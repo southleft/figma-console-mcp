@@ -16,6 +16,7 @@ import { BrowserManager, type Env } from "./browser-manager.js";
 import { ConsoleMonitor } from "./console-monitor.js";
 import { getConfig } from "./config.js";
 import { createChildLogger } from "./logger.js";
+import { testBrowserRendering } from "./test-browser.js";
 
 const logger = createChildLogger({ component: "mcp-server" });
 
@@ -523,7 +524,7 @@ export class FigmaConsoleMCP extends McpAgent {
  * Routes requests to appropriate MCP endpoints
  */
 export default {
-	fetch(request: Request, env: Env, ctx: ExecutionContext) {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url);
 
 		// SSE endpoint for remote MCP clients
@@ -543,12 +544,20 @@ export default {
 					status: "healthy",
 					service: "Figma Console MCP",
 					version: "0.1.0",
-					endpoints: ["/sse", "/mcp"],
+					endpoints: ["/sse", "/mcp", "/test-browser"],
 				}),
 				{
 					headers: { "Content-Type": "application/json" },
 				},
 			);
+		}
+
+		// Browser Rendering API test endpoint
+		if (url.pathname === "/test-browser") {
+			const results = await testBrowserRendering(env);
+			return new Response(JSON.stringify(results, null, 2), {
+				headers: { "Content-Type": "application/json" },
+			});
 		}
 
 		return new Response("Not found", { status: 404 });
