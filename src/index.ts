@@ -37,19 +37,42 @@ export class FigmaConsoleMCP extends McpAgent {
 	 * Initialize browser and console monitoring
 	 */
 	private async ensureInitialized(): Promise<void> {
-		if (!this.browserManager) {
-			logger.info("Initializing BrowserManager");
-			// @ts-ignore - this.env is available in Durable Object context
-			this.browserManager = new BrowserManager(this.env, this.config.browser);
-		}
+		try {
+			if (!this.browserManager) {
+				logger.info("Initializing BrowserManager");
 
-		if (!this.consoleMonitor) {
-			logger.info("Initializing ConsoleMonitor");
-			this.consoleMonitor = new ConsoleMonitor(this.config.console);
+				// Access env from Durable Object context
+				// @ts-ignore - this.env is available in Agent/Durable Object context
+				const env = this.env as Env;
 
-			// Start browser and begin monitoring
-			const page = await this.browserManager.getPage();
-			await this.consoleMonitor.startMonitoring(page);
+				if (!env) {
+					throw new Error("Environment not available - this.env is undefined");
+				}
+
+				if (!env.BROWSER) {
+					throw new Error("BROWSER binding not found in environment. Check wrangler.jsonc configuration.");
+				}
+
+				logger.info("Creating BrowserManager with BROWSER binding");
+				this.browserManager = new BrowserManager(env, this.config.browser);
+			}
+
+			if (!this.consoleMonitor) {
+				logger.info("Initializing ConsoleMonitor");
+				this.consoleMonitor = new ConsoleMonitor(this.config.console);
+
+				// Start browser and begin monitoring
+				logger.info("Getting browser page");
+				const page = await this.browserManager.getPage();
+
+				logger.info("Starting console monitoring");
+				await this.consoleMonitor.startMonitoring(page);
+
+				logger.info("Browser and console monitor initialized successfully");
+			}
+		} catch (error) {
+			logger.error({ error }, "Failed to initialize browser/monitor");
+			throw new Error(`Initialization failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 
@@ -103,14 +126,16 @@ export class FigmaConsoleMCP extends McpAgent {
 					};
 				} catch (error) {
 					logger.error({ error }, "Failed to get console logs");
+					const errorMessage = error instanceof Error ? error.message : String(error);
 					return {
 						content: [
 							{
 								type: "text",
 								text: JSON.stringify(
 									{
-										error: String(error),
-										message: "Failed to retrieve console logs",
+										error: errorMessage,
+										message: "Failed to retrieve console logs. Make sure to call figma_navigate first to initialize the browser.",
+										hint: "Try: figma_navigate({ url: 'https://www.figma.com/design/your-file' })",
 									},
 									null,
 									2,
@@ -410,14 +435,23 @@ export class FigmaConsoleMCP extends McpAgent {
 					};
 				} catch (error) {
 					logger.error({ error }, "Failed to navigate to Figma");
+					const errorMessage = error instanceof Error ? error.message : String(error);
 					return {
 						content: [
 							{
 								type: "text",
 								text: JSON.stringify(
 									{
-										error: String(error),
+										error: errorMessage,
 										message: "Failed to navigate to Figma URL",
+										details: errorMessage.includes("BROWSER")
+											? "Browser Rendering API binding is missing. This is a configuration issue."
+											: "Unable to launch browser or navigate to URL.",
+										troubleshooting: [
+											"Verify the Figma URL is valid and accessible",
+											"Check that the Browser Rendering API is properly configured in wrangler.jsonc",
+											"Try again in a few moments if this is a temporary issue"
+										]
 									},
 									null,
 									2,
