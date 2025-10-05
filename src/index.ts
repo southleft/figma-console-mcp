@@ -12,6 +12,12 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { BrowserManager, type Env } from "./browser-manager.js";
+import { ConsoleMonitor } from "./console-monitor.js";
+import { getConfig } from "./config.js";
+import { createChildLogger } from "./logger.js";
+
+const logger = createChildLogger({ component: "mcp-server" });
 
 /**
  * Figma Console MCP Agent
@@ -22,6 +28,30 @@ export class FigmaConsoleMCP extends McpAgent {
 		name: "Figma Console MCP",
 		version: "0.1.0",
 	});
+
+	private browserManager: BrowserManager | null = null;
+	private consoleMonitor: ConsoleMonitor | null = null;
+	private config = getConfig();
+
+	/**
+	 * Initialize browser and console monitoring
+	 */
+	private async ensureInitialized(): Promise<void> {
+		if (!this.browserManager) {
+			logger.info("Initializing BrowserManager");
+			// @ts-ignore - this.env is available in Durable Object context
+			this.browserManager = new BrowserManager(this.env, this.config.browser);
+		}
+
+		if (!this.consoleMonitor) {
+			logger.info("Initializing ConsoleMonitor");
+			this.consoleMonitor = new ConsoleMonitor(this.config.console);
+
+			// Start browser and begin monitoring
+			const page = await this.browserManager.getPage();
+			await this.consoleMonitor.startMonitoring(page);
+		}
+	}
 
 	async init() {
 		// Tool 1: Get Console Logs
@@ -40,25 +70,56 @@ export class FigmaConsoleMCP extends McpAgent {
 					.describe("Only logs after this timestamp (Unix ms)"),
 			},
 			async ({ count, level, since }) => {
-				// TODO: Phase 1, Week 4 - Implement console log capture using Browser Rendering API
-				// Will use Puppeteer to connect to Figma and capture console events via CDP
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									status: "placeholder",
-									message: `Would retrieve ${count} logs of level '${level}'${since ? ` since ${new Date(since).toISOString()}` : ""}`,
-									plannedFor: "Phase 1, Week 4",
-									implementation: "Browser Rendering API + Puppeteer + CDP",
-								},
-								null,
-								2,
-							),
-						},
-					],
-				};
+				try {
+					await this.ensureInitialized();
+
+					if (!this.consoleMonitor) {
+						throw new Error("Console monitor not initialized");
+					}
+
+					const logs = this.consoleMonitor.getLogs({
+						count,
+						level,
+						since,
+					});
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										logs,
+										totalCount: logs.length,
+										oldestTimestamp: logs[0]?.timestamp,
+										newestTimestamp: logs[logs.length - 1]?.timestamp,
+										status: this.consoleMonitor.getStatus(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to get console logs");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: String(error),
+										message: "Failed to retrieve console logs",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
 			},
 		);
 
@@ -85,24 +146,61 @@ export class FigmaConsoleMCP extends McpAgent {
 					.describe("JPEG quality (0-100)"),
 			},
 			async ({ target, format, quality }) => {
-				// TODO: Phase 2 - Implement screenshot capture
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									status: "placeholder",
-									message: `Would capture ${format} screenshot of ${target} at quality ${quality}`,
-									plannedFor: "Phase 2",
-									implementation: "Puppeteer screenshot API",
-								},
-								null,
-								2,
-							),
-						},
-					],
-				};
+				try {
+					await this.ensureInitialized();
+
+					if (!this.browserManager) {
+						throw new Error("Browser manager not initialized");
+					}
+
+					const screenshot = await this.browserManager.screenshot({
+						fullPage: target === "full-page",
+						type: format,
+						quality: format === "jpeg" ? quality : undefined,
+					});
+
+					// Convert buffer to base64
+					const base64 = screenshot.toString("base64");
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										id: crypto.randomUUID(),
+										timestamp: Date.now(),
+										format,
+										target,
+										quality,
+										base64Data: base64,
+										size: screenshot.length,
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to capture screenshot");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: String(error),
+										message: "Failed to capture screenshot",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
 			},
 		);
 
@@ -155,25 +253,62 @@ export class FigmaConsoleMCP extends McpAgent {
 					.default(true)
 					.describe("Clear console logs before reload"),
 			},
-			async ({ clearConsole }) => {
-				// TODO: Phase 1, Week 4 - Implement plugin reload
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									status: "placeholder",
-									message: `Would reload plugin${clearConsole ? " and clear console" : ""}`,
-									plannedFor: "Phase 1, Week 4",
-									implementation: "Puppeteer page reload + context detection",
-								},
-								null,
-								2,
-							),
-						},
-					],
-				};
+			async ({ clearConsole: clearConsoleBefore }) => {
+				try {
+					await this.ensureInitialized();
+
+					if (!this.browserManager) {
+						throw new Error("Browser manager not initialized");
+					}
+
+					// Clear console buffer if requested
+					let clearedCount = 0;
+					if (clearConsoleBefore && this.consoleMonitor) {
+						clearedCount = this.consoleMonitor.clear();
+					}
+
+					// Reload the page
+					await this.browserManager.reload();
+
+					const currentUrl = this.browserManager.getCurrentUrl();
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										status: "reloaded",
+										timestamp: Date.now(),
+										url: currentUrl,
+										consoleCleared: clearConsoleBefore,
+										clearedCount: clearConsoleBefore ? clearedCount : 0,
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to reload plugin");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: String(error),
+										message: "Failed to reload plugin",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
 			},
 		);
 
@@ -182,24 +317,50 @@ export class FigmaConsoleMCP extends McpAgent {
 			"figma_clear_console",
 			{},
 			async () => {
-				// TODO: Phase 1, Week 4 - Implement console buffer clearing
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									status: "placeholder",
-									message: "Would clear console log buffer",
-									plannedFor: "Phase 1, Week 4",
-									implementation: "In-memory buffer management",
-								},
-								null,
-								2,
-							),
-						},
-					],
-				};
+				try {
+					await this.ensureInitialized();
+
+					if (!this.consoleMonitor) {
+						throw new Error("Console monitor not initialized");
+					}
+
+					const clearedCount = this.consoleMonitor.clear();
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										status: "cleared",
+										clearedCount,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to clear console");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: String(error),
+										message: "Failed to clear console buffer",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
 			},
 		);
 	}
