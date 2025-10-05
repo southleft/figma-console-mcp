@@ -6,13 +6,16 @@
 
 ## ⚠️ Important: Browser Rendering API Required
 
-**This MCP server requires Cloudflare Browser Rendering API ($5/month) to be enabled on your account.**
+**This MCP server requires Cloudflare Browser Rendering API to be enabled on your account.**
 
-- **Total Cost:** $10/month minimum (Workers Paid $5 + Browser Rendering $5)
-- **Setup Required:** See [BROWSER_RENDERING_SETUP.md](BROWSER_RENDERING_SETUP.md) for instructions
-- **Current Status:** If you're seeing initialization errors, Browser Rendering likely needs to be enabled
+- **Free Tier Available:** 10 min/day, 3 concurrent browsers (perfect for testing!)
+- **Paid Tier:** 10 hours/month included, then $0.09/browser hour
+- **Setup Required:** Must be explicitly enabled - see [ENABLE_BROWSER_RENDERING.md](ENABLE_BROWSER_RENDERING.md)
+- **Test Your Setup:** Visit `/test-browser` endpoint to verify Browser Rendering is working
 
 **Enable it here:** https://dash.cloudflare.com/?to=/:account/workers/plans
+
+**Not working?** Run the diagnostic: `https://your-worker.workers.dev/test-browser`
 
 ---
 
