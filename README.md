@@ -4,6 +4,18 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## ⚠️ Important: Browser Rendering API Required
+
+**This MCP server requires Cloudflare Browser Rendering API ($5/month) to be enabled on your account.**
+
+- **Total Cost:** $10/month minimum (Workers Paid $5 + Browser Rendering $5)
+- **Setup Required:** See [BROWSER_RENDERING_SETUP.md](BROWSER_RENDERING_SETUP.md) for instructions
+- **Current Status:** If you're seeing initialization errors, Browser Rendering likely needs to be enabled
+
+**Enable it here:** https://dash.cloudflare.com/?to=/:account/workers/plans
+
+---
+
 ## Overview
 
 Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/) server that bridges AI coding assistants (like Claude Code and Cursor) to Figma's runtime environment. It enables autonomous debugging of Figma plugins by providing:
