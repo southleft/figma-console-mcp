@@ -65,9 +65,18 @@ Restart Claude Desktop to see the tools become available.
 
 ## Available MCP Tools
 
-All tools are currently **placeholders** and will be implemented in Phase 1, Week 4 using Cloudflare's Browser Rendering API.
+**7 tools available** - 6 fully functional, 1 placeholder for Phase 3.
 
-### `figma_get_console_logs`
+### `figma_navigate` ✅
+
+Navigate to a specific Figma URL to start monitoring.
+
+**Parameters:**
+- `url` (string, required): Figma URL to navigate to (e.g., `https://www.figma.com/design/abc123`)
+
+**Use this first** to open Figma and start console monitoring before using other tools.
+
+### `figma_get_console_logs` ✅
 
 Retrieve recent console logs from the Figma plugin.
 
@@ -76,7 +85,9 @@ Retrieve recent console logs from the Figma plugin.
 - `level` (string, optional): Filter by log level - 'log', 'info', 'warn', 'error', 'debug', 'all' (default: 'all')
 - `since` (number, optional): Only logs after this timestamp (Unix ms)
 
-### `figma_take_screenshot`
+**Returns:** Array of log entries with timestamp, level, message, args, source, and optional stack trace.
+
+### `figma_take_screenshot` ✅
 
 Capture a screenshot of the Figma plugin UI.
 
@@ -85,7 +96,9 @@ Capture a screenshot of the Figma plugin UI.
 - `format` (string, optional): Image format - 'png', 'jpeg' (default: 'png')
 - `quality` (number, optional): JPEG quality 0-100 (default: 90)
 
-### `figma_watch_console`
+**Returns:** Base64-encoded image data with metadata (id, timestamp, format, size).
+
+### `figma_watch_console` ⏳
 
 Stream console logs in real-time (sends notifications).
 
@@ -93,18 +106,32 @@ Stream console logs in real-time (sends notifications).
 - `duration` (number, optional): How long to watch in seconds (default: 30)
 - `level` (string, optional): Filter by log level (default: 'all')
 
-### `figma_reload_plugin`
+**Status:** Placeholder for Phase 3 (SSE implementation).
+
+### `figma_reload_plugin` ✅
 
 Reload the currently running Figma plugin.
 
 **Parameters:**
 - `clearConsole` (boolean, optional): Clear console logs before reload (default: true)
 
-### `figma_clear_console`
+**Returns:** Reload status, current URL, and number of cleared logs.
+
+### `figma_clear_console` ✅
 
 Clear the console log buffer.
 
 **Parameters:** None
+
+**Returns:** Number of logs cleared and timestamp.
+
+### `figma_get_status` ✅
+
+Get the current status of the browser and console monitor.
+
+**Parameters:** None
+
+**Returns:** Browser running state, current URL, console monitor status (log count, buffer size, timestamps), and initialization state.
 
 ## How It Works
 
@@ -271,12 +298,13 @@ See [ROADMAP.md](ROADMAP.md) for complete timeline.
 Let your AI assistant debug Figma plugins without manual intervention:
 
 ```
-1. AI writes plugin code
-2. Plugin executes, logs appear
-3. AI calls figma_get_console_logs()
-4. AI analyzes errors and fixes code
-5. AI calls figma_reload_plugin()
-6. Loop continues until plugin works
+1. AI navigates to Figma: figma_navigate({ url: 'https://www.figma.com/design/...' })
+2. AI writes/modifies plugin code
+3. Plugin executes in Figma, logs are captured automatically
+4. AI checks logs: figma_get_console_logs({ level: 'error' })
+5. AI analyzes errors and fixes code
+6. AI reloads: figma_reload_plugin({ clearConsole: true })
+7. Loop continues until plugin works
 ```
 
 ### Error Investigation
@@ -285,6 +313,7 @@ Quickly investigate runtime errors:
 
 ```
 AI: "Check the latest error in the plugin"
+→ figma_navigate({ url: 'https://www.figma.com/design/abc123' })
 → figma_get_console_logs({ level: 'error', count: 1 })
 → Analyzes stack trace and suggests fix
 ```
@@ -295,9 +324,21 @@ Combine logs with screenshots:
 
 ```
 AI: "Show me what the plugin looks like when the error occurs"
+→ figma_get_status() // Check if browser is running
 → figma_take_screenshot({ target: 'plugin' })
 → figma_get_console_logs({ level: 'error' })
 → Correlates UI state with errors
+```
+
+### Monitoring Workflow
+
+Track plugin execution state:
+
+```
+→ figma_navigate({ url: 'https://www.figma.com/design/...' })
+→ figma_get_status() // See log count, buffer size
+→ figma_get_console_logs({ count: 50 })
+→ figma_clear_console() // Clear for next test
 ```
 
 ## Cloudflare Workers Costs

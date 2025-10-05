@@ -363,6 +363,124 @@ export class FigmaConsoleMCP extends McpAgent {
 				}
 			},
 		);
+
+		// Tool 6: Navigate to Figma
+		this.server.tool(
+			"figma_navigate",
+			{
+				url: z
+					.string()
+					.url()
+					.describe(
+						"Figma URL to navigate to (e.g., https://www.figma.com/design/abc123)",
+					),
+			},
+			async ({ url }) => {
+				try {
+					await this.ensureInitialized();
+
+					if (!this.browserManager) {
+						throw new Error("Browser manager not initialized");
+					}
+
+					// Navigate to the URL
+					await this.browserManager.navigateToFigma(url);
+
+					// Give page time to load and start capturing logs
+					await new Promise((resolve) => setTimeout(resolve, 2000));
+
+					const currentUrl = this.browserManager.getCurrentUrl();
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										status: "navigated",
+										url: currentUrl,
+										timestamp: Date.now(),
+										message: "Browser navigated to Figma. Console monitoring is active.",
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to navigate to Figma");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: String(error),
+										message: "Failed to navigate to Figma URL",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool 7: Get Status
+		this.server.tool(
+			"figma_get_status",
+			{},
+			async () => {
+				try {
+					const browserRunning = this.browserManager?.isRunning() ?? false;
+					const monitorStatus = this.consoleMonitor?.getStatus() ?? null;
+					const currentUrl = this.browserManager?.getCurrentUrl() ?? null;
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										browser: {
+											running: browserRunning,
+											currentUrl,
+										},
+										consoleMonitor: monitorStatus,
+										initialized: this.browserManager !== null && this.consoleMonitor !== null,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to get status");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: String(error),
+										message: "Failed to retrieve status",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
 	}
 }
 

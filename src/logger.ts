@@ -15,7 +15,7 @@ export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
  */
 export function createLogger(level: LogLevel = 'info'): pino.Logger {
   // Check if running in Cloudflare Workers environment
-  const isWorkers = typeof globalThis.caches !== 'undefined';
+  const isWorkers = typeof (globalThis as any).caches !== 'undefined';
 
   if (isWorkers) {
     // Cloudflare Workers: use simple console-based logging
