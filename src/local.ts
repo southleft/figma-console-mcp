@@ -316,19 +316,49 @@ class LocalFigmaConsoleMCP {
 					.describe("Filter by log level"),
 			},
 			async ({ duration, level }) => {
-				// TODO: Phase 3 - Implement real-time console streaming
-				const endsAt = Date.now() + duration * 1000;
+				if (!this.browserManager || !this.consoleMonitor) {
+					throw new Error("Browser not connected. Ensure Figma Desktop is running with --remote-debugging-port=9222");
+				}
+
+				const consoleMonitor = this.consoleMonitor;
+
+				if (!consoleMonitor.getStatus().isMonitoring) {
+					throw new Error("Console monitoring not active. Call figma_navigate first.");
+				}
+
+				const startTime = Date.now();
+				const endTime = startTime + duration * 1000;
+				const startLogCount = consoleMonitor.getStatus().logCount;
+
+				// Wait for the specified duration while collecting logs
+				await new Promise(resolve => setTimeout(resolve, duration * 1000));
+
+				// Get logs captured during watch period
+				const watchedLogs = consoleMonitor.getLogs({
+					level: level === 'all' ? undefined : level,
+					since: startTime,
+				});
+
+				const endLogCount = consoleMonitor.getStatus().logCount;
+				const newLogsCount = endLogCount - startLogCount;
+
 				return {
 					content: [
 						{
 							type: "text",
 							text: JSON.stringify(
 								{
-									status: "placeholder",
-									message: `Would watch console logs for ${duration} seconds (level: ${level})`,
-									endsAt: new Date(endsAt).toISOString(),
-									plannedFor: "Phase 3",
-									implementation: "Stdio notifications (future)",
+									status: "completed",
+									duration: `${duration} seconds`,
+									startTime: new Date(startTime).toISOString(),
+									endTime: new Date(endTime).toISOString(),
+									filter: level,
+									statistics: {
+										totalLogsInBuffer: endLogCount,
+										logsAddedDuringWatch: newLogsCount,
+										logsMatchingFilter: watchedLogs.length,
+									},
+									logs: watchedLogs,
 								},
 								null,
 								2,
