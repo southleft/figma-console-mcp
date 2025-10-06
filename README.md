@@ -435,8 +435,8 @@ Clear the console log buffer.
 figma_clear_console()
 ```
 
-#### `figma_watch_console` (Coming Soon)
-Stream console logs in real-time via SSE notifications.
+#### `figma_watch_console`
+Stream console logs in real-time for a specified duration.
 
 ```javascript
 figma_watch_console({
@@ -445,7 +445,7 @@ figma_watch_console({
 })
 ```
 
-*Currently returns placeholder - planned for Phase 3.*
+Returns logs captured during the watch period with real-time monitoring.
 
 ---
 
@@ -1083,12 +1083,14 @@ Workers Paid plan ($5/month) required only if you exceed free Workers limits (10
 ✅ **Phase 2 (v0.2.0):** All 7 debugging tools implemented and tested
 ✅ **Phase 2.5 (v0.2.5):** Figma API data extraction tools (8-11) - Variables, Components, Styles
 ✅ **Phase 3 (v0.3.0):** Local MCP server mode with dual-mode architecture
-🚧 **Phase 4 (v0.4.0):** Real-time `figma_watch_console` via SSE/notifications
+✅ **Phase 4 (v0.4.0):** Console monitoring with `figma_watch_console` and real-time log capture
 📋 **Phase 5 (v1.0.0):** Advanced features (custom filters, log persistence, plugin interaction)
 
-### What's New in Phase 3
+### What's New in Phase 4 (Current)
 
-- **Dual-mode architecture:** Local (stdio) and Cloud (SSE) modes
+- **✅ Working console monitoring:** All 11 tools fully functional and tested
+- **Real-time log capture:** Native console monitoring via Chrome DevTools Protocol
+- **Dual-mode architecture:** Local (stdio) and Cloud (SSE) modes both working
 - **Local browser manager:** Connect to Figma Desktop via Chrome Remote Debugging Protocol
 - **Shared core logic:** Identical tool behavior across both modes
 - **Launch scripts:** Easy setup for macOS with `launch-figma-debug.sh`
