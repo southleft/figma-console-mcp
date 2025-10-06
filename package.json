@@ -43,8 +43,8 @@
 		"node": ">=18.0.0"
 	},
 	"dependencies": {
+		"@cloudflare/puppeteer": "^1.0.4",
 		"@modelcontextprotocol/sdk": "1.19.1",
-		"@cloudflare/puppeteer": "^0.0.10",
 		"agents": "^0.2.8",
 		"chrome-remote-interface": "^0.33.2",
 		"pino": "^9.5.0",
