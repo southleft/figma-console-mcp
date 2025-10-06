@@ -252,6 +252,20 @@ figma_get_console_logs({ count: 20 })
 4. Look for "🔌" indicator showing MCP servers connected
 5. All 7 Figma tools should be available
 
+### Claude Code (VS Code Extension)
+
+**One-line install:**
+
+```bash
+claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
+```
+
+**Verify:**
+- Use `/mcp` command in Claude Code
+- Should show "figma-console: connected"
+
+**See [CLAUDE_CODE_SETUP.md](CLAUDE_CODE_SETUP.md) for troubleshooting.**
+
 ### Cursor
 
 **Location:** `.cursor/mcp.json` in your project or `~/.cursor/mcp.json` globally

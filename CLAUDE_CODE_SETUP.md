@@ -1,65 +1,71 @@
 # Claude Code Setup Guide
 
-## Issue: "Error: fetch failed" when using Figma Console MCP
+## Quick Setup (Recommended)
 
-If you're seeing this error when trying to use Figma Console MCP tools in Claude Code:
+The easiest way to install Figma Console MCP in Claude Code:
+
+```bash
+claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
+```
+
+That's it! All 7 Figma tools are now available.
+
+**Verify installation:**
+```bash
+# List all MCP servers
+claude mcp list
+
+# Get Figma Console details
+claude mcp get figma-console
+```
+
+**Test in Claude Code:**
+- Use `/mcp` command to see server status
+- Should show "figma-console: connected"
+
+---
+
+## Issue: "Error: fetch failed" when calling tools
+
+If you're seeing this error when trying to use Figma Console MCP tools:
 
 ```
 ⏺ figma-console - figma_get_console_logs (MCP)(count: 100, level: "all")
   ⎿  Error: fetch failed
 ```
 
-This means Claude Code can see the tools but can't connect to the server.
+This means the server is installed but having connectivity issues.
 
-## Solution: Configure Claude Code MCP
+## Solutions
 
-Claude Code uses a different configuration file than Claude Desktop.
-
-### Step 1: Create or Edit `~/.claude.json`
-
-**Location:** `~/.claude.json` (in your home directory)
+### Solution 1: Remove and Reinstall
 
 ```bash
-# Create the file if it doesn't exist
-touch ~/.claude.json
+# Remove the server
+claude mcp remove figma-console
 
-# Or edit it
-code ~/.claude.json  # VS Code
-vim ~/.claude.json   # Vim
-nano ~/.claude.json  # Nano
+# Add it again
+claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
 ```
 
-### Step 2: Add Figma Console MCP Configuration
+### Solution 2: Check Server Status
 
-**Add this to `~/.claude.json`:**
+```bash
+# Verify the server is reachable
+curl https://figma-console-mcp.southleft.com/health
 
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "https://figma-console-mcp.southleft.com/sse"
-      ]
-    }
-  }
-}
+# Should return:
+# {"status":"healthy","service":"Figma Console MCP","version":"0.1.0"}
 ```
 
-**Important notes:**
-- Use `-y` flag for `npx` to auto-confirm package installation
-- URL must end with `/sse` (Server-Sent Events endpoint)
-- Exact URL: `https://figma-console-mcp.southleft.com/sse`
+### Solution 3: Restart Claude Code
 
-### Step 3: Restart Claude Code
-
-After saving the config:
+After adding the MCP server:
 
 1. **Quit Claude Code completely** (not just close the window)
 2. **Restart Claude Code**
-3. Wait for MCP servers to initialize (look for 🔌 indicator)
+3. Wait for MCP servers to initialize
+4. Check `/mcp` command shows "connected"
 
 ### Step 4: Verify Connection
 
