@@ -1,0 +1,13 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"outDir": "./dist/cloudflare",
+		"rootDir": "./src",
+		"noEmit": false,
+		"declaration": false,
+		"sourceMap": false,
+		"moduleResolution": "bundler"
+	},
+	"include": ["worker-configuration.d.ts", "src/index.ts", "src/core/**/*.ts", "src/browser/base.ts", "src/browser/cloudflare.ts", "src/test-browser.ts"],
+	"exclude": ["src/local.ts", "src/browser/local.ts", "node_modules", "dist"]
+}

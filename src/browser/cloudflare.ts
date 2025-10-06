@@ -1,45 +1,46 @@
 /**
- * Browser Manager
+ * Cloudflare Browser Manager
  * Manages Puppeteer browser instance lifecycle for Cloudflare Browser Rendering API
  */
 
 import puppeteer, { type Browser, type Page } from '@cloudflare/puppeteer';
-import { createChildLogger } from './core/logger.js';
-import type { BrowserConfig } from './core/types/index.js';
+import { createChildLogger } from '../core/logger.js';
+import type { BrowserConfig } from '../core/types/index.js';
+import type { IBrowserManager, ScreenshotOptions } from './base.js';
 
-const logger = createChildLogger({ component: 'browser-manager' });
+const logger = createChildLogger({ component: 'cloudflare-browser' });
 
 /**
  * Environment interface for Cloudflare Workers
  */
-export interface Env {
+export interface CloudflareEnv {
 	BROWSER: Fetcher;
 	MCP_OBJECT: DurableObjectNamespace;
 	FIGMA_ACCESS_TOKEN?: string; // Optional Figma API token for data extraction
 }
 
 /**
- * Browser Manager
- * Handles browser instance creation, page management, and navigation
+ * Cloudflare Browser Manager
+ * Implements IBrowserManager for Cloudflare Browser Rendering API
  */
-export class BrowserManager {
+export class CloudflareBrowserManager implements IBrowserManager {
 	private browser: Browser | null = null;
 	private page: Page | null = null;
-	private env: Env;
+	private env: CloudflareEnv;
 	private config: BrowserConfig;
 
-	constructor(env: Env, config: BrowserConfig) {
+	constructor(env: CloudflareEnv, config: BrowserConfig) {
 		this.env = env;
 		this.config = config;
 	}
 
 	/**
-	 * Launch browser instance
+	 * Launch browser instance via Cloudflare Browser Rendering API
 	 */
-	async launch(): Promise<Browser> {
+	async launch(): Promise<void> {
 		if (this.browser) {
 			logger.info('Browser already running, reusing instance');
-			return this.browser;
+			return;
 		}
 
 		logger.info('Launching browser with Cloudflare Browser Rendering API');
@@ -50,7 +51,6 @@ export class BrowserManager {
 			});
 
 			logger.info('Browser launched successfully');
-			return this.browser;
 		} catch (error) {
 			logger.error({ error }, 'Failed to launch browser');
 			throw new Error(`Browser launch failed: ${error}`);
@@ -142,11 +142,7 @@ export class BrowserManager {
 	/**
 	 * Take screenshot of current page
 	 */
-	async screenshot(options?: {
-		fullPage?: boolean;
-		type?: 'png' | 'jpeg';
-		quality?: number;
-	}): Promise<Buffer> {
+	async screenshot(options?: ScreenshotOptions): Promise<Buffer> {
 		const page = await this.getPage();
 
 		logger.info({ options }, 'Taking screenshot');
@@ -220,3 +216,6 @@ export class BrowserManager {
 		});
 	}
 }
+
+// Re-export Env for backwards compatibility
+export type Env = CloudflareEnv;

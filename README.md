@@ -14,7 +14,32 @@ Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/
 - **Automated screenshot capture** of Figma UI and plugins
 - **Direct visibility** into Figma execution state
 - **Zero-friction debugging** workflow (no copy-paste needed)
-- **Cloudflare Workers deployment** with Browser Rendering API
+- **Dual deployment modes** - Local (for plugin development) or Cloud (for remote collaboration)
+
+## Architecture Overview
+
+Figma Console MCP supports **two deployment modes** that provide identical functionality with different trade-offs:
+
+| Mode | Best For | Latency | Browser | Setup Complexity |
+|------|----------|---------|---------|------------------|
+| **Local** | Plugin development, debugging | ~10ms | Your Figma Desktop | Low (run script) |
+| **Cloud** | Remote collaboration, production | ~50-200ms | Cloudflare Browser API | Medium (deploy once) |
+
+### When to Use Each Mode
+
+**Use Local Mode when:**
+- Developing Figma plugins locally
+- You need instant console log capture from running plugins
+- You want zero network latency
+- You're debugging plugin code in real-time
+
+**Use Cloud Mode when:**
+- Working remotely or collaborating with teams
+- You need access from multiple machines
+- You want a persistent debugging endpoint
+- You're deploying for production use
+
+**Both modes provide the same 11 MCP tools** - the only difference is where the browser runs.
 
 ## Live Demo
 
@@ -24,7 +49,87 @@ Try the diagnostic test: [https://figma-console-mcp.southleft.com/test-browser](
 
 ## Quick Start
 
-### Option 1: Use Our Public Server (Fastest)
+Choose the deployment mode that fits your workflow:
+
+### Option 1: Local Mode (Plugin Development)
+
+Perfect for developing Figma plugins with instant console log access.
+
+**Prerequisites:**
+- Figma Desktop installed
+- Node.js >= 18.0.0
+- FIGMA_ACCESS_TOKEN (optional, for API access)
+
+**Step 1: Launch Figma Desktop with remote debugging**
+
+We provide launch scripts for convenience:
+
+**macOS:**
+```bash
+# Clone the repository first
+git clone https://github.com/southleft/figma-console-mcp.git
+cd figma-console-mcp
+npm install
+
+# Launch Figma with debugging enabled
+./scripts/launch-figma-debug.sh
+```
+
+Or manually:
+```bash
+open -a "Figma" --args --remote-debugging-port=9222
+```
+
+**Windows:**
+```bash
+start figma://--remote-debugging-port=9222
+```
+
+**Linux:**
+```bash
+figma --remote-debugging-port=9222
+```
+
+**Step 2: Enable Developer VM in Figma**
+
+In Figma Desktop:
+1. Go to **Plugins → Development**
+2. Enable **"Use Developer VM"**
+
+This ensures plugin code runs in a monitored environment.
+
+**Step 3: Build and configure**
+
+```bash
+# Build local mode
+npm run build:local
+
+# Add to Claude Desktop config (~/.config/Claude/claude_desktop_config.json):
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "node",
+      "args": ["/absolute/path/to/figma-console-mcp/dist/local.js"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "your-token-here"
+      }
+    }
+  }
+}
+```
+
+**Step 4: Test**
+
+Restart Claude Desktop and verify the connection:
+- Look for "🔌" indicator
+- All 11 Figma tools should be available
+- Console logs from your running plugins are captured automatically!
+
+See [Local Mode Setup](#local-mode-setup) for detailed configuration.
+
+---
+
+### Option 2: Remote/Cloud Mode (Public Server)
 
 Connect directly to our hosted instance:
 
@@ -61,7 +166,7 @@ Connect directly to our hosted instance:
 
 Restart your MCP client to see the 11 Figma tools become available.
 
-### Option 2: Deploy Your Own Instance
+### Option 3: Remote/Cloud Mode (Self-Hosted)
 
 [![Deploy to Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/southleft/figma-console-mcp)
 
@@ -87,9 +192,173 @@ npm run deploy
 - Paid tier: 10 hours/month, then $0.09/browser hour
 - Automatically available on Cloudflare Workers
 
+## Local Mode Setup
+
+Detailed setup for local plugin development with native console log capture.
+
+### Prerequisites
+
+1. **Figma Desktop** - Download from [figma.com/downloads](https://www.figma.com/downloads/)
+2. **Node.js** >= 18.0.0
+3. **FIGMA_ACCESS_TOKEN** - Optional for API access (get from [Figma settings](https://www.figma.com/developers/api#access-tokens))
+
+### Step-by-Step Setup
+
+**1. Clone and Install**
+
+```bash
+git clone https://github.com/southleft/figma-console-mcp.git
+cd figma-console-mcp
+npm install
+```
+
+**2. Build Local Mode**
+
+```bash
+npm run build:local
+```
+
+This builds to `dist/local.js` - the MCP server entry point.
+
+**3. Launch Figma with Remote Debugging**
+
+**Option A: Use our launch script (macOS)**
+
+```bash
+./scripts/launch-figma-debug.sh
+```
+
+This script will:
+- Check if Figma is installed
+- Quit Figma if already running
+- Relaunch with `--remote-debugging-port=9222`
+- Verify the debug port is accessible
+
+**Option B: Manual launch**
+
+**macOS:**
+```bash
+open -a "Figma" --args --remote-debugging-port=9222
+```
+
+**Windows:**
+```bash
+start figma://--remote-debugging-port=9222
+```
+
+**Linux:**
+```bash
+figma --remote-debugging-port=9222
+```
+
+**4. Enable Developer VM**
+
+In Figma Desktop:
+1. Open **Plugins → Development**
+2. Enable **"Use Developer VM"**
+
+This ensures your plugin code runs in the Web Worker that we can monitor via Chrome DevTools Protocol.
+
+**5. Configure MCP Client**
+
+**Claude Desktop** (`~/.config/Claude/claude_desktop_config.json` or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "node",
+      "args": ["/absolute/path/to/figma-console-mcp/dist/local.js"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_your_token_here",
+        "FIGMA_DEBUG_PORT": "9222",
+        "FIGMA_DEBUG_HOST": "localhost"
+      }
+    }
+  }
+}
+```
+
+**Important:** Replace `/absolute/path/to/figma-console-mcp` with your actual path!
+
+**Other MCP Clients** (Cursor, Cline, etc.):
+
+Same configuration, but check your client's MCP configuration location.
+
+**6. Test Connection**
+
+Restart your MCP client and verify:
+
+```bash
+# Verify Figma debug port is accessible
+curl http://localhost:9222/json/version
+```
+
+You should see JSON with browser version info.
+
+In your MCP client:
+- Look for "🔌" indicator or MCP connection status
+- All 11 Figma tools should be available
+- Test with: "Navigate to https://www.figma.com and check status"
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FIGMA_ACCESS_TOKEN` | - | Your Figma API token (optional, for API tools) |
+| `FIGMA_DEBUG_HOST` | `localhost` | Debug host for Figma Desktop |
+| `FIGMA_DEBUG_PORT` | `9222` | Debug port for Figma Desktop |
+
+### Troubleshooting Local Mode
+
+**Error: "Failed to connect to Figma Desktop"**
+
+1. Verify Figma Desktop is running
+2. Check it was launched with `--remote-debugging-port=9222`
+3. Test port: `curl http://localhost:9222/json/version`
+4. Ensure no firewall is blocking port 9222
+5. On macOS, try relaunching with the provided script
+
+**Error: "No console logs captured"**
+
+1. Enable "Use Developer VM" in Figma (Plugins → Development)
+2. Make sure your plugin is actually running
+3. Open Figma's developer console (Plugins → Development → Open Console) to verify logs appear there
+4. Navigate to a Figma file with your plugin active
+5. Check `figma_get_status` - should show `consoleMonitor.isMonitoring: true`
+
+**Error: "FIGMA_ACCESS_TOKEN not configured"**
+
+- This error only affects Figma API tools (8-11)
+- Console logging and screenshots (tools 1-7) work without a token
+- Get a token at: https://www.figma.com/developers/api#access-tokens
+
+### Development Workflow
+
+```bash
+# Watch mode for development
+npm run dev:local
+
+# Type checking
+npm run type-check
+
+# Build both modes
+npm run build
+```
+
+### Key Benefits of Local Mode
+
+1. **Native Console Log Capture** - Directly captures plugin console logs via Chrome DevTools Protocol
+2. **Zero Latency** - No network round trips, instant response
+3. **Free** - No Cloudflare costs, runs entirely on your machine
+4. **Live Debugging** - Monitor console logs in real-time as your plugin executes
+5. **Perfect for Development** - Ideal workflow for plugin development and testing
+
 ## Available MCP Tools
 
-All 11 tools are **fully functional** and tested. Here's what you can do:
+All 11 tools are **fully functional** and tested in **BOTH local and cloud modes**. The tools provide identical functionality regardless of deployment mode.
+
+> **Note on Local Mode:** In local mode, console logs are captured natively from your running Figma Desktop plugins via Chrome DevTools Protocol - this is the whole point of local mode! No need to navigate to Figma URLs for console monitoring; logs from your development plugins are captured automatically.
 
 ### Debugging & Navigation Tools (1-7)
 
@@ -494,6 +763,22 @@ All tools should execute successfully. If you see errors, check:
 
 ## How It Works
 
+### Local Mode Architecture
+
+```
+AI Assistant (Claude Desktop/Cursor/etc)
+         ↓ MCP Protocol (stdio)
+Figma Console MCP Server (Node.js)
+         ↓ puppeteer-core
+Chrome Remote Debugging (localhost:9222)
+         ↓ Chrome DevTools Protocol
+    Figma Desktop → Your Plugin
+```
+
+The local MCP server connects directly to your Figma Desktop application via Chrome Remote Debugging Protocol. It captures console logs natively from running plugins using Chrome DevTools Protocol.
+
+### Cloud Mode Architecture
+
 ```
 AI Assistant (Claude Desktop/Cursor/etc)
          ↓ MCP Protocol
@@ -503,30 +788,99 @@ Figma Console MCP Server (Cloudflare Workers)
          ↓ Browser Rendering API
 Chrome Browser (@cloudflare/puppeteer v1.0.4)
          ↓ Chrome DevTools Protocol
-    Figma → Your Plugin
+    Figma (web) → Your Plugin
 ```
 
-The MCP server runs on Cloudflare Workers and uses Browser Rendering API to control a headless Chrome instance. It monitors console events via Chrome DevTools Protocol and exposes Figma-specific debugging tools via MCP.
+The cloud MCP server runs on Cloudflare Workers and uses Browser Rendering API to control a headless Chrome instance. It monitors console events via Chrome DevTools Protocol and exposes Figma-specific debugging tools via MCP.
 
 ## Architecture
 
-- **McpAgent pattern** from Cloudflare's "agents" package
-- **Durable Objects** for session persistence
-- **Browser Rendering API** (@cloudflare/puppeteer) for headless Chrome
-- **Chrome DevTools Protocol** for console log monitoring
-- **SSE (Server-Sent Events)** for remote MCP clients
-- **Circular buffer** for efficient log storage (1000 logs)
-- **Pino logger** for structured logging
+Figma Console MCP uses a **dual-mode architecture** with shared core logic and mode-specific implementations.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
+### Shared Core (Runtime-Agnostic)
+
+All core debugging and API logic is shared between modes:
+
+```
+src/core/
+  ├── console-monitor.ts   # Console log capture via Chrome DevTools Protocol
+  ├── figma-api.ts        # Figma REST API client
+  ├── figma-tools.ts      # MCP tool registration (tools 8-11)
+  ├── config.ts           # Configuration with mode detection
+  └── logger.ts           # Structured logging (Pino)
+```
+
+### Mode-Specific Browser Managers
+
+Each mode has its own browser implementation:
+
+```
+src/browser/
+  ├── base.ts             # IBrowserManager interface
+  ├── local.ts            # LocalBrowserManager (puppeteer-core)
+  └── cloudflare.ts       # CloudflareBrowserManager (@cloudflare/puppeteer)
+```
+
+**Local Mode (`LocalBrowserManager`):**
+- Uses `puppeteer-core` to connect to existing browser
+- Connects to `localhost:9222` (Chrome Remote Debugging Protocol)
+- No browser launch overhead
+- Direct access to Figma Desktop
+
+**Cloud Mode (`CloudflareBrowserManager`):**
+- Uses `@cloudflare/puppeteer` to launch browser
+- Runs on Cloudflare Browser Rendering API
+- Manages browser lifecycle
+- Navigates to Figma web URLs
+
+### Entry Points
+
+- **`src/local.ts`** - Local mode entry point
+  - StdioServerTransport for MCP communication
+  - Registers all 11 tools
+  - Connects to Figma Desktop
+
+- **`src/index.ts`** - Cloud mode entry point
+  - McpAgent pattern for SSE/HTTP transport
+  - Durable Objects for session persistence
+  - Registers all 11 tools
+
+### Key Technologies
+
+**Local Mode:**
+- `puppeteer-core` - Connect to existing browser
+- `@modelcontextprotocol/sdk` - MCP server (stdio)
+- Chrome DevTools Protocol - Console monitoring
+
+**Cloud Mode:**
+- `@cloudflare/puppeteer` - Browser Rendering API
+- `@cloudflare/agents` - McpAgent pattern
+- Durable Objects - Session persistence
+- SSE (Server-Sent Events) - Remote MCP transport
+
+**Shared:**
+- Circular buffer for efficient log storage (1000 logs)
+- Pino logger for structured logging
+- Zod for schema validation
+- TypeScript for type safety
+
+### Build System
+
+Separate TypeScript configurations for each mode:
+
+- `tsconfig.local.json` - Builds to `dist/local.js`
+- `tsconfig.cloudflare.json` - Builds to `dist/cloudflare/`
+
+This prevents bundling wrong dependencies and optimizes each mode independently.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) and [DUAL_MODE_SETUP.md](DUAL_MODE_SETUP.md) for detailed technical documentation.
 
 ## Development
 
 ### Prerequisites
 
 - Node.js >= 18
-- Cloudflare account
-- Wrangler CLI (`npm install -g wrangler`)
+- For Cloud Mode: Cloudflare account and Wrangler CLI
 
 ### Setup
 
@@ -538,12 +892,33 @@ npm install
 
 ### Commands
 
+**Local Mode Development:**
 ```bash
-# Local development
-npm run dev
-# Server runs at http://localhost:8787
+# Watch mode with auto-reload
+npm run dev:local
 
-# Build TypeScript
+# Build local mode only
+npm run build:local
+
+# Run local mode (after building)
+node dist/local.js
+```
+
+**Cloud Mode Development:**
+```bash
+# Cloudflare Workers dev server (localhost:8787)
+npm run dev
+
+# Build cloud mode only
+npm run build:cloudflare
+
+# Deploy to Cloudflare Workers
+npm run deploy
+```
+
+**Both Modes:**
+```bash
+# Build both modes
 npm run build
 
 # Type checking
@@ -554,15 +929,28 @@ npm run format
 
 # Lint and fix
 npm run lint:fix
-
-# Deploy to Cloudflare Workers
-npm run deploy
 ```
 
-### Local Testing
+### Testing Local Mode
 
 ```bash
-# Start dev server
+# 1. Launch Figma Desktop with debugging
+./scripts/launch-figma-debug.sh
+
+# 2. Build and run local server
+npm run build:local
+node dist/local.js
+
+# 3. Test in another terminal
+curl http://localhost:9222/json/version  # Should show browser info
+```
+
+Configure Claude Desktop with local mode (see [Local Mode Setup](#local-mode-setup)).
+
+### Testing Cloud Mode
+
+```bash
+# Start Cloudflare Workers dev server
 npm run dev
 
 # In another terminal, test endpoints:
@@ -570,11 +958,11 @@ curl http://localhost:8787/health
 curl http://localhost:8787/test-browser
 ```
 
-**Connect Claude Desktop to local server:**
+**Connect Claude Desktop to local cloud dev server:**
 ```json
 {
   "mcpServers": {
-    "figma-console-local": {
+    "figma-console-dev": {
       "command": "npx",
       "args": [
         "mcp-remote",
@@ -590,24 +978,38 @@ curl http://localhost:8787/test-browser
 ```
 figma-console-mcp/
 ├── src/
-│   ├── index.ts              # Main entry point (McpAgent)
-│   ├── browser-manager.ts    # Puppeteer browser lifecycle
-│   ├── console-monitor.ts    # Console log capture (CDP)
-│   ├── figma-api.ts          # Figma REST API client
-│   ├── figma-tools.ts        # Figma data extraction tools (8-11)
-│   ├── config.ts             # Configuration management
-│   ├── logger.ts             # Pino logging
-│   ├── test-browser.ts       # Browser Rendering API diagnostics
-│   └── types/
-│       └── index.ts          # TypeScript types
-├── wrangler.jsonc            # Cloudflare Workers config
-├── package.json              # Dependencies
-├── tsconfig.json             # TypeScript config
-├── biome.json                # Linter/formatter config
-├── ARCHITECTURE.md           # Technical architecture
-├── FIGMA_API_SETUP.md        # Figma API tools setup guide
-├── TROUBLESHOOTING.md        # Common issues and solutions
-└── README.md                 # This file
+│   ├── core/                    # Shared core logic (both modes)
+│   │   ├── console-monitor.ts   # Console log capture via CDP
+│   │   ├── figma-api.ts         # Figma REST API client
+│   │   ├── figma-tools.ts       # Figma API MCP tools (8-11)
+│   │   ├── config.ts            # Configuration with mode detection
+│   │   ├── logger.ts            # Pino logging
+│   │   └── types/
+│   │       └── index.ts         # TypeScript types
+│   ├── browser/                 # Browser manager implementations
+│   │   ├── base.ts              # IBrowserManager interface
+│   │   ├── local.ts             # LocalBrowserManager (puppeteer-core)
+│   │   └── cloudflare.ts        # CloudflareBrowserManager (@cloudflare/puppeteer)
+│   ├── local.ts                 # Local mode entry point (stdio MCP)
+│   ├── index.ts                 # Cloud mode entry point (McpAgent)
+│   └── test-browser.ts          # Browser Rendering API diagnostics
+├── scripts/
+│   └── launch-figma-debug.sh    # Launch Figma with debugging (macOS)
+├── dist/                        # Build output
+│   ├── local.js                 # Local mode build
+│   └── cloudflare/              # Cloud mode build
+│       └── index.js
+├── tsconfig.json                # Base TypeScript config
+├── tsconfig.local.json          # Local mode build config
+├── tsconfig.cloudflare.json     # Cloud mode build config
+├── wrangler.jsonc               # Cloudflare Workers config
+├── package.json                 # Dependencies and scripts
+├── biome.json                   # Linter/formatter config
+├── ARCHITECTURE.md              # Technical architecture details
+├── DUAL_MODE_SETUP.md           # Dual mode setup guide
+├── FIGMA_API_SETUP.md           # Figma API tools setup
+├── TROUBLESHOOTING.md           # Common issues and solutions
+└── README.md                    # This file
 ```
 
 ## Troubleshooting
@@ -680,10 +1082,19 @@ Workers Paid plan ($5/month) required only if you exceed free Workers limits (10
 ✅ **Phase 1 (v0.1.0):** Infrastructure & Cloudflare Workers deployment
 ✅ **Phase 2 (v0.2.0):** All 7 debugging tools implemented and tested
 ✅ **Phase 2.5 (v0.2.5):** Figma API data extraction tools (8-11) - Variables, Components, Styles
-🚧 **Phase 3 (v0.3.0):** Real-time `figma_watch_console` via SSE
-📋 **Phase 4 (v1.0.0):** Advanced features (custom filters, log persistence)
+✅ **Phase 3 (v0.3.0):** Local MCP server mode with dual-mode architecture
+🚧 **Phase 4 (v0.4.0):** Real-time `figma_watch_console` via SSE/notifications
+📋 **Phase 5 (v1.0.0):** Advanced features (custom filters, log persistence, plugin interaction)
 
-See [ROADMAP.md](ROADMAP.md) for complete timeline.
+### What's New in Phase 3
+
+- **Dual-mode architecture:** Local (stdio) and Cloud (SSE) modes
+- **Local browser manager:** Connect to Figma Desktop via Chrome Remote Debugging Protocol
+- **Shared core logic:** Identical tool behavior across both modes
+- **Launch scripts:** Easy setup for macOS with `launch-figma-debug.sh`
+- **Zero latency debugging:** Native console log capture from running plugins
+
+See [ROADMAP.md](ROADMAP.md) for complete timeline and [PHASE3_SUMMARY.md](PHASE3_SUMMARY.md) for implementation details.
 
 ## Contributing
 
@@ -703,28 +1114,38 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Related Projects
 
-- [Model Context Protocol](https://modelcontextprotocol.io/) - Protocol specification
+- [Model Context Protocol](https://modelcontextprotocol.io/) - Protocol specification and SDK
 - [Cloudflare Browser Rendering](https://developers.cloudflare.com/browser-rendering/) - Browser automation on Workers
-- [Figma Plugin API](https://www.figma.com/plugin-docs/) - Official Figma plugin docs
-- [mcp-remote](https://www.npmjs.com/package/mcp-remote) - Remote MCP proxy for local clients
+- [Figma Plugin API](https://www.figma.com/plugin-docs/) - Official Figma plugin documentation
+- [mcp-remote](https://www.npmjs.com/package/mcp-remote) - Remote MCP proxy for SSE transport
+- [puppeteer-core](https://github.com/puppeteer/puppeteer) - Headless Chrome Node.js API
+- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) - Remote debugging protocol
 
 ## Support
 
-- 📖 [Documentation](ARCHITECTURE.md)
+- 📖 [Architecture Documentation](ARCHITECTURE.md)
+- 🏠 [Dual Mode Setup Guide](DUAL_MODE_SETUP.md)
 - 🐛 [Issue Tracker](https://github.com/southleft/figma-console-mcp/issues)
 - 💬 [Discussions](https://github.com/southleft/figma-console-mcp/discussions)
 - 🔧 [Troubleshooting Guide](TROUBLESHOOTING.md)
+- 🔑 [Figma API Setup](FIGMA_API_SETUP.md)
 
 ## Acknowledgments
 
 Built with:
-- [Cloudflare Workers](https://workers.cloudflare.com/) - Serverless platform
-- [@cloudflare/puppeteer](https://github.com/cloudflare/puppeteer) - Browser automation
-- [Model Context Protocol SDK](https://github.com/modelcontextprotocol/sdk) - MCP implementation
+- [Model Context Protocol SDK](https://github.com/modelcontextprotocol/sdk) - MCP server and transport
+- [Cloudflare Workers](https://workers.cloudflare.com/) - Serverless edge platform (cloud mode)
+- [@cloudflare/puppeteer](https://github.com/cloudflare/puppeteer) - Browser automation (cloud mode)
+- [puppeteer-core](https://github.com/puppeteer/puppeteer) - Chrome DevTools Protocol (local mode)
 - [Anthropic Claude](https://claude.ai/) - AI assistant integration
+- [TypeScript](https://www.typescriptlang.org/) - Type-safe development
+- [Zod](https://github.com/colinhacks/zod) - Schema validation
+- [Pino](https://github.com/pinojs/pino) - Structured logging
 
 ---
 
 **Made for Figma plugin developers and AI enthusiasts**
-**Deployed on Cloudflare Workers ⚡**
-**Live at [figma-console-mcp.southleft.com](https://figma-console-mcp.southleft.com)**
+
+**Dual-mode deployment:** Run locally or deploy to Cloudflare Workers ⚡
+
+**Live cloud demo:** [figma-console-mcp.southleft.com](https://figma-console-mcp.southleft.com)

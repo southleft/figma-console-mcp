@@ -1,0 +1,13 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"noEmit": false,
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true
+	},
+	"include": ["src/local.ts", "src/core/**/*.ts", "src/browser/base.ts", "src/browser/local.ts"],
+	"exclude": ["src/index.ts", "src/browser/cloudflare.ts", "src/test-browser.ts", "node_modules", "dist"]
+}

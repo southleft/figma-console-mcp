@@ -27,11 +27,22 @@ export function createLogger(level: LogLevel = 'info'): pino.Logger {
     });
   }
 
-  // Node.js environment: use stderr destination
+  // Node.js environment: detect MCP stdio mode
+  // When stdout is not a TTY, we're likely in MCP stdio mode
+  const isMCPStdio = !process.stdout.isTTY;
+
+  // MCP stdio mode: NO pretty printing, stderr only
+  if (isMCPStdio) {
+    return pino(
+      { level: process.env.LOG_LEVEL || level },
+      pino.destination({ dest: 2, sync: false })
+    );
+  }
+
+  // Development/terminal mode: use pretty printing
   return pino(
     {
       level: process.env.LOG_LEVEL || level,
-      // Use pino-pretty in development for better readability
       transport:
         process.env.NODE_ENV !== 'production'
           ? {
@@ -40,12 +51,11 @@ export function createLogger(level: LogLevel = 'info'): pino.Logger {
                 colorize: true,
                 translateTime: 'HH:MM:ss',
                 ignore: 'pid,hostname',
+                destination: 2, // Explicit stderr for transport
               },
             }
           : undefined,
-    },
-    // Always write to stderr (stdout is reserved for MCP protocol)
-    pino.destination({ dest: 2, sync: false })
+    }
   );
 }
 

@@ -1,62 +1,113 @@
 #!/usr/bin/env node
 
 /**
- * Figma Console MCP Server
- * Entry point for the MCP server that enables AI assistants to access
- * Figma plugin console logs and screenshots.
+ * Figma Console MCP Server - Local Mode
  *
- * This implementation uses Cloudflare's McpAgent pattern for deployment
- * on Cloudflare Workers with Browser Rendering API support.
+ * Entry point for local MCP server that connects to Figma Desktop
+ * via Chrome Remote Debugging Protocol (port 9222).
+ *
+ * This implementation uses stdio transport for MCP communication,
+ * suitable for local IDE integrations and development workflows.
+ *
+ * Requirements:
+ * - Figma Desktop must be launched with: --remote-debugging-port=9222
+ * - "Use Developer VM" enabled in Figma: Plugins → Development → Use Developer VM
+ * - FIGMA_ACCESS_TOKEN environment variable for API access
+ *
+ * macOS launch command:
+ *   open -a "Figma" --args --remote-debugging-port=9222
  */
 
-import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { BrowserManager, type Env } from "./browser-manager.js";
+import { LocalBrowserManager } from "./browser/local.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
 import { createChildLogger } from "./core/logger.js";
-import { testBrowserRendering } from "./test-browser.js";
-import { FigmaAPI, extractFileKey, formatVariables, formatComponentData } from "./core/figma-api.js";
+import { FigmaAPI, extractFileKey } from "./core/figma-api.js";
 import { registerFigmaAPITools } from "./core/figma-tools.js";
 
-const logger = createChildLogger({ component: "mcp-server" });
+const logger = createChildLogger({ component: "local-server" });
 
 /**
- * Figma Console MCP Agent
- * Extends McpAgent to provide Figma-specific debugging tools
+ * Local MCP Server
+ * Connects to Figma Desktop and provides identical tools to Cloudflare mode
  */
-export class FigmaConsoleMCP extends McpAgent {
-	server = new McpServer({
-		name: "Figma Console MCP",
-		version: "0.1.0",
-	});
-
-	private browserManager: BrowserManager | null = null;
+class LocalFigmaConsoleMCP {
+	private server: McpServer;
+	private browserManager: LocalBrowserManager | null = null;
 	private consoleMonitor: ConsoleMonitor | null = null;
 	private figmaAPI: FigmaAPI | null = null;
 	private config = getConfig();
+
+	constructor() {
+		this.server = new McpServer({
+			name: "Figma Console MCP (Local)",
+			version: "0.1.0",
+		});
+	}
 
 	/**
 	 * Get or create Figma API client
 	 */
 	private getFigmaAPI(): FigmaAPI {
 		if (!this.figmaAPI) {
-			// @ts-ignore - this.env is available in Agent/Durable Object context
-			const env = this.env as Env;
+			const accessToken = process.env.FIGMA_ACCESS_TOKEN;
 
-			if (!env?.FIGMA_ACCESS_TOKEN) {
+			if (!accessToken) {
 				throw new Error(
 					"FIGMA_ACCESS_TOKEN not configured. " +
-					"Set it as an environment variable in wrangler.jsonc or deployment settings. " +
+					"Set it as an environment variable. " +
 					"Get your token at: https://www.figma.com/developers/api#access-tokens"
 				);
 			}
 
-			this.figmaAPI = new FigmaAPI({ accessToken: env.FIGMA_ACCESS_TOKEN });
+			this.figmaAPI = new FigmaAPI({ accessToken });
 		}
 
 		return this.figmaAPI;
+	}
+
+	/**
+	 * Check if Figma Desktop is accessible
+	 */
+	private async checkFigmaDesktop(): Promise<void> {
+		if (!this.config.local) {
+			throw new Error("Local mode configuration missing");
+		}
+
+		const { debugHost, debugPort } = this.config.local;
+		const browserURL = `http://${debugHost}:${debugPort}`;
+
+		try {
+			// Simple HTTP check to see if debug port is accessible
+			const response = await fetch(`${browserURL}/json/version`, {
+				signal: AbortSignal.timeout(5000),
+			});
+
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+			}
+
+			const versionInfo = await response.json();
+			logger.info({ versionInfo, browserURL }, "Figma Desktop is accessible");
+		} catch (error) {
+			const errorMsg = error instanceof Error ? error.message : String(error);
+
+			throw new Error(
+				`Failed to connect to Figma Desktop at ${browserURL}\n\n` +
+				`Make sure:\n` +
+				`1. Figma Desktop is running\n` +
+				`2. Figma was launched with: --remote-debugging-port=${debugPort}\n` +
+				`3. "Use Developer VM" is enabled in: Plugins → Development → Use Developer VM\n\n` +
+				`macOS launch command:\n` +
+				`  open -a "Figma" --args --remote-debugging-port=${debugPort}\n\n` +
+				`Windows launch command:\n` +
+				`  start figma://--remote-debugging-port=${debugPort}\n\n` +
+				`Error: ${errorMsg}`
+			);
+		}
 	}
 
 	/**
@@ -65,29 +116,20 @@ export class FigmaConsoleMCP extends McpAgent {
 	private async ensureInitialized(): Promise<void> {
 		try {
 			if (!this.browserManager) {
-				logger.info("Initializing BrowserManager");
+				logger.info("Initializing LocalBrowserManager");
 
-				// Access env from Durable Object context
-				// @ts-ignore - this.env is available in Agent/Durable Object context
-				const env = this.env as Env;
-
-				if (!env) {
-					throw new Error("Environment not available - this.env is undefined");
+				if (!this.config.local) {
+					throw new Error("Local mode configuration missing");
 				}
 
-				if (!env.BROWSER) {
-					throw new Error("BROWSER binding not found in environment. Check wrangler.jsonc configuration.");
-				}
-
-				logger.info("Creating BrowserManager with BROWSER binding");
-				this.browserManager = new BrowserManager(env, this.config.browser);
+				this.browserManager = new LocalBrowserManager(this.config.local);
 			}
 
 			if (!this.consoleMonitor) {
 				logger.info("Initializing ConsoleMonitor");
 				this.consoleMonitor = new ConsoleMonitor(this.config.console);
 
-				// Start browser and begin monitoring
+				// Connect to browser and begin monitoring
 				logger.info("Getting browser page");
 				const page = await this.browserManager.getPage();
 
@@ -102,7 +144,10 @@ export class FigmaConsoleMCP extends McpAgent {
 		}
 	}
 
-	async init() {
+	/**
+	 * Register all MCP tools
+	 */
+	private registerTools(): void {
 		// Tool 1: Get Console Logs
 		this.server.tool(
 			"figma_get_console_logs",
@@ -283,7 +328,7 @@ export class FigmaConsoleMCP extends McpAgent {
 									message: `Would watch console logs for ${duration} seconds (level: ${level})`,
 									endsAt: new Date(endsAt).toISOString(),
 									plannedFor: "Phase 3",
-									implementation: "SSE notifications via McpAgent",
+									implementation: "Stdio notifications (future)",
 								},
 								null,
 								2,
@@ -470,13 +515,10 @@ export class FigmaConsoleMCP extends McpAgent {
 									{
 										error: errorMessage,
 										message: "Failed to navigate to Figma URL",
-										details: errorMessage.includes("BROWSER")
-											? "Browser Rendering API binding is missing. This is a configuration issue."
-											: "Unable to launch browser or navigate to URL.",
 										troubleshooting: [
 											"Verify the Figma URL is valid and accessible",
-											"Check that the Browser Rendering API is properly configured in wrangler.jsonc",
-											"Try again in a few moments if this is a temporary issue"
+											"Make sure Figma Desktop is running with remote debugging enabled",
+											"Check that the debug port (9222) is accessible"
 										]
 									},
 									null,
@@ -506,6 +548,8 @@ export class FigmaConsoleMCP extends McpAgent {
 								type: "text",
 								text: JSON.stringify(
 									{
+										mode: "local",
+										debugConfig: this.config.local,
 										browser: {
 											running: browserRunning,
 											currentUrl,
@@ -548,50 +592,92 @@ export class FigmaConsoleMCP extends McpAgent {
 			() => this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null
 		);
+
+		logger.info("All MCP tools registered successfully");
+	}
+
+	/**
+	 * Start the MCP server
+	 */
+	async start(): Promise<void> {
+		try {
+			logger.info({ config: this.config }, "Starting Figma Console MCP (Local Mode)");
+
+			// Check if Figma Desktop is accessible
+			logger.info("Checking Figma Desktop accessibility...");
+			await this.checkFigmaDesktop();
+
+			// Register all tools
+			this.registerTools();
+
+			// Create stdio transport
+			const transport = new StdioServerTransport();
+
+			// Connect server to transport
+			await this.server.connect(transport);
+
+			logger.info("MCP server started successfully on stdio transport");
+		} catch (error) {
+			logger.error({ error }, "Failed to start MCP server");
+
+			// Log helpful error message to stderr
+			console.error("\n❌ Failed to start Figma Console MCP:\n");
+			console.error(error instanceof Error ? error.message : String(error));
+			console.error("\n");
+
+			process.exit(1);
+		}
+	}
+
+	/**
+	 * Cleanup and shutdown
+	 */
+	async shutdown(): Promise<void> {
+		logger.info("Shutting down MCP server...");
+
+		try {
+			if (this.consoleMonitor) {
+				await this.consoleMonitor.stopMonitoring();
+			}
+
+			if (this.browserManager) {
+				await this.browserManager.close();
+			}
+
+			logger.info("MCP server shutdown complete");
+		} catch (error) {
+			logger.error({ error }, "Error during shutdown");
+		}
 	}
 }
 
 /**
- * Cloudflare Workers fetch handler
- * Routes requests to appropriate MCP endpoints
+ * Main entry point
  */
-export default {
-	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-		const url = new URL(request.url);
+async function main() {
+	const server = new LocalFigmaConsoleMCP();
 
-		// SSE endpoint for remote MCP clients
-		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
-			return FigmaConsoleMCP.serveSSE("/sse").fetch(request, env, ctx);
-		}
+	// Handle graceful shutdown
+	process.on("SIGINT", async () => {
+		await server.shutdown();
+		process.exit(0);
+	});
 
-		// HTTP endpoint for direct MCP communication
-		if (url.pathname === "/mcp") {
-			return FigmaConsoleMCP.serve("/mcp").fetch(request, env, ctx);
-		}
+	process.on("SIGTERM", async () => {
+		await server.shutdown();
+		process.exit(0);
+	});
 
-		// Health check endpoint
-		if (url.pathname === "/health") {
-			return new Response(
-				JSON.stringify({
-					status: "healthy",
-					service: "Figma Console MCP",
-					version: "0.1.0",
-					endpoints: ["/sse", "/mcp", "/test-browser"],
-				}),
-				{
-					headers: { "Content-Type": "application/json" },
-				},
-			);
-		}
+	// Start the server
+	await server.start();
+}
 
-		// Browser Rendering API test endpoint
-		if (url.pathname === "/test-browser") {
-			const results = await testBrowserRendering(env);
-			return new Response(JSON.stringify(results, null, 2), {
-				headers: { "Content-Type": "application/json" },
-			});
-		}
+// Run if executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+	main().catch((error) => {
+		console.error("Fatal error:", error);
+		process.exit(1);
+	});
+}
 
-		return new Response("Not found", { status: 404 });
-	},
-};
+export { LocalFigmaConsoleMCP };

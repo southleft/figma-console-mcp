@@ -8,9 +8,29 @@ import { join } from 'path';
 import type { ServerConfig } from './types/index.js';
 
 /**
+ * Auto-detect server mode based on environment
+ */
+function detectMode(): 'local' | 'cloudflare' {
+  // If running in Workers environment, return cloudflare
+  if (typeof globalThis !== 'undefined' && 'caches' in globalThis) {
+    return 'cloudflare';
+  }
+
+  // Explicit env var override
+  const modeEnv = process.env.FIGMA_MCP_MODE?.toLowerCase();
+  if (modeEnv === 'local' || modeEnv === 'cloudflare') {
+    return modeEnv;
+  }
+
+  // Default to local for Node.js environments
+  return 'local';
+}
+
+/**
  * Default configuration values
  */
 const DEFAULT_CONFIG: ServerConfig = {
+  mode: detectMode(),
   browser: {
     headless: false,
     args: [
@@ -33,6 +53,10 @@ const DEFAULT_CONFIG: ServerConfig = {
     defaultFormat: 'png',
     quality: 90,
     storePath: join(process.env.TMPDIR || '/tmp', 'figma-console-mcp', 'screenshots'),
+  },
+  local: {
+    debugHost: process.env.FIGMA_DEBUG_HOST || 'localhost',
+    debugPort: parseInt(process.env.FIGMA_DEBUG_PORT || '9222', 10),
   },
 };
 
@@ -81,6 +105,7 @@ export function loadConfig(): ServerConfig {
  */
 function mergeConfig(defaults: ServerConfig, overrides: Partial<ServerConfig>): ServerConfig {
   return {
+    mode: overrides.mode || defaults.mode,
     browser: {
       ...defaults.browser,
       ...(overrides.browser || {}),
@@ -96,6 +121,10 @@ function mergeConfig(defaults: ServerConfig, overrides: Partial<ServerConfig>): 
     screenshots: {
       ...defaults.screenshots,
       ...(overrides.screenshots || {}),
+    },
+    local: {
+      ...defaults.local!,
+      ...(overrides.local || {}),
     },
   };
 }

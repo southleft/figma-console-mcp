@@ -1,17 +1,20 @@
 {
 	"name": "figma-console-mcp",
 	"version": "0.1.0",
-	"description": "MCP server for accessing Figma plugin console logs and screenshots via Cloudflare Workers",
+	"description": "MCP server for accessing Figma plugin console logs and screenshots via Cloudflare Workers or local mode",
 	"private": true,
-	"main": "dist/index.js",
-	"types": "dist/index.d.ts",
+	"main": "dist/local.js",
+	"types": "dist/local.d.ts",
 	"bin": {
-		"figma-console-mcp": "./dist/index.js"
+		"figma-console-mcp": "./dist/local.js"
 	},
 	"scripts": {
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
-		"build": "tsc",
+		"dev:local": "tsx src/local.ts",
+		"build": "npm run build:local && npm run build:cloudflare",
+		"build:local": "tsc -p tsconfig.local.json",
+		"build:cloudflare": "tsc -p tsconfig.cloudflare.json",
 		"start": "wrangler dev",
 		"test": "jest",
 		"test:watch": "jest --watch",
@@ -49,6 +52,7 @@
 		"chrome-remote-interface": "^0.33.2",
 		"pino": "^9.5.0",
 		"pino-pretty": "^13.0.0",
+		"puppeteer-core": "^23.11.1",
 		"uuid": "^11.0.3",
 		"zod": "^3.25.76"
 	},

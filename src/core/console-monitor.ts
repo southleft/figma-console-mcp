@@ -4,9 +4,15 @@
  * Monitors both main page console AND Web Worker consoles (where Figma plugins run)
  */
 
-import type { Page, WebWorker } from '@cloudflare/puppeteer';
+// Use type imports to support both puppeteer-core and @cloudflare/puppeteer
+// Both have compatible Page/WebWorker interfaces for our use case
+import type { Page as PuppeteerPage, WebWorker as PuppeteerWorker } from 'puppeteer-core';
 import { createChildLogger } from './logger.js';
 import type { ConsoleLogEntry, ConsoleConfig } from './types/index.js';
+
+// Type alias to accept either puppeteer implementation
+type Page = PuppeteerPage;
+type WebWorker = PuppeteerWorker;
 
 const logger = createChildLogger({ component: 'console-monitor' });
 
@@ -19,7 +25,7 @@ export class ConsoleMonitor {
 	private logs: ConsoleLogEntry[] = [];
 	private config: ConsoleConfig;
 	private isMonitoring = false;
-	private page: Page | null = null;
+	private page: any = null; // Supports both puppeteer-core and @cloudflare/puppeteer
 	private workers: Set<WebWorker> = new Set();
 
 	constructor(config: ConsoleConfig) {
@@ -28,8 +34,9 @@ export class ConsoleMonitor {
 
 	/**
 	 * Start monitoring console logs on a page
+	 * Accepts any puppeteer Page type (puppeteer-core or @cloudflare/puppeteer)
 	 */
-	async startMonitoring(page: Page): Promise<void> {
+	async startMonitoring(page: any): Promise<void> {
 		if (this.isMonitoring && this.page === page) {
 			logger.info('Already monitoring this page');
 			return;
@@ -99,7 +106,7 @@ export class ConsoleMonitor {
 		});
 
 		// Listen to page errors
-		page.on('pageerror', (error) => {
+		page.on('pageerror', (error: any) => {
 			this.addLog({
 				timestamp: Date.now(),
 				level: 'error',
@@ -107,7 +114,7 @@ export class ConsoleMonitor {
 				args: [],
 				stackTrace: {
 					callFrames: error.stack
-						? error.stack.split('\n').map((line) => ({
+						? error.stack.split('\n').map((line: any) => ({
 								functionName: line.trim(),
 								url: '',
 								lineNumber: 0,
@@ -127,19 +134,19 @@ export class ConsoleMonitor {
 		}
 
 		// Listen for new workers being created (e.g., when plugin starts)
-		page.on('workercreated', (worker) => {
+		page.on('workercreated', (worker: any) => {
 			logger.info({ workerUrl: worker.url() }, 'New worker created');
 			this.attachWorkerListeners(worker);
 		});
 
 		// Listen for workers being destroyed
-		page.on('workerdestroyed', (worker) => {
+		page.on('workerdestroyed', (worker: any) => {
 			logger.info({ workerUrl: worker.url() }, 'Worker destroyed');
 			this.workers.delete(worker);
 		});
 
 		// Listen for new frames being attached (e.g., when plugin UI loads)
-		page.on('frameattached', (frame) => {
+		page.on('frameattached', (frame: any) => {
 			const frameUrl = frame.url();
 			const frameName = frame.name() || 'unnamed';
 
@@ -156,7 +163,7 @@ export class ConsoleMonitor {
 		});
 
 		// Listen for frames being detached
-		page.on('framedetached', (frame) => {
+		page.on('framedetached', (frame: any) => {
 			logger.info({ frameUrl: frame.url() }, 'Frame detached');
 		});
 
