@@ -224,6 +224,8 @@ figma_get_console_logs({ count: 20 })
 
 ## MCP Client Setup Guides
 
+> **Claude Code users:** See [CLAUDE_CODE_SETUP.md](CLAUDE_CODE_SETUP.md) for detailed setup and troubleshooting if you get "fetch failed" errors.
+
 ### Claude Desktop
 
 **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
