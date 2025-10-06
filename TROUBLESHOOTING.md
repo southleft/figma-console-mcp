@@ -5,54 +5,37 @@
 ### Issue: "Browser isn't currently running"
 
 **Symptoms:**
-- Claude Desktop reports: "The browser isn't currently running"
+- Error message: "The browser isn't currently running"
 - `figma_get_status` shows `browser.running: false`
 
-**Causes:**
-1. You haven't called `figma_navigate` yet
-2. Browser Rendering API initialization failed
-3. The browser session expired
+**Cause:**
+You haven't called `figma_navigate` yet to initialize the browser.
 
-**Solutions:**
+**Solution:**
 
-#### Step 1: Always Start with figma_navigate
-```
+Always start with `figma_navigate`:
+
+```javascript
 figma_navigate({ url: 'https://www.figma.com/design/your-file-id' })
 ```
 
 This tool:
-- Initializes the browser
-- Starts console monitoring
+- Launches the headless Chrome browser
+- Initializes console monitoring
 - Navigates to your Figma file
 
-#### Step 2: Check Status
-```
+Then check status:
+
+```javascript
 figma_get_status()
 ```
 
-Look for:
+Should show:
 - `browser.running: true`
 - `initialized: true`
 - `consoleMonitor.isMonitoring: true`
 
-#### Step 3: If Still Failing
-
-Check the error message details. Common issues:
-
-**"BROWSER binding not found"**
-- This is a configuration issue on the Cloudflare Workers side
-- The Browser Rendering API binding might not be properly configured
-- This should not happen in production, but if it does, contact support
-
-**"Browser launch failed"**
-- Cloudflare Workers Browser Rendering API might be temporarily unavailable
-- Wait a few moments and try again
-- Check Cloudflare status page
-
-**"Navigation timeout"**
-- The Figma URL might be invalid or inaccessible
-- Try navigating to https://www.figma.com first to verify connectivity
-- Check that your Figma file URL is publicly accessible or you're logged in
+**Note:** If using the public server at `https://figma-console-mcp.southleft.com`, browser launch is handled automatically and should work without issues.
 
 ---
 
@@ -163,9 +146,9 @@ This is a lightweight call that doesn't require browser initialization:
 figma_get_status()  // Fast, shows current state
 ```
 
-#### Check Worker Health
+#### Check Server Health
 ```bash
-curl https://figma-console-mcp.southleft-llc.workers.dev/health
+curl https://figma-console-mcp.southleft.com/health
 ```
 
 Should return:
@@ -173,7 +156,8 @@ Should return:
 {
   "status": "healthy",
   "service": "Figma Console MCP",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "endpoints": ["/sse", "/mcp", "/test-browser"]
 }
 ```
 
@@ -188,7 +172,10 @@ Should return:
 **Solutions:**
 
 #### Check Configuration
-Verify `~/.config/Claude/claude_desktop_config.json`:
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
 ```json
 {
   "mcpServers": {
@@ -196,12 +183,14 @@ Verify `~/.config/Claude/claude_desktop_config.json`:
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://figma-console-mcp.southleft-llc.workers.dev/sse"
+        "https://figma-console-mcp.southleft.com/sse"
       ]
     }
   }
 }
 ```
+
+**Important:** URL must be exactly `https://figma-console-mcp.southleft.com/sse` (note the `/sse` endpoint).
 
 #### Restart Claude Desktop
 After changing configuration:
@@ -379,4 +368,4 @@ Create `~/.config/figma-console-mcp/config.json`:
 }
 ```
 
-**Note:** Configuration is currently only used for local/stdio deployment, not Cloudflare Workers.
+**Note:** Custom configuration is optional. The public server at `https://figma-console-mcp.southleft.com` uses sensible defaults that work for most use cases.

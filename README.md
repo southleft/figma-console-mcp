@@ -3,59 +3,32 @@
 > MCP server that enables AI coding assistants to access Figma plugin console logs and screenshots in real-time.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-## ⚠️ Important: Browser Rendering API Required
-
-**This MCP server requires Cloudflare Browser Rendering API to be enabled on your account.**
-
-- **Free Tier Available:** 10 min/day, 3 concurrent browsers (perfect for testing!)
-- **Paid Tier:** 10 hours/month included, then $0.09/browser hour
-- **Setup Required:** Must be explicitly enabled - see [ENABLE_BROWSER_RENDERING.md](ENABLE_BROWSER_RENDERING.md)
-- **Test Your Setup:** Visit `/test-browser` endpoint to verify Browser Rendering is working
-
-**Enable it here:** https://dash.cloudflare.com/?to=/:account/workers/plans
-
-**Not working?** Run the diagnostic: `https://your-worker.workers.dev/test-browser`
-
----
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare)](https://workers.cloudflare.com/)
+[![Live Demo](https://img.shields.io/badge/Demo-Live-success)](https://figma-console-mcp.southleft.com/health)
 
 ## Overview
 
-Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/) server that bridges AI coding assistants (like Claude Code and Cursor) to Figma's runtime environment. It enables autonomous debugging of Figma plugins by providing:
+Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/) server that bridges AI coding assistants (like Claude Desktop and Cursor) to Figma's runtime environment. It enables autonomous debugging of Figma plugins by providing:
 
-- **Real-time console log access** from Figma plugins
-- **Automated screenshot capture** of plugin UI
-- **Direct visibility** into plugin execution state
-- **Zero-friction debugging** workflow (no copy-paste)
+- **Real-time console log access** from Figma plugins and files
+- **Automated screenshot capture** of Figma UI and plugins
+- **Direct visibility** into Figma execution state
+- **Zero-friction debugging** workflow (no copy-paste needed)
 - **Cloudflare Workers deployment** with Browser Rendering API
+
+## Live Demo
+
+**Production server:** https://figma-console-mcp.southleft.com
+
+Try the diagnostic test: [https://figma-console-mcp.southleft.com/test-browser](https://figma-console-mcp.southleft.com/test-browser)
 
 ## Quick Start
 
-### Deploy to Cloudflare Workers
+### Option 1: Use Our Public Server (Fastest)
 
-[![Deploy to Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/southleft/figma-console-mcp)
+Connect directly to our hosted instance:
 
-This deploys your MCP server to: `figma-console-mcp.<your-account>.workers.dev`
-
-Alternatively, use the command line:
-
-```bash
-# Clone the repository
-git clone https://github.com/southleft/figma-console-mcp.git
-cd figma-console-mcp
-
-# Install dependencies
-npm install
-
-# Deploy to Cloudflare Workers
-npm run deploy
-```
-
-### Connect to Claude Desktop
-
-Use [mcp-remote](https://www.npmjs.com/package/mcp-remote) proxy to connect from Claude Desktop:
-
-**`~/.config/Claude/claude_desktop_config.json`:**
+**Claude Desktop (`~/.config/Claude/claude_desktop_config.json`):**
 ```json
 {
   "mcpServers": {
@@ -63,110 +36,369 @@ Use [mcp-remote](https://www.npmjs.com/package/mcp-remote) proxy to connect from
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://figma-console-mcp.your-account.workers.dev/sse"
+        "https://figma-console-mcp.southleft.com/sse"
       ]
     }
   }
 }
 ```
 
-Restart Claude Desktop to see the tools become available.
+**Cursor, Cline, Zed, etc:**
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://figma-console-mcp.southleft.com/sse"
+      ]
+    }
+  }
+}
+```
 
-### Connect to Cloudflare AI Playground
+Restart your MCP client to see the 7 Figma tools become available.
 
-1. Go to https://playground.ai.cloudflare.com/
-2. Enter your deployed URL: `https://figma-console-mcp.your-account.workers.dev/sse`
-3. Start using the Figma debugging tools!
+### Option 2: Deploy Your Own Instance
+
+[![Deploy to Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/southleft/figma-console-mcp)
+
+Or via command line:
+
+```bash
+# Clone and install
+git clone https://github.com/southleft/figma-console-mcp.git
+cd figma-console-mcp
+npm install
+
+# Deploy to Cloudflare Workers
+npm run deploy
+```
+
+**Requirements:**
+- Cloudflare account (free or paid)
+- Wrangler CLI (installed via `npm install`)
+- `@cloudflare/puppeteer@^1.0.4` (already in package.json)
+
+**Browser Rendering API:**
+- Free tier: 10 min/day, 3 concurrent browsers
+- Paid tier: 10 hours/month, then $0.09/browser hour
+- Automatically available on Cloudflare Workers
 
 ## Available MCP Tools
 
-**7 tools available** - 6 fully functional, 1 placeholder for Phase 3.
+All 7 tools are **fully functional** and tested. Here's what you can do:
 
-### `figma_navigate` ✅
+### Core Tools
 
-Navigate to a specific Figma URL to start monitoring.
+#### `figma_navigate`
+Navigate to any Figma URL to start monitoring.
 
-**Parameters:**
-- `url` (string, required): Figma URL to navigate to (e.g., `https://www.figma.com/design/abc123`)
+```javascript
+figma_navigate({
+  url: 'https://www.figma.com/design/abc123/My-Design?node-id=1-2'
+})
+```
 
-**Use this first** to open Figma and start console monitoring before using other tools.
+**Always use this first** to initialize the browser and start console monitoring.
 
-### `figma_get_console_logs` ✅
+#### `figma_get_console_logs`
+Retrieve console logs from Figma.
 
-Retrieve recent console logs from the Figma plugin.
+```javascript
+figma_get_console_logs({
+  count: 50,           // Number of recent logs (default: 100)
+  level: 'error',      // Filter: 'log', 'info', 'warn', 'error', 'debug', 'all'
+  since: 1234567890    // Unix timestamp (optional)
+})
+```
 
-**Parameters:**
-- `count` (number, optional): Number of recent logs to retrieve (default: 100)
-- `level` (string, optional): Filter by log level - 'log', 'info', 'warn', 'error', 'debug', 'all' (default: 'all')
-- `since` (number, optional): Only logs after this timestamp (Unix ms)
+Returns logs with:
+- Timestamp
+- Log level
+- Message and arguments
+- Source (plugin vs Figma)
+- Stack traces (for errors)
 
-**Returns:** Array of log entries with timestamp, level, message, args, source, and optional stack trace.
+#### `figma_take_screenshot`
+Capture screenshots of Figma UI.
 
-### `figma_take_screenshot` ✅
+```javascript
+figma_take_screenshot({
+  target: 'full-page',  // 'plugin', 'full-page', 'viewport'
+  format: 'png',        // 'png' or 'jpeg'
+  quality: 90           // JPEG quality (0-100)
+})
+```
 
-Capture a screenshot of the Figma plugin UI.
+Returns base64-encoded image data.
 
-**Parameters:**
-- `target` (string, optional): What to screenshot - 'plugin', 'full-page', 'viewport' (default: 'plugin')
-- `format` (string, optional): Image format - 'png', 'jpeg' (default: 'png')
-- `quality` (number, optional): JPEG quality 0-100 (default: 90)
+#### `figma_get_status`
+Check browser and monitoring status.
 
-**Returns:** Base64-encoded image data with metadata (id, timestamp, format, size).
+```javascript
+figma_get_status()
+```
 
-### `figma_watch_console` ⏳
+Returns:
+- Browser running state
+- Current URL
+- Log count and buffer info
+- Initialization state
 
-Stream console logs in real-time (sends notifications).
+### Utility Tools
 
-**Parameters:**
-- `duration` (number, optional): How long to watch in seconds (default: 30)
-- `level` (string, optional): Filter by log level (default: 'all')
+#### `figma_reload_plugin`
+Reload the current Figma page.
 
-**Status:** Placeholder for Phase 3 (SSE implementation).
+```javascript
+figma_reload_plugin({
+  clearConsole: true  // Clear logs before reload
+})
+```
 
-### `figma_reload_plugin` ✅
-
-Reload the currently running Figma plugin.
-
-**Parameters:**
-- `clearConsole` (boolean, optional): Clear console logs before reload (default: true)
-
-**Returns:** Reload status, current URL, and number of cleared logs.
-
-### `figma_clear_console` ✅
-
+#### `figma_clear_console`
 Clear the console log buffer.
 
-**Parameters:** None
+```javascript
+figma_clear_console()
+```
 
-**Returns:** Number of logs cleared and timestamp.
+#### `figma_watch_console` (Coming Soon)
+Stream console logs in real-time via SSE notifications.
 
-### `figma_get_status` ✅
+```javascript
+figma_watch_console({
+  duration: 30,    // Seconds to watch
+  level: 'all'     // Log level filter
+})
+```
 
-Get the current status of the browser and console monitor.
+*Currently returns placeholder - planned for Phase 3.*
 
-**Parameters:** None
+## Use Cases
 
-**Returns:** Browser running state, current URL, console monitor status (log count, buffer size, timestamps), and initialization state.
+### Autonomous Plugin Debugging
+
+Let AI assistants debug your Figma plugins without manual intervention:
+
+```
+1. AI navigates: figma_navigate({ url: '...' })
+2. AI reads code and makes changes
+3. Plugin executes in Figma → logs captured automatically
+4. AI checks: figma_get_console_logs({ level: 'error' })
+5. AI analyzes errors and fixes code
+6. AI reloads: figma_reload_plugin()
+7. Loop continues until plugin works
+```
+
+### Error Investigation
+
+```javascript
+// Navigate to your Figma file
+figma_navigate({ url: 'https://www.figma.com/design/...' })
+
+// Check for errors
+figma_get_console_logs({ level: 'error', count: 10 })
+
+// Take screenshot of current state
+figma_take_screenshot({ target: 'full-page' })
+
+// AI correlates visual state with errors
+```
+
+### Visual Debugging
+
+```javascript
+// Get current status
+figma_get_status()
+
+// Capture UI state
+figma_take_screenshot({ target: 'plugin' })
+
+// Get logs from same timeframe
+figma_get_console_logs({ count: 20 })
+```
+
+## MCP Client Setup Guides
+
+### Claude Desktop
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://figma-console-mcp.southleft.com/sse"
+      ]
+    }
+  }
+}
+```
+
+**After editing:**
+1. Save the file
+2. Quit Claude Desktop completely
+3. Restart Claude Desktop
+4. Look for "🔌" indicator showing MCP servers connected
+5. All 7 Figma tools should be available
+
+### Cursor
+
+**Location:** `.cursor/mcp.json` in your project or `~/.cursor/mcp.json` globally
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://figma-console-mcp.southleft.com/sse"
+      ]
+    }
+  }
+}
+```
+
+**After editing:**
+1. Restart Cursor
+2. Tools available via Composer or Chat
+
+### Cline (VS Code Extension)
+
+**Location:** VS Code Settings → Cline → MCP Settings
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://figma-console-mcp.southleft.com/sse"
+      ]
+    }
+  }
+}
+```
+
+### Zed
+
+**Location:** `~/.config/zed/settings.json`
+
+```json
+{
+  "assistant": {
+    "version": "2",
+    "provider": {
+      "name": "anthropic",
+      "mcp_servers": {
+        "figma-console": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "mcp-remote",
+            "https://figma-console-mcp.southleft.com/sse"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+### Continue (VS Code/JetBrains)
+
+**Location:** `~/.continue/config.json`
+
+```json
+{
+  "mcpServers": [
+    {
+      "name": "figma-console",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://figma-console-mcp.southleft.com/sse"
+      ]
+    }
+  ]
+}
+```
+
+### Cloudflare AI Playground
+
+1. Go to https://playground.ai.cloudflare.com/
+2. Click "Add MCP Server"
+3. Enter: `https://figma-console-mcp.southleft.com/sse`
+4. Start using Figma tools in the playground!
+
+## Testing Your Setup
+
+After connecting to any MCP client, try this workflow:
+
+```
+1. Ask: "Navigate to https://www.figma.com and check the status"
+   → Should call figma_navigate() and figma_get_status()
+
+2. Ask: "What console logs are there?"
+   → Should call figma_get_console_logs()
+
+3. Ask: "Take a screenshot"
+   → Should call figma_take_screenshot()
+```
+
+All tools should execute successfully. If you see errors, check:
+- Your MCP client configuration is correct
+- The server URL is exactly: `https://figma-console-mcp.southleft.com/sse`
+- You've restarted your MCP client after config changes
 
 ## How It Works
 
 ```
-AI Assistant (Claude Code/Cursor)
+AI Assistant (Claude Desktop/Cursor/etc)
          ↓ MCP Protocol
+    mcp-remote proxy
+         ↓ SSE/HTTP
 Figma Console MCP Server (Cloudflare Workers)
-         ↓ Browser Rendering API (@cloudflare/puppeteer)
-Chrome Browser → Figma → Your Plugin
+         ↓ Browser Rendering API
+Chrome Browser (@cloudflare/puppeteer v1.0.4)
+         ↓ Chrome DevTools Protocol
+    Figma → Your Plugin
 ```
 
-The MCP server runs on Cloudflare Workers and uses the Browser Rendering API to control a headless Chrome instance. It monitors console events via the Chrome DevTools Protocol and exposes Figma-specific debugging tools via the MCP protocol.
+The MCP server runs on Cloudflare Workers and uses Browser Rendering API to control a headless Chrome instance. It monitors console events via Chrome DevTools Protocol and exposes Figma-specific debugging tools via MCP.
+
+## Architecture
+
+- **McpAgent pattern** from Cloudflare's "agents" package
+- **Durable Objects** for session persistence
+- **Browser Rendering API** (@cloudflare/puppeteer) for headless Chrome
+- **Chrome DevTools Protocol** for console log monitoring
+- **SSE (Server-Sent Events)** for remote MCP clients
+- **Circular buffer** for efficient log storage (1000 logs)
+- **Pino logger** for structured logging
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
 
 ## Development
 
 ### Prerequisites
 
 - Node.js >= 18
-- Cloudflare account (for deployment)
-- Wrangler CLI (installed via npm)
+- Cloudflare account
+- Wrangler CLI (`npm install -g wrangler`)
 
 ### Setup
 
@@ -176,19 +408,20 @@ cd figma-console-mcp
 npm install
 ```
 
-### Development Commands
+### Commands
 
 ```bash
-# Start local development server
+# Local development
 npm run dev
+# Server runs at http://localhost:8787
 
 # Build TypeScript
 npm run build
 
-# Run type checking
+# Type checking
 npm run type-check
 
-# Format code with Biome
+# Format code
 npm run format
 
 # Lint and fix
@@ -198,22 +431,18 @@ npm run lint:fix
 npm run deploy
 ```
 
-### Local Development
+### Local Testing
 
 ```bash
-# Start Wrangler dev server (includes Browser Rendering API emulation)
+# Start dev server
 npm run dev
 
-# Server will be available at:
-# - SSE endpoint: http://localhost:8787/sse
-# - HTTP endpoint: http://localhost:8787/mcp
-# - Health check: http://localhost:8787/health
+# In another terminal, test endpoints:
+curl http://localhost:8787/health
+curl http://localhost:8787/test-browser
 ```
 
-### Testing with MCP Remote Proxy
-
-During development, connect Claude Desktop to your local server:
-
+**Connect Claude Desktop to local server:**
 ```json
 {
   "mcpServers": {
@@ -233,147 +462,108 @@ During development, connect Claude Desktop to your local server:
 ```
 figma-console-mcp/
 ├── src/
-│   ├── index.ts              # Main entry point (McpAgent implementation)
+│   ├── index.ts              # Main entry point (McpAgent)
+│   ├── browser-manager.ts    # Puppeteer browser lifecycle
+│   ├── console-monitor.ts    # Console log capture (CDP)
 │   ├── config.ts             # Configuration management
-│   ├── logger.ts             # Pino logging infrastructure
+│   ├── logger.ts             # Pino logging
+│   ├── test-browser.ts       # Browser Rendering API diagnostics
 │   └── types/
-│       └── index.ts          # TypeScript type definitions
-├── wrangler.jsonc            # Cloudflare Workers configuration
-├── package.json              # Dependencies and scripts
-├── tsconfig.json             # TypeScript configuration
-├── biome.json                # Biome linter/formatter config
-├── ARCHITECTURE.md           # Technical architecture documentation
-├── PRODUCT_PLAN.md           # Product requirements document
-├── ROADMAP.md                # Development roadmap
+│       └── index.ts          # TypeScript types
+├── wrangler.jsonc            # Cloudflare Workers config
+├── package.json              # Dependencies
+├── tsconfig.json             # TypeScript config
+├── biome.json                # Linter/formatter config
+├── ARCHITECTURE.md           # Technical architecture
+├── TROUBLESHOOTING.md        # Common issues and solutions
 └── README.md                 # This file
 ```
 
-## Architecture
+## Troubleshooting
 
-This implementation uses:
+### "Browser isn't currently running"
 
-- **McpAgent pattern** from Cloudflare's "agents" package for Durable Objects integration
-- **Browser Rendering API** (@cloudflare/puppeteer) for headless Chrome control
-- **Chrome DevTools Protocol** for console log monitoring
-- **SSE (Server-Sent Events)** for real-time log streaming
-- **Pino logger** for structured logging to stderr
+**Solution:** Always call `figma_navigate()` first to initialize the browser.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
+```javascript
+// ✅ Correct workflow
+figma_navigate({ url: 'https://www.figma.com/design/...' })
+figma_get_console_logs()
 
-## Configuration
-
-The server supports configuration via:
-
-1. Environment variable: `FIGMA_CONSOLE_CONFIG`
-2. Project-local: `.figma-console-mcp.json`
-3. User home: `~/.config/figma-console-mcp/config.json`
-
-Example configuration:
-
-```json
-{
-  "browser": {
-    "headless": true,
-    "args": ["--disable-blink-features=AutomationControlled"]
-  },
-  "console": {
-    "bufferSize": 1000,
-    "filterLevels": ["log", "info", "warn", "error"],
-    "truncation": {
-      "maxStringLength": 500,
-      "maxArrayLength": 10,
-      "maxObjectDepth": 3
-    }
-  },
-  "screenshots": {
-    "defaultFormat": "png",
-    "quality": 90
-  }
-}
+// ❌ Wrong - will fail
+figma_get_console_logs()  // No browser initialized
 ```
 
-## Roadmap
+### "Connection timed out"
 
-**Phase 1 (v0.1.0):** ✅ Infrastructure & Cloudflare Workers deployment
-- [x] McpAgent integration
-- [x] Tool schema definitions
-- [x] Browser Rendering API binding
-- [ ] Console log capture implementation (Week 4)
+**Cause:** First call to `figma_navigate()` can take 10-30 seconds (browser launch + Figma load).
 
-**Phase 2 (v0.2.0):** Screenshot capability
-**Phase 3 (v0.3.0):** Real-time monitoring
-**Phase 4 (v1.0.0):** Advanced features
+**Solution:** Wait patiently. Subsequent calls will be much faster.
 
-See [ROADMAP.md](ROADMAP.md) for complete timeline.
+### No console logs captured
 
-## Use Cases
+**Possible causes:**
+1. Plugin hasn't executed yet
+2. Logs are filtered out (try `level: 'all'`)
+3. Timing issue (wait after navigation)
 
-### Autonomous Debugging
-
-Let your AI assistant debug Figma plugins without manual intervention:
-
-```
-1. AI navigates to Figma: figma_navigate({ url: 'https://www.figma.com/design/...' })
-2. AI writes/modifies plugin code
-3. Plugin executes in Figma, logs are captured automatically
-4. AI checks logs: figma_get_console_logs({ level: 'error' })
-5. AI analyzes errors and fixes code
-6. AI reloads: figma_reload_plugin({ clearConsole: true })
-7. Loop continues until plugin works
+**Solution:**
+```javascript
+figma_navigate({ url: '...' })
+// Wait a moment for page to load
+figma_get_status()  // Check log count
+figma_get_console_logs({ level: 'all' })
 ```
 
-### Error Investigation
+### Tools not showing in MCP client
 
-Quickly investigate runtime errors:
+**Solutions:**
+1. Verify server URL exactly: `https://figma-console-mcp.southleft.com/sse`
+2. Check MCP config file syntax (valid JSON)
+3. Restart your MCP client completely
+4. Check client logs for connection errors
 
-```
-AI: "Check the latest error in the plugin"
-→ figma_navigate({ url: 'https://www.figma.com/design/abc123' })
-→ figma_get_console_logs({ level: 'error', count: 1 })
-→ Analyzes stack trace and suggests fix
-```
-
-### Visual Debugging
-
-Combine logs with screenshots:
-
-```
-AI: "Show me what the plugin looks like when the error occurs"
-→ figma_get_status() // Check if browser is running
-→ figma_take_screenshot({ target: 'plugin' })
-→ figma_get_console_logs({ level: 'error' })
-→ Correlates UI state with errors
-```
-
-### Monitoring Workflow
-
-Track plugin execution state:
-
-```
-→ figma_navigate({ url: 'https://www.figma.com/design/...' })
-→ figma_get_status() // See log count, buffer size
-→ figma_get_console_logs({ count: 50 })
-→ figma_clear_console() // Clear for next test
-```
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for comprehensive guide.
 
 ## Cloudflare Workers Costs
 
 Browser Rendering API pricing:
-- $5/month for up to 30 concurrent browser sessions
-- Includes 2 million requests/month
-- 10ms CPU time per request (Workers Standard)
 
-Perfect for development and moderate usage.
+**Free Tier:**
+- 10 minutes of browser time per day
+- 3 concurrent browser sessions
+- Perfect for development and testing
+- **$0/month**
+
+**Paid Tier (if you exceed free tier):**
+- 10 hours of browser time included
+- Unlimited concurrent browsers
+- $0.09 per browser hour after included allowance
+- Billing starts August 20, 2025
+- **Typical usage: $5-10/month**
+
+Workers Paid plan ($5/month) required only if you exceed free Workers limits (100k requests/day).
+
+## Roadmap
+
+✅ **Phase 1 (v0.1.0):** Infrastructure & Cloudflare Workers deployment
+✅ **Phase 2 (v0.2.0):** All 7 tools implemented and tested
+🚧 **Phase 3 (v0.3.0):** Real-time `figma_watch_console` via SSE
+📋 **Phase 4 (v1.0.0):** Advanced features (custom filters, log persistence)
+
+See [ROADMAP.md](ROADMAP.md) for complete timeline.
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions welcome! Please:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Make your changes
+4. Run tests and linting (`npm run type-check && npm run lint:fix`)
+5. Commit changes (`git commit -m 'Add amazing feature'`)
+6. Push to branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
 ## License
 
@@ -383,7 +573,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [Model Context Protocol](https://modelcontextprotocol.io/) - Protocol specification
 - [Cloudflare Browser Rendering](https://developers.cloudflare.com/browser-rendering/) - Browser automation on Workers
-- [Figma Plugin API](https://www.figma.com/plugin-docs/) - Official Figma plugin documentation
+- [Figma Plugin API](https://www.figma.com/plugin-docs/) - Official Figma plugin docs
 - [mcp-remote](https://www.npmjs.com/package/mcp-remote) - Remote MCP proxy for local clients
 
 ## Support
@@ -391,9 +581,18 @@ MIT License - see [LICENSE](LICENSE) for details.
 - 📖 [Documentation](ARCHITECTURE.md)
 - 🐛 [Issue Tracker](https://github.com/southleft/figma-console-mcp/issues)
 - 💬 [Discussions](https://github.com/southleft/figma-console-mcp/discussions)
+- 🔧 [Troubleshooting Guide](TROUBLESHOOTING.md)
+
+## Acknowledgments
+
+Built with:
+- [Cloudflare Workers](https://workers.cloudflare.com/) - Serverless platform
+- [@cloudflare/puppeteer](https://github.com/cloudflare/puppeteer) - Browser automation
+- [Model Context Protocol SDK](https://github.com/modelcontextprotocol/sdk) - MCP implementation
+- [Anthropic Claude](https://claude.ai/) - AI assistant integration
 
 ---
 
-Made with ❤️ for Figma plugin developers and AI enthusiasts
-
-Deployed on [Cloudflare Workers](https://workers.cloudflare.com/) ⚡
+**Made for Figma plugin developers and AI enthusiasts**
+**Deployed on Cloudflare Workers ⚡**
+**Live at [figma-console-mcp.southleft.com](https://figma-console-mcp.southleft.com)**
