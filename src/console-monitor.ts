@@ -38,12 +38,58 @@ export class ConsoleMonitor {
 		this.page = page;
 		this.isMonitoring = true;
 
-		logger.info('Starting console monitoring (page + workers)');
+		logger.info('Starting console monitoring (page + workers + frames)');
 
-		// Listen to main page console events
-		page.on('console', async (msg) => {
+		// DIAGNOSTIC: Log all frames on the page and add to console
+		const frames = page.frames();
+		logger.info({ frameCount: frames.length }, 'Frames detected on page');
+
+		// Add diagnostic marker to console logs
+		this.addLog({
+			timestamp: Date.now(),
+			level: 'info',
+			message: `[MCP DIAGNOSTIC] Monitoring started. Detected ${frames.length} frames and ${page.workers().length} workers.`,
+			args: [],
+			source: 'page',
+		});
+
+		for (const frame of frames) {
+			const frameUrl = frame.url();
+			const frameName = frame.name() || 'unnamed';
+
+			logger.info({
+				frameUrl,
+				isDetached: frame.isDetached(),
+				name: frameName
+			}, 'Frame details');
+
+			// Add frame detection to console logs
+			this.addLog({
+				timestamp: Date.now(),
+				level: 'info',
+				message: `[MCP DIAGNOSTIC] Frame detected: ${frameName} - ${frameUrl}`,
+				args: [],
+				source: 'page',
+			});
+		}
+
+		// Listen to ALL console events (includes main page, iframes, and workers)
+		page.on('console', async (msg: any) => {
 			try {
-				const entry = await this.processConsoleMessage(msg, 'page');
+				const location = msg.location();
+				const url = location?.url || 'unknown';
+				const text = msg.text();
+				const type = msg.type();
+
+				// DIAGNOSTIC: Log every console event with its source
+				logger.info({
+					type,
+					url,
+					textPreview: text.substring(0, 100),
+					location
+				}, 'Console event captured');
+
+				const entry = await this.processConsoleMessage(msg, 'page', url);
 				if (entry) {
 					this.addLog(entry);
 				}
@@ -92,10 +138,34 @@ export class ConsoleMonitor {
 			this.workers.delete(worker);
 		});
 
+		// Listen for new frames being attached (e.g., when plugin UI loads)
+		page.on('frameattached', (frame) => {
+			const frameUrl = frame.url();
+			const frameName = frame.name() || 'unnamed';
+
+			logger.info({ frameUrl, frameName }, 'New frame attached');
+
+			// Add diagnostic marker for new frame
+			this.addLog({
+				timestamp: Date.now(),
+				level: 'info',
+				message: `[MCP DIAGNOSTIC] New frame attached: ${frameName} - ${frameUrl}`,
+				args: [],
+				source: 'page',
+			});
+		});
+
+		// Listen for frames being detached
+		page.on('framedetached', (frame) => {
+			logger.info({ frameUrl: frame.url() }, 'Frame detached');
+		});
+
 		logger.info({
 			pageMonitoring: true,
 			workerMonitoring: true,
-			initialWorkerCount: existingWorkers.length
+			frameMonitoring: true,
+			initialWorkerCount: existingWorkers.length,
+			initialFrameCount: frames.length
 		}, 'Console monitoring started');
 	}
 
@@ -211,16 +281,29 @@ export class ConsoleMonitor {
 	}
 
 	/**
-	 * Determine if log is from plugin or Figma
+	 * Determine if log is from plugin or Figma based on URL
 	 */
 	private determineSource(url?: string): ConsoleLogEntry['source'] {
 		if (!url) return 'unknown';
 
-		// Plugin code typically runs in iframes or specific contexts
-		if (url.includes('plugin') || url.includes('iframe')) {
+		// Check for plugin-related URLs
+		// Plugins might run in:
+		// - iframes with plugin-specific URLs
+		// - blob: URLs created by the plugin
+		// - chrome-extension: URLs (for dev mode)
+		// - any URL containing "plugin"
+		if (
+			url.includes('plugin') ||
+			url.includes('iframe') ||
+			url.startsWith('blob:') ||
+			url.startsWith('chrome-extension:') ||
+			url.includes('figma.com/plugin') ||
+			url.includes('/plugin-')
+		) {
 			return 'plugin';
 		}
 
+		// Main Figma application
 		if (url.includes('figma.com')) {
 			return 'figma';
 		}
