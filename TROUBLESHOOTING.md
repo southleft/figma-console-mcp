@@ -2,6 +2,71 @@
 
 ## Common Issues and Solutions
 
+### Issue: Plugin console logs not captured
+
+**Symptoms:**
+- `figma_get_console_logs` returns empty array or only shows Figma infrastructure logs
+- Plugin is running and logs are visible in Figma's DevTools, but MCP doesn't see them
+- Missing `[PluginName]` or custom log prefixes in MCP output
+
+**Cause:**
+Figma plugins run in a **sandboxed worker context** separate from the main page. The Figma Console MCP monitors the main page console (via Chrome DevTools Protocol), which **cannot access the plugin sandbox console** by design.
+
+**What the MCP Can See:**
+- ✅ Figma web app console logs
+- ✅ Main page JavaScript errors
+- ✅ Network errors, WebSocket logs
+- ✅ Figma infrastructure logs (Sprigma, tracking, etc.)
+
+**What the MCP Cannot See:**
+- ❌ Plugin `console.log()` statements from code.ts (sandbox)
+- ❌ Plugin errors from the sandbox context
+- ❌ Any logs visible only in Figma's **Plugins → Development → Open Console**
+
+**Solution Option 1: Bridge Plugin Logs to Main Page**
+
+Modify your plugin to send console logs to the main page context where the MCP can capture them.
+
+See detailed guide: [docs/PLUGIN_LOGGING_BRIDGE.md](docs/PLUGIN_LOGGING_BRIDGE.md)
+
+**Quick implementation:**
+
+```typescript
+// In your plugin code.ts (sandbox)
+function logToMainPage(level: 'log' | 'info' | 'warn' | 'error', ...args: any[]) {
+  console[level](...args); // Still log to plugin console
+
+  figma.ui.postMessage({
+    type: 'CONSOLE_LOG',
+    level: level,
+    args: args,
+    timestamp: Date.now()
+  });
+}
+
+// In your ui.html/ui.tsx (main thread)
+window.onmessage = (event) => {
+  const msg = event.data.pluginMessage;
+  if (msg?.type === 'CONSOLE_LOG') {
+    console[msg.level](`[PLUGIN]`, ...msg.args);
+  }
+};
+```
+
+Now the MCP will see your plugin logs prefixed with `[PLUGIN]`.
+
+**Solution Option 2: Manual Copy-Paste**
+
+1. Open Figma's DevTools: **Plugins → Development → Open Console**
+2. Copy the relevant console logs
+3. Paste them into your AI assistant conversation
+4. AI can analyze them directly
+
+**Future Enhancement:**
+We're investigating ways to directly access Figma's plugin console, but this requires Figma API support or reverse-engineering their DevTools implementation.
+
+---
+
 ### Issue: "Browser isn't currently running"
 
 **Symptoms:**
