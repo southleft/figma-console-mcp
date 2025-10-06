@@ -5,3 +5,4 @@
 
 export { StyleValueResolver } from "./style-resolver";
 export { RelationshipMapper } from "./relationship-mapper";
+export { EnrichmentService } from "./enrichment-service";

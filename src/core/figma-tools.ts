@@ -8,8 +8,13 @@ import { z } from "zod";
 import type { FigmaAPI } from "./figma-api.js";
 import { extractFileKey, formatVariables, formatComponentData } from "./figma-api.js";
 import { createChildLogger } from "./logger.js";
+import { EnrichmentService } from "./enrichment/index.js";
+import type { EnrichmentOptions } from "./types/enriched.js";
 
 const logger = createChildLogger({ component: "figma-tools" });
+
+// Initialize enrichment service
+const enrichmentService = new EnrichmentService(logger);
 
 /**
  * Register Figma API tools with the MCP server
@@ -308,8 +313,28 @@ export function registerFigmaAPITools(
 				.describe(
 					"Figma file URL (optional if already navigated with figma_navigate)"
 				),
+			enrich: z
+				.boolean()
+				.optional()
+				.describe(
+					"Enable enrichment (adds resolved values, usage, export formats). Default: false for backward compatibility"
+				),
+			include_usage: z
+				.boolean()
+				.optional()
+				.describe("Include component usage information (requires enrich=true)"),
+			include_exports: z
+				.boolean()
+				.optional()
+				.describe("Include export format examples (requires enrich=true)"),
+			export_formats: z
+				.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
+				.optional()
+				.describe(
+					"Export formats to generate (requires enrich=true). Default: all formats"
+				),
 		},
-		async ({ fileUrl }) => {
+		async ({ fileUrl, enrich, include_usage, include_exports, export_formats }) => {
 			try {
 				const api = getFigmaAPI();
 
@@ -325,9 +350,32 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey }, "Fetching styles");
+				logger.info({ fileKey, enrich }, "Fetching styles");
 
 				const stylesData = await api.getStyles(fileKey);
+				let styles = stylesData.meta?.styles || [];
+
+				// Apply enrichment if requested
+				if (enrich) {
+					const enrichmentOptions: EnrichmentOptions = {
+						enrich: true,
+						include_usage: include_usage !== false,
+						include_exports: include_exports !== false,
+						export_formats: export_formats || [
+							"css",
+							"sass",
+							"tailwind",
+							"typescript",
+							"json",
+						],
+					};
+
+					styles = await enrichmentService.enrichStyles(
+						styles,
+						fileKey,
+						enrichmentOptions
+					);
+				}
 
 				return {
 					content: [
@@ -336,8 +384,9 @@ export function registerFigmaAPITools(
 							text: JSON.stringify(
 								{
 									fileKey,
-									styles: stylesData.meta?.styles || [],
-									totalStyles: stylesData.meta?.styles?.length || 0,
+									styles,
+									totalStyles: styles.length,
+									enriched: enrich || false,
 								},
 								null,
 								2
