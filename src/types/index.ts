@@ -11,7 +11,8 @@ export interface ConsoleLogEntry {
   message: string;
   args: any[];
   stackTrace?: StackTrace;
-  source: 'plugin' | 'figma' | 'unknown';
+  source: 'plugin' | 'figma' | 'page' | 'unknown';
+  workerUrl?: string; // URL of the worker if source is from a Web Worker
 }
 
 /**

@@ -1,9 +1,10 @@
 /**
  * Console Monitor
  * Captures and manages console logs from Figma plugins via Chrome DevTools Protocol
+ * Monitors both main page console AND Web Worker consoles (where Figma plugins run)
  */
 
-import type { Page } from '@cloudflare/puppeteer';
+import type { Page, WebWorker } from '@cloudflare/puppeteer';
 import { createChildLogger } from './logger.js';
 import type { ConsoleLogEntry, ConsoleConfig } from './types/index.js';
 
@@ -12,12 +13,14 @@ const logger = createChildLogger({ component: 'console-monitor' });
 /**
  * Console Monitor
  * Listens to page console events and maintains a circular buffer of logs
+ * Also monitors Web Workers to capture Figma plugin console logs
  */
 export class ConsoleMonitor {
 	private logs: ConsoleLogEntry[] = [];
 	private config: ConsoleConfig;
 	private isMonitoring = false;
 	private page: Page | null = null;
+	private workers: Set<WebWorker> = new Set();
 
 	constructor(config: ConsoleConfig) {
 		this.config = config;
@@ -35,12 +38,12 @@ export class ConsoleMonitor {
 		this.page = page;
 		this.isMonitoring = true;
 
-		logger.info('Starting console monitoring');
+		logger.info('Starting console monitoring (page + workers)');
 
-		// Listen to console events
+		// Listen to main page console events
 		page.on('console', async (msg) => {
 			try {
-				const entry = await this.processConsoleMessage(msg);
+				const entry = await this.processConsoleMessage(msg, 'page');
 				if (entry) {
 					this.addLog(entry);
 				}
@@ -66,17 +69,72 @@ export class ConsoleMonitor {
 						  }))
 						: [],
 				},
-				source: 'plugin',
+				source: 'page',
 			});
 		});
 
-		logger.info('Console monitoring started');
+		// Monitor existing workers (for Figma plugin console logs)
+		const existingWorkers = page.workers();
+		logger.info({ workerCount: existingWorkers.length }, 'Found existing workers');
+		for (const worker of existingWorkers) {
+			this.attachWorkerListeners(worker);
+		}
+
+		// Listen for new workers being created (e.g., when plugin starts)
+		page.on('workercreated', (worker) => {
+			logger.info({ workerUrl: worker.url() }, 'New worker created');
+			this.attachWorkerListeners(worker);
+		});
+
+		// Listen for workers being destroyed
+		page.on('workerdestroyed', (worker) => {
+			logger.info({ workerUrl: worker.url() }, 'Worker destroyed');
+			this.workers.delete(worker);
+		});
+
+		logger.info({
+			pageMonitoring: true,
+			workerMonitoring: true,
+			initialWorkerCount: existingWorkers.length
+		}, 'Console monitoring started');
+	}
+
+	/**
+	 * Attach console listeners to a Web Worker
+	 * This captures Figma plugin console logs
+	 */
+	private attachWorkerListeners(worker: WebWorker): void {
+		this.workers.add(worker);
+
+		const workerUrl = worker.url();
+		logger.info({ workerUrl }, 'Attaching console listener to worker');
+
+		// Listen to worker console events
+		worker.on('console', async (msg) => {
+			try {
+				const entry = await this.processConsoleMessage(msg, 'worker', workerUrl);
+				if (entry) {
+					this.addLog(entry);
+				}
+			} catch (error) {
+				logger.error({ error, workerUrl }, 'Failed to process worker console message');
+			}
+		});
+
+		// Worker doesn't have pageerror, but console.error will be captured above
 	}
 
 	/**
 	 * Process console message from Puppeteer
+	 * @param msg - Console message from page or worker
+	 * @param context - Where the message came from ('page' or 'worker')
+	 * @param workerUrl - URL of the worker (if context is 'worker')
 	 */
-	private async processConsoleMessage(msg: any): Promise<ConsoleLogEntry | null> {
+	private async processConsoleMessage(
+		msg: any,
+		context: 'page' | 'worker',
+		workerUrl?: string
+	): Promise<ConsoleLogEntry | null> {
 		const level = msg.type() as ConsoleLogEntry['level'];
 
 		// Filter by configured levels
@@ -103,9 +161,16 @@ export class ConsoleMonitor {
 				})
 			);
 
-			// Determine source (plugin vs figma)
-			const location = msg.location();
-			const source = this.determineSource(location?.url);
+			// Determine source based on context
+			let source: ConsoleLogEntry['source'];
+			if (context === 'worker') {
+				// Workers are where Figma plugins run
+				source = 'plugin';
+			} else {
+				// Page console - determine if plugin or figma
+				const location = msg.location();
+				source = this.determineSource(location?.url);
+			}
 
 			const entry: ConsoleLogEntry = {
 				timestamp: Date.now(),
@@ -114,6 +179,11 @@ export class ConsoleMonitor {
 				args,
 				source,
 			};
+
+			// Add worker URL metadata for debugging
+			if (workerUrl && context === 'worker') {
+				entry.workerUrl = workerUrl;
+			}
 
 			// Add stack trace for errors
 			if (level === 'error' && msg.stackTrace) {
@@ -124,7 +194,7 @@ export class ConsoleMonitor {
 
 			return entry;
 		} catch (error) {
-			logger.error({ error }, 'Failed to extract console message details');
+			logger.error({ error, context, workerUrl }, 'Failed to extract console message details');
 			return null;
 		}
 	}
@@ -289,6 +359,7 @@ export class ConsoleMonitor {
 			isMonitoring: this.isMonitoring,
 			logCount: this.logs.length,
 			bufferSize: this.config.bufferSize,
+			workerCount: this.workers.size,
 			oldestTimestamp: this.logs[0]?.timestamp,
 			newestTimestamp: this.logs[this.logs.length - 1]?.timestamp,
 		};

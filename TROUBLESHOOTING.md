@@ -2,68 +2,82 @@
 
 ## Common Issues and Solutions
 
-### Issue: Plugin console logs not captured
+### Issue: Plugin console logs not captured (RESOLVED ✅)
 
-**Symptoms:**
-- `figma_get_console_logs` returns empty array or only shows Figma infrastructure logs
-- Plugin is running and logs are visible in Figma's DevTools, but MCP doesn't see them
-- Missing `[PluginName]` or custom log prefixes in MCP output
+**Status:** ✅ **FIXED** - Native worker monitoring now enabled!
 
-**Cause:**
-Figma plugins run in a **sandboxed worker context** separate from the main page. The Figma Console MCP monitors the main page console (via Chrome DevTools Protocol), which **cannot access the plugin sandbox console** by design.
+**What Changed:**
+The Figma Console MCP now **automatically monitors Web Workers** where Figma plugins run. No plugin code changes required!
 
-**What the MCP Can See:**
-- ✅ Figma web app console logs
-- ✅ Main page JavaScript errors
-- ✅ Network errors, WebSocket logs
-- ✅ Figma infrastructure logs (Sprigma, tracking, etc.)
+**How It Works:**
+- Monitors main page console (Figma web app)
+- **NEW:** Monitors all Web Worker consoles (Figma plugins)
+- Automatically detects when workers are created/destroyed
+- Merges all console logs into a single stream
+- Tags logs with source: `'plugin'`, `'figma'`, `'page'`
 
-**What the MCP Cannot See:**
-- ❌ Plugin `console.log()` statements from code.ts (sandbox)
-- ❌ Plugin errors from the sandbox context
-- ❌ Any logs visible only in Figma's **Plugins → Development → Open Console**
-
-**Solution Option 1: Bridge Plugin Logs to Main Page**
-
-Modify your plugin to send console logs to the main page context where the MCP can capture them.
-
-See detailed guide: [docs/PLUGIN_LOGGING_BRIDGE.md](docs/PLUGIN_LOGGING_BRIDGE.md)
-
-**Quick implementation:**
-
-```typescript
-// In your plugin code.ts (sandbox)
-function logToMainPage(level: 'log' | 'info' | 'warn' | 'error', ...args: any[]) {
-  console[level](...args); // Still log to plugin console
-
-  figma.ui.postMessage({
-    type: 'CONSOLE_LOG',
-    level: level,
-    args: args,
-    timestamp: Date.now()
-  });
+**What You'll See:**
+```json
+{
+  "logs": [
+    {
+      "timestamp": 1705318245123,
+      "level": "log",
+      "message": "[PropertyFilter] Starting analysis...",
+      "source": "plugin",
+      "workerUrl": "https://www.figma.com/plugin-worker/abc123"
+    },
+    {
+      "timestamp": 1705318246456,
+      "level": "error",
+      "message": "[ClaudeClient] Token mapping failed",
+      "source": "plugin",
+      "workerUrl": "https://www.figma.com/plugin-worker/abc123"
+    }
+  ]
 }
-
-// In your ui.html/ui.tsx (main thread)
-window.onmessage = (event) => {
-  const msg = event.data.pluginMessage;
-  if (msg?.type === 'CONSOLE_LOG') {
-    console[msg.level](`[PLUGIN]`, ...msg.args);
-  }
-};
 ```
 
-Now the MCP will see your plugin logs prefixed with `[PLUGIN]`.
+**No Action Required:**
+Your plugin's `console.log()` statements will be captured automatically. Just use the MCP as normal:
 
-**Solution Option 2: Manual Copy-Paste**
+```javascript
+figma_navigate({ url: 'https://www.figma.com/design/...' })
+figma_get_console_logs({ count: 100 })
+```
 
-1. Open Figma's DevTools: **Plugins → Development → Open Console**
-2. Copy the relevant console logs
-3. Paste them into your AI assistant conversation
-4. AI can analyze them directly
+**If You Still Don't See Plugin Logs:**
 
-**Future Enhancement:**
-We're investigating ways to directly access Figma's plugin console, but this requires Figma API support or reverse-engineering their DevTools implementation.
+1. **Check timing:** Make sure you run the plugin AFTER navigating
+   ```javascript
+   figma_navigate({ url: '...' })
+   // Now run your plugin in Figma
+   figma_get_console_logs() // Should capture plugin logs
+   ```
+
+2. **Check worker count:** Use `figma_get_status()` to verify workers are detected
+   ```json
+   {
+     "consoleMonitor": {
+       "isMonitoring": true,
+       "workerCount": 2  // Should be > 0 when plugin is running
+     }
+   }
+   ```
+
+3. **Check log levels:** Use `level: 'all'` to ensure nothing is filtered
+   ```javascript
+   figma_get_console_logs({ level: 'all', count: 500 })
+   ```
+
+**Technical Details:**
+The MCP uses Puppeteer's Worker APIs to:
+- Enumerate existing workers via `page.workers()`
+- Listen for new workers via `page.on('workercreated')`
+- Attach console listeners to each worker
+- Tag worker logs with `source: 'plugin'`
+
+This is the same mechanism Figma's own DevTools uses, just exposed natively through the MCP.
 
 ---
 
