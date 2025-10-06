@@ -3,6 +3,7 @@
 	"version": "0.1.0",
 	"description": "MCP server for accessing Figma plugin console logs and screenshots via Cloudflare Workers or local mode",
 	"private": true,
+	"type": "module",
 	"main": "dist/local.js",
 	"types": "dist/local.d.ts",
 	"bin": {
