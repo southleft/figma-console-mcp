@@ -109,9 +109,20 @@ export class ConsoleMonitor {
 		const workerUrl = worker.url();
 		logger.info({ workerUrl }, 'Attaching console listener to worker');
 
+		// DIAGNOSTIC: Log a marker when worker listener is attached
+		this.addLog({
+			timestamp: Date.now(),
+			level: 'info',
+			message: `[MCP] Worker detected and monitored: ${workerUrl}`,
+			args: [],
+			source: 'plugin',
+			workerUrl,
+		});
+
 		// Listen to worker console events
-		worker.on('console', async (msg) => {
+		worker.on('console', async (msg: any) => {
 			try {
+				logger.info({ workerUrl, type: msg.type(), text: msg.text() }, 'Worker console event received');
 				const entry = await this.processConsoleMessage(msg, 'worker', workerUrl);
 				if (entry) {
 					this.addLog(entry);
