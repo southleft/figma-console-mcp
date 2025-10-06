@@ -33,7 +33,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (optional if already navigated with figma_navigate)"
+					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
 				),
 			depth: z
 				.number()
@@ -50,7 +50,7 @@ export function registerFigmaAPITools(
 				.boolean()
 				.optional()
 				.describe(
-					"Enable enrichment (adds statistics, health score, audit summary). Default: false"
+					"Set to true when user asks for: file statistics, health metrics, design system audit, or quality analysis. Adds statistics, health scores, and audit summaries. Default: false"
 				),
 		},
 		async ({ fileUrl, depth, nodeIds, enrich }) => {
@@ -157,7 +157,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (optional if already navigated with figma_navigate)"
+					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
 				),
 			includePublished: z
 				.boolean()
@@ -168,7 +168,7 @@ export function registerFigmaAPITools(
 				.boolean()
 				.optional()
 				.describe(
-					"Enable enrichment (adds resolved values, dependencies, usage). Default: false"
+					"Set to true when user asks for: CSS/Sass/Tailwind exports, code examples, design tokens, usage information, dependencies, or any export format. Adds resolved values, dependency graphs, and usage analysis. Default: false"
 				),
 			include_usage: z
 				.boolean()
@@ -185,7 +185,7 @@ export function registerFigmaAPITools(
 			export_formats: z
 				.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
 				.optional()
-				.describe("Export formats to generate (requires enrich=true)"),
+				.describe("Which code formats to generate examples for. Use when user mentions specific formats like 'CSS', 'Tailwind', 'SCSS', 'TypeScript', etc. Automatically enables enrichment."),
 		},
 		async ({ fileUrl, includePublished, enrich, include_usage, include_dependencies, include_exports, export_formats }) => {
 			try {
@@ -305,7 +305,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (optional if already navigated with figma_navigate)"
+					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
 				),
 			nodeId: z
 				.string()
@@ -314,7 +314,7 @@ export function registerFigmaAPITools(
 				.boolean()
 				.optional()
 				.describe(
-					"Enable enrichment (adds token coverage, hardcoded values). Default: false"
+					"Set to true when user asks for: design token coverage, hardcoded value analysis, or component quality metrics. Adds token coverage analysis and hardcoded value detection. Default: false"
 				),
 		},
 		async ({ fileUrl, nodeId, enrich }) => {
@@ -408,13 +408,13 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (optional if already navigated with figma_navigate)"
+					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
 				),
 			enrich: z
 				.boolean()
 				.optional()
 				.describe(
-					"Enable enrichment (adds resolved values, usage, export formats). Default: false for backward compatibility"
+					"Set to true when user asks for: CSS/Sass/Tailwind code, export formats, usage information, code examples, or design system exports. Adds resolved values, usage analysis, and export format examples. Default: false for backward compatibility"
 				),
 			include_usage: z
 				.boolean()
@@ -428,7 +428,7 @@ export function registerFigmaAPITools(
 				.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
 				.optional()
 				.describe(
-					"Export formats to generate (requires enrich=true). Default: all formats"
+					"Which code formats to generate examples for. Use when user mentions specific formats like 'CSS', 'Tailwind', 'SCSS', 'TypeScript', etc. Automatically enables enrichment. Default: all formats"
 				),
 		},
 		async ({ fileUrl, enrich, include_usage, include_exports, export_formats }) => {

@@ -8,7 +8,7 @@ import type {
 	VariableReference,
 	ExportFormats,
 	ExportFormat,
-} from "../types/enriched";
+} from "../types/enriched.js";
 import type pino from "pino";
 
 type Logger = pino.Logger;

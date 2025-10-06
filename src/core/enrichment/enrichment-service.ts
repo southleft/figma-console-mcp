@@ -4,8 +4,8 @@
  */
 
 import type pino from "pino";
-import { StyleValueResolver } from "./style-resolver";
-import { RelationshipMapper } from "./relationship-mapper";
+import { StyleValueResolver } from "./style-resolver.js";
+import { RelationshipMapper } from "./relationship-mapper.js";
 import type {
 	EnrichedStyle,
 	EnrichedVariable,
@@ -13,7 +13,7 @@ import type {
 	EnrichedFileData,
 	EnrichmentOptions,
 	ExportFormat,
-} from "../types/enriched";
+} from "../types/enriched.js";
 
 type Logger = pino.Logger;
 

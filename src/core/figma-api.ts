@@ -173,9 +173,10 @@ export class FigmaAPI {
     local: any;
     published: any;
   }> {
+    // Don't catch errors - let them bubble up so proper error messages are shown
     const [local, published] = await Promise.all([
-      this.getLocalVariables(fileKey).catch(() => ({ variables: {} })),
-      this.getPublishedVariables(fileKey).catch(() => ({ variables: {} })),
+      this.getLocalVariables(fileKey),
+      this.getPublishedVariables(fileKey).catch(() => ({ variables: {} })), // Published can fail gracefully
     ]);
 
     return { local, published };
