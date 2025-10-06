@@ -89,6 +89,57 @@ figma_watch_console({ duration: 10 })
 
 If you're building a design system or developing Figma plugins, you'll benefit from **both**. The Figma Official MCP generates your initial implementation, while Figma Console MCP helps you debug, validate, and extract the underlying data.
 
+### 🚀 The Cheat Code: Using Both MCPs Together
+
+Running **both MCPs simultaneously** is like having a superpower for Figma development:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
+    },
+    "figma-dev-mode": {
+      "command": "npx",
+      "args": ["-y", "@figma/mcp-server-figma"]
+    }
+  }
+}
+```
+
+**The workflow becomes magical:**
+
+1. **AI generates component code** (Figma Official MCP)
+   ```typescript
+   // AI creates: <Button /> with Tailwind classes
+   ```
+
+2. **You integrate it into your app**
+   ```typescript
+   import { Button } from './components/Button'
+   ```
+
+3. **AI monitors and debugs it live** (Figma Console MCP)
+   ```javascript
+   figma_watch_console({ duration: 10 })
+   // → Sees: "Button rendered", "onClick triggered", etc.
+   ```
+
+4. **AI extracts actual design tokens** (Figma Console MCP)
+   ```javascript
+   figma_get_variables()
+   // → Returns: { "color/button/primary": "#4375FF" }
+   ```
+
+5. **AI refactors to use design tokens**
+   ```typescript
+   // Before: className="bg-[#4375ff]"
+   // After:  color="primary"
+   ```
+
+**Result:** AI can autonomously build, test, debug, and refine components using real design system data - all without you leaving your editor. It's the fastest way to go from Figma design to production-ready code.
+
 ## Architecture Overview
 
 Figma Console MCP supports **two deployment modes** that provide identical functionality with different trade-offs:
@@ -524,7 +575,7 @@ Returns logs captured during the watch period with real-time monitoring.
 
 ### Figma Data Extraction Tools (8-11)
 
-> **Note:** These tools require a Figma access token. See [FIGMA_API_SETUP.md](FIGMA_API_SETUP.md) for setup instructions.
+> **Note:** These tools require a Figma access token. See [FIGMA_API_SETUP.md](docs/FIGMA_API_SETUP.md) for setup instructions.
 
 These tools use the Figma REST API to extract design data, variables, components, and styles directly from Figma files.
 
@@ -678,7 +729,7 @@ figma_get_console_logs({ count: 20 })
 
 ## MCP Client Setup Guides
 
-> **Claude Code users:** See [CLAUDE_CODE_SETUP.md](CLAUDE_CODE_SETUP.md) for detailed setup and troubleshooting if you get "fetch failed" errors.
+> **Claude Code users:** See [CLAUDE_CODE_SETUP.md](docs/CLAUDE_CODE_SETUP.md) for detailed setup and troubleshooting if you get "fetch failed" errors.
 
 ### Claude Desktop
 
@@ -718,7 +769,7 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 - Use `/mcp` command in Claude Code
 - Should show "figma-console: connected"
 
-**See [CLAUDE_CODE_SETUP.md](CLAUDE_CODE_SETUP.md) for troubleshooting.**
+**See [CLAUDE_CODE_SETUP.md](docs/CLAUDE_CODE_SETUP.md) for troubleshooting.**
 
 ### Cursor
 
@@ -946,7 +997,7 @@ Separate TypeScript configurations for each mode:
 
 This prevents bundling wrong dependencies and optimizes each mode independently.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) and [DUAL_MODE_SETUP.md](DUAL_MODE_SETUP.md) for detailed technical documentation.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [DUAL_MODE_SETUP.md](docs/DUAL_MODE_SETUP.md) for detailed technical documentation.
 
 ## Development
 
@@ -1072,16 +1123,21 @@ figma-console-mcp/
 │   ├── local.js                 # Local mode build
 │   └── cloudflare/              # Cloud mode build
 │       └── index.js
+├── docs/                        # Documentation
+│   ├── ARCHITECTURE.md          # Technical architecture details
+│   ├── CLAUDE_CODE_SETUP.md     # Claude Code setup guide
+│   ├── DUAL_MODE_SETUP.md       # Dual mode setup guide
+│   ├── FIGMA_API_SETUP.md       # Figma API tools setup
+│   ├── PHASE3_SUMMARY.md        # Phase 3 implementation details
+│   ├── PRODUCT_PLAN.md          # Product roadmap and planning
+│   ├── ROADMAP.md               # Feature roadmap
+│   └── TROUBLESHOOTING.md       # Common issues and solutions
 ├── tsconfig.json                # Base TypeScript config
 ├── tsconfig.local.json          # Local mode build config
 ├── tsconfig.cloudflare.json     # Cloud mode build config
 ├── wrangler.jsonc               # Cloudflare Workers config
 ├── package.json                 # Dependencies and scripts
 ├── biome.json                   # Linter/formatter config
-├── ARCHITECTURE.md              # Technical architecture details
-├── DUAL_MODE_SETUP.md           # Dual mode setup guide
-├── FIGMA_API_SETUP.md           # Figma API tools setup
-├── TROUBLESHOOTING.md           # Common issues and solutions
 └── README.md                    # This file
 ```
 
@@ -1129,7 +1185,7 @@ figma_get_console_logs({ level: 'all' })
 3. Restart your MCP client completely
 4. Check client logs for connection errors
 
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for comprehensive guide.
+See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for comprehensive guide.
 
 ## Cloudflare Workers Costs
 
@@ -1169,7 +1225,7 @@ Workers Paid plan ($5/month) required only if you exceed free Workers limits (10
 - **Launch scripts:** Easy setup for macOS with `launch-figma-debug.sh`
 - **Zero latency debugging:** Native console log capture from running plugins
 
-See [ROADMAP.md](ROADMAP.md) for complete timeline and [PHASE3_SUMMARY.md](PHASE3_SUMMARY.md) for implementation details.
+See [ROADMAP.md](docs/ROADMAP.md) for complete timeline and [PHASE3_SUMMARY.md](docs/PHASE3_SUMMARY.md) for implementation details.
 
 ## Contributing
 
@@ -1198,12 +1254,12 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- 📖 [Architecture Documentation](ARCHITECTURE.md)
-- 🏠 [Dual Mode Setup Guide](DUAL_MODE_SETUP.md)
+- 📖 [Architecture Documentation](docs/ARCHITECTURE.md)
+- 🏠 [Dual Mode Setup Guide](docs/DUAL_MODE_SETUP.md)
 - 🐛 [Issue Tracker](https://github.com/southleft/figma-console-mcp/issues)
 - 💬 [Discussions](https://github.com/southleft/figma-console-mcp/discussions)
-- 🔧 [Troubleshooting Guide](TROUBLESHOOTING.md)
-- 🔑 [Figma API Setup](FIGMA_API_SETUP.md)
+- 🔧 [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
+- 🔑 [Figma API Setup](docs/FIGMA_API_SETUP.md)
 
 ## Acknowledgments
 
