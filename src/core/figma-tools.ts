@@ -46,8 +46,14 @@ export function registerFigmaAPITools(
 				.array(z.string())
 				.optional()
 				.describe("Specific node IDs to retrieve (optional)"),
+			enrich: z
+				.boolean()
+				.optional()
+				.describe(
+					"Enable enrichment (adds statistics, health score, audit summary). Default: false"
+				),
 		},
-		async ({ fileUrl, depth, nodeIds }) => {
+		async ({ fileUrl, depth, nodeIds, enrich }) => {
 			try {
 				const api = getFigmaAPI();
 
@@ -64,12 +70,43 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, depth, nodeIds }, "Fetching file data");
+				logger.info({ fileKey, depth, nodeIds, enrich }, "Fetching file data");
 
 				const fileData = await api.getFile(fileKey, {
 					depth,
 					ids: nodeIds,
 				});
+
+				let response: any = {
+					fileKey,
+					name: fileData.name,
+					lastModified: fileData.lastModified,
+					version: fileData.version,
+					document: fileData.document,
+					components: fileData.components
+						? Object.keys(fileData.components).length
+						: 0,
+					styles: fileData.styles
+						? Object.keys(fileData.styles).length
+						: 0,
+					...(nodeIds && {
+						requestedNodes: nodeIds,
+						nodes: fileData.nodes,
+					}),
+				};
+
+				// Apply enrichment if requested
+				if (enrich) {
+					const enrichmentOptions: EnrichmentOptions = {
+						enrich: true,
+						include_usage: true,
+					};
+
+					response = await enrichmentService.enrichFileData(
+						{ ...response, ...fileData },
+						enrichmentOptions
+					);
+				}
 
 				return {
 					content: [
@@ -77,21 +114,8 @@ export function registerFigmaAPITools(
 							type: "text",
 							text: JSON.stringify(
 								{
-									fileKey,
-									name: fileData.name,
-									lastModified: fileData.lastModified,
-									version: fileData.version,
-									document: fileData.document,
-									components: fileData.components
-										? Object.keys(fileData.components).length
-										: 0,
-									styles: fileData.styles
-										? Object.keys(fileData.styles).length
-										: 0,
-									...(nodeIds && {
-										requestedNodes: nodeIds,
-										nodes: fileData.nodes,
-									}),
+									...response,
+									enriched: enrich || false,
 								},
 								null,
 								2
@@ -140,8 +164,30 @@ export function registerFigmaAPITools(
 				.optional()
 				.default(true)
 				.describe("Include published variables from libraries"),
+			enrich: z
+				.boolean()
+				.optional()
+				.describe(
+					"Enable enrichment (adds resolved values, dependencies, usage). Default: false"
+				),
+			include_usage: z
+				.boolean()
+				.optional()
+				.describe("Include usage in styles and components (requires enrich=true)"),
+			include_dependencies: z
+				.boolean()
+				.optional()
+				.describe("Include variable dependency graph (requires enrich=true)"),
+			include_exports: z
+				.boolean()
+				.optional()
+				.describe("Include export format examples (requires enrich=true)"),
+			export_formats: z
+				.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
+				.optional()
+				.describe("Export formats to generate (requires enrich=true)"),
 		},
-		async ({ fileUrl, includePublished }) => {
+		async ({ fileUrl, includePublished, enrich, include_usage, include_dependencies, include_exports, export_formats }) => {
 			try {
 				const api = getFigmaAPI();
 
@@ -157,14 +203,43 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, includePublished }, "Fetching variables");
+				logger.info({ fileKey, includePublished, enrich }, "Fetching variables");
 
 				const { local, published } = await api.getAllVariables(fileKey);
 
-				const localFormatted = formatVariables(local);
-				const publishedFormatted = includePublished
+				let localFormatted = formatVariables(local);
+				let publishedFormatted = includePublished
 					? formatVariables(published)
 					: null;
+
+				// Apply enrichment if requested
+				if (enrich) {
+					const enrichmentOptions: EnrichmentOptions = {
+						enrich: true,
+						include_usage: include_usage !== false,
+						include_dependencies: include_dependencies !== false,
+						include_exports: include_exports !== false,
+						export_formats: export_formats || ["css", "sass", "tailwind", "typescript", "json"],
+					};
+
+					// Enrich local variables
+					const enrichedLocal = await enrichmentService.enrichVariables(
+						localFormatted.variables,
+						fileKey,
+						enrichmentOptions
+					);
+					localFormatted = { ...localFormatted, variables: enrichedLocal };
+
+					// Enrich published variables if included
+					if (publishedFormatted) {
+						const enrichedPublished = await enrichmentService.enrichVariables(
+							publishedFormatted.variables,
+							fileKey,
+							enrichmentOptions
+						);
+						publishedFormatted = { ...publishedFormatted, variables: enrichedPublished };
+					}
+				}
 
 				return {
 					content: [
@@ -186,6 +261,7 @@ export function registerFigmaAPITools(
 												variables: publishedFormatted.variables,
 											},
 										}),
+									enriched: enrich || false,
 								},
 								null,
 								2
@@ -234,8 +310,14 @@ export function registerFigmaAPITools(
 			nodeId: z
 				.string()
 				.describe("Component node ID (e.g., '123:456')"),
+			enrich: z
+				.boolean()
+				.optional()
+				.describe(
+					"Enable enrichment (adds token coverage, hardcoded values). Default: false"
+				),
 		},
-		async ({ fileUrl, nodeId }) => {
+		async ({ fileUrl, nodeId, enrich }) => {
 			try {
 				const api = getFigmaAPI();
 
@@ -251,7 +333,7 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, nodeId }, "Fetching component data");
+				logger.info({ fileKey, nodeId, enrich }, "Fetching component data");
 
 				const componentData = await api.getComponentData(fileKey, nodeId);
 
@@ -259,7 +341,21 @@ export function registerFigmaAPITools(
 					throw new Error(`Component not found: ${nodeId}`);
 				}
 
-				const formatted = formatComponentData(componentData.document);
+				let formatted = formatComponentData(componentData.document);
+
+				// Apply enrichment if requested
+				if (enrich) {
+					const enrichmentOptions: EnrichmentOptions = {
+						enrich: true,
+						include_usage: true,
+					};
+
+					formatted = await enrichmentService.enrichComponent(
+						formatted,
+						fileKey,
+						enrichmentOptions
+					);
+				}
 
 				return {
 					content: [
@@ -270,6 +366,7 @@ export function registerFigmaAPITools(
 									fileKey,
 									nodeId,
 									component: formatted,
+									enriched: enrich || false,
 								},
 								null,
 								2

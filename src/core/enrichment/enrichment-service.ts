@@ -40,6 +40,7 @@ export class EnrichmentService {
 		styles: any[],
 		fileKey: string,
 		options: EnrichmentOptions = {},
+		fileData?: any,
 	): Promise<EnrichedStyle[]> {
 		if (!options.enrich) {
 			return styles; // Return as-is if enrichment not requested
@@ -48,13 +49,13 @@ export class EnrichmentService {
 		this.logger.info({ fileKey, count: styles.length }, "Enriching styles");
 
 		try {
-			// Get file data for relationships
-			const fileData = await this.getFileDataForEnrichment(fileKey);
-			const variables = this.extractVariablesMap(fileData);
+			// Get file data for relationships (use provided data if available)
+			const data = fileData || await this.getFileDataForEnrichment(fileKey);
+			const variables = this.extractVariablesMap(data);
 
 			// Build relationships if requested
 			if (options.include_usage) {
-				await this.relationshipMapper.buildRelationships(fileData);
+				await this.relationshipMapper.buildRelationships(data);
 			}
 
 			const enrichedStyles: EnrichedStyle[] = [];
@@ -117,6 +118,7 @@ export class EnrichmentService {
 		variables: any[],
 		fileKey: string,
 		options: EnrichmentOptions = {},
+		fileData?: any,
 	): Promise<EnrichedVariable[]> {
 		if (!options.enrich) {
 			return variables;
@@ -125,12 +127,12 @@ export class EnrichmentService {
 		this.logger.info({ fileKey, count: variables.length }, "Enriching variables");
 
 		try {
-			const fileData = await this.getFileDataForEnrichment(fileKey);
-			const variablesMap = this.extractVariablesMap(fileData);
+			const data = fileData || await this.getFileDataForEnrichment(fileKey);
+			const variablesMap = this.extractVariablesMap(data);
 
 			// Build relationships if requested
 			if (options.include_usage) {
-				await this.relationshipMapper.buildRelationships(fileData);
+				await this.relationshipMapper.buildRelationships(data);
 			}
 
 			const enrichedVars: EnrichedVariable[] = [];
@@ -204,6 +206,7 @@ export class EnrichmentService {
 		component: any,
 		fileKey: string,
 		options: EnrichmentOptions = {},
+		fileData?: any,
 	): Promise<EnrichedComponent> {
 		if (!options.enrich) {
 			return component;
@@ -219,16 +222,16 @@ export class EnrichmentService {
 				...component,
 			};
 
-			const fileData = await this.getFileDataForEnrichment(fileKey);
+			const data = fileData || await this.getFileDataForEnrichment(fileKey);
 
 			// Build relationships
-			await this.relationshipMapper.buildRelationships(fileData);
+			await this.relationshipMapper.buildRelationships(data);
 
 			// Extract styles used
 			if (component.styles) {
 				const stylesUsed: any[] = [];
 				for (const [prop, styleId] of Object.entries(component.styles)) {
-					const style = fileData.styles?.[styleId as string];
+					const style = data.styles?.[styleId as string];
 					if (style) {
 						stylesUsed.push({
 							style_id: styleId,
@@ -330,8 +333,10 @@ export class EnrichmentService {
 
 	/**
 	 * Get file data for enrichment (with caching)
+	 * NOTE: This is a placeholder that returns the data passed in
+	 * In a full implementation, this would fetch fresh data from Figma API
 	 */
-	private async getFileDataForEnrichment(fileKey: string): Promise<any> {
+	private async getFileDataForEnrichment(fileKey: string, providedData?: any): Promise<any> {
 		const now = Date.now();
 		const lastEnrich = this.lastEnrichmentTime.get(fileKey) || 0;
 
@@ -343,9 +348,9 @@ export class EnrichmentService {
 			return this.fileDataCache.get(fileKey);
 		}
 
-		// This would be replaced with actual API call
-		// For now, return empty structure
-		const fileData = {
+		// If data is provided, use it (from the tool that called us)
+		// This avoids redundant API calls since the tool already fetched the data
+		const fileData = providedData || {
 			styles: {},
 			variables: {},
 			document: {},
@@ -356,6 +361,14 @@ export class EnrichmentService {
 		this.lastEnrichmentTime.set(fileKey, now);
 
 		return fileData;
+	}
+
+	/**
+	 * Set file data in cache (called by tools that already have the data)
+	 */
+	setFileDataCache(fileKey: string, fileData: any): void {
+		this.fileDataCache.set(fileKey, fileData);
+		this.lastEnrichmentTime.set(fileKey, Date.now());
 	}
 
 	/**
