@@ -16,6 +16,79 @@ Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/
 - **Zero-friction debugging** workflow (no copy-paste needed)
 - **Dual deployment modes** - Local (for plugin development) or Cloud (for remote collaboration)
 
+## Figma Console MCP vs. Figma Official Dev Mode MCP
+
+Both MCPs connect AI assistants to Figma, but serve **completely different purposes**:
+
+| Feature | **Figma Console MCP** (This Plugin) | **Figma Official Dev Mode MCP** |
+|---------|-------------------------------------|--------------------------------|
+| **Primary Purpose** | **Runtime debugging & live monitoring** | **Code generation from designs** |
+| **What it returns** | Console logs, errors, runtime state, design data | React/HTML code with Tailwind classes |
+| **Best for** | Plugin development, debugging, data extraction | Converting designs to frontend code |
+| **Console access** | ✅ Real-time log capture via Chrome DevTools Protocol | ❌ No console access |
+| **Error debugging** | ✅ Stack traces, warnings, runtime errors | ❌ No debugging info |
+| **Screenshot capture** | ✅ Automated UI screenshots | ❌ No screenshot capability |
+| **Design variables** | ✅ Raw variable data (JSON) | ✅ As CSS/Tailwind tokens in code |
+| **Component data** | ✅ Full component metadata and properties | ✅ As React component code |
+| **File structure** | ✅ Complete node tree with metadata | ✅ As component structure in code |
+| **Live monitoring** | ✅ Watch console logs in real-time | ❌ Not available |
+| **Deployment** | Local (instant) or Cloud (remote) | Figma Desktop only |
+
+### When to Use Each
+
+**Use Figma Console MCP when you need to:**
+- **Debug Figma plugins** - See console.log(), errors, and warnings from your plugin code
+- **Monitor runtime behavior** - Watch what happens when your plugin executes
+- **Extract design system data** - Get variables, components, and styles as raw JSON
+- **Investigate errors** - Get stack traces and error context
+- **Develop plugins locally** - Zero-latency console log capture from Figma Desktop
+- **Automate debugging** - Let AI assistants debug your plugin code autonomously
+
+**Use Figma Official Dev Mode MCP when you need to:**
+- **Convert designs to code** - Generate React components from Figma designs
+- **Implement UI from mockups** - Get starter code with Tailwind classes
+- **Scaffold components** - Quick component boilerplate generation
+- **Extract design tokens as code** - Variables rendered as CSS/Tailwind values
+
+### Can They Work Together?
+
+**Yes!** They're complementary:
+
+1. **Use Figma Official MCP** to generate initial component code from designs
+2. **Use Figma Console MCP** to:
+   - Debug that generated code when integrated into your app
+   - Extract the actual variable values as JSON for your design token system
+   - Monitor console logs when the component runs
+   - Verify the component matches design specs via screenshots
+
+### Example: Design System Workflow
+
+```javascript
+// 1. Use Figma Official MCP to generate component code
+// → Returns: React component with Tailwind classes
+<div className="bg-[#4375ff] px-[12px] py-[8px] rounded-[6px]">
+  <p className="text-[#000b29] text-[16px]">Label</p>
+</div>
+
+// 2. Use Figma Console MCP to get actual design tokens
+figma_get_variables()
+// → Returns: { "color/background/primary-default": "#4375FF", ... }
+
+// 3. Replace hardcoded values with design tokens
+<Button color="primary" size="medium">Label</Button>
+
+// 4. Use Figma Console MCP to debug the integrated component
+figma_watch_console({ duration: 10 })
+// → See console logs: "Button rendered with variant: primary"
+```
+
+### Key Insight
+
+**Figma Official MCP** gives you **code** (what to build).
+**Figma Console MCP** gives you **runtime insight** (how it's working).
+
+If you're building a design system or developing Figma plugins, you'll benefit from **both**. The Figma Official MCP generates your initial implementation, while Figma Console MCP helps you debug, validate, and extract the underlying data.
+
 ## Architecture Overview
 
 Figma Console MCP supports **two deployment modes** that provide identical functionality with different trade-offs:
