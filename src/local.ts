@@ -620,7 +620,8 @@ class LocalFigmaConsoleMCP {
 		registerFigmaAPITools(
 			this.server,
 			() => this.getFigmaAPI(),
-			() => this.browserManager?.getCurrentUrl() || null
+			() => this.browserManager?.getCurrentUrl() || null,
+			() => this.consoleMonitor || null
 		);
 
 		logger.info("All MCP tools registered successfully");

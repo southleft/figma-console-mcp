@@ -10,11 +10,16 @@ import { extractFileKey, formatVariables, formatComponentData } from "./figma-ap
 import { createChildLogger } from "./logger.js";
 import { EnrichmentService } from "./enrichment/index.js";
 import type { EnrichmentOptions } from "./types/enriched.js";
+import { SnippetInjector } from "./snippet-injector.js";
+import type { ConsoleMonitor } from "./console-monitor.js";
 
 const logger = createChildLogger({ component: "figma-tools" });
 
 // Initialize enrichment service
 const enrichmentService = new EnrichmentService(logger);
+
+// Initialize snippet injector
+const snippetInjector = new SnippetInjector();
 
 /**
  * Register Figma API tools with the MCP server
@@ -22,7 +27,8 @@ const enrichmentService = new EnrichmentService(logger);
 export function registerFigmaAPITools(
 	server: McpServer,
 	getFigmaAPI: () => FigmaAPI,
-	getCurrentUrl: () => string | null
+	getCurrentUrl: () => string | null,
+	getConsoleMonitor?: () => ConsoleMonitor | null
 ) {
 	// Tool 8: Get File Data
 	server.tool(
@@ -182,15 +188,23 @@ export function registerFigmaAPITools(
 				.boolean()
 				.optional()
 				.describe("Include export format examples (requires enrich=true)"),
-			export_formats: z
+				export_formats: z
 				.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
 				.optional()
 				.describe("Which code formats to generate examples for. Use when user mentions specific formats like 'CSS', 'Tailwind', 'SCSS', 'TypeScript', etc. Automatically enables enrichment."),
+			useConsoleFallback: z
+				.boolean()
+				.optional()
+				.default(true)
+				.describe("If REST API fails with 403 (Enterprise required), provide console snippet for manual variable extraction. Default: true"),
+			parseFromConsole: z
+				.boolean()
+				.optional()
+				.default(false)
+				.describe("Parse variables from recent console logs (after running the snippet). Use this after executing the console snippet."),
 		},
-		async ({ fileUrl, includePublished, enrich, include_usage, include_dependencies, include_exports, export_formats }) => {
+		async ({ fileUrl, includePublished, enrich, include_usage, include_dependencies, include_exports, export_formats, useConsoleFallback, parseFromConsole }) => {
 			try {
-				const api = getFigmaAPI();
-
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
@@ -203,7 +217,66 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, includePublished, enrich }, "Fetching variables");
+				// NEW: Parse from console logs if requested
+				if (parseFromConsole) {
+					const consoleMonitor = getConsoleMonitor?.();
+					if (!consoleMonitor) {
+						throw new Error("Console monitoring not available. Make sure browser is connected to Figma.");
+					}
+
+					logger.info({ fileKey }, "Parsing variables from console logs");
+
+					// Get recent logs
+					const logs = consoleMonitor.getLogs({ count: 100, level: "log" });
+					const varLog = snippetInjector.findVariablesLog(logs);
+
+					if (!varLog) {
+						throw new Error(
+							"No variables found in console logs.\n\n" +
+							"Please run the snippet first:\n" +
+							"1. Call figma_get_variables({ useConsoleFallback: true }) to get the snippet\n" +
+							"2. Paste and run it in Figma's console\n" +
+							"3. Then call figma_get_variables({ parseFromConsole: true })"
+						);
+					}
+
+					// Parse variables from log
+					const parsedData = snippetInjector.parseVariablesFromLog(varLog);
+
+					if (!parsedData) {
+						throw new Error("Failed to parse variables from console log");
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										fileKey,
+										source: "console_capture",
+										local: {
+											summary: {
+												total_variables: parsedData.variables.length,
+												total_collections: parsedData.variableCollections.length,
+											},
+											collections: parsedData.variableCollections,
+											variables: parsedData.variables,
+										},
+										timestamp: parsedData.timestamp,
+										enriched: false,
+									},
+									null,
+									2
+								),
+							},
+						],
+					};
+				}
+
+				// Try REST API
+				logger.info({ fileKey, includePublished, enrich }, "Fetching variables via REST API");
+				const api = getFigmaAPI();
 
 				const { local, published } = await api.getAllVariables(fileKey);
 
@@ -273,6 +346,41 @@ export function registerFigmaAPITools(
 				logger.error({ error }, "Failed to get variables");
 				const errorMessage =
 					error instanceof Error ? error.message : String(error);
+
+				// NEW: Handle 403 with console fallback snippet
+				if (errorMessage.includes("403") && useConsoleFallback) {
+					const snippet = snippetInjector.generateVariablesSnippet();
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: "Variables API requires Enterprise plan with file_variables:read scope",
+										fallback_available: true,
+										method: "console_capture",
+										instructions: [
+											"The Figma Variables API requires an Enterprise plan.",
+											"However, you can extract variables using console logs:",
+											"",
+											"Step 1: Open Figma and navigate to your file",
+											"Step 2: Open DevTools Console (Right-click → Inspect → Console tab)",
+											"Step 3: Paste and run the snippet below",
+											"Step 4: Call: figma_get_variables({ parseFromConsole: true })",
+										],
+										snippet: snippet,
+										note: "This snippet is safe - it only reads variables using Figma's Plugin API and logs them to the console.",
+									},
+									null,
+									2
+								),
+							},
+						],
+					};
+				}
+
+				// Standard error response
 				return {
 					content: [
 						{
@@ -282,7 +390,7 @@ export function registerFigmaAPITools(
 									error: errorMessage,
 									message: "Failed to retrieve Figma variables",
 									hint: errorMessage.includes("403")
-										? "Variables API requires Enterprise plan with file_variables:read scope"
+										? "Variables API requires Enterprise plan. Set useConsoleFallback=true for alternative method."
 										: "Make sure FIGMA_ACCESS_TOKEN is configured and has appropriate permissions",
 								},
 								null,
