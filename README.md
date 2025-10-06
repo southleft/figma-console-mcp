@@ -59,7 +59,7 @@ Connect directly to our hosted instance:
 }
 ```
 
-Restart your MCP client to see the 7 Figma tools become available.
+Restart your MCP client to see the 11 Figma tools become available.
 
 ### Option 2: Deploy Your Own Instance
 
@@ -89,9 +89,9 @@ npm run deploy
 
 ## Available MCP Tools
 
-All 7 tools are **fully functional** and tested. Here's what you can do:
+All 11 tools are **fully functional** and tested. Here's what you can do:
 
-### Core Tools
+### Debugging & Navigation Tools (1-7)
 
 #### `figma_navigate`
 Navigate to any Figma URL to start monitoring.
@@ -178,6 +178,118 @@ figma_watch_console({
 
 *Currently returns placeholder - planned for Phase 3.*
 
+---
+
+### Figma Data Extraction Tools (8-11)
+
+> **Note:** These tools require a Figma access token. See [FIGMA_API_SETUP.md](FIGMA_API_SETUP.md) for setup instructions.
+
+These tools use the Figma REST API to extract design data, variables, components, and styles directly from Figma files.
+
+#### `figma_get_file_data`
+Get file structure, components, and metadata.
+
+```javascript
+figma_get_file_data({
+  fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
+  depth: 2,           // How many levels of children to include (default: 1)
+  nodeIds: ['123:456', '123:789']  // Optional: specific nodes only
+})
+```
+
+**Returns:**
+- File name, version, last modified date
+- Complete document tree structure
+- Component and style counts
+- Node metadata (if nodeIds specified)
+
+#### `figma_get_variables`
+Get design tokens and variables from Figma.
+
+```javascript
+figma_get_variables({
+  fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
+  includePublished: true  // Include published library variables (default: true)
+})
+```
+
+**Returns:**
+- Local variables (colors, numbers, strings, booleans)
+- Variable collections with modes
+- Published library variables
+- Summary with counts by type
+
+**Note:** Variables API requires Figma Enterprise plan with `file_variables:read` scope.
+
+#### `figma_get_component`
+Get specific component data and properties.
+
+```javascript
+figma_get_component({
+  fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
+  nodeId: '123:456'  // Component node ID (from URL: ?node-id=123-456)
+})
+```
+
+**Returns:**
+- Component name, type, and ID
+- Component property definitions (variants, boolean props, etc.)
+- Children structure
+- Bounds, fills, strokes, effects
+
+**Tip:** Get node IDs from Figma URLs. For example, `?node-id=123-456` means nodeId is `'123:456'`.
+
+#### `figma_get_styles`
+Get color, text, and effect styles from file.
+
+```javascript
+figma_get_styles({
+  fileUrl: 'https://www.figma.com/design/abc123/My-File'  // Optional if already navigated
+})
+```
+
+**Returns:**
+- All color, text, and effect styles
+- Style names, descriptions, and types
+- Total style count
+
+---
+
+### Combined Workflow Examples
+
+**Debug plugin with actual Figma data:**
+```javascript
+// 1. Navigate to file
+figma_navigate({ url: 'https://www.figma.com/design/abc123/My-Design-System' })
+
+// 2. Get all design tokens
+figma_get_variables()
+
+// 3. Get specific component properties
+figma_get_component({ nodeId: '123:456' })
+
+// 4. Check console for errors
+figma_get_console_logs({ level: 'error' })
+
+// AI can now correlate:
+// - What variables exist in Figma
+// - What your plugin is trying to use
+// - Any errors that occurred
+```
+
+**Extract design system data:**
+```javascript
+// Get all variables and styles
+figma_get_variables()
+figma_get_styles()
+
+// Get specific component metadata
+figma_get_component({ nodeId: '5:123' })
+
+// Get file structure
+figma_get_file_data({ depth: 2 })
+```
+
 ## Use Cases
 
 ### Autonomous Plugin Debugging
@@ -250,7 +362,7 @@ figma_get_console_logs({ count: 20 })
 2. Quit Claude Desktop completely
 3. Restart Claude Desktop
 4. Look for "🔌" indicator showing MCP servers connected
-5. All 7 Figma tools should be available
+5. All 11 Figma tools should be available
 
 ### Claude Code (VS Code Extension)
 
@@ -481,6 +593,8 @@ figma-console-mcp/
 │   ├── index.ts              # Main entry point (McpAgent)
 │   ├── browser-manager.ts    # Puppeteer browser lifecycle
 │   ├── console-monitor.ts    # Console log capture (CDP)
+│   ├── figma-api.ts          # Figma REST API client
+│   ├── figma-tools.ts        # Figma data extraction tools (8-11)
 │   ├── config.ts             # Configuration management
 │   ├── logger.ts             # Pino logging
 │   ├── test-browser.ts       # Browser Rendering API diagnostics
@@ -491,6 +605,7 @@ figma-console-mcp/
 ├── tsconfig.json             # TypeScript config
 ├── biome.json                # Linter/formatter config
 ├── ARCHITECTURE.md           # Technical architecture
+├── FIGMA_API_SETUP.md        # Figma API tools setup guide
 ├── TROUBLESHOOTING.md        # Common issues and solutions
 └── README.md                 # This file
 ```
@@ -563,7 +678,8 @@ Workers Paid plan ($5/month) required only if you exceed free Workers limits (10
 ## Roadmap
 
 ✅ **Phase 1 (v0.1.0):** Infrastructure & Cloudflare Workers deployment
-✅ **Phase 2 (v0.2.0):** All 7 tools implemented and tested
+✅ **Phase 2 (v0.2.0):** All 7 debugging tools implemented and tested
+✅ **Phase 2.5 (v0.2.5):** Figma API data extraction tools (8-11) - Variables, Components, Styles
 🚧 **Phase 3 (v0.3.0):** Real-time `figma_watch_console` via SSE
 📋 **Phase 4 (v1.0.0):** Advanced features (custom filters, log persistence)
 

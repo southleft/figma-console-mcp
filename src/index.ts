@@ -17,6 +17,8 @@ import { ConsoleMonitor } from "./console-monitor.js";
 import { getConfig } from "./config.js";
 import { createChildLogger } from "./logger.js";
 import { testBrowserRendering } from "./test-browser.js";
+import { FigmaAPI, extractFileKey, formatVariables, formatComponentData } from "./figma-api.js";
+import { registerFigmaAPITools } from "./figma-tools.js";
 
 const logger = createChildLogger({ component: "mcp-server" });
 
@@ -32,7 +34,30 @@ export class FigmaConsoleMCP extends McpAgent {
 
 	private browserManager: BrowserManager | null = null;
 	private consoleMonitor: ConsoleMonitor | null = null;
+	private figmaAPI: FigmaAPI | null = null;
 	private config = getConfig();
+
+	/**
+	 * Get or create Figma API client
+	 */
+	private getFigmaAPI(): FigmaAPI {
+		if (!this.figmaAPI) {
+			// @ts-ignore - this.env is available in Agent/Durable Object context
+			const env = this.env as Env;
+
+			if (!env?.FIGMA_ACCESS_TOKEN) {
+				throw new Error(
+					"FIGMA_ACCESS_TOKEN not configured. " +
+					"Set it as an environment variable in wrangler.jsonc or deployment settings. " +
+					"Get your token at: https://www.figma.com/developers/api#access-tokens"
+				);
+			}
+
+			this.figmaAPI = new FigmaAPI({ accessToken: env.FIGMA_ACCESS_TOKEN });
+		}
+
+		return this.figmaAPI;
+	}
 
 	/**
 	 * Initialize browser and console monitoring
@@ -515,6 +540,13 @@ export class FigmaConsoleMCP extends McpAgent {
 					};
 				}
 			},
+		);
+
+		// Register Figma API tools (Tools 8-11)
+		registerFigmaAPITools(
+			this.server,
+			() => this.getFigmaAPI(),
+			() => this.browserManager?.getCurrentUrl() || null
 		);
 	}
 }
