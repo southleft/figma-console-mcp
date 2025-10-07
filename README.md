@@ -580,13 +580,14 @@ Returns logs captured during the watch period with real-time monitoring.
 These tools use the Figma REST API to extract design data, variables, components, and styles directly from Figma files.
 
 #### `figma_get_file_data`
-Get file structure, components, and metadata.
+Get file structure, components, and metadata with optional enrichment.
 
 ```javascript
 figma_get_file_data({
   fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
   depth: 2,           // How many levels of children to include (default: 1)
-  nodeIds: ['123:456', '123:789']  // Optional: specific nodes only
+  nodeIds: ['123:456', '123:789'],  // Optional: specific nodes only
+  enrich: true        // Optional: Add statistics, health metrics, audit summaries (default: false)
 })
 ```
 
@@ -595,14 +596,20 @@ figma_get_file_data({
 - Complete document tree structure
 - Component and style counts
 - Node metadata (if nodeIds specified)
+- **When enriched:** File statistics, health scores, design system audit results
 
 #### `figma_get_variables`
-Get design tokens and variables from Figma.
+Get design tokens and variables from Figma with optional enrichment and console fallback.
 
 ```javascript
 figma_get_variables({
   fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
-  includePublished: true  // Include published library variables (default: true)
+  includePublished: true,  // Include published library variables (default: true)
+  enrich: true,           // Optional: Add resolved values, dependencies, usage analysis (default: false)
+  include_usage: true,    // Optional: Include usage in styles and components (requires enrich=true)
+  include_dependencies: true,  // Optional: Include variable dependency graph (requires enrich=true)
+  include_exports: true,  // Optional: Include export format examples (requires enrich=true)
+  export_formats: ['css', 'tailwind']  // Optional: Specify export formats (default: all formats)
 })
 ```
 
@@ -611,16 +618,20 @@ figma_get_variables({
 - Variable collections with modes
 - Published library variables
 - Summary with counts by type
+- **When enriched:** Resolved values, dependency graphs, usage analysis, code export examples
 
-**Note:** Variables API requires Figma Enterprise plan with `file_variables:read` scope.
+**Console Fallback:** If Variables API returns 403 (Enterprise plan required), the tool automatically provides a JavaScript snippet that users can run in Figma's plugin console to extract variables. This is a two-step process:
+1. First call returns the snippet to run
+2. After running the snippet, call again with `parseFromConsole: true` to retrieve the data
 
 #### `figma_get_component`
-Get specific component data and properties.
+Get specific component data and properties with optional enrichment.
 
 ```javascript
 figma_get_component({
   fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
-  nodeId: '123:456'  // Component node ID (from URL: ?node-id=123-456)
+  nodeId: '123:456',  // Component node ID (from URL: ?node-id=123-456)
+  enrich: true        // Optional: Add token coverage analysis and hardcoded value detection (default: false)
 })
 ```
 
@@ -629,15 +640,20 @@ figma_get_component({
 - Component property definitions (variants, boolean props, etc.)
 - Children structure
 - Bounds, fills, strokes, effects
+- **When enriched:** Design token coverage metrics, hardcoded value analysis, component quality scores
 
 **Tip:** Get node IDs from Figma URLs. For example, `?node-id=123-456` means nodeId is `'123:456'`.
 
 #### `figma_get_styles`
-Get color, text, and effect styles from file.
+Get color, text, and effect styles from file with optional enrichment.
 
 ```javascript
 figma_get_styles({
-  fileUrl: 'https://www.figma.com/design/abc123/My-File'  // Optional if already navigated
+  fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
+  enrich: true,           // Optional: Add resolved values and export formats (default: false)
+  include_usage: true,    // Optional: Include component usage information (requires enrich=true)
+  include_exports: true,  // Optional: Include export format examples (requires enrich=true)
+  export_formats: ['css', 'sass', 'tailwind']  // Optional: Specify export formats (default: all formats)
 })
 ```
 
@@ -645,6 +661,7 @@ figma_get_styles({
 - All color, text, and effect styles
 - Style names, descriptions, and types
 - Total style count
+- **When enriched:** Resolved values, usage analysis, CSS/Sass/Tailwind export examples
 
 ---
 
@@ -681,6 +698,28 @@ figma_get_component({ nodeId: '5:123' })
 
 // Get file structure
 figma_get_file_data({ depth: 2 })
+```
+
+**Extract enriched design system with export formats:**
+```javascript
+// Get variables with full enrichment and export formats
+figma_get_variables({
+  enrich: true,
+  export_formats: ['css', 'tailwind'],
+  include_dependencies: true
+})
+
+// Get styles with CSS/Sass/Tailwind exports
+figma_get_styles({
+  enrich: true,
+  export_formats: ['css', 'sass', 'tailwind']
+})
+
+// Analyze component token coverage
+figma_get_component({
+  nodeId: '123:456',
+  enrich: true
+})
 ```
 
 ## Use Cases

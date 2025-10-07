@@ -49,7 +49,14 @@ export class FigmaAPI {
   private async request(endpoint: string, options: RequestInit = {}): Promise<any> {
     const url = `${FIGMA_API_BASE}${endpoint}`;
 
-    logger.debug({ url }, 'Making Figma API request');
+    // Debug logging to verify token is being used
+    const tokenPreview = this.accessToken ? `${this.accessToken.substring(0, 10)}...` : 'NO TOKEN';
+    logger.info({
+      url,
+      tokenPreview,
+      hasToken: !!this.accessToken,
+      tokenLength: this.accessToken?.length
+    }, 'Making Figma API request with token');
 
     const response = await fetch(url, {
       ...options,

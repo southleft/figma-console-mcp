@@ -63,6 +63,11 @@ class LocalFigmaConsoleMCP {
 				);
 			}
 
+			logger.info({
+				tokenPreview: `${accessToken.substring(0, 10)}...`,
+				tokenLength: accessToken.length
+			}, "Initializing Figma API with token from environment");
+
 			this.figmaAPI = new FigmaAPI({ accessToken });
 		}
 
@@ -621,7 +626,8 @@ class LocalFigmaConsoleMCP {
 			this.server,
 			() => this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
-			() => this.consoleMonitor || null
+			() => this.consoleMonitor || null,
+			() => this.browserManager || null
 		);
 
 		logger.info("All MCP tools registered successfully");

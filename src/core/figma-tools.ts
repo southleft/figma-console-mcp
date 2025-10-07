@@ -28,7 +28,8 @@ export function registerFigmaAPITools(
 	server: McpServer,
 	getFigmaAPI: () => FigmaAPI,
 	getCurrentUrl: () => string | null,
-	getConsoleMonitor?: () => ConsoleMonitor | null
+	getConsoleMonitor?: () => ConsoleMonitor | null,
+	getBrowserManager?: () => any
 ) {
 	// Tool 8: Get File Data
 	server.tool(
@@ -154,7 +155,20 @@ export function registerFigmaAPITools(
 		}
 	);
 
-	// Tool 9: Get Variables (Design Tokens)
+	/**
+	 * Tool 9: Get Variables (Design Tokens)
+	 *
+	 * WORKFLOW:
+	 * - Primary: Attempts to fetch variables via Figma REST API (requires Enterprise plan)
+	 * - Fallback: On 403 error, provides console-based extraction snippet
+	 *
+	 * TWO-CALL PATTERN (when API unavailable):
+	 * 1. First call: Returns snippet + instructions (useConsoleFallback: true, default)
+	 * 2. User runs snippet in Figma plugin console
+	 * 3. Second call: Parses captured data (parseFromConsole: true)
+	 *
+	 * IMPORTANT: Snippet requires Figma Plugin API context, not browser DevTools console.
+	 */
 	server.tool(
 		"figma_get_variables",
 		{
@@ -196,28 +210,139 @@ export function registerFigmaAPITools(
 				.boolean()
 				.optional()
 				.default(true)
-				.describe("If REST API fails with 403 (Enterprise required), provide console snippet for manual variable extraction. Default: true"),
+				.describe(
+					"Enable automatic fallback to console-based extraction when REST API returns 403 (Figma Enterprise plan required). " +
+					"When enabled, provides a JavaScript snippet that users run in Figma's plugin console. " +
+					"This is STEP 1 of a two-call workflow. After receiving the snippet, instruct the user to run it, then call this tool again with parseFromConsole=true. " +
+					"Default: true. Set to false only to disable the fallback entirely."
+				),
 			parseFromConsole: z
 				.boolean()
 				.optional()
 				.default(false)
-				.describe("Parse variables from recent console logs (after running the snippet). Use this after executing the console snippet."),
+				.describe(
+					"Parse variables from console logs after user has executed the snippet. " +
+					"This is STEP 2 of the two-call workflow. Set to true ONLY after: " +
+					"(1) you received a console snippet from the first call, " +
+					"(2) instructed the user to run it in Figma's PLUGIN console (Plugins → Development → Open Console or existing plugin), " +
+					"(3) user confirmed they ran the snippet and saw '✅ Variables data captured!' message. " +
+					"Default: false. Never set to true on the first call."
+				),
 		},
 		async ({ fileUrl, includePublished, enrich, include_usage, include_dependencies, include_exports, export_formats, useConsoleFallback, parseFromConsole }) => {
+			// Extract fileKey outside try block so it's available in catch block
+			const url = fileUrl || getCurrentUrl();
+			if (!url) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(
+								{
+									error: "No Figma file URL provided",
+									message: "Either pass fileUrl parameter or call figma_navigate first."
+								},
+								null,
+								2
+							),
+						},
+					],
+					isError: true,
+				};
+			}
+
+			const fileKey = extractFileKey(url);
+			if (!fileKey) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(
+								{
+									error: `Invalid Figma URL: ${url}`,
+									message: "Could not extract file key from URL"
+								},
+								null,
+								2
+							),
+						},
+					],
+					isError: true,
+				};
+			}
+
 			try {
-				const url = fileUrl || getCurrentUrl();
-				if (!url) {
-					throw new Error(
-						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
-					);
+				// BEST: Try Desktop connection first (like official Figma MCP does)
+				const browserManager = getBrowserManager?.();
+				if (browserManager && !parseFromConsole) {
+					try {
+						logger.info({ fileKey }, "Attempting to get variables via Desktop connection");
+
+						// Import and use the Desktop connector
+						const { FigmaDesktopConnector } = await import('./figma-desktop-connector.js');
+						const page = await browserManager.getPage();
+						const connector = new FigmaDesktopConnector(page);
+
+						await connector.initialize();
+						const desktopResult = await connector.getVariables(fileKey);
+
+						if (desktopResult.success && desktopResult.variables) {
+							logger.info(
+								{
+									variableCount: desktopResult.variables.length,
+									collectionCount: desktopResult.variableCollections?.length
+								},
+								"Successfully retrieved variables via Desktop connection!"
+							);
+
+							// Enrich if requested
+							let enrichedData = null;
+							if (enrich && enrichmentService) {
+								enrichedData = await enrichmentService.enrichVariables(
+									desktopResult.variables,
+									desktopResult.variableCollections,
+									{
+										include_usage: include_usage,
+										include_dependencies: include_dependencies,
+										include_exports: include_exports,
+										export_formats: export_formats
+									}
+								);
+							}
+
+							return {
+								content: [
+									{
+										type: "text",
+										text: JSON.stringify(
+											{
+												fileKey,
+												source: "desktop_connection",
+												local: enrichedData || {
+													summary: {
+														total_variables: desktopResult.variables.length,
+														total_collections: desktopResult.variableCollections?.length,
+													},
+													collections: desktopResult.variableCollections,
+													variables: desktopResult.variables,
+												},
+												timestamp: desktopResult.timestamp,
+												enriched: !!enrichedData,
+											},
+											null,
+											2
+										),
+									},
+								],
+							};
+						}
+					} catch (desktopError) {
+						logger.warn({ error: desktopError }, "Desktop connection failed, falling back to other methods");
+						// Continue to try other methods
+					}
 				}
 
-				const fileKey = extractFileKey(url);
-				if (!fileKey) {
-					throw new Error(`Invalid Figma URL: ${url}`);
-				}
-
-				// NEW: Parse from console logs if requested
+				// FALLBACK: Parse from console logs if requested
 				if (parseFromConsole) {
 					const consoleMonitor = getConsoleMonitor?.();
 					if (!consoleMonitor) {
@@ -233,10 +358,14 @@ export function registerFigmaAPITools(
 					if (!varLog) {
 						throw new Error(
 							"No variables found in console logs.\n\n" +
-							"Please run the snippet first:\n" +
-							"1. Call figma_get_variables({ useConsoleFallback: true }) to get the snippet\n" +
-							"2. Paste and run it in Figma's console\n" +
-							"3. Then call figma_get_variables({ parseFromConsole: true })"
+							"Did you run the snippet in Figma's plugin console? Here's the correct workflow:\n\n" +
+							"1. Call figma_get_variables() without parameters (you may have already done this)\n" +
+							"2. Copy the provided snippet\n" +
+							"3. Open Figma Desktop → Plugins → Development → Open Console\n" +
+							"4. Paste and run the snippet in the PLUGIN console (not browser DevTools)\n" +
+							"5. Wait for '✅ Variables data captured!' confirmation\n" +
+							"6. Then call figma_get_variables({ parseFromConsole: true })\n\n" +
+							"Note: The browser console won't work - you need a plugin console for the figma.variables API."
 						);
 					}
 
@@ -347,37 +476,75 @@ export function registerFigmaAPITools(
 				const errorMessage =
 					error instanceof Error ? error.message : String(error);
 
-				// NEW: Handle 403 with console fallback snippet
-				if (errorMessage.includes("403") && useConsoleFallback) {
-					const snippet = snippetInjector.generateVariablesSnippet();
+				// FIXED: Jump directly to Styles API (fast) instead of full file data (slow)
+				if (errorMessage.includes("403")) {
+					try {
+						logger.info({ fileKey }, "Variables API requires Enterprise, falling back to Styles API");
 
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error: "Variables API requires Enterprise plan with file_variables:read scope",
-										fallback_available: true,
-										method: "console_capture",
-										instructions: [
-											"The Figma Variables API requires an Enterprise plan.",
-											"However, you can extract variables using console logs:",
-											"",
-											"Step 1: Open Figma and navigate to your file",
-											"Step 2: Open DevTools Console (Right-click → Inspect → Console tab)",
-											"Step 3: Paste and run the snippet below",
-											"Step 4: Call: figma_get_variables({ parseFromConsole: true })",
-										],
-										snippet: snippet,
-										note: "This snippet is safe - it only reads variables using Figma's Plugin API and logs them to the console.",
-									},
-									null,
-									2
-								),
+						const api = getFigmaAPI();
+						// Use the Styles API directly - much faster than getFile!
+						const stylesData = await api.getStyles(fileKey);
+
+						// Format the styles data similar to variables
+						const formattedStyles = {
+							summary: {
+								total_styles: stylesData.meta?.styles?.length || 0,
+								message: "Variables API requires Enterprise. Here are your design styles instead.",
+								note: "These are Figma Styles (not Variables). Styles are the traditional way to store design tokens in Figma."
 							},
-						],
-					};
+							styles: stylesData.meta?.styles || []
+						};
+
+						logger.info(
+							{ styleCount: formattedStyles.summary.total_styles },
+							"Successfully retrieved styles as fallback!"
+						);
+
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											fileKey,
+											source: "styles_api",
+											message: "Variables API requires an Enterprise plan. Retrieved your design system styles instead.",
+											data: formattedStyles,
+											fallback_method: true,
+										},
+										null,
+										2
+									),
+								},
+							],
+						};
+					} catch (styleError) {
+						logger.warn({ error: styleError }, "Style extraction failed");
+
+						// Return a simple error message without the console snippet
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											error: "Unable to extract variables or styles from this file",
+											message: "The Variables API requires an Enterprise plan, and the automatic style extraction encountered an error.",
+											possibleReasons: [
+												"The file may be private or require additional permissions",
+												"The file structure may not contain extractable styles",
+												"There may be a network or authentication issue"
+											],
+											suggestion: "Please ensure the file is accessible and try again, or check if your token has the necessary permissions.",
+											technical: styleError instanceof Error ? styleError.message : String(styleError)
+										},
+										null,
+										2
+									),
+								},
+							],
+						};
+					}
 				}
 
 				// Standard error response
