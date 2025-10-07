@@ -573,30 +573,130 @@ Returns logs captured during the watch period with real-time monitoring.
 
 ---
 
-### Figma Data Extraction Tools (8-11)
+### Figma Data Extraction Tools (8-14)
 
 > **Note:** These tools require a Figma access token. See [FIGMA_API_SETUP.md](docs/FIGMA_API_SETUP.md) for setup instructions.
 
 These tools use the Figma REST API to extract design data, variables, components, and styles directly from Figma files.
 
-#### `figma_get_file_data`
-Get file structure, components, and metadata with optional enrichment.
+#### **🎯 Specialized Tools for Specific Workflows**
+
+**For UI Component Development:**
+- Use `figma_get_component_for_development` - Get component with visual reference image + styling data
+- Use `figma_get_component_image` - Get just the component image for visual reference
+
+**For Plugin Development:**
+- Use `figma_get_file_for_plugin` - Get file structure with plugin data, IDs, relationships
+- Higher depth allowed (max 5) since visual bloat is filtered out
+
+**For General Use:**
+- Use `figma_get_file_data` - Flexible general-purpose tool with verbosity control
+
+---
+
+#### `figma_get_component_for_development`
+**🎨 Optimized for UI Component Implementation**
+
+Get complete component data for building UI components, with automatic visual reference image.
 
 ```javascript
-figma_get_file_data({
+figma_get_component_for_development({
   fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
-  depth: 2,           // How many levels of children to include (default: 1)
-  nodeIds: ['123:456', '123:789'],  // Optional: specific nodes only
-  enrich: true        // Optional: Add statistics, health metrics, audit summaries (default: false)
+  nodeId: '695:313',      // Component node ID (from URL: ?node-id=695-313)
+  includeImage: true      // Include rendered image for visual reference (default: true)
 })
 ```
 
 **Returns:**
+- **Visual Reference:** Rendered PNG image (2x scale) displayed directly to AI
+- **Layout Properties:** Bounds, constraints, auto-layout (padding, spacing, alignment)
+- **Visual Styling:** Fills, strokes, effects, opacity, corner radius, blend modes
+- **Typography:** Font styles, character data, text formatting
+- **Component System:** Properties, variants, definitions
+- **Hierarchy:** Complete children structure
+
+**Excludes:** Plugin data, document-level bloat
+
+**Use Case:** When AI needs to implement a component like tooltip, button, card, etc. Provides everything needed to recreate the visual appearance accurately.
+
+---
+
+#### `figma_get_file_for_plugin`
+**🔌 Optimized for Plugin Development**
+
+Get file structure focused on plugin-relevant data with minimal visual bloat.
+
+```javascript
+figma_get_file_for_plugin({
+  fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
+  depth: 3,              // Levels of children to include (default: 2, max: 5)
+  nodeIds: ['123:456']   // Optional: specific nodes only
+})
+```
+
+**Returns:**
+- **Navigation:** IDs, names, types, children hierarchy
+- **Plugin Data:** pluginData, sharedPluginData (CRITICAL for plugins)
+- **Component Relationships:** componentId, mainComponent, instanceOf
+- **Structure:** visible, locked, lightweight bounds (x, y, width, height)
+- **Text Content:** characters for text nodes
+
+**Excludes:** Detailed visual properties, full style definitions
+
+**Use Case:** When building Figma plugins that need to traverse, query, or manipulate the document. Higher depth allowed since visual bloat is filtered out.
+
+---
+
+#### `figma_get_component_image`
+**📸 Just the Image**
+
+Get only the rendered component image for quick visual reference.
+
+```javascript
+figma_get_component_image({
+  fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
+  nodeId: '695:313',  // Component node ID
+  scale: 2,          // Image scale (0.01-4, default: 2)
+  format: 'png'      // 'png', 'jpg', 'svg', 'pdf' (default: png)
+})
+```
+
+**Returns:**
+- Image URL (expires in 30 days)
+- Metadata (fileKey, nodeId, scale, format)
+
+**Use Case:** Quick visual reference without component data overhead.
+
+---
+
+#### `figma_get_file_data`
+**⚙️ General Purpose with Verbosity Control**
+
+Get file structure with flexible verbosity levels for different needs.
+
+```javascript
+figma_get_file_data({
+  fileUrl: 'https://www.figma.com/design/abc123/My-File',  // Optional if already navigated
+  depth: 2,           // Levels of children (default: 1, max: 3 to prevent context exhaustion)
+  verbosity: 'standard',  // 'summary', 'standard', 'full' (default: 'standard')
+  nodeIds: ['123:456'],   // Optional: specific nodes only
+  enrich: true        // Optional: Add statistics, health metrics (default: false)
+})
+```
+
+**Verbosity Levels:**
+- **`summary`** (~90% smaller): IDs, names, types only - good for exploration
+- **`standard`** (~50% smaller): Essential properties for plugins - good for most use cases
+- **`full`** (no reduction): Everything - use sparingly to avoid context exhaustion
+
+**Returns:**
 - File name, version, last modified date
-- Complete document tree structure
+- Document tree (filtered by verbosity level)
 - Component and style counts
 - Node metadata (if nodeIds specified)
 - **When enriched:** File statistics, health scores, design system audit results
+
+**Use Case:** When specialized tools don't fit your needs, or you need custom verbosity control.
 
 #### `figma_get_variables`
 Get design tokens and variables from Figma with optional enrichment and console fallback.

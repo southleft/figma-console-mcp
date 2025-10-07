@@ -173,6 +173,54 @@ export class FigmaAPI {
     return this.request(`/files/${fileKey}/component_sets`);
   }
 
+	/**
+	 * GET /v1/images/:file_key
+	 * Renders images for specified nodes
+	 * @param fileKey - The file key
+	 * @param nodeIds - Node IDs to render (single string or array)
+	 * @param options - Rendering options
+	 * @returns Map of node IDs to image URLs (URLs expire after 30 days)
+	 */
+	async getImages(
+		fileKey: string,
+		nodeIds: string | string[],
+		options?: {
+			scale?: number; // 0.01-4, default 1
+			format?: 'png' | 'jpg' | 'svg' | 'pdf'; // default png
+			svg_outline_text?: boolean; // default true
+			svg_include_id?: boolean; // default false
+			svg_include_node_id?: boolean; // default false
+			svg_simplify_stroke?: boolean; // default true
+			contents_only?: boolean; // default true
+		}
+	): Promise<{ images: Record<string, string | null> }> {
+		const params = new URLSearchParams();
+		
+		// Handle single or multiple node IDs
+		const ids = Array.isArray(nodeIds) ? nodeIds.join(',') : nodeIds;
+		params.append('ids', ids);
+		
+		// Add optional parameters
+		if (options?.scale !== undefined) params.append('scale', options.scale.toString());
+		if (options?.format) params.append('format', options.format);
+		if (options?.svg_outline_text !== undefined) 
+			params.append('svg_outline_text', options.svg_outline_text.toString());
+		if (options?.svg_include_id !== undefined) 
+			params.append('svg_include_id', options.svg_include_id.toString());
+		if (options?.svg_include_node_id !== undefined) 
+			params.append('svg_include_node_id', options.svg_include_node_id.toString());
+		if (options?.svg_simplify_stroke !== undefined) 
+			params.append('svg_simplify_stroke', options.svg_simplify_stroke.toString());
+		if (options?.contents_only !== undefined) 
+			params.append('contents_only', options.contents_only.toString());
+		
+		const endpoint = `/images/${fileKey}?${params.toString()}`;
+		
+		logger.info({ fileKey, ids, options }, 'Rendering images');
+		
+		return this.request(endpoint);
+	}
+
   /**
    * Helper: Get all design tokens (variables) with formatted output
    */

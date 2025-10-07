@@ -31,7 +31,10 @@ export function registerFigmaAPITools(
 	getConsoleMonitor?: () => ConsoleMonitor | null,
 	getBrowserManager?: () => any
 ) {
-	// Tool 8: Get File Data
+	// Tool 8: Get File Data (General Purpose)
+	// NOTE: For specific use cases, consider using specialized tools:
+	// - figma_get_component_for_development: For UI component implementation
+	// - figma_get_file_for_plugin: For plugin development
 	server.tool(
 		"figma_get_file_data",
 		{
@@ -45,9 +48,17 @@ export function registerFigmaAPITools(
 			depth: z
 				.number()
 				.min(0)
+				.max(3)
 				.optional()
 				.describe(
-					"How many levels of children to include (default: 1, use 0 for full tree)"
+					"How many levels of children to include (default: 1, max: 3 to prevent context exhaustion). Use 0 for full tree only when absolutely necessary."
+				),
+			verbosity: z
+				.enum(["summary", "standard", "full"])
+				.optional()
+				.default("standard")
+				.describe(
+					"Controls payload size: 'summary' (IDs/names/types only, ~90% smaller), 'standard' (essential properties for plugins, ~50% smaller), 'full' (everything). Default: standard"
 				),
 			nodeIds: z
 				.array(z.string())
@@ -60,7 +71,7 @@ export function registerFigmaAPITools(
 					"Set to true when user asks for: file statistics, health metrics, design system audit, or quality analysis. Adds statistics, health scores, and audit summaries. Default: false"
 				),
 		},
-		async ({ fileUrl, depth, nodeIds, enrich }) => {
+		async ({ fileUrl, depth, nodeIds, enrich, verbosity }) => {
 			try {
 				const api = getFigmaAPI();
 
@@ -77,25 +88,89 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, depth, nodeIds, enrich }, "Fetching file data");
+				logger.info({ fileKey, depth, nodeIds, enrich, verbosity }, "Fetching file data");
 
 				const fileData = await api.getFile(fileKey, {
 					depth,
 					ids: nodeIds,
 				});
 
+				// Apply verbosity filtering to reduce payload size
+				const filterNode = (node: any, level: "summary" | "standard" | "full"): any => {
+					if (!node) return node;
+
+					if (level === "summary") {
+						// Summary: Only IDs, names, types (~90% reduction)
+						return {
+							id: node.id,
+							name: node.name,
+							type: node.type,
+							...(node.children && {
+								children: node.children.map((child: any) => filterNode(child, level))
+							}),
+						};
+					}
+
+					if (level === "standard") {
+						// Standard: Essential properties for plugin development (~50% reduction)
+						const filtered: any = {
+							id: node.id,
+							name: node.name,
+							type: node.type,
+							visible: node.visible,
+							locked: node.locked,
+						};
+
+						// Include bounds for layout calculations
+						if (node.absoluteBoundingBox) filtered.absoluteBoundingBox = node.absoluteBoundingBox;
+						if (node.size) filtered.size = node.size;
+
+						// Include component/instance info for plugin work
+						if (node.componentId) filtered.componentId = node.componentId;
+						if (node.componentPropertyReferences) filtered.componentPropertyReferences = node.componentPropertyReferences;
+
+						// Include basic styling (but not full details)
+						if (node.fills && node.fills.length > 0) {
+							filtered.fills = node.fills.map((fill: any) => ({
+								type: fill.type,
+								visible: fill.visible,
+								...(fill.color && { color: fill.color }),
+							}));
+						}
+
+						// Include plugin data if present
+						if (node.pluginData) filtered.pluginData = node.pluginData;
+						if (node.sharedPluginData) filtered.sharedPluginData = node.sharedPluginData;
+
+						// Recursively filter children
+						if (node.children) {
+							filtered.children = node.children.map((child: any) => filterNode(child, level));
+						}
+
+						return filtered;
+					}
+
+					// Full: Return everything
+					return node;
+				};
+
+				const filteredDocument = verbosity !== "full"
+					? filterNode(fileData.document, verbosity || "standard")
+					: fileData.document;
+
 				let response: any = {
 					fileKey,
 					name: fileData.name,
 					lastModified: fileData.lastModified,
 					version: fileData.version,
-					document: fileData.document,
+					document: filteredDocument,
 					components: fileData.components
 						? Object.keys(fileData.components).length
 						: 0,
 					styles: fileData.styles
 						? Object.keys(fileData.styles).length
 						: 0,
+					verbosity: verbosity || "standard",
 					...(nodeIds && {
 						requestedNodes: nodeIds,
 						nodes: fileData.nodes,
@@ -778,6 +853,459 @@ export function registerFigmaAPITools(
 								{
 									error: errorMessage,
 									message: "Failed to retrieve styles",
+								},
+								null,
+								2
+							),
+						},
+					],
+					isError: true,
+				};
+			}
+		}
+	);
+
+	// Tool 12: Get Component Image (Visual Reference)
+	server.tool(
+		"figma_get_component_image",
+		{
+			fileUrl: z
+				.string()
+				.url()
+				.optional()
+				.describe(
+					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
+				),
+			nodeId: z
+				.string()
+				.describe("Component node ID to render as image (e.g., '695:313')"),
+			scale: z
+				.number()
+				.min(0.01)
+				.max(4)
+				.optional()
+				.default(2)
+				.describe("Image scale factor (0.01-4, default: 2 for high quality)"),
+			format: z
+				.enum(["png", "jpg", "svg", "pdf"])
+				.optional()
+				.default("png")
+				.describe("Image format (default: png)"),
+		},
+		async ({ fileUrl, nodeId, scale, format }) => {
+			try {
+				const api = getFigmaAPI();
+
+				const url = fileUrl || getCurrentUrl();
+				if (!url) {
+					throw new Error(
+						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
+					);
+				}
+
+				const fileKey = extractFileKey(url);
+				if (!fileKey) {
+					throw new Error(`Invalid Figma URL: ${url}`);
+				}
+
+				logger.info({ fileKey, nodeId, scale, format }, "Rendering component image");
+
+				// Call the new getImages method
+				const result = await api.getImages(fileKey, nodeId, {
+					scale,
+					format,
+					contents_only: true,
+				});
+
+				const imageUrl = result.images[nodeId];
+
+				if (!imageUrl) {
+					throw new Error(
+						`Failed to render image for node ${nodeId}. The node may not exist or may not be renderable.`
+					);
+				}
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(
+								{
+									fileKey,
+									nodeId,
+									imageUrl,
+									scale,
+									format,
+									expiresIn: "30 days",
+									note: "Use this image as visual reference for component development. Image URLs expire after 30 days.",
+								},
+								null,
+								2
+							),
+						},
+					],
+				};
+			} catch (error) {
+				logger.error({ error }, "Failed to render component image");
+				const errorMessage =
+					error instanceof Error ? error.message : String(error);
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(
+								{
+									error: errorMessage,
+									message: "Failed to render component image",
+									hint: "Make sure the node ID is correct and the component is renderable",
+								},
+								null,
+								2
+							),
+						},
+					],
+					isError: true,
+				};
+			}
+		}
+	);
+
+	// Tool 13: Get Component for Development (UI Implementation)
+	server.tool(
+		"figma_get_component_for_development",
+		{
+			fileUrl: z
+				.string()
+				.url()
+				.optional()
+				.describe(
+					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called."
+				),
+			nodeId: z
+				.string()
+				.describe("Component node ID to get data for (e.g., '695:313')"),
+			includeImage: z
+				.boolean()
+				.optional()
+				.default(true)
+				.describe("Include rendered image for visual reference (default: true)"),
+		},
+		async ({ fileUrl, nodeId, includeImage }) => {
+			try {
+				const api = getFigmaAPI();
+
+				const url = fileUrl || getCurrentUrl();
+				if (!url) {
+					throw new Error(
+						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
+					);
+				}
+
+				const fileKey = extractFileKey(url);
+				if (!fileKey) {
+					throw new Error(`Invalid Figma URL: ${url}`);
+				}
+
+				logger.info({ fileKey, nodeId, includeImage }, "Fetching component for development");
+
+				// Get node data with depth for children
+				const nodeData = await api.getNodes(fileKey, [nodeId], { depth: 2 });
+				const node = nodeData.nodes?.[nodeId]?.document;
+
+				if (!node) {
+					throw new Error(`Component not found: ${nodeId}`);
+				}
+
+				// Filter to visual/layout properties only
+				const filterForDevelopment = (n: any): any => {
+					if (!n) return n;
+
+					const result: any = {
+						id: n.id,
+						name: n.name,
+						type: n.type,
+					};
+
+					// Layout & positioning
+					if (n.absoluteBoundingBox) result.absoluteBoundingBox = n.absoluteBoundingBox;
+					if (n.relativeTransform) result.relativeTransform = n.relativeTransform;
+					if (n.size) result.size = n.size;
+					if (n.constraints) result.constraints = n.constraints;
+					if (n.layoutAlign) result.layoutAlign = n.layoutAlign;
+					if (n.layoutGrow) result.layoutGrow = n.layoutGrow;
+					if (n.layoutPositioning) result.layoutPositioning = n.layoutPositioning;
+
+					// Auto-layout
+					if (n.layoutMode) result.layoutMode = n.layoutMode;
+					if (n.primaryAxisSizingMode) result.primaryAxisSizingMode = n.primaryAxisSizingMode;
+					if (n.counterAxisSizingMode) result.counterAxisSizingMode = n.counterAxisSizingMode;
+					if (n.primaryAxisAlignItems) result.primaryAxisAlignItems = n.primaryAxisAlignItems;
+					if (n.counterAxisAlignItems) result.counterAxisAlignItems = n.counterAxisAlignItems;
+					if (n.paddingLeft !== undefined) result.paddingLeft = n.paddingLeft;
+					if (n.paddingRight !== undefined) result.paddingRight = n.paddingRight;
+					if (n.paddingTop !== undefined) result.paddingTop = n.paddingTop;
+					if (n.paddingBottom !== undefined) result.paddingBottom = n.paddingBottom;
+					if (n.itemSpacing !== undefined) result.itemSpacing = n.itemSpacing;
+					if (n.itemReverseZIndex) result.itemReverseZIndex = n.itemReverseZIndex;
+					if (n.strokesIncludedInLayout) result.strokesIncludedInLayout = n.strokesIncludedInLayout;
+
+					// Visual properties
+					if (n.fills) result.fills = n.fills;
+					if (n.strokes) result.strokes = n.strokes;
+					if (n.strokeWeight !== undefined) result.strokeWeight = n.strokeWeight;
+					if (n.strokeAlign) result.strokeAlign = n.strokeAlign;
+					if (n.strokeCap) result.strokeCap = n.strokeCap;
+					if (n.strokeJoin) result.strokeJoin = n.strokeJoin;
+					if (n.dashPattern) result.dashPattern = n.dashPattern;
+					if (n.cornerRadius !== undefined) result.cornerRadius = n.cornerRadius;
+					if (n.rectangleCornerRadii) result.rectangleCornerRadii = n.rectangleCornerRadii;
+					if (n.effects) result.effects = n.effects;
+					if (n.opacity !== undefined) result.opacity = n.opacity;
+					if (n.blendMode) result.blendMode = n.blendMode;
+					if (n.isMask) result.isMask = n.isMask;
+					if (n.clipsContent) result.clipsContent = n.clipsContent;
+
+					// Typography
+					if (n.characters) result.characters = n.characters;
+					if (n.style) result.style = n.style;
+					if (n.characterStyleOverrides) result.characterStyleOverrides = n.characterStyleOverrides;
+					if (n.styleOverrideTable) result.styleOverrideTable = n.styleOverrideTable;
+
+					// Component properties & variants
+					if (n.componentProperties) result.componentProperties = n.componentProperties;
+					if (n.componentPropertyDefinitions) result.componentPropertyDefinitions = n.componentPropertyDefinitions;
+					if (n.variantProperties) result.variantProperties = n.variantProperties;
+					if (n.componentId) result.componentId = n.componentId;
+
+					// State
+					if (n.visible !== undefined) result.visible = n.visible;
+					if (n.locked) result.locked = n.locked;
+
+					// Recursively process children
+					if (n.children) {
+						result.children = n.children.map((child: any) => filterForDevelopment(child));
+					}
+
+					return result;
+				};
+
+				const componentData = filterForDevelopment(node);
+
+				// Get image if requested
+				let imageUrl = null;
+				if (includeImage) {
+					try {
+						const imageResult = await api.getImages(fileKey, nodeId, {
+							scale: 2,
+							format: "png",
+							contents_only: true,
+						});
+						imageUrl = imageResult.images[nodeId];
+					} catch (error) {
+						logger.warn({ error }, "Failed to render component image, continuing without it");
+					}
+				}
+
+				// Build response content with image (if available) + data
+				const content: any[] = [];
+
+				// Add image as visual content if we got one
+				if (imageUrl) {
+					content.push({
+						type: "image",
+						data: imageUrl,
+						mimeType: "image/png",
+					});
+				}
+
+				// Add component data as text
+				content.push({
+					type: "text",
+					text: JSON.stringify(
+						{
+							fileKey,
+							nodeId,
+							imageUrl,
+							component: componentData,
+							metadata: {
+								purpose: "component_development",
+								note: "Optimized for UI implementation. Image shown above, full component data below.",
+							},
+						},
+						null,
+						2
+					),
+				});
+
+				return { content };
+			} catch (error) {
+				logger.error({ error }, "Failed to get component for development");
+				const errorMessage =
+					error instanceof Error ? error.message : String(error);
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(
+								{
+									error: errorMessage,
+									message: "Failed to retrieve component development data",
+								},
+								null,
+								2
+							),
+						},
+					],
+					isError: true,
+				};
+			}
+		}
+	);
+
+	// Tool 14: Get File for Plugin Development
+	server.tool(
+		"figma_get_file_for_plugin",
+		{
+			fileUrl: z
+				.string()
+				.url()
+				.optional()
+				.describe(
+					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called."
+				),
+			depth: z
+				.number()
+				.min(0)
+				.max(5)
+				.optional()
+				.default(2)
+				.describe(
+					"How many levels of children to include (default: 2, max: 5). Higher depths are safe here due to filtering."
+				),
+			nodeIds: z
+				.array(z.string())
+				.optional()
+				.describe("Specific node IDs to retrieve (optional)"),
+		},
+		async ({ fileUrl, depth, nodeIds }) => {
+			try {
+				const api = getFigmaAPI();
+
+				const url = fileUrl || getCurrentUrl();
+				if (!url) {
+					throw new Error(
+						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
+					);
+				}
+
+				const fileKey = extractFileKey(url);
+				if (!fileKey) {
+					throw new Error(`Invalid Figma URL: ${url}`);
+				}
+
+				logger.info({ fileKey, depth, nodeIds }, "Fetching file data for plugin development");
+
+				const fileData = await api.getFile(fileKey, {
+					depth,
+					ids: nodeIds,
+				});
+
+				// Filter to plugin-relevant properties only
+				const filterForPlugin = (node: any): any => {
+					if (!node) return node;
+
+					const result: any = {
+						id: node.id,
+						name: node.name,
+						type: node.type,
+					};
+
+					// Navigation & structure
+					if (node.visible !== undefined) result.visible = node.visible;
+					if (node.locked) result.locked = node.locked;
+					if (node.removed) result.removed = node.removed;
+
+					// Lightweight bounds (just position/size)
+					if (node.absoluteBoundingBox) {
+						result.bounds = {
+							x: node.absoluteBoundingBox.x,
+							y: node.absoluteBoundingBox.y,
+							width: node.absoluteBoundingBox.width,
+							height: node.absoluteBoundingBox.height,
+						};
+					}
+
+					// Plugin data (CRITICAL for plugins)
+					if (node.pluginData) result.pluginData = node.pluginData;
+					if (node.sharedPluginData) result.sharedPluginData = node.sharedPluginData;
+
+					// Component relationships (important for plugins)
+					if (node.componentId) result.componentId = node.componentId;
+					if (node.mainComponent) result.mainComponent = node.mainComponent;
+					if (node.componentPropertyReferences) result.componentPropertyReferences = node.componentPropertyReferences;
+					if (node.instanceOf) result.instanceOf = node.instanceOf;
+					if (node.exposedInstances) result.exposedInstances = node.exposedInstances;
+
+					// Component properties (for manipulation)
+					if (node.componentProperties) result.componentProperties = node.componentProperties;
+
+					// Characters for text nodes (plugins often need this)
+					if (node.characters !== undefined) result.characters = node.characters;
+
+					// Recursively process children
+					if (node.children) {
+						result.children = node.children.map((child: any) => filterForPlugin(child));
+					}
+
+					return result;
+				};
+
+				const filteredDocument = filterForPlugin(fileData.document);
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(
+								{
+									fileKey,
+									name: fileData.name,
+									lastModified: fileData.lastModified,
+									version: fileData.version,
+									document: filteredDocument,
+									components: fileData.components
+										? Object.keys(fileData.components).length
+										: 0,
+									styles: fileData.styles
+										? Object.keys(fileData.styles).length
+										: 0,
+									...(nodeIds && {
+										requestedNodes: nodeIds,
+										nodes: fileData.nodes,
+									}),
+									metadata: {
+										purpose: "plugin_development",
+										note: "Optimized for plugin development. Contains IDs, structure, plugin data, and component relationships.",
+									},
+								},
+								null,
+								2
+							),
+						},
+					],
+				};
+			} catch (error) {
+				logger.error({ error }, "Failed to get file for plugin");
+				const errorMessage =
+					error instanceof Error ? error.message : String(error);
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(
+								{
+									error: errorMessage,
+									message: "Failed to retrieve file data for plugin development",
 								},
 								null,
 								2
