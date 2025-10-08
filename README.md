@@ -257,7 +257,12 @@ The same pattern applies - add an `env` object with `FIGMA_ACCESS_TOKEN`:
 In your AI assistant, try:
 
 ```
-Navigate to https://www.figma.com and check the status
+Navigate to [your Figma file URL] and check the status
+```
+
+**Example:**
+```
+Navigate to https://figma.com/design/abc123/My-Design and check the status
 ```
 
 You should see:
@@ -265,17 +270,22 @@ You should see:
 - Console monitoring active
 - All 14 tools available
 
-If you added your Figma token, also try:
+**If you added your Figma token**, also try:
 
 ```
-Get design variables from [your Figma file URL]
+Get design variables from https://figma.com/design/abc123
+```
+
+**Don't have a Figma file?** Try the basic test:
+```
+Navigate to https://www.figma.com and check the status
 ```
 
 ---
 
 ## Available Tools
 
-All 14 tools work identically in both cloud and local modes:
+All 14 tools work identically in both cloud and local modes.
 
 ### Quick Reference
 
@@ -296,73 +306,19 @@ All 14 tools work identically in both cloud and local modes:
 | | `figma_get_file_data` | File structure with verbosity control |
 | | `figma_get_file_for_plugin` | File data optimized for plugins |
 
-### Tool Categories
-
-#### 🧭 Navigation Tools
-- **figma_navigate** - Navigate to any Figma URL (always use this first)
-- **figma_get_status** - Check connection and monitoring status
-
-#### 📋 Console Tools (Plugin Debugging)
-- **figma_get_console_logs** - Get recent logs with filters (level, count, since)
-- **figma_watch_console** - Live stream logs for X seconds
-- **figma_clear_console** - Clear the log buffer
-
-#### 🔍 Debugging Tools
-- **figma_take_screenshot** - Capture screenshots (plugin UI, full page, or viewport)
-- **figma_reload_plugin** - Reload the current page
-
-#### 🎨 Design System Tools (Requires FIGMA_ACCESS_TOKEN)
-- **figma_get_variables** - Extract design tokens/variables with optional CSS/Tailwind exports
-- **figma_get_styles** - Get all styles (color, text, effects) with code exports
-- **figma_get_component** - Get component metadata and properties
-- **figma_get_component_for_development** - Component data + rendered image (for UI implementation)
-- **figma_get_component_image** - Just render a component as an image
-- **figma_get_file_data** - Full file structure with verbosity control (summary/standard/full)
-- **figma_get_file_for_plugin** - File structure optimized for plugin development (IDs, plugin data, relationships)
+> **📖 For detailed API documentation, parameters, and examples:** See [docs/TOOLS.md](docs/TOOLS.md)
 
 ---
 
 ## Use Cases
 
-### Plugin Development & Debugging
+**Common scenarios:**
+- 🐛 **Plugin Development** - Debug console errors, monitor execution, capture stack traces
+- 🎨 **Design System Extraction** - Pull variables, styles, and components as structured data
+- 🔧 **Component Implementation** - Get specs + visual references for UI development
+- 📸 **Visual Debugging** - Capture screenshots for documentation or troubleshooting
 
-**Scenario:** You're developing a Figma plugin and need to debug console errors.
-
-```
-"Navigate to my Figma file at https://figma.com/design/abc123 and watch console logs for 30 seconds while I test my plugin"
-```
-
-The AI will:
-1. Navigate to your file
-2. Start monitoring console logs
-3. Capture any errors, warnings, or log statements
-4. Report back with timestamped logs
-
-### Design System Extraction
-
-**Scenario:** You need to extract design tokens from your Figma design system.
-
-```
-"Get all design variables from https://figma.com/design/abc123 and export them as CSS custom properties"
-```
-
-The AI will:
-1. Extract all variables using the Figma API
-2. Format them as CSS custom properties
-3. Provide organized, ready-to-use CSS code
-
-### Component Implementation
-
-**Scenario:** You need to implement a Tooltip component from Figma.
-
-```
-"Get the Tooltip component from https://figma.com/design/abc123?node-id=695-313 and help me implement it in React"
-```
-
-The AI will:
-1. Fetch component data with visual reference image
-2. Extract layout, styling, and property information
-3. Help you implement it with accurate spacing, colors, and behavior
+> **📖 For detailed scenarios, workflows, and prompt examples:** See [docs/USE_CASES.md](docs/USE_CASES.md)
 
 ---
 
@@ -418,9 +374,6 @@ See [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) for installation.
 
 Want to deploy your own instance on Cloudflare Workers?
 
-<details>
-<summary><b>Deploy Your Own Instance</b></summary>
-
 [![Deploy to Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/southleft/figma-console-mcp)
 
 Or via CLI:
@@ -428,36 +381,10 @@ Or via CLI:
 ```bash
 git clone https://github.com/southleft/figma-console-mcp.git
 cd figma-console-mcp
-npm install
-npm run deploy
+npm install && npm run deploy
 ```
 
-**Requirements:**
-- Cloudflare account (free or paid)
-- Wrangler CLI (installed via `npm install`)
-- Browser Rendering API enabled (free tier: 10 min/day)
-
-**Set your Figma token:**
-
-```bash
-npx wrangler secret put FIGMA_ACCESS_TOKEN
-# Paste your token when prompted
-```
-
-**Update your MCP client config:**
-
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://your-worker-name.your-subdomain.workers.dev/sse"]
-    }
-  }
-}
-```
-
-</details>
+> **📖 For complete deployment guide, custom domains, monitoring, and costs:** See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)
 
 ---
 
@@ -507,33 +434,17 @@ npm test:watch
 
 ## Troubleshooting
 
-### "FIGMA_ACCESS_TOKEN not configured"
+**Quick fixes:**
 
-This error appears when using design system tools (`figma_get_variables`, `figma_get_component`, etc.) without setting your Figma access token.
+| Problem | Solution |
+|---------|----------|
+| "FIGMA_ACCESS_TOKEN not configured" | Add token to MCP config ([Step 2](#step-2-add-your-figma-access-token-for-design-system-tools)) |
+| "Failed to connect to browser" | Wait 10-30s (cloud mode cold start) or check [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md#troubleshooting) |
+| Console tools work, design tools don't | You need to add FIGMA_ACCESS_TOKEN |
+| Variables API 403 error | Enterprise plan required - MCP auto-falls back to Styles |
+| Tools are slow | Normal for cloud mode first request (10-30s), then faster |
 
-**Solution:** Add your token to your MCP client config (see [Step 2](#step-2-add-your-figma-access-token-for-design-system-tools))
-
-### "Failed to connect to browser"
-
-**Cloud mode:** This is usually temporary. The Cloudflare Browser Rendering API may be initializing. Try again in a few seconds.
-
-**Local mode:** See [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md#troubleshooting)
-
-### Console tools work but design tools don't
-
-You have the MCP connected, but haven't added your `FIGMA_ACCESS_TOKEN`.
-
-**Solution:** Add your token to the `env` section of your MCP config (see [Step 2](#step-2-add-your-figma-access-token-for-design-system-tools))
-
-### Variables API returns 403 error
-
-The Figma Variables API requires an Enterprise plan. The MCP will automatically fall back to Styles API or provide alternative extraction methods.
-
-### Tools are slow in cloud mode
-
-Cloud mode uses Cloudflare Browser Rendering API, which may have a cold start delay. After the first request, subsequent requests are typically faster.
-
-For plugin development workflows that need instant feedback, consider [Local Mode](LOCAL_MODE_SETUP.md).
+> **📖 For complete troubleshooting guide with detailed solutions:** See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
 ---
 
