@@ -65,7 +65,57 @@ This ensures plugin code runs in a monitored environment where console logs can 
 
 ### Step 4: Configure Your MCP Client
 
-**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+<details>
+<summary><b>Claude Code</b></summary>
+
+**One-line install:**
+
+```bash
+claude mcp add figma-console --env FIGMA_ACCESS_TOKEN=figd_your_token_here -- node /path/to/figma-console-mcp/dist/local.js
+```
+
+**Important:**
+- Replace `/path/to/figma-console-mcp` with your actual path to the cloned repository
+- Replace `figd_your_token_here` with your actual Figma access token
+
+**Verify:**
+```bash
+claude mcp list
+```
+
+Should show `figma-console: connected`
+
+**Optional environment variables:**
+
+If you need to customize the debug port or host:
+
+```bash
+claude config edit
+```
+
+Add to the `figma-console` entry:
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "node",
+      "args": ["/path/to/figma-console-mcp/dist/local.js"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_your_token_here",
+        "FIGMA_DEBUG_PORT": "9222",
+        "FIGMA_DEBUG_HOST": "localhost"
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Claude Desktop</b></summary>
+
+**Location:** `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
 
 ```json
 {
@@ -87,7 +137,28 @@ This ensures plugin code runs in a monitored environment where console logs can 
 - Replace `/absolute/path/to/figma-console-mcp` with your actual path!
 - Replace `figd_your_token_here` with your actual Figma access token
 
-**Other MCP clients:** Use the same configuration, but check your client's specific MCP configuration location.
+</details>
+
+<details>
+<summary><b>Other MCP Clients</b></summary>
+
+Use the same configuration pattern:
+
+```json
+{
+  "command": "node",
+  "args": ["/absolute/path/to/figma-console-mcp/dist/local.js"],
+  "env": {
+    "FIGMA_ACCESS_TOKEN": "figd_your_token_here",
+    "FIGMA_DEBUG_PORT": "9222",
+    "FIGMA_DEBUG_HOST": "localhost"
+  }
+}
+```
+
+Consult your MCP client's documentation for the specific configuration file location.
+
+</details>
 
 ### Step 5: Test Connection
 

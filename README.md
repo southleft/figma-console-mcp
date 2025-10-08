@@ -121,9 +121,9 @@ Both MCPs can help with **component development**. Console MCP provides design s
 
 ## Installation
 
-Choose **Cloud Mode** (recommended) or **Local Mode** (for plugin development):
+Choose **Cloud Mode** or **Local Mode** (for plugin development):
 
-### Cloud Mode (Recommended)
+### Cloud Mode
 
 Zero-setup remote access. Works with all AI clients.
 
