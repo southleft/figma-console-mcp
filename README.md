@@ -3,7 +3,7 @@
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Model Context Protocol server** that provides AI assistants with **real-time console access, visual debugging, and design system extraction** for Figma files and plugins.
+> **Model Context Protocol server** that provides AI assistants with **real-time console access, visual debugging, design system auditing, and data extraction** for Figma files and plugins.
 
 ## Overview
 
@@ -12,6 +12,7 @@ Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/
 - **🐛 Plugin debugging** - Capture console logs, errors, and stack traces from Figma plugins
 - **📸 Visual debugging** - Take screenshots of Figma UI for context
 - **🎨 Design system extraction** - Pull variables, components, styles, and file data
+- **🔍 Design system auditing** - AI-powered quality checks, token coverage analysis, compliance reporting
 - **⚡ Live monitoring** - Watch console logs in real-time as plugins execute
 - **Zero-friction debugging** workflow (no copy-paste needed)
 - **Dual deployment modes** - Local (for plugin development) or Cloud (for remote collaboration)
@@ -35,6 +36,12 @@ Once connected, try these prompts with your AI assistant:
 - "Extract color styles and show me the CSS exports"
 - "Get the Button component data with a visual reference image"
 
+### 🔍 Design System Auditing (NEW!)
+- "Scan my design system file and give me a complete audit report"
+- "Which components use hardcoded colors instead of design tokens?"
+- "Show me variables that aren't being used anywhere"
+- "Analyze my design system for naming consistency and compliance issues"
+
 ### 🔄 Combined Workflows
 - "Navigate to my design system file and extract all variables"
 - "Get the Tooltip component and help me implement it in React"
@@ -47,11 +54,13 @@ Once connected, try these prompts with your AI assistant:
 
 Both MCPs connect AI assistants to Figma, but serve different purposes:
 
-**Figma Console MCP (This Project)** - Debugging & data extraction
+**Figma Console MCP (This Project)** - Debugging, auditing & data extraction
 - ✅ Real-time console logs from Figma plugins
 - ✅ Screenshot capture and visual debugging
 - ✅ Error stack traces and runtime state
 - ✅ Raw design data extraction (JSON)
+- ✅ AI-powered design system auditing (like ESLint for Figma)
+- ✅ Token coverage analysis and compliance reporting
 - ✅ Works remotely via cloud or locally via Figma Desktop
 - ✅ Component images for visual reference
 
@@ -69,15 +78,17 @@ Both MCPs can help with **component development**. Console MCP provides design s
 
 **Use Figma Console MCP** when:
 - Debugging Figma plugins (console logs, errors, runtime monitoring)
+- Auditing design systems (token coverage, compliance, quality checks)
 - Extracting design system data as JSON (variables, components, styles)
 - You need visual debugging with screenshots
 - Investigating runtime errors with stack traces
+- Generating design system quality reports
 
 **Use Figma Official MCP** when:
 - Converting Figma designs into React/HTML code
 - You want generated Tailwind classes and component boilerplate
 
-**Use both together** for the complete workflow: generate code with Official MCP, then debug and refine with Console MCP.
+**Use both together** for the complete workflow: generate code with Official MCP, then audit, debug and refine with Console MCP.
 
 ---
 
@@ -314,6 +325,7 @@ All 14 tools work identically in both cloud and local modes.
 
 **Common scenarios:**
 - 🐛 **Plugin Development** - Debug console errors, monitor execution, capture stack traces
+- 🔍 **Design System Auditing** - AI-powered quality checks, token coverage analysis, compliance reporting (like ESLint for Figma)
 - 🎨 **Design System Extraction** - Pull variables, styles, and components as structured data
 - 🔧 **Component Implementation** - Get specs + visual references for UI development
 - 📸 **Visual Debugging** - Capture screenshots for documentation or troubleshooting
