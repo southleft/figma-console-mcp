@@ -121,44 +121,44 @@ Both MCPs can help with **component development**. Console MCP provides design s
 
 ## Installation
 
-### Step 1: Connect to Figma Console MCP
+Choose **Cloud Mode** (recommended) or **Local Mode** (for plugin development):
 
-Add this configuration to your AI client:
+### Cloud Mode (Recommended)
 
-<details>
-<summary><b>Claude Desktop</b></summary>
-
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
-    }
-  }
-}
-```
-
-**After editing:**
-1. Save the file
-2. Quit Claude Desktop completely
-3. Restart Claude Desktop
-4. Look for "🔌" indicator showing MCP servers connected
-5. All 14 Figma tools should be available
-
-</details>
+Zero-setup remote access. Works with all AI clients.
 
 <details>
-<summary><b>Claude Code (VS Code Extension)</b></summary>
+<summary><b>Claude Code</b></summary>
 
 **One-line install:**
 
 ```bash
 claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
 ```
+
+**To add Figma token** (required for design system tools):
+
+```bash
+claude config edit
+```
+
+Add the environment variable:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "transport": "sse",
+      "url": "https://figma-console-mcp.southleft.com/sse",
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+      }
+    }
+  }
+}
+```
+
+**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
 
 **Verify:**
 - Use `/mcp` command in Claude Code
@@ -173,6 +173,7 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 
 **Location:** `.cursor/mcp.json` in your project or `~/.cursor/mcp.json` globally
 
+**Without Figma token** (console/screenshots only):
 ```json
 {
   "mcpServers": {
@@ -184,6 +185,23 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 }
 ```
 
+**With Figma token** (full design system access):
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+      }
+    }
+  }
+}
+```
+
+**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
+
 **After editing:**
 1. Save and restart Cursor
 2. Check for MCP connection indicator
@@ -192,10 +210,47 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 </details>
 
 <details>
+<summary><b>Windsurf</b></summary>
+
+**Location:** Follow Windsurf's MCP configuration documentation
+
+**Without Figma token** (console/screenshots only):
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
+    }
+  }
+}
+```
+
+**With Figma token** (full design system access):
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+      }
+    }
+  }
+}
+```
+
+**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
+
+</details>
+
+<details>
 <summary><b>Zed</b></summary>
 
 **Location:** `~/.config/zed/settings.json` (Linux/macOS) or `%APPDATA%\Zed\settings.json` (Windows)
 
+**Without Figma token** (console/screenshots only):
 ```json
 {
   "context_servers": {
@@ -209,13 +264,75 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 }
 ```
 
+**With Figma token** (full design system access):
+```json
+{
+  "context_servers": {
+    "figma-console": {
+      "command": {
+        "path": "npx",
+        "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
+      },
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+      }
+    }
+  }
+}
+```
+
+**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
+
+</details>
+
+<details>
+<summary><b>Claude Desktop</b></summary>
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+**Without Figma token** (console/screenshots only):
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
+    }
+  }
+}
+```
+
+**With Figma token** (full design system access):
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+      }
+    }
+  }
+}
+```
+
+**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
+
+**After editing:**
+1. Save the file
+2. Quit Claude Desktop completely
+3. Restart Claude Desktop
+4. Look for "🔌" indicator showing MCP servers connected
+5. All 14 Figma tools should be available
+
 </details>
 
 <details>
 <summary><b>Other MCP Clients</b></summary>
 
-Use the same configuration pattern:
-
+**Without Figma token** (console/screenshots only):
 ```json
 {
   "command": "npx",
@@ -223,74 +340,44 @@ Use the same configuration pattern:
 }
 ```
 
+**With Figma token** (full design system access):
+```json
+{
+  "command": "npx",
+  "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
+  "env": {
+    "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+  }
+}
+```
+
+**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
+
 Consult your MCP client's documentation for the specific configuration file location.
 
 </details>
 
 ---
 
-### Step 2: Add Your Figma Access Token (For Design System Tools)
+### Local Mode (For Plugin Development)
 
-> **⚠️ Required for:** `figma_get_variables`, `figma_get_component`, `figma_get_styles`, `figma_get_file_data`, and other API-based tools.
->
-> **Not required for:** Console monitoring, screenshots, and browser navigation.
+Direct connection to Figma Desktop for zero-latency console logs.
 
-**Get your token:** https://www.figma.com/developers/api#access-tokens
+> **⚠️ Requires:** One-time Figma restart with `--remote-debugging-port=9222` flag
 
-<details>
-<summary><b>How to add your token to Claude Desktop</b></summary>
+**See full guide:** [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md)
 
-Edit your config file to include the `env` section:
+**Quick setup:**
 
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
-      }
-    }
-  }
-}
-```
-
-**After editing:**
-1. Replace `figd_your_actual_token_here` with your actual token
-2. Save the file
-3. Quit Claude Desktop completely
-4. Restart Claude Desktop
-
-</details>
-
-<details>
-<summary><b>How to add your token to other MCP clients</b></summary>
-
-The same pattern applies - add an `env` object with `FIGMA_ACCESS_TOKEN`:
-
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
-      }
-    }
-  }
-}
-```
-
-</details>
+1. **Quit Figma Desktop completely**
+2. **Relaunch with debug flag:**
+   - **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
+   - **Windows:** `start figma://--remote-debugging-port=9222`
+3. **Install local MCP server** (see [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md))
 
 ---
 
-### Step 3: Test Your Connection
+### Test Your Connection
 
 In your AI assistant, try:
 
