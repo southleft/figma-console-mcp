@@ -106,6 +106,7 @@ export class FigmaConsoleMCP extends McpAgent {
 		// Tool 1: Get Console Logs
 		this.server.tool(
 			"figma_get_console_logs",
+			"Retrieve console logs from Figma. Captures all plugin console output including [Main], [Swapper], etc. prefixes. Call figma_navigate first to initialize browser monitoring.",
 			{
 				count: z.number().optional().default(100).describe("Number of recent logs to retrieve"),
 				level: z

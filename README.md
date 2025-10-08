@@ -21,10 +21,37 @@ Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/
 
 Once connected, try these prompts with your AI assistant:
 
-### 🐛 Debugging & Console Monitoring
+### 🐛 Plugin Debugging
+
+**Cloud Mode (Default - No Setup Required):**
 - "Navigate to my Figma plugin and show me any console errors"
 - "Watch the console logs for 30 seconds while I test my plugin"
 - "Get the last 20 console logs from https://figma.com/design/abc123"
+
+**Local Mode (For Plugin Development - Requires One-Time Setup):**
+
+> **🚨 REQUIRED FIRST-TIME SETUP:**
+>
+> **Step 1:** Quit Figma Desktop completely (Cmd+Q / Alt+F4)
+>
+> **Step 2:** Relaunch Figma with remote debugging enabled:
+> - **macOS:** Open Terminal and run:
+>   ```bash
+>   open -a "Figma" --args --remote-debugging-port=9222
+>   ```
+> - **Windows:** Open Command Prompt and run:
+>   ```bash
+>   start figma://--remote-debugging-port=9222
+>   ```
+>
+> **Step 3:** Open your design file, run your plugin, then ask:
+> - "Check the last 20 console logs"
+> - "Show me recent error logs from my plugin"
+> - "Watch for new console output"
+>
+> ✅ **You only need to do this setup once per Figma session.** Your logs will appear instantly!
+>
+> See [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) for detailed local mode installation.
 
 ### 📸 Visual Debugging
 - "Take a screenshot of the current Figma canvas"
@@ -336,18 +363,36 @@ All 14 tools work identically in both cloud and local modes.
 
 ## Advanced: Local Mode for Plugin Developers
 
-If you're developing Figma plugins and need **zero-latency console log capture** directly from Figma Desktop, see [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md).
+If you're developing Figma plugins and need **zero-latency console log capture** directly from Figma Desktop:
 
-**Cloud mode (what you just installed) works great for most use cases**, including:
+### 🚨 Critical First Step: Enable Remote Debugging
+
+**Before using local mode, you MUST restart Figma with the debug flag:**
+
+1. **Quit Figma Desktop completely** (Cmd+Q on macOS / Alt+F4 on Windows)
+2. **Relaunch with remote debugging:**
+   - **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
+   - **Windows:** `start figma://--remote-debugging-port=9222`
+3. **Verify it worked:** Visit http://localhost:9222 in Chrome - you should see inspectable pages
+
+**Then proceed to:** [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) for full local mode installation.
+
+---
+
+### When to Use Local Mode vs Cloud Mode
+
+**Cloud mode (what you just installed) works great for most use cases:**
 - ✅ Design system extraction
 - ✅ Component data and images
 - ✅ Console monitoring and screenshots
 - ✅ Remote collaboration
+- ✅ No setup required
 
 **Local mode** is only recommended for:
-- Developing Figma plugins with rapid iteration
-- Needing instant console feedback (no network latency)
-- Advanced debugging workflows
+- ✅ Developing Figma plugins with rapid iteration
+- ✅ Needing instant console feedback (no network latency)
+- ✅ Advanced debugging workflows with stack traces
+- ⚠️ Requires one-time Figma restart with debug flag
 
 ---
 

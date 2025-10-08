@@ -4,9 +4,46 @@ This guide shows real-world scenarios for using Figma Console MCP in your workfl
 
 ## 🐛 Plugin Development & Debugging
 
-### Scenario 1: Debug Console Errors in Plugin
+### Scenario 1: Simple Plugin Debugging (Local Mode - Easiest!)
 
-**Your situation:** You're developing a Figma plugin and seeing errors in the Figma console.
+**Your situation:** You're developing a Figma plugin and want to see console output.
+
+**One-time setup:** Quit Figma Desktop and relaunch with:
+- **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
+- **Windows:** `start figma://--remote-debugging-port=9222`
+
+Then open your design file and run your plugin.
+
+**What to say to your AI assistant:**
+
+```
+"Check the last 20 console logs"
+```
+
+Then run your plugin in Figma Desktop, and say:
+
+```
+"Check the last 20 console logs again"
+```
+
+**What happens:**
+1. AI retrieves current console logs (likely empty initially)
+2. You run your plugin in Figma Desktop
+3. AI retrieves logs again - now showing ALL plugin output: `[Main]`, `[Swapper]`, `[Serializer]`, etc.
+4. You see errors, warnings, and log statements with timestamps
+
+**Follow-up prompts:**
+- "Show me just the error logs"
+- "What does this stack trace mean?"
+- "Help me fix this error"
+
+**Why this works:** In local mode, the MCP automatically monitors Figma Desktop. No navigation needed!
+
+---
+
+### Scenario 2: Debug Console Errors in Plugin (Cloud Mode)
+
+**Your situation:** You're using cloud mode or need to debug a specific Figma file URL.
 
 **What to say to your AI assistant:**
 
@@ -27,7 +64,7 @@ This guide shows real-world scenarios for using Figma Console MCP in your workfl
 
 ---
 
-### Scenario 2: Monitor Plugin Performance
+### Scenario 3: Monitor Plugin Performance
 
 **Your situation:** You want to see what your plugin is logging during execution.
 
@@ -44,7 +81,7 @@ This guide shows real-world scenarios for using Figma Console MCP in your workfl
 
 ---
 
-### Scenario 3: Debug Plugin with Screenshots
+### Scenario 4: Debug Plugin with Screenshots
 
 **Your situation:** Plugin UI isn't rendering correctly.
 

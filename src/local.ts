@@ -156,6 +156,7 @@ class LocalFigmaConsoleMCP {
 		// Tool 1: Get Console Logs
 		this.server.tool(
 			"figma_get_console_logs",
+			"Retrieve console logs from Figma Desktop. FOR PLUGIN DEVELOPERS: This works immediately - no navigation needed! Just check logs, run your plugin in Figma Desktop, check logs again. All plugin logs ([Main], [Swapper], etc.) appear instantly.",
 			{
 				count: z.number().optional().default(100).describe("Number of recent logs to retrieve"),
 				level: z
@@ -203,6 +204,10 @@ class LocalFigmaConsoleMCP {
 				} catch (error) {
 					logger.error({ error }, "Failed to get console logs");
 					const errorMessage = error instanceof Error ? error.message : String(error);
+
+					// Check if it's a connection issue
+					const isConnectionError = errorMessage.includes("connect") || errorMessage.includes("ECONNREFUSED");
+
 					return {
 						content: [
 							{
@@ -210,8 +215,21 @@ class LocalFigmaConsoleMCP {
 								text: JSON.stringify(
 									{
 										error: errorMessage,
-										message: "Failed to retrieve console logs. Make sure to call figma_navigate first to initialize the browser.",
-										hint: "Try: figma_navigate({ url: 'https://www.figma.com/design/your-file' })",
+										message: isConnectionError
+											? "Cannot connect to Figma Desktop. Figma must be running with remote debugging enabled for local mode to work."
+											: "Failed to retrieve console logs.",
+										setup: isConnectionError ? {
+											step1: "QUIT Figma Desktop completely (Cmd+Q on macOS / Alt+F4 on Windows)",
+											step2_macOS: "Open Terminal and run: open -a \"Figma\" --args --remote-debugging-port=9222",
+											step2_windows: "Open Command Prompt and run: start figma://--remote-debugging-port=9222",
+											step3: "Open your design file and run your plugin",
+											step4: "Then try this tool again - logs will appear instantly",
+											verify: "To verify setup worked, visit http://localhost:9222 in Chrome - you should see inspectable pages"
+										} : undefined,
+										ai_instruction: isConnectionError
+											? "IMPORTANT: You must ask the user to complete the setup steps above. DO NOT proceed until they confirm Figma has been restarted with the --remote-debugging-port=9222 flag. After they restart Figma, you should call this tool again and the logs will work."
+											: undefined,
+										hint: !isConnectionError ? "Try: figma_navigate({ url: 'https://www.figma.com/design/your-file' })" : undefined,
 									},
 									null,
 									2,
@@ -567,15 +585,29 @@ class LocalFigmaConsoleMCP {
 			},
 		);
 
-		// Tool 7: Get Status
+		// Tool 7: Get Status (with setup validation)
 		this.server.tool(
 			"figma_get_status",
+			"Check browser and monitoring status. Also validates if Figma Desktop is running with the required --remote-debugging-port=9222 flag.",
 			{},
 			async () => {
 				try {
 					const browserRunning = this.browserManager?.isRunning() ?? false;
 					const monitorStatus = this.consoleMonitor?.getStatus() ?? null;
 					const currentUrl = this.browserManager?.getCurrentUrl() ?? null;
+
+					// Check if debug port is accessible
+					let debugPortAccessible = false;
+					let setupValid = false;
+					try {
+						const response = await fetch('http://localhost:9222/json/version', {
+							signal: AbortSignal.timeout(2000)
+						});
+						debugPortAccessible = response.ok;
+						setupValid = debugPortAccessible;
+					} catch (e) {
+						// Port not accessible
+					}
 
 					return {
 						content: [
@@ -584,7 +616,23 @@ class LocalFigmaConsoleMCP {
 								text: JSON.stringify(
 									{
 										mode: "local",
-										debugConfig: this.config.local,
+										setup: {
+											valid: setupValid,
+											debugPortAccessible,
+											message: setupValid
+												? "✅ Figma Desktop is running with remote debugging enabled"
+												: "❌ Figma Desktop is NOT running with --remote-debugging-port=9222",
+											setupInstructions: !setupValid ? {
+												step1: "QUIT Figma Desktop completely (Cmd+Q on macOS / Alt+F4 on Windows)",
+												step2_macOS: "Open Terminal and run: open -a \"Figma\" --args --remote-debugging-port=9222",
+												step2_windows: "Open Command Prompt and run: start figma://--remote-debugging-port=9222",
+												step3: "Open your design file and run your plugin",
+												verify: "Visit http://localhost:9222 in Chrome to verify - you should see inspectable pages"
+											} : undefined,
+											ai_instruction: !setupValid
+												? "CRITICAL: User must restart Figma with the debug flag before any console tools will work. Ask them to follow the setupInstructions above, then call figma_get_status again to verify."
+												: "Setup is valid. Console tools are ready to use."
+										},
 										browser: {
 											running: browserRunning,
 											currentUrl,

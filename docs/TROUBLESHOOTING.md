@@ -2,49 +2,108 @@
 
 ## Common Issues and Solutions
 
-### Issue: Plugin console logs not captured (RESOLVED ✅)
+### Plugin Debugging: Simple Workflow ✅
 
-**Status:** ✅ **FIXED** - Native worker monitoring now enabled!
+**For Plugin Developers in Local Mode:**
 
-**What Changed:**
-The Figma Console MCP now **automatically monitors Web Workers** where Figma plugins run. No plugin code changes required!
+> **🚨 CRITICAL FIRST-TIME SETUP:**
+>
+> **Step 1:** Quit Figma Desktop completely (Cmd+Q on macOS / Alt+F4 on Windows)
+>
+> **Step 2:** Relaunch Figma with remote debugging enabled:
+> - **macOS:** Open Terminal and run:
+>   ```bash
+>   open -a "Figma" --args --remote-debugging-port=9222
+>   ```
+> - **Windows:** Open Command Prompt and run:
+>   ```bash
+>   start figma://--remote-debugging-port=9222
+>   ```
+>
+> **Step 3:** Verify setup worked by visiting http://localhost:9222 in Chrome
+> - You should see a list of inspectable pages
+> - If you see this, the setup is correct!
+>
+> **Step 4:** Open your design file and run your plugin
+>
+> ✅ **You only need to do this once per Figma session.** Every time you quit Figma, you'll need to relaunch it with this command.
 
-**How It Works:**
-- Monitors main page console (Figma web app)
-- **NEW:** Monitors all Web Worker consoles (Figma plugins)
-- Automatically detects when workers are created/destroyed
-- Merges all console logs into a single stream
-- Tags logs with source: `'plugin'`, `'figma'`, `'page'`
+### How to Verify Setup is Working
 
-**What You'll See:**
+Before trying to get console logs, verify your setup:
+
+```
+"Check Figma status"
+```
+
+You should see:
+```json
+{
+  "setup": {
+    "valid": true,
+    "message": "✅ Figma Desktop is running with remote debugging enabled"
+  }
+}
+```
+
+If you see `"valid": false`, the AI will provide step-by-step setup instructions.
+
+---
+
+### The Simplest Workflow - No Navigation Needed!
+
+Once setup is complete, just ask your AI to check console logs:
+
+```
+"Check the last 20 console logs"
+```
+
+Then run your plugin in Figma Desktop, and ask again:
+
+```
+"Check the last 20 console logs"
+```
+
+You'll see all your `[Main]`, `[Swapper]`, `[Serializer]`, etc. plugin logs immediately:
+
 ```json
 {
   "logs": [
     {
-      "timestamp": 1705318245123,
+      "timestamp": 1759747593482,
       "level": "log",
-      "message": "[PropertyFilter] Starting analysis...",
-      "source": "plugin",
-      "workerUrl": "https://www.figma.com/plugin-worker/abc123"
+      "message": "[Main] ✓ Instance Swapping: 0 swapped, 20 unmatched",
+      "source": "figma"
     },
     {
-      "timestamp": 1705318246456,
-      "level": "error",
-      "message": "[ClaudeClient] Token mapping failed",
-      "source": "plugin",
-      "workerUrl": "https://www.figma.com/plugin-worker/abc123"
+      "timestamp": 1759747593880,
+      "level": "log",
+      "message": "[Serializer] Collected 280 variables, 144 paint styles",
+      "source": "figma"
     }
   ]
 }
 ```
 
-**No Action Required:**
-Your plugin's `console.log()` statements will be captured automatically. Just use the MCP as normal:
+**That's it!** No navigation, no browser setup, no complex configuration.
+
+---
+
+### For Cloud Mode (Figma Web)
+
+If you're using cloud mode or need to navigate to a specific file:
 
 ```javascript
 figma_navigate({ url: 'https://www.figma.com/design/...' })
 figma_get_console_logs({ count: 100 })
 ```
+
+**How It Works:**
+- Monitors main page console (Figma web app)
+- Monitors all Web Worker consoles (Figma plugins)
+- Automatically detects when workers are created/destroyed
+- Merges all console logs into a single stream
+- Tags logs with source: `'plugin'`, `'figma'`, `'page'`
 
 **If You Still Don't See Plugin Logs:**
 

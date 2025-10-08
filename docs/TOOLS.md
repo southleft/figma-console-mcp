@@ -47,7 +47,7 @@ figma_navigate({
 
 ### `figma_get_status`
 
-Check browser and monitoring status.
+Check browser and monitoring status. **In local mode, also validates if Figma Desktop is running with the required `--remote-debugging-port=9222` flag.**
 
 **Usage:**
 ```javascript
@@ -55,16 +55,56 @@ figma_get_status()
 ```
 
 **Returns:**
+- **Setup validation** (local mode only):
+  - `setup.valid` - Whether Figma Desktop is running with debug flag
+  - `setup.message` - Human-readable status
+  - `setup.setupInstructions` - Step-by-step setup guide (if invalid)
+  - `setup.ai_instruction` - Guidance for AI assistants
 - Browser connection status
 - Console monitoring active/inactive
 - Current URL (if navigated)
 - Number of captured console logs
+
+**Example Response (Local Mode - Setup Valid):**
+```json
+{
+  "mode": "local",
+  "setup": {
+    "valid": true,
+    "message": "✅ Figma Desktop is running with remote debugging enabled"
+  }
+}
+```
+
+**Example Response (Local Mode - Setup Invalid):**
+```json
+{
+  "mode": "local",
+  "setup": {
+    "valid": false,
+    "message": "❌ Figma Desktop is NOT running with --remote-debugging-port=9222",
+    "setupInstructions": {
+      "step1": "QUIT Figma Desktop completely",
+      "step2_macOS": "open -a \"Figma\" --args --remote-debugging-port=9222",
+      "step2_windows": "start figma://--remote-debugging-port=9222"
+    },
+    "ai_instruction": "CRITICAL: User must restart Figma with the debug flag"
+  }
+}
+```
+
+**Best Practice:**
+- Call this tool first when starting a debugging session in local mode
+- If `setup.valid` is false, guide user through setup before using console tools
 
 ---
 
 ## 📋 Console Tools (Plugin Debugging)
 
 ### `figma_get_console_logs`
+
+> **💡 Plugin Developers in Local Mode**: This tool works immediately - no navigation required!
+> Just check logs, run your plugin in Figma Desktop, check logs again. All `[Main]`, `[Swapper]`, etc. plugin logs appear instantly.
 
 Retrieve console logs with filters.
 
