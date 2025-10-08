@@ -77,54 +77,87 @@ export class LocalBrowserManager implements IBrowserManager {
 	}
 
 	/**
+	 * Find the best page for plugin debugging
+	 * Actively searches for pages with workers across ALL tabs
+	 */
+	private async findBestPage(): Promise<Page | null> {
+		if (!this.browser) {
+			return null;
+		}
+
+		const pages = await this.browser.pages();
+
+		// Find Figma pages with workers
+		const figmaPages = pages.filter(p => {
+			const url = p.url();
+			return url.includes('figma.com') && !url.includes('devtools');
+		});
+
+		if (figmaPages.length === 0) {
+			return null;
+		}
+
+		// Check each page for workers
+		const pagesWithWorkers = figmaPages
+			.map(p => ({
+				page: p,
+				workerCount: p.workers().length,
+				url: p.url()
+			}))
+			.filter(p => p.workerCount > 0)
+			.sort((a, b) => b.workerCount - a.workerCount); // Most workers first
+
+		if (pagesWithWorkers.length > 0) {
+			logger.info({
+				url: pagesWithWorkers[0].url,
+				workerCount: pagesWithWorkers[0].workerCount,
+				totalPagesWithWorkers: pagesWithWorkers.length
+			}, 'Found page with active plugin workers');
+			return pagesWithWorkers[0].page;
+		}
+
+		// No workers found - prefer design/file pages
+		const designPage = figmaPages.find(p =>
+			p.url().includes('/design/') || p.url().includes('/file/')
+		);
+
+		return designPage || figmaPages[0];
+	}
+
+	/**
 	 * Get active Figma page or create new one
+	 * Prefers pages with active plugin workers for plugin debugging
 	 */
 	async getPage(): Promise<Page> {
 		if (!this.browser) {
 			await this.launch();
 		}
 
-		if (this.page && !this.page.isClosed()) {
+		// ALWAYS re-check for best page (don't cache if we might have missed workers)
+		const bestPage = await this.findBestPage();
+		if (bestPage) {
+			const workerCount = bestPage.workers().length;
+			logger.info({
+				url: bestPage.url(),
+				workerCount,
+				cached: this.page === bestPage
+			}, 'Selected page for monitoring');
+
+			this.page = bestPage;
 			return this.page;
 		}
 
-		// Get existing pages (Figma tabs)
+		// Fallback: Get any existing page or create new one
 		const pages = await this.browser!.pages();
 
-		logger.info({ pageCount: pages.length }, 'Found existing pages in Figma Desktop');
-
-		// Find Figma pages (not DevTools, about:blank, etc.)
-		const figmaPages = pages.filter(p => {
-			const url = p.url();
-			return url.includes('figma.com') && !url.includes('devtools');
-		});
-
-		if (figmaPages.length > 0) {
-			// Prefer design/file pages over team pages
-			const designPage = figmaPages.find(p =>
-				p.url().includes('/design/') || p.url().includes('/file/')
-			);
-
-			const selectedPage = designPage || figmaPages[0];
-			logger.info({
-				url: selectedPage.url(),
-				totalFigmaPages: figmaPages.length,
-				isDesignFile: !!designPage
-			}, 'Using existing Figma page');
-
-			this.page = selectedPage;
-			return this.page;
-		}
-
-		// If no Figma page found, use first available page or create new one
 		if (pages.length > 0 && pages[0].url() !== 'about:blank') {
-			logger.info({ url: pages[0].url() }, 'Using first available page');
+			logger.warn({ url: pages[0].url() }, 'No Figma pages found, using first available page');
 			this.page = pages[0];
 			return this.page;
 		}
 
-		// Create new page
-		logger.info('Creating new page in Figma Desktop');
+		// Last resort: Create new page
+		logger.warn('No suitable pages found, creating new page in Figma Desktop');
 		this.page = await this.browser!.newPage();
 		return this.page;
 	}

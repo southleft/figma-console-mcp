@@ -588,10 +588,13 @@ class LocalFigmaConsoleMCP {
 		// Tool 7: Get Status (with setup validation)
 		this.server.tool(
 			"figma_get_status",
-			"Check browser and monitoring status. Also validates if Figma Desktop is running with the required --remote-debugging-port=9222 flag.",
+			"Check browser and monitoring status. Also validates if Figma Desktop is running with the required --remote-debugging-port=9222 flag. Automatically initializes connection if needed.",
 			{},
 			async () => {
 				try {
+					// Ensure initialized (connects to Figma Desktop if not already connected)
+					await this.ensureInitialized();
+
 					const browserRunning = this.browserManager?.isRunning() ?? false;
 					const monitorStatus = this.consoleMonitor?.getStatus() ?? null;
 					const currentUrl = this.browserManager?.getCurrentUrl() ?? null;
@@ -607,6 +610,29 @@ class LocalFigmaConsoleMCP {
 						setupValid = debugPortAccessible;
 					} catch (e) {
 						// Port not accessible
+					}
+
+					// List ALL available Figma pages with worker counts
+					let availablePages: Array<{url: string, workerCount: number, isCurrentPage: boolean}> = [];
+					if (this.browserManager && browserRunning) {
+						try {
+							const browser = (this.browserManager as any).browser;
+							if (browser) {
+								const pages = await browser.pages();
+								availablePages = pages
+									.filter((p: any) => {
+										const url = p.url();
+										return url.includes('figma.com') && !url.includes('devtools');
+									})
+									.map((p: any) => ({
+										url: p.url(),
+										workerCount: p.workers().length,
+										isCurrentPage: p.url() === currentUrl
+									}));
+							}
+						} catch (e) {
+							logger.error({ error: e }, "Failed to list available pages");
+						}
 					}
 
 					return {
@@ -631,8 +657,11 @@ class LocalFigmaConsoleMCP {
 											} : undefined,
 											ai_instruction: !setupValid
 												? "CRITICAL: User must restart Figma with the debug flag before any console tools will work. Ask them to follow the setupInstructions above, then call figma_get_status again to verify."
-												: "Setup is valid. Console tools are ready to use."
+												: availablePages.length > 1
+													? `Multiple Figma pages detected. The MCP automatically selects the page with the most workers (active plugins). Current page has ${monitorStatus?.workerCount || 0} workers. If you're not seeing the expected plugin logs, the plugin might be running in a different page/tab.`
+													: "Setup is valid. Console tools are ready to use."
 										},
+										availablePages: availablePages.length > 0 ? availablePages : undefined,
 										browser: {
 											running: browserRunning,
 											currentUrl,
