@@ -491,7 +491,32 @@ npm test:watch
 
 ## Troubleshooting
 
-**Quick fixes:**
+### Understanding Console Log Capture
+
+**How It Works:**
+- The MCP captures console logs in **real-time** starting from when monitoring begins
+- It does **NOT** retrieve historical logs from before monitoring started
+- When Claude Code/Desktop restarts, the MCP reconnects and starts fresh monitoring
+
+### Common Issue: "No Plugin Logs Appearing"
+
+**Symptom:** You see logs in Figma's console but not in the MCP
+
+**Cause:** Your plugin ran BEFORE the MCP started monitoring (e.g., before restarting your AI client)
+
+**Solution:**
+1. ✅ Check status: Use `figma_get_status` to confirm monitoring is active
+2. ✅ **Run your plugin in Figma Desktop** (this generates fresh logs)
+3. ✅ Check logs: Use `figma_get_console_logs` to retrieve them
+4. ✅ Logs should now appear!
+
+**Best Practice Workflow:**
+1. Start your AI client (MCP connects automatically)
+2. Check status to confirm monitoring is active
+3. Run your Figma plugin
+4. Retrieve console logs
+
+### Other Quick Fixes
 
 | Problem | Solution |
 |---------|----------|

@@ -183,18 +183,26 @@ class LocalFigmaConsoleMCP {
 						since,
 					});
 
+					// Add AI instruction when no logs are found
+					const responseData: any = {
+						logs,
+						totalCount: logs.length,
+						oldestTimestamp: logs[0]?.timestamp,
+						newestTimestamp: logs[logs.length - 1]?.timestamp,
+						status: this.consoleMonitor.getStatus(),
+					};
+
+					// If no logs found, add helpful AI instruction
+					if (logs.length === 0) {
+						responseData.ai_instruction = "No console logs found. This usually means the Figma plugin hasn't run since monitoring started. Please inform the user: 'No console logs found yet. Try running your Figma plugin now, then I'll check for logs again.' The MCP only captures logs AFTER monitoring starts - it cannot retrieve historical logs from before the browser connected.";
+					}
+
 					return {
 						content: [
 							{
 								type: "text",
 								text: JSON.stringify(
-									{
-										logs,
-										totalCount: logs.length,
-										oldestTimestamp: logs[0]?.timestamp,
-										newestTimestamp: logs[logs.length - 1]?.timestamp,
-										status: this.consoleMonitor.getStatus(),
-									},
+									responseData,
 									null,
 									2,
 								),
