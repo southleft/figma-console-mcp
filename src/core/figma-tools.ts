@@ -259,6 +259,13 @@ export function registerFigmaAPITools(
 				.optional()
 				.default(true)
 				.describe("Include published variables from libraries"),
+			verbosity: z
+				.enum(["summary", "standard", "full"])
+				.optional()
+				.default("standard")
+				.describe(
+					"Controls payload size: 'summary' (names/values only, ~80% smaller), 'standard' (essential properties, ~45% smaller), 'full' (everything). Default: standard"
+				),
 			enrich: z
 				.boolean()
 				.optional()
@@ -304,7 +311,7 @@ export function registerFigmaAPITools(
 					"Default: false. Never set to true on the first call."
 				),
 		},
-		async ({ fileUrl, includePublished, enrich, include_usage, include_dependencies, include_exports, export_formats, useConsoleFallback, parseFromConsole }) => {
+		async ({ fileUrl, includePublished, verbosity, enrich, include_usage, include_dependencies, include_exports, export_formats, useConsoleFallback, parseFromConsole }) => {
 			// Extract fileKey outside try block so it's available in catch block
 			const url = fileUrl || getCurrentUrl();
 			if (!url) {
@@ -479,7 +486,7 @@ export function registerFigmaAPITools(
 				}
 
 				// Try REST API
-				logger.info({ fileKey, includePublished, enrich }, "Fetching variables via REST API");
+				logger.info({ fileKey, includePublished, verbosity, enrich }, "Fetching variables via REST API");
 				const api = getFigmaAPI();
 
 				const { local, published } = await api.getAllVariables(fileKey);
@@ -488,6 +495,70 @@ export function registerFigmaAPITools(
 				let publishedFormatted = includePublished
 					? formatVariables(published)
 					: null;
+
+				// Apply verbosity filtering
+				const filterVariable = (variable: any, level: "summary" | "standard" | "full"): any => {
+					if (!variable) return variable;
+
+					if (level === "summary") {
+						// Summary: Only id, name, value (~80% reduction)
+						return {
+							id: variable.id,
+							name: variable.name,
+							resolvedType: variable.resolvedType,
+							valuesByMode: variable.valuesByMode,
+						};
+					}
+
+					if (level === "standard") {
+						// Standard: Essential properties (~45% reduction)
+						return {
+							id: variable.id,
+							name: variable.name,
+							resolvedType: variable.resolvedType,
+							valuesByMode: variable.valuesByMode,
+							description: variable.description,
+							variableCollectionId: variable.variableCollectionId,
+							...(variable.scopes && { scopes: variable.scopes }),
+						};
+					}
+
+					// Full: Return everything
+					return variable;
+				};
+
+				const filterCollection = (collection: any, level: "summary" | "standard" | "full"): any => {
+					if (!collection) return collection;
+
+					if (level === "summary") {
+						return {
+							id: collection.id,
+							name: collection.name,
+						};
+					}
+
+					if (level === "standard") {
+						return {
+							id: collection.id,
+							name: collection.name,
+							modes: collection.modes,
+							defaultModeId: collection.defaultModeId,
+						};
+					}
+
+					return collection;
+				};
+
+				if (verbosity !== "full") {
+					const level = verbosity || "standard";
+					localFormatted.variables = localFormatted.variables.map((v: any) => filterVariable(v, level));
+					localFormatted.collections = localFormatted.collections.map((c: any) => filterCollection(c, level));
+
+					if (publishedFormatted) {
+						publishedFormatted.variables = publishedFormatted.variables.map((v: any) => filterVariable(v, level));
+						publishedFormatted.collections = publishedFormatted.collections.map((c: any) => filterCollection(c, level));
+					}
+				}
 
 				// Apply enrichment if requested
 				if (enrich) {
@@ -538,6 +609,7 @@ export function registerFigmaAPITools(
 												variables: publishedFormatted.variables,
 											},
 										}),
+									verbosity: verbosity || "standard",
 									enriched: enrich || false,
 								},
 								null,
@@ -760,6 +832,13 @@ export function registerFigmaAPITools(
 				.describe(
 					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
 				),
+			verbosity: z
+				.enum(["summary", "standard", "full"])
+				.optional()
+				.default("standard")
+				.describe(
+					"Controls payload size: 'summary' (names/types only, ~85% smaller), 'standard' (essential properties, ~40% smaller), 'full' (everything). Default: standard"
+				),
 			enrich: z
 				.boolean()
 				.optional()
@@ -781,7 +860,7 @@ export function registerFigmaAPITools(
 					"Which code formats to generate examples for. Use when user mentions specific formats like 'CSS', 'Tailwind', 'SCSS', 'TypeScript', etc. Automatically enables enrichment. Default: all formats"
 				),
 		},
-		async ({ fileUrl, enrich, include_usage, include_exports, export_formats }) => {
+		async ({ fileUrl, verbosity, enrich, include_usage, include_exports, export_formats }) => {
 			try {
 				const api = getFigmaAPI();
 
@@ -797,10 +876,42 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, enrich }, "Fetching styles");
+				logger.info({ fileKey, verbosity, enrich }, "Fetching styles");
 
 				const stylesData = await api.getStyles(fileKey);
 				let styles = stylesData.meta?.styles || [];
+
+				// Apply verbosity filtering
+				const filterStyle = (style: any, level: "summary" | "standard" | "full"): any => {
+					if (!style) return style;
+
+					if (level === "summary") {
+						// Summary: Only key, name, type (~85% reduction)
+						return {
+							key: style.key,
+							name: style.name,
+							style_type: style.style_type,
+						};
+					}
+
+					if (level === "standard") {
+						// Standard: Essential properties (~40% reduction)
+						return {
+							key: style.key,
+							name: style.name,
+							description: style.description,
+							style_type: style.style_type,
+							...(style.remote && { remote: style.remote }),
+						};
+					}
+
+					// Full: Return everything
+					return style;
+				};
+
+				if (verbosity !== "full") {
+					styles = styles.map((style: any) => filterStyle(style, verbosity || "standard"));
+				}
 
 				// Apply enrichment if requested
 				if (enrich) {
@@ -833,6 +944,7 @@ export function registerFigmaAPITools(
 									fileKey,
 									styles,
 									totalStyles: styles.length,
+									verbosity: verbosity || "standard",
 									enriched: enrich || false,
 								},
 								null,
@@ -1106,38 +1218,30 @@ export function registerFigmaAPITools(
 					}
 				}
 
-				// Build response content with image (if available) + data
-				const content: any[] = [];
-
-				// Add image as visual content if we got one
-				if (imageUrl) {
-					content.push({
-						type: "image",
-						data: imageUrl,
-						mimeType: "image/png",
-					});
-				}
-
-				// Add component data as text
-				content.push({
-					type: "text",
-					text: JSON.stringify(
+				// Build response with component data and image URL
+				return {
+					content: [
 						{
-							fileKey,
-							nodeId,
-							imageUrl,
-							component: componentData,
-							metadata: {
-								purpose: "component_development",
-								note: "Optimized for UI implementation. Image shown above, full component data below.",
-							},
+							type: "text",
+							text: JSON.stringify(
+								{
+									fileKey,
+									nodeId,
+									imageUrl,
+									component: componentData,
+									metadata: {
+										purpose: "component_development",
+										note: imageUrl
+											? "Image URL provided above (valid for 30 days). Full component data optimized for UI implementation."
+											: "Full component data optimized for UI implementation.",
+									},
+								},
+								null,
+								2
+							),
 						},
-						null,
-						2
-					),
-				});
-
-				return { content };
+					],
+				};
 			} catch (error) {
 				logger.error({ error }, "Failed to get component for development");
 				const errorMessage =

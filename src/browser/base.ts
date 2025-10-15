@@ -4,15 +4,6 @@
  */
 
 /**
- * Screenshot options
- */
-export interface ScreenshotOptions {
-	fullPage?: boolean;
-	type?: 'png' | 'jpeg';
-	quality?: number;
-}
-
-/**
  * Browser Manager Interface
  * Provides unified API for browser automation regardless of runtime (Cloudflare/Local)
  *
@@ -45,10 +36,8 @@ export interface IBrowserManager {
 	 */
 	evaluate<T>(fn: () => T): Promise<T>;
 
-	/**
-	 * Take screenshot of current page
-	 */
-	screenshot(options?: ScreenshotOptions): Promise<Buffer>;
+	// Screenshot functionality removed - use Figma REST API's getImages() instead
+	// See: figma_take_screenshot and figma_get_component_image tools
 
 	/**
 	 * Check if browser is running

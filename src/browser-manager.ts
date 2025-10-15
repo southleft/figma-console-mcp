@@ -139,32 +139,8 @@ export class BrowserManager {
 		return page.evaluate(fn);
 	}
 
-	/**
-	 * Take screenshot of current page
-	 */
-	async screenshot(options?: {
-		fullPage?: boolean;
-		type?: 'png' | 'jpeg';
-		quality?: number;
-	}): Promise<Buffer> {
-		const page = await this.getPage();
-
-		logger.info({ options }, 'Taking screenshot');
-
-		try {
-			const screenshot = await page.screenshot({
-				fullPage: options?.fullPage ?? false,
-				type: options?.type ?? 'png',
-				quality: options?.quality,
-			});
-
-			logger.info('Screenshot captured successfully');
-			return screenshot as Buffer;
-		} catch (error) {
-			logger.error({ error }, 'Screenshot failed');
-			throw new Error(`Screenshot failed: ${error}`);
-		}
-	}
+	// Screenshot functionality removed - use Figma REST API's getImages() instead
+	// See: figma_take_screenshot and figma_get_component_image tools
 
 	/**
 	 * Check if browser is running

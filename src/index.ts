@@ -183,44 +183,78 @@ export class FigmaConsoleMCP extends McpAgent {
 			},
 		);
 
-		// Tool 2: Take Screenshot
+		// Tool 2: Take Screenshot (using Figma REST API)
+		// Note: For screenshots of specific components, use figma_get_component_image instead
 		this.server.tool(
 			"figma_take_screenshot",
+			"Export an image of the currently viewed Figma page or specific node using Figma's REST API. Returns an image URL (valid for 30 days). For specific components, use figma_get_component_image instead.",
 			{
-				target: z
-					.enum(["plugin", "full-page", "viewport"])
+				nodeId: z
+					.string()
 					.optional()
-					.default("plugin")
-					.describe("What to screenshot"),
+					.describe("Optional node ID to screenshot. If not provided, uses the currently viewed page/frame from the browser URL."),
+				scale: z
+					.number()
+					.min(0.01)
+					.max(4)
+					.optional()
+					.default(2)
+					.describe("Image scale factor (0.01-4, default: 2 for high quality)"),
 				format: z
-					.enum(["png", "jpeg"])
+					.enum(["png", "jpg", "svg", "pdf"])
 					.optional()
 					.default("png")
-					.describe("Image format"),
-				quality: z
-					.number()
-					.min(0)
-					.max(100)
-					.optional()
-					.default(90)
-					.describe("JPEG quality (0-100)"),
+					.describe("Image format (default: png)"),
 			},
-			async ({ target, format, quality }) => {
+			async ({ nodeId, scale, format }) => {
 				try {
-					await this.ensureInitialized();
+					const api = this.getFigmaAPI();
 
-					if (!this.browserManager) {
-						throw new Error("Browser manager not initialized");
+					// Get current URL to extract file key and node ID if not provided
+					const currentUrl = this.browserManager?.getCurrentUrl() || null;
+
+					if (!currentUrl) {
+						throw new Error(
+							"No Figma file open. Either provide a nodeId parameter or call figma_navigate first to open a Figma file."
+						);
 					}
 
-					const screenshot = await this.browserManager.screenshot({
-						fullPage: target === "full-page",
-						type: format,
-						quality: format === "jpeg" ? quality : undefined,
+					const fileKey = extractFileKey(currentUrl);
+					if (!fileKey) {
+						throw new Error(`Invalid Figma URL: ${currentUrl}`);
+					}
+
+					// Extract node ID from URL if not provided
+					let targetNodeId = nodeId;
+					if (!targetNodeId) {
+						const urlObj = new URL(currentUrl);
+						const nodeIdParam = urlObj.searchParams.get('node-id');
+						if (nodeIdParam) {
+							// Convert 123-456 to 123:456
+							targetNodeId = nodeIdParam.replace(/-/g, ':');
+						} else {
+							throw new Error(
+								"No node ID found. Either provide nodeId parameter or ensure the Figma URL contains a node-id parameter (e.g., ?node-id=123-456)"
+							);
+						}
+					}
+
+					logger.info({ fileKey, nodeId: targetNodeId, scale, format }, "Rendering image via Figma API");
+
+					// Use Figma REST API to get image
+					const result = await api.getImages(fileKey, targetNodeId, {
+						scale,
+						format: format === 'jpg' ? 'jpg' : format, // normalize jpeg -> jpg
+						contents_only: true,
 					});
 
-					// Convert buffer to base64
-					const base64 = screenshot.toString("base64");
+					const imageUrl = result.images[targetNodeId];
+
+					if (!imageUrl) {
+						throw new Error(
+							`Failed to render image for node ${targetNodeId}. The node may not exist or may not be renderable.`
+						);
+					}
 
 					return {
 						content: [
@@ -228,33 +262,35 @@ export class FigmaConsoleMCP extends McpAgent {
 								type: "text",
 								text: JSON.stringify(
 									{
-										id: crypto.randomUUID(),
-										timestamp: Date.now(),
+										fileKey,
+										nodeId: targetNodeId,
+										imageUrl,
+										scale,
 										format,
-										target,
-										quality,
-										base64Data: base64,
-										size: screenshot.length,
+										expiresIn: "30 days",
+										note: "Image URL provided above. Use this URL to view or download the screenshot. URLs expire after 30 days.",
 									},
 									null,
-									2,
+									2
 								),
 							},
 						],
 					};
 				} catch (error) {
 					logger.error({ error }, "Failed to capture screenshot");
+					const errorMessage = error instanceof Error ? error.message : String(error);
 					return {
 						content: [
 							{
 								type: "text",
 								text: JSON.stringify(
 									{
-										error: String(error),
-										message: "Failed to capture screenshot",
+										error: errorMessage,
+										message: "Failed to capture screenshot via Figma API",
+										hint: "Make sure you've called figma_navigate to open a file, or provide a valid nodeId parameter",
 									},
 									null,
-									2,
+									2
 								),
 							},
 						],

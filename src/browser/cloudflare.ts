@@ -6,7 +6,7 @@
 import puppeteer, { type Browser, type Page } from '@cloudflare/puppeteer';
 import { createChildLogger } from '../core/logger.js';
 import type { BrowserConfig } from '../core/types/index.js';
-import type { IBrowserManager, ScreenshotOptions } from './base.js';
+import type { IBrowserManager } from './base.js';
 
 const logger = createChildLogger({ component: 'cloudflare-browser' });
 
@@ -139,28 +139,8 @@ export class CloudflareBrowserManager implements IBrowserManager {
 		return page.evaluate(fn);
 	}
 
-	/**
-	 * Take screenshot of current page
-	 */
-	async screenshot(options?: ScreenshotOptions): Promise<Buffer> {
-		const page = await this.getPage();
-
-		logger.info({ options }, 'Taking screenshot');
-
-		try {
-			const screenshot = await page.screenshot({
-				fullPage: options?.fullPage ?? false,
-				type: options?.type ?? 'png',
-				quality: options?.quality,
-			});
-
-			logger.info('Screenshot captured successfully');
-			return screenshot as Buffer;
-		} catch (error) {
-			logger.error({ error }, 'Screenshot failed');
-			throw new Error(`Screenshot failed: ${error}`);
-		}
-	}
+	// Screenshot functionality removed - use Figma REST API's getImages() instead
+	// See: figma_take_screenshot and figma_get_component_image tools
 
 	/**
 	 * Check if browser is running
