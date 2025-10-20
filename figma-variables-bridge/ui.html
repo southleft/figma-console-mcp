@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 24px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 320px;
+      width: 100%;
+    }
+
+    .status {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .details {
+      font-size: 12px;
+      color: #666;
+      line-height: 1.6;
+      margin-top: 8px;
+    }
+
+    .details strong {
+      color: #1a1a1a;
+      font-weight: 500;
+    }
+
+    .success {
+      color: #059669;
+    }
+
+    .error {
+      color: #dc2626;
+    }
+
+    .loading {
+      color: #6b7280;
+    }
+
+    .divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 16px 0;
+    }
+
+    .footer {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 16px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="content">
+      <div class="status loading">
+        <span class="icon">⏳</span>
+        <span>Loading variables...</span>
+      </div>
+      <div class="details">Connecting to Figma API</div>
+    </div>
+    <div class="divider"></div>
+    <div class="footer">Figma Variables Bridge for MCP</div>
+  </div>
+
+  <script>
+    // Global variable to store data for Puppeteer access
+    window.__figmaVariablesData = null;
+    window.__figmaVariablesReady = false;
+
+    // Listen for messages from plugin worker
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+
+      if (msg.type === 'VARIABLES_DATA') {
+        // Store data on window object for Puppeteer
+        window.__figmaVariablesData = msg.data;
+        window.__figmaVariablesReady = true;
+
+        const varCount = msg.data.variables?.length || 0;
+        const collCount = msg.data.variableCollections?.length || 0;
+
+        // Update UI
+        document.getElementById('content').innerHTML = `
+          <div class="status success">
+            <span class="icon">✓</span>
+            <span>Variables ready</span>
+          </div>
+          <div class="details">
+            <strong>${varCount}</strong> variables in <strong>${collCount}</strong> ${collCount === 1 ? 'collection' : 'collections'}<br>
+            <br>
+            Data available via MCP<br>
+            <code style="font-size: 11px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">window.__figmaVariablesData</code>
+          </div>
+        `;
+
+        console.log('[Variables Bridge] Data ready:', { varCount, collCount });
+      } else if (msg.type === 'ERROR') {
+        window.__figmaVariablesReady = false;
+
+        document.getElementById('content').innerHTML = `
+          <div class="status error">
+            <span class="icon">✕</span>
+            <span>Error loading variables</span>
+          </div>
+          <div class="details">${msg.error}</div>
+        `;
+
+        console.error('[Variables Bridge] Error:', msg.error);
+      }
+    };
+  </script>
+</body>
+</html>

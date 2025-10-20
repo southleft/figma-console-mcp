@@ -448,6 +448,277 @@ All 14 tools work identically in both cloud and local modes.
 
 ---
 
+## Accessing Variables Without Enterprise API
+
+Figma's Variables API requires an Enterprise plan. **We've built a workaround** that lets you access all your local variables through a simple plugin bridge - no Enterprise plan needed.
+
+### How It Works
+
+The **Figma Variables Bridge** plugin runs in Figma Desktop and exposes your variables data through a plugin UI iframe. The MCP server accesses this data via Puppeteer, bypassing Figma's Enterprise API requirement.
+
+```
+Figma Plugin Worker → postMessage → Plugin UI Iframe → window object → Puppeteer → MCP Server
+```
+
+**Key Features:**
+- ✅ No Enterprise plan required
+- ✅ Access all local variables and collections
+- ✅ Supports multiple variable modes (Light/Dark/Brand variants)
+- ✅ Smart caching with 5-minute TTL (no token limits)
+- ✅ Natural language queries ("What's the primary font for Stratton mode?")
+- ✅ Minimal, clean UI
+
+### Complete Setup Workflow
+
+> **⏱️ One-time setup** (~5 minutes) - After this, variables are instantly available in every session
+
+#### Step 1: Enable Figma Remote Debugging
+
+**Quit Figma Desktop completely**, then relaunch with remote debugging enabled:
+
+**macOS:**
+```bash
+open -a "Figma" --args --remote-debugging-port=9222
+```
+
+**Windows:**
+```bash
+start figma://--remote-debugging-port=9222
+```
+
+**Verify it worked:** Visit http://localhost:9222 in Chrome - you should see inspectable Figma pages.
+
+#### Step 2: Install Local Mode MCP
+
+Follow the complete guide in [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) to:
+- Install the local MCP server
+- Configure Claude Code or Claude Desktop
+- Verify the connection
+
+**Quick verification:**
+```
+Ask Claude: "Check figma status"
+```
+
+You should see "✓ Figma Desktop connected" with port 9222.
+
+#### Step 3: Install the Variables Bridge Plugin
+
+1. **Open Figma Desktop** (must be running with debug flag from Step 1)
+2. **Go to:** Plugins → Development → Import plugin from manifest...
+3. **Navigate to:** `/path/to/figma-console-mcp/figma-variables-bridge/manifest.json`
+4. **Click "Open"**
+
+The plugin appears in your Development plugins list as "Figma Variables Bridge".
+
+> **📁 Plugin location:** The `figma-variables-bridge/` directory is in your `figma-console-mcp` repository root
+
+#### Step 4: Run the Plugin in Your Figma File
+
+1. **Open your Figma file** that contains variables
+2. **Right-click anywhere** → Plugins → Development → Figma Variables Bridge
+3. **Wait for confirmation:** Plugin UI shows "✓ Variables ready"
+
+**What you'll see:**
+```
+✓ Variables ready
+404 variables in 2 collections
+
+Data available via MCP
+window.__figmaVariablesData
+```
+
+The plugin window can stay open or be minimized - it stays running until you close it.
+
+#### Step 5: Query Your Variables
+
+Now you can ask Claude about your variables using natural language!
+
+**Example prompts:**
+
+**Summary overview (recommended first call):**
+```
+Get me a summary of the Figma variables from https://figma.com/design/YOUR_FILE_KEY
+```
+
+Returns ~4K tokens with:
+- Total variable count by collection
+- Variable types (colors, floats, strings)
+- Mode names
+- Quick stats
+
+**Specific questions:**
+```
+What is the primary font for the Stratton variable mode?
+```
+
+```
+What is the primary brand color for Winter Park?
+```
+
+```
+Show me all breakpoint variables
+```
+
+**Filtered queries:**
+```
+Get all color variables from the Brand collection
+```
+
+```
+Show me font variables that contain "heading"
+```
+
+### API Parameters
+
+The `figma_get_variables` tool supports these parameters:
+
+```typescript
+{
+  fileUrl: string,              // Required: Your Figma file URL
+  format?: "summary" | "filtered" | "full",  // Default: "full"
+  collection?: string,          // Filter by collection name/ID
+  namePattern?: string,         // Filter by name (regex or substring)
+  mode?: string,                // Filter by mode name/ID
+  refreshCache?: boolean        // Force refresh (default: false)
+}
+```
+
+**Format options:**
+- `"summary"` - ~2-5K tokens with overview and names only
+- `"filtered"` - Apply collection/name/mode filters
+- `"full"` - Complete dataset (auto-summarized if >25K tokens)
+
+**Examples:**
+
+```typescript
+// Get summary first (recommended)
+figma_get_variables({
+  fileUrl: "https://figma.com/design/abc123",
+  format: "summary"
+})
+
+// Filter by collection
+figma_get_variables({
+  fileUrl: "https://figma.com/design/abc123",
+  format: "filtered",
+  collection: "Brand"
+})
+
+// Search by name pattern
+figma_get_variables({
+  fileUrl: "https://figma.com/design/abc123",
+  format: "filtered",
+  namePattern: "font/family"
+})
+
+// Get specific mode
+figma_get_variables({
+  fileUrl: "https://figma.com/design/abc123",
+  format: "filtered",
+  collection: "Brand",
+  mode: "Stratton"
+})
+
+// Force refresh cache
+figma_get_variables({
+  fileUrl: "https://figma.com/design/abc123",
+  refreshCache: true
+})
+```
+
+### Smart Caching
+
+The MCP caches variables data with intelligent management:
+
+- **5-minute TTL** - Automatic cache invalidation
+- **LRU eviction** - Maximum 10 files cached
+- **Token optimization** - Summary format uses ~95% fewer tokens
+- **Instant responses** - Filtered queries return from cache immediately
+
+**Cache is automatically used when:**
+- Same file accessed within 5 minutes
+- No `refreshCache: true` parameter
+- File data hasn't been invalidated
+
+**Force cache refresh:**
+```typescript
+figma_get_variables({
+  fileUrl: "https://figma.com/design/abc123",
+  refreshCache: true  // Fetches fresh data from plugin
+})
+```
+
+### Troubleshooting
+
+#### Plugin doesn't appear in menu
+- ✅ Verify Figma Desktop is running (not browser)
+- ✅ Check manifest.json path is correct
+- ✅ Try: Plugins → Development → Refresh plugin list
+
+#### "No plugin UI found with variables data"
+- ✅ Ensure plugin is running (check for plugin window)
+- ✅ Try closing and reopening the plugin
+- ✅ Check Figma console: Plugins → Development → Open Console
+
+#### Variables not updating
+- ✅ Close and reopen plugin to refresh data
+- ✅ Use `refreshCache: true` parameter
+- ✅ Verify you're viewing the correct Figma file
+
+#### Empty or outdated data
+- ✅ Plugin fetches data on load - rerun after making changes
+- ✅ Cache TTL is 5 minutes - use `refreshCache: true` for immediate updates
+- ✅ Ensure you're in the correct file (plugin reads current file's variables)
+
+#### Remote debugging not working
+- ✅ Verify Figma was launched with `--remote-debugging-port=9222`
+- ✅ Check http://localhost:9222 shows Figma pages
+- ✅ Quit Figma completely (Cmd+Q / Alt+F4) and relaunch with flag
+- ✅ See [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) for detailed troubleshooting
+
+### Technical Details
+
+**Plugin Architecture:**
+- **Worker (code.js):** Fetches variables via `figma.variables.getLocalVariablesAsync()`
+- **UI (ui.html):** Stores data on `window.__figmaVariablesData` (accessible to Puppeteer)
+- **MCP Server:** Reads UI iframe window object via Chrome DevTools Protocol
+
+**Data Format:**
+```typescript
+{
+  success: true,
+  timestamp: number,
+  fileKey: string,
+  variables: Array<{
+    id: string,
+    name: string,
+    resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN",
+    valuesByMode: Record<string, any>,
+    variableCollectionId: string,
+    scopes: string[],
+    description?: string
+  }>,
+  variableCollections: Array<{
+    id: string,
+    name: string,
+    modes: Array<{ modeId: string, name: string }>,
+    defaultModeId: string,
+    variableIds: string[]
+  }>
+}
+```
+
+**Why This Works:**
+- Figma plugin worker can access Variables API (no Enterprise restriction in plugins)
+- Plugin UI iframe window is accessible via Puppeteer (not sandboxed)
+- Data bridge bypasses Enterprise API requirement completely
+- No network access required (plugin security: `allowedDomains: ["none"]`)
+
+> **📖 For complete plugin documentation:** See [figma-variables-bridge/README.md](figma-variables-bridge/README.md)
+
+---
+
 ## Advanced: Local Mode for Plugin Developers
 
 If you're developing Figma plugins and need **zero-latency console log capture** directly from Figma Desktop:

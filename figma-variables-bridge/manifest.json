@@ -1,6 +1,6 @@
 {
-  "name": "Variables Exporter (Persistent)",
-  "id": "figma-variables-mcp-persistent",
+  "name": "Figma Variables Bridge",
+  "id": "figma-variables-bridge-mcp",
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",

@@ -463,6 +463,8 @@ export class FigmaConsoleMCP extends McpAgent {
 										status: "cleared",
 										clearedCount,
 										timestamp: Date.now(),
+										ai_instruction:
+											"⚠️ CRITICAL: Console cleared successfully, but this operation disrupts the monitoring connection. You MUST reconnect the MCP server using `/mcp reconnect figma-console` before calling figma_get_console_logs again. Best practice: Avoid clearing console - filter/parse logs instead to maintain monitoring connection.",
 									},
 									null,
 									2,
@@ -623,7 +625,10 @@ export class FigmaConsoleMCP extends McpAgent {
 		registerFigmaAPITools(
 			this.server,
 			() => this.getFigmaAPI(),
-			() => this.browserManager?.getCurrentUrl() || null
+			() => this.browserManager?.getCurrentUrl() || null,
+			undefined, // No console monitor in Cloudflare mode
+			undefined, // No browser manager in Cloudflare mode for Desktop connector
+			undefined  // No ensureInitialized in Cloudflare mode
 		);
 	}
 }
