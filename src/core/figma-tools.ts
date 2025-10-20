@@ -21,6 +21,171 @@ const enrichmentService = new EnrichmentService(logger);
 // Initialize snippet injector
 const snippetInjector = new SnippetInjector();
 
+// ============================================================================
+// Cache Management & Data Processing Helpers
+// ============================================================================
+
+/**
+ * Cache configuration
+ */
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_ENTRIES = 10; // LRU eviction
+
+/**
+ * Check if cache entry is still valid based on TTL
+ */
+function isCacheValid(timestamp: number, ttlMs: number = CACHE_TTL_MS): boolean {
+	return Date.now() - timestamp < ttlMs;
+}
+
+/**
+ * Rough token estimation for response size checking
+ * Approximation: 1 token ≈ 4 characters for JSON
+ */
+function estimateTokens(data: any): number {
+	const jsonString = JSON.stringify(data);
+	return Math.ceil(jsonString.length / 4);
+}
+
+/**
+ * Generate compact summary of variables data (~2K tokens)
+ * Returns high-level overview with counts and names
+ */
+function generateSummary(data: any): any {
+	const summary = {
+		fileKey: data.fileKey,
+		timestamp: data.timestamp,
+		source: data.source || 'cache',
+		overview: {
+			total_variables: data.variables?.length || 0,
+			total_collections: data.variableCollections?.length || 0,
+		},
+		collections: data.variableCollections?.map((c: any) => ({
+			id: c.id,
+			name: c.name,
+			modes: c.modes?.map((m: any) => ({ id: m.modeId, name: m.name })),
+			variable_count: c.variableIds?.length || 0,
+		})) || [],
+		variables_by_type: {} as Record<string, number>,
+		variable_names: [] as string[],
+	};
+
+	// Count variables by type
+	const typeCount: Record<string, number> = {};
+	const names: string[] = [];
+
+	data.variables?.forEach((v: any) => {
+		typeCount[v.resolvedType] = (typeCount[v.resolvedType] || 0) + 1;
+		names.push(v.name);
+	});
+
+	summary.variables_by_type = typeCount;
+	summary.variable_names = names;
+
+	return summary;
+}
+
+/**
+ * Apply filters to variables data
+ */
+function applyFilters(
+	data: any,
+	filters: {
+		collection?: string;
+		namePattern?: string;
+		mode?: string;
+	}
+): any {
+	let filteredVariables = [...(data.variables || [])];
+	let filteredCollections = [...(data.variableCollections || [])];
+
+	// Filter by collection name or ID
+	if (filters.collection) {
+		const collectionFilter = filters.collection.toLowerCase();
+		filteredCollections = filteredCollections.filter((c: any) =>
+			c.name?.toLowerCase().includes(collectionFilter) ||
+			c.id === filters.collection
+		);
+
+		const collectionIds = new Set(filteredCollections.map((c: any) => c.id));
+		filteredVariables = filteredVariables.filter((v: any) =>
+			collectionIds.has(v.variableCollectionId)
+		);
+	}
+
+	// Filter by variable name pattern (regex or substring)
+	if (filters.namePattern) {
+		try {
+			const regex = new RegExp(filters.namePattern, 'i');
+			filteredVariables = filteredVariables.filter((v: any) =>
+				regex.test(v.name)
+			);
+		} catch (e) {
+			// If regex fails, fall back to substring match
+			const pattern = filters.namePattern.toLowerCase();
+			filteredVariables = filteredVariables.filter((v: any) =>
+				v.name?.toLowerCase().includes(pattern)
+			);
+		}
+	}
+
+	// Filter by mode name or ID
+	if (filters.mode) {
+		const modeFilter = filters.mode.toLowerCase();
+		filteredVariables = filteredVariables.filter((v: any) => {
+			// Check if variable has values for the specified mode
+			if (v.valuesByMode) {
+				// Try to match by mode ID directly
+				if (v.valuesByMode[filters.mode!]) {
+					return true;
+				}
+				// Try to match by mode name through collections
+				const collection = filteredCollections.find((c: any) =>
+					c.id === v.variableCollectionId
+				);
+				if (collection?.modes) {
+					const mode = collection.modes.find((m: any) =>
+						m.name?.toLowerCase().includes(modeFilter) || m.modeId === filters.mode
+					);
+					return mode && v.valuesByMode[mode.modeId];
+				}
+			}
+			return false;
+		});
+	}
+
+	return {
+		...data,
+		variables: filteredVariables,
+		variableCollections: filteredCollections,
+	};
+}
+
+/**
+ * Manage LRU cache eviction
+ */
+function evictOldestCacheEntry(
+	cache: Map<string, { data: any; timestamp: number }>
+): void {
+	if (cache.size >= MAX_CACHE_ENTRIES) {
+		// Find oldest entry
+		let oldestKey: string | null = null;
+		let oldestTime = Infinity;
+
+		for (const [key, entry] of cache.entries()) {
+			if (entry.timestamp < oldestTime) {
+				oldestTime = entry.timestamp;
+				oldestKey = key;
+			}
+		}
+
+		if (oldestKey) {
+			cache.delete(oldestKey);
+			logger.info({ evictedKey: oldestKey }, 'Evicted oldest cache entry (LRU)');
+		}
+	}
+}
+
 /**
  * Register Figma API tools with the MCP server
  */
@@ -29,7 +194,9 @@ export function registerFigmaAPITools(
 	getFigmaAPI: () => FigmaAPI,
 	getCurrentUrl: () => string | null,
 	getConsoleMonitor?: () => ConsoleMonitor | null,
-	getBrowserManager?: () => any
+	getBrowserManager?: () => any,
+	ensureInitialized?: () => Promise<void>,
+	variablesCache?: Map<string, { data: any; timestamp: number }>
 ) {
 	// Tool 8: Get File Data (General Purpose)
 	// NOTE: For specific use cases, consider using specialized tools:
@@ -288,6 +455,31 @@ export function registerFigmaAPITools(
 				.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
 				.optional()
 				.describe("Which code formats to generate examples for. Use when user mentions specific formats like 'CSS', 'Tailwind', 'SCSS', 'TypeScript', etc. Automatically enables enrichment."),
+			format: z
+				.enum(["summary", "filtered", "full"])
+				.optional()
+				.default("full")
+				.describe(
+					"Response format: 'summary' (~2K tokens with overview and names only), 'filtered' (apply collection/name/mode filters), 'full' (complete dataset from cache or fetch). " +
+					"Summary is recommended for initial exploration. Full format returns all data but may be auto-summarized if >25K tokens. Default: full"
+				),
+			collection: z
+				.string()
+				.optional()
+				.describe("Filter variables by collection name or ID. Case-insensitive substring match. Only applies when format='filtered'. Example: 'Primitives' or 'VariableCollectionId:123'"),
+			namePattern: z
+				.string()
+				.optional()
+				.describe("Filter variables by name using regex pattern or substring. Case-insensitive. Only applies when format='filtered'. Example: 'color/brand' or '^typography'"),
+			mode: z
+				.string()
+				.optional()
+				.describe("Filter variables by mode name or ID. Only returns variables that have values for this mode. Only applies when format='filtered'. Example: 'Light' or 'Dark'"),
+			refreshCache: z
+				.boolean()
+				.optional()
+				.default(false)
+				.describe("Force refresh cache by fetching fresh data from Figma. Use when data may have changed since last fetch. Default: false (use cached data if available and fresh)"),
 			useConsoleFallback: z
 				.boolean()
 				.optional()
@@ -311,7 +503,23 @@ export function registerFigmaAPITools(
 					"Default: false. Never set to true on the first call."
 				),
 		},
-		async ({ fileUrl, includePublished, verbosity, enrich, include_usage, include_dependencies, include_exports, export_formats, useConsoleFallback, parseFromConsole }) => {
+		async ({
+			fileUrl,
+			includePublished,
+			verbosity,
+			enrich,
+			include_usage,
+			include_dependencies,
+			include_exports,
+			export_formats,
+			format,
+			collection,
+			namePattern,
+			mode,
+			refreshCache,
+			useConsoleFallback,
+			parseFromConsole
+		}) => {
 			// Extract fileKey outside try block so it's available in catch block
 			const url = fileUrl || getCurrentUrl();
 			if (!url) {
@@ -354,8 +562,146 @@ export function registerFigmaAPITools(
 			}
 
 			try {
+				// =====================================================================
+				// CACHE-FIRST LOGIC: Check if we have cached data before fetching
+				// =====================================================================
+				let cachedData: any = null;
+				let shouldFetch = true;
+
+				if (variablesCache && !parseFromConsole) {
+					const cacheEntry = variablesCache.get(fileKey);
+
+					if (cacheEntry) {
+						const isValid = isCacheValid(cacheEntry.timestamp);
+
+						if (isValid && !refreshCache) {
+							// Cache hit! Use cached data
+							cachedData = cacheEntry.data;
+							shouldFetch = false;
+
+							logger.info(
+								{
+									fileKey,
+									cacheAge: Date.now() - cacheEntry.timestamp,
+									variableCount: cachedData.variables?.length,
+								},
+								'Using cached variables data'
+							);
+						} else if (!isValid) {
+							logger.info({ fileKey, cacheAge: Date.now() - cacheEntry.timestamp }, 'Cache expired, will refresh');
+						} else if (refreshCache) {
+							logger.info({ fileKey }, 'Refresh cache requested, will fetch fresh data');
+						}
+					} else {
+						logger.info({ fileKey }, 'No cache entry found, will fetch data');
+					}
+				}
+
+				// If we have cached data, skip fetching and jump to formatting
+				if (cachedData && !shouldFetch) {
+					// Apply format logic based on user request
+					let responseData = cachedData;
+
+					if (format === 'summary') {
+						// Return compact summary
+						responseData = generateSummary(cachedData);
+						logger.info({ fileKey, estimatedTokens: estimateTokens(responseData) }, 'Generated summary from cache');
+					} else if (format === 'filtered') {
+						// Apply filters
+						responseData = applyFilters(cachedData, {
+							collection,
+							namePattern,
+							mode,
+						});
+						logger.info(
+							{
+								fileKey,
+								originalCount: cachedData.variables?.length,
+								filteredCount: responseData.variables?.length,
+							},
+							'Applied filters to cached data'
+						);
+
+						// Auto-summarize if still too large
+						const estimatedTokens = estimateTokens(responseData);
+						if (estimatedTokens > 25000) {
+							logger.warn({ fileKey, estimatedTokens }, 'Filtered data still exceeds token limit, auto-summarizing');
+							responseData = generateSummary(responseData);
+						}
+					} else {
+						// format === 'full'
+						// Check if we need to auto-summarize
+						const estimatedTokens = estimateTokens(responseData);
+						if (estimatedTokens > 25000) {
+							logger.warn(
+								{ fileKey, estimatedTokens },
+								'Full data exceeds MCP token limit (25K), auto-summarizing. Use format=summary or format=filtered to get specific data.'
+							);
+							const summary = generateSummary(responseData);
+							return {
+								content: [
+									{
+										type: "text",
+										text: JSON.stringify(
+											{
+												fileKey,
+												source: 'cache_auto_summarized',
+												warning: 'Full dataset exceeds MCP token limit (25,000 tokens)',
+												suggestion: 'Use format="summary" for overview or format="filtered" with collection/namePattern/mode filters to get specific variables',
+												estimatedTokens,
+												summary,
+											},
+											null,
+											2
+										),
+									},
+								],
+							};
+						}
+					}
+
+					// Return cached/processed data
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										fileKey,
+										source: 'cache',
+										format: format || 'full',
+										timestamp: cachedData.timestamp,
+										data: responseData,
+									},
+									null,
+									2
+								),
+							},
+						],
+					};
+				}
+
+				// =====================================================================
+				// FETCH LOGIC: No cache or cache invalid/refresh requested
+				// =====================================================================
+
 				// BEST: Try Desktop connection first (like official Figma MCP does)
+				// Ensure browser manager is initialized
+				if (ensureInitialized && !parseFromConsole) {
+					logger.info("Calling ensureInitialized to initialize browser manager");
+					await ensureInitialized();
+				}
+
 				const browserManager = getBrowserManager?.();
+				logger.info({ hasBrowserManager: !!browserManager, parseFromConsole }, "Desktop connection check");
+
+				// Debug: Log why Desktop connection might be skipped
+				if (!browserManager) {
+					logger.error("Desktop connection skipped: browserManager is not available");
+				} else if (parseFromConsole) {
+					logger.info("Desktop connection skipped: parseFromConsole is true");
+				}
+
 				if (browserManager && !parseFromConsole) {
 					try {
 						logger.info({ fileKey }, "Attempting to get variables via Desktop connection");
@@ -363,10 +709,27 @@ export function registerFigmaAPITools(
 						// Import and use the Desktop connector
 						const { FigmaDesktopConnector } = await import('./figma-desktop-connector.js');
 						const page = await browserManager.getPage();
+						logger.info("Got page from browser manager");
+
+						// Log to browser console for MCP capture
+						await page.evaluate(() => {
+							console.log('[FIGMA_TOOLS] 🚀 Got page from browser manager, creating Desktop connector...');
+						});
+
 						const connector = new FigmaDesktopConnector(page);
 
+						await page.evaluate(() => {
+							console.log('[FIGMA_TOOLS] ✅ Desktop connector created, initializing...');
+						});
+
 						await connector.initialize();
-						const desktopResult = await connector.getVariables(fileKey);
+						logger.info("Desktop connector initialized, calling getVariablesFromPluginUI...");
+
+						await page.evaluate(() => {
+							console.log('[FIGMA_TOOLS] ✅ Desktop connector initialized, calling getVariablesFromPluginUI...');
+						});
+
+						const desktopResult = await connector.getVariablesFromPluginUI(fileKey);
 
 						if (desktopResult.success && desktopResult.variables) {
 							logger.info(
@@ -377,19 +740,85 @@ export function registerFigmaAPITools(
 								"Successfully retrieved variables via Desktop connection!"
 							);
 
-							// Enrich if requested
-							let enrichedData = null;
-							if (enrich && enrichmentService) {
-								enrichedData = await enrichmentService.enrichVariables(
-									desktopResult.variables,
-									desktopResult.variableCollections,
-									{
-										include_usage: include_usage,
-										include_dependencies: include_dependencies,
-										include_exports: include_exports,
-										export_formats: export_formats
-									}
+							// Prepare data for caching (using the raw data, not enriched)
+							const dataForCache = {
+								fileKey,
+								source: "desktop_connection",
+								timestamp: desktopResult.timestamp || Date.now(),
+								variables: desktopResult.variables,
+								variableCollections: desktopResult.variableCollections,
+							};
+
+							// Store in cache with LRU eviction
+							if (variablesCache) {
+								evictOldestCacheEntry(variablesCache);
+								variablesCache.set(fileKey, {
+									data: dataForCache,
+									timestamp: Date.now(),
+								});
+								logger.info(
+									{ fileKey, cacheSize: variablesCache.size },
+									'Stored variables in cache'
 								);
+							}
+
+							// Apply format logic
+							let responseData = dataForCache;
+
+							if (format === 'summary') {
+								responseData = generateSummary(dataForCache);
+								logger.info({ fileKey, estimatedTokens: estimateTokens(responseData) }, 'Generated summary from fetched data');
+							} else if (format === 'filtered') {
+								responseData = applyFilters(dataForCache, {
+									collection,
+									namePattern,
+									mode,
+								});
+								logger.info(
+									{
+										fileKey,
+										originalCount: dataForCache.variables?.length,
+										filteredCount: responseData.variables?.length,
+									},
+									'Applied filters to fetched data'
+								);
+
+								// Auto-summarize if still too large
+								const estimatedTokens = estimateTokens(responseData);
+								if (estimatedTokens > 25000) {
+									logger.warn({ fileKey, estimatedTokens }, 'Filtered data still exceeds token limit, auto-summarizing');
+									responseData = generateSummary(responseData);
+								}
+							} else {
+								// format === 'full'
+								// Check if we need to auto-summarize
+								const estimatedTokens = estimateTokens(responseData);
+								if (estimatedTokens > 25000) {
+									logger.warn(
+										{ fileKey, estimatedTokens },
+										'Full data exceeds MCP token limit (25K), auto-summarizing. Use format=summary or format=filtered to get specific data.'
+									);
+									const summary = generateSummary(responseData);
+									return {
+										content: [
+											{
+												type: "text",
+												text: JSON.stringify(
+													{
+														fileKey,
+														source: 'desktop_connection_auto_summarized',
+														warning: 'Full dataset exceeds MCP token limit (25,000 tokens)',
+														suggestion: 'Use format="summary" for overview or format="filtered" with collection/namePattern/mode filters to get specific variables',
+														estimatedTokens,
+														summary,
+													},
+													null,
+													2
+												),
+											},
+										],
+									};
+								}
 							}
 
 							return {
@@ -400,16 +829,10 @@ export function registerFigmaAPITools(
 											{
 												fileKey,
 												source: "desktop_connection",
-												local: enrichedData || {
-													summary: {
-														total_variables: desktopResult.variables.length,
-														total_collections: desktopResult.variableCollections?.length,
-													},
-													collections: desktopResult.variableCollections,
-													variables: desktopResult.variables,
-												},
-												timestamp: desktopResult.timestamp,
-												enriched: !!enrichedData,
+												format: format || 'full',
+												timestamp: dataForCache.timestamp,
+												data: responseData,
+												cached: true,
 											},
 											null,
 											2
@@ -419,7 +842,30 @@ export function registerFigmaAPITools(
 							};
 						}
 					} catch (desktopError) {
-						logger.warn({ error: desktopError }, "Desktop connection failed, falling back to other methods");
+						const errorMessage = desktopError instanceof Error ? desktopError.message : String(desktopError);
+						const errorStack = desktopError instanceof Error ? desktopError.stack : undefined;
+
+						logger.error({
+							error: desktopError,
+							message: errorMessage,
+							stack: errorStack
+						}, "Desktop connection failed, falling back to other methods");
+
+						// Try to log to browser console if we have access to page
+						try {
+							if (browserManager) {
+								const page = await browserManager.getPage();
+								await page.evaluate((msg: string, stack: string | undefined) => {
+									console.error('[FIGMA_TOOLS] ❌ Desktop connection failed:', msg);
+									if (stack) {
+										console.error('[FIGMA_TOOLS] Stack trace:', stack);
+									}
+								}, errorMessage, errorStack);
+							}
+						} catch (logError) {
+							// Ignore logging errors
+						}
+
 						// Continue to try other methods
 					}
 				}

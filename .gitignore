@@ -194,3 +194,6 @@ dist
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# Serena MCP memory files
+.serena/

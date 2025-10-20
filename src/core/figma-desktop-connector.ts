@@ -4,14 +4,16 @@
  * This service connects directly to Figma Desktop's plugin context
  * to execute code with access to the full Figma Plugin API,
  * including variables without Enterprise access.
+ *
+ * Uses Puppeteer's Worker API to directly access plugin workers,
+ * bypassing CDP context enumeration limitations.
  */
 
-import { CDPSession, Page } from 'puppeteer-core';
-import { logger } from './logger';
+import { Page } from 'puppeteer-core';
+import { logger } from './logger.js';
 
 export class FigmaDesktopConnector {
   private page: Page;
-  private session: CDPSession | null = null;
 
   constructor(page: Page) {
     this.page = page;
@@ -19,112 +21,164 @@ export class FigmaDesktopConnector {
 
   /**
    * Initialize connection to Figma Desktop's plugin context
+   * No setup needed - Puppeteer handles worker access automatically
    */
   async initialize(): Promise<void> {
-    try {
-      // Create a CDP session for direct protocol access
-      const client = await this.page.target().createCDPSession();
-      this.session = client;
-
-      // Enable Runtime domain for script execution
-      await client.send('Runtime.enable');
-
-      logger.info('Figma Desktop connector initialized');
-    } catch (error) {
-      logger.error({ error }, 'Failed to initialize Figma Desktop connector');
-      throw error;
-    }
+    logger.info('Figma Desktop connector initialized (using Puppeteer Worker API)');
   }
 
   /**
    * Execute code in Figma's plugin context where the figma API is available
-   * This mimics what the official Figma MCP does
+   * Uses Puppeteer's direct worker access instead of CDP context enumeration
    */
   async executeInPluginContext<T = any>(code: string): Promise<T> {
-    if (!this.session) {
-      throw new Error('Figma Desktop connector not initialized');
-    }
-
     try {
-      // Find the Figma plugin context (worker or isolated world)
-      const { result } = await this.session.send('Runtime.evaluate', {
-        expression: code,
-        includeCommandLineAPI: true,
-        returnByValue: true,
-        // Try to execute in the context where figma API exists
-        contextId: await this.findPluginContextId()
-      });
+      // Use Puppeteer's worker API directly - this can access plugin workers
+      // that CDP's Runtime.getExecutionContexts cannot enumerate
+      const workers = this.page.workers();
 
-      if (result.subtype === 'error') {
-        throw new Error(result.description || 'Execution failed');
-      }
+      // Log to browser console so MCP can capture it
+      await this.page.evaluate((count, urls) => {
+        console.log(`[DESKTOP_CONNECTOR] Found ${count} workers via Puppeteer API:`, urls);
+      }, workers.length, workers.map(w => w.url()));
 
-      return result.value as T;
-    } catch (error) {
-      logger.error({ error, code }, 'Failed to execute in plugin context');
+      logger.info({
+        workerCount: workers.length,
+        workerUrls: workers.map(w => w.url())
+      }, 'Found workers via Puppeteer API');
 
-      // Fallback: Try to find and execute in a Web Worker context
-      return this.executeInWorkerContext(code);
-    }
-  }
+      // Try each worker to find one with figma API
+      for (const worker of workers) {
+        try {
+          // Log to browser console
+          await this.page.evaluate((url) => {
+            console.log(`[DESKTOP_CONNECTOR] Checking worker: ${url}`);
+          }, worker.url());
 
-  /**
-   * Find the execution context ID where the figma API is available
-   */
-  private async findPluginContextId(): Promise<number | undefined> {
-    if (!this.session) return undefined;
+          // Check if this worker has the figma API
+          // Use string evaluation to avoid TypeScript errors about figma global
+          const hasFigmaApi = await worker.evaluate('typeof figma !== "undefined"');
 
-    try {
-      // Get all execution contexts
-      const { contexts } = await this.session.send('Runtime.getExecutionContexts' as any);
+          // Log result to browser console
+          await this.page.evaluate((url, hasApi) => {
+            console.log(`[DESKTOP_CONNECTOR] Worker ${url} has figma API: ${hasApi}`);
+          }, worker.url(), hasFigmaApi);
 
-      // Look for a context that might have the figma API
-      // This could be a worker, isolated world, or specific frame
-      for (const context of contexts) {
-        const { result } = await this.session.send('Runtime.evaluate', {
-          expression: 'typeof figma !== "undefined"',
-          contextId: context.id,
-          returnByValue: true
-        });
+          if (hasFigmaApi) {
+            logger.info({ workerUrl: worker.url() }, 'Found worker with Figma API');
 
-        if (result.value === true) {
-          logger.info({ contextId: context.id }, 'Found Figma plugin context');
-          return context.id;
+            await this.page.evaluate((url) => {
+              console.log(`[DESKTOP_CONNECTOR] ✅ SUCCESS! Found worker with Figma API: ${url}`);
+            }, worker.url());
+
+            // Execute the code in this worker context
+            // Wrap the code in a function to ensure proper evaluation
+            const wrappedCode = `(${code})`;
+            const result = await worker.evaluate(wrappedCode);
+            return result as T;
+          }
+        } catch (workerError) {
+          // This worker doesn't have figma API or evaluation failed, try next
+          await this.page.evaluate((url, err) => {
+            console.error(`[DESKTOP_CONNECTOR] ❌ Worker ${url} check failed:`, err);
+          }, worker.url(), workerError instanceof Error ? workerError.message : String(workerError));
+
+          logger.error({ error: workerError, workerUrl: worker.url() }, 'Worker check failed, trying next');
+          continue;
         }
       }
-    } catch (error) {
-      logger.warn({ error }, 'Could not find plugin context');
-    }
 
-    return undefined;
+      // If no worker found with figma API, throw error
+      throw new Error('No plugin worker found with Figma API. Make sure a plugin is running in Figma Desktop.');
+    } catch (error) {
+      logger.error({ error, code: code.substring(0, 200) }, 'Failed to execute in plugin context');
+      throw error;
+    }
   }
 
+
   /**
-   * Execute code in a Web Worker context (where plugins run)
+   * Get Figma variables from plugin UI window object
+   * This bypasses Figma's plugin sandbox security restrictions
+   * by accessing data that the plugin posted to its UI iframe
    */
-  private async executeInWorkerContext<T = any>(code: string): Promise<T> {
+  async getVariablesFromPluginUI(fileKey?: string): Promise<any> {
     try {
-      // Evaluate in the page but target worker contexts
-      const result = await this.page.evaluate(`
-        (async () => {
-          // Try to find and communicate with Figma plugin workers
-          const workers = await navigator.serviceWorker?.getRegistrations() || [];
+      // Log to browser console
+      await this.page.evaluate((key) => {
+        console.log(`[DESKTOP_CONNECTOR] 🚀 getVariablesFromPluginUI() called, fileKey: ${key}`);
+      }, fileKey);
 
-          // Also check for shared workers or dedicated workers
-          // This is where Figma plugins typically run
+      logger.info({ fileKey }, 'Getting variables from plugin UI iframe');
 
-          // For now, we'll try direct evaluation in case we're in the right context
-          try {
-            return await (async function() { ${code} })();
-          } catch (e) {
-            throw new Error('Figma API not available in this context: ' + e.message);
+      // Get all frames (iframes) in the page
+      const frames = this.page.frames();
+
+      await this.page.evaluate((count) => {
+        console.log(`[DESKTOP_CONNECTOR] Found ${count} frames (iframes)`);
+      }, frames.length);
+
+      logger.info({ frameCount: frames.length }, 'Found frames in page');
+
+      // Try to find plugin UI iframe with variables data
+      for (const frame of frames) {
+        try {
+          const frameUrl = frame.url();
+
+          await this.page.evaluate((url) => {
+            console.log(`[DESKTOP_CONNECTOR] Checking frame: ${url}`);
+          }, frameUrl);
+
+          // Check if this frame has our variables data
+          const hasData = await frame.evaluate('typeof window.__figmaVariablesData !== "undefined" && window.__figmaVariablesReady === true');
+
+          await this.page.evaluate((url, has) => {
+            console.log(`[DESKTOP_CONNECTOR] Frame ${url} has variables data: ${has}`);
+          }, frameUrl, hasData);
+
+          if (hasData) {
+            logger.info({ frameUrl }, 'Found frame with variables data');
+
+            await this.page.evaluate((url) => {
+              console.log(`[DESKTOP_CONNECTOR] ✅ SUCCESS! Found plugin UI with variables data: ${url}`);
+            }, frameUrl);
+
+            // Get the data from window object
+            const result = await frame.evaluate('window.__figmaVariablesData') as any;
+
+            logger.info(
+              {
+                variableCount: result.variables?.length,
+                collectionCount: result.variableCollections?.length
+              },
+              'Successfully retrieved variables from plugin UI'
+            );
+
+            await this.page.evaluate((varCount, collCount) => {
+              console.log(`[DESKTOP_CONNECTOR] ✅ Retrieved ${varCount} variables in ${collCount} collections`);
+            }, result.variables?.length || 0, result.variableCollections?.length || 0);
+
+            return result;
           }
-        })()
-      `);
+        } catch (frameError) {
+          await this.page.evaluate((url, err) => {
+            console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
+          }, frame.url(), frameError instanceof Error ? frameError.message : String(frameError));
 
-      return result as T;
+          logger.debug({ error: frameError, frameUrl: frame.url() }, 'Frame check failed, trying next');
+          continue;
+        }
+      }
+
+      // If no frame found with data, throw error
+      throw new Error('No plugin UI found with variables data. Make sure the Variables Exporter (Persistent) plugin is running.');
     } catch (error) {
-      logger.error({ error }, 'Failed to execute in worker context');
+      logger.error({ error }, 'Failed to get variables from plugin UI');
+
+      await this.page.evaluate((msg) => {
+        console.error('[DESKTOP_CONNECTOR] ❌ getVariablesFromPluginUI failed:', msg);
+      }, error instanceof Error ? error.message : String(error));
+
       throw error;
     }
   }
@@ -134,6 +188,11 @@ export class FigmaDesktopConnector {
    * This bypasses the Enterprise requirement!
    */
   async getVariables(fileKey?: string): Promise<any> {
+    // Log to browser console
+    await this.page.evaluate((key) => {
+      console.log(`[DESKTOP_CONNECTOR] 🚀 getVariables() called, fileKey: ${key}`);
+    }, fileKey);
+
     logger.info({ fileKey }, 'Getting variables via Desktop connection');
 
     const code = `
@@ -206,12 +265,9 @@ export class FigmaDesktopConnector {
   }
 
   /**
-   * Clean up resources
+   * Clean up resources (no-op since we use Puppeteer's built-in worker management)
    */
   async dispose(): Promise<void> {
-    if (this.session) {
-      await this.session.detach();
-      this.session = null;
-    }
+    logger.info('Figma Desktop connector disposed');
   }
 }

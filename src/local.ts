@@ -41,6 +41,13 @@ class LocalFigmaConsoleMCP {
 	private figmaAPI: FigmaAPI | null = null;
 	private config = getConfig();
 
+	// In-memory cache for variables data to avoid MCP token limits
+	// Maps fileKey -> {data, timestamp}
+	private variablesCache: Map<string, {
+		data: any;
+		timestamp: number;
+	}> = new Map();
+
 	constructor() {
 		this.server = new McpServer({
 			name: "Figma Console MCP (Local)",
@@ -528,6 +535,8 @@ class LocalFigmaConsoleMCP {
 										status: "cleared",
 										clearedCount,
 										timestamp: Date.now(),
+										ai_instruction:
+											"⚠️ CRITICAL: Console cleared successfully, but this operation disrupts the monitoring connection. You MUST reconnect the MCP server using `/mcp reconnect figma-console` before calling figma_get_console_logs again. Best practice: Avoid clearing console - filter/parse logs instead to maintain monitoring connection.",
 									},
 									null,
 									2,
@@ -748,7 +757,9 @@ class LocalFigmaConsoleMCP {
 			() => this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			() => this.consoleMonitor || null,
-			() => this.browserManager || null
+			() => this.browserManager || null,
+			() => this.ensureInitialized(),
+			this.variablesCache  // Pass cache for efficient variable queries
 		);
 
 		logger.info("All MCP tools registered successfully");
