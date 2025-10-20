@@ -197,3 +197,6 @@ Temporary Items
 
 # Serena MCP memory files
 .serena/
+
+# Release artifacts
+*.zip

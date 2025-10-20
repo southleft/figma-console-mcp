@@ -17,6 +17,47 @@ Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/
 - **Zero-friction debugging** workflow (no copy-paste needed)
 - **Dual deployment modes** - Local (for plugin development) or Cloud (for remote collaboration)
 
+## ⚡ Quick Start for Designers
+
+Get full access to your Figma design system data in 3 simple steps:
+
+### Step 1: Install MCP Server (One Command)
+
+Open your terminal and run:
+
+```bash
+claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
+```
+
+**Verify it worked:**
+- Open Claude Code
+- Type `/mcp`
+- You should see "figma-console: connected" ✅
+
+### Step 2: Download the Figma Plugin
+
+1. Go to [Releases](https://github.com/southleft/figma-console-mcp/releases/latest)
+2. Download **`figma-variables-bridge.zip`**
+3. Unzip the file
+
+### Step 3: Install Plugin in Figma
+
+1. Open **Figma Desktop**
+2. Go to **Plugins → Development → Import plugin from manifest**
+3. Select the **`manifest.json`** file from your unzipped folder
+4. Done! ✅
+
+### Step 4: Use It!
+
+1. Open any Figma file with design tokens (variables)
+2. Right-click → **Plugins → Development → Figma Variables Bridge**
+3. The plugin will show "✓ Variables ready"
+4. Go to Claude and ask: **"Show me the primary font for [your theme name]"**
+
+**That's it!** Claude now has full access to your design system. 🎉
+
+---
+
 ## Example Prompts
 
 Once connected, try these prompts with your AI assistant:
