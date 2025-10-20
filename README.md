@@ -21,47 +21,42 @@ Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/
 
 Get full access to your Figma design system data in 5 simple steps:
 
-### Step 1: Install MCP Server (One Command)
+### Step 1: Get Your Figma Access Token
 
-Open your terminal and run:
-
-```bash
-claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
-```
-
-### Step 2: Add Your Figma Access Token
-
-**Get your token:**
 1. Go to [Figma Settings → Personal Access Tokens](https://www.figma.com/developers/api#access-tokens)
 2. Click "Create new token"
 3. Copy the token (starts with `figd_`)
+4. Keep it handy for Step 2
 
-**Add it to Claude:**
+### Step 2: Configure Claude Desktop
 
-```bash
-claude config edit
-```
+**Open Claude Desktop settings:**
+- **Mac**: `Claude` menu → `Settings` → `Developer`
+- **Windows**: `File` menu → `Settings` → `Developer`
 
-Add the token to your configuration:
+Click **"Edit Config"** to open `claude_desktop_config.json`
+
+**Add this configuration** (replace `your_token_here` with your actual token):
 
 ```json
 {
   "mcpServers": {
     "figma-console": {
-      "transport": "sse",
-      "url": "https://figma-console-mcp.southleft.com/sse",
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
       "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+        "FIGMA_ACCESS_TOKEN": "figd_your_token_here"
       }
     }
   }
 }
 ```
 
+**Save and restart Claude Desktop**
+
 **Verify it worked:**
-- Open Claude Code
-- Type `/mcp`
-- You should see "figma-console: connected" ✅
+- Look for a 🔌 icon in the bottom-right of Claude Desktop
+- It should show "figma-console: connected" ✅
 
 ### Step 3: Download the Figma Plugin
 

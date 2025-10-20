@@ -17,35 +17,35 @@ This release includes the **Figma Variables Bridge** plugin, which enables AI as
 
 ## 🚀 Quick Install (5 Steps)
 
-### Step 1: Install MCP Server
+### Step 1: Get Your Figma Access Token
 
-```bash
-claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
-```
+1. Go to: https://www.figma.com/developers/api#access-tokens
+2. Click "Create new token"
+3. Copy the token (starts with `figd_`)
 
-### Step 2: Add Your Figma Access Token
+### Step 2: Configure Claude Desktop
 
-Get your token: https://www.figma.com/developers/api#access-tokens
+**Open Claude Desktop settings:**
+- **Mac**: Claude menu → Settings → Developer
+- **Windows**: File menu → Settings → Developer
 
-Then add it:
-
-```bash
-claude config edit
-```
+Click **"Edit Config"** and add:
 
 ```json
 {
   "mcpServers": {
     "figma-console": {
-      "transport": "sse",
-      "url": "https://figma-console-mcp.southleft.com/sse",
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
       "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+        "FIGMA_ACCESS_TOKEN": "figd_your_token_here"
       }
     }
   }
 }
 ```
+
+**Save and restart Claude Desktop**
 
 ### Step 3: Download & Unzip Plugin
 
