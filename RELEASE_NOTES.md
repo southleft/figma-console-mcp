@@ -15,7 +15,7 @@ This release includes the **Figma Variables Bridge** plugin, which enables AI as
 - **Real-time Updates**: Changes in Figma instantly available to AI
 - **Southleft Branded**: Made with ❤️ by Southleft
 
-## 🚀 Quick Install (3 Steps)
+## 🚀 Quick Install (5 Steps)
 
 ### Step 1: Install MCP Server
 
@@ -23,16 +23,46 @@ This release includes the **Figma Variables Bridge** plugin, which enables AI as
 claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
 ```
 
-### Step 2: Download & Unzip Plugin
+### Step 2: Add Your Figma Access Token
+
+Get your token: https://www.figma.com/developers/api#access-tokens
+
+Then add it:
+
+```bash
+claude config edit
+```
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "transport": "sse",
+      "url": "https://figma-console-mcp.southleft.com/sse",
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+      }
+    }
+  }
+}
+```
+
+### Step 3: Download & Unzip Plugin
 
 1. Download `figma-variables-bridge.zip` from this release
 2. Unzip the file to any location
 
-### Step 3: Install in Figma
+### Step 4: Install in Figma
 
 1. Open Figma Desktop
 2. Go to **Plugins → Development → Import plugin from manifest**
 3. Select the `manifest.json` file from your unzipped folder
+
+### Step 5: Use It!
+
+1. Open any Figma file with design tokens
+2. Right-click → **Plugins → Development → Figma Variables Bridge**
+3. Ask Claude: **"Show me the primary font for [your theme]"**
 
 **Done!** ✅
 

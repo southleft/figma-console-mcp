@@ -19,7 +19,7 @@ Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/
 
 ## ⚡ Quick Start for Designers
 
-Get full access to your Figma design system data in 3 simple steps:
+Get full access to your Figma design system data in 5 simple steps:
 
 ### Step 1: Install MCP Server (One Command)
 
@@ -29,25 +29,54 @@ Open your terminal and run:
 claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
 ```
 
+### Step 2: Add Your Figma Access Token
+
+**Get your token:**
+1. Go to [Figma Settings → Personal Access Tokens](https://www.figma.com/developers/api#access-tokens)
+2. Click "Create new token"
+3. Copy the token (starts with `figd_`)
+
+**Add it to Claude:**
+
+```bash
+claude config edit
+```
+
+Add the token to your configuration:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "transport": "sse",
+      "url": "https://figma-console-mcp.southleft.com/sse",
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
+      }
+    }
+  }
+}
+```
+
 **Verify it worked:**
 - Open Claude Code
 - Type `/mcp`
 - You should see "figma-console: connected" ✅
 
-### Step 2: Download the Figma Plugin
+### Step 3: Download the Figma Plugin
 
 1. Go to [Releases](https://github.com/southleft/figma-console-mcp/releases/latest)
 2. Download **`figma-variables-bridge.zip`**
 3. Unzip the file
 
-### Step 3: Install Plugin in Figma
+### Step 4: Install Plugin in Figma
 
 1. Open **Figma Desktop**
 2. Go to **Plugins → Development → Import plugin from manifest**
 3. Select the **`manifest.json`** file from your unzipped folder
 4. Done! ✅
 
-### Step 4: Use It!
+### Step 5: Use It!
 
 1. Open any Figma file with design tokens (variables)
 2. Right-click → **Plugins → Development → Figma Variables Bridge**
