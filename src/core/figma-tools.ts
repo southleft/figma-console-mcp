@@ -204,6 +204,7 @@ export function registerFigmaAPITools(
 	// - figma_get_file_for_plugin: For plugin development
 	server.tool(
 		"figma_get_file_data",
+		"Get full file structure and document tree. WARNING: Can consume large amounts of tokens. NOT recommended for component descriptions (use figma_get_component instead). Best for understanding file structure or finding component nodeIds. Start with verbosity='summary' and depth=1 for initial exploration.",
 		{
 			fileUrl: z
 				.string()
@@ -217,15 +218,16 @@ export function registerFigmaAPITools(
 				.min(0)
 				.max(3)
 				.optional()
+				.default(1)
 				.describe(
-					"How many levels of children to include (default: 1, max: 3 to prevent context exhaustion). Use 0 for full tree only when absolutely necessary."
+					"How many levels of children to include (default: 1, max: 3). Start with 1 to prevent context exhaustion. Use 0 for full tree only when absolutely necessary."
 				),
 			verbosity: z
 				.enum(["summary", "standard", "full"])
 				.optional()
-				.default("standard")
+				.default("summary")
 				.describe(
-					"Controls payload size: 'summary' (IDs/names/types only, ~90% smaller), 'standard' (essential properties for plugins, ~50% smaller), 'full' (everything). Default: standard"
+					"Controls payload size: 'summary' (IDs/names/types only, ~90% smaller - RECOMMENDED), 'standard' (essential properties, ~50% smaller), 'full' (everything). Default: summary for token efficiency."
 				),
 			nodeIds: z
 				.array(z.string())
@@ -1167,6 +1169,7 @@ export function registerFigmaAPITools(
 	// Tool 10: Get Component Data
 	server.tool(
 		"figma_get_component",
+		"Get component metadata including reliable description fields. IMPORTANT: For local/unpublished components, ensure the Figma Desktop Bridge plugin is running (Right-click in Figma → Plugins → Development → Figma Desktop Bridge) to get complete description data. Without the plugin, descriptions may be missing due to REST API limitations.",
 		{
 			fileUrl: z
 				.string()
@@ -1203,6 +1206,73 @@ export function registerFigmaAPITools(
 
 				logger.info({ fileKey, nodeId, enrich }, "Fetching component data");
 
+				// PRIORITY 1: Try Desktop Bridge plugin UI first (has reliable description field!)
+				const browserManager = getBrowserManager?.();
+				if (browserManager && ensureInitialized) {
+					try {
+						logger.info({ nodeId }, "Attempting to get component via Desktop Bridge plugin UI");
+						await ensureInitialized();
+
+						const { FigmaDesktopConnector } = await import('./figma-desktop-connector.js');
+						const page = await browserManager.getPage();
+						const connector = new FigmaDesktopConnector(page);
+						await connector.initialize();
+
+						const desktopResult = await connector.getComponentFromPluginUI(nodeId);
+
+						if (desktopResult.success && desktopResult.component) {
+							logger.info(
+								{
+									componentName: desktopResult.component.name,
+									hasDescription: !!desktopResult.component.description,
+									hasDescriptionMarkdown: !!desktopResult.component.descriptionMarkdown
+								},
+								"Successfully retrieved component via Desktop Bridge plugin UI!"
+							);
+
+							let formatted = desktopResult.component;
+
+							// Apply enrichment if requested
+							if (enrich) {
+								const enrichmentOptions: EnrichmentOptions = {
+									enrich: true,
+									include_usage: true,
+								};
+
+								formatted = await enrichmentService.enrichComponent(
+									formatted,
+									fileKey,
+									enrichmentOptions
+								);
+							}
+
+							return {
+								content: [
+									{
+										type: "text",
+										text: JSON.stringify(
+											{
+												fileKey,
+												nodeId,
+												component: formatted,
+												source: "desktop_bridge_plugin",
+												enriched: enrich || false,
+												note: "Retrieved via Desktop Bridge plugin - description fields are reliable and current"
+											},
+											null,
+											2
+										),
+									},
+								],
+							};
+						}
+					} catch (desktopError) {
+						logger.warn({ error: desktopError, nodeId }, "Desktop Bridge plugin failed, falling back to REST API");
+					}
+				}
+
+				// FALLBACK: Use REST API (may have missing/outdated description)
+				logger.info({ nodeId }, "Using REST API fallback");
 				const componentData = await api.getComponentData(fileKey, nodeId);
 
 				if (!componentData) {
@@ -1234,7 +1304,10 @@ export function registerFigmaAPITools(
 									fileKey,
 									nodeId,
 									component: formatted,
+									source: "rest_api",
 									enriched: enrich || false,
+									warning: "Retrieved via REST API - description field may be missing due to known Figma API bug",
+									action_required: formatted.description || formatted.descriptionMarkdown ? null : "To get reliable component descriptions, run the Desktop Bridge plugin in Figma Desktop: Right-click → Plugins → Development → Figma Desktop Bridge, then try again."
 								},
 								null,
 								2
@@ -1582,6 +1655,8 @@ export function registerFigmaAPITools(
 						id: n.id,
 						name: n.name,
 						type: n.type,
+						description: n.description,
+						descriptionMarkdown: n.descriptionMarkdown,
 					};
 
 					// Layout & positioning
@@ -1768,6 +1843,8 @@ export function registerFigmaAPITools(
 						id: node.id,
 						name: node.name,
 						type: node.type,
+						description: node.description,
+						descriptionMarkdown: node.descriptionMarkdown,
 					};
 
 					// Navigation & structure
