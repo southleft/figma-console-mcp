@@ -61,7 +61,7 @@ Click **"Edit Config"** to open `claude_desktop_config.json`
 ### Step 3: Download the Figma Plugin
 
 1. Go to [Releases](https://github.com/southleft/figma-console-mcp/releases/latest)
-2. Download **`figma-variables-bridge.zip`**
+2. Download **`figma-desktop-bridge.zip`**
 3. Unzip the file
 
 ### Step 4: Install Plugin in Figma
@@ -73,12 +73,14 @@ Click **"Edit Config"** to open `claude_desktop_config.json`
 
 ### Step 5: Use It!
 
-1. Open any Figma file with design tokens (variables)
-2. Right-click → **Plugins → Development → Figma Variables Bridge**
-3. The plugin will show "✓ Variables ready"
-4. Go to Claude and ask: **"Show me the primary font for [your theme name]"**
+1. Open any Figma file with design tokens (variables) or components
+2. Right-click → **Plugins → Development → Figma Desktop Bridge**
+3. The plugin will show "✓ Desktop Bridge active"
+4. Go to Claude and ask questions about your design system:
+   - **"Show me the primary font for [your theme name]"** (accesses variables)
+   - **"What does the Chips component description say?"** (accesses component data)
 
-**That's it!** Claude now has full access to your design system. 🎉
+**That's it!** Claude now has full access to your design system variables AND component descriptions. 🎉
 
 ---
 
@@ -513,24 +515,33 @@ All 14 tools work identically in both cloud and local modes.
 
 ---
 
-## Accessing Variables Without Enterprise API
+## Accessing Variables & Component Descriptions Without Enterprise API
 
-Figma's Variables API requires an Enterprise plan. **We've built a workaround** that lets you access all your local variables through a simple plugin bridge - no Enterprise plan needed.
+Figma's Variables API requires an Enterprise plan, and the REST API has known issues with component descriptions. **We've built a workaround** that lets you access all your local variables AND reliable component descriptions through a simple plugin bridge - no Enterprise plan needed.
 
 ### How It Works
 
-The **Figma Variables Bridge** plugin runs in Figma Desktop and exposes your variables data through a plugin UI iframe. The MCP server accesses this data via Puppeteer, bypassing Figma's Enterprise API requirement.
+The **Figma Desktop Bridge** plugin runs in Figma Desktop and provides two key capabilities:
+
+1. **Pre-loaded Variables**: Exposes all variables data through a plugin UI iframe on startup
+2. **On-Demand Components**: Fetches component data (including descriptions) when requested by the MCP
 
 ```
+Variables Flow:
 Figma Plugin Worker → postMessage → Plugin UI Iframe → window object → Puppeteer → MCP Server
+
+Components Flow:
+MCP Request → Plugin UI → postMessage → Plugin Worker → figma.getNodeByIdAsync() → Returns with description
 ```
 
 **Key Features:**
-- ✅ No Enterprise plan required
+- ✅ No Enterprise plan required for variables
 - ✅ Access all local variables and collections
+- ✅ Reliable component descriptions (bypasses REST API bug)
 - ✅ Supports multiple variable modes (Light/Dark/Brand variants)
 - ✅ Smart caching with 5-minute TTL (no token limits)
 - ✅ Natural language queries ("What's the primary font for Stratton mode?")
+- ✅ Component metadata with full description fields
 - ✅ Minimal, clean UI
 
 ### Complete Setup Workflow
@@ -567,41 +578,44 @@ Ask Claude: "Check figma status"
 
 You should see "✓ Figma Desktop connected" with port 9222.
 
-#### Step 3: Install the Variables Bridge Plugin
+#### Step 3: Install the Desktop Bridge Plugin
 
 1. **Open Figma Desktop** (must be running with debug flag from Step 1)
 2. **Go to:** Plugins → Development → Import plugin from manifest...
-3. **Navigate to:** `/path/to/figma-console-mcp/figma-variables-bridge/manifest.json`
+3. **Navigate to:** `/path/to/figma-console-mcp/figma-desktop-bridge/manifest.json`
 4. **Click "Open"**
 
-The plugin appears in your Development plugins list as "Figma Variables Bridge".
+The plugin appears in your Development plugins list as "Figma Desktop Bridge".
 
-> **📁 Plugin location:** The `figma-variables-bridge/` directory is in your `figma-console-mcp` repository root
+> **📁 Plugin location:** The `figma-desktop-bridge/` directory is in your `figma-console-mcp` repository root
 
 #### Step 4: Run the Plugin in Your Figma File
 
-1. **Open your Figma file** that contains variables
-2. **Right-click anywhere** → Plugins → Development → Figma Variables Bridge
-3. **Wait for confirmation:** Plugin UI shows "✓ Variables ready"
+1. **Open your Figma file** that contains variables and/or components
+2. **Right-click anywhere** → Plugins → Development → Figma Desktop Bridge
+3. **Wait for confirmation:** Plugin UI shows "✓ Desktop Bridge active"
 
 **What you'll see:**
 ```
-✓ Variables ready
-404 variables in 2 collections
+✓ Desktop Bridge active
+Variables: 404 in 2 collections
+Components: On-demand via MCP
 
-Data available via MCP
 window.__figmaVariablesData
+window.requestComponentData(id)
 ```
 
 The plugin window can stay open or be minimized - it stays running until you close it.
 
-#### Step 5: Query Your Variables
+#### Step 5: Query Your Design System
 
-Now you can ask Claude about your variables using natural language!
+Now you can ask Claude about your variables AND component descriptions using natural language!
+
+**For Variables:**
 
 **Example prompts:**
 
-**Summary overview (recommended first call):**
+**Variables - Summary overview (recommended first call):**
 ```
 Get me a summary of the Figma variables from https://figma.com/design/YOUR_FILE_KEY
 ```
@@ -612,7 +626,7 @@ Returns ~4K tokens with:
 - Mode names
 - Quick stats
 
-**Specific questions:**
+**Variables - Specific questions:**
 ```
 What is the primary font for the Stratton variable mode?
 ```
@@ -625,7 +639,7 @@ What is the primary brand color for Winter Park?
 Show me all breakpoint variables
 ```
 
-**Filtered queries:**
+**Variables - Filtered queries:**
 ```
 Get all color variables from the Brand collection
 ```
@@ -633,6 +647,21 @@ Get all color variables from the Brand collection
 ```
 Show me font variables that contain "heading"
 ```
+
+**For Components:**
+```
+What does the Chips component description say?
+```
+
+```
+Get component data for node 279:2861 from https://figma.com/design/YOUR_FILE_KEY
+```
+
+```
+Show me the description for the Button component
+```
+
+> **💡 Why use Desktop Bridge for components?** Figma's REST API has a known bug where component descriptions are missing or outdated. The Desktop Bridge plugin uses the Figma Plugin API (`figma.getNodeByIdAsync()`) which has reliable access to description fields, making it perfect for local team projects where components aren't published.
 
 ### API Parameters
 
@@ -780,7 +809,7 @@ figma_get_variables({
 - Data bridge bypasses Enterprise API requirement completely
 - No network access required (plugin security: `allowedDomains: ["none"]`)
 
-> **📖 For complete plugin documentation:** See [figma-variables-bridge/README.md](figma-variables-bridge/README.md)
+> **📖 For complete plugin documentation:** See [figma-desktop-bridge/README.md](figma-desktop-bridge/README.md)
 
 ---
 
