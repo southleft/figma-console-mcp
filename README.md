@@ -190,6 +190,8 @@ Both MCPs can help with **component development**. Console MCP provides design s
 
 Choose **Cloud Mode** or **Local Mode** (for plugin development):
 
+> **🤔 Not sure which mode to use?** See [DEPLOYMENT_COMPARISON.md](DEPLOYMENT_COMPARISON.md) for a detailed comparison of Local vs Remote deployment modes, including feature differences, use cases, and decision guidance.
+
 ### Cloud Mode
 
 Zero-setup remote access. Works with all AI clients.
