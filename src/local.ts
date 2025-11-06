@@ -58,7 +58,7 @@ class LocalFigmaConsoleMCP {
 	/**
 	 * Get or create Figma API client
 	 */
-	private getFigmaAPI(): FigmaAPI {
+	private async getFigmaAPI(): Promise<FigmaAPI> {
 		if (!this.figmaAPI) {
 			const accessToken = process.env.FIGMA_ACCESS_TOKEN;
 
@@ -282,7 +282,7 @@ class LocalFigmaConsoleMCP {
 			},
 			async ({ nodeId, scale, format }) => {
 				try {
-					const api = this.getFigmaAPI();
+					const api = await this.getFigmaAPI();
 
 					// Get current URL to extract file key and node ID if not provided
 					const currentUrl = this.browserManager?.getCurrentUrl() || null;

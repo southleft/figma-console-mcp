@@ -184,6 +184,94 @@ export class FigmaDesktopConnector {
   }
 
   /**
+   * Get component data by node ID from plugin UI window object
+   * This bypasses the REST API bug where descriptions are missing
+   * by accessing data from the Desktop Bridge plugin via its UI iframe
+   */
+  async getComponentFromPluginUI(nodeId: string): Promise<any> {
+    try {
+      // Log to browser console
+      await this.page.evaluate((id) => {
+        console.log(`[DESKTOP_CONNECTOR] 🎯 getComponentFromPluginUI() called, nodeId: ${id}`);
+      }, nodeId);
+
+      logger.info({ nodeId }, 'Getting component from plugin UI iframe');
+
+      // Get all frames (iframes) in the page
+      const frames = this.page.frames();
+
+      await this.page.evaluate((count) => {
+        console.log(`[DESKTOP_CONNECTOR] Found ${count} frames (iframes)`);
+      }, frames.length);
+
+      logger.info({ frameCount: frames.length }, 'Found frames in page');
+
+      // Try to find plugin UI iframe with requestComponentData function
+      for (const frame of frames) {
+        try {
+          const frameUrl = frame.url();
+
+          await this.page.evaluate((url) => {
+            console.log(`[DESKTOP_CONNECTOR] Checking frame: ${url}`);
+          }, frameUrl);
+
+          // Check if this frame has our requestComponentData function
+          const hasFunction = await frame.evaluate('typeof window.requestComponentData === "function"');
+
+          await this.page.evaluate((url, has) => {
+            console.log(`[DESKTOP_CONNECTOR] Frame ${url} has requestComponentData: ${has}`);
+          }, frameUrl, hasFunction);
+
+          if (hasFunction) {
+            logger.info({ frameUrl }, 'Found frame with requestComponentData function');
+
+            await this.page.evaluate((url) => {
+              console.log(`[DESKTOP_CONNECTOR] ✅ SUCCESS! Found plugin UI with requestComponentData: ${url}`);
+            }, frameUrl);
+
+            // Call the function with the nodeId - it returns a Promise
+            // Use JSON.stringify to safely pass the nodeId as a string literal
+            const result = await frame.evaluate(`window.requestComponentData(${JSON.stringify(nodeId)})`) as any;
+
+            logger.info(
+              {
+                nodeId,
+                componentName: result.component?.name,
+                hasDescription: !!result.component?.description
+              },
+              'Successfully retrieved component from plugin UI'
+            );
+
+            await this.page.evaluate((name, hasDesc) => {
+              console.log(`[DESKTOP_CONNECTOR] ✅ Retrieved component "${name}", has description: ${hasDesc}`);
+            }, result.component?.name, !!result.component?.description);
+
+            return result;
+          }
+        } catch (frameError) {
+          await this.page.evaluate((url, err) => {
+            console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
+          }, frame.url(), frameError instanceof Error ? frameError.message : String(frameError));
+
+          logger.debug({ error: frameError, frameUrl: frame.url() }, 'Frame check failed, trying next');
+          continue;
+        }
+      }
+
+      // If no frame found with function, throw error
+      throw new Error('No plugin UI found with requestComponentData function. Make sure the Desktop Bridge plugin is running.');
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Failed to get component from plugin UI');
+
+      await this.page.evaluate((msg) => {
+        console.error('[DESKTOP_CONNECTOR] ❌ getComponentFromPluginUI failed:', msg);
+      }, error instanceof Error ? error.message : String(error));
+
+      throw error;
+    }
+  }
+
+  /**
    * Get Figma variables using the desktop connection
    * This bypasses the Enterprise requirement!
    */
@@ -267,6 +355,107 @@ export class FigmaDesktopConnector {
   /**
    * Clean up resources (no-op since we use Puppeteer's built-in worker management)
    */
+
+  /**
+   * Get component data by node ID using Plugin API
+   * This bypasses the REST API bug where descriptions are missing
+   */
+  async getComponentByNodeId(nodeId: string): Promise<any> {
+    await this.page.evaluate((id) => {
+      console.log(`[DESKTOP_CONNECTOR] 🎯 getComponentByNodeId() called, nodeId: ${id}`);
+    }, nodeId);
+
+    logger.info({ nodeId }, 'Getting component via Desktop Plugin API');
+
+    const code = `
+      (async () => {
+        try {
+          // Check if we're in the right context
+          if (typeof figma === 'undefined') {
+            throw new Error('Figma API not available in this context');
+          }
+
+          // Get the node by ID
+          const node = figma.getNodeById('${nodeId}');
+          
+          if (!node) {
+            throw new Error('Node not found with ID: ${nodeId}');
+          }
+
+          // Check if it's a component-like node
+          if (node.type !== 'COMPONENT' && node.type !== 'COMPONENT_SET' && node.type !== 'INSTANCE') {
+            throw new Error('Node is not a component, component set, or instance. Type: ' + node.type);
+          }
+
+          // Extract component data including description fields
+          const result = {
+            success: true,
+            timestamp: Date.now(),
+            component: {
+              id: node.id,
+              name: node.name,
+              type: node.type,
+              description: node.description || null,
+              descriptionMarkdown: node.descriptionMarkdown || null,
+              // Include other useful properties
+              visible: node.visible,
+              locked: node.locked,
+              // For components with properties
+              componentPropertyDefinitions: node.type === 'COMPONENT' || node.type === 'COMPONENT_SET' 
+                ? node.componentPropertyDefinitions 
+                : undefined,
+              // Get children info (lightweight)
+              children: node.children ? node.children.map(child => ({
+                id: child.id,
+                name: child.name,
+                type: child.type
+              })) : undefined
+            }
+          };
+
+          return result;
+        } catch (error) {
+          return {
+            success: false,
+            error: error.message,
+            stack: error.stack
+          };
+        }
+      })()
+    `;
+
+    try {
+      const result = await this.executeInPluginContext(code);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to get component data');
+      }
+
+      logger.info(
+        {
+          nodeId,
+          componentName: result.component?.name,
+          hasDescription: !!result.component?.description
+        },
+        'Successfully retrieved component via Desktop Plugin API'
+      );
+
+      await this.page.evaluate((name, hasDesc) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Retrieved component "${name}", has description: ${hasDesc}`);
+      }, result.component?.name, !!result.component?.description);
+
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Failed to get component via Desktop Plugin API');
+      
+      await this.page.evaluate((id, err) => {
+        console.error(`[DESKTOP_CONNECTOR] ❌ getComponentByNodeId failed for ${id}:`, err);
+      }, nodeId, error instanceof Error ? error.message : String(error));
+      
+      throw error;
+    }
+  }
+
   async dispose(): Promise<void> {
     logger.info('Figma Desktop connector disposed');
   }
