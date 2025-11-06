@@ -49,22 +49,37 @@ export class FigmaAPI {
   private async request(endpoint: string, options: RequestInit = {}): Promise<any> {
     const url = `${FIGMA_API_BASE}${endpoint}`;
 
+    // Detect token type and use appropriate authentication header
+    // OAuth tokens start with 'figu_' and require Authorization: Bearer header
+    // Personal Access Tokens use X-Figma-Token header
+    const isOAuthToken = this.accessToken.startsWith('figu_');
+
     // Debug logging to verify token is being used
     const tokenPreview = this.accessToken ? `${this.accessToken.substring(0, 10)}...` : 'NO TOKEN';
     logger.info({
       url,
       tokenPreview,
       hasToken: !!this.accessToken,
-      tokenLength: this.accessToken?.length
+      tokenLength: this.accessToken?.length,
+      isOAuthToken,
+      authMethod: isOAuthToken ? 'Bearer' : 'X-Figma-Token'
     }, 'Making Figma API request with token');
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string> || {}),
+    };
+
+    // Add authentication header based on token type
+    if (isOAuthToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    } else {
+      headers['X-Figma-Token'] = this.accessToken;
+    }
 
     const response = await fetch(url, {
       ...options,
-      headers: {
-        'X-Figma-Token': this.accessToken,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -114,7 +129,10 @@ export class FigmaAPI {
    * Get local variables (design tokens) from a file
    */
   async getLocalVariables(fileKey: string): Promise<any> {
-    return this.request(`/files/${fileKey}/variables/local`);
+    const response = await this.request(`/files/${fileKey}/variables/local`);
+    // Figma API returns {status, error, meta: {variableCollections, variables}}
+    // Extract meta to match expected format
+    return response.meta || response;
   }
 
   /**
@@ -122,7 +140,10 @@ export class FigmaAPI {
    * Get published variables from a file
    */
   async getPublishedVariables(fileKey: string): Promise<any> {
-    return this.request(`/files/${fileKey}/variables/published`);
+    const response = await this.request(`/files/${fileKey}/variables/published`);
+    // Figma API returns {status, error, meta: {variableCollections, variables}}
+    // Extract meta to match expected format
+    return response.meta || response;
   }
 
   /**
@@ -195,29 +216,29 @@ export class FigmaAPI {
 		}
 	): Promise<{ images: Record<string, string | null> }> {
 		const params = new URLSearchParams();
-		
+
 		// Handle single or multiple node IDs
 		const ids = Array.isArray(nodeIds) ? nodeIds.join(',') : nodeIds;
 		params.append('ids', ids);
-		
+
 		// Add optional parameters
 		if (options?.scale !== undefined) params.append('scale', options.scale.toString());
 		if (options?.format) params.append('format', options.format);
-		if (options?.svg_outline_text !== undefined) 
+		if (options?.svg_outline_text !== undefined)
 			params.append('svg_outline_text', options.svg_outline_text.toString());
-		if (options?.svg_include_id !== undefined) 
+		if (options?.svg_include_id !== undefined)
 			params.append('svg_include_id', options.svg_include_id.toString());
-		if (options?.svg_include_node_id !== undefined) 
+		if (options?.svg_include_node_id !== undefined)
 			params.append('svg_include_node_id', options.svg_include_node_id.toString());
-		if (options?.svg_simplify_stroke !== undefined) 
+		if (options?.svg_simplify_stroke !== undefined)
 			params.append('svg_simplify_stroke', options.svg_simplify_stroke.toString());
-		if (options?.contents_only !== undefined) 
+		if (options?.contents_only !== undefined)
 			params.append('contents_only', options.contents_only.toString());
-		
+
 		const endpoint = `/images/${fileKey}?${params.toString()}`;
-		
+
 		logger.info({ fileKey, ids, options }, 'Rendering images');
-		
+
 		return this.request(endpoint);
 	}
 
@@ -287,6 +308,7 @@ export function formatVariables(variablesData: any): {
       key: variable.key,
       resolvedType: variable.resolvedType,
       valuesByMode: variable.valuesByMode,
+      variableCollectionId: variable.variableCollectionId,
       scopes: variable.scopes,
       description: variable.description,
     })
@@ -315,6 +337,8 @@ export function formatComponentData(componentNode: any): {
   id: string;
   name: string;
   type: string;
+  description?: string;
+  descriptionMarkdown?: string;
   properties?: any;
   children?: any[];
   bounds?: any;
@@ -326,6 +350,8 @@ export function formatComponentData(componentNode: any): {
     id: componentNode.id,
     name: componentNode.name,
     type: componentNode.type,
+    description: componentNode.description,
+    descriptionMarkdown: componentNode.descriptionMarkdown,
     properties: componentNode.componentPropertyDefinitions,
     children: componentNode.children?.map((child: any) => ({
       id: child.id,

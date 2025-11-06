@@ -94,7 +94,8 @@ function applyFilters(
 		collection?: string;
 		namePattern?: string;
 		mode?: string;
-	}
+	},
+	verbosity: "inventory" | "summary" | "standard" | "full" = "standard"
 ): any {
 	let filteredVariables = [...(data.variables || [])];
 	let filteredCollections = [...(data.variableCollections || [])];
@@ -129,14 +130,40 @@ function applyFilters(
 		}
 	}
 
-	// Filter by mode name or ID
+	// Find target mode ID if mode filter specified (needed for both filtering and transformation)
+	let targetModeId: string | null = null;
+	let targetModeName: string | null = null;
 	if (filters.mode) {
 		const modeFilter = filters.mode.toLowerCase();
+		// Try direct mode ID match first
+		if (data.variableCollections || filteredCollections.length > 0) {
+			for (const collection of filteredCollections) {
+				if (collection.modes) {
+					const mode = collection.modes.find((m: any) =>
+						m.modeId === filters.mode ||
+						m.name?.toLowerCase().includes(modeFilter)
+					);
+					if (mode) {
+						targetModeId = mode.modeId;
+						targetModeName = mode.name;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	// Filter by mode name or ID
+	if (filters.mode) {
 		filteredVariables = filteredVariables.filter((v: any) => {
 			// Check if variable has values for the specified mode
 			if (v.valuesByMode) {
 				// Try to match by mode ID directly
 				if (v.valuesByMode[filters.mode!]) {
+					return true;
+				}
+				// Try using resolved targetModeId
+				if (targetModeId && v.valuesByMode[targetModeId]) {
 					return true;
 				}
 				// Try to match by mode name through collections
@@ -145,7 +172,7 @@ function applyFilters(
 				);
 				if (collection?.modes) {
 					const mode = collection.modes.find((m: any) =>
-						m.name?.toLowerCase().includes(modeFilter) || m.modeId === filters.mode
+						m.name?.toLowerCase().includes(filters.mode!.toLowerCase()) || m.modeId === filters.mode
 					);
 					return mode && v.valuesByMode[mode.modeId];
 				}
@@ -154,10 +181,137 @@ function applyFilters(
 		});
 	}
 
+
+	// Transform valuesByMode based on verbosity level
+	// This is critical for reducing response size with multi-mode variables
+	if (verbosity !== "full") {
+		filteredVariables = filteredVariables.map((v: any) => {
+			const variable = { ...v };
+			// Use original collections array for lookup, not filtered, since we need mode metadata
+			// Handle both variableCollections and collections property names
+			const collections = data.variableCollections || data.collections || [];
+			const collection = collections.find((c: any) => c.id === v.variableCollectionId);
+
+			if (verbosity === "inventory") {
+				// Inventory: Remove valuesByMode entirely, add mode count
+				delete variable.valuesByMode;
+				if (collection?.modes) {
+					variable.modeCount = collection.modes.length;
+				}
+			} else if (verbosity === "summary") {
+				// Summary: Replace valuesByMode with mode names array
+				if (variable.valuesByMode && collection?.modes) {
+					variable.modeNames = collection.modes.map((m: any) => m.name);
+					variable.modeCount = collection.modes.length;
+				}
+				delete variable.valuesByMode;
+			} else if (verbosity === "standard") {
+				// Standard: If mode parameter specified, filter to that mode only
+				if (targetModeId && variable.valuesByMode) {
+					const singleModeValue = variable.valuesByMode[targetModeId];
+					variable.valuesByMode = { [targetModeId]: singleModeValue };
+					variable.selectedMode = {
+						modeId: targetModeId,
+						modeName: targetModeName,
+					};
+				}
+				// If no mode specified, keep all valuesByMode but add metadata for context
+				else if (variable.valuesByMode && collection?.modes) {
+					variable.modeMetadata = collection.modes.map((m: any) => ({
+						modeId: m.modeId,
+						modeName: m.name,
+					}));
+				}
+			}
+
+			return variable;
+		});
+
+		// Apply field-level filtering based on verbosity
+		if (verbosity === "inventory") {
+			filteredVariables = filteredVariables.map((v: any) => ({
+				id: v.id,
+				name: v.name,
+				resolvedType: v.resolvedType,
+				variableCollectionId: v.variableCollectionId,
+				...(v.modeCount && { modeCount: v.modeCount }),
+			}));
+		} else if (verbosity === "summary") {
+			filteredVariables = filteredVariables.map((v: any) => ({
+				id: v.id,
+				name: v.name,
+				resolvedType: v.resolvedType,
+				variableCollectionId: v.variableCollectionId,
+				...(v.modeNames && { modeNames: v.modeNames }),
+				...(v.modeCount && { modeCount: v.modeCount }),
+			}));
+		} else if (verbosity === "standard") {
+			filteredVariables = filteredVariables.map((v: any) => ({
+				id: v.id,
+				name: v.name,
+				resolvedType: v.resolvedType,
+				valuesByMode: v.valuesByMode,
+				description: v.description,
+				variableCollectionId: v.variableCollectionId,
+				...(v.scopes && { scopes: v.scopes }),
+				...(v.selectedMode && { selectedMode: v.selectedMode }),
+				...(v.modeMetadata && { modeMetadata: v.modeMetadata }),
+			}));
+		}
+		// For "full" verbosity, return all fields (no filtering)
+	}
+
+	// IMPORTANT: Only return filtered data, not the entire original data object
+	// The ...data spread was including massive metadata that bloated responses
 	return {
-		...data,
 		variables: filteredVariables,
 		variableCollections: filteredCollections,
+	};
+}
+
+/**
+ * Apply pagination to variables
+ */
+function paginateVariables(
+	data: any,
+	page: number = 1,
+	pageSize: number = 50
+): {
+	data: any;
+	pagination: {
+		currentPage: number;
+		pageSize: number;
+		totalVariables: number;
+		totalPages: number;
+		hasNextPage: boolean;
+		hasPrevPage: boolean;
+	};
+} {
+	const variables = data.variables || [];
+	const totalVariables = variables.length;
+	const totalPages = Math.ceil(totalVariables / pageSize);
+
+	// Validate page number
+	const currentPage = Math.max(1, Math.min(page, totalPages || 1));
+
+	// Calculate pagination
+	const startIndex = (currentPage - 1) * pageSize;
+	const endIndex = startIndex + pageSize;
+	const paginatedVariables = variables.slice(startIndex, endIndex);
+
+	return {
+		data: {
+			...data,
+			variables: paginatedVariables,
+		},
+		pagination: {
+			currentPage,
+			pageSize,
+			totalVariables,
+			totalPages,
+			hasNextPage: currentPage < totalPages,
+			hasPrevPage: currentPage > 1,
+		},
 	};
 }
 
@@ -191,7 +345,7 @@ function evictOldestCacheEntry(
  */
 export function registerFigmaAPITools(
 	server: McpServer,
-	getFigmaAPI: () => FigmaAPI,
+	getFigmaAPI: () => Promise<FigmaAPI>,
 	getCurrentUrl: () => string | null,
 	getConsoleMonitor?: () => ConsoleMonitor | null,
 	getBrowserManager?: () => any,
@@ -242,7 +396,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, depth, nodeIds, enrich, verbosity }) => {
 			try {
-				const api = getFigmaAPI();
+				const api = await getFigmaAPI();
 
 				// Use provided URL or current URL from browser
 				const url = fileUrl || getCurrentUrl();
@@ -429,11 +583,11 @@ export function registerFigmaAPITools(
 				.default(true)
 				.describe("Include published variables from libraries"),
 			verbosity: z
-				.enum(["summary", "standard", "full"])
+				.enum(["inventory", "summary", "standard", "full"])
 				.optional()
 				.default("standard")
 				.describe(
-					"Controls payload size: 'summary' (names/values only, ~80% smaller), 'standard' (essential properties, ~45% smaller), 'full' (everything). Default: standard"
+					"Controls payload size: 'inventory' (names/IDs only, ~95% smaller, use with filtered), 'summary' (names/values only, ~80% smaller), 'standard' (essential properties, ~45% smaller), 'full' (everything). Default: standard"
 				),
 			enrich: z
 				.boolean()
@@ -477,6 +631,11 @@ export function registerFigmaAPITools(
 				.string()
 				.optional()
 				.describe("Filter variables by mode name or ID. Only returns variables that have values for this mode. Only applies when format='filtered'. Example: 'Light' or 'Dark'"),
+			returnAsLinks: z
+				.boolean()
+				.optional()
+				.default(false)
+				.describe("Return variables as resource_link references instead of full data. Drastically reduces payload size (100+ variables = ~20KB vs >1MB). Use with figma_get_variable_by_id to fetch specific variables. Recommended for large variable sets. Default: false"),
 			refreshCache: z
 				.boolean()
 				.optional()
@@ -504,6 +663,21 @@ export function registerFigmaAPITools(
 					"(3) user confirmed they ran the snippet and saw '✅ Variables data captured!' message. " +
 					"Default: false. Never set to true on the first call."
 				),
+			page: z
+				.number()
+				.int()
+				.min(1)
+				.optional()
+				.default(1)
+				.describe("Page number for paginated results (1-based). Use when response is too large (>1MB). Each page returns up to 50 variables."),
+			pageSize: z
+				.number()
+				.int()
+				.min(1)
+				.max(100)
+				.optional()
+				.default(50)
+				.describe("Number of variables per page (1-100). Default: 50. Smaller values reduce response size."),
 		},
 		async ({
 			fileUrl,
@@ -518,9 +692,12 @@ export function registerFigmaAPITools(
 			collection,
 			namePattern,
 			mode,
+			returnAsLinks,
 			refreshCache,
 			useConsoleFallback,
-			parseFromConsole
+			parseFromConsole,
+			page,
+			pageSize
 		}) => {
 			// Extract fileKey outside try block so it's available in catch block
 			const url = fileUrl || getCurrentUrl();
@@ -603,33 +780,138 @@ export function registerFigmaAPITools(
 				if (cachedData && !shouldFetch) {
 					// Apply format logic based on user request
 					let responseData = cachedData;
+					let paginationInfo: any = null;
 
 					if (format === 'summary') {
 						// Return compact summary
 						responseData = generateSummary(cachedData);
 						logger.info({ fileKey, estimatedTokens: estimateTokens(responseData) }, 'Generated summary from cache');
 					} else if (format === 'filtered') {
-						// Apply filters
+						// Apply filters with verbosity-aware valuesByMode transformation
 						responseData = applyFilters(cachedData, {
 							collection,
 							namePattern,
 							mode,
+						}, verbosity || 'standard');
+
+						// ALWAYS apply pagination for filtered results to prevent 1MB limit
+						// Default to page 1, pageSize 50 if not specified
+						const paginated = paginateVariables(
+							responseData,
+							page || 1,
+							pageSize || 50
+						);
+						responseData = paginated.data;
+						paginationInfo = paginated.pagination;
+
+						// Apply verbosity filtering to minimize payload size
+						// For filtered results, default to "inventory" for maximum size reduction
+						const effectiveVerbosity = verbosity || "inventory";
+
+						// CRITICAL FIX: Only include collections referenced by paginated variables
+						const referencedCollectionIds = new Set(
+							responseData.variables.map((v: any) => v.variableCollectionId)
+						);
+						responseData.variableCollections = responseData.variableCollections.filter(
+							(c: any) => referencedCollectionIds.has(c.id)
+						);
+
+						// Filter variables to minimal needed fields
+						responseData.variables = responseData.variables.map((v: any) => {
+							if (effectiveVerbosity === "inventory") {
+								// Ultra-minimal: just names and IDs for inventory purposes
+								// If mode filter is specified, include only that mode's value
+								const result: any = {
+									id: v.id,
+									name: v.name,
+									collectionId: v.variableCollectionId,
+								};
+
+								// If mode filter specified, include just that single mode's value
+								if (mode && v.valuesByMode) {
+									// Find the mode ID from the collection
+									const collection = responseData.variableCollections.find((c: any) =>
+										c.id === v.variableCollectionId
+									);
+									if (collection?.modes) {
+										const modeObj = collection.modes.find((m: any) =>
+											m.name?.toLowerCase().includes(mode.toLowerCase()) || m.modeId === mode
+										);
+										if (modeObj && v.valuesByMode[modeObj.modeId]) {
+											result.value = v.valuesByMode[modeObj.modeId];
+											result.mode = modeObj.name;
+										}
+									}
+								}
+								return result;
+							}
+							if (effectiveVerbosity === "summary") {
+								return {
+									id: v.id,
+									name: v.name,
+									resolvedType: v.resolvedType,
+									valuesByMode: v.valuesByMode,
+									variableCollectionId: v.variableCollectionId,
+									// Include modeNames and modeCount added by applyFilters
+									...(v.modeNames && { modeNames: v.modeNames }),
+									...(v.modeCount && { modeCount: v.modeCount }),
+								};
+							}
+							if (effectiveVerbosity === "standard") {
+								return {
+									id: v.id,
+									name: v.name,
+									resolvedType: v.resolvedType,
+									valuesByMode: v.valuesByMode,
+									description: v.description,
+									variableCollectionId: v.variableCollectionId,
+								};
+							}
+							return v; // full
 						});
+
+						// Filter collections to remove massive variableIds arrays
+						responseData.variableCollections = responseData.variableCollections.map((c: any) => {
+							if (effectiveVerbosity === "inventory") {
+								// Ultra-minimal: just ID and name, mode names only (no full mode objects)
+								return {
+									id: c.id,
+									name: c.name,
+									modeNames: c.modes?.map((m: any) => m.name) || [],
+								};
+							}
+							if (effectiveVerbosity === "summary") {
+								return {
+									id: c.id,
+									name: c.name,
+									modes: c.modes, // Keep modes for user to understand mode structure
+								};
+							}
+							if (effectiveVerbosity === "standard") {
+								return {
+									id: c.id,
+									name: c.name,
+									modes: c.modes,
+									defaultModeId: c.defaultModeId,
+								};
+							}
+							// For full, remove variableIds array to reduce size
+							const { variableIds, ...rest } = c;
+							return rest;
+						});
+
 						logger.info(
 							{
 								fileKey,
 								originalCount: cachedData.variables?.length,
-								filteredCount: responseData.variables?.length,
+								filteredCount: paginationInfo.totalVariables,
+								returnedCount: responseData.variables?.length,
+								page: paginationInfo.currentPage,
+								totalPages: paginationInfo.totalPages,
+								verbosity: effectiveVerbosity,
 							},
-							'Applied filters to cached data'
+							'Applied filters, pagination, and verbosity filtering to cached data'
 						);
-
-						// Auto-summarize if still too large
-						const estimatedTokens = estimateTokens(responseData);
-						if (estimatedTokens > 25000) {
-							logger.warn({ fileKey, estimatedTokens }, 'Filtered data still exceeds token limit, auto-summarizing');
-							responseData = generateSummary(responseData);
-						}
 					} else {
 						// format === 'full'
 						// Check if we need to auto-summarize
@@ -663,21 +945,81 @@ export function registerFigmaAPITools(
 					}
 
 					// Return cached/processed data
+					// If returnAsLinks=true, return resource_link references instead of full data
+					if (returnAsLinks) {
+						const summary = {
+							fileKey,
+							source: 'cache',
+							totalVariables: responseData.variables?.length || 0,
+							totalCollections: responseData.variableCollections?.length || 0,
+							...(paginationInfo && { pagination: paginationInfo }),
+						};
+
+						// Build resource_link content for each variable
+						const content: any[] = [
+							{
+								type: "text",
+								text: JSON.stringify(summary),
+							},
+						];
+
+						// Add resource_link for each variable (minimal overhead ~150 bytes each)
+						responseData.variables?.forEach((v: any) => {
+							content.push({
+								type: "resource_link",
+								uri: `figma://variable/${v.id}`,
+								name: v.name || v.id,
+								description: `${v.resolvedType || 'VARIABLE'} from ${fileKey}`,
+							});
+						});
+
+						logger.info(
+							{
+								fileKey,
+								format: 'resource_links',
+								variableCount: responseData.variables?.length || 0,
+								linkCount: content.length - 1, // -1 for summary text
+								estimatedSizeKB: (content.length * 150) / 1024,
+							},
+							`Returning variables as resource_links`
+						);
+
+						return { content };
+					}
+
+					// Default: return full data
+					const responsePayload = {
+						fileKey,
+						source: 'cache',
+						format: format || 'full',
+						timestamp: cachedData.timestamp,
+						data: responseData,
+						...(paginationInfo && { pagination: paginationInfo }),
+					};
+					// Remove pretty printing to reduce payload size by 30-40%
+					const responseText = JSON.stringify(responsePayload);
+					const responseSizeBytes = Buffer.byteLength(responseText, 'utf8');
+					const responseSizeMB = (responseSizeBytes / (1024 * 1024)).toFixed(2);
+
+					logger.info(
+						{
+							fileKey,
+							format: format || 'full',
+							verbosity: verbosity || 'standard',
+							variableCount: responseData.variables?.length || 0,
+							collectionCount: responseData.variableCollections?.length || 0,
+							responseSizeBytes,
+							responseSizeMB: `${responseSizeMB} MB`,
+							isUnder1MB: responseSizeBytes < 1024 * 1024,
+						},
+						`Response size check: ${responseSizeMB} MB`
+					);
+
 					return {
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										fileKey,
-										source: 'cache',
-										format: format || 'full',
-										timestamp: cachedData.timestamp,
-										data: responseData,
-									},
-									null,
-									2
-								),
+								text: responseText,
 							},
 						],
 					};
@@ -771,11 +1113,12 @@ export function registerFigmaAPITools(
 								responseData = generateSummary(dataForCache);
 								logger.info({ fileKey, estimatedTokens: estimateTokens(responseData) }, 'Generated summary from fetched data');
 							} else if (format === 'filtered') {
+								// Apply filters with verbosity-aware valuesByMode transformation
 								responseData = applyFilters(dataForCache, {
 									collection,
 									namePattern,
 									mode,
-								});
+								}, verbosity || 'standard');
 								logger.info(
 									{
 										fileKey,
@@ -785,12 +1128,66 @@ export function registerFigmaAPITools(
 									'Applied filters to fetched data'
 								);
 
-								// Auto-summarize if still too large
-								const estimatedTokens = estimateTokens(responseData);
-								if (estimatedTokens > 25000) {
-									logger.warn({ fileKey, estimatedTokens }, 'Filtered data still exceeds token limit, auto-summarizing');
-									responseData = generateSummary(responseData);
-								}
+								// Apply pagination (CRITICAL - was missing!)
+								let paginationInfo: any = null;
+								const paginated = paginateVariables(
+									responseData,
+									page || 1,
+									pageSize || 50
+								);
+								responseData = paginated.data;
+								paginationInfo = paginated.pagination;
+
+								// Apply verbosity filtering (CRITICAL - was missing!)
+								const effectiveVerbosity = verbosity || "inventory";
+
+								// Only include collections referenced by paginated variables
+								const referencedCollectionIds = new Set(
+									responseData.variables.map((v: any) => v.variableCollectionId)
+								);
+								responseData.variableCollections = responseData.variableCollections.filter(
+									(c: any) => referencedCollectionIds.has(c.id)
+								);
+
+								// Filter variables by verbosity
+								responseData.variables = responseData.variables.map((v: any) => {
+									if (effectiveVerbosity === "inventory") {
+										return {
+											id: v.id,
+											name: v.name,
+											collectionId: v.variableCollectionId,
+										};
+									}
+									if (effectiveVerbosity === "summary") {
+										return {
+											id: v.id,
+											name: v.name,
+											resolvedType: v.resolvedType,
+											valuesByMode: v.valuesByMode,
+											variableCollectionId: v.variableCollectionId,
+										};
+									}
+									return v; // standard/full
+								});
+
+								// Filter collections by verbosity
+								responseData.variableCollections = responseData.variableCollections.map((c: any) => {
+									if (effectiveVerbosity === "inventory") {
+										return {
+											id: c.id,
+											name: c.name,
+											modeNames: c.modes?.map((m: any) => m.name) || [],
+										};
+									}
+									if (effectiveVerbosity === "summary") {
+										return {
+											id: c.id,
+											name: c.name,
+											modes: c.modes,
+										};
+									}
+									return c; // standard/full
+								});
 							} else {
 								// format === 'full'
 								// Check if we need to auto-summarize
@@ -813,9 +1210,7 @@ export function registerFigmaAPITools(
 														suggestion: 'Use format="summary" for overview or format="filtered" with collection/namePattern/mode filters to get specific variables',
 														estimatedTokens,
 														summary,
-													},
-													null,
-													2
+													}
 												),
 											},
 										],
@@ -823,6 +1218,46 @@ export function registerFigmaAPITools(
 								}
 							}
 
+							// If returnAsLinks=true, return resource_link references
+							if (returnAsLinks) {
+								const summary = {
+									fileKey,
+									source: 'desktop_connection',
+									totalVariables: responseData.variables?.length || 0,
+									totalCollections: responseData.variableCollections?.length || 0,
+								};
+
+								const content: any[] = [
+									{
+										type: "text",
+										text: JSON.stringify(summary),
+									},
+								];
+
+								// Add resource_link for each variable
+								responseData.variables?.forEach((v: any) => {
+									content.push({
+										type: "resource_link",
+										uri: `figma://variable/${v.id}`,
+										name: v.name || v.id,
+										description: `${v.resolvedType || 'VARIABLE'} from ${fileKey}`,
+									});
+								});
+
+								logger.info(
+									{
+										fileKey,
+										format: 'resource_links',
+										variableCount: responseData.variables?.length || 0,
+										linkCount: content.length - 1,
+									},
+									`Returning Desktop variables as resource_links`
+								);
+
+								return { content };
+							}
+
+							// Default: return full data (removed pretty printing)
 							return {
 								content: [
 									{
@@ -835,9 +1270,7 @@ export function registerFigmaAPITools(
 												timestamp: dataForCache.timestamp,
 												data: responseData,
 												cached: true,
-											},
-											null,
-											2
+											}
 										),
 									},
 								],
@@ -935,7 +1368,7 @@ export function registerFigmaAPITools(
 
 				// Try REST API
 				logger.info({ fileKey, includePublished, verbosity, enrich }, "Fetching variables via REST API");
-				const api = getFigmaAPI();
+				const api = await getFigmaAPI();
 
 				const { local, published } = await api.getAllVariables(fileKey);
 
@@ -944,8 +1377,57 @@ export function registerFigmaAPITools(
 					? formatVariables(published)
 					: null;
 
-				// Apply verbosity filtering
-				const filterVariable = (variable: any, level: "summary" | "standard" | "full"): any => {
+				// DEBUG: Check if valuesByMode exists before filtering
+				if (localFormatted.variables[0]) {
+					logger.info(
+						{
+							hasValuesByMode: !!localFormatted.variables[0].valuesByMode,
+							variableKeys: Object.keys(localFormatted.variables[0]),
+							collectionCount: localFormatted.collections?.length,
+						},
+						'Variable structure before filtering'
+					);
+				}
+
+				// Apply collection/name/mode filtering if format is 'filtered'
+				if (format === 'filtered') {
+					// Create properly structured data for applyFilters
+					const dataToFilter = {
+						variables: localFormatted.variables,
+						variableCollections: localFormatted.collections,
+					};
+
+					// Apply filters with verbosity-aware valuesByMode transformation
+					const filtered = applyFilters(
+						dataToFilter,
+						{
+							collection,
+							namePattern,
+							mode,
+						},
+						verbosity || 'standard'
+					);
+
+					localFormatted.variables = filtered.variables;
+					localFormatted.collections = filtered.variableCollections;
+
+					// DEBUG: Check if transformation was applied
+					if (localFormatted.variables[0]) {
+						logger.info(
+							{
+								hasValuesByMode: !!localFormatted.variables[0].valuesByMode,
+								hasModeNames: !!localFormatted.variables[0].modeNames,
+								variableKeys: Object.keys(localFormatted.variables[0]),
+							},
+							'Variable structure after applyFilters'
+						);
+					}
+
+					// Skip inline verbosity filtering - already handled by applyFilters
+				}
+
+				// Apply verbosity filtering for non-filtered formats
+				const filterVariable = (variable: any, level: "inventory" | "summary" | "standard" | "full"): any => {
 					if (!variable) return variable;
 
 					if (level === "summary") {
@@ -955,6 +1437,9 @@ export function registerFigmaAPITools(
 							name: variable.name,
 							resolvedType: variable.resolvedType,
 							valuesByMode: variable.valuesByMode,
+							// Include modeNames and modeCount added by applyFilters
+							...(variable.modeNames && { modeNames: variable.modeNames }),
+							...(variable.modeCount && { modeCount: variable.modeCount }),
 						};
 					}
 
@@ -975,7 +1460,7 @@ export function registerFigmaAPITools(
 					return variable;
 				};
 
-				const filterCollection = (collection: any, level: "summary" | "standard" | "full"): any => {
+				const filterCollection = (collection: any, level: "inventory" | "summary" | "standard" | "full"): any => {
 					if (!collection) return collection;
 
 					if (level === "summary") {
@@ -997,7 +1482,9 @@ export function registerFigmaAPITools(
 					return collection;
 				};
 
-				if (verbosity !== "full") {
+				// Apply inline verbosity filtering only for non-filtered formats
+				// (filtered format already handled by applyFilters above)
+				if (verbosity !== "full" && format !== 'filtered') {
 					const level = verbosity || "standard";
 					localFormatted.variables = localFormatted.variables.map((v: any) => filterVariable(v, level));
 					localFormatted.collections = localFormatted.collections.map((c: any) => filterCollection(c, level));
@@ -1008,7 +1495,7 @@ export function registerFigmaAPITools(
 					}
 				}
 
-				// Apply enrichment if requested
+					// Apply enrichment if requested
 				if (enrich) {
 					const enrichmentOptions: EnrichmentOptions = {
 						enrich: true,
@@ -1037,6 +1524,71 @@ export function registerFigmaAPITools(
 					}
 				}
 
+				// Apply pagination for filtered format
+				let paginationInfo: any = null;
+				if (format === 'filtered') {
+					const paginated = paginateVariables(
+						{ variables: localFormatted.variables, variableCollections: localFormatted.collections },
+						page || 1,
+						pageSize || 50
+					);
+					localFormatted.variables = paginated.data.variables;
+					localFormatted.collections = paginated.data.variableCollections;
+					paginationInfo = paginated.pagination;
+
+					// For inventory/summary modes, strip variableIds from collections to reduce payload
+					if (verbosity === 'inventory' || verbosity === 'summary') {
+						localFormatted.collections = localFormatted.collections.map((c: any) => ({
+							id: c.id,
+							name: c.name,
+							key: c.key,
+							modes: c.modes,
+							// Omit variableIds array which can be huge
+						}));
+					}
+				}
+
+				// If returnAsLinks=true, return resource_link references
+				if (returnAsLinks) {
+					const summary = {
+						fileKey,
+						source: 'rest_api',
+						totalVariables: localFormatted.variables.length,
+						totalCollections: localFormatted.collections.length,
+						...(paginationInfo && { pagination: paginationInfo }),
+					};
+
+					const content: any[] = [
+						{
+							type: "text",
+							text: JSON.stringify(summary),
+						},
+					];
+
+					// Add resource_link for each variable
+					localFormatted.variables.forEach((v: any) => {
+						content.push({
+							type: "resource_link",
+							uri: `figma://variable/${v.id}`,
+							name: v.name || v.id,
+							description: `${v.resolvedType || 'VARIABLE'} from ${fileKey}`,
+						});
+					});
+
+					logger.info(
+						{
+							fileKey,
+							format: 'resource_links',
+							variableCount: localFormatted.variables.length,
+							linkCount: content.length - 1,
+						},
+						`Returning REST API variables as resource_links`
+					);
+
+					return { content };
+				}
+
+				// Default: return full data (removed pretty printing)
 				return {
 					content: [
 						{
@@ -1059,9 +1611,8 @@ export function registerFigmaAPITools(
 										}),
 									verbosity: verbosity || "standard",
 									enriched: enrich || false,
-								},
-								null,
-								2
+									...(paginationInfo && { pagination: paginationInfo }),
+								}
 							),
 						},
 					],
@@ -1076,7 +1627,7 @@ export function registerFigmaAPITools(
 					try {
 						logger.info({ fileKey }, "Variables API requires Enterprise, falling back to Styles API");
 
-						const api = getFigmaAPI();
+						const api = await getFigmaAPI();
 						// Use the Styles API directly - much faster than getFile!
 						const stylesData = await api.getStyles(fileKey);
 
@@ -1190,7 +1741,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, nodeId, enrich }) => {
 			try {
-				const api = getFigmaAPI();
+				const api = await getFigmaAPI();
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
@@ -1381,7 +1932,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, verbosity, enrich, include_usage, include_exports, export_formats }) => {
 			try {
-				const api = getFigmaAPI();
+				const api = await getFigmaAPI();
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
@@ -1525,7 +2076,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, nodeId, scale, format }) => {
 			try {
-				const api = getFigmaAPI();
+				const api = await getFigmaAPI();
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
@@ -1623,7 +2174,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, nodeId, includeImage }) => {
 			try {
-				const api = getFigmaAPI();
+				const api = await getFigmaAPI();
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
@@ -1814,7 +2365,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, depth, nodeIds }) => {
 			try {
-				const api = getFigmaAPI();
+				const api = await getFigmaAPI();
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
