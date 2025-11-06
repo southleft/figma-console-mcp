@@ -780,22 +780,24 @@ figma_get_variables({
 
 ### Adaptive Response Sizing
 
-The MCP automatically adjusts response verbosity based on payload size to prevent context window exhaustion in Claude Desktop:
+The MCP automatically compresses responses based on payload size to prevent context window exhaustion in Claude Desktop:
 
 **Size Thresholds:**
-- ✅ **≤100KB** - Ideal size, no compression needed
-- ⚠️ **>200KB** - Auto-downgrade `full` → `standard` verbosity
-- 🚨 **>500KB** - Auto-downgrade `full`/`standard` → `summary` verbosity
-- 🔴 **>1MB** - Emergency compression to `inventory` (names/IDs only)
+- ✅ **≤5MB** - Ideal size, no compression needed
+- ℹ️ **>5MB** - Info-level compression (maintains `standard` verbosity)
+- ⚠️ **>10MB** - Warning-level compression (auto-downgrades to `summary`)
+- 🚨 **>15MB** - Critical compression (auto-downgrades to `summary`)
+- 🔴 **>20MB** - Emergency compression (auto-downgrades to `inventory` - names/IDs only)
 
 **What happens when compression occurs:**
-1. Response is automatically reduced to a lighter verbosity level
-2. Claude receives an AI instruction explaining what happened
-3. Response includes `compression` metadata showing:
-   - `originalVerbosity`: What you requested
-   - `appliedVerbosity`: What was actually returned
-   - `reason`: Why compression was needed
-   - `originalSizeKB` / `finalSizeKB`: Size before/after
+1. MCP detects response size exceeds thresholds
+2. **Automatically re-filters data** with lower verbosity level
+3. Response is reduced BEFORE being sent to Claude Desktop
+4. Claude receives an AI instruction explaining what happened
+5. Response includes `compression` metadata showing:
+   - `originalSizeKB`: Size before compression
+   - `finalSizeKB`: Size after compression
+   - `compressionLevel`: The compression level applied
 
 **Example compression scenario:**
 ```typescript
@@ -805,22 +807,20 @@ figma_get_variables({
   verbosity: "standard"
 })
 
-// MCP detects response would be 1.2MB
-// Automatically downgrades to 'summary' (320KB)
+// MCP detects response would be 538KB
+// Automatically re-filters with 'summary' verbosity
 // Claude receives:
 {
   fileKey: "abc123",
   local: {
-    variables: [...],  // Only names, types, modes
+    variables: [...],  // Only names, types, modes (no values)
     collections: [...]
   },
   verbosity: "summary",  // ← Auto-adjusted
   compression: {
-    originalVerbosity: "standard",
-    appliedVerbosity: "summary",
-    reason: "Response size (1200KB) exceeds critical threshold",
-    originalSizeKB: 1200,
-    finalSizeKB: 320
+    originalSizeKB: 538,
+    finalSizeKB: 38,  // 93% reduction!
+    compressionLevel: "critical"
   }
 }
 ```

@@ -22,12 +22,21 @@
 				}
 			],
 			"tag": "v2"
+		},
+		{
+			"renamed_classes": [
+				{
+					"from": "FigmaConsoleMCP",
+					"to": "FigmaConsoleMCPv3"
+				}
+			],
+			"tag": "v3"
 		}
 	],
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "FigmaConsoleMCP",
+				"class_name": "FigmaConsoleMCPv3",
 				"name": "MCP_OBJECT"
 			}
 		]
@@ -35,7 +44,24 @@
 	"browser": {
 		"binding": "BROWSER"
 	},
+	"kv_namespaces": [
+		{
+			"binding": "OAUTH_TOKENS",
+			"id": "c6b268e475e64764a11641effddd56a3"
+		}
+	],
 	"observability": {
 		"enabled": true
-	}
+	},
+	// OAuth Configuration (Required for user authentication)
+	// Set these secrets using: wrangler secret put FIGMA_OAUTH_CLIENT_ID
+	// Get your OAuth credentials at: https://www.figma.com/developers
+	//
+	// FIGMA_OAUTH_CLIENT_ID: Your Figma OAuth app client ID
+	// FIGMA_OAUTH_CLIENT_SECRET: Your Figma OAuth app client secret
+	// FIGMA_ACCESS_TOKEN: (Optional/Deprecated) Server-wide token for testing
+	//
+	// Note: Secrets are not defined in this file - they must be set via:
+	// wrangler secret put FIGMA_OAUTH_CLIENT_ID
+	// wrangler secret put FIGMA_OAUTH_CLIENT_SECRET
 }

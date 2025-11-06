@@ -15,7 +15,10 @@ const logger = createChildLogger({ component: 'browser-manager' });
 export interface Env {
 	BROWSER: Fetcher;
 	MCP_OBJECT: DurableObjectNamespace;
-	FIGMA_ACCESS_TOKEN?: string; // Optional Figma API token for data extraction
+	OAUTH_TOKENS: KVNamespace; // KV for OAuth tokens (accessible across Durable Objects)
+	FIGMA_ACCESS_TOKEN?: string; // Optional Figma API token for data extraction (deprecated, use OAuth)
+	FIGMA_OAUTH_CLIENT_ID?: string; // OAuth client ID for user authentication
+	FIGMA_OAUTH_CLIENT_SECRET?: string; // OAuth client secret for token exchange
 }
 
 /**

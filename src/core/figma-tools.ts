@@ -119,10 +119,19 @@ function adaptiveResponse(
 			`ℹ️ RESPONSE OPTIMIZED: The ${options.toolName} response was automatically reduced because it would be ${sizeKB.toFixed(0)}KB.\n\n`;
 	}
 
+	// Map compression level to verbosity level
+	const verbosityMap: Record<string, string> = {
+		"info": "standard",
+		"warning": "summary",
+		"critical": "summary",
+		"emergency": "inventory"
+	};
+
 	// If compression needed, apply callback to reduce data
 	let finalData = responseData;
 	if (shouldCompress && options.compressionCallback) {
-		finalData = options.compressionCallback(compressionLevel);
+		const targetVerbosity = verbosityMap[compressionLevel] || "summary";
+		finalData = options.compressionCallback(targetVerbosity);
 
 		// Add compression metadata
 		finalData.compression = {
@@ -738,6 +747,18 @@ export function registerFigmaAPITools(
 				// Use adaptive response to prevent context exhaustion
 				return adaptiveResponse(finalResponse, {
 					toolName: "figma_get_file_data",
+					compressionCallback: (adjustedLevel: string) => {
+						// Re-apply node filtering with lower verbosity
+						const level = adjustedLevel as "summary" | "standard" | "full";
+						const refiltered = {
+							...finalResponse,
+							document: verbosity !== "full"
+								? filterNode(fileData.document, level)
+								: fileData.document,
+							verbosity: level,
+						};
+						return refiltered;
+					},
 					suggestedActions: [
 						"Use verbosity='summary' with depth=1 for initial exploration",
 						"Use verbosity='standard' for essential properties",
@@ -1826,64 +1847,38 @@ export function registerFigmaAPITools(
 					...(paginationInfo && { pagination: paginationInfo }),
 				};
 
-				// Apply adaptive compression based on response size
-				const compressionResult = adaptiveVerbosity(responseData, verbosity || "standard");
+				// Use adaptive response to prevent context exhaustion
+				return adaptiveResponse(responseData, {
+					toolName: "figma_get_variables",
+					compressionCallback: (adjustedLevel: string) => {
+						// Re-apply filters with adjusted verbosity
+						const level = adjustedLevel as "inventory" | "summary" | "standard" | "full";
+						const refiltered = applyFilters(
+							{
+								variables: localFormatted.variables,
+								variableCollections: localFormatted.collections,
+							},
+							{ collection, namePattern, mode },
+							level
+						);
 
-				// If compression was applied, re-filter the data
-				if (compressionResult.wasCompressed) {
-					const adjustedVerbosity = compressionResult.adjustedVerbosity;
-
-					// Re-apply filters with adjusted verbosity
-					const refiltered = applyFilters(
-						{
-							variables: localFormatted.variables,
-							variableCollections: localFormatted.collections,
-						},
-						{ collection, namePattern, mode },
-						adjustedVerbosity
-					);
-
-					responseData.local.variables = refiltered.variables;
-					responseData.local.collections = refiltered.variableCollections;
-					responseData.verbosity = adjustedVerbosity;
-
-					// Add compression metadata
-					responseData.compression = {
-						originalVerbosity: verbosity || "standard",
-						appliedVerbosity: adjustedVerbosity,
-						reason: compressionResult.compressionReason,
-						originalSizeKB: Math.round(compressionResult.sizeKB),
-						finalSizeKB: Math.round(calculateSizeKB(responseData)),
-					};
-
-					logger.info(
-						{
-							originalVerbosity: verbosity || "standard",
-							adjustedVerbosity,
-							originalSizeKB: compressionResult.sizeKB.toFixed(2),
-							finalSizeKB: calculateSizeKB(responseData).toFixed(2),
-						},
-						"Response compressed to prevent context exhaustion"
-					);
-				}
-
-				// Build final response with AI instruction if compressed
-				const content: any[] = [
-					{
-						type: "text",
-						text: JSON.stringify(responseData),
+						return {
+							...responseData,
+							local: {
+								...responseData.local,
+								variables: refiltered.variables,
+								collections: refiltered.variableCollections,
+							},
+							verbosity: level,
+						};
 					},
-				];
-
-				// Add AI instruction as separate content block if compression occurred
-				if (compressionResult.aiInstruction) {
-					content.unshift({
-						type: "text",
-						text: compressionResult.aiInstruction,
-					});
-				}
-
-				return { content };
+					suggestedActions: [
+						"Use verbosity='inventory' or 'summary' for large variable sets",
+						"Apply filters: collection, namePattern, or mode parameters",
+						"Use pagination with pageSize parameter (default 50, max 100)",
+						"Use returnAsLinks=true to get resource_link references instead of full data",
+					],
+				});
 			} catch (error) {
 				logger.error({ error }, "Failed to get variables");
 				const errorMessage =
@@ -2283,6 +2278,18 @@ export function registerFigmaAPITools(
 				// Use adaptive response to prevent context exhaustion
 				return adaptiveResponse(finalResponse, {
 					toolName: "figma_get_styles",
+					compressionCallback: (adjustedLevel: string) => {
+						// Re-apply style filtering with lower verbosity
+						const level = adjustedLevel as "summary" | "standard" | "full";
+						const refilteredStyles = verbosity !== "full"
+							? styles.map((style: any) => filterStyle(style, level))
+							: styles;
+						return {
+							...finalResponse,
+							styles: refilteredStyles,
+							verbosity: level,
+						};
+					},
 					suggestedActions: [
 						"Use verbosity='summary' for style names and types only",
 						"Use verbosity='standard' for essential style properties",
@@ -2731,6 +2738,42 @@ export function registerFigmaAPITools(
 				// Use adaptive response to prevent context exhaustion
 				return adaptiveResponse(finalResponse, {
 					toolName: "figma_get_file_for_plugin",
+					compressionCallback: (adjustedLevel: string) => {
+						// For plugin format, we can't reduce much without breaking functionality
+						// But we can strip some less critical metadata
+						const compressNode = (node: any): any => {
+							const result: any = {
+								id: node.id,
+								name: node.name,
+								type: node.type,
+							};
+
+							// Keep only essential properties based on compression level
+							if (adjustedLevel !== "inventory") {
+								if (node.visible !== undefined) result.visible = node.visible;
+								if (node.locked !== undefined) result.locked = node.locked;
+								if (node.absoluteBoundingBox) result.absoluteBoundingBox = node.absoluteBoundingBox;
+								if (node.pluginData) result.pluginData = node.pluginData;
+								if (node.sharedPluginData) result.sharedPluginData = node.sharedPluginData;
+								if (node.componentId) result.componentId = node.componentId;
+							}
+
+							if (node.children) {
+								result.children = node.children.map(compressNode);
+							}
+
+							return result;
+						};
+
+						return {
+							...finalResponse,
+							document: compressNode(filteredDocument),
+							metadata: {
+								...finalResponse.metadata,
+								compressionApplied: adjustedLevel,
+							},
+						};
+					},
 					suggestedActions: [
 						"Reduce depth parameter (recommend 1-2)",
 						"Request specific nodeIds to narrow the scope",

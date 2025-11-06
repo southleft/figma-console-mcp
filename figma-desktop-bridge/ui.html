@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 24px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 320px;
+      width: 100%;
+    }
+
+    .status {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .details {
+      font-size: 12px;
+      color: #666;
+      line-height: 1.6;
+      margin-top: 8px;
+    }
+
+    .details strong {
+      color: #1a1a1a;
+      font-weight: 500;
+    }
+
+    .success {
+      color: #059669;
+    }
+
+    .error {
+      color: #dc2626;
+    }
+
+    .loading {
+      color: #6b7280;
+    }
+
+    .divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 16px 0;
+    }
+
+    .footer {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 16px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="content">
+      <div class="status loading">
+        <span class="icon">⏳</span>
+        <span>Loading data...</span>
+      </div>
+      <div class="details">Connecting to Figma API</div>
+    </div>
+    <div class="divider"></div>
+    <div class="footer">Made with ❤️ by Southleft</div>
+  </div>
+
+  <script>
+    // Global variables to store data for Puppeteer access
+    window.__figmaVariablesData = null;
+    window.__figmaVariablesReady = false;
+    window.__figmaComponentData = null;
+    window.__figmaComponentRequests = new Map(); // Track pending requests
+
+    let requestIdCounter = 0;
+
+    // Function to request component data from plugin worker
+    window.requestComponentData = (nodeId) => {
+      return new Promise((resolve, reject) => {
+        const requestId = `component_${++requestIdCounter}_${Date.now()}`;
+
+        // Store the promise callbacks
+        window.__figmaComponentRequests.set(requestId, { resolve, reject });
+
+        // Send request to plugin worker
+        parent.postMessage({
+          pluginMessage: {
+            type: 'GET_COMPONENT',
+            requestId: requestId,
+            nodeId: nodeId
+          }
+        }, '*');
+
+        console.log('[Desktop Bridge] Requested component:', nodeId, 'requestId:', requestId);
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          if (window.__figmaComponentRequests.has(requestId)) {
+            window.__figmaComponentRequests.delete(requestId);
+            reject(new Error('Component request timed out'));
+          }
+        }, 10000);
+      });
+    };
+
+    // Listen for messages from plugin worker
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+
+      if (msg.type === 'VARIABLES_DATA') {
+        // Store data on window object for Puppeteer
+        window.__figmaVariablesData = msg.data;
+        window.__figmaVariablesReady = true;
+
+        const varCount = msg.data.variables?.length || 0;
+        const collCount = msg.data.variableCollections?.length || 0;
+
+        // Update UI
+        document.getElementById('content').innerHTML = `
+          <div class="status success">
+            <span class="icon">✓</span>
+            <span>Desktop Bridge active</span>
+          </div>
+          <div class="details">
+            <strong>Variables:</strong> ${varCount} in ${collCount} ${collCount === 1 ? 'collection' : 'collections'}<br>
+            <strong>Components:</strong> On-demand via MCP<br>
+            <br>
+            <code style="font-size: 10px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; display: block; margin-top: 4px;">window.__figmaVariablesData</code>
+            <code style="font-size: 10px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; display: block; margin-top: 2px;">window.requestComponentData(id)</code>
+          </div>
+        `;
+
+        console.log('[Desktop Bridge] Variables ready:', { varCount, collCount });
+
+      } else if (msg.type === 'COMPONENT_DATA') {
+        // Store component data
+        window.__figmaComponentData = msg.data;
+
+        console.log('[Desktop Bridge] Component data received:', msg.data.component.name);
+
+        // Resolve the promise
+        const request = window.__figmaComponentRequests.get(msg.requestId);
+        if (request) {
+          request.resolve(msg.data);
+          window.__figmaComponentRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'COMPONENT_ERROR') {
+        console.error('[Desktop Bridge] Component error:', msg.error);
+
+        // Reject the promise
+        const request = window.__figmaComponentRequests.get(msg.requestId);
+        if (request) {
+          request.reject(new Error(msg.error));
+          window.__figmaComponentRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'ERROR') {
+        window.__figmaVariablesReady = false;
+
+        document.getElementById('content').innerHTML = `
+          <div class="status error">
+            <span class="icon">✕</span>
+            <span>Error loading data</span>
+          </div>
+          <div class="details">${msg.error}</div>
+        `;
+
+        console.error('[Desktop Bridge] Error:', msg.error);
+      }
+    };
+  </script>
+</body>
+</html>
