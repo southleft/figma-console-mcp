@@ -68,8 +68,114 @@ function calculateSizeKB(data: any): number {
 }
 
 /**
+ * Generic adaptive response wrapper - automatically compresses responses that exceed size thresholds
+ * Can be used by any tool to prevent context window exhaustion
+ *
+ * @param responseData - The response data to potentially compress
+ * @param options - Configuration options for compression behavior
+ * @returns Response content array with optional AI instruction
+ */
+function adaptiveResponse(
+	responseData: any,
+	options: {
+		toolName: string;
+		compressionCallback?: (adjustedLevel: string) => any;
+		suggestedActions?: string[];
+	}
+): { content: any[] } {
+	const sizeKB = calculateSizeKB(responseData);
+
+	// No compression needed
+	if (sizeKB <= RESPONSE_SIZE_THRESHOLDS.IDEAL_SIZE_KB) {
+		return {
+			content: [
+				{
+					type: "text",
+					text: JSON.stringify(responseData),
+				},
+			],
+		};
+	}
+
+	// Determine compression level and message
+	let compressionLevel: "info" | "warning" | "critical" | "emergency" = "info";
+	let aiInstruction = "";
+	let shouldCompress = false;
+
+	if (sizeKB > RESPONSE_SIZE_THRESHOLDS.MAX_SIZE_KB) {
+		compressionLevel = "emergency";
+		shouldCompress = true;
+		aiInstruction =
+			`⚠️ RESPONSE AUTO-COMPRESSED: The ${options.toolName} response was automatically reduced because the full response would be ${sizeKB.toFixed(0)}KB, which would exhaust Claude Desktop's context window.\n\n`;
+	} else if (sizeKB > RESPONSE_SIZE_THRESHOLDS.CRITICAL_SIZE_KB) {
+		compressionLevel = "critical";
+		shouldCompress = true;
+		aiInstruction =
+			`⚠️ RESPONSE AUTO-COMPRESSED: The ${options.toolName} response was automatically reduced because it would be ${sizeKB.toFixed(0)}KB, risking context window exhaustion.\n\n`;
+	} else if (sizeKB > RESPONSE_SIZE_THRESHOLDS.WARNING_SIZE_KB) {
+		compressionLevel = "warning";
+		shouldCompress = true;
+		aiInstruction =
+			`ℹ️ RESPONSE OPTIMIZED: The ${options.toolName} response was automatically reduced because it would be ${sizeKB.toFixed(0)}KB.\n\n`;
+	}
+
+	// If compression needed, apply callback to reduce data
+	let finalData = responseData;
+	if (shouldCompress && options.compressionCallback) {
+		finalData = options.compressionCallback(compressionLevel);
+
+		// Add compression metadata
+		finalData.compression = {
+			originalSizeKB: Math.round(sizeKB),
+			finalSizeKB: Math.round(calculateSizeKB(finalData)),
+			compressionLevel,
+		};
+
+		logger.info(
+			{
+				tool: options.toolName,
+				originalSizeKB: sizeKB.toFixed(2),
+				finalSizeKB: calculateSizeKB(finalData).toFixed(2),
+				compressionLevel,
+			},
+			"Response compressed to prevent context exhaustion"
+		);
+	}
+
+	// Build AI instruction with suggested actions
+	if (shouldCompress) {
+		if (options.suggestedActions && options.suggestedActions.length > 0) {
+			aiInstruction += `To get more detail:\n`;
+			options.suggestedActions.forEach(action => {
+				aiInstruction += `• ${action}\n`;
+			});
+		}
+	}
+
+	// Build response content
+	const content: any[] = [
+		{
+			type: "text",
+			text: JSON.stringify(finalData),
+		},
+	];
+
+	// Add AI instruction as separate content block if needed
+	if (aiInstruction) {
+		content.unshift({
+			type: "text",
+			text: aiInstruction.trim(),
+		});
+	}
+
+	return { content };
+}
+
+/**
  * Adaptive verbosity system - automatically downgrades verbosity based on response size
  * Returns adjusted verbosity level and compression info for AI instructions
+ *
+ * @deprecated Use adaptiveResponse instead for more flexible compression
  */
 function adaptiveVerbosity(
 	data: any,
@@ -624,21 +730,21 @@ export function registerFigmaAPITools(
 					);
 				}
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									...response,
-									enriched: enrich || false,
-								},
-								null,
-								2
-							),
-						},
-					],
+				const finalResponse = {
+					...response,
+					enriched: enrich || false,
 				};
+
+				// Use adaptive response to prevent context exhaustion
+				return adaptiveResponse(finalResponse, {
+					toolName: "figma_get_file_data",
+					suggestedActions: [
+						"Use verbosity='summary' with depth=1 for initial exploration",
+						"Use verbosity='standard' for essential properties",
+						"Request specific nodeIds to narrow the scope",
+						"Reduce depth parameter (max 3, recommend 1-2)",
+					],
+				});
 			} catch (error) {
 				logger.error({ error }, "Failed to get file data");
 				const errorMessage =
@@ -2166,24 +2272,23 @@ export function registerFigmaAPITools(
 					);
 				}
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									fileKey,
-									styles,
-									totalStyles: styles.length,
-									verbosity: verbosity || "standard",
-									enriched: enrich || false,
-								},
-								null,
-								2
-							),
-						},
-					],
+				const finalResponse = {
+					fileKey,
+					styles,
+					totalStyles: styles.length,
+					verbosity: verbosity || "standard",
+					enriched: enrich || false,
 				};
+
+				// Use adaptive response to prevent context exhaustion
+				return adaptiveResponse(finalResponse, {
+					toolName: "figma_get_styles",
+					suggestedActions: [
+						"Use verbosity='summary' for style names and types only",
+						"Use verbosity='standard' for essential style properties",
+						"Filter to specific style types if needed",
+					],
+				});
 			} catch (error) {
 				logger.error({ error }, "Failed to get styles");
 				const errorMessage =
@@ -2601,38 +2706,37 @@ export function registerFigmaAPITools(
 
 				const filteredDocument = filterForPlugin(fileData.document);
 
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									fileKey,
-									name: fileData.name,
-									lastModified: fileData.lastModified,
-									version: fileData.version,
-									document: filteredDocument,
-									components: fileData.components
-										? Object.keys(fileData.components).length
-										: 0,
-									styles: fileData.styles
-										? Object.keys(fileData.styles).length
-										: 0,
-									...(nodeIds && {
-										requestedNodes: nodeIds,
-										nodes: fileData.nodes,
-									}),
-									metadata: {
-										purpose: "plugin_development",
-										note: "Optimized for plugin development. Contains IDs, structure, plugin data, and component relationships.",
-									},
-								},
-								null,
-								2
-							),
-						},
-					],
+				const finalResponse = {
+					fileKey,
+					name: fileData.name,
+					lastModified: fileData.lastModified,
+					version: fileData.version,
+					document: filteredDocument,
+					components: fileData.components
+						? Object.keys(fileData.components).length
+						: 0,
+					styles: fileData.styles
+						? Object.keys(fileData.styles).length
+						: 0,
+					...(nodeIds && {
+						requestedNodes: nodeIds,
+						nodes: fileData.nodes,
+					}),
+					metadata: {
+						purpose: "plugin_development",
+						note: "Optimized for plugin development. Contains IDs, structure, plugin data, and component relationships.",
+					},
 				};
+
+				// Use adaptive response to prevent context exhaustion
+				return adaptiveResponse(finalResponse, {
+					toolName: "figma_get_file_for_plugin",
+					suggestedActions: [
+						"Reduce depth parameter (recommend 1-2)",
+						"Request specific nodeIds to narrow the scope",
+						"Filter to specific component types if possible",
+					],
+				});
 			} catch (error) {
 				logger.error({ error }, "Failed to get file for plugin");
 				const errorMessage =
