@@ -84,6 +84,57 @@ Click **"Edit Config"** to open `claude_desktop_config.json`
 
 ---
 
+## 🔐 Authentication & Tool Availability
+
+The MCP provides **14 tools** split into two categories:
+
+### ✅ **Always Available (No Authentication Required) - 7 Tools**
+
+Browser-based debugging tools that work immediately after installation:
+
+- `figma_navigate` - Navigate to Figma URLs
+- `figma_get_console_logs` - Capture plugin console output
+- `figma_watch_console` - Real-time log streaming
+- `figma_reload_plugin` - Reload Figma page
+- `figma_clear_console` - Clear console buffer
+- `figma_get_status` - Check connection status
+- `figma_take_screenshot` - Take screenshots (uses browser state)
+
+**Use cases**: Plugin debugging, console monitoring, visual debugging
+
+### 🔒 **Requires OAuth Authentication - 7 Tools**
+
+Design system and Figma API tools that require user authentication:
+
+- `figma_get_file_data` - Full file structure and document tree
+- `figma_get_variables` - Design variables/tokens extraction
+- `figma_get_component` - Component metadata and descriptions
+- `figma_get_styles` - Color/text/effect styles
+- `figma_get_component_image` - Component image rendering
+- `figma_get_component_for_development` - Component data with image
+- `figma_get_file_for_plugin` - Filtered file data for plugins
+
+**Use cases**: Design system extraction, component data, variables, styles, auditing
+
+### 🎫 **OAuth Authentication Flow**
+
+First-time users authenticate automatically:
+
+1. **Installation**: `claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse`
+2. **First API Call**: When using a design system tool, authentication is triggered
+3. **Browser Opens**: User logs in with their Figma account (one-time)
+4. **All Set**: All subsequent API calls work seamlessly
+
+**Benefits**:
+- ✅ Secure per-user authentication
+- ✅ No need to share personal access tokens
+- ✅ Tokens managed automatically
+- ✅ Works with any Figma account
+
+**See [OAuth Setup Guide](docs/OAUTH_SETUP.md) for server administrator setup.**
+
+---
+
 ## Example Prompts
 
 Once connected, try these prompts with your AI assistant:
@@ -205,35 +256,17 @@ Zero-setup remote access. Works with all AI clients.
 claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
 ```
 
-**To add Figma token** (required for design system tools):
+**That's it!** 🎉
 
-```bash
-claude config edit
-```
+- Browser-based tools work immediately
+- Design system tools trigger OAuth authentication automatically on first use
+- Your browser will open once to authorize with Figma
 
-Add the environment variable:
-
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "transport": "sse",
-      "url": "https://figma-console-mcp.southleft.com/sse",
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
-      }
-    }
-  }
-}
-```
-
-**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
-
-**Verify:**
+**Verify connection:**
 - Use `/mcp` command in Claude Code
 - Should show "figma-console: connected"
 
-**See [CLAUDE_CODE_SETUP.md](docs/CLAUDE_CODE_SETUP.md) for troubleshooting.**
+**Troubleshooting:** See [CLAUDE_CODE_SETUP.md](docs/CLAUDE_CODE_SETUP.md)
 
 </details>
 
@@ -744,6 +777,61 @@ figma_get_variables({
   refreshCache: true  // Fetches fresh data from plugin
 })
 ```
+
+### Adaptive Response Sizing
+
+The MCP automatically adjusts response verbosity based on payload size to prevent context window exhaustion in Claude Desktop:
+
+**Size Thresholds:**
+- ✅ **≤100KB** - Ideal size, no compression needed
+- ⚠️ **>200KB** - Auto-downgrade `full` → `standard` verbosity
+- 🚨 **>500KB** - Auto-downgrade `full`/`standard` → `summary` verbosity
+- 🔴 **>1MB** - Emergency compression to `inventory` (names/IDs only)
+
+**What happens when compression occurs:**
+1. Response is automatically reduced to a lighter verbosity level
+2. Claude receives an AI instruction explaining what happened
+3. Response includes `compression` metadata showing:
+   - `originalVerbosity`: What you requested
+   - `appliedVerbosity`: What was actually returned
+   - `reason`: Why compression was needed
+   - `originalSizeKB` / `finalSizeKB`: Size before/after
+
+**Example compression scenario:**
+```typescript
+// You request: verbosity='standard' for 410 variables with 19 modes
+figma_get_variables({
+  fileUrl: "https://figma.com/design/abc123",
+  verbosity: "standard"
+})
+
+// MCP detects response would be 1.2MB
+// Automatically downgrades to 'summary' (320KB)
+// Claude receives:
+{
+  fileKey: "abc123",
+  local: {
+    variables: [...],  // Only names, types, modes
+    collections: [...]
+  },
+  verbosity: "summary",  // ← Auto-adjusted
+  compression: {
+    originalVerbosity: "standard",
+    appliedVerbosity: "summary",
+    reason: "Response size (1200KB) exceeds critical threshold",
+    originalSizeKB: 1200,
+    finalSizeKB: 320
+  }
+}
+```
+
+**How to get more detail after compression:**
+- Use `format='filtered'` with specific filters (collection, namePattern, mode)
+- Use pagination (`page=1`, `pageSize=20`)
+- Use `returnAsLinks=true` for resource_link references
+- Request smaller subsets instead of entire dataset
+
+**Pro tip:** Start with `format='summary'` for large design systems, then drill down with filtered queries.
 
 ### Troubleshooting
 

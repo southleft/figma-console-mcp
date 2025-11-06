@@ -48,6 +48,117 @@ function estimateTokens(data: any): number {
 }
 
 /**
+ * Response size thresholds for adaptive verbosity
+ * Based on typical Claude Desktop context window limits
+ */
+const RESPONSE_SIZE_THRESHOLDS = {
+	// Conservative thresholds to leave room for conversation context
+	IDEAL_SIZE_KB: 100,        // Target size for optimal performance
+	WARNING_SIZE_KB: 200,      // Start considering compression
+	CRITICAL_SIZE_KB: 500,     // Must compress to avoid context exhaustion
+	MAX_SIZE_KB: 1000,         // Absolute maximum before emergency compression
+} as const;
+
+/**
+ * Calculate JSON string size in KB
+ */
+function calculateSizeKB(data: any): number {
+	const jsonString = JSON.stringify(data);
+	return jsonString.length / 1024;
+}
+
+/**
+ * Adaptive verbosity system - automatically downgrades verbosity based on response size
+ * Returns adjusted verbosity level and compression info for AI instructions
+ */
+function adaptiveVerbosity(
+	data: any,
+	requestedVerbosity: "inventory" | "summary" | "standard" | "full"
+): {
+	adjustedVerbosity: "inventory" | "summary" | "standard" | "full";
+	sizeKB: number;
+	wasCompressed: boolean;
+	compressionReason?: string;
+	aiInstruction?: string;
+} {
+	const sizeKB = calculateSizeKB(data);
+
+	// No adjustment needed - response is within ideal size
+	if (sizeKB <= RESPONSE_SIZE_THRESHOLDS.IDEAL_SIZE_KB) {
+		return {
+			adjustedVerbosity: requestedVerbosity,
+			sizeKB,
+			wasCompressed: false,
+		};
+	}
+
+	// Determine appropriate verbosity based on size
+	let adjustedVerbosity = requestedVerbosity;
+	let compressionReason = "";
+	let aiInstruction = "";
+
+	if (sizeKB > RESPONSE_SIZE_THRESHOLDS.MAX_SIZE_KB) {
+		// Emergency: Force inventory mode
+		adjustedVerbosity = "inventory";
+		compressionReason = `Response size (${sizeKB.toFixed(0)}KB) exceeds maximum threshold (${RESPONSE_SIZE_THRESHOLDS.MAX_SIZE_KB}KB)`;
+		aiInstruction =
+			`⚠️ RESPONSE AUTO-COMPRESSED: The response was automatically reduced to 'inventory' verbosity (names/IDs only) because the full response would be ${sizeKB.toFixed(0)}KB, which would exhaust Claude Desktop's context window.\n\n` +
+			`To get more detail:\n` +
+			`• Use format='filtered' with collection/namePattern/mode filters to narrow the scope\n` +
+			`• Use pagination (page=1, pageSize=20) to retrieve data in smaller chunks\n` +
+			`• Use returnAsLinks=true to get resource_link references instead of full data\n\n` +
+			`Current response contains variable/collection names and IDs only.`;
+	} else if (sizeKB > RESPONSE_SIZE_THRESHOLDS.CRITICAL_SIZE_KB) {
+		// Critical: Downgrade to summary if higher was requested
+		if (requestedVerbosity === "full" || requestedVerbosity === "standard") {
+			adjustedVerbosity = "summary";
+			compressionReason = `Response size (${sizeKB.toFixed(0)}KB) exceeds critical threshold (${RESPONSE_SIZE_THRESHOLDS.CRITICAL_SIZE_KB}KB)`;
+			aiInstruction =
+				`⚠️ RESPONSE AUTO-COMPRESSED: The response was automatically reduced to 'summary' verbosity because the ${requestedVerbosity} response would be ${sizeKB.toFixed(0)}KB, risking context window exhaustion.\n\n` +
+				`To get more detail, use filtering options:\n` +
+				`• format='filtered' with collection='CollectionName' to focus on specific collections\n` +
+				`• namePattern='color' to filter by variable name\n` +
+				`• mode='Light' to filter by mode\n` +
+				`• pagination with smaller pageSize values\n\n` +
+				`Current response includes variable names, types, and mode information.`;
+		}
+	} else if (sizeKB > RESPONSE_SIZE_THRESHOLDS.WARNING_SIZE_KB) {
+		// Warning: Downgrade full to standard
+		if (requestedVerbosity === "full") {
+			adjustedVerbosity = "standard";
+			compressionReason = `Response size (${sizeKB.toFixed(0)}KB) exceeds warning threshold (${RESPONSE_SIZE_THRESHOLDS.WARNING_SIZE_KB}KB)`;
+			aiInstruction =
+				`ℹ️ RESPONSE OPTIMIZED: The response was automatically reduced to 'standard' verbosity because the full response would be ${sizeKB.toFixed(0)}KB.\n\n` +
+				`This response includes essential variable properties. For specific details, use filtering:\n` +
+				`• format='filtered' with collection/namePattern/mode filters\n` +
+				`• Request verbosity='full' with specific filters to get complete data for a subset`;
+		}
+	}
+
+	const wasCompressed = adjustedVerbosity !== requestedVerbosity;
+
+	if (wasCompressed) {
+		logger.info(
+			{
+				originalVerbosity: requestedVerbosity,
+				adjustedVerbosity,
+				sizeKB: sizeKB.toFixed(2),
+				threshold: compressionReason,
+			},
+			"Adaptive compression applied"
+		);
+	}
+
+	return {
+		adjustedVerbosity,
+		sizeKB,
+		wasCompressed,
+		compressionReason: wasCompressed ? compressionReason : undefined,
+		aiInstruction: wasCompressed ? aiInstruction : undefined,
+	};
+}
+
+/**
  * Generate compact summary of variables data (~2K tokens)
  * Returns high-level overview with counts and names
  */
@@ -1588,35 +1699,85 @@ export function registerFigmaAPITools(
 					return { content };
 				}
 
-				// Default: return full data (removed pretty printing)
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									fileKey,
-									local: {
-										summary: localFormatted.summary,
-										collections: localFormatted.collections,
-										variables: localFormatted.variables,
-									},
-									...(includePublished &&
-										publishedFormatted && {
-											published: {
-												summary: publishedFormatted.summary,
-												collections: publishedFormatted.collections,
-												variables: publishedFormatted.variables,
-											},
-										}),
-									verbosity: verbosity || "standard",
-									enriched: enrich || false,
-									...(paginationInfo && { pagination: paginationInfo }),
-								}
-							),
-						},
-					],
+				// Build initial response data
+				const responseData = {
+					fileKey,
+					local: {
+						summary: localFormatted.summary,
+						collections: localFormatted.collections,
+						variables: localFormatted.variables,
+					},
+					...(includePublished &&
+						publishedFormatted && {
+							published: {
+								summary: publishedFormatted.summary,
+								collections: publishedFormatted.collections,
+								variables: publishedFormatted.variables,
+							},
+						}),
+					verbosity: verbosity || "standard",
+					enriched: enrich || false,
+					...(paginationInfo && { pagination: paginationInfo }),
 				};
+
+				// Apply adaptive compression based on response size
+				const compressionResult = adaptiveVerbosity(responseData, verbosity || "standard");
+
+				// If compression was applied, re-filter the data
+				if (compressionResult.wasCompressed) {
+					const adjustedVerbosity = compressionResult.adjustedVerbosity;
+
+					// Re-apply filters with adjusted verbosity
+					const refiltered = applyFilters(
+						{
+							variables: localFormatted.variables,
+							variableCollections: localFormatted.collections,
+						},
+						{ collection, namePattern, mode },
+						adjustedVerbosity
+					);
+
+					responseData.local.variables = refiltered.variables;
+					responseData.local.collections = refiltered.variableCollections;
+					responseData.verbosity = adjustedVerbosity;
+
+					// Add compression metadata
+					responseData.compression = {
+						originalVerbosity: verbosity || "standard",
+						appliedVerbosity: adjustedVerbosity,
+						reason: compressionResult.compressionReason,
+						originalSizeKB: Math.round(compressionResult.sizeKB),
+						finalSizeKB: Math.round(calculateSizeKB(responseData)),
+					};
+
+					logger.info(
+						{
+							originalVerbosity: verbosity || "standard",
+							adjustedVerbosity,
+							originalSizeKB: compressionResult.sizeKB.toFixed(2),
+							finalSizeKB: calculateSizeKB(responseData).toFixed(2),
+						},
+						"Response compressed to prevent context exhaustion"
+					);
+				}
+
+				// Build final response with AI instruction if compressed
+				const content: any[] = [
+					{
+						type: "text",
+						text: JSON.stringify(responseData),
+					},
+				];
+
+				// Add AI instruction as separate content block if compression occurred
+				if (compressionResult.aiInstruction) {
+					content.unshift({
+						type: "text",
+						text: compressionResult.aiInstruction,
+					});
+				}
+
+				return { content };
 			} catch (error) {
 				logger.error({ error }, "Failed to get variables");
 				const errorMessage =
