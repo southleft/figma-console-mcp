@@ -19,16 +19,9 @@ Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/
 
 ## ⚡ Quick Start for Designers
 
-Get full access to your Figma design system data in 5 simple steps:
+Get full access to your Figma design system data in 4 simple steps:
 
-### Step 1: Get Your Figma Access Token
-
-1. Go to [Figma Settings → Personal Access Tokens](https://www.figma.com/developers/api#access-tokens)
-2. Click "Create new token"
-3. Copy the token (starts with `figd_`)
-4. Keep it handy for Step 2
-
-### Step 2: Configure Claude Desktop
+### Step 1: Configure Claude Desktop
 
 **Open Claude Desktop settings:**
 - **Mac**: `Claude` menu → `Settings` → `Developer`
@@ -36,17 +29,14 @@ Get full access to your Figma design system data in 5 simple steps:
 
 Click **"Edit Config"** to open `claude_desktop_config.json`
 
-**Add this configuration** (replace `your_token_here` with your actual token):
+**Add this configuration:**
 
 ```json
 {
   "mcpServers": {
     "figma-console": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_token_here"
-      }
+      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
     }
   }
 }
@@ -58,20 +48,22 @@ Click **"Edit Config"** to open `claude_desktop_config.json`
 - Look for a 🔌 icon in the bottom-right of Claude Desktop
 - It should show "figma-console: connected" ✅
 
-### Step 3: Download the Figma Plugin
+> **Note**: This cloud mode configuration uses OAuth authentication. When you first use design system tools, your browser will open once to authorize with your Figma account. No personal access token required!
+
+### Step 2: Download the Figma Plugin
 
 1. Go to [Releases](https://github.com/southleft/figma-console-mcp/releases/latest)
 2. Download **`figma-desktop-bridge.zip`**
 3. Unzip the file
 
-### Step 4: Install Plugin in Figma
+### Step 3: Install Plugin in Figma
 
 1. Open **Figma Desktop**
 2. Go to **Plugins → Development → Import plugin from manifest**
 3. Select the **`manifest.json`** file from your unzipped folder
 4. Done! ✅
 
-### Step 5: Use It!
+### Step 4: Use It!
 
 1. Open any Figma file with design tokens (variables) or components
 2. Right-click → **Plugins → Development → Figma Desktop Bridge**
@@ -116,22 +108,27 @@ Design system and Figma API tools that require user authentication:
 
 **Use cases**: Design system extraction, component data, variables, styles, auditing
 
-### 🎫 **OAuth Authentication Flow**
+### 🎫 **OAuth Authentication Flow** (Cloud Mode)
 
-First-time users authenticate automatically:
+When using the remote MCP server (https://figma-console-mcp.southleft.com), authentication happens automatically via OAuth:
 
 1. **Installation**: `claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse`
-2. **First API Call**: When using a design system tool, authentication is triggered
-3. **Browser Opens**: User logs in with their Figma account (one-time)
-4. **All Set**: All subsequent API calls work seamlessly
+   - No personal access token needed in configuration!
+2. **First Design System Tool Call**: When you first request variables, components, or styles, authentication is triggered
+3. **Browser Opens Automatically**: You'll be redirected to Figma to authorize the app (one-time)
+4. **All Set**: Token is securely stored and all subsequent API calls work seamlessly
 
 **Benefits**:
-- ✅ Secure per-user authentication
-- ✅ No need to share personal access tokens
-- ✅ Tokens managed automatically
-- ✅ Works with any Figma account
+- ✅ Secure per-user authentication with your own Figma account
+- ✅ No need to create or manage personal access tokens
+- ✅ Tokens stored securely in Cloudflare Durable Objects
+- ✅ Token management is completely automatic
+- ✅ Works with any Figma account (Free, Professional, Organization, or Enterprise)
+- ✅ Tokens persist across MCP server reconnections
 
-**See [OAuth Setup Guide](docs/OAUTH_SETUP.md) for server administrator setup.**
+**Important**: OAuth is only available for the remote/cloud mode MCP server. If you're running the local mode MCP server (for plugin development), you'll need to provide a personal access token via the `FIGMA_ACCESS_TOKEN` environment variable.
+
+**For server administrators**: See [OAuth Setup Guide](docs/OAUTH_SETUP.md) for how to configure OAuth on your own self-hosted deployment.
 
 ---
 
@@ -275,7 +272,7 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 
 **Location:** `.cursor/mcp.json` in your project or `~/.cursor/mcp.json` globally
 
-**Without Figma token** (console/screenshots only):
+**Configuration:**
 ```json
 {
   "mcpServers": {
@@ -287,27 +284,15 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 }
 ```
 
-**With Figma token** (full design system access):
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
-      }
-    }
-  }
-}
-```
-
-**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
-
 **After editing:**
 1. Save and restart Cursor
 2. Check for MCP connection indicator
 3. Test with a prompt like "Navigate to https://www.figma.com"
+
+**Authentication:**
+- Browser-based tools work immediately
+- Design system tools trigger OAuth authentication automatically on first use
+- Your browser will open once to authorize with Figma
 
 </details>
 
@@ -316,7 +301,7 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 
 **Location:** Follow Windsurf's MCP configuration documentation
 
-**Without Figma token** (console/screenshots only):
+**Configuration:**
 ```json
 {
   "mcpServers": {
@@ -328,22 +313,10 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 }
 ```
 
-**With Figma token** (full design system access):
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
-      }
-    }
-  }
-}
-```
-
-**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
+**Authentication:**
+- Browser-based tools work immediately
+- Design system tools trigger OAuth authentication automatically on first use
+- Your browser will open once to authorize with Figma
 
 </details>
 
@@ -352,7 +325,7 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 
 **Location:** `~/.config/zed/settings.json` (Linux/macOS) or `%APPDATA%\Zed\settings.json` (Windows)
 
-**Without Figma token** (console/screenshots only):
+**Configuration:**
 ```json
 {
   "context_servers": {
@@ -366,24 +339,10 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 }
 ```
 
-**With Figma token** (full design system access):
-```json
-{
-  "context_servers": {
-    "figma-console": {
-      "command": {
-        "path": "npx",
-        "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
-      },
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
-      }
-    }
-  }
-}
-```
-
-**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
+**Authentication:**
+- Browser-based tools work immediately
+- Design system tools trigger OAuth authentication automatically on first use
+- Your browser will open once to authorize with Figma
 
 </details>
 
@@ -393,34 +352,17 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
-**Without Figma token** (console/screenshots only):
+**Configuration:**
 ```json
 {
   "mcpServers": {
     "figma-console": {
       "command": "npx",
-      "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
+      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
     }
   }
 }
 ```
-
-**With Figma token** (full design system access):
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
-      }
-    }
-  }
-}
-```
-
-**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
 
 **After editing:**
 1. Save the file
@@ -429,31 +371,28 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 4. Look for "🔌" indicator showing MCP servers connected
 5. All 14 Figma tools should be available
 
+**Authentication:**
+- Browser-based tools work immediately
+- Design system tools trigger OAuth authentication automatically on first use
+- Your browser will open once to authorize with Figma
+
 </details>
 
 <details>
 <summary><b>Other MCP Clients</b></summary>
 
-**Without Figma token** (console/screenshots only):
+**Configuration:**
 ```json
 {
   "command": "npx",
-  "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
+  "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
 }
 ```
 
-**With Figma token** (full design system access):
-```json
-{
-  "command": "npx",
-  "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"],
-  "env": {
-    "FIGMA_ACCESS_TOKEN": "figd_your_actual_token_here"
-  }
-}
-```
-
-**Get your Figma token:** https://www.figma.com/developers/api#access-tokens
+**Authentication:**
+- Browser-based tools work immediately
+- Design system tools trigger OAuth authentication automatically on first use
+- Your browser will open once to authorize with Figma
 
 Consult your MCP client's documentation for the specific configuration file location.
 
