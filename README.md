@@ -3,276 +3,67 @@
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Model Context Protocol server** that provides AI assistants with **real-time console access, visual debugging, design system auditing, and data extraction** for Figma files and plugins.
+> **Model Context Protocol server** that provides AI assistants with **real-time console access, visual debugging, and design system extraction** for Figma.
 
-## Overview
+## What is this?
 
-Figma Console MCP is a [Model Context Protocol](https://modelcontextprotocol.io/) server that connects AI assistants (like Claude) to Figma for:
+Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
-- **🐛 Plugin debugging** - Capture console logs, errors, and stack traces from Figma plugins
-- **📸 Visual debugging** - Take screenshots of Figma UI for context
-- **🎨 Design system extraction** - Pull variables, components, styles, and file data
-- **🔍 Design system auditing** - AI-powered quality checks, token coverage analysis, compliance reporting
-- **⚡ Live monitoring** - Watch console logs in real-time as plugins execute
-- **Zero-friction debugging** workflow (no copy-paste needed)
-- **Dual deployment modes** - Local (for plugin development) or Cloud (for remote collaboration)
-
-## ⚡ Quick Start for Designers
-
-Get full access to your Figma design system data in 4 simple steps:
-
-### Step 1: Configure Claude Desktop
-
-**Open Claude Desktop settings:**
-- **Mac**: `Claude` menu → `Settings` → `Developer`
-- **Windows**: `File` menu → `Settings` → `Developer`
-
-Click **"Edit Config"** to open `claude_desktop_config.json`
-
-**Add this configuration:**
-
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
-    }
-  }
-}
-```
-
-**Save and restart Claude Desktop**
-
-**Verify it worked:**
-- Look for a 🔌 icon in the bottom-right of Claude Desktop
-- It should show "figma-console: connected" ✅
-
-> **Note**: This cloud mode configuration uses OAuth authentication. When you first use design system tools, your browser will open once to authorize with your Figma account. No personal access token required!
-
-### Step 2: Download the Figma Plugin
-
-1. Go to [Releases](https://github.com/southleft/figma-console-mcp/releases/latest)
-2. Download **`figma-desktop-bridge.zip`**
-3. Unzip the file
-
-### Step 3: Install Plugin in Figma
-
-1. Open **Figma Desktop**
-2. Go to **Plugins → Development → Import plugin from manifest**
-3. Select the **`manifest.json`** file from your unzipped folder
-4. Done! ✅
-
-### Step 4: Use It!
-
-1. Open any Figma file with design tokens (variables) or components
-2. Right-click → **Plugins → Development → Figma Desktop Bridge**
-3. The plugin will show "✓ Desktop Bridge active"
-4. Go to Claude and ask questions about your design system:
-   - **"Show me the primary font for [your theme name]"** (accesses variables)
-   - **"What does the Chips component description say?"** (accesses component data)
-
-**That's it!** Claude now has full access to your design system variables AND component descriptions. 🎉
+- **🐛 Plugin debugging** - Capture console logs, errors, and stack traces
+- **📸 Visual debugging** - Take screenshots for context
+- **🎨 Design system extraction** - Pull variables, components, and styles
+- **⚡ Real-time monitoring** - Watch logs as plugins execute
+- **🔄 Two modes** - Remote (zero setup) or Local (plugin development)
 
 ---
 
-## 🔐 Authentication & Tool Availability
+## ⚡ Quick Start
 
-The MCP provides **14 tools** split into two categories:
+Choose the setup that fits your needs:
 
-### ✅ **Always Available (No Authentication Required) - 7 Tools**
+### For Most Users: Remote Mode (Zero Setup)
 
-Browser-based debugging tools that work immediately after installation:
+Perfect for design system extraction and basic debugging. No installation required!
 
-- `figma_navigate` - Navigate to Figma URLs
-- `figma_get_console_logs` - Capture plugin console output
-- `figma_watch_console` - Real-time log streaming
-- `figma_reload_plugin` - Reload Figma page
-- `figma_clear_console` - Clear console buffer
-- `figma_get_status` - Check connection status
-- `figma_take_screenshot` - Take screenshots (uses browser state)
+#### Claude Desktop (Recommended)
 
-**Use cases**: Plugin debugging, console monitoring, visual debugging
+**Latest Method - No Config Files!**
 
-### 🔒 **Requires OAuth Authentication - 7 Tools**
+1. Open Claude Desktop → **Settings** → **Connectors**
+2. Click **"Add Custom Connector"**
+3. Enter:
+   - **Name:** `Figma Console`
+   - **URL:** `https://figma-console-mcp.southleft.com/sse`
+4. Click **"Add"**
+5. Done! ✅
 
-Design system and Figma API tools that require user authentication:
+**What you get:**
+- ✅ All 14 Figma tools available immediately
+- ✅ OAuth authentication (automatic when you first use API tools)
+- ✅ Design system extraction (variables*, components, styles)
+- ✅ Console debugging and screenshots
+- ❌ Desktop Bridge plugin NOT available (use Local Mode for that)
 
-- `figma_get_file_data` - Full file structure and document tree
-- `figma_get_variables` - Design variables/tokens extraction
-- `figma_get_component` - Component metadata and descriptions
-- `figma_get_styles` - Color/text/effect styles
-- `figma_get_component_image` - Component image rendering
-- `figma_get_component_for_development` - Component data with image
-- `figma_get_file_for_plugin` - Filtered file data for plugins
-
-**Use cases**: Design system extraction, component data, variables, styles, auditing
-
-### 🎫 **OAuth Authentication Flow** (Cloud Mode)
-
-When using the remote MCP server (https://figma-console-mcp.southleft.com), authentication happens automatically via OAuth:
-
-1. **Installation**: `claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse`
-   - No personal access token needed in configuration!
-2. **First Design System Tool Call**: When you first request variables, components, or styles, authentication is triggered
-3. **Browser Opens Automatically**: You'll be redirected to Figma to authorize the app (one-time)
-4. **All Set**: Token is securely stored and all subsequent API calls work seamlessly
-
-**Benefits**:
-- ✅ Secure per-user authentication with your own Figma account
-- ✅ No need to create or manage personal access tokens
-- ✅ Tokens stored securely in Cloudflare Durable Objects
-- ✅ Token management is completely automatic
-- ✅ Works with any Figma account (Free, Professional, Organization, or Enterprise)
-- ✅ Tokens persist across MCP server reconnections
-
-**Important**: OAuth is only available for the remote/cloud mode MCP server. If you're running the local mode MCP server (for plugin development), you'll need to provide a personal access token via the `FIGMA_ACCESS_TOKEN` environment variable.
-
-**For server administrators**: See [OAuth Setup Guide](docs/OAUTH_SETUP.md) for how to configure OAuth on your own self-hosted deployment.
+*Variables API requires Figma Enterprise plan OR use Local Mode + Desktop Bridge plugin
 
 ---
 
-## Example Prompts
+#### Claude Code
 
-Once connected, try these prompts with your AI assistant:
-
-### 🐛 Plugin Debugging
-
-**Cloud Mode (Default - No Setup Required):**
-- "Navigate to my Figma plugin and show me any console errors"
-- "Watch the console logs for 30 seconds while I test my plugin"
-- "Get the last 20 console logs from https://figma.com/design/abc123"
-
-**Local Mode (For Plugin Development - Requires One-Time Setup):**
-
-> **🚨 REQUIRED FIRST-TIME SETUP:**
->
-> **Step 1:** Quit Figma Desktop completely (Cmd+Q / Alt+F4)
->
-> **Step 2:** Relaunch Figma with remote debugging enabled:
-> - **macOS:** Open Terminal and run:
->   ```bash
->   open -a "Figma" --args --remote-debugging-port=9222
->   ```
-> - **Windows:** Open Command Prompt and run:
->   ```bash
->   start figma://--remote-debugging-port=9222
->   ```
->
-> **Step 3:** Open your design file, run your plugin, then ask:
-> - "Check the last 20 console logs"
-> - "Show me recent error logs from my plugin"
-> - "Watch for new console output"
->
-> ✅ **You only need to do this setup once per Figma session.** Your logs will appear instantly!
->
-> See [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) for detailed local mode installation.
-
-### 📸 Visual Debugging
-- "Take a screenshot of the current Figma canvas"
-- "Navigate to this Figma file and capture what's on screen"
-- "Show me what Figma looks like right now with a full-page screenshot"
-
-### 🎨 Design System Extraction
-- "Get all design variables from https://figma.com/design/abc123"
-- "Extract color styles and show me the CSS exports"
-- "Get the Button component data with a visual reference image"
-
-### 🔍 Design System Auditing (NEW!)
-- "Scan my design system file and give me a complete audit report"
-- "Which components use hardcoded colors instead of design tokens?"
-- "Show me variables that aren't being used anywhere"
-- "Analyze my design system for naming consistency and compliance issues"
-
-### 🔄 Combined Workflows
-- "Navigate to my design system file and extract all variables"
-- "Get the Tooltip component and help me implement it in React"
-- "Check console errors while I test my plugin, then take a screenshot"
-
-### ✅ Quick Test
-- "Navigate to https://www.figma.com and check the status"
-
-## Figma Console MCP vs. Figma Official Dev Mode MCP
-
-Both MCPs connect AI assistants to Figma, but serve different purposes:
-
-**Figma Console MCP (This Project)** - Debugging, auditing & data extraction
-- ✅ Real-time console logs from Figma plugins
-- ✅ Screenshot capture and visual debugging
-- ✅ Error stack traces and runtime state
-- ✅ Raw design data extraction (JSON)
-- ✅ AI-powered design system auditing (like ESLint for Figma)
-- ✅ Token coverage analysis and compliance reporting
-- ✅ Works remotely via cloud or locally via Figma Desktop
-- ✅ Component images for visual reference
-
-**Figma Official Dev Mode MCP** - Code generation from designs
-- ✅ Generates React/HTML code from Figma designs
-- ✅ Tailwind/CSS class generation
-- ✅ Component boilerplate scaffolding
-- ✅ Works remotely (Figma recently added remote access)
-- ✅ Component image export
-- ❌ No console access or debugging features
-
-### When to Use Each
-
-Both MCPs can help with **component development**. Console MCP provides design specs as structured data, while Dev Mode MCP generates starter code.
-
-**Use Figma Console MCP** when:
-- Debugging Figma plugins (console logs, errors, runtime monitoring)
-- Auditing design systems (token coverage, compliance, quality checks)
-- Extracting design system data as JSON (variables, components, styles)
-- You need visual debugging with screenshots
-- Investigating runtime errors with stack traces
-- Generating design system quality reports
-
-**Use Figma Official MCP** when:
-- Converting Figma designs into React/HTML code
-- You want generated Tailwind classes and component boilerplate
-
-**Use both together** for the complete workflow: generate code with Official MCP, then audit, debug and refine with Console MCP.
-
----
-
-## Installation
-
-Choose **Cloud Mode** or **Local Mode** (for plugin development):
-
-> **🤔 Not sure which mode to use?** See [DEPLOYMENT_COMPARISON.md](DEPLOYMENT_COMPARISON.md) for a detailed comparison of Local vs Remote deployment modes, including feature differences, use cases, and decision guidance.
-
-### Cloud Mode
-
-Zero-setup remote access. Works with all AI clients.
-
-<details>
-<summary><b>Claude Code</b></summary>
-
-**One-line install:**
+One-line install:
 
 ```bash
 claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
 ```
 
-**That's it!** 🎉
+Verify: `/mcp` should show "figma-console: connected"
 
-- Browser-based tools work immediately
-- Design system tools trigger OAuth authentication automatically on first use
-- Your browser will open once to authorize with Figma
+---
 
-**Verify connection:**
-- Use `/mcp` command in Claude Code
-- Should show "figma-console: connected"
+#### Cursor
 
-**Troubleshooting:** See [CLAUDE_CODE_SETUP.md](docs/CLAUDE_CODE_SETUP.md)
+Add to `.cursor/mcp.json`:
 
-</details>
-
-<details>
-<summary><b>Cursor</b></summary>
-
-**Location:** `.cursor/mcp.json` in your project or `~/.cursor/mcp.json` globally
-
-**Configuration:**
 ```json
 {
   "mcpServers": {
@@ -284,24 +75,15 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 }
 ```
 
-**After editing:**
-1. Save and restart Cursor
-2. Check for MCP connection indicator
-3. Test with a prompt like "Navigate to https://www.figma.com"
+Restart Cursor after saving.
 
-**Authentication:**
-- Browser-based tools work immediately
-- Design system tools trigger OAuth authentication automatically on first use
-- Your browser will open once to authorize with Figma
-
-</details>
+---
 
 <details>
-<summary><b>Windsurf</b></summary>
+<summary><b>Other MCP Clients (Windsurf, Zed, etc.)</b></summary>
 
-**Location:** Follow Windsurf's MCP configuration documentation
+Consult your client's MCP documentation for the config file location, then add:
 
-**Configuration:**
 ```json
 {
   "mcpServers": {
@@ -313,732 +95,234 @@ claude mcp add --transport sse figma-console https://figma-console-mcp.southleft
 }
 ```
 
-**Authentication:**
-- Browser-based tools work immediately
-- Design system tools trigger OAuth authentication automatically on first use
-- Your browser will open once to authorize with Figma
-
-</details>
-
-<details>
-<summary><b>Zed</b></summary>
-
-**Location:** `~/.config/zed/settings.json` (Linux/macOS) or `%APPDATA%\Zed\settings.json` (Windows)
-
-**Configuration:**
-```json
-{
-  "context_servers": {
-    "figma-console": {
-      "command": {
-        "path": "npx",
-        "args": ["mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
-      }
-    }
-  }
-}
-```
-
-**Authentication:**
-- Browser-based tools work immediately
-- Design system tools trigger OAuth authentication automatically on first use
-- Your browser will open once to authorize with Figma
-
-</details>
-
-<details>
-<summary><b>Claude Desktop</b></summary>
-
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
-**Configuration:**
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
-    }
-  }
-}
-```
-
-**After editing:**
-1. Save the file
-2. Quit Claude Desktop completely
-3. Restart Claude Desktop
-4. Look for "🔌" indicator showing MCP servers connected
-5. All 14 Figma tools should be available
-
-**Authentication:**
-- Browser-based tools work immediately
-- Design system tools trigger OAuth authentication automatically on first use
-- Your browser will open once to authorize with Figma
-
-</details>
-
-<details>
-<summary><b>Other MCP Clients</b></summary>
-
-**Configuration:**
-```json
-{
-  "command": "npx",
-  "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
-}
-```
-
-**Authentication:**
-- Browser-based tools work immediately
-- Design system tools trigger OAuth authentication automatically on first use
-- Your browser will open once to authorize with Figma
-
-Consult your MCP client's documentation for the specific configuration file location.
-
 </details>
 
 ---
 
-### Local Mode (For Plugin Development)
+### For Plugin Developers: Local Mode
 
-Direct connection to Figma Desktop for zero-latency console logs.
+**Use Local Mode if you:**
+- ✅ Are developing Figma plugins (need zero-latency console debugging)
+- ✅ Need variables WITHOUT Enterprise plan (via Desktop Bridge plugin)
+- ✅ Need reliable component descriptions (Figma API has bugs, plugin bypasses them)
+- ✅ Want direct access to Figma Desktop state
 
-> **⚠️ Requires:** One-time Figma restart with `--remote-debugging-port=9222` flag
+**⚠️ Important:** The **Desktop Bridge plugin ONLY works in Local Mode**. Remote mode cannot access it because the plugin requires direct connection to Figma Desktop via `localhost:9222`.
 
-**See full guide:** [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md)
+**Setup time:** 10-15 minutes
 
-**Quick setup:**
+**Prerequisites:**
+- Node.js 18+
+- Figma Desktop installed
+- Terminal access
 
-1. **Quit Figma Desktop completely**
-2. **Relaunch with debug flag:**
-   - **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
-   - **Windows:** `start figma://--remote-debugging-port=9222`
-3. **Install local MCP server** (see [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md))
-
----
-
-### Test Your Connection
-
-In your AI assistant, try:
-
-```
-Navigate to [your Figma file URL] and check the status
-```
-
-**Example:**
-```
-Navigate to https://figma.com/design/abc123/My-Design and check the status
-```
-
-You should see:
-- Browser connected successfully
-- Console monitoring active
-- All 14 tools available
-
-**If you added your Figma token**, also try:
-
-```
-Get design variables from https://figma.com/design/abc123
-```
-
-**Don't have a Figma file?** Try the basic test:
-```
-Navigate to https://www.figma.com and check the status
-```
+**[📖 See Local Mode Setup Guide](docs/CLAUDE_DESKTOP_SETUP_UPDATED.md#local-mode-setup-advanced)**
 
 ---
 
-## Available Tools
+## 📊 Remote vs Local: Which Should I Use?
 
-All 14 tools work identically in both cloud and local modes.
+| Feature | Remote Mode | Local Mode |
+|---------|-------------|------------|
+| **Setup** | 2 minutes | 10-15 minutes |
+| **Prerequisites** | None | Node.js, Figma restart |
+| **Console logs** | ✅ | ✅ (lower latency) |
+| **API access** | ✅ | ✅ |
+| **OAuth auth** | ✅ (automatic) | ❌ (manual PAT) |
+| **Desktop Bridge plugin** | ❌ | ✅ |
+| **Variables (no Enterprise)** | ❌ | ✅ (via plugin) |
+| **Reliable component descriptions** | ⚠️ (API bugs) | ✅ (via plugin) |
 
-### Quick Reference
-
-| Category | Tool | Purpose |
-|----------|------|---------|
-| **🧭 Navigation** | `figma_navigate` | Open a Figma URL and start monitoring |
-| | `figma_get_status` | Check browser and monitoring status |
-| **📋 Console** | `figma_get_console_logs` | Retrieve console logs with filters |
-| | `figma_watch_console` | Stream logs in real-time |
-| | `figma_clear_console` | Clear log buffer |
-| **🔍 Debugging** | `figma_take_screenshot` | Capture UI screenshots |
-| | `figma_reload_plugin` | Reload current page |
-| **🎨 Design System** | `figma_get_variables` | Extract design tokens/variables |
-| | `figma_get_styles` | Get color, text, effect styles |
-| | `figma_get_component` | Get component data |
-| | `figma_get_component_for_development` | Component + visual reference |
-| | `figma_get_component_image` | Just the component image |
-| | `figma_get_file_data` | File structure with verbosity control |
-| | `figma_get_file_for_plugin` | File data optimized for plugins |
-
-> **📖 For detailed API documentation, parameters, and examples:** See [docs/TOOLS.md](docs/TOOLS.md)
+**📖 [Complete Feature Comparison](docs/MODE_COMPARISON.md)**
 
 ---
 
-## Use Cases
+## 🎯 Test Your Connection
 
-**Common scenarios:**
-- 🐛 **Plugin Development** - Debug console errors, monitor execution, capture stack traces
-- 🔍 **Design System Auditing** - AI-powered quality checks, token coverage analysis, compliance reporting (like ESLint for Figma)
-- 🎨 **Design System Extraction** - Pull variables, styles, and components as structured data
-- 🔧 **Component Implementation** - Get specs + visual references for UI development
-- 📸 **Visual Debugging** - Capture screenshots for documentation or troubleshooting
+After setup, try these prompts:
 
-> **📖 For detailed scenarios, workflows, and prompt examples:** See [docs/USE_CASES.md](docs/USE_CASES.md)
+**Basic test (both modes):**
+```
+Navigate to https://www.figma.com and check status
+```
+
+**Design system test (requires auth):**
+```
+Get design variables from [your Figma file URL]
+```
+
+**Plugin test (Local Mode only):**
+```
+Show me the primary font for [your theme name]
+```
 
 ---
 
-## Accessing Variables & Component Descriptions Without Enterprise API
+## 🔐 Authentication
 
-Figma's Variables API requires an Enterprise plan, and the REST API has known issues with component descriptions. **We've built a workaround** that lets you access all your local variables AND reliable component descriptions through a simple plugin bridge - no Enterprise plan needed.
+### Remote Mode - OAuth (Automatic)
 
-### How It Works
+When you first use design system tools:
+1. Browser opens automatically to Figma authorization page
+2. Click "Allow" to authorize (one-time)
+3. Token stored securely and refreshed automatically
+4. Works with Free, Pro, and Enterprise Figma plans
 
-The **Figma Desktop Bridge** plugin runs in Figma Desktop and provides two key capabilities:
+### Local Mode - Personal Access Token (Manual)
 
-1. **Pre-loaded Variables**: Exposes all variables data through a plugin UI iframe on startup
-2. **On-Demand Components**: Fetches component data (including descriptions) when requested by the MCP
-
-```
-Variables Flow:
-Figma Plugin Worker → postMessage → Plugin UI Iframe → window object → Puppeteer → MCP Server
-
-Components Flow:
-MCP Request → Plugin UI → postMessage → Plugin Worker → figma.getNodeByIdAsync() → Returns with description
-```
-
-**Key Features:**
-- ✅ No Enterprise plan required for variables
-- ✅ Access all local variables and collections
-- ✅ Reliable component descriptions (bypasses REST API bug)
-- ✅ Supports multiple variable modes (Light/Dark/Brand variants)
-- ✅ Smart caching with 5-minute TTL (no token limits)
-- ✅ Natural language queries ("What's the primary font for Stratton mode?")
-- ✅ Component metadata with full description fields
-- ✅ Minimal, clean UI
-
-### Complete Setup Workflow
-
-> **⏱️ One-time setup** (~5 minutes) - After this, variables are instantly available in every session
-
-#### Step 1: Enable Figma Remote Debugging
-
-**Quit Figma Desktop completely**, then relaunch with remote debugging enabled:
-
-**macOS:**
-```bash
-open -a "Figma" --args --remote-debugging-port=9222
-```
-
-**Windows:**
-```bash
-start figma://--remote-debugging-port=9222
-```
-
-**Verify it worked:** Visit http://localhost:9222 in Chrome - you should see inspectable Figma pages.
-
-#### Step 2: Install Local Mode MCP
-
-Follow the complete guide in [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) to:
-- Install the local MCP server
-- Configure Claude Code or Claude Desktop
-- Verify the connection
-
-**Quick verification:**
-```
-Ask Claude: "Check figma status"
-```
-
-You should see "✓ Figma Desktop connected" with port 9222.
-
-#### Step 3: Install the Desktop Bridge Plugin
-
-1. **Open Figma Desktop** (must be running with debug flag from Step 1)
-2. **Go to:** Plugins → Development → Import plugin from manifest...
-3. **Navigate to:** `/path/to/figma-console-mcp/figma-desktop-bridge/manifest.json`
-4. **Click "Open"**
-
-The plugin appears in your Development plugins list as "Figma Desktop Bridge".
-
-> **📁 Plugin location:** The `figma-desktop-bridge/` directory is in your `figma-console-mcp` repository root
-
-#### Step 4: Run the Plugin in Your Figma File
-
-1. **Open your Figma file** that contains variables and/or components
-2. **Right-click anywhere** → Plugins → Development → Figma Desktop Bridge
-3. **Wait for confirmation:** Plugin UI shows "✓ Desktop Bridge active"
-
-**What you'll see:**
-```
-✓ Desktop Bridge active
-Variables: 404 in 2 collections
-Components: On-demand via MCP
-
-window.__figmaVariablesData
-window.requestComponentData(id)
-```
-
-The plugin window can stay open or be minimized - it stays running until you close it.
-
-#### Step 5: Query Your Design System
-
-Now you can ask Claude about your variables AND component descriptions using natural language!
-
-**For Variables:**
-
-**Example prompts:**
-
-**Variables - Summary overview (recommended first call):**
-```
-Get me a summary of the Figma variables from https://figma.com/design/YOUR_FILE_KEY
-```
-
-Returns ~4K tokens with:
-- Total variable count by collection
-- Variable types (colors, floats, strings)
-- Mode names
-- Quick stats
-
-**Variables - Specific questions:**
-```
-What is the primary font for the Stratton variable mode?
-```
-
-```
-What is the primary brand color for Winter Park?
-```
-
-```
-Show me all breakpoint variables
-```
-
-**Variables - Filtered queries:**
-```
-Get all color variables from the Brand collection
-```
-
-```
-Show me font variables that contain "heading"
-```
-
-**For Components:**
-```
-What does the Chips component description say?
-```
-
-```
-Get component data for node 279:2861 from https://figma.com/design/YOUR_FILE_KEY
-```
-
-```
-Show me the description for the Button component
-```
-
-> **💡 Why use Desktop Bridge for components?** Figma's REST API has a known bug where component descriptions are missing or outdated. The Desktop Bridge plugin uses the Figma Plugin API (`figma.getNodeByIdAsync()`) which has reliable access to description fields, making it perfect for local team projects where components aren't published.
-
-### API Parameters
-
-The `figma_get_variables` tool supports these parameters:
-
-```typescript
-{
-  fileUrl: string,              // Required: Your Figma file URL
-  format?: "summary" | "filtered" | "full",  // Default: "full"
-  collection?: string,          // Filter by collection name/ID
-  namePattern?: string,         // Filter by name (regex or substring)
-  mode?: string,                // Filter by mode name/ID
-  refreshCache?: boolean        // Force refresh (default: false)
-}
-```
-
-**Format options:**
-- `"summary"` - ~2-5K tokens with overview and names only
-- `"filtered"` - Apply collection/name/mode filters
-- `"full"` - Complete dataset (auto-summarized if >25K tokens)
-
-**Examples:**
-
-```typescript
-// Get summary first (recommended)
-figma_get_variables({
-  fileUrl: "https://figma.com/design/abc123",
-  format: "summary"
-})
-
-// Filter by collection
-figma_get_variables({
-  fileUrl: "https://figma.com/design/abc123",
-  format: "filtered",
-  collection: "Brand"
-})
-
-// Search by name pattern
-figma_get_variables({
-  fileUrl: "https://figma.com/design/abc123",
-  format: "filtered",
-  namePattern: "font/family"
-})
-
-// Get specific mode
-figma_get_variables({
-  fileUrl: "https://figma.com/design/abc123",
-  format: "filtered",
-  collection: "Brand",
-  mode: "Stratton"
-})
-
-// Force refresh cache
-figma_get_variables({
-  fileUrl: "https://figma.com/design/abc123",
-  refreshCache: true
-})
-```
-
-### Smart Caching
-
-The MCP caches variables data with intelligent management:
-
-- **5-minute TTL** - Automatic cache invalidation
-- **LRU eviction** - Maximum 10 files cached
-- **Token optimization** - Summary format uses ~95% fewer tokens
-- **Instant responses** - Filtered queries return from cache immediately
-
-**Cache is automatically used when:**
-- Same file accessed within 5 minutes
-- No `refreshCache: true` parameter
-- File data hasn't been invalidated
-
-**Force cache refresh:**
-```typescript
-figma_get_variables({
-  fileUrl: "https://figma.com/design/abc123",
-  refreshCache: true  // Fetches fresh data from plugin
-})
-```
-
-### Adaptive Response Sizing
-
-The MCP automatically compresses responses based on payload size to prevent context window exhaustion in Claude Desktop:
-
-**Size Thresholds:**
-- ✅ **≤5MB** - Ideal size, no compression needed
-- ℹ️ **>5MB** - Info-level compression (maintains `standard` verbosity)
-- ⚠️ **>10MB** - Warning-level compression (auto-downgrades to `summary`)
-- 🚨 **>15MB** - Critical compression (auto-downgrades to `summary`)
-- 🔴 **>20MB** - Emergency compression (auto-downgrades to `inventory` - names/IDs only)
-
-**What happens when compression occurs:**
-1. MCP detects response size exceeds thresholds
-2. **Automatically re-filters data** with lower verbosity level
-3. Response is reduced BEFORE being sent to Claude Desktop
-4. Claude receives an AI instruction explaining what happened
-5. Response includes `compression` metadata showing:
-   - `originalSizeKB`: Size before compression
-   - `finalSizeKB`: Size after compression
-   - `compressionLevel`: The compression level applied
-
-**Example compression scenario:**
-```typescript
-// You request: verbosity='standard' for 410 variables with 19 modes
-figma_get_variables({
-  fileUrl: "https://figma.com/design/abc123",
-  verbosity: "standard"
-})
-
-// MCP detects response would be 538KB
-// Automatically re-filters with 'summary' verbosity
-// Claude receives:
-{
-  fileKey: "abc123",
-  local: {
-    variables: [...],  // Only names, types, modes (no values)
-    collections: [...]
-  },
-  verbosity: "summary",  // ← Auto-adjusted
-  compression: {
-    originalSizeKB: 538,
-    finalSizeKB: 38,  // 93% reduction!
-    compressionLevel: "critical"
-  }
-}
-```
-
-**How to get more detail after compression:**
-- Use `format='filtered'` with specific filters (collection, namePattern, mode)
-- Use pagination (`page=1`, `pageSize=20`)
-- Use `returnAsLinks=true` for resource_link references
-- Request smaller subsets instead of entire dataset
-
-**Pro tip:** Start with `format='summary'` for large design systems, then drill down with filtered queries.
-
-### Troubleshooting
-
-#### Plugin doesn't appear in menu
-- ✅ Verify Figma Desktop is running (not browser)
-- ✅ Check manifest.json path is correct
-- ✅ Try: Plugins → Development → Refresh plugin list
-
-#### "No plugin UI found with variables data"
-- ✅ Ensure plugin is running (check for plugin window)
-- ✅ Try closing and reopening the plugin
-- ✅ Check Figma console: Plugins → Development → Open Console
-
-#### Variables not updating
-- ✅ Close and reopen plugin to refresh data
-- ✅ Use `refreshCache: true` parameter
-- ✅ Verify you're viewing the correct Figma file
-
-#### Empty or outdated data
-- ✅ Plugin fetches data on load - rerun after making changes
-- ✅ Cache TTL is 5 minutes - use `refreshCache: true` for immediate updates
-- ✅ Ensure you're in the correct file (plugin reads current file's variables)
-
-#### Remote debugging not working
-- ✅ Verify Figma was launched with `--remote-debugging-port=9222`
-- ✅ Check http://localhost:9222 shows Figma pages
-- ✅ Quit Figma completely (Cmd+Q / Alt+F4) and relaunch with flag
-- ✅ See [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) for detailed troubleshooting
-
-### Technical Details
-
-**Plugin Architecture:**
-- **Worker (code.js):** Fetches variables via `figma.variables.getLocalVariablesAsync()`
-- **UI (ui.html):** Stores data on `window.__figmaVariablesData` (accessible to Puppeteer)
-- **MCP Server:** Reads UI iframe window object via Chrome DevTools Protocol
-
-**Data Format:**
-```typescript
-{
-  success: true,
-  timestamp: number,
-  fileKey: string,
-  variables: Array<{
-    id: string,
-    name: string,
-    resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN",
-    valuesByMode: Record<string, any>,
-    variableCollectionId: string,
-    scopes: string[],
-    description?: string
-  }>,
-  variableCollections: Array<{
-    id: string,
-    name: string,
-    modes: Array<{ modeId: string, name: string }>,
-    defaultModeId: string,
-    variableIds: string[]
-  }>
-}
-```
-
-**Why This Works:**
-- Figma plugin worker can access Variables API (no Enterprise restriction in plugins)
-- Plugin UI iframe window is accessible via Puppeteer (not sandboxed)
-- Data bridge bypasses Enterprise API requirement completely
-- No network access required (plugin security: `allowedDomains: ["none"]`)
-
-> **📖 For complete plugin documentation:** See [figma-desktop-bridge/README.md](figma-desktop-bridge/README.md)
+1. Visit https://www.figma.com/developers/api#access-tokens
+2. Generate token
+3. Add to MCP config as `FIGMA_ACCESS_TOKEN` environment variable
 
 ---
 
-## Advanced: Local Mode for Plugin Developers
+## 🛠️ Available Tools
 
-If you're developing Figma plugins and need **zero-latency console log capture** directly from Figma Desktop:
+All 14 tools work in both Remote and Local modes:
 
-### 🚨 Critical First Step: Enable Remote Debugging
+### Navigation & Status
+- `figma_navigate` - Open Figma URLs
+- `figma_get_status` - Check connection status
 
-**Before using local mode, you MUST restart Figma with the debug flag:**
+### Console Debugging
+- `figma_get_console_logs` - Retrieve console logs
+- `figma_watch_console` - Real-time log streaming
+- `figma_clear_console` - Clear log buffer
+- `figma_reload_plugin` - Reload current page
 
-1. **Quit Figma Desktop completely** (Cmd+Q on macOS / Alt+F4 on Windows)
-2. **Relaunch with remote debugging:**
-   - **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
-   - **Windows:** `start figma://--remote-debugging-port=9222`
-3. **Verify it worked:** Visit http://localhost:9222 in Chrome - you should see inspectable pages
+### Visual Debugging
+- `figma_take_screenshot` - Capture UI screenshots
 
-**Then proceed to:** [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) for full local mode installation.
+### Design System Extraction
+- `figma_get_variables` - Extract design tokens/variables
+- `figma_get_component` - Get component data
+- `figma_get_component_for_development` - Component + image
+- `figma_get_component_image` - Just the image
+- `figma_get_styles` - Color, text, effect styles
+- `figma_get_file_data` - Full file structure
+- `figma_get_file_for_plugin` - Optimized file data
 
----
-
-### When to Use Local Mode vs Cloud Mode
-
-**Cloud mode (what you just installed) works great for most use cases:**
-- ✅ Design system extraction
-- ✅ Component data and images
-- ✅ Console monitoring and screenshots
-- ✅ Remote collaboration
-- ✅ No setup required
-
-**Local mode** is only recommended for:
-- ✅ Developing Figma plugins with rapid iteration
-- ✅ Needing instant console feedback (no network latency)
-- ✅ Advanced debugging workflows with stack traces
-- ⚠️ Requires one-time Figma restart with debug flag
+**📖 [Detailed Tool Documentation](docs/TOOLS.md)**
 
 ---
 
-## Architecture
+## 📖 Example Prompts
 
-### Cloud Mode (Default)
-
+### Plugin Debugging
 ```
-AI Assistant → mcp-remote → MCP Server (Cloudflare Workers) →
-Browser Rendering API → Figma Web → Design Data
-```
-
-- ✅ Zero local setup
-- ✅ Works from anywhere
-- ✅ All 14 tools available
-- ✅ Figma API integration for design data
-
-### Local Mode (Advanced)
-
-```
-AI Assistant → MCP Server (local.js) →
-Chrome DevTools Protocol (port 9222) →
-Figma Desktop → Your Plugin
+Navigate to my Figma plugin and show me any console errors
+Watch the console for 30 seconds while I test my plugin
+Get the last 20 console logs
 ```
 
-- ✅ Zero network latency
-- ✅ Direct console log capture
-- ✅ Perfect for plugin development
-- ⚙️ Requires local setup
+### Design System Extraction
+```
+Get all design variables from https://figma.com/design/abc123
+Extract color styles and show me the CSS exports
+Get the Button component with a visual reference image
+```
 
-See [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md) for installation.
+### Visual Debugging
+```
+Take a screenshot of the current Figma canvas
+Navigate to this file and capture what's on screen
+```
+
+**📖 [More Use Cases & Examples](docs/USE_CASES.md)**
 
 ---
 
-## Self-Hosting (Optional)
+## 🎨 Desktop Bridge Plugin (Local Mode Only)
 
-Want to deploy your own instance on Cloudflare Workers?
+The **Figma Desktop Bridge** plugin enables:
+- ✅ Variables without Enterprise API
+- ✅ Reliable component descriptions (bypasses API bugs)
+- ✅ Multi-mode support (Light/Dark/Brand variants)
 
-[![Deploy to Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/southleft/figma-console-mcp)
+**⚠️ Plugin Limitation:** Only works in Local Mode. Remote mode cannot access it.
 
-Or via CLI:
+**Setup:**
+1. Install Local Mode MCP
+2. Download plugin from [Releases](https://github.com/southleft/figma-console-mcp/releases/latest)
+3. Import plugin: Figma Desktop → Plugins → Development → Import plugin from manifest
+4. Run plugin in your Figma file
+5. Ask Claude: "Show me the primary font for [your theme]"
 
-```bash
-git clone https://github.com/southleft/figma-console-mcp.git
-cd figma-console-mcp
-npm install && npm run deploy
-```
-
-> **📖 For complete deployment guide, custom domains, monitoring, and costs:** See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)
+**📖 [Desktop Bridge Documentation](figma-desktop-bridge/README.md)**
 
 ---
 
-## Development
+## 🚀 Advanced Topics
 
-### Local Development
+- **[Local Mode Setup](docs/CLAUDE_DESKTOP_SETUP_UPDATED.md)** - Complete local installation guide
+- **[Self-Hosting](docs/SELF_HOSTING.md)** - Deploy your own instance on Cloudflare
+- **[Architecture](docs/ARCHITECTURE.md)** - How it works under the hood
+- **[OAuth Setup](docs/OAUTH_SETUP.md)** - Configure OAuth for self-hosted deployments
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+---
+
+## 🤝 vs. Figma Official MCP
+
+**Figma Console MCP (This Project)** - Debugging & data extraction
+- ✅ Real-time console logs from Figma plugins
+- ✅ Screenshot capture and visual debugging
+- ✅ Error stack traces and runtime monitoring
+- ✅ Raw design data extraction (JSON)
+- ✅ Works remotely or locally
+
+**Figma Official Dev Mode MCP** - Code generation
+- ✅ Generates React/HTML code from designs
+- ✅ Tailwind/CSS class generation
+- ✅ Component boilerplate scaffolding
+
+**Use both together** for the complete workflow: generate code with Official MCP, then debug and extract data with Console MCP.
+
+---
+
+## 🛤️ Roadmap
+
+- [ ] **Real-time collaboration** - Multi-user debugging sessions
+- [ ] **Component screenshot diffs** - Visual regression testing
+- [ ] **Batch operations** - Process multiple files at once
+- [ ] **Design linting** - Automated compliance checks
+- [ ] **Plugin template generation** - Generate plugin boilerplate
+
+**📖 [Full Roadmap](docs/ROADMAP.md)**
+
+---
+
+## 💻 Development
 
 ```bash
 git clone https://github.com/southleft/figma-console-mcp.git
 cd figma-console-mcp
 npm install
 
-# For cloud mode development
+# Local mode development
+npm run dev:local
+
+# Cloud mode development
 npm run dev
 
-# For local mode development
-npm run dev:local
-```
-
-### Building
-
-```bash
-# Build both modes
+# Build
 npm run build
-
-# Build local mode only
-npm run build:local
-
-# Build cloud mode only
-npm run build:cloudflare
 ```
 
-### Testing
-
-```bash
-# Run tests
-npm test
-
-# Run tests with coverage
-npm test:coverage
-
-# Run tests in watch mode
-npm test:watch
-```
+**📖 [Development Guide](docs/ARCHITECTURE.md)**
 
 ---
 
-## Troubleshooting
-
-### Understanding Console Log Capture
-
-**How It Works:**
-- The MCP captures console logs in **real-time** starting from when monitoring begins
-- It does **NOT** retrieve historical logs from before monitoring started
-- When Claude Code/Desktop restarts, the MCP reconnects and starts fresh monitoring
-
-### Common Issue: "No Plugin Logs Appearing"
-
-**Symptom:** You see logs in Figma's console but not in the MCP
-
-**Cause:** Your plugin ran BEFORE the MCP started monitoring (e.g., before restarting your AI client)
-
-**Solution:**
-1. ✅ Check status: Use `figma_get_status` to confirm monitoring is active
-2. ✅ **Run your plugin in Figma Desktop** (this generates fresh logs)
-3. ✅ Check logs: Use `figma_get_console_logs` to retrieve them
-4. ✅ Logs should now appear!
-
-**Best Practice Workflow:**
-1. Start your AI client (MCP connects automatically)
-2. Check status to confirm monitoring is active
-3. Run your Figma plugin
-4. Retrieve console logs
-
-### Other Quick Fixes
-
-| Problem | Solution |
-|---------|----------|
-| "FIGMA_ACCESS_TOKEN not configured" | Add token to MCP config ([Step 2](#step-2-add-your-figma-access-token-for-design-system-tools)) |
-| "Failed to connect to browser" | Wait 10-30s (cloud mode cold start) or check [LOCAL_MODE_SETUP.md](LOCAL_MODE_SETUP.md#troubleshooting) |
-| Console tools work, design tools don't | You need to add FIGMA_ACCESS_TOKEN |
-| Variables API 403 error | Enterprise plan required - MCP auto-falls back to Styles |
-| Tools are slow | Normal for cloud mode first request (10-30s), then faster |
-
-> **📖 For complete troubleshooting guide with detailed solutions:** See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-
----
-
-## Roadmap
-
-- [ ] **Phase 6: Component Screenshot Diffs** - Visual regression testing for components
-- [ ] **Phase 7: Batch Operations** - Process multiple components/files at once
-- [ ] **Phase 8: Plugin Template Generation** - Generate plugin boilerplate from specs
-- [ ] **Phase 9: Design Linting** - Automated design system compliance checks
-- [ ] **Phase 10: Real-time Collaboration** - Multi-user debugging sessions
-
-See [docs/ROADMAP.md](docs/ROADMAP.md) for full roadmap.
-
----
-
-## Contributing
-
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
----
-
-## License
+## 📄 License
 
 MIT - See [LICENSE](LICENSE) file for details.
 
 ---
 
-## Support & Resources
+## 🔗 Links
 
 - 📖 [Full Documentation](docs/)
 - 🐛 [Report Issues](https://github.com/southleft/figma-console-mcp/issues)
 - 💬 [Discussions](https://github.com/southleft/figma-console-mcp/discussions)
-- 🔗 [Model Context Protocol](https://modelcontextprotocol.io/)
-- 🎨 [Figma API Reference](https://www.figma.com/developers/api)
+- 🌐 [Model Context Protocol](https://modelcontextprotocol.io/)
+- 🎨 [Figma API](https://www.figma.com/developers/api)

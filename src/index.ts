@@ -1028,60 +1028,87 @@ export default {
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Authentication Successful</title>
+	<link rel="icon" type="image/jpeg" href="https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg">
 	<style>
-								body {
-									font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-									display: flex;
-									justify-content: center;
-									align-items: center;
-									height: 100vh;
-									margin: 0;
-									background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-								}
-								.container {
-									background: white;
-									padding: 3rem;
-									border-radius: 12px;
-									box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-									text-align: center;
-									max-width: 400px;
-								}
-								h1 { color: #667eea; margin-top: 0; }
-								.checkmark {
-									font-size: 4rem;
-									animation: scaleIn 0.5s ease-out;
-								}
-								@keyframes scaleIn {
-									from { transform: scale(0); }
-									to { transform: scale(1); }
-								}
-								p { color: #666; line-height: 1.6; }
-								.close-btn {
-									margin-top: 1.5rem;
-									padding: 0.75rem 2rem;
-									background: #667eea;
-									color: white;
-									border: none;
-									border-radius: 6px;
-									font-size: 1rem;
-									cursor: pointer;
-								}
-								.close-btn:hover { background: #5568d3; }
-							</style>
-						</head>
-						<body>
-							<div class="container">
-								<div class="checkmark">✅</div>
-								<h1>Authentication Successful!</h1>
-								<p>You've successfully connected to Figma. You can now close this window and return to Claude.</p>
-								<button class="close-btn" onclick="window.close()">Close Window</button>
-							</div>
-							<script>
-								// Auto-close after 5 seconds
-								setTimeout(() => window.close(), 5000);
-							</script>
-						</body>
-					</html>`,
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+		body {
+			font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			background: #ffffff;
+			color: #000000;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			min-height: 100vh;
+			padding: 24px;
+		}
+		.container {
+			max-width: 480px;
+			text-align: center;
+		}
+		.icon {
+			width: 64px;
+			height: 64px;
+			margin: 0 auto 24px;
+			background: #18a0fb;
+			border-radius: 50%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 32px;
+			color: white;
+		}
+		h1 {
+			font-size: 32px;
+			font-weight: 700;
+			margin-bottom: 16px;
+			letter-spacing: -0.02em;
+		}
+		p {
+			font-size: 16px;
+			color: #666666;
+			line-height: 1.6;
+			margin-bottom: 32px;
+		}
+		.button {
+			display: inline-block;
+			padding: 12px 24px;
+			background: #000000;
+			color: #ffffff;
+			text-decoration: none;
+			border-radius: 8px;
+			font-weight: 500;
+			font-size: 16px;
+			border: none;
+			cursor: pointer;
+			transition: background 0.2s;
+		}
+		.button:hover {
+			background: #333333;
+		}
+		.footer {
+			margin-top: 48px;
+			font-size: 14px;
+			color: #999999;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="icon">✓</div>
+		<h1>Authentication successful</h1>
+		<p>You've successfully connected Figma Console MCP to your Figma account. You can now close this window and return to Claude.</p>
+		<button class="button" onclick="window.close()">Close this window</button>
+		<div class="footer">This window will automatically close in 5 seconds</div>
+	</div>
+	<script>
+		setTimeout(() => window.close(), 5000);
+	</script>
+</body>
+</html>`,
 					{
 						headers: {
 							"Content-Type": "text/html; charset=utf-8"
@@ -1128,6 +1155,156 @@ export default {
 			});
 		}
 
-		return new Response("Not found", { status: 404 });
+		// Serve favicon
+	if (url.pathname === "/favicon.ico") {
+		// Redirect to custom Figma Console icon
+		return Response.redirect("https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg", 302);
+	}
+
+	// Root path - serve landing page with proper meta tags
+	if (url.pathname === "/") {
+		return new Response(
+			`<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Figma Console MCP</title>
+	<link rel="icon" type="image/jpeg" href="https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg">
+	<meta name="description" content="Model Context Protocol server for Figma debugging and design system extraction">
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+		body {
+			font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			background: #ffffff;
+			color: #000000;
+			line-height: 1.5;
+		}
+		.header {
+			padding: 24px 48px;
+			border-bottom: 1px solid #e5e5e5;
+		}
+		.logo {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			font-size: 18px;
+			font-weight: 600;
+		}
+		.logo img {
+			width: 32px;
+			height: 32px;
+		}
+		.container {
+			max-width: 1200px;
+			margin: 0 auto;
+			padding: 80px 48px;
+		}
+		h1 {
+			font-size: 64px;
+			font-weight: 700;
+			margin-bottom: 24px;
+			letter-spacing: -0.02em;
+			line-height: 1.1;
+		}
+		.subtitle {
+			font-size: 20px;
+			color: #666666;
+			margin-bottom: 48px;
+			max-width: 600px;
+		}
+		.cta {
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
+			padding: 12px 24px;
+			background: #000000;
+			color: #ffffff;
+			text-decoration: none;
+			border-radius: 8px;
+			font-weight: 500;
+			font-size: 16px;
+			transition: background 0.2s;
+		}
+		.cta:hover {
+			background: #333333;
+		}
+		.features {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+			gap: 32px;
+			margin-top: 80px;
+		}
+		.feature {
+			padding: 24px;
+			border: 1px solid #e5e5e5;
+			border-radius: 8px;
+		}
+		.feature h3 {
+			font-size: 20px;
+			font-weight: 600;
+			margin-bottom: 12px;
+		}
+		.feature p {
+			color: #666666;
+			font-size: 15px;
+		}
+		.footer {
+			padding: 48px;
+			text-align: center;
+			color: #999999;
+			font-size: 14px;
+			border-top: 1px solid #e5e5e5;
+			margin-top: 120px;
+		}
+	</style>
+</head>
+<body>
+	<div class="header">
+		<div class="logo">
+			<img src="https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg" alt="Figma Console MCP">
+			Figma Console MCP
+		</div>
+	</div>
+	<div class="container">
+		<h1>Debug Figma plugins<br>with AI assistance</h1>
+		<p class="subtitle">Model Context Protocol server that gives AI assistants real-time access to Figma console logs, design system data, and visual debugging tools.</p>
+		<a href="https://github.com/southleft/figma-console-mcp" class="cta">
+			<svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+				<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+			</svg>
+			View Documentation
+		</a>
+		<div class="features">
+			<div class="feature">
+				<h3>Real-time Console Access</h3>
+				<p>Capture plugin console logs, errors, and stack traces as they happen</p>
+			</div>
+			<div class="feature">
+				<h3>Design System Extraction</h3>
+				<p>Pull variables, components, and styles directly from Figma files</p>
+			</div>
+			<div class="feature">
+				<h3>Visual Debugging</h3>
+				<p>Take screenshots and export component images for visual reference</p>
+			</div>
+		</div>
+	</div>
+	<div class="footer">
+		© 2025 Figma Console MCP · MIT License
+	</div>
+</body>
+</html>`,
+			{
+				headers: { "Content-Type": "text/html; charset=utf-8" }
+			}
+		);
+	}
+
+	return new Response("Not found", { status: 404 });
 	},
 };
