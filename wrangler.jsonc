@@ -48,6 +48,10 @@
 		{
 			"binding": "OAUTH_TOKENS",
 			"id": "c6b268e475e64764a11641effddd56a3"
+		},
+		{
+			"binding": "OAUTH_STATE",
+			"id": "bcdeabb0932e4b0895a82215c6901bc4"
 		}
 	],
 	"observability": {

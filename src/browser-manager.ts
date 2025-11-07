@@ -16,6 +16,7 @@ export interface Env {
 	BROWSER: Fetcher;
 	MCP_OBJECT: DurableObjectNamespace;
 	OAUTH_TOKENS: KVNamespace; // KV for OAuth tokens (accessible across Durable Objects)
+	OAUTH_STATE: KVNamespace; // KV for OAuth state CSRF tokens (short-lived, 10 minute TTL)
 	FIGMA_ACCESS_TOKEN?: string; // Optional Figma API token for data extraction (deprecated, use OAuth)
 	FIGMA_OAUTH_CLIENT_ID?: string; // OAuth client ID for user authentication
 	FIGMA_OAUTH_CLIENT_SECRET?: string; // OAuth client secret for token exchange
