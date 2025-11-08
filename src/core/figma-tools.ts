@@ -2020,11 +2020,15 @@ export function registerFigmaAPITools(
 				logger.info({ fileKey, nodeId, enrich }, "Fetching component data");
 
 				// PRIORITY 1: Try Desktop Bridge plugin UI first (has reliable description field!)
-				const browserManager = getBrowserManager?.();
-				if (browserManager && ensureInitialized) {
+				if (getBrowserManager && ensureInitialized) {
 					try {
 						logger.info({ nodeId }, "Attempting to get component via Desktop Bridge plugin UI");
 						await ensureInitialized();
+
+						const browserManager = getBrowserManager();
+						if (!browserManager) {
+							throw new Error("Browser manager not available after initialization");
+						}
 
 						const { FigmaDesktopConnector } = await import('./figma-desktop-connector.js');
 						const page = await browserManager.getPage();
