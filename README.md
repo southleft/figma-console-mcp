@@ -13,11 +13,23 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 - **📸 Visual debugging** - Take screenshots for context
 - **🎨 Design system extraction** - Pull variables, components, and styles
 - **⚡ Real-time monitoring** - Watch logs as plugins execute
-- **🔄 Two modes** - Remote (zero setup) or Local (plugin development)
+- **🔄 Three ways to install** - Remote SSE (OAuth, zero-setup), NPX (npm package), or Local Git (source code)
 
 ---
 
 ## ⚡ Quick Start
+
+### Choose Your Installation Method
+
+This MCP server offers **three installation methods** with different tradeoffs:
+
+| Method | Setup | Auth | Best For |
+|--------|-------|------|----------|
+| **[Remote SSE](#for-most-users-remote-mode-zero-setup)** | ⭐ Paste URL (2 min) | OAuth (automatic) | Most users - design system extraction |
+| **[NPX](#npx-alternative-package-distribution)** | npm package (10 min) | PAT (manual) | Local execution without source code |
+| **[Local Git](#for-plugin-developers-local-mode)** | git clone (15 min) | PAT (manual) | Developers - modify source code |
+
+**Key Insight:** Only Remote SSE offers true zero-setup via OAuth. Both NPX and Local Git require manual `FIGMA_ACCESS_TOKEN` setup.
 
 Choose the setup that fits your needs:
 
@@ -99,7 +111,49 @@ Consult your client's MCP documentation for the config file location, then add:
 
 ---
 
-### For Plugin Developers: Local Mode
+### NPX: Alternative Package Distribution
+
+**Use NPX if you:**
+- ✅ Want local execution without cloning source code
+- ✅ Need Desktop Bridge plugin features
+- ✅ Prefer npm package distribution over git
+- ⚠️ Are comfortable with manual `FIGMA_ACCESS_TOKEN` setup
+
+**Setup time:** 10 minutes
+
+**Note:** NPX has **identical authentication requirements** to Local Git mode. For true zero-setup, use [Remote Mode](#for-most-users-remote-mode-zero-setup) instead.
+
+#### Configuration
+
+Add to your MCP config (e.g., `.claude.json` or `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "your_figma_access_token_here"
+      }
+    }
+  }
+}
+```
+
+#### Prerequisites
+
+- Get **Figma Personal Access Token**: https://www.figma.com/developers/api#access-tokens
+- Restart Figma Desktop with `--remote-debugging-port=9222`
+  - **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
+  - **Windows:** `start figma://--remote-debugging-port=9222`
+
+**📖 [Complete NPX Setup Guide](docs/NPX-INSTALLATION.md)**
+
+---
+
+### For Plugin Developers: Local Git Mode
 
 **Use Local Mode if you:**
 - ✅ Are developing Figma plugins (need zero-latency console debugging)
@@ -120,18 +174,20 @@ Consult your client's MCP documentation for the config file location, then add:
 
 ---
 
-## 📊 Remote vs Local: Which Should I Use?
+## 📊 Installation Method Comparison
 
-| Feature | Remote Mode | Local Mode |
-|---------|-------------|------------|
-| **Setup** | 2 minutes | 10-15 minutes |
-| **Prerequisites** | None | Node.js, Figma restart |
-| **Console logs** | ✅ | ✅ (lower latency) |
-| **API access** | ✅ | ✅ |
-| **OAuth auth** | ✅ (automatic) | ❌ (manual PAT) |
-| **Desktop Bridge plugin** | ❌ | ✅ |
-| **Variables (no Enterprise)** | ❌ | ✅ (via plugin) |
-| **Reliable component descriptions** | ⚠️ (API bugs) | ✅ (via plugin) |
+| Feature | Remote SSE | NPX | Local Git |
+|---------|------------|-----|-----------|
+| **Setup** | 2 minutes | 10 minutes | 15 minutes |
+| **Prerequisites** | None | PAT + Figma restart | PAT + Figma restart + git |
+| **Authentication** | OAuth (automatic) | PAT (manual) | PAT (manual) |
+| **Console logs** | ✅ | ✅ (zero latency) | ✅ (zero latency) |
+| **API access** | ✅ | ✅ | ✅ |
+| **Desktop Bridge plugin** | ❌ | ✅ | ✅ |
+| **Variables (no Enterprise)** | ❌ | ✅ (via plugin) | ✅ (via plugin) |
+| **Reliable descriptions** | ⚠️ (API bugs) | ✅ (via plugin) | ✅ (via plugin) |
+| **Source code access** | ❌ | ❌ | ✅ |
+| **Distribution** | URL | npm package | git clone |
 
 **📖 [Complete Feature Comparison](docs/MODE_COMPARISON.md)**
 
