@@ -1,22 +1,66 @@
-# Remote Mode vs Local Mode - Complete Comparison
+# Installation Methods & Execution Modes - Complete Comparison
 
-This document clarifies the differences between Remote and Local deployment modes to help you choose the right setup.
+This document clarifies the differences between installation methods and execution modes to help you choose the right setup.
+
+## Understanding the Architecture
+
+The MCP server has **two execution modes** but **three installation methods**:
+
+### Execution Modes (Where Code Runs)
+1. **Remote Mode** - Runs in Cloudflare Workers (cloud)
+2. **Local Mode** - Runs on your machine (Node.js)
+
+### Installation Methods (How You Install)
+1. **Remote SSE** - URL-based connection (uses Remote Mode)
+2. **NPX** - npm package distribution (uses Local Mode)
+3. **Local Git** - Source code clone (uses Local Mode)
+
+### Authentication Methods (How You Authenticate)
+1. **OAuth** - Automatic browser-based auth (Remote Mode only)
+2. **Personal Access Token (PAT)** - Manual token setup (NPX + Local Git)
+
+**Key Insight:** Authentication method, NOT installation method, determines setup complexity.
 
 ## 🎯 Quick Decision Guide
 
-### Use Remote Mode if you:
-- ✅ Want zero-setup installation (no Node.js, no build steps)
-- ✅ Need design system extraction via Figma REST API
-- ✅ Are using Claude Desktop with the new Connectors UI
-- ✅ Don't need the Figma Desktop Bridge plugin
-- ✅ Want automatic OAuth authentication
+### Use Remote SSE (Recommended for Most Users)
+- ✅ **TRUE zero-setup** - Just paste a URL
+- ✅ **OAuth authentication** - Automatic browser flow, no manual tokens
+- ✅ Works without Figma Desktop restart
+- ✅ No local installation required
+- ❌ Cannot use Desktop Bridge plugin
 
-### Use Local Mode if you:
-- ✅ Are developing Figma plugins (need console debugging)
-- ✅ Need variables without Enterprise API (via Desktop Bridge plugin)
-- ✅ Need reliable component descriptions (Figma API has bugs)
-- ✅ Want zero-latency console log capture
-- ✅ Need direct access to Figma Desktop state
+### Use NPX (For Local Execution Without Source Code)
+- ✅ No git clone required (npm handles it)
+- ✅ Automatic updates with `@latest`
+- ✅ Desktop Bridge plugin support
+- ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual)
+- ⚠️ Requires Figma Desktop restart with `--remote-debugging-port=9222`
+
+### Use Local Git (For Development & Testing)
+- ✅ Full source code access
+- ✅ Modify and test changes
+- ✅ Desktop Bridge plugin support
+- ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual)
+- ⚠️ Requires Figma Desktop restart with `--remote-debugging-port=9222`
+- ⚠️ Manual updates via `git pull && npm run build`
+
+---
+
+## Installation Methods Comparison
+
+| Aspect | Remote SSE | NPX | Local Git |
+|--------|-----------|-----|-----------|
+| **Execution** | Cloudflare Workers | Local Node.js | Local Node.js |
+| **Code** | `src/index.ts` | `dist/local.js` (npm) | `dist/local.js` (source) |
+| **Authentication** | OAuth (automatic) | PAT (manual) | PAT (manual) |
+| **Setup Complexity** | ⭐ Zero-setup | ⚠️ Manual token + restart | ⚠️ Manual token + restart |
+| **Distribution** | URL only | npm package | git clone |
+| **Updates** | Automatic (server-side) | `@latest` auto-updates | Manual `git pull + build` |
+| **Figma Desktop** | Not required | Required with debug port | Required with debug port |
+| **Desktop Bridge** | ❌ Not available | ✅ Available | ✅ Available |
+| **Source Access** | No | No | Yes |
+| **Use Case** | Most users | Local execution users | Developers |
 
 ---
 
@@ -120,7 +164,7 @@ Variables & Components Data
 
 ## Prerequisites & Setup Time
 
-### Remote Mode
+### Remote SSE
 **Prerequisites:** None
 
 **Setup Time:** 2 minutes
@@ -129,30 +173,47 @@ Variables & Components Data
 1. Open Claude Desktop → Settings → Connectors
 2. Click "Add Custom Connector"
 3. Paste URL: `https://figma-console-mcp.southleft.com/sse`
-4. Done ✅
+4. Done ✅ (OAuth happens automatically on first API use)
 
-### Local Mode
+### NPX
+**Prerequisites:**
+- Node.js 18+
+- Figma Desktop installed
+- Figma Personal Access Token ([get one](https://www.figma.com/developers/api#access-tokens))
+
+**Setup Time:** 10 minutes
+
+**Steps:**
+1. Get Figma Personal Access Token
+2. Add to MCP config with `FIGMA_ACCESS_TOKEN` env var
+3. Quit and restart Figma with `--remote-debugging-port=9222`
+4. Verify http://localhost:9222 is accessible
+
+### Local Git
 **Prerequisites:**
 - Node.js 18+
 - Git
-- Terminal access
 - Figma Desktop installed
+- Figma Personal Access Token ([get one](https://www.figma.com/developers/api#access-tokens))
 
-**Setup Time:** 10-15 minutes
+**Setup Time:** 15 minutes
 
 **Steps:**
-1. Clone repository
+1. Clone repository: `git clone https://github.com/southleft/figma-console-mcp.git`
 2. Run `npm install && npm run build:local`
-3. Configure MCP client JSON config
-4. Set `FIGMA_ACCESS_TOKEN` environment variable
-5. Quit and restart Figma with `--remote-debugging-port=9222`
-6. Verify http://localhost:9222 is accessible
+3. Get Figma Personal Access Token
+4. Configure MCP client JSON config with path to `dist/local.js`
+5. Set `FIGMA_ACCESS_TOKEN` environment variable
+6. Quit and restart Figma with `--remote-debugging-port=9222`
+7. Verify http://localhost:9222 is accessible
 
 ---
 
 ## Authentication Comparison
 
-### Remote Mode - OAuth (Automatic)
+### Remote SSE - OAuth (Automatic) ⭐ Recommended
+
+**Method:** Remote Mode only
 
 **How it works:**
 1. First design system tool call triggers OAuth
@@ -162,32 +223,37 @@ Variables & Components Data
 5. Automatic token refresh when expired
 
 **Benefits:**
-- ✅ No manual token creation
+- ✅ **TRUE zero-setup** - No manual token creation
 - ✅ Per-user authentication
 - ✅ Automatic token refresh
 - ✅ Works with Free, Pro, and Enterprise Figma plans
 
 **Limitations:**
 - ⚠️ Requires internet connection
-- ⚠️ Initial authorization flow required
+- ⚠️ Initial authorization flow required (one-time)
 
-### Local Mode - Personal Access Token (Manual)
+### NPX + Local Git - Personal Access Token (Manual)
+
+**Method:** Both NPX and Local Git modes
 
 **How it works:**
 1. User creates PAT at https://www.figma.com/developers/api#access-tokens
-2. Set as `FIGMA_ACCESS_TOKEN` environment variable
+2. Set as `FIGMA_ACCESS_TOKEN` environment variable in MCP config
 3. MCP server uses PAT for all API calls
 4. No automatic refresh (token valid for 90 days)
 
 **Benefits:**
-- ✅ Works offline
+- ✅ Works offline (for console debugging)
 - ✅ No browser-based OAuth flow
 - ✅ Simpler for single-user setups
 
 **Limitations:**
-- ❌ Manual token creation required
+- ❌ **Manual token creation required**
 - ❌ Must manually refresh every 90 days
 - ❌ Single shared token (no per-user auth)
+- ❌ **Requires Figma Desktop restart** with debug port
+
+**Why NPX ≠ Simpler:** Despite being distributed via npm, NPX has identical authentication complexity to Local Git. The only difference is distribution method, not setup complexity.
 
 ---
 
@@ -226,34 +292,54 @@ Remote mode runs in Cloudflare Workers which:
 
 ---
 
-## When to Switch Modes
+## When to Switch Installation Methods
 
-### Switch from Remote → Local if:
+### Switch from Remote SSE → NPX/Local Git if:
 - ❌ You need variables but don't have Enterprise plan
 - ❌ Component descriptions are missing in API responses
 - ❌ You're developing Figma plugins (need console debugging)
 - ❌ You need instant console log feedback
+- ❌ You need Desktop Bridge plugin features
 
-### Switch from Local → Remote if:
+### Switch from NPX/Local Git → Remote SSE if:
 - ✅ You got Enterprise plan (Variables API now available)
 - ✅ You're no longer developing plugins
-- ✅ You want zero-maintenance setup
-- ✅ You want per-user OAuth authentication
+- ✅ You want zero-maintenance OAuth setup
+- ✅ You want per-user authentication
+- ✅ You don't need Desktop Bridge plugin
+
+### Switch from NPX → Local Git if:
+- ✅ You want to modify source code
+- ✅ You want to test unreleased features
+- ✅ You're developing the MCP server itself
+
+### Switch from Local Git → NPX if:
+- ✅ You don't need source code access
+- ✅ You want automatic updates
+- ✅ You want simpler distribution (no git operations)
 
 ---
 
 ## Cost Comparison
 
-### Remote Mode (Free - Hosted by Project)
+All three installation methods are completely free:
+
+### Remote SSE (Free - Hosted by Project)
 - ✅ Free to use
 - ✅ Hosted on Cloudflare Workers
 - ✅ No infrastructure costs for users
 - ⚠️ Shared rate limits (fair use)
 
-### Local Mode (Free - Self-Hosted)
+### NPX (Free - Self-Hosted)
 - ✅ Free to use
 - ✅ Runs on your machine
 - ✅ No external dependencies after setup
+- ⚠️ Uses your CPU/memory
+
+### Local Git (Free - Self-Hosted)
+- ✅ Free to use
+- ✅ Runs on your machine
+- ✅ Full source code access
 - ⚠️ Uses your CPU/memory
 
 ---
@@ -275,15 +361,25 @@ Remote mode runs in Cloudflare Workers which:
 
 ## Summary
 
-**For most users: Start with Remote Mode**
+**For most users: Start with Remote SSE** ⭐
 - Zero setup, just paste URL
+- OAuth authentication (automatic)
 - Perfect for design system extraction
-- OAuth authentication is seamless
+- No Figma Desktop restart required
 
-**Upgrade to Local Mode when:**
-- You need the Desktop Bridge plugin features
-- You're developing Figma plugins
+**Use NPX when:**
+- You need Desktop Bridge plugin features
+- You want local execution without source code
 - You don't have Enterprise plan but need variables
-- You need maximum performance
+- You prefer npm distribution over git
 
-Both modes provide the same 14 MCP tools - the difference is in capabilities, setup complexity, and plugin access.
+**Use Local Git when:**
+- You're developing the MCP server
+- You want to modify source code
+- You need unreleased features
+- You're testing changes before contributing
+
+**Key Takeaway:** All three methods provide the same 14 MCP tools. The difference is in:
+- **Authentication**: OAuth (Remote SSE) vs PAT (NPX + Local Git)
+- **Distribution**: URL (Remote SSE) vs npm (NPX) vs git (Local Git)
+- **Execution**: Cloud (Remote SSE) vs Local (NPX + Local Git)
