@@ -377,6 +377,7 @@ class LocalFigmaConsoleMCP {
 		// Tool 3: Watch Console (Real-time streaming)
 		this.server.tool(
 			"figma_watch_console",
+			"Stream console logs in real-time for a specified duration (max 5 minutes). Use for monitoring plugin execution while user tests manually. Returns all logs captured during watch period with summary statistics. NOT for retrieving past logs (use figma_get_console_logs). Best for: watching plugin output during manual testing, debugging race conditions, monitoring async operations.",
 			{
 				duration: z
 					.number()
@@ -446,6 +447,7 @@ class LocalFigmaConsoleMCP {
 		// Tool 4: Reload Plugin
 		this.server.tool(
 			"figma_reload_plugin",
+			"Reload the current Figma page/plugin to test code changes. Optionally clears console logs before reload. Use when user says: 'reload plugin', 'refresh page', 'restart plugin', 'test my changes'. Returns reload confirmation and current URL. Best for rapid iteration during plugin development.",
 			{
 				clearConsole: z
 					.boolean()
@@ -515,6 +517,7 @@ class LocalFigmaConsoleMCP {
 		// Tool 5: Clear Console
 		this.server.tool(
 			"figma_clear_console",
+			"Clear the console log buffer. ⚠️ WARNING: Disrupts monitoring connection - requires MCP reconnect afterward. AVOID using this - prefer filtering logs with figma_get_console_logs instead. Only use if user explicitly requests clearing logs. Returns number of logs cleared.",
 			{},
 			async () => {
 				try {
@@ -569,6 +572,7 @@ class LocalFigmaConsoleMCP {
 		// Tool 6: Navigate to Figma
 		this.server.tool(
 			"figma_navigate",
+			"Navigate browser to a Figma URL and start console monitoring. ALWAYS use this first when starting a new debugging session or switching files. Initializes browser connection and begins capturing console logs. Use when user provides a Figma URL or says: 'open this file', 'debug this design', 'switch to'. Returns navigation status and current URL.",
 			{
 				url: z
 					.string()
