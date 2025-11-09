@@ -807,6 +807,7 @@ export function registerFigmaAPITools(
 	 */
 	server.tool(
 		"figma_get_variables",
+		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Supports filtering by collection/mode/name and verbosity control to prevent token exhaustion. Enterprise plan required for Variables API; automatically falls back to Styles API or console-based extraction if unavailable.",
 		{
 			fileUrl: z
 				.string()
@@ -2160,6 +2161,7 @@ export function registerFigmaAPITools(
 	// Tool 11: Get Styles
 	server.tool(
 		"figma_get_styles",
+		"Get all styles (color, text, effects, grids) from a Figma file with optional code exports. Use when user asks for: text styles, color palette, design system styles, typography, or style documentation. Returns organized style definitions with resolved values. NOT for design tokens/variables (use figma_get_variables). Set enrich=true for CSS/Tailwind/Sass code examples. Supports verbosity control to manage payload size.",
 		{
 			fileUrl: z
 				.string()
@@ -2327,6 +2329,7 @@ export function registerFigmaAPITools(
 	// Tool 12: Get Component Image (Visual Reference)
 	server.tool(
 		"figma_get_component_image",
+		"Render a specific component or node as an image (PNG, JPG, SVG, PDF). Returns image URL valid for 30 days. Use when user asks for: component screenshot, visual preview, rendered output, or 'show me'. NOT for component metadata/properties (use figma_get_component). NOT for getting code/layout data (use figma_get_component_for_development). Best for: visual references, design review, documentation.",
 		{
 			fileUrl: z
 				.string()
@@ -2432,6 +2435,7 @@ export function registerFigmaAPITools(
 	// Tool 13: Get Component for Development (UI Implementation)
 	server.tool(
 		"figma_get_component_for_development",
+		"Get component data optimized for UI implementation, includes rendered image + filtered implementation context (layout, typography, visual properties). Use when user asks to: 'build this component', 'implement this in React/Vue', 'generate code for', or needs both visual reference and technical specs. Automatically includes 2x scale image unless includeImage=false. Best for: UI development, code generation, design-to-code workflows. For just metadata, use figma_get_component; for just image, use figma_get_component_image.",
 		{
 			fileUrl: z
 				.string()
@@ -2618,6 +2622,7 @@ export function registerFigmaAPITools(
 	// Tool 14: Get File for Plugin Development
 	server.tool(
 		"figma_get_file_for_plugin",
+		"Get file data optimized for plugin development with filtered properties (IDs, structure, plugin data, component relationships). Excludes visual properties (fills, strokes, effects) to reduce payload. Use when user asks for: plugin development, file structure for manipulation, node IDs for plugin API. NOT for component descriptions (use figma_get_component). NOT for visual/styling data (use figma_get_component_for_development). Supports deeper tree traversal (max depth=5) than figma_get_file_data.",
 		{
 			fileUrl: z
 				.string()
