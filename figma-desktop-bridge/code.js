@@ -80,7 +80,7 @@ figma.ui.onmessage = async (msg) => {
         throw new Error(`Node is not a component. Type: ${node.type}`);
       }
 
-      // Extract component data including description fields
+      // Extract component data including description fields and annotations
       const componentData = {
         success: true,
         timestamp: Date.now(),
@@ -93,6 +93,8 @@ figma.ui.onmessage = async (msg) => {
           descriptionMarkdown: node.descriptionMarkdown || null,
           visible: node.visible,
           locked: node.locked,
+          // Dev Mode annotations
+          annotations: node.annotations || [],
           // For components with properties
           componentPropertyDefinitions: (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET')
             ? node.componentPropertyDefinitions
@@ -106,7 +108,7 @@ figma.ui.onmessage = async (msg) => {
         }
       };
 
-      console.log(`🌉 [Desktop Bridge] Component data ready. Has description: ${!!componentData.component.description}`);
+      console.log(`🌉 [Desktop Bridge] Component data ready. Has description: ${!!componentData.component.description}, annotations: ${componentData.component.annotations.length}`);
 
       // Send to UI
       figma.ui.postMessage({

@@ -2043,7 +2043,8 @@ export function registerFigmaAPITools(
 								{
 									componentName: desktopResult.component.name,
 									hasDescription: !!desktopResult.component.description,
-									hasDescriptionMarkdown: !!desktopResult.component.descriptionMarkdown
+									hasDescriptionMarkdown: !!desktopResult.component.descriptionMarkdown,
+									annotationsCount: desktopResult.component.annotations?.length || 0
 								},
 								"Successfully retrieved component via Desktop Bridge plugin UI!"
 							);
@@ -2075,7 +2076,7 @@ export function registerFigmaAPITools(
 												component: formatted,
 												source: "desktop_bridge_plugin",
 												enriched: enrich || false,
-												note: "Retrieved via Desktop Bridge plugin - description fields are reliable and current"
+												note: "Retrieved via Desktop Bridge plugin - description fields and annotations are reliable and current"
 											},
 											null,
 											2
