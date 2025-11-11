@@ -1,8 +1,8 @@
-# Claude Desktop Setup Guide (Updated 2025)
+# Figma Console MCP - Setup Guide
 
-This guide shows the **modern UI-based method** for connecting Figma Console MCP to Claude Desktop.
+Complete setup instructions for connecting Figma Console MCP to various AI clients (Claude Desktop, Cursor, Windsurf, etc.).
 
-> **Note:** This replaces the old JSON config file editing method. Both methods still work, but the UI method is easier.
+> **Quick Start:** For most users, we recommend [Remote Mode](#remote-mode-setup-recommended) with the UI-based setup method - just paste a URL, no config files needed.
 
 ---
 

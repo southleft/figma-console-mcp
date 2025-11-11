@@ -153,7 +153,7 @@ Add to your MCP config (e.g., `.claude.json` or `claude_desktop_config.json`):
 
 ---
 
-### For Plugin Developers: Local Git Mode
+### For Plugin Developers: Local Mode
 
 **Use Local Mode if you:**
 - ✅ Are developing Figma plugins (need zero-latency console debugging)
@@ -165,12 +165,91 @@ Add to your MCP config (e.g., `.claude.json` or `claude_desktop_config.json`):
 
 **Setup time:** 10-15 minutes
 
-**Prerequisites:**
-- Node.js 18+
+#### Prerequisites
+- Node.js 18+ installed
 - Figma Desktop installed
-- Terminal access
+- Git installed
+- Terminal/command line access
 
-**[📖 See Local Mode Setup Guide](docs/CLAUDE_DESKTOP_SETUP_UPDATED.md#local-mode-setup-advanced)**
+#### Step 1: Install the MCP Server
+
+```bash
+# Clone the repository
+git clone https://github.com/southleft/figma-console-mcp.git
+cd figma-console-mcp
+
+# Install dependencies
+npm install
+
+# Build for local mode
+npm run build:local
+```
+
+#### Step 2: Get Figma Personal Access Token
+
+1. Visit https://www.figma.com/developers/api#access-tokens
+2. Click "Get personal access token"
+3. Enter description: "Figma Console MCP Local"
+4. Click "Generate token"
+5. **Copy the token** (you won't see it again!)
+
+#### Step 3: Configure Claude Desktop
+
+**macOS:** Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows:** Edit `%APPDATA%\Claude\claude_desktop_config.json`
+
+Add this configuration:
+
+```json
+{
+  "mcpServers": {
+    "figma-console-local": {
+      "command": "node",
+      "args": ["/absolute/path/to/figma-console-mcp/dist/local.js"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+**Important:**
+- Replace `/absolute/path/to/figma-console-mcp` with the actual absolute path where you cloned the repo
+- Replace `figd_YOUR_TOKEN_HERE` with your actual Figma token from Step 2
+- Use forward slashes `/` even on Windows
+
+#### Step 4: Launch Figma Desktop with Remote Debugging
+
+**⚠️ CRITICAL:** Quit Figma completely first, then restart it with the debug flag:
+
+**macOS:**
+```bash
+open -a "Figma" --args --remote-debugging-port=9222
+```
+
+**Windows:**
+```cmd
+start figma://--remote-debugging-port=9222
+```
+
+#### Step 5: Restart Claude Desktop
+
+Quit Claude Desktop completely and relaunch it. The MCP server will connect automatically.
+
+#### Step 6: Verify Setup
+
+1. **Check debug port is working:**
+   - Open Chrome browser
+   - Visit: http://localhost:9222
+   - You should see inspectable Figma pages
+
+2. **Test in Claude Desktop:**
+   - Look for 🔌 icon showing "figma-console-local: connected"
+   - Ask Claude: "Check Figma status"
+   - Should show: "✅ Figma Desktop connected"
+
+**📖 For more details:** See [Complete Setup Guide](docs/SETUP.md)
 
 ---
 
@@ -310,7 +389,7 @@ The **Figma Desktop Bridge** plugin enables:
 
 ## 🚀 Advanced Topics
 
-- **[Local Mode Setup](docs/CLAUDE_DESKTOP_SETUP_UPDATED.md)** - Complete local installation guide
+- **[Setup Guide](docs/SETUP.md)** - Complete setup guide for all MCP clients
 - **[Self-Hosting](docs/SELF_HOSTING.md)** - Deploy your own instance on Cloudflare
 - **[Architecture](docs/ARCHITECTURE.md)** - How it works under the hood
 - **[OAuth Setup](docs/OAUTH_SETUP.md)** - Configure OAuth for self-hosted deployments

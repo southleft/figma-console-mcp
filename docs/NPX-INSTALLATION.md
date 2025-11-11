@@ -34,7 +34,7 @@ Replace `your_figma_access_token_here` with your actual Figma access token.
 - `FIGMA_ACCESS_TOKEN` environment variable
 - Figma Desktop restart with `--remote-debugging-port=9222`
 
-For true zero-setup with OAuth authentication, use [Remote Mode](CLAUDE_DESKTOP_SETUP_UPDATED.md#remote-mode-setup-recommended) instead.
+For true zero-setup with OAuth authentication, use [Remote Mode](SETUP.md#remote-mode-setup-recommended) instead.
 
 ## Pinning to a Specific Version
 
@@ -77,7 +77,7 @@ Subsequent runs will use the cached version unless you specify `@latest`.
 - ✅ Require Figma Desktop with `--remote-debugging-port=9222`
 - ✅ Support Desktop Bridge plugin
 
-**For most users:** [Remote Mode](CLAUDE_DESKTOP_SETUP_UPDATED.md#remote-mode-setup-recommended) offers zero-setup with OAuth authentication.
+**For most users:** [Remote Mode](SETUP.md#remote-mode-setup-recommended) offers zero-setup with OAuth authentication.
 
 ## Prerequisites
 
@@ -96,7 +96,7 @@ Subsequent runs will use the cached version unless you specify `@latest`.
 4. Verify http://localhost:9222 is accessible
 5. Add `FIGMA_ACCESS_TOKEN` to your MCP config (see above)
 
-**Authentication Note:** This method uses Personal Access Tokens, same as Local Git mode. For automatic OAuth authentication without manual token setup, use [Remote Mode](CLAUDE_DESKTOP_SETUP_UPDATED.md#remote-mode-setup-recommended).
+**Authentication Note:** This method uses Personal Access Tokens, same as Local Git mode. For automatic OAuth authentication without manual token setup, use [Remote Mode](SETUP.md#remote-mode-setup-recommended).
 
 ## Publishing the Package
 
