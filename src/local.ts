@@ -776,9 +776,21 @@ class LocalFigmaConsoleMCP {
 		try {
 			logger.info({ config: this.config }, "Starting Figma Console MCP (Local Mode)");
 
-			// Check if Figma Desktop is accessible
+			// Check if Figma Desktop is accessible (non-blocking, just for logging)
 			logger.info("Checking Figma Desktop accessibility...");
-			await this.checkFigmaDesktop();
+			try {
+				await this.checkFigmaDesktop();
+				logger.info("✅ Figma Desktop is accessible and ready");
+			} catch (error) {
+				// Don't crash if Figma isn't running yet - just log a warning
+				const errorMsg = error instanceof Error ? error.message : String(error);
+				logger.warn({ error: errorMsg }, "⚠️ Figma Desktop not accessible yet - MCP will connect when you use a tool");
+				console.error("\n⚠️ Figma Desktop Check:\n");
+				console.error("Figma Desktop is not currently running with remote debugging enabled.");
+				console.error("The MCP server will start anyway, but tools won't work until you:");
+				console.error("1. Launch Figma Desktop with: --remote-debugging-port=9222");
+				console.error("2. Then use figma_get_status to verify connection\n");
+			}
 
 			// Register all tools
 			this.registerTools();
