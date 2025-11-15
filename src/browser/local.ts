@@ -129,6 +129,9 @@ export class LocalBrowserManager implements IBrowserManager {
 	 * Prefers pages with active plugin workers for plugin debugging
 	 */
 	async getPage(): Promise<Page> {
+		// Ensure connection is alive before proceeding
+		await this.ensureConnection();
+
 		if (!this.browser) {
 			await this.launch();
 		}
@@ -166,6 +169,9 @@ export class LocalBrowserManager implements IBrowserManager {
 	 * Navigate to Figma URL
 	 */
 	async navigateToFigma(figmaUrl?: string): Promise<Page> {
+		// Ensure connection is alive before navigation
+		await this.ensureConnection();
+		
 		const page = await this.getPage();
 
 		// Default to Figma homepage if no URL provided
@@ -260,6 +266,45 @@ export class LocalBrowserManager implements IBrowserManager {
 		}
 
 		return this.page.url();
+	}
+
+	/**
+	 * Check if the browser connection is still alive
+	 * Returns false if connection is stale (e.g., after computer sleep)
+	 */
+	async isConnectionAlive(): Promise<boolean> {
+		try {
+			if (!this.browser || !this.page) {
+				return false;
+			}
+
+			// Try to get the page title - this will fail if connection is dead
+			await this.page.title();
+			return true;
+		} catch (error) {
+			logger.warn({ error }, 'Browser connection appears to be dead');
+			return false;
+		}
+	}
+
+	/**
+	 * Reconnect to Figma Desktop if connection was lost
+	 * Call this before any operation that requires a live connection
+	 */
+	async ensureConnection(): Promise<void> {
+		const isAlive = await this.isConnectionAlive();
+		
+		if (!isAlive) {
+			logger.info('Connection lost, attempting to reconnect to Figma Desktop');
+			
+			// Clear stale references
+			this.browser = null;
+			this.page = null;
+			
+			// Reconnect
+			await this.launch();
+			logger.info('Successfully reconnected to Figma Desktop');
+		}
 	}
 
 	/**

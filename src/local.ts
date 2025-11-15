@@ -137,6 +137,19 @@ class LocalFigmaConsoleMCP {
 				this.browserManager = new LocalBrowserManager(this.config.local);
 			}
 
+			// Always check connection health (handles computer sleep/reconnects)
+			if (this.browserManager && this.consoleMonitor) {
+				await this.browserManager.ensureConnection();
+				
+				// If connection was lost and re-established, restart monitoring
+				const isAlive = await this.browserManager.isConnectionAlive();
+				if (isAlive && !this.consoleMonitor.getStatus().isMonitoring) {
+					logger.info("Connection recovered, restarting console monitoring");
+					const page = await this.browserManager.getPage();
+					await this.consoleMonitor.startMonitoring(page);
+				}
+			}
+
 			if (!this.consoleMonitor) {
 				logger.info("Initializing ConsoleMonitor");
 				this.consoleMonitor = new ConsoleMonitor(this.config.console);
