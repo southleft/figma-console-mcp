@@ -214,7 +214,21 @@ class LocalFigmaConsoleMCP {
 
 					// If no logs found, add helpful AI instruction
 					if (logs.length === 0) {
-						responseData.ai_instruction = "No console logs found. This usually means the Figma plugin hasn't run since monitoring started. Please inform the user: 'No console logs found yet. Try running your Figma plugin now, then I'll check for logs again.' The MCP only captures logs AFTER monitoring starts - it cannot retrieve historical logs from before the browser connected.";
+						const monitorStatus = this.consoleMonitor.getStatus();
+						const isMonitoring = monitorStatus.isMonitoring;
+
+						// Detect if connection might be stale
+						if (!isMonitoring) {
+							responseData.ai_instruction = "Console monitoring is not active (likely lost connection after computer sleep). TAKE THESE STEPS: 1) Call figma_get_status to check connection, 2) Call figma_navigate with the Figma file URL to reconnect and restart monitoring, 3) Retry this tool - logs should appear.";
+							responseData.ai_recovery_steps = [
+								"Console monitoring is not active - connection was likely lost",
+								"STEP 1: Call figma_get_status to verify browser connection status",
+								"STEP 2: Call figma_navigate with the Figma file URL to reconnect",
+								"STEP 3: Retry figma_get_console_logs - monitoring will be restarted automatically"
+							];
+						} else {
+							responseData.ai_instruction = "No console logs found. This usually means the Figma plugin hasn't run since monitoring started. Please inform the user: 'No console logs found yet. Try running your Figma plugin now, then I'll check for logs again.' The MCP only captures logs AFTER monitoring starts - it cannot retrieve historical logs from before the browser connected.";
+						}
 					}
 
 					return {
@@ -507,14 +521,30 @@ class LocalFigmaConsoleMCP {
 					};
 				} catch (error) {
 					logger.error({ error }, "Failed to reload plugin");
+					const errorMessage = String(error);
+					const isNoPageError = errorMessage.includes("No active page");
+
 					return {
 						content: [
 							{
 								type: "text",
 								text: JSON.stringify(
 									{
-										error: String(error),
+										error: errorMessage,
 										message: "Failed to reload plugin",
+										ai_recovery_steps: isNoPageError ? [
+											"Connection to Figma Desktop was lost (likely from computer sleep)",
+											"STEP 1: Call figma_get_status to check browser connection",
+											"STEP 2: Call figma_navigate with the Figma file URL to reconnect",
+											"STEP 3: Retry this operation - connection should be restored"
+										] : [
+											"STEP 1: Call figma_get_status to diagnose the issue",
+											"STEP 2: Try figma_navigate to re-establish connection",
+											"STEP 3: Retry this operation"
+										],
+										ai_instruction: isNoPageError
+											? "The browser connection was lost (computer likely went to sleep). Call figma_navigate to reconnect, then retry."
+											: "Connection issue detected. Call figma_get_status first to diagnose, then figma_navigate to reconnect."
 									},
 									null,
 									2,
