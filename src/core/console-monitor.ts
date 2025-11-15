@@ -498,6 +498,7 @@ export class ConsoleMonitor {
 
 		this.isMonitoring = false;
 		this.page = null;
+		this.lastUrl = ''; // Clear last URL to prevent stale comparisons after restart
 
 		logger.info('Console monitoring stopped');
 	}

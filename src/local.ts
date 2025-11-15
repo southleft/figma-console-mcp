@@ -141,16 +141,16 @@ class LocalFigmaConsoleMCP {
 			if (this.browserManager && this.consoleMonitor) {
 				const wasAlive = await this.browserManager.isConnectionAlive();
 				await this.browserManager.ensureConnection();
-				const isAliveNow = await this.browserManager.isConnectionAlive();
 
-				// If connection was lost and re-established, FORCE restart monitoring
-				// (ConsoleMonitor might still think it's monitoring the old stale page)
-				if (!wasAlive && isAliveNow) {
+				// If connection was lost and browser is now connected, FORCE restart monitoring
+				// Note: Can't use isConnectionAlive() here because page might not be fetched yet after reconnection
+				// Instead, check if browser is connected using isRunning()
+				if (!wasAlive && this.browserManager.isRunning()) {
 					logger.info("Connection was lost and recovered - forcing monitoring restart with fresh page");
 					this.consoleMonitor.stopMonitoring(); // Clear stale state
 					const page = await this.browserManager.getPage();
 					await this.consoleMonitor.startMonitoring(page);
-				} else if (isAliveNow && !this.consoleMonitor.getStatus().isMonitoring) {
+				} else if (this.browserManager.isRunning() && !this.consoleMonitor.getStatus().isMonitoring) {
 					// Connection is fine but monitoring stopped for some reason
 					logger.info("Connection alive but monitoring stopped - restarting console monitoring");
 					const page = await this.browserManager.getPage();
