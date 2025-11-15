@@ -27,6 +27,7 @@ export class ConsoleMonitor {
 	private isMonitoring = false;
 	private page: any = null; // Supports both puppeteer-core and @cloudflare/puppeteer
 	private workers: Set<WebWorker> = new Set();
+	private lastUrl: string = ''; // Track the last URL to detect real navigations vs hash changes
 
 	constructor(config: ConsoleConfig) {
 		this.config = config;
@@ -167,24 +168,52 @@ export class ConsoleMonitor {
 			logger.info({ frameUrl: frame.url() }, 'Frame detached');
 		});
 
-		// Listen for main frame navigation - clear logs when navigating to new page
+		// Listen for main frame navigation - clear logs when navigating to a DIFFERENT page
+		// (not just hash changes or SPA navigations within the same Figma file)
 		page.on('framenavigated', (frame: any) => {
-			// Only clear logs on main frame navigation (not iframe navigations)
+			// Only handle main frame navigation (not iframe navigations)
 			if (frame === page.mainFrame()) {
 				const frameUrl = frame.url();
-				logger.info({ frameUrl }, 'Main frame navigated - clearing console logs');
 
-				// Clear old logs to prevent stale data
-				this.logs = [];
+				// Extract base URL without hash/query params to detect real navigation
+				const getBaseUrl = (url: string) => {
+					try {
+						const urlObj = new URL(url);
+						// For Figma, consider the file ID part of the path
+						// Example: https://figma.com/design/FILE_ID/...
+						// Only clear if the file ID changes
+						return urlObj.origin + urlObj.pathname.split('?')[0].split('#')[0];
+					} catch {
+						return url;
+					}
+				};
 
-				// Add diagnostic marker for navigation
-				this.addLog({
-					timestamp: Date.now(),
-					level: 'info',
-					message: `[MCP DIAGNOSTIC] Page navigated to ${frameUrl}. Console logs cleared.`,
-					args: [],
-					source: 'page',
-				});
+				const currentBaseUrl = getBaseUrl(frameUrl);
+				const previousBaseUrl = this.lastUrl ? getBaseUrl(this.lastUrl) : '';
+
+				// Only clear logs if we've actually navigated to a different file
+				// (not just hash changes like going from one component to another)
+				if (previousBaseUrl && currentBaseUrl !== previousBaseUrl) {
+					logger.info({
+						from: previousBaseUrl,
+						to: currentBaseUrl
+					}, 'Navigated to different file - clearing console logs');
+
+					// Clear old logs to prevent stale data from previous file
+					this.logs = [];
+
+					// Add diagnostic marker for navigation
+					this.addLog({
+						timestamp: Date.now(),
+						level: 'info',
+						message: `[MCP DIAGNOSTIC] Navigated to new file: ${frameUrl}. Console logs cleared.`,
+						args: [],
+						source: 'page',
+					});
+				}
+
+				// Update last URL for next comparison
+				this.lastUrl = frameUrl;
 			}
 		});
 
