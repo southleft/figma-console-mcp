@@ -167,6 +167,27 @@ export class ConsoleMonitor {
 			logger.info({ frameUrl: frame.url() }, 'Frame detached');
 		});
 
+		// Listen for main frame navigation - clear logs when navigating to new page
+		page.on('framenavigated', (frame: any) => {
+			// Only clear logs on main frame navigation (not iframe navigations)
+			if (frame === page.mainFrame()) {
+				const frameUrl = frame.url();
+				logger.info({ frameUrl }, 'Main frame navigated - clearing console logs');
+
+				// Clear old logs to prevent stale data
+				this.logs = [];
+
+				// Add diagnostic marker for navigation
+				this.addLog({
+					timestamp: Date.now(),
+					level: 'info',
+					message: `[MCP DIAGNOSTIC] Page navigated to ${frameUrl}. Console logs cleared.`,
+					args: [],
+					source: 'page',
+				});
+			}
+		});
+
 		logger.info({
 			pageMonitoring: true,
 			workerMonitoring: true,
