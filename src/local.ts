@@ -142,6 +142,68 @@ class LocalFigmaConsoleMCP {
 				const wasAlive = await this.browserManager.isConnectionAlive();
 				await this.browserManager.ensureConnection();
 
+				// 🆕 NEW: Dynamic page switching for worker migration
+				// Check if we should switch to a page with more workers
+				if (this.browserManager.isRunning() && this.consoleMonitor.getStatus().isMonitoring) {
+					const browser = (this.browserManager as any).browser;
+
+					if (browser) {
+						try {
+							// Get all Figma pages
+							const pages = await browser.pages();
+							const figmaPages = pages
+								.filter((p: any) => {
+									const url = p.url();
+									return url.includes('figma.com') && !url.includes('devtools');
+								})
+								.map((p: any) => ({
+									page: p,
+									url: p.url(),
+									workerCount: p.workers().length
+								}));
+
+							// Find current monitored page URL
+							const currentUrl = this.browserManager.getCurrentUrl();
+							const currentPageInfo = figmaPages.find((p: { page: any; url: string; workerCount: number }) => p.url === currentUrl);
+							const currentWorkerCount = currentPageInfo?.workerCount ?? 0;
+
+							// Find best page (most workers)
+							const bestPage = figmaPages
+								.filter((p: { page: any; url: string; workerCount: number }) => p.workerCount > 0)
+								.sort((a: { page: any; url: string; workerCount: number }, b: { page: any; url: string; workerCount: number }) => b.workerCount - a.workerCount)[0];
+
+							// Switch if:
+							// 1. Current page has 0 workers AND another page has workers
+							// 2. Another page has MORE workers (prevent thrashing with threshold)
+							const shouldSwitch = bestPage && (
+								(currentWorkerCount === 0 && bestPage.workerCount > 0) ||
+								(bestPage.workerCount > currentWorkerCount + 1) // +1 threshold to prevent ping-pong
+							);
+
+							if (shouldSwitch && bestPage.url !== currentUrl) {
+								logger.info({
+									oldPage: currentUrl,
+									oldWorkers: currentWorkerCount,
+									newPage: bestPage.url,
+									newWorkers: bestPage.workerCount
+								}, 'Switching to page with more workers');
+
+								// Stop monitoring old page
+								this.consoleMonitor.stopMonitoring();
+
+								// Start monitoring new page
+								await this.consoleMonitor.startMonitoring(bestPage.page);
+
+								// Don't clear logs - preserve history across page switches
+								logger.info('Console monitoring restarted on new page');
+							}
+						} catch (error) {
+							logger.error({ error }, 'Failed to check for better pages with workers');
+							// Don't throw - this is a best-effort optimization
+						}
+					}
+				}
+
 				// If connection was lost and browser is now connected, FORCE restart monitoring
 				// Note: Can't use isConnectionAlive() here because page might not be fetched yet after reconnection
 				// Instead, check if browser is connected using isRunning()
@@ -750,6 +812,8 @@ class LocalFigmaConsoleMCP {
 								text: JSON.stringify(
 									{
 										mode: "local",
+										monitoredPageUrl: currentUrl,
+										monitorWorkerCount: monitorStatus?.workerCount ?? 0,
 										setup: {
 											valid: setupValid,
 											debugPortAccessible,

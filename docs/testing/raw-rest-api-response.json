@@ -1,0 +1,186 @@
+{
+  "id": "2626:542",
+  "name": "Type=Text, Variant=Error",
+  "type": "COMPONENT",
+  "scrollBehavior": "SCROLLS",
+  "boundVariables": {
+    "itemSpacing": {
+      "type": "VARIABLE_ALIAS",
+      "id": "VariableID:99:28714"
+    },
+    "size": {
+      "x": {
+        "type": "VARIABLE_ALIAS",
+        "id": "VariableID:99:28804"
+      },
+      "y": {
+        "type": "VARIABLE_ALIAS",
+        "id": "VariableID:99:28804"
+      }
+    },
+    "rectangleCornerRadii": {
+      "RECTANGLE_TOP_LEFT_CORNER_RADIUS": {
+        "type": "VARIABLE_ALIAS",
+        "id": "VariableID:99:28769"
+      },
+      "RECTANGLE_TOP_RIGHT_CORNER_RADIUS": {
+        "type": "VARIABLE_ALIAS",
+        "id": "VariableID:99:28769"
+      },
+      "RECTANGLE_BOTTOM_LEFT_CORNER_RADIUS": {
+        "type": "VARIABLE_ALIAS",
+        "id": "VariableID:99:28769"
+      },
+      "RECTANGLE_BOTTOM_RIGHT_CORNER_RADIUS": {
+        "type": "VARIABLE_ALIAS",
+        "id": "VariableID:99:28769"
+      }
+    }
+  },
+  "children": [
+    {
+      "id": "2626:543",
+      "name": "Text",
+      "type": "TEXT",
+      "scrollBehavior": "SCROLLS",
+      "componentPropertyReferences": {
+        "characters": "Text#2626:0"
+      },
+      "blendMode": "PASS_THROUGH",
+      "fills": [
+        {
+          "blendMode": "NORMAL",
+          "type": "SOLID",
+          "color": {
+            "r": 0.12156862765550613,
+            "g": 0.0235294122248888,
+            "b": 0,
+            "a": 1
+          }
+        }
+      ],
+      "strokes": [],
+      "strokeWeight": 1,
+      "strokeAlign": "OUTSIDE",
+      "styles": {
+        "fill": "371:873",
+        "text": "70:105719"
+      },
+      "absoluteBoundingBox": {
+        "x": 411.5,
+        "y": 113,
+        "width": 8,
+        "height": 20
+      },
+      "absoluteRenderBounds": {
+        "x": 411.8409729003906,
+        "y": 119.6240005493164,
+        "width": 7.32000732421875,
+        "height": 8.375999450683594
+      },
+      "constraints": {
+        "vertical": "TOP",
+        "horizontal": "LEFT"
+      },
+      "layoutAlign": "INHERIT",
+      "layoutGrow": 0,
+      "layoutSizingHorizontal": "HUG",
+      "layoutSizingVertical": "HUG",
+      "characters": "#",
+      "characterStyleOverrides": [],
+      "styleOverrideTable": {},
+      "lineTypes": [
+        "NONE"
+      ],
+      "lineIndentations": [
+        0
+      ],
+      "style": {
+        "fontFamily": "IBM Plex Sans",
+        "fontPostScriptName": "IBMPlexSans-Bold",
+        "fontStyle": "Bold",
+        "fontWeight": 700,
+        "textAutoResize": "WIDTH_AND_HEIGHT",
+        "fontSize": 12,
+        "textAlignHorizontal": "CENTER",
+        "textAlignVertical": "CENTER",
+        "letterSpacing": 0.12,
+        "lineHeightPx": 20,
+        "lineHeightPercent": 128.20513916015625,
+        "lineHeightPercentFontSize": 166.6666717529297,
+        "lineHeightUnit": "PIXELS"
+      },
+      "layoutVersion": 4,
+      "effects": [],
+      "interactions": []
+    }
+  ],
+  "blendMode": "PASS_THROUGH",
+  "clipsContent": false,
+  "background": [
+    {
+      "blendMode": "NORMAL",
+      "type": "SOLID",
+      "color": {
+        "r": 0.9411764740943909,
+        "g": 0.34117648005485535,
+        "b": 0.2078431397676468,
+        "a": 1
+      }
+    }
+  ],
+  "fills": [
+    {
+      "blendMode": "NORMAL",
+      "type": "SOLID",
+      "color": {
+        "r": 0.9411764740943909,
+        "g": 0.34117648005485535,
+        "b": 0.2078431397676468,
+        "a": 1
+      }
+    }
+  ],
+  "strokes": [],
+  "cornerRadius": 50,
+  "cornerSmoothing": 0,
+  "strokeWeight": 1.5,
+  "strokeAlign": "INSIDE",
+  "backgroundColor": {
+    "r": 0.9411764740943909,
+    "g": 0.34117648005485535,
+    "b": 0.2078431397676468,
+    "a": 1
+  },
+  "styles": {
+    "fills": "371:856",
+    "fill": "371:856"
+  },
+  "layoutMode": "HORIZONTAL",
+  "counterAxisSizingMode": "FIXED",
+  "primaryAxisSizingMode": "FIXED",
+  "counterAxisAlignItems": "CENTER",
+  "primaryAxisAlignItems": "CENTER",
+  "itemSpacing": 8,
+  "layoutWrap": "NO_WRAP",
+  "absoluteBoundingBox": {
+    "x": 407.5,
+    "y": 115,
+    "width": 16,
+    "height": 16
+  },
+  "absoluteRenderBounds": {
+    "x": 407.5,
+    "y": 115,
+    "width": 16,
+    "height": 16
+  },
+  "constraints": {
+    "vertical": "TOP",
+    "horizontal": "LEFT"
+  },
+  "layoutSizingHorizontal": "FIXED",
+  "layoutSizingVertical": "FIXED",
+  "effects": [],
+  "interactions": []
+}

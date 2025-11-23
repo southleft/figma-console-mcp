@@ -302,27 +302,50 @@ figma_get_styles({
 
 ### `figma_get_component`
 
-Get component metadata and properties.
+Get component data in two export formats: metadata (default) or reconstruction specification.
 
 **Usage:**
 ```javascript
+// Metadata format (default) - for documentation and style guides
 figma_get_component({
   fileUrl: 'https://figma.com/design/abc123',
   nodeId: '123:456',
-  enrich: true   // Add token coverage analysis
+  format: 'metadata',  // or omit for default
+  enrich: true         // Add token coverage analysis
+})
+
+// Reconstruction format - for programmatic component creation
+figma_get_component({
+  fileUrl: 'https://figma.com/design/abc123',
+  nodeId: '123:456',
+  format: 'reconstruction'  // Compatible with Figma Component Reconstructor plugin
 })
 ```
 
 **Parameters:**
 - `fileUrl` (optional): Figma file URL
 - `nodeId` (required): Component node ID (e.g., '123:456')
-- `enrich` (optional): Add quality metrics (default: false)
+- `format` (optional): Export format - `'metadata'` (default) or `'reconstruction'`
+- `enrich` (optional): Add quality metrics (default: false, only for metadata format)
 
-**Returns:**
-- Component metadata
+**Export Formats:**
+
+**Metadata Format** (default):
+- Component metadata and documentation
 - Properties and variants
 - Bounds and layout info
 - Token coverage (if `enrich: true`)
+- Use for: Documentation, style guides, design system references
+
+**Reconstruction Format**:
+- Complete node tree specification
+- All visual properties (fills, strokes, effects)
+- Layout properties (auto-layout, padding, spacing)
+- Text properties with font information
+- Color values in 0-1 normalized RGB format
+- Validation of spec against plugin requirements
+- Use for: Programmatic component creation, version control, component migration
+- Compatible with: Figma Component Reconstructor plugin
 
 ---
 

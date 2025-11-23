@@ -1,0 +1,62 @@
+{
+  "name": "Type=Text, Variant=Error",
+  "type": "COMPONENT",
+  "x": 0,
+  "y": 0,
+  "layoutSizingHorizontal": "FIXED",
+  "layoutSizingVertical": "FIXED",
+  "width": 16,
+  "height": 16,
+  "fills": [
+    {
+      "type": "SOLID",
+      "color": {
+        "r": 0.9411764740943909,
+        "g": 0.34117648005485535,
+        "b": 0.2078431397676468,
+        "a": 1
+      },
+      "opacity": 1,
+      "visible": true
+    }
+  ],
+  "cornerRadius": 50,
+  "layoutMode": "HORIZONTAL",
+  "primaryAxisSizingMode": "FIXED",
+  "counterAxisSizingMode": "FIXED",
+  "primaryAxisAlignItems": "CENTER",
+  "counterAxisAlignItems": "CENTER",
+  "itemSpacing": 8,
+  "children": [
+    {
+      "name": "Text",
+      "type": "TEXT",
+      "x": 0,
+      "y": 0,
+      "layoutSizingHorizontal": "HUG",
+      "layoutSizingVertical": "HUG",
+      "fills": [
+        {
+          "type": "SOLID",
+          "color": {
+            "r": 0.12156862765550613,
+            "g": 0.0235294122248888,
+            "b": 0,
+            "a": 1
+          },
+          "opacity": 1,
+          "visible": true
+        }
+      ],
+      "characters": "#",
+      "fontSize": 12,
+      "fontName": {
+        "family": "IBM Plex Sans",
+        "style": 700
+      },
+      "textAlignHorizontal": "CENTER",
+      "textAlignVertical": "CENTER",
+      "letterSpacing": 0.12
+    }
+  ]
+}
