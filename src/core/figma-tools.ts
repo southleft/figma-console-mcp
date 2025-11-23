@@ -12,6 +12,7 @@ import { EnrichmentService } from "./enrichment/index.js";
 import type { EnrichmentOptions } from "./types/enriched.js";
 import { SnippetInjector } from "./snippet-injector.js";
 import type { ConsoleMonitor } from "./console-monitor.js";
+import { extractNodeSpec, validateReconstructionSpec, listVariants } from "./figma-reconstruction-spec.js";
 
 const logger = createChildLogger({ component: "figma-tools" });
 
@@ -1983,7 +1984,7 @@ export function registerFigmaAPITools(
 	// Tool 10: Get Component Data
 	server.tool(
 		"figma_get_component",
-		"Get component metadata including reliable description fields. IMPORTANT: For local/unpublished components, ensure the Figma Desktop Bridge plugin is running (Right-click in Figma → Plugins → Development → Figma Desktop Bridge) to get complete description data. Without the plugin, descriptions may be missing due to REST API limitations.",
+		"Get component metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation. IMPORTANT: For local/unpublished components with metadata format, ensure the Figma Desktop Bridge plugin is running (Right-click in Figma → Plugins → Development → Figma Desktop Bridge) to get complete description data.",
 		{
 			fileUrl: z
 				.string()
@@ -1995,14 +1996,21 @@ export function registerFigmaAPITools(
 			nodeId: z
 				.string()
 				.describe("Component node ID (e.g., '123:456')"),
+			format: z
+				.enum(["metadata", "reconstruction"])
+				.optional()
+				.default("metadata")
+				.describe(
+					"Export format: 'metadata' (default) for comprehensive documentation, 'reconstruction' for node tree specification compatible with Figma Component Reconstructor plugin"
+				),
 			enrich: z
 				.boolean()
 				.optional()
 				.describe(
-					"Set to true when user asks for: design token coverage, hardcoded value analysis, or component quality metrics. Adds token coverage analysis and hardcoded value detection. Default: false"
+					"Set to true when user asks for: design token coverage, hardcoded value analysis, or component quality metrics. Adds token coverage analysis and hardcoded value detection. Default: false. Only applicable for metadata format."
 				),
 		},
-		async ({ fileUrl, nodeId, enrich }) => {
+		async ({ fileUrl, nodeId, format = "metadata", enrich }) => {
 			try {
 				const api = await getFigmaAPI();
 
@@ -2018,7 +2026,7 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, nodeId, enrich }, "Fetching component data");
+				logger.info({ fileKey, nodeId, format, enrich }, "Fetching component data");
 
 				// PRIORITY 1: Try Desktop Bridge plugin UI first (has reliable description field!)
 				if (getBrowserManager && ensureInitialized) {
@@ -2049,6 +2057,54 @@ export function registerFigmaAPITools(
 								"Successfully retrieved component via Desktop Bridge plugin UI!"
 							);
 
+							// Handle reconstruction format
+							if (format === "reconstruction") {
+								const reconstructionSpec = extractNodeSpec(desktopResult.component);
+								const validation = validateReconstructionSpec(reconstructionSpec);
+
+								if (!validation.valid) {
+									logger.warn({ errors: validation.errors }, "Reconstruction spec validation warnings");
+								}
+
+								// Check if this is a COMPONENT_SET - plugin cannot create these
+								if (reconstructionSpec.type === 'COMPONENT_SET') {
+									const variants = listVariants(desktopResult.component);
+
+									return {
+										content: [
+											{
+												type: "text",
+												text: JSON.stringify({
+													error: "COMPONENT_SET_NOT_SUPPORTED",
+													message: "The Figma Component Reconstructor plugin cannot create COMPONENT_SET nodes (variant containers). Please select a specific variant component instead.",
+													componentName: reconstructionSpec.name,
+													availableVariants: variants,
+													instructions: [
+														"1. In Figma, expand the component set to see individual variants",
+														"2. Select the specific variant you want to reconstruct",
+														"3. Copy the node ID of that variant",
+														"4. Use figma_get_component with that variant's node ID"
+													],
+													note: "COMPONENT_SET is automatically created by Figma when you have variants. The plugin can only create individual COMPONENT nodes."
+												}, null, 2),
+											},
+										],
+									};
+								}
+
+								// Return spec directly for plugin compatibility
+								// Plugin expects name, type, etc. at root level
+								return {
+									content: [
+										{
+											type: "text",
+											text: JSON.stringify(reconstructionSpec, null, 2),
+										},
+									],
+								};
+							}
+
+							// Handle metadata format (original behavior)
 							let formatted = desktopResult.component;
 
 							// Apply enrichment if requested
@@ -2098,6 +2154,54 @@ export function registerFigmaAPITools(
 					throw new Error(`Component not found: ${nodeId}`);
 				}
 
+				// Handle reconstruction format
+				if (format === "reconstruction") {
+					const reconstructionSpec = extractNodeSpec(componentData.document);
+					const validation = validateReconstructionSpec(reconstructionSpec);
+
+					if (!validation.valid) {
+						logger.warn({ errors: validation.errors }, "Reconstruction spec validation warnings");
+					}
+
+					// Check if this is a COMPONENT_SET - plugin cannot create these
+					if (reconstructionSpec.type === 'COMPONENT_SET') {
+						const variants = listVariants(componentData.document);
+
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										error: "COMPONENT_SET_NOT_SUPPORTED",
+										message: "The Figma Component Reconstructor plugin cannot create COMPONENT_SET nodes (variant containers). Please select a specific variant component instead.",
+										componentName: reconstructionSpec.name,
+										availableVariants: variants,
+										instructions: [
+											"1. In Figma, expand the component set to see individual variants",
+											"2. Select the specific variant you want to reconstruct",
+											"3. Copy the node ID of that variant",
+											"4. Use figma_get_component with that variant's node ID"
+										],
+										note: "COMPONENT_SET is automatically created by Figma when you have variants. The plugin can only create individual COMPONENT nodes."
+									}, null, 2),
+								},
+							],
+						};
+					}
+
+					// Return spec directly for plugin compatibility
+					// Plugin expects name, type, etc. at root level
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(reconstructionSpec, null, 2),
+							},
+						],
+					};
+				}
+
+				// Handle metadata format (original behavior)
 				let formatted = formatComponentData(componentData.document);
 
 				// Apply enrichment if requested
@@ -2372,6 +2476,46 @@ export function registerFigmaAPITools(
 				}
 
 				logger.info({ fileKey, nodeId, scale, format }, "Rendering component image");
+
+				// First, fetch the node to check if it's a COMPONENT_SET
+				const fileData = await api.getFile(fileKey, { ids: [nodeId] });
+				const node = fileData.nodes[nodeId]?.document;
+
+				if (!node) {
+					throw new Error(
+						`Node ${nodeId} not found in file ${fileKey}. Please verify the node ID is correct.`
+					);
+				}
+
+				// Check if this is a COMPONENT_SET - cannot be rendered as image
+				if (node.type === 'COMPONENT_SET') {
+					const variants = listVariants(node);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: "COMPONENT_SET_NOT_RENDERABLE",
+										message: "Node is a COMPONENT_SET which cannot be rendered. Please use a specific variant component ID instead.",
+										componentName: node.name,
+										availableVariants: variants,
+										instructions: [
+											"1. In Figma, expand the component set to see individual variants",
+											"2. Select the specific variant you want to render",
+											"3. Copy the node ID of that variant",
+											"4. Use figma_get_component_image with that variant's node ID"
+										],
+										note: "COMPONENT_SET is a container for variants. Only individual variant components can be rendered as images."
+									},
+									null,
+									2
+								),
+							},
+						],
+					};
+				}
 
 				// Call the new getImages method
 				const result = await api.getImages(fileKey, nodeId, {

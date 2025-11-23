@@ -330,7 +330,9 @@ All 14 tools work in both Remote and Local modes:
 
 ### Design System Extraction
 - `figma_get_variables` - Extract design tokens/variables
-- `figma_get_component` - Get component data
+- `figma_get_component` - Get component data (metadata or reconstruction spec)
+  - **Metadata format** (default): Comprehensive documentation with properties, variants, and design tokens
+  - **Reconstruction format**: Node tree specification for programmatic component creation (compatible with Figma Component Reconstructor plugin)
 - `figma_get_component_for_development` - Component + image
 - `figma_get_component_image` - Just the image
 - `figma_get_styles` - Color, text, effect styles
@@ -355,6 +357,7 @@ Get the last 20 console logs
 Get all design variables from https://figma.com/design/abc123
 Extract color styles and show me the CSS exports
 Get the Button component with a visual reference image
+Get the Badge component in reconstruction format for programmatic creation
 ```
 
 ### Visual Debugging
