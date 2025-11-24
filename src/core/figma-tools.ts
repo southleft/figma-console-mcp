@@ -623,7 +623,22 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, depth, nodeIds, enrich, verbosity }) => {
 			try {
-				const api = await getFigmaAPI();
+				// Initialize API client (required for file data - no Desktop Bridge alternative)
+				let api;
+				try {
+					api = await getFigmaAPI();
+				} catch (apiError) {
+					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					throw new Error(
+						`Cannot retrieve file data. REST API authentication required.\n` +
+						`Error: ${errorMessage}\n\n` +
+						`To fix:\n` +
+						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
+						`2. Cloud mode: Authenticate via OAuth\n\n` +
+						`Note: figma_get_file_data requires REST API access. ` +
+						`For component-specific data, use figma_get_component which has Desktop Bridge fallback.`
+					);
+				}
 
 				// Use provided URL or current URL from browser
 				const url = fileUrl || getCurrentUrl();
@@ -1269,24 +1284,285 @@ export function registerFigmaAPITools(
 				// FETCH LOGIC: No cache or cache invalid/refresh requested
 				// =====================================================================
 
-				// BEST: Try Desktop connection first (like official Figma MCP does)
+				// Check if REST API token is available (determines priority)
+				const hasToken = !!process.env.FIGMA_ACCESS_TOKEN;
+				let restApiSucceeded = false;
+
+				// PRIORITY LOGIC:
+				// 1. If token exists → Try REST API FIRST (enterprise users)
+				// 2. If no token OR REST API fails → Try Desktop Bridge as fallback
+				logger.info({ hasToken }, "Authentication method detection");
+
+				// Try REST API first if token is available
+				if (hasToken && !parseFromConsole) {
+					try {
+						logger.info({ fileKey, includePublished, verbosity, enrich }, "Fetching variables via REST API (priority: token detected)");
+						const api = await getFigmaAPI();
+						const { local, published } = await api.getAllVariables(fileKey);
+
+						let localFormatted = formatVariables(local);
+						let publishedFormatted = includePublished
+							? formatVariables(published)
+							: null;
+
+						// DEBUG: Check if valuesByMode exists before filtering
+						if (localFormatted.variables[0]) {
+							logger.info(
+								{
+									hasValuesByMode: !!localFormatted.variables[0].valuesByMode,
+									variableKeys: Object.keys(localFormatted.variables[0]),
+									collectionCount: localFormatted.collections?.length,
+								},
+								'Variable structure before filtering'
+							);
+						}
+
+						// Apply collection/name/mode filtering if format is 'filtered'
+						if (format === 'filtered') {
+							// Create properly structured data for applyFilters
+							const dataToFilter = {
+								variables: localFormatted.variables,
+								variableCollections: localFormatted.collections,
+							};
+
+							const filteredLocal = applyFilters(
+								dataToFilter,
+								{ collection, namePattern, mode },
+								verbosity || "standard"
+							);
+
+							localFormatted = {
+								summary: localFormatted.summary,
+								collections: filteredLocal.variableCollections,
+								variables: filteredLocal.variables,
+							};
+
+							// Also filter published if included
+							if (includePublished && publishedFormatted) {
+								const dataToFilterPublished = {
+									variables: publishedFormatted.variables,
+									variableCollections: publishedFormatted.collections,
+								};
+
+								const filteredPublished = applyFilters(
+									dataToFilterPublished,
+									{ collection, namePattern, mode },
+									verbosity || "standard"
+								);
+
+								publishedFormatted = {
+									summary: publishedFormatted.summary,
+									collections: filteredPublished.variableCollections,
+									variables: filteredPublished.variables,
+								};
+							}
+						}
+
+						// Apply verbosity filtering after collection/name/mode filters
+						if (verbosity && verbosity !== 'full') {
+							const verbosityFiltered = applyFilters(
+								{
+									variables: localFormatted.variables,
+									variableCollections: localFormatted.collections,
+								},
+								{},
+								verbosity
+							);
+
+							localFormatted = {
+								...localFormatted,
+								collections: verbosityFiltered.variableCollections,
+								variables: verbosityFiltered.variables,
+							};
+
+							if (includePublished && publishedFormatted) {
+								const verbosityFilteredPublished = applyFilters(
+									{
+										variables: publishedFormatted.variables,
+										variableCollections: publishedFormatted.collections,
+									},
+									{},
+									verbosity
+								);
+
+								publishedFormatted = {
+									...publishedFormatted,
+									collections: verbosityFilteredPublished.variableCollections,
+									variables: verbosityFilteredPublished.variables,
+								};
+							}
+						}
+
+						// Apply pagination if requested
+						let paginationInfo;
+						if (pageSize) {
+							const startIdx = (page - 1) * pageSize;
+							const endIdx = startIdx + pageSize;
+							const totalVars = localFormatted.variables.length;
+
+							paginationInfo = {
+								page,
+								pageSize,
+								totalItems: totalVars,
+								totalPages: Math.ceil(totalVars / pageSize),
+								hasNextPage: endIdx < totalVars,
+								hasPrevPage: page > 1,
+							};
+
+							localFormatted.variables = localFormatted.variables.slice(startIdx, endIdx);
+
+							if (includePublished && publishedFormatted) {
+								publishedFormatted.variables = publishedFormatted.variables.slice(startIdx, endIdx);
+							}
+						}
+
+
+						// Cache the successful REST API response
+						const dataForCache = {
+							fileKey,
+							local: {
+								summary: localFormatted.summary,
+								collections: localFormatted.collections,
+								variables: localFormatted.variables,
+							},
+							...(includePublished &&
+								publishedFormatted && {
+									published: {
+										summary: publishedFormatted.summary,
+										collections: publishedFormatted.collections,
+										variables: publishedFormatted.variables,
+									},
+								}),
+							verbosity: verbosity || "standard",
+							enriched: enrich || false,
+							timestamp: Date.now(),
+							source: "rest_api",
+						};
+
+						if (variablesCache) {
+							variablesCache.set(fileKey, { data: dataForCache, timestamp: Date.now() });
+							logger.info({ fileKey }, "Cached REST API variables");
+						}
+
+						// Handle resource_links format
+						if (returnAsLinks) {
+							const content: any[] = [
+								{
+									type: "text",
+									text: `Variables for file ${fileKey} (${localFormatted.variables.length} variables). Use figma_get_variable_by_id to fetch specific variables:\n\n`,
+								},
+							];
+
+							for (const variable of localFormatted.variables) {
+								content.push({
+									type: "resource",
+									resource: {
+										uri: `figma://variable/${fileKey}/${variable.id}`,
+										mimeType: "application/json",
+										text: `${variable.name} (${variable.resolvedType})`,
+									},
+								});
+							}
+
+							logger.info(
+								{
+									fileKey,
+									format: 'resource_links',
+									variableCount: localFormatted.variables.length,
+									linkCount: content.length - 1,
+								},
+								`Returning REST API variables as resource_links`
+							);
+
+							return { content };
+						}
+
+						// Build initial response data
+						const responseData = {
+							fileKey,
+							local: {
+								summary: localFormatted.summary,
+								collections: localFormatted.collections,
+								variables: localFormatted.variables,
+							},
+							...(includePublished &&
+								publishedFormatted && {
+									published: {
+										summary: publishedFormatted.summary,
+										collections: publishedFormatted.collections,
+										variables: publishedFormatted.variables,
+									},
+								}),
+							verbosity: verbosity || "standard",
+							enriched: enrich || false,
+							...(paginationInfo && { pagination: paginationInfo }),
+						};
+
+						// Mark REST API as successful
+						restApiSucceeded = true;
+						logger.info({ fileKey }, "REST API fetch successful, skipping Desktop Bridge");
+
+						// Use adaptive response to prevent context exhaustion
+						return adaptiveResponse(responseData, {
+							toolName: "figma_get_variables",
+							compressionCallback: (adjustedLevel: string) => {
+								// Re-apply filters with adjusted verbosity
+								const level = adjustedLevel as "inventory" | "summary" | "standard" | "full";
+								const refiltered = applyFilters(
+									{
+										variables: localFormatted.variables,
+										variableCollections: localFormatted.collections,
+									},
+									{ collection, namePattern, mode },
+									level
+								);
+
+								return {
+									...responseData,
+									local: {
+										...responseData.local,
+										variables: refiltered.variables,
+										collections: refiltered.variableCollections,
+									},
+									verbosity: level,
+								};
+							},
+							suggestedActions: [
+								"Use verbosity='inventory' or 'summary' for large variable sets",
+								"Apply filters: collection, namePattern, or mode parameters",
+								"Use pagination with pageSize parameter (default 50, max 100)",
+								"Use returnAsLinks=true to get resource_link references instead of full data",
+							],
+						});
+					} catch (restError) {
+						const errorMessage = restError instanceof Error ? restError.message : String(restError);
+						logger.warn({ error: errorMessage }, "REST API failed, will try Desktop Bridge fallback");
+						// Don't throw - fall through to Desktop Bridge
+					}
+				}
+
+				// FALLBACK: Try Desktop connection (when no token available OR as secondary fallback)
 				// Ensure browser manager is initialized
-				if (ensureInitialized && !parseFromConsole) {
+				if (ensureInitialized && !parseFromConsole && !hasToken) {
 					logger.info("Calling ensureInitialized to initialize browser manager");
 					await ensureInitialized();
 				}
 
 				const browserManager = getBrowserManager?.();
-				logger.info({ hasBrowserManager: !!browserManager, parseFromConsole }, "Desktop connection check");
+				logger.info({ hasBrowserManager: !!browserManager, parseFromConsole, hasToken, restApiSucceeded }, "Desktop connection check");
 
 				// Debug: Log why Desktop connection might be skipped
 				if (!browserManager) {
 					logger.error("Desktop connection skipped: browserManager is not available");
 				} else if (parseFromConsole) {
 					logger.info("Desktop connection skipped: parseFromConsole is true");
+				} else if (hasToken && !restApiSucceeded) {
+					logger.info("Desktop connection skipped: Token exists, will try REST API first");
+				} else if (restApiSucceeded) {
+					logger.info("Desktop connection skipped: REST API already succeeded");
 				}
 
-				if (browserManager && !parseFromConsole) {
+				if (browserManager && !parseFromConsole && !hasToken) {
 					try {
 						logger.info({ fileKey }, "Attempting to get variables via Desktop connection");
 
@@ -1606,281 +1882,17 @@ export function registerFigmaAPITools(
 					};
 				}
 
-				// Try REST API
-				logger.info({ fileKey, includePublished, verbosity, enrich }, "Fetching variables via REST API");
-				const api = await getFigmaAPI();
-
-				const { local, published } = await api.getAllVariables(fileKey);
-
-				let localFormatted = formatVariables(local);
-				let publishedFormatted = includePublished
-					? formatVariables(published)
-					: null;
-
-				// DEBUG: Check if valuesByMode exists before filtering
-				if (localFormatted.variables[0]) {
-					logger.info(
-						{
-							hasValuesByMode: !!localFormatted.variables[0].valuesByMode,
-							variableKeys: Object.keys(localFormatted.variables[0]),
-							collectionCount: localFormatted.collections?.length,
-						},
-						'Variable structure before filtering'
-					);
-				}
-
-				// Apply collection/name/mode filtering if format is 'filtered'
-				if (format === 'filtered') {
-					// Create properly structured data for applyFilters
-					const dataToFilter = {
-						variables: localFormatted.variables,
-						variableCollections: localFormatted.collections,
-					};
-
-					// Apply filters with verbosity-aware valuesByMode transformation
-					const filtered = applyFilters(
-						dataToFilter,
-						{
-							collection,
-							namePattern,
-							mode,
-						},
-						verbosity || 'standard'
-					);
-
-					localFormatted.variables = filtered.variables;
-					localFormatted.collections = filtered.variableCollections;
-
-					// DEBUG: Check if transformation was applied
-					if (localFormatted.variables[0]) {
-						logger.info(
-							{
-								hasValuesByMode: !!localFormatted.variables[0].valuesByMode,
-								hasModeNames: !!localFormatted.variables[0].modeNames,
-								variableKeys: Object.keys(localFormatted.variables[0]),
-							},
-							'Variable structure after applyFilters'
-						);
-					}
-
-					// Skip inline verbosity filtering - already handled by applyFilters
-				}
-
-				// Apply verbosity filtering for non-filtered formats
-				const filterVariable = (variable: any, level: "inventory" | "summary" | "standard" | "full"): any => {
-					if (!variable) return variable;
-
-					if (level === "summary") {
-						// Summary: Only id, name, value (~80% reduction)
-						return {
-							id: variable.id,
-							name: variable.name,
-							resolvedType: variable.resolvedType,
-							valuesByMode: variable.valuesByMode,
-							// Include modeNames and modeCount added by applyFilters
-							...(variable.modeNames && { modeNames: variable.modeNames }),
-							...(variable.modeCount && { modeCount: variable.modeCount }),
-						};
-					}
-
-					if (level === "standard") {
-						// Standard: Essential properties (~45% reduction)
-						return {
-							id: variable.id,
-							name: variable.name,
-							resolvedType: variable.resolvedType,
-							valuesByMode: variable.valuesByMode,
-							description: variable.description,
-							variableCollectionId: variable.variableCollectionId,
-							...(variable.scopes && { scopes: variable.scopes }),
-						};
-					}
-
-					// Full: Return everything
-					return variable;
-				};
-
-				const filterCollection = (collection: any, level: "inventory" | "summary" | "standard" | "full"): any => {
-					if (!collection) return collection;
-
-					if (level === "summary") {
-						return {
-							id: collection.id,
-							name: collection.name,
-						};
-					}
-
-					if (level === "standard") {
-						return {
-							id: collection.id,
-							name: collection.name,
-							modes: collection.modes,
-							defaultModeId: collection.defaultModeId,
-						};
-					}
-
-					return collection;
-				};
-
-				// Apply inline verbosity filtering only for non-filtered formats
-				// (filtered format already handled by applyFilters above)
-				if (verbosity !== "full" && format !== 'filtered') {
-					const level = verbosity || "standard";
-					localFormatted.variables = localFormatted.variables.map((v: any) => filterVariable(v, level));
-					localFormatted.collections = localFormatted.collections.map((c: any) => filterCollection(c, level));
-
-					if (publishedFormatted) {
-						publishedFormatted.variables = publishedFormatted.variables.map((v: any) => filterVariable(v, level));
-						publishedFormatted.collections = publishedFormatted.collections.map((c: any) => filterCollection(c, level));
-					}
-				}
-
-					// Apply enrichment if requested
-				if (enrich) {
-					const enrichmentOptions: EnrichmentOptions = {
-						enrich: true,
-						include_usage: include_usage !== false,
-						include_dependencies: include_dependencies !== false,
-						include_exports: include_exports !== false,
-						export_formats: export_formats || ["css", "sass", "tailwind", "typescript", "json"],
-					};
-
-					// Enrich local variables
-					const enrichedLocal = await enrichmentService.enrichVariables(
-						localFormatted.variables,
-						fileKey,
-						enrichmentOptions
-					);
-					localFormatted = { ...localFormatted, variables: enrichedLocal };
-
-					// Enrich published variables if included
-					if (publishedFormatted) {
-						const enrichedPublished = await enrichmentService.enrichVariables(
-							publishedFormatted.variables,
-							fileKey,
-							enrichmentOptions
-						);
-						publishedFormatted = { ...publishedFormatted, variables: enrichedPublished };
-					}
-				}
-
-				// Apply pagination for filtered format
-				let paginationInfo: any = null;
-				if (format === 'filtered') {
-					const paginated = paginateVariables(
-						{ variables: localFormatted.variables, variableCollections: localFormatted.collections },
-						page || 1,
-						pageSize || 50
-					);
-					localFormatted.variables = paginated.data.variables;
-					localFormatted.collections = paginated.data.variableCollections;
-					paginationInfo = paginated.pagination;
-
-					// For inventory/summary modes, strip variableIds from collections to reduce payload
-					if (verbosity === 'inventory' || verbosity === 'summary') {
-						localFormatted.collections = localFormatted.collections.map((c: any) => ({
-							id: c.id,
-							name: c.name,
-							key: c.key,
-							modes: c.modes,
-							// Omit variableIds array which can be huge
-						}));
-					}
-				}
-
-				// If returnAsLinks=true, return resource_link references
-				if (returnAsLinks) {
-					const summary = {
-						fileKey,
-						source: 'rest_api',
-						totalVariables: localFormatted.variables.length,
-						totalCollections: localFormatted.collections.length,
-						...(paginationInfo && { pagination: paginationInfo }),
-					};
-
-					const content: any[] = [
-						{
-							type: "text",
-							text: JSON.stringify(summary),
-						},
-					];
-
-					// Add resource_link for each variable
-					localFormatted.variables.forEach((v: any) => {
-						content.push({
-							type: "resource_link",
-							uri: `figma://variable/${v.id}`,
-							name: v.name || v.id,
-							description: `${v.resolvedType || 'VARIABLE'} from ${fileKey}`,
-						});
-					});
-
-					logger.info(
-						{
-							fileKey,
-							format: 'resource_links',
-							variableCount: localFormatted.variables.length,
-							linkCount: content.length - 1,
-						},
-						`Returning REST API variables as resource_links`
-					);
-
-					return { content };
-				}
-
-				// Build initial response data
-				const responseData = {
-					fileKey,
-					local: {
-						summary: localFormatted.summary,
-						collections: localFormatted.collections,
-						variables: localFormatted.variables,
-					},
-					...(includePublished &&
-						publishedFormatted && {
-							published: {
-								summary: publishedFormatted.summary,
-								collections: publishedFormatted.collections,
-								variables: publishedFormatted.variables,
-							},
-						}),
-					verbosity: verbosity || "standard",
-					enriched: enrich || false,
-					...(paginationInfo && { pagination: paginationInfo }),
-				};
-
-				// Use adaptive response to prevent context exhaustion
-				return adaptiveResponse(responseData, {
-					toolName: "figma_get_variables",
-					compressionCallback: (adjustedLevel: string) => {
-						// Re-apply filters with adjusted verbosity
-						const level = adjustedLevel as "inventory" | "summary" | "standard" | "full";
-						const refiltered = applyFilters(
-							{
-								variables: localFormatted.variables,
-								variableCollections: localFormatted.collections,
-							},
-							{ collection, namePattern, mode },
-							level
-						);
-
-						return {
-							...responseData,
-							local: {
-								...responseData.local,
-								variables: refiltered.variables,
-								collections: refiltered.variableCollections,
-							},
-							verbosity: level,
-						};
-					},
-					suggestedActions: [
-						"Use verbosity='inventory' or 'summary' for large variable sets",
-						"Apply filters: collection, namePattern, or mode parameters",
-						"Use pagination with pageSize parameter (default 50, max 100)",
-						"Use returnAsLinks=true to get resource_link references instead of full data",
-					],
-				});
+				// No more fallback options available
+				throw new Error(
+					`Cannot retrieve variables. All methods failed.\n\n` +
+					`Tried methods:\n` +
+					`${hasToken ? '✗ REST API (failed)\n' : ''}` +
+					`${!hasToken ? '✗ Desktop Bridge (not available)\n' : '✗ Desktop Bridge (skipped - token available)\n'}` +
+					`\nTo fix:\n` +
+					`1. If you have FIGMA_ACCESS_TOKEN: Check your token permissions\n` +
+					`2. If no token: Install and run Figma Desktop Bridge plugin\n` +
+					`3. Alternative: Use parseFromConsole=true with console snippet workflow`
+				);
 			} catch (error) {
 				logger.error({ error }, "Failed to get variables");
 				const errorMessage =
@@ -1891,7 +1903,19 @@ export function registerFigmaAPITools(
 					try {
 						logger.info({ fileKey }, "Variables API requires Enterprise, falling back to Styles API");
 
-						const api = await getFigmaAPI();
+						let api;
+						try {
+							api = await getFigmaAPI();
+						} catch (apiError) {
+							const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+							throw new Error(
+								`Cannot retrieve variables or styles. REST API authentication required for both.\n` +
+								`Error: ${errorMessage}\n\n` +
+								`To fix:\n` +
+								`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
+								`2. Cloud mode: Authenticate via OAuth`
+							);
+						}
 						// Use the Styles API directly - much faster than getFile!
 						const stylesData = await api.getStyles(fileKey);
 
@@ -2012,8 +2036,6 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, nodeId, format = "metadata", enrich }) => {
 			try {
-				const api = await getFigmaAPI();
-
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
@@ -2148,6 +2170,24 @@ export function registerFigmaAPITools(
 
 				// FALLBACK: Use REST API (may have missing/outdated description)
 				logger.info({ nodeId }, "Using REST API fallback");
+
+				// Initialize API client (may throw if no token available)
+				let api;
+				try {
+					api = await getFigmaAPI();
+				} catch (apiError) {
+					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					throw new Error(
+						`Cannot retrieve component data. Both Desktop Bridge and REST API are unavailable.\n` +
+						`Desktop Bridge: ${getBrowserManager && ensureInitialized ? 'Failed (see logs above)' : 'Not available (local mode only)'}\n` +
+						`REST API: ${errorMessage}\n\n` +
+						`To fix:\n` +
+						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable, OR ensure Figma Desktop Bridge plugin is running\n` +
+						`2. Cloud mode: Authenticate via OAuth\n` +
+						`3. Make sure figma_navigate was called to initialize browser connection`
+					);
+				}
+
 				const componentData = await api.getComponentData(fileKey, nodeId);
 
 				if (!componentData) {
@@ -2305,7 +2345,19 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, verbosity, enrich, include_usage, include_exports, export_formats }) => {
 			try {
-				const api = await getFigmaAPI();
+				let api;
+				try {
+					api = await getFigmaAPI();
+				} catch (apiError) {
+					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					throw new Error(
+						`Cannot retrieve styles. REST API authentication required.\n` +
+						`Error: ${errorMessage}\n\n` +
+						`To fix:\n` +
+						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
+						`2. Cloud mode: Authenticate via OAuth`
+					);
+				}
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
@@ -2319,10 +2371,17 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, verbosity, enrich }, "Fetching styles");
+			logger.info({ fileKey, verbosity, enrich }, "Fetching styles");
 
-				const stylesData = await api.getStyles(fileKey);
-				let styles = stylesData.meta?.styles || [];
+			// Get styles via REST API
+			const stylesData = await api.getStyles(fileKey);
+			let styles = stylesData.meta?.styles || [];
+
+			logger.info(
+				{ styleCount: styles.length },
+				"Successfully retrieved styles via REST API"
+			);
+
 
 				// Apply verbosity filtering
 				const filterStyle = (style: any, level: "summary" | "standard" | "full"): any => {
@@ -2461,7 +2520,21 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, nodeId, scale, format }) => {
 			try {
-				const api = await getFigmaAPI();
+				let api;
+				try {
+					api = await getFigmaAPI();
+				} catch (apiError) {
+					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					throw new Error(
+						`Cannot render component image. REST API authentication required.\n` +
+						`Error: ${errorMessage}\n\n` +
+						`To fix:\n` +
+						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
+						`2. Cloud mode: Authenticate via OAuth\n\n` +
+						`Note: For component screenshots, figma_take_screenshot may work as browser-based alternative ` +
+						`if you've called figma_navigate first.`
+					);
+				}
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
@@ -2600,7 +2673,21 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, nodeId, includeImage }) => {
 			try {
-				const api = await getFigmaAPI();
+				let api;
+				try {
+					api = await getFigmaAPI();
+				} catch (apiError) {
+					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					throw new Error(
+						`Cannot retrieve component for development. REST API authentication required.\n` +
+						`Error: ${errorMessage}\n\n` +
+						`To fix:\n` +
+						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
+						`2. Cloud mode: Authenticate via OAuth\n\n` +
+						`Note: For component metadata, figma_get_component has Desktop Bridge fallback ` +
+						`that works without token (requires figma_navigate first).`
+					);
+				}
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
@@ -2792,7 +2879,19 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, depth, nodeIds }) => {
 			try {
-				const api = await getFigmaAPI();
+				let api;
+				try {
+					api = await getFigmaAPI();
+				} catch (apiError) {
+					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					throw new Error(
+						`Cannot retrieve file data for plugin development. REST API authentication required.\n` +
+						`Error: ${errorMessage}\n\n` +
+						`To fix:\n` +
+						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
+						`2. Cloud mode: Authenticate via OAuth`
+					);
+				}
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {

@@ -284,6 +284,15 @@ export function extractNodeSpec(node: any): NodeSpecification {
     type: node.type,
   };
 
+  // INSTANCE → FRAME conversion for plugin compatibility
+  // Plugin cannot create instance nodes, so we convert them to frames
+  // This preserves visual properties and children for the "sketchpad" workflow
+  if (spec.type === 'INSTANCE') {
+    spec.type = 'FRAME';
+    // All visual properties (fills, strokes, layout) will be copied from the instance
+    // Children will be processed recursively and also converted if needed
+  }
+
   // Position - provide defaults if missing
   if ('x' in node && typeof node.x === 'number') {
     spec.x = node.x;

@@ -456,6 +456,7 @@ export class FigmaDesktopConnector {
     }
   }
 
+
   async dispose(): Promise<void> {
     logger.info('Figma Desktop connector disposed');
   }
