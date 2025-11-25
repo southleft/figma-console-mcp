@@ -98,6 +98,7 @@ function parseColor(cssColor: string): { r: number; g: number; b: number; a: num
 
 /**
  * Create Figma fill from CSS color
+ * Note: Plugin expects color.a inside the color object (not as separate opacity)
  */
 function createFill(cssColor: string): any[] {
   const color = parseColor(cssColor);
@@ -107,7 +108,6 @@ function createFill(cssColor: string): any[] {
     {
       type: "SOLID",
       color: { r: color.r, g: color.g, b: color.b, a: color.a },
-      opacity: 1,
       visible: true,
     },
   ];
@@ -115,6 +115,7 @@ function createFill(cssColor: string): any[] {
 
 /**
  * Create Figma stroke from CSS border
+ * Note: Plugin expects color.a inside the color object (not as separate opacity)
  */
 function createStroke(cssBorder: string): { strokes: any[]; strokeWeight: number } | null {
   if (!cssBorder || cssBorder === "none" || cssBorder === "0px none") {
@@ -136,7 +137,6 @@ function createStroke(cssBorder: string): { strokes: any[]; strokeWeight: number
       {
         type: "SOLID",
         color: { r: color.r, g: color.g, b: color.b, a: color.a },
-        opacity: 1,
         visible: true,
       },
     ],
@@ -245,30 +245,78 @@ function parseHTML(html: string): ParsedElement | null {
   // For MVP, we expect a simplified structure
   // In production, the Storybook addon would send already-parsed DOM
 
-  // Simple regex-based extraction for demo purposes
-  const tagMatch = html.match(/<(\w+)([^>]*)>([\s\S]*?)<\/\1>/);
-  if (!tagMatch) {
-    // Check for text content
-    const trimmed = html.trim();
-    if (trimmed && !trimmed.startsWith("<")) {
-      return {
-        tagName: "#text",
-        textContent: trimmed,
-        children: [],
-        styles: {},
-      };
-    }
-    return null;
+  const trimmed = html.trim();
+  if (!trimmed) return null;
+
+  // Check for pure text content
+  if (!trimmed.startsWith("<")) {
+    return {
+      tagName: "#text",
+      textContent: trimmed,
+      children: [],
+      styles: {},
+    };
   }
 
-  const [, tagName, attributes, innerContent] = tagMatch;
+  // Extract opening tag
+  const openTagMatch = trimmed.match(/^<(\w+)([^>]*)>/);
+  if (!openTagMatch) return null;
+
+  const [openTag, tagName, attributes] = openTagMatch;
+  const tagNameLower = tagName.toLowerCase();
+
+  // Handle self-closing tags
+  if (trimmed.endsWith("/>") || ["br", "hr", "img", "input"].includes(tagNameLower)) {
+    return {
+      tagName: tagNameLower,
+      id: attributes.match(/id="([^"]+)"/)?.[1],
+      className: attributes.match(/class="([^"]+)"/)?.[1],
+      children: [],
+      styles: {},
+    };
+  }
+
+  // Find matching closing tag by counting nested tags
+  const closeTag = `</${tagName}>`;
+  let depth = 1;
+  let searchPos = openTag.length;
+  let closePos = -1;
+
+  while (depth > 0 && searchPos < trimmed.length) {
+    const nextOpen = trimmed.indexOf(`<${tagName}`, searchPos);
+    const nextClose = trimmed.indexOf(closeTag, searchPos);
+
+    if (nextClose === -1) break;
+
+    // Check if there's an opening tag before the next closing tag
+    if (nextOpen !== -1 && nextOpen < nextClose) {
+      // Check if it's actually an opening tag (not </tag or <tagName with more chars)
+      const afterOpen = trimmed[nextOpen + tagName.length + 1];
+      if (afterOpen === " " || afterOpen === ">" || afterOpen === "/") {
+        depth++;
+        searchPos = nextOpen + 1;
+        continue;
+      }
+    }
+
+    depth--;
+    if (depth === 0) {
+      closePos = nextClose;
+    } else {
+      searchPos = nextClose + closeTag.length;
+    }
+  }
+
+  if (closePos === -1) return null;
+
+  const innerContent = trimmed.slice(openTag.length, closePos);
 
   // Extract id and class from attributes
   const idMatch = attributes.match(/id="([^"]+)"/);
   const classMatch = attributes.match(/class="([^"]+)"/);
 
   const element: ParsedElement = {
-    tagName: tagName.toLowerCase(),
+    tagName: tagNameLower,
     id: idMatch?.[1],
     className: classMatch?.[1],
     children: [],
@@ -280,10 +328,9 @@ function parseHTML(html: string): ParsedElement | null {
   if (!hasChildElements && innerContent.trim()) {
     element.textContent = innerContent.trim();
   } else {
-    // Parse child elements (simplified - handles single level)
-    const childMatches = innerContent.matchAll(/<(\w+)([^>]*)>([\s\S]*?)<\/\1>/g);
-    for (const childMatch of childMatches) {
-      const childHtml = childMatch[0];
+    // Parse child elements
+    const children = extractChildElements(innerContent);
+    for (const childHtml of children) {
       const child = parseHTML(childHtml);
       if (child) {
         element.children.push(child);
@@ -292,6 +339,98 @@ function parseHTML(html: string): ParsedElement | null {
   }
 
   return element;
+}
+
+/**
+ * Extract top-level child elements from HTML content
+ */
+function extractChildElements(html: string): string[] {
+  const children: string[] = [];
+  let pos = 0;
+  const content = html.trim();
+
+  while (pos < content.length) {
+    // Skip whitespace
+    while (pos < content.length && /\s/.test(content[pos])) pos++;
+    if (pos >= content.length) break;
+
+    // Check if we're at a tag
+    if (content[pos] !== "<") {
+      // Text node - skip for now (handled by parent)
+      const nextTag = content.indexOf("<", pos);
+      if (nextTag === -1) break;
+      pos = nextTag;
+      continue;
+    }
+
+    // Check for comment
+    if (content.slice(pos, pos + 4) === "<!--") {
+      const endComment = content.indexOf("-->", pos);
+      if (endComment === -1) break;
+      pos = endComment + 3;
+      continue;
+    }
+
+    // Extract tag name
+    const tagMatch = content.slice(pos).match(/^<(\w+)/);
+    if (!tagMatch) {
+      pos++;
+      continue;
+    }
+
+    const tagName = tagMatch[1];
+    const closeTag = `</${tagName}>`;
+
+    // Find matching close tag
+    let depth = 1;
+    let searchPos = pos + tagMatch[0].length;
+    let endPos = -1;
+
+    // First, find end of opening tag
+    const openTagEnd = content.indexOf(">", pos);
+    if (openTagEnd === -1) break;
+
+    // Check for self-closing
+    if (content[openTagEnd - 1] === "/" || ["br", "hr", "img", "input"].includes(tagName.toLowerCase())) {
+      children.push(content.slice(pos, openTagEnd + 1));
+      pos = openTagEnd + 1;
+      continue;
+    }
+
+    searchPos = openTagEnd + 1;
+
+    while (depth > 0 && searchPos < content.length) {
+      const nextOpen = content.indexOf(`<${tagName}`, searchPos);
+      const nextClose = content.indexOf(closeTag, searchPos);
+
+      if (nextClose === -1) break;
+
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        const afterOpen = content[nextOpen + tagName.length + 1];
+        if (afterOpen === " " || afterOpen === ">" || afterOpen === "/") {
+          depth++;
+          searchPos = nextOpen + 1;
+          continue;
+        }
+      }
+
+      depth--;
+      if (depth === 0) {
+        endPos = nextClose + closeTag.length;
+      } else {
+        searchPos = nextClose + closeTag.length;
+      }
+    }
+
+    if (endPos !== -1) {
+      children.push(content.slice(pos, endPos));
+      pos = endPos;
+    } else {
+      pos++;
+    }
+  }
+
+  return children;
 }
 
 // ============================================================================
@@ -304,7 +443,8 @@ function parseHTML(html: string): ParsedElement | null {
 function elementToSpec(
   element: ParsedElement,
   styles: Record<string, string>,
-  isRoot: boolean = false
+  isRoot: boolean = false,
+  allStyles?: ComputedStyleMap
 ): FigmaSpec {
   const spec: FigmaSpec = {
     name: element.className || element.id || element.tagName,
@@ -347,16 +487,18 @@ function elementToSpec(
   spec.x = 0;
   spec.y = 0;
 
-  // Layout mode from display: flex
+  // Layout mode - ALL frames need layoutMode for children to use layoutSizing properties
+  // Default to VERTICAL (stacking) unless CSS specifies flex-direction: row
   const display = styles.display || "block";
-  const flexDirection = styles.flexDirection || "row";
+  const flexDirection = styles.flexDirection || "column";
+
+  // Always set layoutMode - required for children to have layoutSizing properties
+  spec.layoutMode = flexDirection === "row" ? "HORIZONTAL" : "VERTICAL";
+  spec.primaryAxisSizingMode = "AUTO";
+  spec.counterAxisSizingMode = "AUTO";
 
   if (display === "flex" || display === "inline-flex") {
-    spec.layoutMode = flexDirection === "column" ? "VERTICAL" : "HORIZONTAL";
-    spec.primaryAxisSizingMode = "AUTO";
-    spec.counterAxisSizingMode = "AUTO";
-
-    // Alignment
+    // Alignment (only meaningful for flex containers)
     if (styles.alignItems) {
       spec.counterAxisAlignItems = mapAlignItems(styles.alignItems);
     }
@@ -433,32 +575,86 @@ function elementToSpec(
 
   // Process children
   if (element.children.length > 0) {
+    // Check if children can be flattened (single-text-child elements become TEXT directly)
     spec.children = element.children.map((child) => {
-      // Look up styles for child (by class name or tag)
-      const childSelector = child.className || child.tagName;
-      const childStyles = {}; // In production, styles would be passed per-element
-      return elementToSpec(child, childStyles, false);
+      const childStyles = allStyles ? findStylesForElement(child, allStyles) : {};
+
+      // FLATTEN: If child element only contains text and has no frame-requiring styles,
+      // convert it directly to a TEXT node instead of FRAME > TEXT
+      if (child.textContent && child.children.length === 0 && !needsFrameWrapper(childStyles)) {
+        return createTextNode(
+          child.className || child.id || child.textContent.substring(0, 20),
+          child.textContent,
+          childStyles
+        );
+      }
+
+      return elementToSpec(child, childStyles, false, allStyles);
     });
   } else if (element.textContent) {
-    // Create text child for elements with text content
+    // Element has direct text content - create text child
     spec.children = [
-      elementToSpec(
-        {
-          tagName: "#text",
-          textContent: element.textContent,
-          children: [],
-          styles: {},
-        },
-        {
-          fontSize: styles.fontSize,
-          fontFamily: styles.fontFamily,
-          fontWeight: styles.fontWeight,
-          color: styles.color,
-          textAlign: styles.textAlign,
-        },
-        false
-      ),
+      createTextNode("#text", element.textContent, {
+        fontSize: styles.fontSize,
+        fontFamily: styles.fontFamily,
+        fontWeight: styles.fontWeight,
+        color: styles.color,
+        textAlign: styles.textAlign,
+      }),
     ];
+  }
+
+  return spec;
+}
+
+/**
+ * Check if an element needs a FRAME wrapper (has padding, background, border, etc.)
+ * If false, element can be flattened to just a TEXT node
+ */
+function needsFrameWrapper(styles: Record<string, string>): boolean {
+  const frameRequiringProps = [
+    'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'backgroundColor', 'background',
+    'border', 'borderTop', 'borderRight', 'borderBottom', 'borderLeft',
+    'borderRadius',
+    'display', // flex containers need frames
+    'gap',
+  ];
+
+  return frameRequiringProps.some(prop => {
+    const value = styles[prop];
+    return value && value !== '0' && value !== '0px' && value !== 'none' && value !== 'transparent';
+  });
+}
+
+/**
+ * Create a TEXT node spec directly (no FRAME wrapper)
+ */
+function createTextNode(name: string, text: string, styles: Record<string, string>): FigmaSpec {
+  const spec: FigmaSpec = {
+    name,
+    type: "TEXT",
+    characters: text,
+    layoutSizingHorizontal: "HUG",
+    layoutSizingVertical: "HUG",
+    textAlignVertical: "CENTER",
+  };
+
+  if (styles.fontSize) {
+    spec.fontSize = parseNumericValue(styles.fontSize);
+  }
+  if (styles.fontFamily) {
+    const family = styles.fontFamily.split(",")[0].replace(/['"]/g, "").trim();
+    spec.fontName = {
+      family: family || "Inter",
+      style: mapFontWeight(styles.fontWeight || "400"),
+    };
+  }
+  if (styles.color) {
+    spec.fills = createFill(styles.color);
+  }
+  if (styles.textAlign) {
+    spec.textAlignHorizontal = mapTextAlign(styles.textAlign);
   }
 
   return spec;
@@ -574,8 +770,8 @@ export function convertCodeToFigmaSpec(input: CodeToSpecInput): CodeToSpecResult
     // Get root styles - try multiple selector formats
     const rootStyles = findStylesForElement(rootElement, input.styles);
 
-    // Convert to Figma spec
-    const spec = elementToSpec(rootElement, rootStyles, true);
+    // Convert to Figma spec (pass full styles for child lookups)
+    const spec = elementToSpec(rootElement, rootStyles, true, input.styles);
 
     // Apply component name if provided
     if (input.options?.componentName) {
