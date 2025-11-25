@@ -1,0 +1,70 @@
+/**
+ * Design Tokens - CSS Custom Properties
+ * This represents a real token architecture like you'd find in production
+ */
+
+:root {
+  /* ============================================
+   * COLOR TOKENS (Tier 1 - Primitives)
+   * ============================================ */
+  --color-blue-500: #2563eb;
+  --color-blue-600: #1d4ed8;
+  --color-blue-700: #1e40af;
+
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-700: #374151;
+  --color-gray-900: #111827;
+
+  --color-white: #ffffff;
+
+  /* ============================================
+   * COLOR TOKENS (Tier 2 - Semantic)
+   * ============================================ */
+  --color-primary: var(--color-blue-500);
+  --color-primary-hover: var(--color-blue-600);
+  --color-primary-active: var(--color-blue-700);
+
+  --color-background-default: var(--color-white);
+  --color-background-subtle: var(--color-gray-50);
+
+  --color-text-primary: var(--color-gray-900);
+  --color-text-inverse: var(--color-white);
+  --color-text-muted: var(--color-gray-700);
+
+  --color-border-default: var(--color-gray-200);
+
+  /* ============================================
+   * SPACING TOKENS
+   * ============================================ */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* ============================================
+   * TYPOGRAPHY TOKENS
+   * ============================================ */
+  --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --line-height-tight: 1.25;
+
+  /* ============================================
+   * BORDER TOKENS
+   * ============================================ */
+  --border-radius-sm: 4px;
+  --border-radius-md: 6px;
+  --border-radius-lg: 8px;
+
+  --border-width-default: 1px;
+}
