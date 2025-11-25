@@ -123,6 +123,27 @@ class LocalFigmaConsoleMCP {
 	}
 
 	/**
+	 * Auto-connect to Figma Desktop at startup
+	 * Runs in background - never blocks or throws
+	 * Enables "get latest logs" workflow without manual setup
+	 */
+	private autoConnectToFigma(): void {
+		// Fire-and-forget with proper async handling
+		(async () => {
+			try {
+				logger.info("🔄 Auto-connecting to Figma Desktop for immediate log capture...");
+				await this.ensureInitialized();
+				logger.info("✅ Auto-connect successful - console monitoring active. Logs will be captured immediately.");
+			} catch (error) {
+				// Don't crash - just log that auto-connect didn't work
+				const errorMsg = error instanceof Error ? error.message : String(error);
+				logger.warn({ error: errorMsg }, "⚠️ Auto-connect to Figma Desktop failed - will connect when you use a tool");
+				// This is fine - the user can still use tools to trigger connection later
+			}
+		})();
+	}
+
+	/**
 	 * Initialize browser and console monitoring
 	 */
 	private async ensureInitialized(): Promise<void> {
@@ -917,6 +938,10 @@ class LocalFigmaConsoleMCP {
 			await this.server.connect(transport);
 
 			logger.info("MCP server started successfully on stdio transport");
+
+			// 🆕 AUTO-CONNECT: Start monitoring immediately if Figma Desktop is available
+			// This enables "get latest logs" workflow without requiring manual setup
+			this.autoConnectToFigma();
 		} catch (error) {
 			logger.error({ error }, "Failed to start MCP server");
 
