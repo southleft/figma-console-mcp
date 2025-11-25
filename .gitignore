@@ -200,3 +200,7 @@ Temporary Items
 
 # Release artifacts
 *.zip
+
+# Development documentation (internal use only)
+docs/testing/
+docs/analysis/
