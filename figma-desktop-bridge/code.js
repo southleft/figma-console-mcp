@@ -80,6 +80,9 @@ figma.ui.onmessage = async (msg) => {
         throw new Error(`Node is not a component. Type: ${node.type}`);
       }
 
+      // Detect if this is a variant (COMPONENT inside a COMPONENT_SET)
+      const isVariant = node.type === 'COMPONENT' && node.parent?.type === 'COMPONENT_SET';
+
       // Extract component data including description fields and annotations
       const componentData = {
         success: true,
@@ -89,14 +92,17 @@ figma.ui.onmessage = async (msg) => {
           id: node.id,
           name: node.name,
           type: node.type,
+          // Variants CAN have their own description
           description: node.description || null,
           descriptionMarkdown: node.descriptionMarkdown || null,
           visible: node.visible,
           locked: node.locked,
           // Dev Mode annotations
           annotations: node.annotations || [],
-          // For components with properties
-          componentPropertyDefinitions: (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET')
+          // Flag to indicate if this is a variant
+          isVariant: isVariant,
+          // For component sets and non-variant components only (variants cannot access this)
+          componentPropertyDefinitions: (node.type === 'COMPONENT_SET' || (node.type === 'COMPONENT' && !isVariant))
             ? node.componentPropertyDefinitions
             : undefined,
           // Get children info (lightweight)

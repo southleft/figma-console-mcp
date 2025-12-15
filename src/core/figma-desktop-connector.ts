@@ -387,6 +387,9 @@ export class FigmaDesktopConnector {
             throw new Error('Node is not a component, component set, or instance. Type: ' + node.type);
           }
 
+          // Detect if this is a variant (COMPONENT inside a COMPONENT_SET)
+          const isVariant = node.type === 'COMPONENT' && node.parent?.type === 'COMPONENT_SET';
+
           // Extract component data including description fields
           const result = {
             success: true,
@@ -395,14 +398,17 @@ export class FigmaDesktopConnector {
               id: node.id,
               name: node.name,
               type: node.type,
+              // Variants CAN have their own description
               description: node.description || null,
               descriptionMarkdown: node.descriptionMarkdown || null,
               // Include other useful properties
               visible: node.visible,
               locked: node.locked,
-              // For components with properties
-              componentPropertyDefinitions: node.type === 'COMPONENT' || node.type === 'COMPONENT_SET' 
-                ? node.componentPropertyDefinitions 
+              // Flag to indicate if this is a variant
+              isVariant: isVariant,
+              // For component sets and non-variant components only (variants cannot access this)
+              componentPropertyDefinitions: node.type === 'COMPONENT_SET' || (node.type === 'COMPONENT' && !isVariant)
+                ? node.componentPropertyDefinitions
                 : undefined,
               // Get children info (lightweight)
               children: node.children ? node.children.map(child => ({
