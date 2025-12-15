@@ -388,7 +388,8 @@ export class FigmaDesktopConnector {
           }
 
           // Detect if this is a variant (COMPONENT inside a COMPONENT_SET)
-          const isVariant = node.type === 'COMPONENT' && node.parent?.type === 'COMPONENT_SET';
+          // Note: Can't use optional chaining (?.) - Figma plugin sandbox doesn't support it
+          const isVariant = node.type === 'COMPONENT' && node.parent && node.parent.type === 'COMPONENT_SET';
 
           // Extract component data including description fields
           const result = {
