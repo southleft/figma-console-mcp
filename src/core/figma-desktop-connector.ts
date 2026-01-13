@@ -467,4 +467,273 @@ export class FigmaDesktopConnector {
   async dispose(): Promise<void> {
     logger.info('Figma Desktop connector disposed');
   }
+
+  // ============================================================================
+  // WRITE OPERATIONS - Execute commands via Plugin UI iframe
+  // ============================================================================
+
+  /**
+   * Find the Desktop Bridge plugin UI iframe
+   * Returns the frame that has the write operation functions
+   */
+  private async findPluginUIFrame(): Promise<any> {
+    const frames = this.page.frames();
+
+    for (const frame of frames) {
+      try {
+        // Check if this frame has the executeCode function (our Desktop Bridge plugin)
+        const hasWriteOps = await frame.evaluate('typeof window.executeCode === "function"');
+
+        if (hasWriteOps) {
+          logger.info({ frameUrl: frame.url() }, 'Found Desktop Bridge plugin UI frame');
+          return frame;
+        }
+      } catch (error) {
+        // Frame might be inaccessible, continue to next
+        continue;
+      }
+    }
+
+    throw new Error(
+      'Desktop Bridge plugin UI not found. Make sure the Desktop Bridge plugin is running in Figma. ' +
+      'The plugin must be open for write operations to work.'
+    );
+  }
+
+  /**
+   * Execute arbitrary code in Figma's plugin context
+   * This is the power tool that can run any Figma Plugin API code
+   */
+  async executeCodeViaUI(code: string, timeout: number = 5000): Promise<any> {
+    await this.page.evaluate((codeStr, timeoutMs) => {
+      console.log(`[DESKTOP_CONNECTOR] executeCodeViaUI() called, code length: ${codeStr.length}, timeout: ${timeoutMs}ms`);
+    }, code, timeout);
+
+    logger.info({ codeLength: code.length, timeout }, 'Executing code via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      // Call the executeCode function in the UI iframe
+      const result = await frame.evaluate(
+        `window.executeCode(${JSON.stringify(code)}, ${timeout})`
+      );
+
+      logger.info({ success: result.success }, 'Code execution completed');
+
+      await this.page.evaluate((success: boolean) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Code execution ${success ? 'succeeded' : 'failed'}`);
+      }, result.success);
+
+      return result;
+    } catch (error) {
+      logger.error({ error }, 'Code execution failed');
+
+      await this.page.evaluate((err: string) => {
+        console.error('[DESKTOP_CONNECTOR] ❌ executeCodeViaUI failed:', err);
+      }, error instanceof Error ? error.message : String(error));
+
+      throw error;
+    }
+  }
+
+  /**
+   * Update a variable's value in a specific mode
+   */
+  async updateVariable(variableId: string, modeId: string, value: any): Promise<any> {
+    await this.page.evaluate((vId, mId) => {
+      console.log(`[DESKTOP_CONNECTOR] updateVariable() called: ${vId} mode ${mId}`);
+    }, variableId, modeId);
+
+    logger.info({ variableId, modeId }, 'Updating variable via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.updateVariable(${JSON.stringify(variableId)}, ${JSON.stringify(modeId)}, ${JSON.stringify(value)})`
+      );
+
+      logger.info({ success: result.success, variableName: result.variable?.name }, 'Variable updated');
+
+      await this.page.evaluate((name: string) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${name}" updated successfully`);
+      }, result.variable?.name || variableId);
+
+      return result;
+    } catch (error) {
+      logger.error({ error, variableId }, 'Update variable failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new variable in a collection
+   */
+  async createVariable(
+    name: string,
+    collectionId: string,
+    resolvedType: 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN',
+    options?: {
+      valuesByMode?: Record<string, any>;
+      description?: string;
+      scopes?: string[];
+    }
+  ): Promise<any> {
+    await this.page.evaluate((n, cId, type) => {
+      console.log(`[DESKTOP_CONNECTOR] createVariable() called: "${n}" in collection ${cId}, type: ${type}`);
+    }, name, collectionId, resolvedType);
+
+    logger.info({ name, collectionId, resolvedType }, 'Creating variable via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.createVariable(${JSON.stringify(name)}, ${JSON.stringify(collectionId)}, ${JSON.stringify(resolvedType)}, ${JSON.stringify(options || {})})`
+      );
+
+      logger.info({ success: result.success, variableId: result.variable?.id }, 'Variable created');
+
+      await this.page.evaluate((id: string, n: string) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${n}" created with ID: ${id}`);
+      }, result.variable?.id || 'unknown', name);
+
+      return result;
+    } catch (error) {
+      logger.error({ error, name }, 'Create variable failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new variable collection
+   */
+  async createVariableCollection(
+    name: string,
+    options?: {
+      initialModeName?: string;
+      additionalModes?: string[];
+    }
+  ): Promise<any> {
+    await this.page.evaluate((n) => {
+      console.log(`[DESKTOP_CONNECTOR] createVariableCollection() called: "${n}"`);
+    }, name);
+
+    logger.info({ name, options }, 'Creating variable collection via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.createVariableCollection(${JSON.stringify(name)}, ${JSON.stringify(options || {})})`
+      );
+
+      logger.info({ success: result.success, collectionId: result.collection?.id }, 'Collection created');
+
+      await this.page.evaluate((id: string, n: string) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Collection "${n}" created with ID: ${id}`);
+      }, result.collection?.id || 'unknown', name);
+
+      return result;
+    } catch (error) {
+      logger.error({ error, name }, 'Create collection failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a variable
+   */
+  async deleteVariable(variableId: string): Promise<any> {
+    await this.page.evaluate((vId) => {
+      console.log(`[DESKTOP_CONNECTOR] deleteVariable() called: ${vId}`);
+    }, variableId);
+
+    logger.info({ variableId }, 'Deleting variable via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.deleteVariable(${JSON.stringify(variableId)})`
+      );
+
+      logger.info({ success: result.success, deletedName: result.deleted?.name }, 'Variable deleted');
+
+      await this.page.evaluate((name: string) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${name}" deleted`);
+      }, result.deleted?.name || variableId);
+
+      return result;
+    } catch (error) {
+      logger.error({ error, variableId }, 'Delete variable failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a variable collection
+   */
+  async deleteVariableCollection(collectionId: string): Promise<any> {
+    await this.page.evaluate((cId) => {
+      console.log(`[DESKTOP_CONNECTOR] deleteVariableCollection() called: ${cId}`);
+    }, collectionId);
+
+    logger.info({ collectionId }, 'Deleting collection via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.deleteVariableCollection(${JSON.stringify(collectionId)})`
+      );
+
+      logger.info({ success: result.success, deletedName: result.deleted?.name }, 'Collection deleted');
+
+      await this.page.evaluate((name: string, count: number) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Collection "${name}" deleted (had ${count} variables)`);
+      }, result.deleted?.name || collectionId, result.deleted?.variableCount || 0);
+
+      return result;
+    } catch (error) {
+      logger.error({ error, collectionId }, 'Delete collection failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Refresh variables data from Figma
+   */
+  async refreshVariables(): Promise<any> {
+    await this.page.evaluate(() => {
+      console.log('[DESKTOP_CONNECTOR] refreshVariables() called');
+    });
+
+    logger.info('Refreshing variables via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate('window.refreshVariables()');
+
+      logger.info(
+        {
+          success: result.success,
+          variableCount: result.data?.variables?.length,
+          collectionCount: result.data?.variableCollections?.length
+        },
+        'Variables refreshed'
+      );
+
+      await this.page.evaluate((vCount: number, cCount: number) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Variables refreshed: ${vCount} variables in ${cCount} collections`);
+      }, result.data?.variables?.length || 0, result.data?.variableCollections?.length || 0);
+
+      return result;
+    } catch (error) {
+      logger.error({ error }, 'Refresh variables failed');
+      throw error;
+    }
+  }
 }
