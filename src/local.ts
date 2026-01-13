@@ -94,13 +94,14 @@ class LocalFigmaConsoleMCP {
 			throw new Error("Browser manager not initialized");
 		}
 
+		// Always get a fresh page reference to handle page navigation/refresh
 		const page = await this.browserManager.getPage();
 
-		if (!this.desktopConnector) {
-			this.desktopConnector = new FigmaDesktopConnector(page);
-			await this.desktopConnector.initialize();
-			logger.info("Desktop connector initialized for write operations");
-		}
+		// Always recreate the connector with the current page to avoid stale references
+		// This prevents "detached Frame" errors when Figma page is refreshed
+		this.desktopConnector = new FigmaDesktopConnector(page);
+		await this.desktopConnector.initialize();
+		logger.debug("Desktop connector initialized with fresh page reference");
 
 		return this.desktopConnector;
 	}
