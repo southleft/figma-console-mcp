@@ -293,18 +293,43 @@ export class LocalBrowserManager implements IBrowserManager {
 	 */
 	async ensureConnection(): Promise<void> {
 		const isAlive = await this.isConnectionAlive();
-		
+
 		if (!isAlive) {
 			logger.info('Connection lost, attempting to reconnect to Figma Desktop');
-			
+
 			// Clear stale references
 			this.browser = null;
 			this.page = null;
-			
+
 			// Reconnect
 			await this.launch();
 			logger.info('Successfully reconnected to Figma Desktop');
 		}
+	}
+
+	/**
+	 * Force a complete reconnection to Figma Desktop
+	 * Use this when frames become detached or stale even though the browser appears connected
+	 */
+	async forceReconnect(): Promise<void> {
+		logger.info('Force reconnecting to Figma Desktop');
+
+		// Disconnect current connection if exists
+		if (this.browser) {
+			try {
+				this.browser.disconnect();
+			} catch (e) {
+				// Ignore disconnect errors
+			}
+		}
+
+		// Clear all references
+		this.browser = null;
+		this.page = null;
+
+		// Reconnect
+		await this.launch();
+		logger.info('Force reconnect completed');
 	}
 
 	/**

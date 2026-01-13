@@ -917,6 +917,76 @@ class LocalFigmaConsoleMCP {
 		);
 
 		// ============================================================================
+		// CONNECTION MANAGEMENT TOOLS
+		// ============================================================================
+
+		// Tool: Force reconnect to Figma Desktop
+		this.server.tool(
+			"figma_reconnect",
+			"Force a complete reconnection to Figma Desktop. Use this when you get 'detached Frame' errors or when the connection seems stale. This will disconnect and reconnect to Figma, getting fresh page and frame references.",
+			{},
+			async () => {
+				try {
+					if (!this.browserManager) {
+						throw new Error("Browser manager not initialized. Run any tool first to initialize.");
+					}
+
+					// Clear our cached desktop connector
+					this.desktopConnector = null;
+
+					// Force the browser manager to reconnect
+					await this.browserManager.forceReconnect();
+
+					// Reinitialize console monitor with new page
+					if (this.consoleMonitor) {
+						this.consoleMonitor.stopMonitoring();
+					}
+					const page = await this.browserManager.getPage();
+					await this.consoleMonitor!.startMonitoring(page);
+
+					const currentUrl = this.browserManager.getCurrentUrl();
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										status: "reconnected",
+										currentUrl,
+										timestamp: Date.now(),
+										message: "Successfully reconnected to Figma Desktop. Console monitoring restarted.",
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to reconnect");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to reconnect to Figma Desktop",
+										hint: "Make sure Figma Desktop is running with --remote-debugging-port=9222",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// ============================================================================
 		// WRITE OPERATION TOOLS - Figma Design Manipulation
 		// ============================================================================
 
