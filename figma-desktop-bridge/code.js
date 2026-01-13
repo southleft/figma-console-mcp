@@ -96,24 +96,38 @@ function hexToFigmaRGB(hex) {
   // Remove # if present
   hex = hex.replace(/^#/, '');
 
+  // Validate hex characters BEFORE parsing (prevents NaN values)
+  if (!/^[0-9A-Fa-f]+$/.test(hex)) {
+    throw new Error('Invalid hex color: "' + hex + '" contains non-hex characters. Use only 0-9 and A-F.');
+  }
+
   // Parse hex values
   var r, g, b, a = 1;
 
   if (hex.length === 3) {
+    // #RGB format
     r = parseInt(hex[0] + hex[0], 16) / 255;
     g = parseInt(hex[1] + hex[1], 16) / 255;
     b = parseInt(hex[2] + hex[2], 16) / 255;
+  } else if (hex.length === 4) {
+    // #RGBA format (CSS4 shorthand)
+    r = parseInt(hex[0] + hex[0], 16) / 255;
+    g = parseInt(hex[1] + hex[1], 16) / 255;
+    b = parseInt(hex[2] + hex[2], 16) / 255;
+    a = parseInt(hex[3] + hex[3], 16) / 255;
   } else if (hex.length === 6) {
+    // #RRGGBB format
     r = parseInt(hex.substring(0, 2), 16) / 255;
     g = parseInt(hex.substring(2, 4), 16) / 255;
     b = parseInt(hex.substring(4, 6), 16) / 255;
   } else if (hex.length === 8) {
+    // #RRGGBBAA format
     r = parseInt(hex.substring(0, 2), 16) / 255;
     g = parseInt(hex.substring(2, 4), 16) / 255;
     b = parseInt(hex.substring(4, 6), 16) / 255;
     a = parseInt(hex.substring(6, 8), 16) / 255;
   } else {
-    throw new Error('Invalid hex color format: ' + hex);
+    throw new Error('Invalid hex color format: "' + hex + '". Expected 3, 4, 6, or 8 hex characters (e.g., #RGB, #RGBA, #RRGGBB, #RRGGBBAA).');
   }
 
   return { r: r, g: g, b: b, a: a };
@@ -381,6 +395,123 @@ figma.ui.onmessage = async (msg) => {
       console.error('🌉 [Desktop Bridge] Delete collection error:', error);
       figma.ui.postMessage({
         type: 'DELETE_VARIABLE_COLLECTION_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // ============================================================================
+  // RENAME_VARIABLE - Rename a variable
+  // ============================================================================
+  else if (msg.type === 'RENAME_VARIABLE') {
+    try {
+      console.log('🌉 [Desktop Bridge] Renaming variable:', msg.variableId, 'to', msg.newName);
+
+      var variable = await figma.variables.getVariableByIdAsync(msg.variableId);
+      if (!variable) {
+        throw new Error('Variable not found: ' + msg.variableId);
+      }
+
+      var oldName = variable.name;
+      variable.name = msg.newName;
+
+      console.log('🌉 [Desktop Bridge] Variable renamed from "' + oldName + '" to "' + msg.newName + '"');
+
+      figma.ui.postMessage({
+        type: 'RENAME_VARIABLE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        variable: serializeVariable(variable),
+        oldName: oldName
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Rename variable error:', error);
+      figma.ui.postMessage({
+        type: 'RENAME_VARIABLE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // ============================================================================
+  // ADD_MODE - Add a mode to a variable collection
+  // ============================================================================
+  else if (msg.type === 'ADD_MODE') {
+    try {
+      console.log('🌉 [Desktop Bridge] Adding mode to collection:', msg.collectionId);
+
+      var collection = await figma.variables.getVariableCollectionByIdAsync(msg.collectionId);
+      if (!collection) {
+        throw new Error('Collection not found: ' + msg.collectionId);
+      }
+
+      // Add the mode (returns the new mode ID)
+      var newModeId = collection.addMode(msg.modeName);
+
+      console.log('🌉 [Desktop Bridge] Mode "' + msg.modeName + '" added with ID:', newModeId);
+
+      figma.ui.postMessage({
+        type: 'ADD_MODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        collection: serializeCollection(collection),
+        newMode: {
+          modeId: newModeId,
+          name: msg.modeName
+        }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Add mode error:', error);
+      figma.ui.postMessage({
+        type: 'ADD_MODE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // ============================================================================
+  // RENAME_MODE - Rename a mode in a variable collection
+  // ============================================================================
+  else if (msg.type === 'RENAME_MODE') {
+    try {
+      console.log('🌉 [Desktop Bridge] Renaming mode:', msg.modeId, 'in collection:', msg.collectionId);
+
+      var collection = await figma.variables.getVariableCollectionByIdAsync(msg.collectionId);
+      if (!collection) {
+        throw new Error('Collection not found: ' + msg.collectionId);
+      }
+
+      // Find the current mode name
+      var currentMode = collection.modes.find(function(m) { return m.modeId === msg.modeId; });
+      if (!currentMode) {
+        throw new Error('Mode not found: ' + msg.modeId);
+      }
+
+      var oldName = currentMode.name;
+      collection.renameMode(msg.modeId, msg.newName);
+
+      console.log('🌉 [Desktop Bridge] Mode renamed from "' + oldName + '" to "' + msg.newName + '"');
+
+      figma.ui.postMessage({
+        type: 'RENAME_MODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        collection: serializeCollection(collection),
+        oldName: oldName
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Rename mode error:', error);
+      figma.ui.postMessage({
+        type: 'RENAME_MODE_RESULT',
         requestId: msg.requestId,
         success: false,
         error: error.message || String(error)

@@ -107,8 +107,16 @@
       return new Promise((resolve, reject) => {
         const requestId = `${type.toLowerCase()}_${++requestIdCounter}_${Date.now()}`;
 
-        // Store the promise callbacks
-        window.__figmaPendingRequests.set(requestId, { resolve, reject, type: type });
+        // Timeout - store the ID so we can clear it when response arrives
+        const timeoutId = setTimeout(() => {
+          if (window.__figmaPendingRequests.has(requestId)) {
+            window.__figmaPendingRequests.delete(requestId);
+            reject(new Error(type + ' request timed out after ' + timeoutMs + 'ms'));
+          }
+        }, timeoutMs);
+
+        // Store the promise callbacks AND the timeout ID for cleanup
+        window.__figmaPendingRequests.set(requestId, { resolve, reject, type: type, timeoutId: timeoutId });
 
         // Build the message
         const message = Object.assign({ type: type, requestId: requestId }, params || {});
@@ -117,14 +125,6 @@
         parent.postMessage({ pluginMessage: message }, '*');
 
         console.log('[Desktop Bridge] Sent command:', type, 'requestId:', requestId);
-
-        // Timeout
-        setTimeout(() => {
-          if (window.__figmaPendingRequests.has(requestId)) {
-            window.__figmaPendingRequests.delete(requestId);
-            reject(new Error(type + ' request timed out after ' + timeoutMs + 'ms'));
-          }
-        }, timeoutMs);
       });
     };
 
@@ -175,6 +175,21 @@
     // Delete a variable collection
     window.deleteVariableCollection = (collectionId) => {
       return window.sendPluginCommand('DELETE_VARIABLE_COLLECTION', { collectionId: collectionId });
+    };
+
+    // Rename a variable
+    window.renameVariable = (variableId, newName) => {
+      return window.sendPluginCommand('RENAME_VARIABLE', { variableId: variableId, newName: newName });
+    };
+
+    // Add a mode to a collection
+    window.addMode = (collectionId, modeName) => {
+      return window.sendPluginCommand('ADD_MODE', { collectionId: collectionId, modeName: modeName });
+    };
+
+    // Rename a mode in a collection
+    window.renameMode = (collectionId, modeId, newName) => {
+      return window.sendPluginCommand('RENAME_MODE', { collectionId: collectionId, modeId: modeId, newName: newName });
     };
 
     // Refresh variables data
@@ -285,6 +300,8 @@
         console.log('[Desktop Bridge] Execute code result:', msg.success ? 'success' : 'error');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
           if (msg.success) {
             request.resolve({ success: true, result: msg.result });
           } else {
@@ -297,6 +314,8 @@
         console.log('[Desktop Bridge] Update variable result:', msg.success ? 'success' : 'error');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
           if (msg.success) {
             request.resolve({ success: true, variable: msg.variable });
           } else {
@@ -309,6 +328,8 @@
         console.log('[Desktop Bridge] Create variable result:', msg.success ? 'success' : 'error');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
           if (msg.success) {
             request.resolve({ success: true, variable: msg.variable });
           } else {
@@ -321,6 +342,8 @@
         console.log('[Desktop Bridge] Create collection result:', msg.success ? 'success' : 'error');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
           if (msg.success) {
             request.resolve({ success: true, collection: msg.collection });
           } else {
@@ -333,6 +356,8 @@
         console.log('[Desktop Bridge] Delete variable result:', msg.success ? 'success' : 'error');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
           if (msg.success) {
             request.resolve({ success: true, deleted: msg.deleted });
           } else {
@@ -345,6 +370,8 @@
         console.log('[Desktop Bridge] Delete collection result:', msg.success ? 'success' : 'error');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
           if (msg.success) {
             request.resolve({ success: true, deleted: msg.deleted });
           } else {
@@ -357,8 +384,52 @@
         console.log('[Desktop Bridge] Refresh variables result:', msg.success ? 'success' : 'error');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
           if (msg.success) {
             request.resolve({ success: true, data: msg.data });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'RENAME_VARIABLE_RESULT') {
+        console.log('[Desktop Bridge] Rename variable result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
+          if (msg.success) {
+            request.resolve({ success: true, variable: msg.variable, oldName: msg.oldName });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'ADD_MODE_RESULT') {
+        console.log('[Desktop Bridge] Add mode result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
+          if (msg.success) {
+            request.resolve({ success: true, collection: msg.collection, newMode: msg.newMode });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'RENAME_MODE_RESULT') {
+        console.log('[Desktop Bridge] Rename mode result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          // Clear timeout to prevent memory leak
+          if (request.timeoutId) clearTimeout(request.timeoutId);
+          if (msg.success) {
+            request.resolve({ success: true, collection: msg.collection, oldName: msg.oldName });
           } else {
             request.reject(new Error(msg.error));
           }
