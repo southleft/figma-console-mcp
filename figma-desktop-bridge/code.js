@@ -141,12 +141,31 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   if (msg.type === 'EXECUTE_CODE') {
     try {
-      console.log('🌉 [Desktop Bridge] Executing code...');
+      console.log('🌉 [Desktop Bridge] Executing code, length:', msg.code.length);
 
       // Create an async function from the code string
       // The function has access to 'figma' global
       var AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-      var fn = new AsyncFunction('figma', msg.code);
+
+      // Wrap the code to ensure it can return values properly
+      // If the code doesn't have a return statement, wrap it in an IIFE that returns the result
+      var wrappedCode = msg.code;
+
+      var fn;
+      try {
+        fn = new AsyncFunction('figma', wrappedCode);
+      } catch (syntaxError) {
+        // Log the actual syntax error message
+        var syntaxErrorMsg = syntaxError && syntaxError.message ? syntaxError.message : String(syntaxError);
+        console.error('🌉 [Desktop Bridge] Syntax error in code:', syntaxErrorMsg);
+        figma.ui.postMessage({
+          type: 'EXECUTE_CODE_RESULT',
+          requestId: msg.requestId,
+          success: false,
+          error: 'Syntax error: ' + syntaxErrorMsg
+        });
+        return;
+      }
 
       // Execute with timeout
       var timeoutMs = msg.timeout || 5000;
@@ -161,7 +180,7 @@ figma.ui.onmessage = async (msg) => {
         timeoutPromise
       ]);
 
-      console.log('🌉 [Desktop Bridge] Code executed successfully');
+      console.log('🌉 [Desktop Bridge] Code executed successfully, result type:', typeof result);
 
       figma.ui.postMessage({
         type: 'EXECUTE_CODE_RESULT',
@@ -171,12 +190,22 @@ figma.ui.onmessage = async (msg) => {
       });
 
     } catch (error) {
-      console.error('🌉 [Desktop Bridge] Code execution error:', error);
+      // Extract error message explicitly - don't rely on console.error serialization
+      var errorName = error && error.name ? error.name : 'Error';
+      var errorMsg = error && error.message ? error.message : String(error);
+      var errorStack = error && error.stack ? error.stack : '';
+
+      // Log error details as strings so they show up properly in Puppeteer
+      console.error('🌉 [Desktop Bridge] Code execution error: [' + errorName + '] ' + errorMsg);
+      if (errorStack) {
+        console.error('🌉 [Desktop Bridge] Stack:', errorStack);
+      }
+
       figma.ui.postMessage({
         type: 'EXECUTE_CODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error)
+        error: errorName + ': ' + errorMsg
       });
     }
   }

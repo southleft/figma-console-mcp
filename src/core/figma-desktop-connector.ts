@@ -475,12 +475,21 @@ export class FigmaDesktopConnector {
   /**
    * Find the Desktop Bridge plugin UI iframe
    * Returns the frame that has the write operation functions
+   * Handles detached frame errors gracefully
    */
   private async findPluginUIFrame(): Promise<any> {
+    // Get fresh frames - don't cache this
     const frames = this.page.frames();
+
+    logger.debug({ frameCount: frames.length }, 'Searching for Desktop Bridge plugin UI frame');
 
     for (const frame of frames) {
       try {
+        // Skip detached frames
+        if (frame.isDetached()) {
+          continue;
+        }
+
         // Check if this frame has the executeCode function (our Desktop Bridge plugin)
         const hasWriteOps = await frame.evaluate('typeof window.executeCode === "function"');
 
@@ -489,7 +498,11 @@ export class FigmaDesktopConnector {
           return frame;
         }
       } catch (error) {
-        // Frame might be inaccessible, continue to next
+        // Frame might be inaccessible or detached, continue to next
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        if (errorMsg.includes('detached')) {
+          logger.debug({ frameUrl: frame.url() }, 'Frame was detached, skipping');
+        }
         continue;
       }
     }
@@ -503,38 +516,83 @@ export class FigmaDesktopConnector {
   /**
    * Execute arbitrary code in Figma's plugin context
    * This is the power tool that can run any Figma Plugin API code
+   * Includes retry logic for detached frame errors
    */
   async executeCodeViaUI(code: string, timeout: number = 5000): Promise<any> {
-    await this.page.evaluate((codeStr, timeoutMs) => {
-      console.log(`[DESKTOP_CONNECTOR] executeCodeViaUI() called, code length: ${codeStr.length}, timeout: ${timeoutMs}ms`);
-    }, code, timeout);
+    // Log to console (but don't fail if page is stale - this is just for debugging)
+    try {
+      await this.page.evaluate((codeStr, timeoutMs) => {
+        console.log(`[DESKTOP_CONNECTOR] executeCodeViaUI() called, code length: ${codeStr.length}, timeout: ${timeoutMs}ms`);
+      }, code, timeout);
+    } catch (logError) {
+      // If even page logging fails, the page is likely stale
+      const errorMsg = logError instanceof Error ? logError.message : String(logError);
+      if (errorMsg.includes('detached')) {
+        throw new Error(`Page or frame is detached. Please refresh the Figma page or reconnect. Original error: ${errorMsg}`);
+      }
+      // For other errors, just continue - logging is not critical
+      logger.warn({ error: errorMsg }, 'Failed to log to page console');
+    }
 
     logger.info({ codeLength: code.length, timeout }, 'Executing code via plugin UI');
 
-    const frame = await this.findPluginUIFrame();
+    // Retry logic for detached frame errors
+    const maxRetries = 2;
+    let lastError: Error | null = null;
 
-    try {
-      // Call the executeCode function in the UI iframe
-      const result = await frame.evaluate(
-        `window.executeCode(${JSON.stringify(code)}, ${timeout})`
-      );
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const frame = await this.findPluginUIFrame();
 
-      logger.info({ success: result.success }, 'Code execution completed');
+        // Check if frame is still valid before using it
+        if (frame.isDetached()) {
+          throw new Error('Frame became detached');
+        }
 
-      await this.page.evaluate((success: boolean) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Code execution ${success ? 'succeeded' : 'failed'}`);
-      }, result.success);
+        // Call the executeCode function in the UI iframe
+        const result = await frame.evaluate(
+          `window.executeCode(${JSON.stringify(code)}, ${timeout})`
+        );
 
-      return result;
-    } catch (error) {
-      logger.error({ error }, 'Code execution failed');
+        logger.info({ success: result.success, error: result.error }, 'Code execution completed');
 
-      await this.page.evaluate((err: string) => {
-        console.error('[DESKTOP_CONNECTOR] ❌ executeCodeViaUI failed:', err);
-      }, error instanceof Error ? error.message : String(error));
+        await this.page.evaluate((success: boolean, errorMsg: string) => {
+          if (success) {
+            console.log('[DESKTOP_CONNECTOR] ✅ Code execution succeeded');
+          } else {
+            console.log('[DESKTOP_CONNECTOR] ⚠️ Code execution returned error:', errorMsg);
+          }
+        }, result.success, result.error || '');
 
-      throw error;
+        return result;
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        lastError = error instanceof Error ? error : new Error(errorMsg);
+
+        // Check if it's a detached frame error
+        if (errorMsg.includes('detached') && attempt < maxRetries) {
+          logger.warn({ attempt, maxRetries }, 'Frame detached, retrying with fresh frames');
+          // Small delay before retry
+          await new Promise(resolve => setTimeout(resolve, 100));
+          continue;
+        }
+
+        // Not a detached frame error or we've exhausted retries
+        logger.error({ error: errorMsg, attempt }, 'Code execution failed');
+
+        try {
+          await this.page.evaluate((err: string) => {
+            console.error('[DESKTOP_CONNECTOR] ❌ executeCodeViaUI failed:', err);
+          }, errorMsg);
+        } catch {
+          // Ignore errors from logging
+        }
+
+        throw lastError;
+      }
     }
+
+    throw lastError || new Error('Execution failed after retries');
   }
 
   /**

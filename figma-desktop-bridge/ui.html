@@ -312,7 +312,7 @@
       // ============================================================================
 
       } else if (msg.type === 'EXECUTE_CODE_RESULT') {
-        console.log('[Desktop Bridge] Execute code result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Execute code result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -320,13 +320,14 @@
           if (msg.success) {
             request.resolve({ success: true, result: msg.result });
           } else {
-            request.reject(new Error(msg.error));
+            // Return a plain object instead of rejecting with Error for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
 
       } else if (msg.type === 'UPDATE_VARIABLE_RESULT') {
-        console.log('[Desktop Bridge] Update variable result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Update variable result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -334,13 +335,14 @@
           if (msg.success) {
             request.resolve({ success: true, variable: msg.variable });
           } else {
-            request.reject(new Error(msg.error));
+            // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
 
       } else if (msg.type === 'CREATE_VARIABLE_RESULT') {
-        console.log('[Desktop Bridge] Create variable result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Create variable result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -348,13 +350,14 @@
           if (msg.success) {
             request.resolve({ success: true, variable: msg.variable });
           } else {
-            request.reject(new Error(msg.error));
+            // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
 
       } else if (msg.type === 'CREATE_VARIABLE_COLLECTION_RESULT') {
-        console.log('[Desktop Bridge] Create collection result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Create collection result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -362,13 +365,14 @@
           if (msg.success) {
             request.resolve({ success: true, collection: msg.collection });
           } else {
-            request.reject(new Error(msg.error));
+            // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
 
       } else if (msg.type === 'DELETE_VARIABLE_RESULT') {
-        console.log('[Desktop Bridge] Delete variable result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Delete variable result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -376,13 +380,14 @@
           if (msg.success) {
             request.resolve({ success: true, deleted: msg.deleted });
           } else {
-            request.reject(new Error(msg.error));
+            // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
 
       } else if (msg.type === 'DELETE_VARIABLE_COLLECTION_RESULT') {
-        console.log('[Desktop Bridge] Delete collection result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Delete collection result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -390,13 +395,14 @@
           if (msg.success) {
             request.resolve({ success: true, deleted: msg.deleted });
           } else {
-            request.reject(new Error(msg.error));
+            // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
 
       } else if (msg.type === 'REFRESH_VARIABLES_RESULT') {
-        console.log('[Desktop Bridge] Refresh variables result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Refresh variables result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -404,13 +410,14 @@
           if (msg.success) {
             request.resolve({ success: true, data: msg.data });
           } else {
-            request.reject(new Error(msg.error));
+            // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
 
       } else if (msg.type === 'RENAME_VARIABLE_RESULT') {
-        console.log('[Desktop Bridge] Rename variable result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Rename variable result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -418,13 +425,14 @@
           if (msg.success) {
             request.resolve({ success: true, variable: msg.variable, oldName: msg.oldName });
           } else {
-            request.reject(new Error(msg.error));
+            // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
 
       } else if (msg.type === 'ADD_MODE_RESULT') {
-        console.log('[Desktop Bridge] Add mode result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Add mode result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -432,13 +440,14 @@
           if (msg.success) {
             request.resolve({ success: true, collection: msg.collection, newMode: msg.newMode });
           } else {
-            request.reject(new Error(msg.error));
+            // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
 
       } else if (msg.type === 'RENAME_MODE_RESULT') {
-        console.log('[Desktop Bridge] Rename mode result:', msg.success ? 'success' : 'error');
+        console.log('[Desktop Bridge] Rename mode result:', msg.success ? 'success' : 'error', msg.error || '');
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           // Clear timeout to prevent memory leak
@@ -446,7 +455,8 @@
           if (msg.success) {
             request.resolve({ success: true, collection: msg.collection, oldName: msg.oldName });
           } else {
-            request.reject(new Error(msg.error));
+            // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
