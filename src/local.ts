@@ -1004,46 +1004,89 @@ class LocalFigmaConsoleMCP {
 				),
 			},
 			async ({ code, timeout }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.executeCodeViaUI(code, Math.min(timeout, 30000));
+				const maxRetries = 2;
+				let lastError: Error | null = null;
 
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: result.success,
-										result: result.result,
-										timestamp: Date.now(),
-									},
-									null,
-									2,
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to execute code");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error: error instanceof Error ? error.message : String(error),
-										message: "Failed to execute code in Figma plugin context",
-										hint: "Make sure the Desktop Bridge plugin is running in Figma",
-									},
-									null,
-									2,
-								),
-							},
-						],
-						isError: true,
-					};
+				for (let attempt = 0; attempt <= maxRetries; attempt++) {
+					try {
+						const connector = await this.getDesktopConnector();
+						const result = await connector.executeCodeViaUI(code, Math.min(timeout, 30000));
+
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											success: result.success,
+											result: result.result,
+											error: result.error,
+											timestamp: Date.now(),
+											...(attempt > 0 ? { reconnected: true, attempts: attempt + 1 } : {}),
+										},
+										null,
+										2,
+									),
+								},
+							],
+						};
+					} catch (error) {
+						lastError = error instanceof Error ? error : new Error(String(error));
+						const errorMessage = lastError.message;
+
+						// Check if it's a detached frame error - auto-reconnect
+						if (errorMessage.includes("detached Frame") ||
+							errorMessage.includes("Execution context was destroyed") ||
+							errorMessage.includes("Target closed")) {
+
+							logger.warn({ attempt, error: errorMessage }, "Detached frame detected, forcing reconnection");
+
+							// Clear cached connector and force browser reconnection
+							this.desktopConnector = null;
+
+							if (this.browserManager && attempt < maxRetries) {
+								try {
+									await this.browserManager.forceReconnect();
+
+									// Reinitialize console monitor with new page
+									if (this.consoleMonitor) {
+										this.consoleMonitor.stopMonitoring();
+										const page = await this.browserManager.getPage();
+										await this.consoleMonitor.startMonitoring(page);
+									}
+
+									logger.info("Reconnection successful, retrying execution");
+									continue; // Retry the execution
+								} catch (reconnectError) {
+									logger.error({ error: reconnectError }, "Failed to reconnect");
+								}
+							}
+						}
+
+						// Non-recoverable error or max retries exceeded
+						break;
+					}
 				}
+
+				// All retries failed
+				logger.error({ error: lastError }, "Failed to execute code after retries");
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify(
+								{
+									error: lastError?.message || "Unknown error",
+									message: "Failed to execute code in Figma plugin context",
+									hint: "Make sure the Desktop Bridge plugin is running in Figma",
+								},
+								null,
+								2,
+							),
+						},
+					],
+					isError: true,
+				};
 			},
 		);
 

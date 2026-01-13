@@ -143,17 +143,28 @@ figma.ui.onmessage = async (msg) => {
     try {
       console.log('🌉 [Desktop Bridge] Executing code, length:', msg.code.length);
 
-      // Create an async function from the code string
-      // The function has access to 'figma' global
-      var AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+      // Use eval with async IIFE wrapper instead of AsyncFunction constructor
+      // AsyncFunction is restricted in Figma's plugin sandbox, but eval works
+      // See: https://developers.figma.com/docs/plugins/resource-links
 
-      // Wrap the code to ensure it can return values properly
-      // If the code doesn't have a return statement, wrap it in an IIFE that returns the result
-      var wrappedCode = msg.code;
+      // Wrap user code in an async IIFE that returns a Promise
+      // This allows async/await in user code while using eval
+      var wrappedCode = "(async function() {\n" + msg.code + "\n})()";
 
-      var fn;
+      console.log('🌉 [Desktop Bridge] Wrapped code for eval');
+
+      // Execute with timeout
+      var timeoutMs = msg.timeout || 5000;
+      var timeoutPromise = new Promise(function(_, reject) {
+        setTimeout(function() {
+          reject(new Error('Execution timed out after ' + timeoutMs + 'ms'));
+        }, timeoutMs);
+      });
+
+      var codePromise;
       try {
-        fn = new AsyncFunction('figma', wrappedCode);
+        // eval returns the Promise from the async IIFE
+        codePromise = eval(wrappedCode);
       } catch (syntaxError) {
         // Log the actual syntax error message
         var syntaxErrorMsg = syntaxError && syntaxError.message ? syntaxError.message : String(syntaxError);
@@ -167,16 +178,8 @@ figma.ui.onmessage = async (msg) => {
         return;
       }
 
-      // Execute with timeout
-      var timeoutMs = msg.timeout || 5000;
-      var timeoutPromise = new Promise(function(_, reject) {
-        setTimeout(function() {
-          reject(new Error('Execution timed out after ' + timeoutMs + 'ms'));
-        }, timeoutMs);
-      });
-
       var result = await Promise.race([
-        fn(figma),
+        codePromise,
         timeoutPromise
       ]);
 
