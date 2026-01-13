@@ -27,6 +27,7 @@ import { getConfig } from "./core/config.js";
 import { createChildLogger } from "./core/logger.js";
 import { FigmaAPI, extractFileKey } from "./core/figma-api.js";
 import { registerFigmaAPITools } from "./core/figma-tools.js";
+import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -39,6 +40,7 @@ class LocalFigmaConsoleMCP {
 	private browserManager: LocalBrowserManager | null = null;
 	private consoleMonitor: ConsoleMonitor | null = null;
 	private figmaAPI: FigmaAPI | null = null;
+	private desktopConnector: FigmaDesktopConnector | null = null;
 	private config = getConfig();
 
 	// In-memory cache for variables data to avoid MCP token limits
@@ -79,6 +81,28 @@ class LocalFigmaConsoleMCP {
 		}
 
 		return this.figmaAPI;
+	}
+
+	/**
+	 * Get or create Desktop Connector for write operations
+	 * Requires the browser to be initialized and the Desktop Bridge plugin to be running
+	 */
+	private async getDesktopConnector(): Promise<FigmaDesktopConnector> {
+		await this.ensureInitialized();
+
+		if (!this.browserManager) {
+			throw new Error("Browser manager not initialized");
+		}
+
+		const page = await this.browserManager.getPage();
+
+		if (!this.desktopConnector) {
+			this.desktopConnector = new FigmaDesktopConnector(page);
+			await this.desktopConnector.initialize();
+			logger.info("Desktop connector initialized for write operations");
+		}
+
+		return this.desktopConnector;
 	}
 
 	/**
@@ -891,6 +915,363 @@ class LocalFigmaConsoleMCP {
 			},
 		);
 
+		// ============================================================================
+		// WRITE OPERATION TOOLS - Figma Design Manipulation
+		// ============================================================================
+
+		// Tool: Execute arbitrary code in Figma plugin context (Power Tool)
+		this.server.tool(
+			"figma_execute",
+			"Execute arbitrary JavaScript code in Figma's plugin context. This is a POWER TOOL that can run any Figma Plugin API code. Use for complex operations not covered by other tools. Requires the Desktop Bridge plugin to be running in Figma. Returns the result of the code execution. CAUTION: Can modify your Figma document - use carefully.",
+			{
+				code: z.string().describe(
+					"JavaScript code to execute. Has access to the 'figma' global object. " +
+					"Example: 'const rect = figma.createRectangle(); rect.resize(100, 100); return { id: rect.id };'"
+				),
+				timeout: z.number().optional().default(5000).describe(
+					"Execution timeout in milliseconds (default: 5000, max: 30000)"
+				),
+			},
+			async ({ code, timeout }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.executeCodeViaUI(code, Math.min(timeout, 30000));
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: result.success,
+										result: result.result,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to execute code");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to execute code in Figma plugin context",
+										hint: "Make sure the Desktop Bridge plugin is running in Figma",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Update a variable's value
+		this.server.tool(
+			"figma_update_variable",
+			"Update a Figma variable's value in a specific mode. Use figma_get_variables first to get variable IDs and mode IDs. Supports COLOR (hex string like '#FF0000'), FLOAT (number), STRING (text), and BOOLEAN values. Requires the Desktop Bridge plugin to be running.",
+			{
+				variableId: z.string().describe(
+					"The variable ID to update (e.g., 'VariableID:123:456'). Get this from figma_get_variables."
+				),
+				modeId: z.string().describe(
+					"The mode ID to update the value in (e.g., '1:0'). Get this from the variable's collection modes."
+				),
+				value: z.any().describe(
+					"The new value. For COLOR: hex string like '#FF0000'. For FLOAT: number. For STRING: text. For BOOLEAN: true/false."
+				),
+			},
+			async ({ variableId, modeId, value }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.updateVariable(variableId, modeId, value);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Variable "${result.variable.name}" updated successfully`,
+										variable: result.variable,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to update variable");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to update variable",
+										hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Create a new variable
+		this.server.tool(
+			"figma_create_variable",
+			"Create a new Figma variable in an existing collection. Use figma_get_variables first to get collection IDs. Supports COLOR, FLOAT, STRING, and BOOLEAN types. Requires the Desktop Bridge plugin to be running.",
+			{
+				name: z.string().describe("Name for the new variable (e.g., 'primary-blue')"),
+				collectionId: z.string().describe(
+					"The collection ID to create the variable in (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables."
+				),
+				resolvedType: z.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"]).describe(
+					"The variable type: COLOR, FLOAT, STRING, or BOOLEAN"
+				),
+				description: z.string().optional().describe("Optional description for the variable"),
+				valuesByMode: z.record(z.any()).optional().describe(
+					"Optional initial values by mode ID. Example: { '1:0': '#FF0000', '1:1': '#0000FF' }"
+				),
+			},
+			async ({ name, collectionId, resolvedType, description, valuesByMode }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.createVariable(name, collectionId, resolvedType, {
+						description,
+						valuesByMode,
+					});
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Variable "${name}" created successfully`,
+										variable: result.variable,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to create variable");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to create variable",
+										hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Create a new variable collection
+		this.server.tool(
+			"figma_create_variable_collection",
+			"Create a new Figma variable collection. Collections organize variables and define modes (like Light/Dark themes). Requires the Desktop Bridge plugin to be running.",
+			{
+				name: z.string().describe("Name for the new collection (e.g., 'Brand Colors')"),
+				initialModeName: z.string().optional().describe(
+					"Name for the initial mode (default mode is created automatically). Example: 'Light'"
+				),
+				additionalModes: z.array(z.string()).optional().describe(
+					"Additional mode names to create. Example: ['Dark', 'High Contrast']"
+				),
+			},
+			async ({ name, initialModeName, additionalModes }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.createVariableCollection(name, {
+						initialModeName,
+						additionalModes,
+					});
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Collection "${name}" created successfully`,
+										collection: result.collection,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to create collection");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to create variable collection",
+										hint: "Make sure the Desktop Bridge plugin is running in Figma",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Delete a variable
+		this.server.tool(
+			"figma_delete_variable",
+			"Delete a Figma variable. WARNING: This is a destructive operation that cannot be undone (except with Figma's undo). Use figma_get_variables first to get variable IDs. Requires the Desktop Bridge plugin to be running.",
+			{
+				variableId: z.string().describe(
+					"The variable ID to delete (e.g., 'VariableID:123:456'). Get this from figma_get_variables."
+				),
+			},
+			async ({ variableId }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.deleteVariable(variableId);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Variable "${result.deleted.name}" deleted successfully`,
+										deleted: result.deleted,
+										timestamp: Date.now(),
+										warning: "This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to delete variable");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to delete variable",
+										hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Delete a variable collection
+		this.server.tool(
+			"figma_delete_variable_collection",
+			"Delete a Figma variable collection and ALL its variables. WARNING: This is a destructive operation that deletes all variables in the collection and cannot be undone (except with Figma's undo). Requires the Desktop Bridge plugin to be running.",
+			{
+				collectionId: z.string().describe(
+					"The collection ID to delete (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables."
+				),
+			},
+			async ({ collectionId }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.deleteVariableCollection(collectionId);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Collection "${result.deleted.name}" and ${result.deleted.variableCount} variables deleted successfully`,
+										deleted: result.deleted,
+										timestamp: Date.now(),
+										warning: "This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to delete collection");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to delete variable collection",
+										hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
 		// Register Figma API tools (Tools 8-11)
 		registerFigmaAPITools(
 			this.server,
@@ -902,7 +1283,7 @@ class LocalFigmaConsoleMCP {
 			this.variablesCache  // Pass cache for efficient variable queries
 		);
 
-		logger.info("All MCP tools registered successfully");
+		logger.info("All MCP tools registered successfully (including write operations)");
 	}
 
 	/**
