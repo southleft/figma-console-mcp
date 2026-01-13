@@ -133,13 +133,20 @@
     // ============================================================================
 
     // Execute arbitrary code in plugin context
+    // Returns { success: true, result: ... } or { success: false, error: "..." }
+    // Never rejects - always returns a plain object for puppeteer BiDi compatibility
     window.executeCode = (code, timeout) => {
-      return window.sendPluginCommand('EXECUTE_CODE', { code: code, timeout: timeout || 5000 }, (timeout || 5000) + 2000);
+      return window.sendPluginCommand('EXECUTE_CODE', { code: code, timeout: timeout || 5000 }, (timeout || 5000) + 2000)
+        .catch(function(err) {
+          // Convert rejection to plain object for BiDi serialization
+          return { success: false, error: err.message || String(err) };
+        });
     };
 
     // Update a variable's value
     window.updateVariable = (variableId, modeId, value) => {
-      return window.sendPluginCommand('UPDATE_VARIABLE', { variableId: variableId, modeId: modeId, value: value });
+      return window.sendPluginCommand('UPDATE_VARIABLE', { variableId: variableId, modeId: modeId, value: value })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
     // Create a new variable
@@ -154,7 +161,8 @@
         if (options.description) params.description = options.description;
         if (options.scopes) params.scopes = options.scopes;
       }
-      return window.sendPluginCommand('CREATE_VARIABLE', params);
+      return window.sendPluginCommand('CREATE_VARIABLE', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
     // Create a new variable collection
@@ -164,37 +172,44 @@
         if (options.initialModeName) params.initialModeName = options.initialModeName;
         if (options.additionalModes) params.additionalModes = options.additionalModes;
       }
-      return window.sendPluginCommand('CREATE_VARIABLE_COLLECTION', params);
+      return window.sendPluginCommand('CREATE_VARIABLE_COLLECTION', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
     // Delete a variable
     window.deleteVariable = (variableId) => {
-      return window.sendPluginCommand('DELETE_VARIABLE', { variableId: variableId });
+      return window.sendPluginCommand('DELETE_VARIABLE', { variableId: variableId })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
     // Delete a variable collection
     window.deleteVariableCollection = (collectionId) => {
-      return window.sendPluginCommand('DELETE_VARIABLE_COLLECTION', { collectionId: collectionId });
+      return window.sendPluginCommand('DELETE_VARIABLE_COLLECTION', { collectionId: collectionId })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
     // Rename a variable
     window.renameVariable = (variableId, newName) => {
-      return window.sendPluginCommand('RENAME_VARIABLE', { variableId: variableId, newName: newName });
+      return window.sendPluginCommand('RENAME_VARIABLE', { variableId: variableId, newName: newName })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
     // Add a mode to a collection
     window.addMode = (collectionId, modeName) => {
-      return window.sendPluginCommand('ADD_MODE', { collectionId: collectionId, modeName: modeName });
+      return window.sendPluginCommand('ADD_MODE', { collectionId: collectionId, modeName: modeName })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
     // Rename a mode in a collection
     window.renameMode = (collectionId, modeId, newName) => {
-      return window.sendPluginCommand('RENAME_MODE', { collectionId: collectionId, modeId: modeId, newName: newName });
+      return window.sendPluginCommand('RENAME_MODE', { collectionId: collectionId, modeId: modeId, newName: newName })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
     // Refresh variables data
     window.refreshVariables = () => {
-      return window.sendPluginCommand('REFRESH_VARIABLES', {});
+      return window.sendPluginCommand('REFRESH_VARIABLES', {})
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
     // Function to request component data from plugin worker (legacy, kept for compatibility)
