@@ -736,4 +736,94 @@ export class FigmaDesktopConnector {
       throw error;
     }
   }
+
+  /**
+   * Rename a variable
+   */
+  async renameVariable(variableId: string, newName: string): Promise<any> {
+    await this.page.evaluate((vId, name) => {
+      console.log(`[DESKTOP_CONNECTOR] renameVariable() called: ${vId} -> "${name}"`);
+    }, variableId, newName);
+
+    logger.info({ variableId, newName }, 'Renaming variable via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.renameVariable(${JSON.stringify(variableId)}, ${JSON.stringify(newName)})`
+      );
+
+      logger.info({ success: result.success, oldName: result.oldName, newName: result.variable?.name }, 'Variable renamed');
+
+      await this.page.evaluate((oldN: string, newN: string) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Variable renamed from "${oldN}" to "${newN}"`);
+      }, result.oldName || 'unknown', result.variable?.name || newName);
+
+      return result;
+    } catch (error) {
+      logger.error({ error, variableId }, 'Rename variable failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Add a mode to a variable collection
+   */
+  async addMode(collectionId: string, modeName: string): Promise<any> {
+    await this.page.evaluate((cId, name) => {
+      console.log(`[DESKTOP_CONNECTOR] addMode() called: "${name}" to collection ${cId}`);
+    }, collectionId, modeName);
+
+    logger.info({ collectionId, modeName }, 'Adding mode via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.addMode(${JSON.stringify(collectionId)}, ${JSON.stringify(modeName)})`
+      );
+
+      logger.info({ success: result.success, newModeId: result.newMode?.modeId }, 'Mode added');
+
+      await this.page.evaluate((name: string, modeId: string) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Mode "${name}" added with ID: ${modeId}`);
+      }, modeName, result.newMode?.modeId || 'unknown');
+
+      return result;
+    } catch (error) {
+      logger.error({ error, collectionId }, 'Add mode failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Rename a mode in a variable collection
+   */
+  async renameMode(collectionId: string, modeId: string, newName: string): Promise<any> {
+    await this.page.evaluate((cId, mId, name) => {
+      console.log(`[DESKTOP_CONNECTOR] renameMode() called: mode ${mId} in collection ${cId} -> "${name}"`);
+    }, collectionId, modeId, newName);
+
+    logger.info({ collectionId, modeId, newName }, 'Renaming mode via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.renameMode(${JSON.stringify(collectionId)}, ${JSON.stringify(modeId)}, ${JSON.stringify(newName)})`
+      );
+
+      logger.info({ success: result.success, oldName: result.oldName, newName }, 'Mode renamed');
+
+      await this.page.evaluate((oldN: string, newN: string) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Mode renamed from "${oldN}" to "${newN}"`);
+      }, result.oldName || 'unknown', newName);
+
+      return result;
+    } catch (error) {
+      logger.error({ error, collectionId, modeId }, 'Rename mode failed');
+      throw error;
+    }
+  }
 }

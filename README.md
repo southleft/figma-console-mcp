@@ -3,7 +3,7 @@
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Model Context Protocol server** that provides AI assistants with **real-time console access, visual debugging, and design system extraction** for Figma.
+> **Model Context Protocol server** that provides AI assistants with **real-time console access, visual debugging, design system extraction, and design creation** for Figma.
 
 ## What is this?
 
@@ -12,6 +12,8 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 - **🐛 Plugin debugging** - Capture console logs, errors, and stack traces
 - **📸 Visual debugging** - Take screenshots for context
 - **🎨 Design system extraction** - Pull variables, components, and styles
+- **✏️ Design creation** - Create UI components, frames, and layouts directly in Figma
+- **🔧 Variable management** - Create, update, rename, and delete design tokens
 - **⚡ Real-time monitoring** - Watch logs as plugins execute
 - **🔄 Three ways to install** - Remote SSE (OAuth, zero-setup), NPX (npm package), or Local Git (source code)
 
@@ -313,8 +315,6 @@ When you first use design system tools:
 
 ## 🛠️ Available Tools
 
-All 14 tools work in both Remote and Local modes:
-
 ### Navigation & Status
 - `figma_navigate` - Open Figma URLs
 - `figma_get_status` - Check connection status
@@ -331,13 +331,27 @@ All 14 tools work in both Remote and Local modes:
 ### Design System Extraction
 - `figma_get_variables` - Extract design tokens/variables
 - `figma_get_component` - Get component data (metadata or reconstruction spec)
-  - **Metadata format** (default): Comprehensive documentation with properties, variants, and design tokens
-  - **Reconstruction format**: Node tree specification for programmatic component creation (compatible with Figma Component Reconstructor plugin)
 - `figma_get_component_for_development` - Component + image
 - `figma_get_component_image` - Just the image
 - `figma_get_styles` - Color, text, effect styles
 - `figma_get_file_data` - Full file structure
 - `figma_get_file_for_plugin` - Optimized file data
+
+### ✏️ Design Creation (Local Mode + Desktop Bridge)
+- `figma_execute` - **Power tool**: Run any Figma Plugin API code to create designs
+  - Create frames, shapes, text, components
+  - Apply auto-layout, styles, effects
+  - Build complete UI mockups programmatically
+
+### 🔧 Variable Management (Local Mode + Desktop Bridge)
+- `figma_create_variable_collection` - Create new variable collections with modes
+- `figma_create_variable` - Create COLOR, FLOAT, STRING, or BOOLEAN variables
+- `figma_update_variable` - Update variable values in specific modes
+- `figma_rename_variable` - Rename variables while preserving values
+- `figma_delete_variable` - Delete variables
+- `figma_delete_variable_collection` - Delete collections and all their variables
+- `figma_add_mode` - Add modes to collections (e.g., "Dark", "Mobile")
+- `figma_rename_mode` - Rename existing modes
 
 **📖 [Detailed Tool Documentation](docs/TOOLS.md)**
 
@@ -360,6 +374,22 @@ Get the Button component with a visual reference image
 Get the Badge component in reconstruction format for programmatic creation
 ```
 
+### Design Creation (Local Mode)
+```
+Create a success notification card with a checkmark icon and message
+Design a button component with hover and disabled states
+Build a navigation bar with logo, menu items, and user avatar
+Create a modal dialog with header, content area, and action buttons
+```
+
+### Variable Management (Local Mode)
+```
+Create a new color collection called "Brand Colors" with Light and Dark modes
+Add a primary color variable with value #3B82F6 for Light and #60A5FA for Dark
+Rename the "Default" mode to "Light Theme"
+Add a "High Contrast" mode to the existing collection
+```
+
 ### Visual Debugging
 ```
 Take a screenshot of the current Figma canvas
@@ -372,10 +402,17 @@ Navigate to this file and capture what's on screen
 
 ## 🎨 Desktop Bridge Plugin (Local Mode Only)
 
-The **Figma Desktop Bridge** plugin enables:
+The **Figma Desktop Bridge** plugin enables powerful capabilities:
+
+### Read Operations
 - ✅ Variables without Enterprise API
 - ✅ Reliable component descriptions (bypasses API bugs)
 - ✅ Multi-mode support (Light/Dark/Brand variants)
+
+### Write Operations
+- ✅ **Design Creation** - Create frames, shapes, text, components via `figma_execute`
+- ✅ **Variable Management** - Full CRUD operations on variables and collections
+- ✅ **Mode Management** - Add and rename modes for multi-theme support
 
 **⚠️ Plugin Limitation:** Only works in Local Mode. Remote mode cannot access it.
 
@@ -384,7 +421,7 @@ The **Figma Desktop Bridge** plugin enables:
 2. Download plugin from [Releases](https://github.com/southleft/figma-console-mcp/releases/latest)
 3. Import plugin: Figma Desktop → Plugins → Development → Import plugin from manifest
 4. Run plugin in your Figma file
-5. Ask Claude: "Show me the primary font for [your theme]"
+5. Ask Claude: "Create a button component" or "Show me the design variables"
 
 **📖 [Desktop Bridge Documentation](figma-desktop-bridge/README.md)**
 

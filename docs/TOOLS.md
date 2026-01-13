@@ -1,25 +1,34 @@
 # Available Tools - Detailed Documentation
 
-All 14 tools work identically in both cloud and local modes. This guide provides detailed documentation for each tool.
+This guide provides detailed documentation for each tool, including when to use them and best practices.
 
 ## Quick Reference
 
-| Category | Tool | Purpose |
-|----------|------|---------|
-| **🧭 Navigation** | `figma_navigate` | Open a Figma URL and start monitoring |
-| | `figma_get_status` | Check browser and monitoring status |
-| **📋 Console** | `figma_get_console_logs` | Retrieve console logs with filters |
-| | `figma_watch_console` | Stream logs in real-time |
-| | `figma_clear_console` | Clear log buffer |
-| **🔍 Debugging** | `figma_take_screenshot` | Capture UI screenshots |
-| | `figma_reload_plugin` | Reload current page |
-| **🎨 Design System** | `figma_get_variables` | Extract design tokens/variables |
-| | `figma_get_styles` | Get color, text, effect styles |
-| | `figma_get_component` | Get component data |
-| | `figma_get_component_for_development` | Component + visual reference |
-| | `figma_get_component_image` | Just the component image |
-| | `figma_get_file_data` | File structure with verbosity control |
-| | `figma_get_file_for_plugin` | File data optimized for plugins |
+| Category | Tool | Purpose | Mode |
+|----------|------|---------|------|
+| **🧭 Navigation** | `figma_navigate` | Open a Figma URL and start monitoring | All |
+| | `figma_get_status` | Check browser and monitoring status | All |
+| **📋 Console** | `figma_get_console_logs` | Retrieve console logs with filters | All |
+| | `figma_watch_console` | Stream logs in real-time | All |
+| | `figma_clear_console` | Clear log buffer | All |
+| **🔍 Debugging** | `figma_take_screenshot` | Capture UI screenshots | All |
+| | `figma_reload_plugin` | Reload current page | All |
+| **🎨 Design System** | `figma_get_variables` | Extract design tokens/variables | All |
+| | `figma_get_styles` | Get color, text, effect styles | All |
+| | `figma_get_component` | Get component data | All |
+| | `figma_get_component_for_development` | Component + visual reference | All |
+| | `figma_get_component_image` | Just the component image | All |
+| | `figma_get_file_data` | File structure with verbosity control | All |
+| | `figma_get_file_for_plugin` | File data optimized for plugins | All |
+| **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local |
+| **🔧 Variables** | `figma_create_variable_collection` | Create collections with modes | Local |
+| | `figma_create_variable` | Create new variables | Local |
+| | `figma_update_variable` | Update variable values | Local |
+| | `figma_rename_variable` | Rename variables | Local |
+| | `figma_delete_variable` | Delete variables | Local |
+| | `figma_delete_variable_collection` | Delete collections | Local |
+| | `figma_add_mode` | Add modes to collections | Local |
+| | `figma_rename_mode` | Rename modes | Local |
 
 ---
 
@@ -496,6 +505,350 @@ figma_get_file_for_plugin({
 
 ---
 
+---
+
+## ✏️ Design Creation Tools (Local Mode Only)
+
+> **⚠️ Requires Desktop Bridge Plugin**: These tools only work in Local Mode with the Desktop Bridge plugin running in Figma.
+
+### `figma_execute`
+
+**The Power Tool** - Execute any Figma Plugin API code to create designs, modify elements, or perform complex operations.
+
+**When to Use:**
+- Creating UI components (buttons, cards, modals, notifications)
+- Building frames with auto-layout
+- Adding text with specific fonts and styles
+- Creating shapes (rectangles, ellipses, vectors)
+- Applying effects, fills, and strokes
+- Creating pages or organizing layers
+- Any operation that requires the full Figma Plugin API
+
+**Usage:**
+```javascript
+figma_execute({
+  code: `
+    // Create a button component
+    const button = figma.createFrame();
+    button.name = "Button";
+    button.resize(120, 40);
+    button.cornerRadius = 8;
+    button.fills = [{ type: 'SOLID', color: { r: 0.23, g: 0.51, b: 0.96 } }];
+
+    // Add auto-layout
+    button.layoutMode = "HORIZONTAL";
+    button.primaryAxisAlignItems = "CENTER";
+    button.counterAxisAlignItems = "CENTER";
+
+    // Add text
+    await figma.loadFontAsync({ family: "Inter", style: "Medium" });
+    const text = figma.createText();
+    text.characters = "Click me";
+    text.fontName = { family: "Inter", style: "Medium" };
+    text.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    button.appendChild(text);
+
+    // Position and select
+    button.x = figma.viewport.center.x;
+    button.y = figma.viewport.center.y;
+    figma.currentPage.selection = [button];
+
+    return { nodeId: button.id, name: button.name };
+  `,
+  timeout: 10000  // Optional: max execution time in ms (default: 5000)
+})
+```
+
+**Parameters:**
+- `code` (required): JavaScript code to execute. Has access to `figma` global object.
+- `timeout` (optional): Execution timeout in ms (default: 5000, max: 30000)
+
+**Returns:**
+- Whatever the code returns (use `return` statement)
+- Execution success/failure status
+
+**Best Practices:**
+1. **Always use `await` for async operations** (loadFontAsync, getNodeByIdAsync)
+2. **Return useful data** (node IDs, names) for follow-up operations
+3. **Position elements** relative to viewport center for visibility
+4. **Select created elements** so users can see them immediately
+5. **Use try/catch** for error handling in complex operations
+
+**Common Patterns:**
+
+```javascript
+// Create a page
+const page = figma.createPage();
+page.name = "My New Page";
+await figma.setCurrentPageAsync(page);
+
+// Find and modify existing node
+const node = await figma.getNodeByIdAsync("123:456");
+node.name = "New Name";
+
+// Create component from frame
+const component = figma.createComponent();
+// ... add children
+
+// Apply auto-layout
+frame.layoutMode = "VERTICAL";
+frame.itemSpacing = 8;
+frame.paddingTop = 16;
+frame.paddingBottom = 16;
+frame.paddingLeft = 16;
+frame.paddingRight = 16;
+```
+
+---
+
+## 🔧 Variable Management Tools (Local Mode Only)
+
+> **⚠️ Requires Desktop Bridge Plugin**: These tools only work in Local Mode with the Desktop Bridge plugin running in Figma.
+
+### `figma_create_variable_collection`
+
+Create a new variable collection with optional modes.
+
+**When to Use:**
+- Setting up a new design system
+- Creating themed variable sets (colors, spacing, typography)
+- Organizing variables into logical groups
+
+**Usage:**
+```javascript
+figma_create_variable_collection({
+  name: "Brand Colors",
+  initialModeName: "Light",        // Optional: rename default mode
+  additionalModes: ["Dark", "High Contrast"]  // Optional: add more modes
+})
+```
+
+**Parameters:**
+- `name` (required): Collection name
+- `initialModeName` (optional): Name for the default mode (otherwise "Mode 1")
+- `additionalModes` (optional): Array of additional mode names to create
+
+**Returns:**
+- Created collection with ID, name, modes, and mode IDs
+
+---
+
+### `figma_create_variable`
+
+Create a new variable in a collection.
+
+**When to Use:**
+- Adding design tokens to your system
+- Creating colors, spacing values, text strings, or boolean flags
+- Setting up multi-mode variable values
+
+**Usage:**
+```javascript
+figma_create_variable({
+  name: "colors/primary/500",
+  collectionId: "VariableCollectionId:123:456",
+  resolvedType: "COLOR",
+  valuesByMode: {
+    "1:0": "#3B82F6",    // Light mode
+    "1:1": "#60A5FA"     // Dark mode
+  },
+  description: "Primary brand color",  // Optional
+  scopes: ["ALL_FILLS"]                 // Optional
+})
+```
+
+**Parameters:**
+- `name` (required): Variable name (use `/` for grouping)
+- `collectionId` (required): Target collection ID
+- `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, or `"BOOLEAN"`
+- `valuesByMode` (optional): Object mapping mode IDs to values
+- `description` (optional): Variable description
+- `scopes` (optional): Where variable can be applied
+
+**Value Formats:**
+- **COLOR**: Hex string `"#FF0000"` or `"#FF0000FF"` (with alpha)
+- **FLOAT**: Number `16` or `1.5`
+- **STRING**: Text `"Hello World"`
+- **BOOLEAN**: `true` or `false`
+
+---
+
+### `figma_update_variable`
+
+Update a variable's value in a specific mode.
+
+**When to Use:**
+- Changing existing token values
+- Updating theme-specific values
+- Modifying design system tokens
+
+**Usage:**
+```javascript
+figma_update_variable({
+  variableId: "VariableID:123:456",
+  modeId: "1:0",
+  value: "#10B981"  // New color value
+})
+```
+
+**Parameters:**
+- `variableId` (required): Variable ID to update
+- `modeId` (required): Mode ID to update value in
+- `value` (required): New value (format depends on variable type)
+
+---
+
+### `figma_rename_variable`
+
+Rename a variable while preserving all its values.
+
+**When to Use:**
+- Reorganizing variable naming conventions
+- Fixing typos in variable names
+- Moving variables to different groups
+
+**Usage:**
+```javascript
+figma_rename_variable({
+  variableId: "VariableID:123:456",
+  newName: "colors/brand/primary"
+})
+```
+
+**Parameters:**
+- `variableId` (required): Variable ID to rename
+- `newName` (required): New name (can include `/` for grouping)
+
+---
+
+### `figma_delete_variable`
+
+Delete a variable.
+
+**When to Use:**
+- Removing unused tokens
+- Cleaning up design system
+- Removing deprecated variables
+
+**Usage:**
+```javascript
+figma_delete_variable({
+  variableId: "VariableID:123:456"
+})
+```
+
+**⚠️ Warning:** This action cannot be undone programmatically. Use Figma's Undo if needed.
+
+---
+
+### `figma_delete_variable_collection`
+
+Delete a collection and ALL its variables.
+
+**When to Use:**
+- Removing entire token sets
+- Cleaning up unused collections
+- Resetting design system sections
+
+**Usage:**
+```javascript
+figma_delete_variable_collection({
+  collectionId: "VariableCollectionId:123:456"
+})
+```
+
+**⚠️ Warning:** This deletes ALL variables in the collection. Cannot be undone programmatically.
+
+---
+
+### `figma_add_mode`
+
+Add a new mode to an existing collection.
+
+**When to Use:**
+- Adding theme variants (Dark mode, High Contrast)
+- Adding responsive breakpoints (Mobile, Tablet, Desktop)
+- Adding brand variants
+
+**Usage:**
+```javascript
+figma_add_mode({
+  collectionId: "VariableCollectionId:123:456",
+  modeName: "Dark"
+})
+```
+
+**Parameters:**
+- `collectionId` (required): Collection to add mode to
+- `modeName` (required): Name for the new mode
+
+**Returns:**
+- Updated collection with new mode ID
+
+**Note:** Figma has limits on the number of modes per collection (varies by plan).
+
+---
+
+### `figma_rename_mode`
+
+Rename an existing mode in a collection.
+
+**When to Use:**
+- Fixing mode names
+- Updating naming conventions
+- Making mode names more descriptive
+
+**Usage:**
+```javascript
+figma_rename_mode({
+  collectionId: "VariableCollectionId:123:456",
+  modeId: "1:0",
+  newName: "Light Theme"
+})
+```
+
+**Parameters:**
+- `collectionId` (required): Collection containing the mode
+- `modeId` (required): Mode ID to rename
+- `newName` (required): New name for the mode
+
+---
+
+## AI Decision Guide: Which Tool to Use?
+
+### For Design Creation
+
+| Task | Tool | Example |
+|------|------|---------|
+| Create UI components | `figma_execute` | Buttons, cards, modals |
+| Create frames/layouts | `figma_execute` | Auto-layout containers |
+| Add text | `figma_execute` | Labels, headings, paragraphs |
+| Create shapes | `figma_execute` | Icons, decorations |
+| Modify existing elements | `figma_execute` | Change colors, resize |
+| Create pages | `figma_execute` | Organize file structure |
+
+### For Variable Management
+
+| Task | Tool |
+|------|------|
+| Create new token collection | `figma_create_variable_collection` |
+| Add design tokens | `figma_create_variable` |
+| Change token values | `figma_update_variable` |
+| Reorganize token names | `figma_rename_variable` |
+| Remove tokens | `figma_delete_variable` |
+| Add themes (Light/Dark) | `figma_add_mode` |
+| Rename themes | `figma_rename_mode` |
+
+### Prerequisites Checklist
+
+Before using write tools, ensure:
+1. ✅ Running in **Local Mode** (not Remote SSE)
+2. ✅ Figma Desktop started with `--remote-debugging-port=9222`
+3. ✅ **Desktop Bridge plugin** is running in Figma
+4. ✅ `figma_get_status` returns `setup.valid: true`
+
+---
+
 ## Error Handling
 
 All tools return structured error responses:
@@ -513,5 +866,7 @@ Common errors:
 - `"Failed to connect to browser"` - Browser initializing or connection issue
 - `"Invalid Figma URL"` - Check URL format
 - `"Node not found"` - Verify node ID is correct
+- `"Desktop Bridge plugin not found"` - Ensure plugin is running in Figma
+- `"Invalid hex color"` - Check hex format (use #RGB, #RGBA, #RRGGBB, or #RRGGBBAA)
 
 See [Troubleshooting Guide](TROUBLESHOOTING.md) for detailed solutions.

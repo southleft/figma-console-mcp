@@ -1272,6 +1272,183 @@ class LocalFigmaConsoleMCP {
 			},
 		);
 
+		// Tool: Rename a variable
+		this.server.tool(
+			"figma_rename_variable",
+			"Rename an existing Figma variable. This updates the variable's name while preserving all its values and settings. Requires the Desktop Bridge plugin to be running.",
+			{
+				variableId: z.string().describe(
+					"The variable ID to rename (e.g., 'VariableID:123:456'). Get this from figma_get_variables."
+				),
+				newName: z.string().describe(
+					"The new name for the variable. Can include slashes for grouping (e.g., 'colors/primary/background')."
+				),
+			},
+			async ({ variableId, newName }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.renameVariable(variableId, newName);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Variable renamed from "${result.oldName}" to "${result.variable.name}"`,
+										oldName: result.oldName,
+										variable: result.variable,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to rename variable");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to rename variable",
+										hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Add a mode to a collection
+		this.server.tool(
+			"figma_add_mode",
+			"Add a new mode to an existing Figma variable collection. Modes allow variables to have different values for different contexts (e.g., Light/Dark themes, device sizes). Requires the Desktop Bridge plugin to be running.",
+			{
+				collectionId: z.string().describe(
+					"The collection ID to add the mode to (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables."
+				),
+				modeName: z.string().describe(
+					"The name for the new mode (e.g., 'Dark', 'Mobile', 'High Contrast')."
+				),
+			},
+			async ({ collectionId, modeName }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.addMode(collectionId, modeName);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Mode "${modeName}" added to collection "${result.collection.name}"`,
+										newMode: result.newMode,
+										collection: result.collection,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to add mode");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to add mode to collection",
+										hint: "Make sure the Desktop Bridge plugin is running, the collection ID is correct, and you haven't exceeded Figma's mode limit",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Rename a mode in a collection
+		this.server.tool(
+			"figma_rename_mode",
+			"Rename an existing mode in a Figma variable collection. Requires the Desktop Bridge plugin to be running.",
+			{
+				collectionId: z.string().describe(
+					"The collection ID containing the mode (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables."
+				),
+				modeId: z.string().describe(
+					"The mode ID to rename (e.g., '123:0'). Get this from the collection's modes array in figma_get_variables."
+				),
+				newName: z.string().describe(
+					"The new name for the mode (e.g., 'Dark Theme', 'Tablet')."
+				),
+			},
+			async ({ collectionId, modeId, newName }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.renameMode(collectionId, modeId, newName);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Mode renamed from "${result.oldName}" to "${newName}"`,
+										oldName: result.oldName,
+										collection: result.collection,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to rename mode");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to rename mode",
+										hint: "Make sure the Desktop Bridge plugin is running, the collection ID and mode ID are correct",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
 		// Register Figma API tools (Tools 8-11)
 		registerFigmaAPITools(
 			this.server,
