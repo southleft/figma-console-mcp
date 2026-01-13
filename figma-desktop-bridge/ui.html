@@ -97,10 +97,92 @@
     window.__figmaVariablesReady = false;
     window.__figmaComponentData = null;
     window.__figmaComponentRequests = new Map(); // Track pending requests
+    window.__figmaPendingRequests = new Map(); // Track ALL pending requests (generic)
 
     let requestIdCounter = 0;
 
-    // Function to request component data from plugin worker
+    // Generic function to send a command to the plugin worker and wait for response
+    window.sendPluginCommand = (type, params, timeoutMs) => {
+      timeoutMs = timeoutMs || 15000;
+      return new Promise((resolve, reject) => {
+        const requestId = `${type.toLowerCase()}_${++requestIdCounter}_${Date.now()}`;
+
+        // Store the promise callbacks
+        window.__figmaPendingRequests.set(requestId, { resolve, reject, type: type });
+
+        // Build the message
+        const message = Object.assign({ type: type, requestId: requestId }, params || {});
+
+        // Send request to plugin worker
+        parent.postMessage({ pluginMessage: message }, '*');
+
+        console.log('[Desktop Bridge] Sent command:', type, 'requestId:', requestId);
+
+        // Timeout
+        setTimeout(() => {
+          if (window.__figmaPendingRequests.has(requestId)) {
+            window.__figmaPendingRequests.delete(requestId);
+            reject(new Error(type + ' request timed out after ' + timeoutMs + 'ms'));
+          }
+        }, timeoutMs);
+      });
+    };
+
+    // ============================================================================
+    // WRITE OPERATION FUNCTIONS - Exposed for Puppeteer/MCP access
+    // ============================================================================
+
+    // Execute arbitrary code in plugin context
+    window.executeCode = (code, timeout) => {
+      return window.sendPluginCommand('EXECUTE_CODE', { code: code, timeout: timeout || 5000 }, (timeout || 5000) + 2000);
+    };
+
+    // Update a variable's value
+    window.updateVariable = (variableId, modeId, value) => {
+      return window.sendPluginCommand('UPDATE_VARIABLE', { variableId: variableId, modeId: modeId, value: value });
+    };
+
+    // Create a new variable
+    window.createVariable = (name, collectionId, resolvedType, options) => {
+      var params = {
+        name: name,
+        collectionId: collectionId,
+        resolvedType: resolvedType
+      };
+      if (options) {
+        if (options.valuesByMode) params.valuesByMode = options.valuesByMode;
+        if (options.description) params.description = options.description;
+        if (options.scopes) params.scopes = options.scopes;
+      }
+      return window.sendPluginCommand('CREATE_VARIABLE', params);
+    };
+
+    // Create a new variable collection
+    window.createVariableCollection = (name, options) => {
+      var params = { name: name };
+      if (options) {
+        if (options.initialModeName) params.initialModeName = options.initialModeName;
+        if (options.additionalModes) params.additionalModes = options.additionalModes;
+      }
+      return window.sendPluginCommand('CREATE_VARIABLE_COLLECTION', params);
+    };
+
+    // Delete a variable
+    window.deleteVariable = (variableId) => {
+      return window.sendPluginCommand('DELETE_VARIABLE', { variableId: variableId });
+    };
+
+    // Delete a variable collection
+    window.deleteVariableCollection = (collectionId) => {
+      return window.sendPluginCommand('DELETE_VARIABLE_COLLECTION', { collectionId: collectionId });
+    };
+
+    // Refresh variables data
+    window.refreshVariables = () => {
+      return window.sendPluginCommand('REFRESH_VARIABLES', {});
+    };
+
+    // Function to request component data from plugin worker (legacy, kept for compatibility)
     window.requestComponentData = (nodeId) => {
       return new Promise((resolve, reject) => {
         const requestId = `component_${++requestIdCounter}_${Date.now()}`;
@@ -150,9 +232,10 @@
           <div class="details">
             <strong>Variables:</strong> ${varCount} in ${collCount} ${collCount === 1 ? 'collection' : 'collections'}<br>
             <strong>Components:</strong> On-demand via MCP<br>
+            <strong>Write ops:</strong> Enabled ✓<br>
             <br>
-            <code style="font-size: 10px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; display: block; margin-top: 4px;">window.__figmaVariablesData</code>
-            <code style="font-size: 10px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; display: block; margin-top: 2px;">window.requestComponentData(id)</code>
+            <code style="font-size: 10px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; display: block; margin-top: 4px;">window.executeCode(code)</code>
+            <code style="font-size: 10px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; display: block; margin-top: 2px;">window.updateVariable(id, mode, val)</code>
           </div>
         `;
 
@@ -193,6 +276,94 @@
         `;
 
         console.error('[Desktop Bridge] Error:', msg.error);
+
+      // ============================================================================
+      // WRITE OPERATION RESPONSES - Handle results from plugin worker
+      // ============================================================================
+
+      } else if (msg.type === 'EXECUTE_CODE_RESULT') {
+        console.log('[Desktop Bridge] Execute code result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (msg.success) {
+            request.resolve({ success: true, result: msg.result });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'UPDATE_VARIABLE_RESULT') {
+        console.log('[Desktop Bridge] Update variable result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (msg.success) {
+            request.resolve({ success: true, variable: msg.variable });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'CREATE_VARIABLE_RESULT') {
+        console.log('[Desktop Bridge] Create variable result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (msg.success) {
+            request.resolve({ success: true, variable: msg.variable });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'CREATE_VARIABLE_COLLECTION_RESULT') {
+        console.log('[Desktop Bridge] Create collection result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (msg.success) {
+            request.resolve({ success: true, collection: msg.collection });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'DELETE_VARIABLE_RESULT') {
+        console.log('[Desktop Bridge] Delete variable result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (msg.success) {
+            request.resolve({ success: true, deleted: msg.deleted });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'DELETE_VARIABLE_COLLECTION_RESULT') {
+        console.log('[Desktop Bridge] Delete collection result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (msg.success) {
+            request.resolve({ success: true, deleted: msg.deleted });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'REFRESH_VARIABLES_RESULT') {
+        console.log('[Desktop Bridge] Refresh variables result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (msg.success) {
+            request.resolve({ success: true, data: msg.data });
+          } else {
+            request.reject(new Error(msg.error));
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
       }
     };
   </script>
