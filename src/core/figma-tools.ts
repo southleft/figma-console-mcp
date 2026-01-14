@@ -3055,4 +3055,231 @@ export function registerFigmaAPITools(
 		}
 	);
 
+	// Tool 15: Capture Screenshot via Plugin (Desktop Bridge)
+	// This uses exportAsync() which reads the current plugin runtime state, not the cloud state
+	// Solves race condition where REST API screenshots show stale data after changes
+	server.tool(
+		"figma_capture_screenshot",
+		"Capture a screenshot of a node using the plugin's exportAsync API. IMPORTANT: This tool captures the CURRENT state from the plugin runtime (not cloud state like REST API), making it reliable for validating changes immediately after making them. Use this instead of figma_get_component_image when you need to verify that changes were applied correctly. Requires Desktop Bridge connection (Figma Desktop with plugin running).",
+		{
+			nodeId: z
+				.string()
+				.optional()
+				.describe(
+					"ID of the node to capture (e.g., '1:234'). If not provided, captures the current page."
+				),
+			format: z
+				.enum(["PNG", "JPG", "SVG"])
+				.optional()
+				.default("PNG")
+				.describe("Image format (default: PNG)"),
+			scale: z
+				.number()
+				.min(0.5)
+				.max(4)
+				.optional()
+				.default(2)
+				.describe("Scale factor (default: 2 for 2x resolution)"),
+		},
+		async ({ nodeId, format, scale }) => {
+			try {
+				// Check for Desktop Bridge connection
+				const browserManager = getBrowserManager?.();
+				if (!browserManager) {
+					throw new Error(
+						"Desktop Bridge not available. To capture screenshots:\n" +
+						"1. Open your Figma file in Figma Desktop\n" +
+						"2. Install and run the 'Figma Console MCP' plugin\n" +
+						"3. Ensure the plugin shows 'MCP ready' status"
+					);
+				}
+
+				// Ensure browser is initialized
+				if (ensureInitialized) {
+					await ensureInitialized();
+				}
+
+				const page = await browserManager.getPage();
+				logger.info({ nodeId, format, scale }, "Capturing screenshot via Desktop Bridge");
+
+				// Find the plugin UI frame and call the captureScreenshot function
+				const frames = page.frames();
+				let result = null;
+
+				for (const frame of frames) {
+					try {
+						const hasFunction = await frame.evaluate('typeof window.captureScreenshot === "function"');
+						if (hasFunction) {
+							result = await frame.evaluate(
+								`window.captureScreenshot(${JSON.stringify(nodeId)}, ${JSON.stringify({ format, scale })})`
+							);
+							break;
+						}
+					} catch {
+						continue;
+					}
+				}
+
+				if (!result) {
+					throw new Error(
+						"Desktop Bridge plugin not found. Ensure the 'Figma Console MCP' plugin is running in Figma Desktop."
+					);
+				}
+
+				if (!result.success) {
+					throw new Error(result.error || "Screenshot capture failed");
+				}
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								image: {
+									format: result.image.format,
+									scale: result.image.scale,
+									byteLength: result.image.byteLength,
+									node: result.image.node,
+									bounds: result.image.bounds,
+									// Base64 data is included but may be large
+									base64: result.image.base64,
+								},
+								metadata: {
+									source: "plugin_export_async",
+									note: "Screenshot captured from plugin runtime state (guaranteed current). Use base64 data to verify visual changes.",
+								},
+							}, null, 2),
+						},
+					],
+				};
+			} catch (error) {
+				logger.error({ error }, "Failed to capture screenshot");
+				const errorMessage = error instanceof Error ? error.message : String(error);
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to capture screenshot via Desktop Bridge",
+								suggestion: "Ensure Figma Desktop is open with the plugin running",
+							}, null, 2),
+						},
+					],
+					isError: true,
+				};
+			}
+		}
+	);
+
+	// Tool 16: Set Instance Properties (Desktop Bridge)
+	// Updates component properties on an instance using setProperties()
+	// This is the correct way to update TEXT/BOOLEAN/VARIANT properties on component instances
+	server.tool(
+		"figma_set_instance_properties",
+		"Update component properties on a component instance. IMPORTANT: Use this tool instead of trying to edit text nodes directly when working with component instances. Components often expose TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties that control their content. Direct text node editing may fail silently if the component uses properties. This tool handles the #nodeId suffix pattern automatically. Requires Desktop Bridge connection.",
+		{
+			nodeId: z
+				.string()
+				.describe(
+					"ID of the INSTANCE node to update (e.g., '1:234'). Must be a component instance, not a regular frame."
+				),
+			properties: z
+				.record(z.string(), z.union([z.string(), z.boolean()]))
+				.describe(
+					"Properties to set. Keys are property names (e.g., 'Label', 'Show Icon', 'Size'). " +
+					"Values are strings for TEXT/VARIANT properties, booleans for BOOLEAN properties. " +
+					"The tool automatically handles the #nodeId suffix for TEXT/BOOLEAN/INSTANCE_SWAP properties."
+				),
+		},
+		async ({ nodeId, properties }) => {
+			try {
+				// Check for Desktop Bridge connection
+				const browserManager = getBrowserManager?.();
+				if (!browserManager) {
+					throw new Error(
+						"Desktop Bridge not available. To set instance properties:\n" +
+						"1. Open your Figma file in Figma Desktop\n" +
+						"2. Install and run the 'Figma Console MCP' plugin\n" +
+						"3. Ensure the plugin shows 'MCP ready' status"
+					);
+				}
+
+				// Ensure browser is initialized
+				if (ensureInitialized) {
+					await ensureInitialized();
+				}
+
+				const page = await browserManager.getPage();
+				logger.info({ nodeId, properties: Object.keys(properties) }, "Setting instance properties via Desktop Bridge");
+
+				// Find the plugin UI frame and call the setInstanceProperties function
+				const frames = page.frames();
+				let result = null;
+
+				for (const frame of frames) {
+					try {
+						const hasFunction = await frame.evaluate('typeof window.setInstanceProperties === "function"');
+						if (hasFunction) {
+							result = await frame.evaluate(
+								`window.setInstanceProperties(${JSON.stringify(nodeId)}, ${JSON.stringify(properties)})`
+							);
+							break;
+						}
+					} catch {
+						continue;
+					}
+				}
+
+				if (!result) {
+					throw new Error(
+						"Desktop Bridge plugin not found. Ensure the 'Figma Console MCP' plugin is running in Figma Desktop."
+					);
+				}
+
+				if (!result.success) {
+					throw new Error(result.error || "Failed to set instance properties");
+				}
+
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								instance: result.instance,
+								metadata: {
+									note: "Instance properties updated successfully. Use figma_capture_screenshot to verify visual changes.",
+								},
+							}, null, 2),
+						},
+					],
+				};
+			} catch (error) {
+				logger.error({ error }, "Failed to set instance properties");
+				const errorMessage = error instanceof Error ? error.message : String(error);
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to set instance properties via Desktop Bridge",
+								suggestions: [
+									"Verify the node is a component INSTANCE (not a regular frame)",
+									"Check available properties with figma_get_component first",
+									"Ensure property names match exactly (case-sensitive)",
+									"For TEXT properties, provide string values",
+									"For BOOLEAN properties, provide true/false",
+								],
+							}, null, 2),
+						},
+					],
+					isError: true,
+				};
+			}
+		}
+	);
+
 }

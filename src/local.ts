@@ -1031,10 +1031,24 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 			"figma_execute",
 			`Execute arbitrary JavaScript code in Figma's plugin context. This is a POWER TOOL that can run any Figma Plugin API code. Use for complex operations not covered by other tools. Requires the Desktop Bridge plugin to be running in Figma. Returns the result of the code execution. CAUTION: Can modify your Figma document - use carefully.
 
+**IMPORTANT: COMPONENT INSTANCES vs DIRECT NODE EDITING**
+When working with component instances (node.type === 'INSTANCE'), you must use the correct approach:
+- Components expose TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties
+- Direct editing of text nodes inside instances often FAILS SILENTLY
+- Use figma_set_instance_properties tool to update component properties
+- Use instance.componentProperties to see available properties
+- Property names may have #nodeId suffixes (e.g., 'Label#1:234')
+
+**SILENT FAILURE DETECTION:**
+This tool now returns a 'resultAnalysis' field that warns when operations may have failed:
+- Empty arrays/objects indicate searches found nothing
+- Null/undefined returns may indicate missing nodes
+- Always check resultAnalysis.warning for potential issues
+
 **VISUAL VALIDATION WORKFLOW (REQUIRED for design creation):**
 After creating or modifying any visual design elements, you MUST follow this validation loop:
 1. CREATE: Execute the design code
-2. SCREENSHOT: Use figma_take_screenshot to capture the result
+2. SCREENSHOT: Use figma_capture_screenshot (NOT figma_take_screenshot) for reliable validation - it reads from plugin runtime, not cloud state
 3. ANALYZE: Compare screenshot against specifications for:
    - Alignment: Are elements properly aligned and balanced?
    - Spacing: Is padding/margin consistent and visually correct?
@@ -1048,6 +1062,7 @@ Common issues to check:
 - Elements using "hug contents" instead of "fill container" (causes lopsided layouts)
 - Inconsistent padding (elements not visually balanced)
 - Text/inputs not filling available width
+- Component text not changing (use figma_set_instance_properties instead)
 - Duplicate pages created (check before creating new pages)`,
 			{
 				code: z.string().describe(
@@ -1076,6 +1091,8 @@ Common issues to check:
 											success: result.success,
 											result: result.result,
 											error: result.error,
+											// Include resultAnalysis for silent failure detection
+											resultAnalysis: result.resultAnalysis,
 											timestamp: Date.now(),
 											...(attempt > 0 ? { reconnected: true, attempts: attempt + 1 } : {}),
 										},

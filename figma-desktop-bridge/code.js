@@ -185,11 +185,47 @@ figma.ui.onmessage = async (msg) => {
 
       console.log('🌉 [Desktop Bridge] Code executed successfully, result type:', typeof result);
 
+      // Analyze result for potential silent failures
+      var resultAnalysis = {
+        type: typeof result,
+        isNull: result === null,
+        isUndefined: result === undefined,
+        isEmpty: false,
+        warning: null
+      };
+
+      // Check for empty results that might indicate a failed search/operation
+      if (Array.isArray(result)) {
+        resultAnalysis.isEmpty = result.length === 0;
+        if (resultAnalysis.isEmpty) {
+          resultAnalysis.warning = 'Code returned an empty array. If you were searching for nodes, none were found.';
+        }
+      } else if (result !== null && typeof result === 'object') {
+        var keys = Object.keys(result);
+        resultAnalysis.isEmpty = keys.length === 0;
+        if (resultAnalysis.isEmpty) {
+          resultAnalysis.warning = 'Code returned an empty object. The operation may not have found what it was looking for.';
+        }
+        // Check for common "found nothing" patterns
+        if (result.length === 0 || result.count === 0 || result.foundCount === 0 || result.nodes?.length === 0) {
+          resultAnalysis.warning = 'Code returned a result indicating nothing was found (count/length is 0).';
+        }
+      } else if (result === null) {
+        resultAnalysis.warning = 'Code returned null. The requested node or resource may not exist.';
+      } else if (result === undefined) {
+        resultAnalysis.warning = 'Code returned undefined. Make sure your code has a return statement.';
+      }
+
+      if (resultAnalysis.warning) {
+        console.warn('🌉 [Desktop Bridge] ⚠️ Result warning:', resultAnalysis.warning);
+      }
+
       figma.ui.postMessage({
         type: 'EXECUTE_CODE_RESULT',
         requestId: msg.requestId,
         success: true,
-        result: result
+        result: result,
+        resultAnalysis: resultAnalysis
       });
 
     } catch (error) {
@@ -1730,6 +1766,173 @@ figma.ui.onmessage = async (msg) => {
       console.error('🌉 [Desktop Bridge] Create child node error:', errorMsg);
       figma.ui.postMessage({
         type: 'CREATE_CHILD_NODE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // CAPTURE_SCREENSHOT - Capture node screenshot using plugin exportAsync
+  // This captures the CURRENT plugin runtime state (not cloud state like REST API)
+  // ============================================================================
+  else if (msg.type === 'CAPTURE_SCREENSHOT') {
+    try {
+      console.log('🌉 [Desktop Bridge] Capturing screenshot for node:', msg.nodeId);
+
+      var node = msg.nodeId ? await figma.getNodeByIdAsync(msg.nodeId) : figma.currentPage;
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      // Verify node supports export
+      if (!('exportAsync' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support export');
+      }
+
+      // Configure export settings
+      var format = msg.format || 'PNG';
+      var scale = msg.scale || 2;
+
+      var exportSettings = {
+        format: format,
+        constraint: { type: 'SCALE', value: scale }
+      };
+
+      // Export the node
+      var bytes = await node.exportAsync(exportSettings);
+
+      // Convert to base64
+      var base64 = figma.base64Encode(bytes);
+
+      // Get node bounds for context
+      var bounds = null;
+      if ('absoluteBoundingBox' in node) {
+        bounds = node.absoluteBoundingBox;
+      }
+
+      console.log('🌉 [Desktop Bridge] Screenshot captured:', bytes.length, 'bytes');
+
+      figma.ui.postMessage({
+        type: 'CAPTURE_SCREENSHOT_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        image: {
+          base64: base64,
+          format: format,
+          scale: scale,
+          byteLength: bytes.length,
+          node: {
+            id: node.id,
+            name: node.name,
+            type: node.type
+          },
+          bounds: bounds
+        }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Screenshot capture error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'CAPTURE_SCREENSHOT_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // SET_INSTANCE_PROPERTIES - Update component properties on an instance
+  // Uses instance.setProperties() to update TEXT, BOOLEAN, INSTANCE_SWAP, VARIANT
+  // ============================================================================
+  else if (msg.type === 'SET_INSTANCE_PROPERTIES') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting instance properties on:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (node.type !== 'INSTANCE') {
+        throw new Error('Node must be an INSTANCE. Got: ' + node.type);
+      }
+
+      // Get current properties for reference
+      var currentProps = node.componentProperties;
+      console.log('🌉 [Desktop Bridge] Current properties:', JSON.stringify(Object.keys(currentProps)));
+
+      // Build the properties object
+      // Note: TEXT, BOOLEAN, INSTANCE_SWAP properties use the format "PropertyName#nodeId"
+      // VARIANT properties use just "PropertyName"
+      var propsToSet = {};
+      var propUpdates = msg.properties || {};
+
+      for (var propName in propUpdates) {
+        var newValue = propUpdates[propName];
+
+        // Check if this exact property name exists
+        if (currentProps[propName] !== undefined) {
+          propsToSet[propName] = newValue;
+          console.log('🌉 [Desktop Bridge] Setting property:', propName, '=', newValue);
+        } else {
+          // Try to find a matching property with a suffix (for TEXT/BOOLEAN/INSTANCE_SWAP)
+          var foundMatch = false;
+          for (var existingProp in currentProps) {
+            // Check if this is the base property name with a node ID suffix
+            if (existingProp.startsWith(propName + '#')) {
+              propsToSet[existingProp] = newValue;
+              console.log('🌉 [Desktop Bridge] Found suffixed property:', existingProp, '=', newValue);
+              foundMatch = true;
+              break;
+            }
+          }
+
+          if (!foundMatch) {
+            console.warn('🌉 [Desktop Bridge] Property not found:', propName, '- Available:', Object.keys(currentProps).join(', '));
+          }
+        }
+      }
+
+      if (Object.keys(propsToSet).length === 0) {
+        throw new Error('No valid properties to set. Available properties: ' + Object.keys(currentProps).join(', '));
+      }
+
+      // Apply the properties
+      node.setProperties(propsToSet);
+
+      // Get updated properties
+      var updatedProps = node.componentProperties;
+
+      console.log('🌉 [Desktop Bridge] Instance properties updated');
+
+      figma.ui.postMessage({
+        type: 'SET_INSTANCE_PROPERTIES_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        instance: {
+          id: node.id,
+          name: node.name,
+          componentId: node.mainComponent ? node.mainComponent.id : null,
+          propertiesSet: Object.keys(propsToSet),
+          currentProperties: Object.keys(updatedProps).reduce(function(acc, key) {
+            acc[key] = {
+              type: updatedProps[key].type,
+              value: updatedProps[key].value
+            };
+            return acc;
+          }, {})
+        }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set instance properties error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_INSTANCE_PROPERTIES_RESULT',
         requestId: msg.requestId,
         success: false,
         error: errorMsg
