@@ -227,7 +227,16 @@ figma.ui.onmessage = async (msg) => {
 
       // Convert value based on variable type
       var value = msg.value;
-      if (variable.resolvedType === 'COLOR' && typeof value === 'string') {
+
+      // Check if value is a variable alias (string starting with "VariableID:")
+      if (typeof value === 'string' && value.startsWith('VariableID:')) {
+        // Convert to VARIABLE_ALIAS format
+        value = {
+          type: 'VARIABLE_ALIAS',
+          id: value
+        };
+        console.log('🌉 [Desktop Bridge] Converting to variable alias:', value.id);
+      } else if (variable.resolvedType === 'COLOR' && typeof value === 'string') {
         // Convert hex string to Figma color
         value = hexToFigmaRGB(value);
       }
