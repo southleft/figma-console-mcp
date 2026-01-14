@@ -265,6 +265,7 @@ Quit Claude Desktop completely and relaunch it. The MCP server will connect auto
 | **Console logs** | ✅ | ✅ (zero latency) | ✅ (zero latency) |
 | **API access** | ✅ | ✅ | ✅ |
 | **Desktop Bridge plugin** | ❌ | ✅ | ✅ |
+| **AI-Assisted Design Creation** | ❌ | ✅ (via plugin) | ✅ (via plugin) |
 | **Variables (no Enterprise)** | ❌ | ✅ (via plugin) | ✅ (via plugin) |
 | **Reliable descriptions** | ⚠️ (API bugs) | ✅ (via plugin) | ✅ (via plugin) |
 | **Source code access** | ❌ | ❌ | ✅ |
@@ -401,6 +402,8 @@ Navigate to this file and capture what's on screen
 ---
 
 ## 🎨 AI-Assisted Design Creation
+
+> **⚠️ Local Mode Only:** This feature requires the Desktop Bridge plugin and only works with [Local Mode installation](#for-plugin-developers-local-mode). Remote Mode is read-only and cannot create or modify designs.
 
 One of the most powerful capabilities of this MCP server is the ability to **design complete UI components and pages directly in Figma through natural language conversation** with any MCP-compatible AI assistant like Claude Desktop or Claude Code.
 
