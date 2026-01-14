@@ -982,4 +982,349 @@ export class FigmaDesktopConnector {
       throw error;
     }
   }
+
+  // ============================================================================
+  // NEW: COMPONENT PROPERTY MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Set description on a component or style
+   */
+  async setNodeDescription(nodeId: string, description: string, descriptionMarkdown?: string): Promise<any> {
+    logger.info({ nodeId, descriptionLength: description.length }, 'Setting node description via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setNodeDescription(${JSON.stringify(nodeId)}, ${JSON.stringify(description)}, ${JSON.stringify(descriptionMarkdown)})`
+      );
+
+      logger.info({ success: result.success, nodeName: result.node?.name }, 'Description set');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Set description failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Add a component property
+   */
+  async addComponentProperty(
+    nodeId: string,
+    propertyName: string,
+    type: 'BOOLEAN' | 'TEXT' | 'INSTANCE_SWAP' | 'VARIANT',
+    defaultValue: any,
+    options?: { preferredValues?: any[] }
+  ): Promise<any> {
+    logger.info({ nodeId, propertyName, type }, 'Adding component property via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.addComponentProperty(${JSON.stringify(nodeId)}, ${JSON.stringify(propertyName)}, ${JSON.stringify(type)}, ${JSON.stringify(defaultValue)}, ${JSON.stringify(options || {})})`
+      );
+
+      logger.info({ success: result.success, propertyName: result.propertyName }, 'Property added');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId, propertyName }, 'Add component property failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Edit an existing component property
+   */
+  async editComponentProperty(
+    nodeId: string,
+    propertyName: string,
+    newValue: { name?: string; defaultValue?: any; preferredValues?: any[] }
+  ): Promise<any> {
+    logger.info({ nodeId, propertyName }, 'Editing component property via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.editComponentProperty(${JSON.stringify(nodeId)}, ${JSON.stringify(propertyName)}, ${JSON.stringify(newValue)})`
+      );
+
+      logger.info({ success: result.success, propertyName: result.propertyName }, 'Property edited');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId, propertyName }, 'Edit component property failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a component property
+   */
+  async deleteComponentProperty(nodeId: string, propertyName: string): Promise<any> {
+    logger.info({ nodeId, propertyName }, 'Deleting component property via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.deleteComponentProperty(${JSON.stringify(nodeId)}, ${JSON.stringify(propertyName)})`
+      );
+
+      logger.info({ success: result.success }, 'Property deleted');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId, propertyName }, 'Delete component property failed');
+      throw error;
+    }
+  }
+
+  // ============================================================================
+  // NEW: NODE MANIPULATION
+  // ============================================================================
+
+  /**
+   * Resize a node
+   */
+  async resizeNode(nodeId: string, width: number, height: number, withConstraints: boolean = true): Promise<any> {
+    logger.info({ nodeId, width, height, withConstraints }, 'Resizing node via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.resizeNode(${JSON.stringify(nodeId)}, ${width}, ${height}, ${withConstraints})`
+      );
+
+      logger.info({ success: result.success, nodeId: result.node?.id }, 'Node resized');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Resize node failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Move/position a node
+   */
+  async moveNode(nodeId: string, x: number, y: number): Promise<any> {
+    logger.info({ nodeId, x, y }, 'Moving node via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.moveNode(${JSON.stringify(nodeId)}, ${x}, ${y})`
+      );
+
+      logger.info({ success: result.success, nodeId: result.node?.id }, 'Node moved');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Move node failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Set fills (colors) on a node
+   */
+  async setNodeFills(nodeId: string, fills: any[]): Promise<any> {
+    logger.info({ nodeId, fillCount: fills.length }, 'Setting node fills via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setNodeFills(${JSON.stringify(nodeId)}, ${JSON.stringify(fills)})`
+      );
+
+      logger.info({ success: result.success, nodeId: result.node?.id }, 'Fills set');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Set fills failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Set strokes on a node
+   */
+  async setNodeStrokes(nodeId: string, strokes: any[], strokeWeight?: number): Promise<any> {
+    logger.info({ nodeId, strokeCount: strokes.length, strokeWeight }, 'Setting node strokes via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setNodeStrokes(${JSON.stringify(nodeId)}, ${JSON.stringify(strokes)}, ${strokeWeight})`
+      );
+
+      logger.info({ success: result.success, nodeId: result.node?.id }, 'Strokes set');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Set strokes failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Set opacity on a node
+   */
+  async setNodeOpacity(nodeId: string, opacity: number): Promise<any> {
+    logger.info({ nodeId, opacity }, 'Setting node opacity via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setNodeOpacity(${JSON.stringify(nodeId)}, ${opacity})`
+      );
+
+      logger.info({ success: result.success, opacity: result.node?.opacity }, 'Opacity set');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Set opacity failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Set corner radius on a node
+   */
+  async setNodeCornerRadius(nodeId: string, radius: number): Promise<any> {
+    logger.info({ nodeId, radius }, 'Setting node corner radius via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setNodeCornerRadius(${JSON.stringify(nodeId)}, ${radius})`
+      );
+
+      logger.info({ success: result.success, radius: result.node?.cornerRadius }, 'Corner radius set');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Set corner radius failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Clone/duplicate a node
+   */
+  async cloneNode(nodeId: string): Promise<any> {
+    logger.info({ nodeId }, 'Cloning node via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.cloneNode(${JSON.stringify(nodeId)})`
+      );
+
+      logger.info({ success: result.success, clonedId: result.node?.id }, 'Node cloned');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Clone node failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a node
+   */
+  async deleteNode(nodeId: string): Promise<any> {
+    logger.info({ nodeId }, 'Deleting node via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.deleteNode(${JSON.stringify(nodeId)})`
+      );
+
+      logger.info({ success: result.success, deletedName: result.deleted?.name }, 'Node deleted');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Delete node failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Rename a node
+   */
+  async renameNode(nodeId: string, newName: string): Promise<any> {
+    logger.info({ nodeId, newName }, 'Renaming node via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.renameNode(${JSON.stringify(nodeId)}, ${JSON.stringify(newName)})`
+      );
+
+      logger.info({ success: result.success, oldName: result.node?.oldName, newName: result.node?.name }, 'Node renamed');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Rename node failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Set text content on a text node
+   */
+  async setTextContent(nodeId: string, text: string, options?: { fontSize?: number }): Promise<any> {
+    logger.info({ nodeId, textLength: text.length }, 'Setting text content via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setTextContent(${JSON.stringify(nodeId)}, ${JSON.stringify(text)}, ${JSON.stringify(options || {})})`
+      );
+
+      logger.info({ success: result.success, characters: result.node?.characters?.substring(0, 50) }, 'Text content set');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Set text content failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Create a child node
+   */
+  async createChildNode(
+    parentId: string,
+    nodeType: 'RECTANGLE' | 'ELLIPSE' | 'FRAME' | 'TEXT' | 'LINE' | 'POLYGON' | 'STAR' | 'VECTOR',
+    properties?: {
+      name?: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      fills?: any[];
+      text?: string;
+    }
+  ): Promise<any> {
+    logger.info({ parentId, nodeType, properties }, 'Creating child node via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.createChildNode(${JSON.stringify(parentId)}, ${JSON.stringify(nodeType)}, ${JSON.stringify(properties || {})})`
+      );
+
+      logger.info({ success: result.success, nodeId: result.node?.id, nodeType: result.node?.type }, 'Child node created');
+      return result;
+    } catch (error) {
+      logger.error({ error, parentId, nodeType }, 'Create child node failed');
+      throw error;
+    }
+  }
 }

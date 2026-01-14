@@ -6,8 +6,8 @@
 
 console.log('🌉 [Desktop Bridge] Plugin loaded and ready');
 
-// Show UI to keep plugin running and receive data
-figma.showUI(__html__, { width: 320, height: 240, visible: true });
+// Show minimal UI - compact status indicator
+figma.showUI(__html__, { width: 120, height: 36, visible: true, themeColors: true });
 
 // Immediately fetch and send variables data to UI
 (async () => {
@@ -1010,6 +1010,717 @@ figma.ui.onmessage = async (msg) => {
       console.error('🌉 [Desktop Bridge] Instantiate component error:', errorMsg);
       figma.ui.postMessage({
         type: 'INSTANTIATE_COMPONENT_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // SET_NODE_DESCRIPTION - Set description on component/style
+  // ============================================================================
+  else if (msg.type === 'SET_NODE_DESCRIPTION') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting description on node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      // Check if node supports description
+      if (!('description' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support description');
+      }
+
+      // Set description (and markdown if supported)
+      node.description = msg.description || '';
+      if (msg.descriptionMarkdown && 'descriptionMarkdown' in node) {
+        node.descriptionMarkdown = msg.descriptionMarkdown;
+      }
+
+      console.log('🌉 [Desktop Bridge] Description set successfully');
+
+      figma.ui.postMessage({
+        type: 'SET_NODE_DESCRIPTION_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: node.id, name: node.name, description: node.description }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set description error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_NODE_DESCRIPTION_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // ADD_COMPONENT_PROPERTY - Add property to component
+  // ============================================================================
+  else if (msg.type === 'ADD_COMPONENT_PROPERTY') {
+    try {
+      console.log('🌉 [Desktop Bridge] Adding component property:', msg.propertyName, 'type:', msg.propertyType);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (node.type !== 'COMPONENT' && node.type !== 'COMPONENT_SET') {
+        throw new Error('Node must be a COMPONENT or COMPONENT_SET. Got: ' + node.type);
+      }
+
+      // Check if it's a variant (can't add properties to variants)
+      if (node.type === 'COMPONENT' && node.parent && node.parent.type === 'COMPONENT_SET') {
+        throw new Error('Cannot add properties to variant components. Add to the parent COMPONENT_SET instead.');
+      }
+
+      // Build options if preferredValues provided
+      var options = undefined;
+      if (msg.preferredValues) {
+        options = { preferredValues: msg.preferredValues };
+      }
+
+      // Use msg.propertyType (not msg.type which is the message type 'ADD_COMPONENT_PROPERTY')
+      var propertyNameWithId = node.addComponentProperty(msg.propertyName, msg.propertyType, msg.defaultValue, options);
+
+      console.log('🌉 [Desktop Bridge] Property added:', propertyNameWithId);
+
+      figma.ui.postMessage({
+        type: 'ADD_COMPONENT_PROPERTY_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        propertyName: propertyNameWithId
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Add component property error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'ADD_COMPONENT_PROPERTY_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // EDIT_COMPONENT_PROPERTY - Edit existing component property
+  // ============================================================================
+  else if (msg.type === 'EDIT_COMPONENT_PROPERTY') {
+    try {
+      console.log('🌉 [Desktop Bridge] Editing component property:', msg.propertyName);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (node.type !== 'COMPONENT' && node.type !== 'COMPONENT_SET') {
+        throw new Error('Node must be a COMPONENT or COMPONENT_SET. Got: ' + node.type);
+      }
+
+      var propertyNameWithId = node.editComponentProperty(msg.propertyName, msg.newValue);
+
+      console.log('🌉 [Desktop Bridge] Property edited:', propertyNameWithId);
+
+      figma.ui.postMessage({
+        type: 'EDIT_COMPONENT_PROPERTY_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        propertyName: propertyNameWithId
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Edit component property error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'EDIT_COMPONENT_PROPERTY_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // DELETE_COMPONENT_PROPERTY - Delete a component property
+  // ============================================================================
+  else if (msg.type === 'DELETE_COMPONENT_PROPERTY') {
+    try {
+      console.log('🌉 [Desktop Bridge] Deleting component property:', msg.propertyName);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (node.type !== 'COMPONENT' && node.type !== 'COMPONENT_SET') {
+        throw new Error('Node must be a COMPONENT or COMPONENT_SET. Got: ' + node.type);
+      }
+
+      node.deleteComponentProperty(msg.propertyName);
+
+      console.log('🌉 [Desktop Bridge] Property deleted');
+
+      figma.ui.postMessage({
+        type: 'DELETE_COMPONENT_PROPERTY_RESULT',
+        requestId: msg.requestId,
+        success: true
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Delete component property error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'DELETE_COMPONENT_PROPERTY_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // RESIZE_NODE - Resize any node
+  // ============================================================================
+  else if (msg.type === 'RESIZE_NODE') {
+    try {
+      console.log('🌉 [Desktop Bridge] Resizing node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (!('resize' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support resize');
+      }
+
+      if (msg.withConstraints) {
+        node.resize(msg.width, msg.height);
+      } else {
+        node.resizeWithoutConstraints(msg.width, msg.height);
+      }
+
+      console.log('🌉 [Desktop Bridge] Node resized to:', msg.width, 'x', msg.height);
+
+      figma.ui.postMessage({
+        type: 'RESIZE_NODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: node.id, name: node.name, width: node.width, height: node.height }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Resize node error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'RESIZE_NODE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // MOVE_NODE - Move/position a node
+  // ============================================================================
+  else if (msg.type === 'MOVE_NODE') {
+    try {
+      console.log('🌉 [Desktop Bridge] Moving node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (!('x' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support positioning');
+      }
+
+      node.x = msg.x;
+      node.y = msg.y;
+
+      console.log('🌉 [Desktop Bridge] Node moved to:', msg.x, ',', msg.y);
+
+      figma.ui.postMessage({
+        type: 'MOVE_NODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: node.id, name: node.name, x: node.x, y: node.y }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Move node error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'MOVE_NODE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // SET_NODE_FILLS - Set fills (colors) on a node
+  // ============================================================================
+  else if (msg.type === 'SET_NODE_FILLS') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting fills on node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (!('fills' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support fills');
+      }
+
+      // Process fills - convert hex colors if needed
+      var processedFills = msg.fills.map(function(fill) {
+        if (fill.type === 'SOLID' && typeof fill.color === 'string') {
+          // Convert hex to RGB
+          var rgb = hexToFigmaRGB(fill.color);
+          return {
+            type: 'SOLID',
+            color: { r: rgb.r, g: rgb.g, b: rgb.b },
+            opacity: rgb.a !== undefined ? rgb.a : (fill.opacity !== undefined ? fill.opacity : 1)
+          };
+        }
+        return fill;
+      });
+
+      node.fills = processedFills;
+
+      console.log('🌉 [Desktop Bridge] Fills set successfully');
+
+      figma.ui.postMessage({
+        type: 'SET_NODE_FILLS_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: node.id, name: node.name }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set fills error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_NODE_FILLS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // SET_NODE_STROKES - Set strokes on a node
+  // ============================================================================
+  else if (msg.type === 'SET_NODE_STROKES') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting strokes on node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (!('strokes' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support strokes');
+      }
+
+      // Process strokes - convert hex colors if needed
+      var processedStrokes = msg.strokes.map(function(stroke) {
+        if (stroke.type === 'SOLID' && typeof stroke.color === 'string') {
+          var rgb = hexToFigmaRGB(stroke.color);
+          return {
+            type: 'SOLID',
+            color: { r: rgb.r, g: rgb.g, b: rgb.b },
+            opacity: rgb.a !== undefined ? rgb.a : (stroke.opacity !== undefined ? stroke.opacity : 1)
+          };
+        }
+        return stroke;
+      });
+
+      node.strokes = processedStrokes;
+
+      if (msg.strokeWeight !== undefined) {
+        node.strokeWeight = msg.strokeWeight;
+      }
+
+      console.log('🌉 [Desktop Bridge] Strokes set successfully');
+
+      figma.ui.postMessage({
+        type: 'SET_NODE_STROKES_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: node.id, name: node.name }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set strokes error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_NODE_STROKES_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // SET_NODE_OPACITY - Set opacity on a node
+  // ============================================================================
+  else if (msg.type === 'SET_NODE_OPACITY') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting opacity on node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (!('opacity' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support opacity');
+      }
+
+      node.opacity = Math.max(0, Math.min(1, msg.opacity));
+
+      console.log('🌉 [Desktop Bridge] Opacity set to:', node.opacity);
+
+      figma.ui.postMessage({
+        type: 'SET_NODE_OPACITY_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: node.id, name: node.name, opacity: node.opacity }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set opacity error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_NODE_OPACITY_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // SET_NODE_CORNER_RADIUS - Set corner radius on a node
+  // ============================================================================
+  else if (msg.type === 'SET_NODE_CORNER_RADIUS') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting corner radius on node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (!('cornerRadius' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support corner radius');
+      }
+
+      node.cornerRadius = msg.radius;
+
+      console.log('🌉 [Desktop Bridge] Corner radius set to:', msg.radius);
+
+      figma.ui.postMessage({
+        type: 'SET_NODE_CORNER_RADIUS_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: node.id, name: node.name, cornerRadius: node.cornerRadius }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set corner radius error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_NODE_CORNER_RADIUS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // CLONE_NODE - Clone/duplicate a node
+  // ============================================================================
+  else if (msg.type === 'CLONE_NODE') {
+    try {
+      console.log('🌉 [Desktop Bridge] Cloning node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (!('clone' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support cloning');
+      }
+
+      var clonedNode = node.clone();
+
+      console.log('🌉 [Desktop Bridge] Node cloned:', clonedNode.id);
+
+      figma.ui.postMessage({
+        type: 'CLONE_NODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: clonedNode.id, name: clonedNode.name, x: clonedNode.x, y: clonedNode.y }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Clone node error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'CLONE_NODE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // DELETE_NODE - Delete a node
+  // ============================================================================
+  else if (msg.type === 'DELETE_NODE') {
+    try {
+      console.log('🌉 [Desktop Bridge] Deleting node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      var deletedInfo = { id: node.id, name: node.name };
+
+      node.remove();
+
+      console.log('🌉 [Desktop Bridge] Node deleted');
+
+      figma.ui.postMessage({
+        type: 'DELETE_NODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        deleted: deletedInfo
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Delete node error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'DELETE_NODE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // RENAME_NODE - Rename a node
+  // ============================================================================
+  else if (msg.type === 'RENAME_NODE') {
+    try {
+      console.log('🌉 [Desktop Bridge] Renaming node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      var oldName = node.name;
+      node.name = msg.newName;
+
+      console.log('🌉 [Desktop Bridge] Node renamed from "' + oldName + '" to "' + msg.newName + '"');
+
+      figma.ui.postMessage({
+        type: 'RENAME_NODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: node.id, name: node.name, oldName: oldName }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Rename node error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'RENAME_NODE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // SET_TEXT_CONTENT - Set text on a text node
+  // ============================================================================
+  else if (msg.type === 'SET_TEXT_CONTENT') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting text content on node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      if (node.type !== 'TEXT') {
+        throw new Error('Node must be a TEXT node. Got: ' + node.type);
+      }
+
+      // Load the font first
+      await figma.loadFontAsync(node.fontName);
+
+      node.characters = msg.text;
+
+      // Apply font properties if specified
+      if (msg.fontSize) {
+        node.fontSize = msg.fontSize;
+      }
+
+      console.log('🌉 [Desktop Bridge] Text content set');
+
+      figma.ui.postMessage({
+        type: 'SET_TEXT_CONTENT_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: { id: node.id, name: node.name, characters: node.characters }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set text content error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_TEXT_CONTENT_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // CREATE_CHILD_NODE - Create a new child node
+  // ============================================================================
+  else if (msg.type === 'CREATE_CHILD_NODE') {
+    try {
+      console.log('🌉 [Desktop Bridge] Creating child node of type:', msg.nodeType);
+
+      var parent = await figma.getNodeByIdAsync(msg.parentId);
+      if (!parent) {
+        throw new Error('Parent node not found: ' + msg.parentId);
+      }
+
+      if (!('appendChild' in parent)) {
+        throw new Error('Parent node type ' + parent.type + ' does not support children');
+      }
+
+      var newNode;
+      var props = msg.properties || {};
+
+      switch (msg.nodeType) {
+        case 'RECTANGLE':
+          newNode = figma.createRectangle();
+          break;
+        case 'ELLIPSE':
+          newNode = figma.createEllipse();
+          break;
+        case 'FRAME':
+          newNode = figma.createFrame();
+          break;
+        case 'TEXT':
+          newNode = figma.createText();
+          // Load default font
+          await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+          newNode.fontName = { family: 'Inter', style: 'Regular' };
+          if (props.text) {
+            newNode.characters = props.text;
+          }
+          break;
+        case 'LINE':
+          newNode = figma.createLine();
+          break;
+        case 'POLYGON':
+          newNode = figma.createPolygon();
+          break;
+        case 'STAR':
+          newNode = figma.createStar();
+          break;
+        case 'VECTOR':
+          newNode = figma.createVector();
+          break;
+        default:
+          throw new Error('Unsupported node type: ' + msg.nodeType);
+      }
+
+      // Apply common properties
+      if (props.name) newNode.name = props.name;
+      if (props.x !== undefined) newNode.x = props.x;
+      if (props.y !== undefined) newNode.y = props.y;
+      if (props.width !== undefined && props.height !== undefined) {
+        newNode.resize(props.width, props.height);
+      }
+
+      // Apply fills if specified
+      if (props.fills) {
+        var processedFills = props.fills.map(function(fill) {
+          if (fill.type === 'SOLID' && typeof fill.color === 'string') {
+            var rgb = hexToFigmaRGB(fill.color);
+            return {
+              type: 'SOLID',
+              color: { r: rgb.r, g: rgb.g, b: rgb.b },
+              opacity: rgb.a !== undefined ? rgb.a : 1
+            };
+          }
+          return fill;
+        });
+        newNode.fills = processedFills;
+      }
+
+      // Add to parent
+      parent.appendChild(newNode);
+
+      console.log('🌉 [Desktop Bridge] Child node created:', newNode.id);
+
+      figma.ui.postMessage({
+        type: 'CREATE_CHILD_NODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        node: {
+          id: newNode.id,
+          name: newNode.name,
+          type: newNode.type,
+          x: newNode.x,
+          y: newNode.y,
+          width: newNode.width,
+          height: newNode.height
+        }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Create child node error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'CREATE_CHILD_NODE_RESULT',
         requestId: msg.requestId,
         success: false,
         error: errorMsg

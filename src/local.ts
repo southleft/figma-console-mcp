@@ -2192,6 +2192,622 @@ After instantiating components, use figma_take_screenshot to verify the result l
 			},
 		);
 
+		// ============================================================================
+		// NEW: Component Property Management Tools
+		// ============================================================================
+
+		// Tool: Set Node Description
+		this.server.tool(
+			"figma_set_description",
+			"Set the description text on a component, component set, or style. Descriptions appear in Dev Mode and help document design intent. Supports plain text and markdown formatting.",
+			{
+				nodeId: z.string().describe(
+					"The node ID of the component or style to update (e.g., '123:456')"
+				),
+				description: z.string().describe(
+					"The plain text description to set"
+				),
+				descriptionMarkdown: z.string().optional().describe(
+					"Optional rich text description using markdown formatting"
+				),
+			},
+			async ({ nodeId, description, descriptionMarkdown }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.setNodeDescription(nodeId, description, descriptionMarkdown);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to set description");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: "Description set successfully",
+								node: result.node,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to set description");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the node supports descriptions (components, component sets, styles)",
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Add Component Property
+		this.server.tool(
+			"figma_add_component_property",
+			"Add a new component property to a component or component set. Properties enable dynamic content and behavior in component instances. Supported types: BOOLEAN (toggle), TEXT (string), INSTANCE_SWAP (component swap), VARIANT (variant selection).",
+			{
+				nodeId: z.string().describe(
+					"The component or component set node ID"
+				),
+				propertyName: z.string().describe(
+					"Name for the new property (e.g., 'Show Icon', 'Button Label')"
+				),
+				type: z.enum(["BOOLEAN", "TEXT", "INSTANCE_SWAP", "VARIANT"]).describe(
+					"Property type: BOOLEAN for toggles, TEXT for strings, INSTANCE_SWAP for component swaps, VARIANT for variant selection"
+				),
+				defaultValue: z.any().describe(
+					"Default value for the property. BOOLEAN: true/false, TEXT: string, INSTANCE_SWAP: component key, VARIANT: variant value"
+				),
+			},
+			async ({ nodeId, propertyName, type, defaultValue }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.addComponentProperty(nodeId, propertyName, type, defaultValue);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to add property");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: "Component property added",
+								propertyName: result.propertyName,
+								hint: "The property name includes a unique suffix (e.g., 'Show Icon#123:456'). Use the full name for editing/deleting.",
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to add component property");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Cannot add properties to variant components. Add to the parent component set instead.",
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Edit Component Property
+		this.server.tool(
+			"figma_edit_component_property",
+			"Edit an existing component property. Can change the name, default value, or preferred values (for INSTANCE_SWAP). Use the full property name including the unique suffix.",
+			{
+				nodeId: z.string().describe(
+					"The component or component set node ID"
+				),
+				propertyName: z.string().describe(
+					"The full property name with suffix (e.g., 'Show Icon#123:456')"
+				),
+				newValue: z.object({
+					name: z.string().optional().describe("New name for the property"),
+					defaultValue: z.any().optional().describe("New default value"),
+					preferredValues: z.array(z.any()).optional().describe("Preferred values (INSTANCE_SWAP only)"),
+				}).describe("Object with the values to update"),
+			},
+			async ({ nodeId, propertyName, newValue }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.editComponentProperty(nodeId, propertyName, newValue);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to edit property");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: "Component property updated",
+								propertyName: result.propertyName,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to edit component property");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Delete Component Property
+		this.server.tool(
+			"figma_delete_component_property",
+			"Delete a component property. Only works with BOOLEAN, TEXT, and INSTANCE_SWAP properties (not VARIANT). This is a destructive operation.",
+			{
+				nodeId: z.string().describe(
+					"The component or component set node ID"
+				),
+				propertyName: z.string().describe(
+					"The full property name with suffix (e.g., 'Show Icon#123:456')"
+				),
+			},
+			async ({ nodeId, propertyName }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.deleteComponentProperty(nodeId, propertyName);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to delete property");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: "Component property deleted",
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to delete component property");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Cannot delete VARIANT properties. Only BOOLEAN, TEXT, and INSTANCE_SWAP can be deleted.",
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// ============================================================================
+		// NEW: Node Manipulation Tools
+		// ============================================================================
+
+		// Tool: Resize Node
+		this.server.tool(
+			"figma_resize_node",
+			"Resize a node to specific dimensions. By default respects child constraints; use withConstraints=false to ignore them.",
+			{
+				nodeId: z.string().describe("The node ID to resize"),
+				width: z.number().describe("New width in pixels"),
+				height: z.number().describe("New height in pixels"),
+				withConstraints: z.boolean().optional().default(true).describe(
+					"Whether to apply child constraints during resize (default: true)"
+				),
+			},
+			async ({ nodeId, width, height, withConstraints }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.resizeNode(nodeId, width, height, withConstraints);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to resize node");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: `Node resized to ${width}x${height}`,
+								node: result.node,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to resize node");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Move Node
+		this.server.tool(
+			"figma_move_node",
+			"Move a node to a new position within its parent.",
+			{
+				nodeId: z.string().describe("The node ID to move"),
+				x: z.number().describe("New X position"),
+				y: z.number().describe("New Y position"),
+			},
+			async ({ nodeId, x, y }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.moveNode(nodeId, x, y);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to move node");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: `Node moved to (${x}, ${y})`,
+								node: result.node,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to move node");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Set Node Fills
+		this.server.tool(
+			"figma_set_fills",
+			"Set the fill colors on a node. Accepts hex color strings (e.g., '#FF0000') or full paint objects.",
+			{
+				nodeId: z.string().describe("The node ID to modify"),
+				fills: z.array(z.object({
+					type: z.literal("SOLID").describe("Fill type (currently only SOLID supported)"),
+					color: z.string().describe("Hex color string (e.g., '#FF0000', '#FF000080' for transparency)"),
+					opacity: z.number().optional().describe("Opacity 0-1 (default: 1)"),
+				})).describe("Array of fill objects"),
+			},
+			async ({ nodeId, fills }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.setNodeFills(nodeId, fills);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to set fills");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: "Fills updated",
+								node: result.node,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to set fills");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Set Node Strokes
+		this.server.tool(
+			"figma_set_strokes",
+			"Set the stroke (border) on a node. Accepts hex color strings and optional stroke weight.",
+			{
+				nodeId: z.string().describe("The node ID to modify"),
+				strokes: z.array(z.object({
+					type: z.literal("SOLID").describe("Stroke type"),
+					color: z.string().describe("Hex color string"),
+					opacity: z.number().optional().describe("Opacity 0-1"),
+				})).describe("Array of stroke objects"),
+				strokeWeight: z.number().optional().describe("Stroke thickness in pixels"),
+			},
+			async ({ nodeId, strokes, strokeWeight }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.setNodeStrokes(nodeId, strokes, strokeWeight);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to set strokes");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: "Strokes updated",
+								node: result.node,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to set strokes");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Clone Node
+		this.server.tool(
+			"figma_clone_node",
+			"Duplicate a node. The clone is placed at a slight offset from the original.",
+			{
+				nodeId: z.string().describe("The node ID to clone"),
+			},
+			async ({ nodeId }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.cloneNode(nodeId);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to clone node");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: "Node cloned",
+								clonedNode: result.node,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to clone node");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Delete Node
+		this.server.tool(
+			"figma_delete_node",
+			"Delete a node from the canvas. WARNING: This is a destructive operation (can be undone with Figma's undo).",
+			{
+				nodeId: z.string().describe("The node ID to delete"),
+			},
+			async ({ nodeId }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.deleteNode(nodeId);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to delete node");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: "Node deleted",
+								deleted: result.deleted,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to delete node");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Rename Node
+		this.server.tool(
+			"figma_rename_node",
+			"Rename a node in the layer panel.",
+			{
+				nodeId: z.string().describe("The node ID to rename"),
+				newName: z.string().describe("The new name for the node"),
+			},
+			async ({ nodeId, newName }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.renameNode(nodeId, newName);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to rename node");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: `Node renamed to "${newName}"`,
+								node: result.node,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to rename node");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Set Text Content
+		this.server.tool(
+			"figma_set_text",
+			"Set the text content of a text node. Optionally adjust font size.",
+			{
+				nodeId: z.string().describe("The text node ID"),
+				text: z.string().describe("The new text content"),
+				fontSize: z.number().optional().describe("Optional font size to set"),
+			},
+			async ({ nodeId, text, fontSize }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.setTextContent(nodeId, text, fontSize ? { fontSize } : undefined);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to set text");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: "Text content updated",
+								node: result.node,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to set text content");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the node is a TEXT node",
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Create Child Node
+		this.server.tool(
+			"figma_create_child",
+			"Create a new child node inside a parent container. Useful for adding shapes, text, or frames to existing structures.",
+			{
+				parentId: z.string().describe("The parent node ID"),
+				nodeType: z.enum(["RECTANGLE", "ELLIPSE", "FRAME", "TEXT", "LINE"]).describe(
+					"Type of node to create"
+				),
+				properties: z.object({
+					name: z.string().optional().describe("Name for the new node"),
+					x: z.number().optional().describe("X position within parent"),
+					y: z.number().optional().describe("Y position within parent"),
+					width: z.number().optional().describe("Width (default: 100)"),
+					height: z.number().optional().describe("Height (default: 100)"),
+					fills: z.array(z.object({
+						type: z.literal("SOLID"),
+						color: z.string(),
+					})).optional().describe("Fill colors (hex strings)"),
+					text: z.string().optional().describe("Text content (for TEXT nodes only)"),
+				}).optional().describe("Properties for the new node"),
+			},
+			async ({ parentId, nodeType, properties }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+					const result = await connector.createChildNode(parentId, nodeType, properties);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to create node");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								message: `Created ${nodeType} node`,
+								node: result.node,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to create child node");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the parent node supports children (frames, groups, etc.)",
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
 		// Register Figma API tools (Tools 8-11)
 		registerFigmaAPITools(
 			this.server,

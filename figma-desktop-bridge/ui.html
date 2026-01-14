@@ -10,104 +10,132 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: #ffffff;
-      color: #1a1a1a;
-      padding: 24px;
-      min-height: 100vh;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 11px;
+      background: var(--figma-color-bg, #2c2c2c);
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+      height: 100%;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
+      padding: 6px 8px;
+      user-select: none;
     }
 
-    .container {
-      max-width: 320px;
-      width: 100%;
-    }
-
-    .status {
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 8px;
+    .bridge-status {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      padding: 4px 8px;
+      background: var(--figma-color-bg-secondary, #383838);
+      border: 1px solid var(--figma-color-border, #4a4a4a);
+      border-radius: 4px;
+      white-space: nowrap;
     }
 
-    .icon {
-      font-size: 16px;
-      line-height: 1;
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
     }
 
-    .details {
-      font-size: 12px;
-      color: #666;
-      line-height: 1.6;
-      margin-top: 8px;
+    .status-indicator.loading {
+      background: #f5a623;
+      animation: pulse 1.5s ease-in-out infinite;
     }
 
-    .details strong {
-      color: #1a1a1a;
+    .status-indicator.active {
+      background: #18a957;
+      box-shadow: 0 0 6px rgba(24, 169, 87, 0.6);
+      animation: glow 2s ease-in-out infinite;
+    }
+
+    .status-indicator.error {
+      background: #f24822;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+
+    @keyframes glow {
+      0%, 100% { box-shadow: 0 0 4px rgba(24, 169, 87, 0.4); }
+      50% { box-shadow: 0 0 8px rgba(24, 169, 87, 0.8); }
+    }
+
+    .status-text {
       font-weight: 500;
+      letter-spacing: 0.2px;
     }
 
-    .success {
-      color: #059669;
+    .status-text .label {
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.7));
     }
 
-    .error {
-      color: #dc2626;
+    .status-text .state {
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+      margin-left: 4px;
     }
 
-    .loading {
-      color: #6b7280;
-    }
-
-    .divider {
-      height: 1px;
-      background: #e5e7eb;
-      margin: 16px 0;
-    }
-
-    .footer {
-      font-size: 11px;
-      color: #9ca3af;
-      margin-top: 16px;
-      text-align: center;
+    /* Light theme support */
+    @media (prefers-color-scheme: light) {
+      body {
+        background: #f5f5f5;
+        color: #333;
+      }
+      .bridge-status {
+        background: #fff;
+        border-color: #e5e5e5;
+      }
+      .status-text .label {
+        color: #666;
+      }
+      .status-text .state {
+        color: #333;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div id="content">
-      <div class="status loading">
-        <span class="icon">⏳</span>
-        <span>Loading data...</span>
-      </div>
-      <div class="details">Connecting to Figma API</div>
+  <div class="bridge-status" id="status-container">
+    <div class="status-indicator loading" id="status-dot"></div>
+    <div class="status-text">
+      <span class="label">MCP</span>
+      <span class="state" id="status-state">connecting</span>
     </div>
-    <div class="divider"></div>
-    <div class="footer">Made with ❤️ by Southleft</div>
   </div>
 
   <script>
-    // Global variables to store data for Puppeteer access
+    // ============================================================================
+    // GLOBAL STATE - Data storage for Puppeteer/MCP access
+    // ============================================================================
     window.__figmaVariablesData = null;
     window.__figmaVariablesReady = false;
     window.__figmaComponentData = null;
-    window.__figmaComponentRequests = new Map(); // Track pending requests
-    window.__figmaPendingRequests = new Map(); // Track ALL pending requests (generic)
+    window.__figmaComponentRequests = new Map();
+    window.__figmaPendingRequests = new Map();
 
     let requestIdCounter = 0;
 
-    // Generic function to send a command to the plugin worker and wait for response
+    // UI update helper
+    function updateStatus(state, isActive, isError) {
+      const dot = document.getElementById('status-dot');
+      const stateText = document.getElementById('status-state');
+
+      dot.className = 'status-indicator ' + (isError ? 'error' : (isActive ? 'active' : 'loading'));
+      stateText.textContent = state;
+    }
+
+    // ============================================================================
+    // COMMAND INFRASTRUCTURE - Generic plugin command sender
+    // ============================================================================
     window.sendPluginCommand = (type, params, timeoutMs) => {
       timeoutMs = timeoutMs || 15000;
       return new Promise((resolve, reject) => {
-        const requestId = `${type.toLowerCase()}_${++requestIdCounter}_${Date.now()}`;
+        const requestId = type.toLowerCase() + '_' + (++requestIdCounter) + '_' + Date.now();
 
-        // Timeout - store the ID so we can clear it when response arrives
         const timeoutId = setTimeout(() => {
           if (window.__figmaPendingRequests.has(requestId)) {
             window.__figmaPendingRequests.delete(requestId);
@@ -115,47 +143,36 @@
           }
         }, timeoutMs);
 
-        // Store the promise callbacks AND the timeout ID for cleanup
-        window.__figmaPendingRequests.set(requestId, { resolve, reject, type: type, timeoutId: timeoutId });
+        window.__figmaPendingRequests.set(requestId, { resolve: resolve, reject: reject, type: type, timeoutId: timeoutId });
 
-        // Build the message
-        const message = Object.assign({ type: type, requestId: requestId }, params || {});
+        var message = { type: type, requestId: requestId };
+        for (var key in params) {
+          if (params.hasOwnProperty(key)) {
+            message[key] = params[key];
+          }
+        }
 
-        // Send request to plugin worker
         parent.postMessage({ pluginMessage: message }, '*');
-
-        console.log('[Desktop Bridge] Sent command:', type, 'requestId:', requestId);
+        console.log('[MCP Bridge] Sent:', type);
       });
     };
 
     // ============================================================================
-    // WRITE OPERATION FUNCTIONS - Exposed for Puppeteer/MCP access
+    // VARIABLE OPERATIONS
     // ============================================================================
 
-    // Execute arbitrary code in plugin context
-    // Returns { success: true, result: ... } or { success: false, error: "..." }
-    // Never rejects - always returns a plain object for puppeteer BiDi compatibility
     window.executeCode = (code, timeout) => {
       return window.sendPluginCommand('EXECUTE_CODE', { code: code, timeout: timeout || 5000 }, (timeout || 5000) + 2000)
-        .catch(function(err) {
-          // Convert rejection to plain object for BiDi serialization
-          return { success: false, error: err.message || String(err) };
-        });
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Update a variable's value
     window.updateVariable = (variableId, modeId, value) => {
       return window.sendPluginCommand('UPDATE_VARIABLE', { variableId: variableId, modeId: modeId, value: value })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Create a new variable
     window.createVariable = (name, collectionId, resolvedType, options) => {
-      var params = {
-        name: name,
-        collectionId: collectionId,
-        resolvedType: resolvedType
-      };
+      var params = { name: name, collectionId: collectionId, resolvedType: resolvedType };
       if (options) {
         if (options.valuesByMode) params.valuesByMode = options.valuesByMode;
         if (options.description) params.description = options.description;
@@ -165,7 +182,6 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Create a new variable collection
     window.createVariableCollection = (name, options) => {
       var params = { name: name };
       if (options) {
@@ -176,83 +192,64 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Delete a variable
     window.deleteVariable = (variableId) => {
       return window.sendPluginCommand('DELETE_VARIABLE', { variableId: variableId })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Delete a variable collection
     window.deleteVariableCollection = (collectionId) => {
       return window.sendPluginCommand('DELETE_VARIABLE_COLLECTION', { collectionId: collectionId })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Rename a variable
     window.renameVariable = (variableId, newName) => {
       return window.sendPluginCommand('RENAME_VARIABLE', { variableId: variableId, newName: newName })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Add a mode to a collection
     window.addMode = (collectionId, modeName) => {
       return window.sendPluginCommand('ADD_MODE', { collectionId: collectionId, modeName: modeName })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Rename a mode in a collection
     window.renameMode = (collectionId, modeId, newName) => {
       return window.sendPluginCommand('RENAME_MODE', { collectionId: collectionId, modeId: modeId, newName: newName })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Refresh variables data
     window.refreshVariables = () => {
       return window.sendPluginCommand('REFRESH_VARIABLES', {})
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Get all local components for design system manifest
-    // Large design systems with many pages can take several minutes to process
+    // ============================================================================
+    // COMPONENT OPERATIONS
+    // ============================================================================
+
     window.getLocalComponents = () => {
-      return window.sendPluginCommand('GET_LOCAL_COMPONENTS', {}, 300000)  // 5 minute timeout for large files
+      return window.sendPluginCommand('GET_LOCAL_COMPONENTS', {}, 300000)
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Instantiate a component with overrides
     window.instantiateComponent = (componentKey, options) => {
-      return window.sendPluginCommand('INSTANTIATE_COMPONENT', {
-        componentKey: componentKey,
-        nodeId: options?.nodeId,  // For local (unpublished) components
-        position: options?.position,
-        size: options?.size,
-        overrides: options?.overrides,
-        variant: options?.variant,
-        parentId: options?.parentId
-      })
+      var params = { componentKey: componentKey };
+      if (options) {
+        if (options.nodeId) params.nodeId = options.nodeId;
+        if (options.position) params.position = options.position;
+        if (options.size) params.size = options.size;
+        if (options.overrides) params.overrides = options.overrides;
+        if (options.variant) params.variant = options.variant;
+        if (options.parentId) params.parentId = options.parentId;
+      }
+      return window.sendPluginCommand('INSTANTIATE_COMPONENT', params)
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Function to request component data from plugin worker (legacy, kept for compatibility)
     window.requestComponentData = (nodeId) => {
       return new Promise((resolve, reject) => {
-        const requestId = `component_${++requestIdCounter}_${Date.now()}`;
-
-        // Store the promise callbacks
-        window.__figmaComponentRequests.set(requestId, { resolve, reject });
-
-        // Send request to plugin worker
-        parent.postMessage({
-          pluginMessage: {
-            type: 'GET_COMPONENT',
-            requestId: requestId,
-            nodeId: nodeId
-          }
-        }, '*');
-
-        console.log('[Desktop Bridge] Requested component:', nodeId, 'requestId:', requestId);
-
-        // Timeout after 10 seconds
+        const requestId = 'component_' + (++requestIdCounter) + '_' + Date.now();
+        window.__figmaComponentRequests.set(requestId, { resolve: resolve, reject: reject });
+        parent.postMessage({ pluginMessage: { type: 'GET_COMPONENT', requestId: requestId, nodeId: nodeId } }, '*');
         setTimeout(() => {
           if (window.__figmaComponentRequests.has(requestId)) {
             window.__figmaComponentRequests.delete(requestId);
@@ -262,251 +259,268 @@
       });
     };
 
-    // Listen for messages from plugin worker
+    // ============================================================================
+    // NEW: COMPONENT PROPERTY MANAGEMENT
+    // ============================================================================
+
+    // Set component/node description
+    window.setNodeDescription = (nodeId, description, descriptionMarkdown) => {
+      return window.sendPluginCommand('SET_NODE_DESCRIPTION', {
+        nodeId: nodeId,
+        description: description,
+        descriptionMarkdown: descriptionMarkdown
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Add a component property (BOOLEAN, TEXT, INSTANCE_SWAP, VARIANT)
+    // Note: We use 'propertyType' instead of 'type' to avoid collision with message type field
+    window.addComponentProperty = (nodeId, propertyName, type, defaultValue, options) => {
+      var params = { nodeId: nodeId, propertyName: propertyName, propertyType: type, defaultValue: defaultValue };
+      if (options) {
+        if (options.preferredValues) params.preferredValues = options.preferredValues;
+      }
+      return window.sendPluginCommand('ADD_COMPONENT_PROPERTY', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Edit an existing component property
+    window.editComponentProperty = (nodeId, propertyName, newValue) => {
+      return window.sendPluginCommand('EDIT_COMPONENT_PROPERTY', {
+        nodeId: nodeId,
+        propertyName: propertyName,
+        newValue: newValue
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Delete a component property
+    window.deleteComponentProperty = (nodeId, propertyName) => {
+      return window.sendPluginCommand('DELETE_COMPONENT_PROPERTY', {
+        nodeId: nodeId,
+        propertyName: propertyName
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // ============================================================================
+    // NEW: NODE MANIPULATION
+    // ============================================================================
+
+    // Resize any node
+    window.resizeNode = (nodeId, width, height, withConstraints) => {
+      return window.sendPluginCommand('RESIZE_NODE', {
+        nodeId: nodeId,
+        width: width,
+        height: height,
+        withConstraints: withConstraints !== false
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Move/position a node
+    window.moveNode = (nodeId, x, y) => {
+      return window.sendPluginCommand('MOVE_NODE', { nodeId: nodeId, x: x, y: y })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set node fills (colors)
+    window.setNodeFills = (nodeId, fills) => {
+      return window.sendPluginCommand('SET_NODE_FILLS', { nodeId: nodeId, fills: fills })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set node strokes
+    window.setNodeStrokes = (nodeId, strokes, strokeWeight) => {
+      var params = { nodeId: nodeId, strokes: strokes };
+      if (strokeWeight !== undefined) params.strokeWeight = strokeWeight;
+      return window.sendPluginCommand('SET_NODE_STROKES', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set node opacity
+    window.setNodeOpacity = (nodeId, opacity) => {
+      return window.sendPluginCommand('SET_NODE_OPACITY', { nodeId: nodeId, opacity: opacity })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set node corner radius
+    window.setNodeCornerRadius = (nodeId, radius) => {
+      return window.sendPluginCommand('SET_NODE_CORNER_RADIUS', { nodeId: nodeId, radius: radius })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Clone a node
+    window.cloneNode = (nodeId) => {
+      return window.sendPluginCommand('CLONE_NODE', { nodeId: nodeId })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Delete a node
+    window.deleteNode = (nodeId) => {
+      return window.sendPluginCommand('DELETE_NODE', { nodeId: nodeId })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Rename a node
+    window.renameNode = (nodeId, newName) => {
+      return window.sendPluginCommand('RENAME_NODE', { nodeId: nodeId, newName: newName })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set text content (for text nodes)
+    window.setTextContent = (nodeId, text, options) => {
+      var params = { nodeId: nodeId, text: text };
+      if (options) {
+        if (options.fontSize) params.fontSize = options.fontSize;
+        if (options.fontWeight) params.fontWeight = options.fontWeight;
+        if (options.fontFamily) params.fontFamily = options.fontFamily;
+      }
+      return window.sendPluginCommand('SET_TEXT_CONTENT', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Create a new node as child
+    window.createChildNode = (parentId, nodeType, properties) => {
+      return window.sendPluginCommand('CREATE_CHILD_NODE', {
+        parentId: parentId,
+        nodeType: nodeType,
+        properties: properties || {}
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // ============================================================================
+    // MESSAGE HANDLER - Process responses from plugin worker
+    // ============================================================================
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
+      if (!msg) return;
 
-      if (msg.type === 'VARIABLES_DATA') {
-        // Store data on window object for Puppeteer
-        window.__figmaVariablesData = msg.data;
-        window.__figmaVariablesReady = true;
-
-        const varCount = msg.data.variables?.length || 0;
-        const collCount = msg.data.variableCollections?.length || 0;
-
-        // Update UI
-        document.getElementById('content').innerHTML = `
-          <div class="status success">
-            <span class="icon">✓</span>
-            <span>Desktop Bridge active</span>
-          </div>
-          <div class="details">
-            <strong>Variables:</strong> ${varCount} in ${collCount} ${collCount === 1 ? 'collection' : 'collections'}<br>
-            <strong>Components:</strong> On-demand via MCP<br>
-            <strong>Write ops:</strong> Enabled ✓<br>
-            <br>
-            <code style="font-size: 10px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; display: block; margin-top: 4px;">window.executeCode(code)</code>
-            <code style="font-size: 10px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; display: block; margin-top: 2px;">window.updateVariable(id, mode, val)</code>
-          </div>
-        `;
-
-        console.log('[Desktop Bridge] Variables ready:', { varCount, collCount });
-
-      } else if (msg.type === 'COMPONENT_DATA') {
-        // Store component data
-        window.__figmaComponentData = msg.data;
-
-        console.log('[Desktop Bridge] Component data received:', msg.data.component.name);
-
-        // Resolve the promise
-        const request = window.__figmaComponentRequests.get(msg.requestId);
-        if (request) {
-          request.resolve(msg.data);
-          window.__figmaComponentRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'COMPONENT_ERROR') {
-        console.error('[Desktop Bridge] Component error:', msg.error);
-
-        // Reject the promise
-        const request = window.__figmaComponentRequests.get(msg.requestId);
-        if (request) {
-          request.reject(new Error(msg.error));
-          window.__figmaComponentRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'ERROR') {
-        window.__figmaVariablesReady = false;
-
-        document.getElementById('content').innerHTML = `
-          <div class="status error">
-            <span class="icon">✕</span>
-            <span>Error loading data</span>
-          </div>
-          <div class="details">${msg.error}</div>
-        `;
-
-        console.error('[Desktop Bridge] Error:', msg.error);
-
-      // ============================================================================
-      // WRITE OPERATION RESPONSES - Handle results from plugin worker
-      // ============================================================================
-
-      } else if (msg.type === 'EXECUTE_CODE_RESULT') {
-        console.log('[Desktop Bridge] Execute code result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, result: msg.result });
-          } else {
-            // Return a plain object instead of rejecting with Error for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'UPDATE_VARIABLE_RESULT') {
-        console.log('[Desktop Bridge] Update variable result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, variable: msg.variable });
-          } else {
-            // Return plain object instead of rejecting for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'CREATE_VARIABLE_RESULT') {
-        console.log('[Desktop Bridge] Create variable result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, variable: msg.variable });
-          } else {
-            // Return plain object instead of rejecting for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'CREATE_VARIABLE_COLLECTION_RESULT') {
-        console.log('[Desktop Bridge] Create collection result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, collection: msg.collection });
-          } else {
-            // Return plain object instead of rejecting for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'DELETE_VARIABLE_RESULT') {
-        console.log('[Desktop Bridge] Delete variable result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, deleted: msg.deleted });
-          } else {
-            // Return plain object instead of rejecting for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'DELETE_VARIABLE_COLLECTION_RESULT') {
-        console.log('[Desktop Bridge] Delete collection result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, deleted: msg.deleted });
-          } else {
-            // Return plain object instead of rejecting for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'REFRESH_VARIABLES_RESULT') {
-        console.log('[Desktop Bridge] Refresh variables result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, data: msg.data });
-          } else {
-            // Return plain object instead of rejecting for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'RENAME_VARIABLE_RESULT') {
-        console.log('[Desktop Bridge] Rename variable result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, variable: msg.variable, oldName: msg.oldName });
-          } else {
-            // Return plain object instead of rejecting for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'ADD_MODE_RESULT') {
-        console.log('[Desktop Bridge] Add mode result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, collection: msg.collection, newMode: msg.newMode });
-          } else {
-            // Return plain object instead of rejecting for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'RENAME_MODE_RESULT') {
-        console.log('[Desktop Bridge] Rename mode result:', msg.success ? 'success' : 'error', msg.error || '');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          // Clear timeout to prevent memory leak
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, collection: msg.collection, oldName: msg.oldName });
-          } else {
-            // Return plain object instead of rejecting for BiDi compatibility
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
-
-      } else if (msg.type === 'GET_LOCAL_COMPONENTS_RESULT') {
-        console.log('[Desktop Bridge] Get local components result:', msg.success ? 'success' : 'error');
+      // Generic result handler
+      const handleResult = (resultType, dataKey) => {
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
           if (request.timeoutId) clearTimeout(request.timeoutId);
           if (msg.success) {
-            request.resolve({ success: true, data: msg.data });
+            var result = { success: true };
+            if (dataKey && msg[dataKey] !== undefined) result[dataKey] = msg[dataKey];
+            if (msg.data !== undefined) result.data = msg.data;
+            request.resolve(result);
           } else {
             request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
+      };
 
-      } else if (msg.type === 'INSTANTIATE_COMPONENT_RESULT') {
-        console.log('[Desktop Bridge] Instantiate component result:', msg.success ? 'success' : 'error');
-        const request = window.__figmaPendingRequests.get(msg.requestId);
-        if (request) {
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          if (msg.success) {
-            request.resolve({ success: true, instance: msg.instance });
-          } else {
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
-          }
-          window.__figmaPendingRequests.delete(msg.requestId);
-        }
+      // Handle message types
+      switch (msg.type) {
+        case 'VARIABLES_DATA':
+          window.__figmaVariablesData = msg.data;
+          window.__figmaVariablesReady = true;
+          updateStatus('ready', true, false);
+          console.log('[MCP Bridge] Active - ' + (msg.data.variables?.length || 0) + ' vars');
+          break;
+
+        case 'COMPONENT_DATA':
+          window.__figmaComponentData = msg.data;
+          var req = window.__figmaComponentRequests.get(msg.requestId);
+          if (req) { req.resolve(msg.data); window.__figmaComponentRequests.delete(msg.requestId); }
+          break;
+
+        case 'COMPONENT_ERROR':
+          var req2 = window.__figmaComponentRequests.get(msg.requestId);
+          if (req2) { req2.reject(new Error(msg.error)); window.__figmaComponentRequests.delete(msg.requestId); }
+          break;
+
+        case 'ERROR':
+          window.__figmaVariablesReady = false;
+          updateStatus('error', false, true);
+          console.error('[MCP Bridge] Error:', msg.error);
+          break;
+
+        // Variable operations
+        case 'EXECUTE_CODE_RESULT':
+          handleResult('EXECUTE_CODE', 'result');
+          break;
+        case 'UPDATE_VARIABLE_RESULT':
+          handleResult('UPDATE_VARIABLE', 'variable');
+          break;
+        case 'CREATE_VARIABLE_RESULT':
+          handleResult('CREATE_VARIABLE', 'variable');
+          break;
+        case 'CREATE_VARIABLE_COLLECTION_RESULT':
+          handleResult('CREATE_VARIABLE_COLLECTION', 'collection');
+          break;
+        case 'DELETE_VARIABLE_RESULT':
+          handleResult('DELETE_VARIABLE', 'deleted');
+          break;
+        case 'DELETE_VARIABLE_COLLECTION_RESULT':
+          handleResult('DELETE_VARIABLE_COLLECTION', 'deleted');
+          break;
+        case 'REFRESH_VARIABLES_RESULT':
+          handleResult('REFRESH_VARIABLES', null);
+          break;
+        case 'RENAME_VARIABLE_RESULT':
+          handleResult('RENAME_VARIABLE', 'variable');
+          break;
+        case 'ADD_MODE_RESULT':
+          handleResult('ADD_MODE', 'collection');
+          break;
+        case 'RENAME_MODE_RESULT':
+          handleResult('RENAME_MODE', 'collection');
+          break;
+        case 'GET_LOCAL_COMPONENTS_RESULT':
+          handleResult('GET_LOCAL_COMPONENTS', null);
+          break;
+        case 'INSTANTIATE_COMPONENT_RESULT':
+          handleResult('INSTANTIATE_COMPONENT', 'instance');
+          break;
+
+        // NEW: Component property operations
+        case 'SET_NODE_DESCRIPTION_RESULT':
+          handleResult('SET_NODE_DESCRIPTION', 'node');
+          break;
+        case 'ADD_COMPONENT_PROPERTY_RESULT':
+          handleResult('ADD_COMPONENT_PROPERTY', 'propertyName');
+          break;
+        case 'EDIT_COMPONENT_PROPERTY_RESULT':
+          handleResult('EDIT_COMPONENT_PROPERTY', 'propertyName');
+          break;
+        case 'DELETE_COMPONENT_PROPERTY_RESULT':
+          handleResult('DELETE_COMPONENT_PROPERTY', null);
+          break;
+
+        // NEW: Node manipulation operations
+        case 'RESIZE_NODE_RESULT':
+          handleResult('RESIZE_NODE', 'node');
+          break;
+        case 'MOVE_NODE_RESULT':
+          handleResult('MOVE_NODE', 'node');
+          break;
+        case 'SET_NODE_FILLS_RESULT':
+          handleResult('SET_NODE_FILLS', 'node');
+          break;
+        case 'SET_NODE_STROKES_RESULT':
+          handleResult('SET_NODE_STROKES', 'node');
+          break;
+        case 'SET_NODE_OPACITY_RESULT':
+          handleResult('SET_NODE_OPACITY', 'node');
+          break;
+        case 'SET_NODE_CORNER_RADIUS_RESULT':
+          handleResult('SET_NODE_CORNER_RADIUS', 'node');
+          break;
+        case 'CLONE_NODE_RESULT':
+          handleResult('CLONE_NODE', 'node');
+          break;
+        case 'DELETE_NODE_RESULT':
+          handleResult('DELETE_NODE', 'deleted');
+          break;
+        case 'RENAME_NODE_RESULT':
+          handleResult('RENAME_NODE', 'node');
+          break;
+        case 'SET_TEXT_CONTENT_RESULT':
+          handleResult('SET_TEXT_CONTENT', 'node');
+          break;
+        case 'CREATE_CHILD_NODE_RESULT':
+          handleResult('CREATE_CHILD_NODE', 'node');
+          break;
       }
     };
   </script>
