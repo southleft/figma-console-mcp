@@ -1543,7 +1543,7 @@ export function registerFigmaAPITools(
 
 				// FALLBACK: Try Desktop connection (when no token available OR as secondary fallback)
 				// Ensure browser manager is initialized
-				if (ensureInitialized && !parseFromConsole && !hasToken) {
+				if (ensureInitialized && !parseFromConsole && (!hasToken || !restApiSucceeded)) {
 					logger.info("Calling ensureInitialized to initialize browser manager");
 					await ensureInitialized();
 				}
@@ -1556,13 +1556,11 @@ export function registerFigmaAPITools(
 					logger.error("Desktop connection skipped: browserManager is not available");
 				} else if (parseFromConsole) {
 					logger.info("Desktop connection skipped: parseFromConsole is true");
-				} else if (hasToken && !restApiSucceeded) {
-					logger.info("Desktop connection skipped: Token exists, will try REST API first");
 				} else if (restApiSucceeded) {
 					logger.info("Desktop connection skipped: REST API already succeeded");
 				}
 
-				if (browserManager && !parseFromConsole && !hasToken) {
+				if (browserManager && !parseFromConsole && (!hasToken || !restApiSucceeded)) {
 					try {
 						logger.info({ fileKey }, "Attempting to get variables via Desktop connection");
 
@@ -1887,10 +1885,10 @@ export function registerFigmaAPITools(
 					`Cannot retrieve variables. All methods failed.\n\n` +
 					`Tried methods:\n` +
 					`${hasToken ? '✗ REST API (failed)\n' : ''}` +
-					`${!hasToken ? '✗ Desktop Bridge (not available)\n' : '✗ Desktop Bridge (skipped - token available)\n'}` +
+					`✗ Desktop Bridge (failed or not available)\n` +
 					`\nTo fix:\n` +
 					`1. If you have FIGMA_ACCESS_TOKEN: Check your token permissions\n` +
-					`2. If no token: Install and run Figma Desktop Bridge plugin\n` +
+					`2. Install and run the Figma Desktop Bridge plugin\n` +
 					`3. Alternative: Use parseFromConsole=true with console snippet workflow`
 				);
 			} catch (error) {
