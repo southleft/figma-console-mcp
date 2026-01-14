@@ -884,4 +884,102 @@ export class FigmaDesktopConnector {
       throw error;
     }
   }
+
+  /**
+   * Get all local components for design system manifest generation
+   */
+  async getLocalComponents(): Promise<{
+    success: boolean;
+    data?: {
+      components: any[];
+      componentSets: any[];
+      totalComponents: number;
+      totalComponentSets: number;
+      fileKey: string;
+      timestamp: number;
+    };
+    error?: string;
+  }> {
+    await this.page.evaluate(() => {
+      console.log('[DESKTOP_CONNECTOR] getLocalComponents() called');
+    });
+
+    logger.info('Getting local components via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate('window.getLocalComponents()');
+
+      logger.info(
+        {
+          success: result.success,
+          componentCount: result.data?.totalComponents,
+          componentSetCount: result.data?.totalComponentSets
+        },
+        'Local components retrieved'
+      );
+
+      await this.page.evaluate((cCount: number, csCount: number) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Found ${cCount} components and ${csCount} component sets`);
+      }, result.data?.totalComponents || 0, result.data?.totalComponentSets || 0);
+
+      return result;
+    } catch (error) {
+      logger.error({ error }, 'Get local components failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Instantiate a component with overrides
+   * Supports both published library components (by key) and local components (by nodeId)
+   */
+  async instantiateComponent(
+    componentKey: string,
+    options?: {
+      nodeId?: string;  // For local (unpublished) components
+      position?: { x: number; y: number };
+      size?: { width: number; height: number };
+      overrides?: Record<string, any>;
+      variant?: Record<string, string>;
+      parentId?: string;
+    }
+  ): Promise<{
+    success: boolean;
+    instance?: {
+      id: string;
+      name: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    error?: string;
+  }> {
+    await this.page.evaluate((key, nodeId) => {
+      console.log(`[DESKTOP_CONNECTOR] instantiateComponent() called: key=${key}, nodeId=${nodeId}`);
+    }, componentKey, options?.nodeId || null);
+
+    logger.info({ componentKey, nodeId: options?.nodeId, options }, 'Instantiating component via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.instantiateComponent(${JSON.stringify(componentKey)}, ${JSON.stringify(options || {})})`
+      );
+
+      logger.info({ success: result.success, instanceId: result.instance?.id }, 'Component instantiated');
+
+      await this.page.evaluate((instanceId: string, name: string) => {
+        console.log(`[DESKTOP_CONNECTOR] ✅ Component instantiated: ${name} (${instanceId})`);
+      }, result.instance?.id || 'unknown', result.instance?.name || 'unknown');
+
+      return result;
+    } catch (error) {
+      logger.error({ error, componentKey }, 'Instantiate component failed');
+      throw error;
+    }
+  }
 }

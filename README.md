@@ -400,6 +400,79 @@ Navigate to this file and capture what's on screen
 
 ---
 
+## 🎨 AI-Assisted Design Creation
+
+One of the most powerful capabilities of this MCP server is the ability to **design complete UI components and pages directly in Figma through natural language conversation** with any MCP-compatible AI assistant like Claude Desktop or Claude Code.
+
+### What's Possible
+
+**Create original designs from scratch:**
+```
+Design a login card with email and password fields, a "Forgot password?" link,
+and a primary Sign In button. Use 32px padding, 16px border radius, and subtle shadow.
+```
+
+**Leverage existing component libraries:**
+```
+Build a dashboard header using the Avatar component for the user profile,
+Button components for actions, and Badge components for notifications.
+```
+
+**Generate complete page layouts:**
+```
+Create a settings page with a sidebar navigation, a main content area with form fields,
+and a sticky footer with Save and Cancel buttons.
+```
+
+### How It Works
+
+1. **You describe what you want** in plain English
+2. **The AI searches your component library** using `figma_search_components` to find relevant building blocks
+3. **Components are instantiated** with proper variants and properties via `figma_instantiate_component`
+4. **Custom elements are created** using the full Figma Plugin API via `figma_execute`
+5. **Visual validation** automatically captures screenshots and iterates until the design looks right
+
+### Who Benefits
+
+| Role | Use Case |
+|------|----------|
+| **Designers** | Rapidly prototype ideas without manual frame-by-frame construction. Explore variations quickly by describing changes. |
+| **Developers** | Generate UI mockups during planning discussions. Create visual specs without switching to design tools. |
+| **Product Managers** | Sketch out feature concepts during ideation. Communicate visual requirements directly to stakeholders. |
+| **Design System Teams** | Test component flexibility by generating compositions. Identify gaps in component coverage. |
+| **Agencies** | Speed up initial concept delivery. Iterate on client feedback in real-time during calls. |
+
+### Example Workflows
+
+**Brand New Design:**
+> "Create a notification toast with an icon on the left, title and description text, and a dismiss button. Use our brand colors."
+
+The AI creates custom frames, applies your design tokens, and builds the component from scratch.
+
+**Component Composition:**
+> "Build a user profile card using the Avatar component (large size), two Button components (Edit Profile and Settings), and a Badge for the user's status."
+
+The AI searches your library, finds the exact components, and assembles them with proper spacing and alignment.
+
+**Design Iteration:**
+> "The spacing feels too tight. Increase the gap between sections to 24px and make the heading larger."
+
+The AI modifies the existing design, takes a screenshot to verify, and continues iterating until you're satisfied.
+
+### Visual Validation
+
+The AI automatically follows a validation workflow after creating designs:
+
+1. **Create** → Execute the design code
+2. **Screenshot** → Capture the result
+3. **Analyze** → Check alignment, spacing, and visual balance
+4. **Iterate** → Fix any issues detected
+5. **Verify** → Final screenshot to confirm
+
+This ensures designs aren't just technically correct—they *look* right.
+
+---
+
 ## 🎨 Desktop Bridge Plugin (Local Mode Only)
 
 The **Figma Desktop Bridge** plugin enables powerful capabilities:

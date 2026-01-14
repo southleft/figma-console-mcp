@@ -54,6 +54,32 @@ class LocalFigmaConsoleMCP {
 		this.server = new McpServer({
 			name: "Figma Console MCP (Local)",
 			version: "0.1.0",
+			instructions: `## Figma Console MCP - Visual Design Workflow
+
+This MCP server enables AI-assisted design creation in Figma. Follow these mandatory workflows:
+
+### VISUAL VALIDATION WORKFLOW (Required)
+After creating or modifying ANY visual design elements:
+1. **CREATE**: Execute design code via figma_execute
+2. **SCREENSHOT**: Capture result with figma_take_screenshot
+3. **ANALYZE**: Check alignment, spacing, proportions, visual balance
+4. **ITERATE**: Fix issues and repeat (max 3 iterations)
+5. **VERIFY**: Final screenshot to confirm
+
+### COMPONENT INSTANTIATION
+- ALWAYS call figma_search_components at the start of each session
+- NodeIds are session-specific and become stale across conversations
+- Never reuse nodeIds from previous sessions without re-searching
+
+### PAGE CREATION
+- Before creating a page, check if it already exists to avoid duplicates
+- Use: await figma.loadAllPagesAsync(); const existing = figma.root.children.find(p => p.name === 'PageName');
+
+### COMMON DESIGN ISSUES TO CHECK
+- Elements using "hug contents" instead of "fill container" (causes lopsided layouts)
+- Inconsistent padding (elements not visually balanced)
+- Text/inputs not filling available width
+- Items not centered properly in their containers`,
 		});
 	}
 
@@ -404,7 +430,17 @@ class LocalFigmaConsoleMCP {
 		// Note: For screenshots of specific components, use figma_get_component_image instead
 		this.server.tool(
 			"figma_take_screenshot",
-			"Export an image of the currently viewed Figma page or specific node using Figma's REST API. Returns an image URL (valid for 30 days). For specific components, use figma_get_component_image instead.",
+			`Export an image of the currently viewed Figma page or specific node using Figma's REST API. Returns an image URL (valid for 30 days). For specific components, use figma_get_component_image instead.
+
+**CRITICAL: Use this tool for visual validation after ANY design creation or modification.**
+This is an essential part of the visual validation workflow:
+1. After creating/modifying designs with figma_execute, ALWAYS take a screenshot
+2. Analyze the screenshot to verify the design matches specifications
+3. Check for alignment, spacing, proportions, and visual balance
+4. If issues are found, iterate with fixes and take another screenshot
+5. Continue until the design looks correct (max 3 iterations)
+
+Pass a nodeId to screenshot specific frames/elements, or omit to capture the current view.`,
 			{
 				nodeId: z
 					.string()
@@ -993,7 +1029,26 @@ class LocalFigmaConsoleMCP {
 		// Tool: Execute arbitrary code in Figma plugin context (Power Tool)
 		this.server.tool(
 			"figma_execute",
-			"Execute arbitrary JavaScript code in Figma's plugin context. This is a POWER TOOL that can run any Figma Plugin API code. Use for complex operations not covered by other tools. Requires the Desktop Bridge plugin to be running in Figma. Returns the result of the code execution. CAUTION: Can modify your Figma document - use carefully.",
+			`Execute arbitrary JavaScript code in Figma's plugin context. This is a POWER TOOL that can run any Figma Plugin API code. Use for complex operations not covered by other tools. Requires the Desktop Bridge plugin to be running in Figma. Returns the result of the code execution. CAUTION: Can modify your Figma document - use carefully.
+
+**VISUAL VALIDATION WORKFLOW (REQUIRED for design creation):**
+After creating or modifying any visual design elements, you MUST follow this validation loop:
+1. CREATE: Execute the design code
+2. SCREENSHOT: Use figma_take_screenshot to capture the result
+3. ANALYZE: Compare screenshot against specifications for:
+   - Alignment: Are elements properly aligned and balanced?
+   - Spacing: Is padding/margin consistent and visually correct?
+   - Proportions: Do widths fill containers appropriately?
+   - Typography: Are fonts, sizes, and weights correct?
+   - Visual balance: Does it look professional and centered?
+4. ITERATE: If issues found, fix and repeat (max 3 iterations)
+5. VERIFY: Take final screenshot to confirm fixes
+
+Common issues to check:
+- Elements using "hug contents" instead of "fill container" (causes lopsided layouts)
+- Inconsistent padding (elements not visually balanced)
+- Text/inputs not filling available width
+- Duplicate pages created (check before creating new pages)`,
 			{
 				code: z.string().describe(
 					"JavaScript code to execute. Has access to the 'figma' global object. " +
@@ -1551,6 +1606,580 @@ class LocalFigmaConsoleMCP {
 										error: error instanceof Error ? error.message : String(error),
 										message: "Failed to rename mode",
 										hint: "Make sure the Desktop Bridge plugin is running, the collection ID and mode ID are correct",
+									},
+									null,
+									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// ============================================================================
+		// DESIGN SYSTEM TOOLS (Token-Efficient Tool Family)
+		// ============================================================================
+		// These tools provide progressive disclosure of design system data
+		// to minimize context window usage. Start with summary, then search,
+		// then get details for specific components.
+
+		// Tool 1: Get Design System Summary (~1000 tokens response)
+		this.server.tool(
+			"figma_get_design_system_summary",
+			"Get a compact overview of the design system. Returns categories, component counts, and token collection names WITHOUT full details. Use this first to understand what's available, then use figma_search_components to find specific components. This tool is optimized for minimal token usage.",
+			{
+				forceRefresh: z.boolean().optional().default(false).describe(
+					"Force refresh the cached data (use sparingly - extraction can take minutes for large files)"
+				),
+			},
+			async ({ forceRefresh }) => {
+				try {
+					const {
+						DesignSystemManifestCache,
+						createEmptyManifest,
+						figmaColorToHex,
+						getCategories,
+						getTokenSummary,
+					} = await import('./core/design-system-manifest.js');
+
+					const cache = DesignSystemManifestCache.getInstance();
+					const currentUrl = this.browserManager?.getCurrentUrl();
+					const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
+					const fileKey = fileKeyMatch ? fileKeyMatch[2] : 'unknown';
+
+					// Check cache first
+					let cacheEntry = cache.get(fileKey);
+					if (cacheEntry && !forceRefresh) {
+						const categories = getCategories(cacheEntry.manifest);
+						const tokenSummary = getTokenSummary(cacheEntry.manifest);
+						return {
+							content: [{
+								type: "text",
+								text: JSON.stringify({
+									success: true,
+									cached: true,
+									cacheAge: Math.round((Date.now() - cacheEntry.timestamp) / 1000),
+									fileKey,
+									categories: categories.slice(0, 15),
+									tokens: tokenSummary,
+									totals: {
+										components: cacheEntry.manifest.summary.totalComponents,
+										componentSets: cacheEntry.manifest.summary.totalComponentSets,
+										tokens: cacheEntry.manifest.summary.totalTokens,
+									},
+									hint: "Use figma_search_components to find specific components by name or category.",
+								}, null, 2),
+							}],
+						};
+					}
+
+					// Need to extract fresh data
+					const connector = await this.getDesktopConnector();
+					const manifest = createEmptyManifest(fileKey);
+					manifest.fileUrl = currentUrl || undefined;
+
+					// Get variables (tokens)
+					try {
+						const variablesResult = await connector.getVariables(fileKey);
+						if (variablesResult.success && variablesResult.data) {
+							for (const collection of variablesResult.data.variableCollections || []) {
+								manifest.collections.push({
+									id: collection.id,
+									name: collection.name,
+									modes: collection.modes.map((m: any) => ({ modeId: m.modeId, name: m.name })),
+									defaultModeId: collection.defaultModeId,
+								});
+							}
+							for (const variable of variablesResult.data.variables || []) {
+								const tokenName = variable.name;
+								const defaultModeId = manifest.collections.find(c => c.id === variable.variableCollectionId)?.defaultModeId;
+								const defaultValue = defaultModeId ? variable.valuesByMode?.[defaultModeId] : undefined;
+
+								if (variable.resolvedType === 'COLOR') {
+									manifest.tokens.colors[tokenName] = {
+										name: tokenName,
+										value: figmaColorToHex(defaultValue),
+										variableId: variable.id,
+										scopes: variable.scopes,
+									};
+								} else if (variable.resolvedType === 'FLOAT') {
+									manifest.tokens.spacing[tokenName] = {
+										name: tokenName,
+										value: typeof defaultValue === 'number' ? defaultValue : 0,
+										variableId: variable.id,
+									};
+								}
+							}
+						}
+					} catch (error) {
+						logger.warn({ error }, "Could not fetch variables");
+					}
+
+					// Get components (can be slow for large files)
+					let rawComponents: { components: any[]; componentSets: any[] } | undefined;
+					try {
+						const componentsResult = await connector.getLocalComponents();
+						if (componentsResult.success && componentsResult.data) {
+							rawComponents = {
+								components: componentsResult.data.components || [],
+								componentSets: componentsResult.data.componentSets || [],
+							};
+							for (const comp of rawComponents.components) {
+								manifest.components[comp.name] = {
+									key: comp.key,
+									nodeId: comp.nodeId,
+									name: comp.name,
+									description: comp.description || undefined,
+									defaultSize: { width: comp.width, height: comp.height },
+								};
+							}
+							for (const compSet of rawComponents.componentSets) {
+								manifest.componentSets[compSet.name] = {
+									key: compSet.key,
+									nodeId: compSet.nodeId,
+									name: compSet.name,
+									description: compSet.description || undefined,
+									variants: compSet.variants?.map((v: any) => ({
+										key: v.key,
+										nodeId: v.nodeId,
+										name: v.name,
+									})) || [],
+									variantAxes: compSet.variantAxes?.map((a: any) => ({
+										name: a.name,
+										values: a.values,
+									})) || [],
+								};
+							}
+						}
+					} catch (error) {
+						logger.warn({ error }, "Could not fetch components");
+					}
+
+					// Update summary
+					manifest.summary = {
+						totalTokens: Object.keys(manifest.tokens.colors).length + Object.keys(manifest.tokens.spacing).length,
+						totalComponents: Object.keys(manifest.components).length,
+						totalComponentSets: Object.keys(manifest.componentSets).length,
+						colorPalette: Object.keys(manifest.tokens.colors).slice(0, 10),
+						spacingScale: Object.values(manifest.tokens.spacing).map(s => s.value).sort((a, b) => a - b).slice(0, 10),
+						typographyScale: [],
+						componentCategories: [],
+					};
+
+					// Cache the result
+					cache.set(fileKey, manifest, rawComponents);
+
+					const categories = getCategories(manifest);
+					const tokenSummary = getTokenSummary(manifest);
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								cached: false,
+								fileKey,
+								categories: categories.slice(0, 15),
+								tokens: tokenSummary,
+								totals: {
+									components: manifest.summary.totalComponents,
+									componentSets: manifest.summary.totalComponentSets,
+									tokens: manifest.summary.totalTokens,
+								},
+								hint: "Use figma_search_components to find specific components by name or category.",
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to get design system summary");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the Desktop Bridge plugin is running in Figma",
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool 2: Search Components (~3000 tokens response max, paginated)
+		this.server.tool(
+			"figma_search_components",
+			"Search for components by name, category, or description. Returns paginated results with component keys for instantiation. Use after figma_get_design_system_summary to find specific components.",
+			{
+				query: z.string().optional().default("").describe(
+					"Search query to match component names or descriptions"
+				),
+				category: z.string().optional().describe(
+					"Filter by category (e.g., 'Button', 'Input', 'Card')"
+				),
+				limit: z.number().optional().default(10).describe(
+					"Maximum results to return (default: 10, max: 25)"
+				),
+				offset: z.number().optional().default(0).describe(
+					"Offset for pagination"
+				),
+			},
+			async ({ query, category, limit, offset }) => {
+				try {
+					const {
+						DesignSystemManifestCache,
+						searchComponents,
+					} = await import('./core/design-system-manifest.js');
+
+					const cache = DesignSystemManifestCache.getInstance();
+					const currentUrl = this.browserManager?.getCurrentUrl();
+					const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
+					const fileKey = fileKeyMatch ? fileKeyMatch[2] : 'unknown';
+
+					const cacheEntry = cache.get(fileKey);
+					if (!cacheEntry) {
+						return {
+							content: [{
+								type: "text",
+								text: JSON.stringify({
+									error: "No cached design system data. Call figma_get_design_system_summary first to load the design system.",
+									hint: "The summary tool extracts and caches design system data for efficient searching.",
+								}, null, 2),
+							}],
+							isError: true,
+						};
+					}
+
+					const effectiveLimit = Math.min(limit || 10, 25);
+					const results = searchComponents(cacheEntry.manifest, query || "", {
+						category,
+						limit: effectiveLimit,
+						offset: offset || 0,
+					});
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								query: query || "(all)",
+								category: category || "(all)",
+								results: results.results,
+								pagination: {
+									offset: offset || 0,
+									limit: effectiveLimit,
+									total: results.total,
+									hasMore: results.hasMore,
+								},
+								hint: results.hasMore
+									? `Use offset=${(offset || 0) + effectiveLimit} to get more results.`
+									: "Use figma_get_component_details with a component key for full details.",
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to search components");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool 3: Get Component Details (~500 tokens per component)
+		this.server.tool(
+			"figma_get_component_details",
+			"Get full details for a specific component including all variants, properties, and keys needed for instantiation. Use the component key or name from figma_search_components.",
+			{
+				componentKey: z.string().optional().describe(
+					"The component key (preferred for exact match)"
+				),
+				componentName: z.string().optional().describe(
+					"The component name (used if key not provided)"
+				),
+			},
+			async ({ componentKey, componentName }) => {
+				try {
+					const { DesignSystemManifestCache } = await import('./core/design-system-manifest.js');
+
+					if (!componentKey && !componentName) {
+						return {
+							content: [{
+								type: "text",
+								text: JSON.stringify({
+									error: "Either componentKey or componentName is required",
+								}, null, 2),
+							}],
+							isError: true,
+						};
+					}
+
+					const cache = DesignSystemManifestCache.getInstance();
+					const currentUrl = this.browserManager?.getCurrentUrl();
+					const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
+					const fileKey = fileKeyMatch ? fileKeyMatch[2] : 'unknown';
+
+					const cacheEntry = cache.get(fileKey);
+					if (!cacheEntry) {
+						return {
+							content: [{
+								type: "text",
+								text: JSON.stringify({
+									error: "No cached design system data. Call figma_get_design_system_summary first.",
+								}, null, 2),
+							}],
+							isError: true,
+						};
+					}
+
+					// Search for the component
+					let component: any = null;
+					let isComponentSet = false;
+
+					// Check component sets first (they have variants)
+					for (const [name, compSet] of Object.entries(cacheEntry.manifest.componentSets)) {
+						if ((componentKey && compSet.key === componentKey) || (componentName && name === componentName)) {
+							component = compSet;
+							isComponentSet = true;
+							break;
+						}
+					}
+
+					// Check standalone components
+					if (!component) {
+						for (const [name, comp] of Object.entries(cacheEntry.manifest.components)) {
+							if ((componentKey && comp.key === componentKey) || (componentName && name === componentName)) {
+								component = comp;
+								break;
+							}
+						}
+					}
+
+					if (!component) {
+						return {
+							content: [{
+								type: "text",
+								text: JSON.stringify({
+									error: `Component not found: ${componentKey || componentName}`,
+									hint: "Use figma_search_components to find available components.",
+								}, null, 2),
+							}],
+							isError: true,
+						};
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								type: isComponentSet ? "componentSet" : "component",
+								component,
+								instantiation: {
+									key: component.key,
+									example: `Use figma_instantiate_component with componentKey: "${component.key}"`,
+								},
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to get component details");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool 4: Get Token Values (~2000 tokens response max)
+		this.server.tool(
+			"figma_get_token_values",
+			"Get actual values for design tokens (colors, spacing, etc). Use after figma_get_design_system_summary to get specific token values for implementation.",
+			{
+				type: z.enum(["colors", "spacing", "all"]).optional().default("all").describe(
+					"Type of tokens to retrieve"
+				),
+				filter: z.string().optional().describe(
+					"Filter token names (e.g., 'primary' to get all primary colors)"
+				),
+				limit: z.number().optional().default(50).describe(
+					"Maximum tokens to return (default: 50)"
+				),
+			},
+			async ({ type, filter, limit }) => {
+				try {
+					const { DesignSystemManifestCache } = await import('./core/design-system-manifest.js');
+
+					const cache = DesignSystemManifestCache.getInstance();
+					const currentUrl = this.browserManager?.getCurrentUrl();
+					const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
+					const fileKey = fileKeyMatch ? fileKeyMatch[2] : 'unknown';
+
+					const cacheEntry = cache.get(fileKey);
+					if (!cacheEntry) {
+						return {
+							content: [{
+								type: "text",
+								text: JSON.stringify({
+									error: "No cached design system data. Call figma_get_design_system_summary first.",
+								}, null, 2),
+							}],
+							isError: true,
+						};
+					}
+
+					const tokens = cacheEntry.manifest.tokens;
+					const effectiveLimit = Math.min(limit || 50, 100);
+					const filterLower = filter?.toLowerCase();
+
+					const result: Record<string, any> = {};
+
+					if (type === "colors" || type === "all") {
+						const colors: Record<string, any> = {};
+						let count = 0;
+						for (const [name, token] of Object.entries(tokens.colors)) {
+							if (count >= effectiveLimit) break;
+							if (!filterLower || name.toLowerCase().includes(filterLower)) {
+								colors[name] = { value: token.value, scopes: token.scopes };
+								count++;
+							}
+						}
+						result.colors = colors;
+					}
+
+					if (type === "spacing" || type === "all") {
+						const spacing: Record<string, any> = {};
+						let count = 0;
+						for (const [name, token] of Object.entries(tokens.spacing)) {
+							if (count >= effectiveLimit) break;
+							if (!filterLower || name.toLowerCase().includes(filterLower)) {
+								spacing[name] = { value: token.value };
+								count++;
+							}
+						}
+						result.spacing = spacing;
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								success: true,
+								type,
+								filter: filter || "(none)",
+								tokens: result,
+								hint: "Use these exact token names and values when generating designs.",
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to get token values");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool 5: Instantiate Component
+		this.server.tool(
+			"figma_instantiate_component",
+			`Create an instance of a component from the design system. Works with both published library components (by key) and local/unpublished components (by nodeId).
+
+**IMPORTANT: Always re-search before instantiating!**
+NodeIds are session-specific and may be stale from previous conversations. ALWAYS call figma_search_components at the start of each design session to get current, valid identifiers.
+
+**VISUAL VALIDATION WORKFLOW:**
+After instantiating components, use figma_take_screenshot to verify the result looks correct. Check placement, sizing, and visual balance.`,
+			{
+				componentKey: z.string().optional().describe(
+					"The component key (for published library components). Get this from figma_search_components."
+				),
+				nodeId: z.string().optional().describe(
+					"The node ID (for local/unpublished components). Get this from figma_search_components. Required if componentKey doesn't work."
+				),
+				variant: z.record(z.string()).optional().describe(
+					"Variant properties to set (e.g., { Type: 'Simple', State: 'Active' })"
+				),
+				overrides: z.record(z.any()).optional().describe(
+					"Property overrides (e.g., { 'Button Label': 'Click Me' })"
+				),
+				position: z.object({
+					x: z.number(),
+					y: z.number(),
+				}).optional().describe(
+					"Position on canvas (default: 0, 0)"
+				),
+				parentId: z.string().optional().describe(
+					"Parent node ID to append the instance to"
+				),
+			},
+			async ({ componentKey, nodeId, variant, overrides, position, parentId }) => {
+				try {
+					if (!componentKey && !nodeId) {
+						throw new Error("Either componentKey or nodeId is required");
+					}
+					const connector = await this.getDesktopConnector();
+					const result = await connector.instantiateComponent(componentKey || "", {
+						nodeId,
+						position,
+						overrides,
+						variant,
+						parentId,
+					});
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to instantiate component");
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: "Component instantiated successfully",
+										instance: result.instance,
+										timestamp: Date.now(),
+									},
+									null,
+									2,
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to instantiate component");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error: error instanceof Error ? error.message : String(error),
+										message: "Failed to instantiate component",
+										hint: "Make sure the component key is correct and the Desktop Bridge plugin is running",
 									},
 									null,
 									2,
