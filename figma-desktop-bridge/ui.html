@@ -212,6 +212,27 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
+    // Get all local components for design system manifest
+    // Large design systems with many pages can take several minutes to process
+    window.getLocalComponents = () => {
+      return window.sendPluginCommand('GET_LOCAL_COMPONENTS', {}, 300000)  // 5 minute timeout for large files
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Instantiate a component with overrides
+    window.instantiateComponent = (componentKey, options) => {
+      return window.sendPluginCommand('INSTANTIATE_COMPONENT', {
+        componentKey: componentKey,
+        nodeId: options?.nodeId,  // For local (unpublished) components
+        position: options?.position,
+        size: options?.size,
+        overrides: options?.overrides,
+        variant: options?.variant,
+        parentId: options?.parentId
+      })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
     // Function to request component data from plugin worker (legacy, kept for compatibility)
     window.requestComponentData = (nodeId) => {
       return new Promise((resolve, reject) => {
@@ -456,6 +477,32 @@
             request.resolve({ success: true, collection: msg.collection, oldName: msg.oldName });
           } else {
             // Return plain object instead of rejecting for BiDi compatibility
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'GET_LOCAL_COMPONENTS_RESULT') {
+        console.log('[Desktop Bridge] Get local components result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (request.timeoutId) clearTimeout(request.timeoutId);
+          if (msg.success) {
+            request.resolve({ success: true, data: msg.data });
+          } else {
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+
+      } else if (msg.type === 'INSTANTIATE_COMPONENT_RESULT') {
+        console.log('[Desktop Bridge] Instantiate component result:', msg.success ? 'success' : 'error');
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (request.timeoutId) clearTimeout(request.timeoutId);
+          if (msg.success) {
+            request.resolve({ success: true, instance: msg.instance });
+          } else {
             request.resolve({ success: false, error: msg.error || 'Unknown error' });
           }
           window.__figmaPendingRequests.delete(msg.requestId);

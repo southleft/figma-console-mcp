@@ -666,6 +666,356 @@ figma.ui.onmessage = async (msg) => {
       });
     }
   }
+
+  // ============================================================================
+  // GET_LOCAL_COMPONENTS - Get all local components for design system manifest
+  // ============================================================================
+  else if (msg.type === 'GET_LOCAL_COMPONENTS') {
+    try {
+      console.log('🌉 [Desktop Bridge] Fetching all local components for manifest...');
+
+      // Find all component sets and standalone components in the file
+      var components = [];
+      var componentSets = [];
+
+      // Helper to extract component data
+      function extractComponentData(node, isPartOfSet) {
+        var data = {
+          key: node.key,
+          nodeId: node.id,
+          name: node.name,
+          type: node.type,
+          description: node.description || null,
+          width: node.width,
+          height: node.height
+        };
+
+        // Get property definitions for non-variant components
+        if (!isPartOfSet && node.componentPropertyDefinitions) {
+          data.properties = [];
+          var propDefs = node.componentPropertyDefinitions;
+          for (var propName in propDefs) {
+            if (propDefs.hasOwnProperty(propName)) {
+              var propDef = propDefs[propName];
+              data.properties.push({
+                name: propName,
+                type: propDef.type,
+                defaultValue: propDef.defaultValue
+              });
+            }
+          }
+        }
+
+        return data;
+      }
+
+      // Helper to extract component set data with all variants
+      function extractComponentSetData(node) {
+        var variantAxes = {};
+        var variants = [];
+
+        // Parse variant properties from children names
+        if (node.children) {
+          node.children.forEach(function(child) {
+            if (child.type === 'COMPONENT') {
+              // Parse variant name (e.g., "Size=md, State=default")
+              var variantProps = {};
+              var parts = child.name.split(',').map(function(p) { return p.trim(); });
+              parts.forEach(function(part) {
+                var kv = part.split('=');
+                if (kv.length === 2) {
+                  var key = kv[0].trim();
+                  var value = kv[1].trim();
+                  variantProps[key] = value;
+
+                  // Track all values for each axis
+                  if (!variantAxes[key]) {
+                    variantAxes[key] = [];
+                  }
+                  if (variantAxes[key].indexOf(value) === -1) {
+                    variantAxes[key].push(value);
+                  }
+                }
+              });
+
+              variants.push({
+                key: child.key,
+                nodeId: child.id,
+                name: child.name,
+                description: child.description || null,
+                variantProperties: variantProps,
+                width: child.width,
+                height: child.height
+              });
+            }
+          });
+        }
+
+        // Convert variantAxes object to array format
+        var axes = [];
+        for (var axisName in variantAxes) {
+          if (variantAxes.hasOwnProperty(axisName)) {
+            axes.push({
+              name: axisName,
+              values: variantAxes[axisName]
+            });
+          }
+        }
+
+        return {
+          key: node.key,
+          nodeId: node.id,
+          name: node.name,
+          type: 'COMPONENT_SET',
+          description: node.description || null,
+          variantAxes: axes,
+          variants: variants,
+          defaultVariant: variants.length > 0 ? variants[0] : null,
+          properties: node.componentPropertyDefinitions ? Object.keys(node.componentPropertyDefinitions).map(function(propName) {
+            var propDef = node.componentPropertyDefinitions[propName];
+            return {
+              name: propName,
+              type: propDef.type,
+              defaultValue: propDef.defaultValue
+            };
+          }) : []
+        };
+      }
+
+      // Recursively search for components
+      function findComponents(node) {
+        if (!node) return;
+
+        if (node.type === 'COMPONENT_SET') {
+          componentSets.push(extractComponentSetData(node));
+        } else if (node.type === 'COMPONENT') {
+          // Only add standalone components (not variants inside component sets)
+          if (!node.parent || node.parent.type !== 'COMPONENT_SET') {
+            components.push(extractComponentData(node, false));
+          }
+        }
+
+        // Recurse into children
+        if (node.children) {
+          node.children.forEach(function(child) {
+            findComponents(child);
+          });
+        }
+      }
+
+      // Load all pages first (required before accessing children)
+      console.log('🌉 [Desktop Bridge] Loading all pages...');
+      await figma.loadAllPagesAsync();
+      console.log('🌉 [Desktop Bridge] All pages loaded, searching for components...');
+
+      // Search through all pages
+      var pages = figma.root.children;
+      pages.forEach(function(page) {
+        findComponents(page);
+      });
+
+      console.log('🌉 [Desktop Bridge] Found ' + components.length + ' components and ' + componentSets.length + ' component sets');
+
+      figma.ui.postMessage({
+        type: 'GET_LOCAL_COMPONENTS_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          components: components,
+          componentSets: componentSets,
+          totalComponents: components.length,
+          totalComponentSets: componentSets.length,
+          fileKey: figma.fileKey || null,
+          timestamp: Date.now()
+        }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Get local components error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'GET_LOCAL_COMPONENTS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // INSTANTIATE_COMPONENT - Create a component instance with overrides
+  // ============================================================================
+  else if (msg.type === 'INSTANTIATE_COMPONENT') {
+    try {
+      console.log('🌉 [Desktop Bridge] Instantiating component:', msg.componentKey || msg.nodeId);
+
+      var component = null;
+      var instance = null;
+
+      // Try published library first (by key), then fall back to local component (by nodeId)
+      if (msg.componentKey) {
+        try {
+          component = await figma.importComponentByKeyAsync(msg.componentKey);
+        } catch (importError) {
+          console.log('🌉 [Desktop Bridge] Not a published component, trying local...');
+        }
+      }
+
+      // Fall back to local component by nodeId
+      if (!component && msg.nodeId) {
+        var node = await figma.getNodeByIdAsync(msg.nodeId);
+        if (node) {
+          if (node.type === 'COMPONENT') {
+            component = node;
+          } else if (node.type === 'COMPONENT_SET') {
+            // For component sets, find the right variant or use default
+            if (msg.variant && node.children && node.children.length > 0) {
+              // Build variant name from properties (e.g., "Type=Simple, State=Default")
+              var variantParts = [];
+              for (var prop in msg.variant) {
+                if (msg.variant.hasOwnProperty(prop)) {
+                  variantParts.push(prop + '=' + msg.variant[prop]);
+                }
+              }
+              var targetVariantName = variantParts.join(', ');
+              console.log('🌉 [Desktop Bridge] Looking for variant:', targetVariantName);
+
+              // Find matching variant
+              for (var i = 0; i < node.children.length; i++) {
+                var child = node.children[i];
+                if (child.type === 'COMPONENT' && child.name === targetVariantName) {
+                  component = child;
+                  console.log('🌉 [Desktop Bridge] Found exact variant match');
+                  break;
+                }
+              }
+
+              // If no exact match, try partial match
+              if (!component) {
+                for (var i = 0; i < node.children.length; i++) {
+                  var child = node.children[i];
+                  if (child.type === 'COMPONENT') {
+                    var matches = true;
+                    for (var prop in msg.variant) {
+                      if (msg.variant.hasOwnProperty(prop)) {
+                        var expected = prop + '=' + msg.variant[prop];
+                        if (child.name.indexOf(expected) === -1) {
+                          matches = false;
+                          break;
+                        }
+                      }
+                    }
+                    if (matches) {
+                      component = child;
+                      console.log('🌉 [Desktop Bridge] Found partial variant match:', child.name);
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+
+            // Default to first variant if no match
+            if (!component && node.children && node.children.length > 0) {
+              component = node.children[0];
+              console.log('🌉 [Desktop Bridge] Using default variant:', component.name);
+            }
+          }
+        }
+      }
+
+      if (!component) {
+        // Build detailed error message with actionable guidance
+        var errorParts = ['Component not found.'];
+
+        if (msg.componentKey) {
+          errorParts.push('Published component key "' + msg.componentKey + '" could not be imported - it may have been unpublished or deleted from the library.');
+        }
+
+        if (msg.nodeId) {
+          errorParts.push('Local nodeId "' + msg.nodeId + '" does not exist in this file - nodeIds are session-specific and may be stale.');
+        }
+
+        if (!msg.componentKey && !msg.nodeId) {
+          errorParts.push('No componentKey or nodeId was provided.');
+        }
+
+        errorParts.push('SUGGESTION: Use figma_search_components to get current component identifiers before instantiating.');
+
+        throw new Error(errorParts.join(' '));
+      }
+
+      // Create the instance
+      instance = component.createInstance();
+
+      // Apply position if specified
+      if (msg.position) {
+        instance.x = msg.position.x || 0;
+        instance.y = msg.position.y || 0;
+      }
+
+      // Apply size override if specified
+      if (msg.size) {
+        instance.resize(msg.size.width, msg.size.height);
+      }
+
+      // Apply property overrides
+      if (msg.overrides) {
+        for (var propName in msg.overrides) {
+          if (msg.overrides.hasOwnProperty(propName)) {
+            try {
+              instance.setProperties({ [propName]: msg.overrides[propName] });
+            } catch (propError) {
+              console.warn('🌉 [Desktop Bridge] Could not set property ' + propName + ':', propError.message);
+            }
+          }
+        }
+      }
+
+      // Apply variant selection if specified
+      if (msg.variant) {
+        try {
+          instance.setProperties(msg.variant);
+        } catch (variantError) {
+          console.warn('🌉 [Desktop Bridge] Could not set variant:', variantError.message);
+        }
+      }
+
+      // Append to parent if specified
+      if (msg.parentId) {
+        var parent = await figma.getNodeByIdAsync(msg.parentId);
+        if (parent && 'appendChild' in parent) {
+          parent.appendChild(instance);
+        }
+      }
+
+      console.log('🌉 [Desktop Bridge] Component instantiated:', instance.id);
+
+      figma.ui.postMessage({
+        type: 'INSTANTIATE_COMPONENT_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        instance: {
+          id: instance.id,
+          name: instance.name,
+          x: instance.x,
+          y: instance.y,
+          width: instance.width,
+          height: instance.height
+        }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Instantiate component error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'INSTANTIATE_COMPONENT_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
 };
 
 console.log('🌉 [Desktop Bridge] Ready to handle component requests');
