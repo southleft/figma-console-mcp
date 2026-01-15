@@ -149,7 +149,7 @@ Add to your MCP config (e.g., `.claude.json` or `claude_desktop_config.json`):
 - Get **Figma Personal Access Token**: https://www.figma.com/developers/api#access-tokens
 - Restart Figma Desktop with `--remote-debugging-port=9222`
   - **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
-  - **Windows:** `start figma://--remote-debugging-port=9222`
+  - **Windows:** `cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222`
 
 **📖 [Complete NPX Setup Guide](docs/NPX-INSTALLATION.md)**
 
@@ -230,9 +230,9 @@ Add this configuration:
 open -a "Figma" --args --remote-debugging-port=9222
 ```
 
-**Windows:**
-```cmd
-start figma://--remote-debugging-port=9222
+**Windows (CMD or PowerShell):**
+```
+cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
 ```
 
 #### Step 5: Restart Claude Desktop

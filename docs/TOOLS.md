@@ -95,7 +95,7 @@ figma_get_status()
     "setupInstructions": {
       "step1": "QUIT Figma Desktop completely",
       "step2_macOS": "open -a \"Figma\" --args --remote-debugging-port=9222",
-      "step2_windows": "start figma://--remote-debugging-port=9222"
+      "step2_windows": "cmd /c \"%LOCALAPPDATA%\\Figma\\Figma.exe\" --remote-debugging-port=9222"
     },
     "ai_instruction": "CRITICAL: User must restart Figma with the debug flag"
   }
