@@ -21,6 +21,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { fileURLToPath } from "url";
+import { resolve } from "path";
 import { LocalBrowserManager } from "./browser/local.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
@@ -3072,7 +3074,12 @@ async function main() {
 }
 
 // Run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Note: On Windows, import.meta.url uses file:/// (3 slashes) while process.argv uses backslashes
+// We normalize both paths to compare correctly across platforms
+const currentFile = fileURLToPath(import.meta.url);
+const entryFile = process.argv[1] ? resolve(process.argv[1]) : "";
+
+if (currentFile === entryFile) {
 	main().catch((error) => {
 		console.error("Fatal error:", error);
 		process.exit(1);
