@@ -15,9 +15,9 @@
 >   ```bash
 >   open -a "Figma" --args --remote-debugging-port=9222
 >   ```
-> - **Windows:** Open Command Prompt and run:
->   ```bash
->   start figma://--remote-debugging-port=9222
+> - **Windows:** Open CMD or PowerShell and run:
+>   ```
+>   cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
 >   ```
 >
 > **Step 3:** Verify setup worked by visiting http://localhost:9222 in Chrome

@@ -92,7 +92,7 @@ Subsequent runs will use the cached version unless you specify `@latest`.
 2. Quit Figma Desktop completely
 3. Relaunch with debug flag:
    - **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
-   - **Windows:** `start figma://--remote-debugging-port=9222`
+   - **Windows:** `cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222`
 4. Verify http://localhost:9222 is accessible
 5. Add `FIGMA_ACCESS_TOKEN` to your MCP config (see above)
 

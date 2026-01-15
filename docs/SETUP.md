@@ -146,11 +146,11 @@ npm run build:local
 open -a "Figma" --args --remote-debugging-port=9222
 ```
 
-**Windows:**
-```bash
+**Windows (CMD or PowerShell):**
+```
 # Close Figma completely first (Alt+F4)
-# Then run in Command Prompt:
-start figma://--remote-debugging-port=9222
+# Then run:
+cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
 ```
 
 #### 5. Verify Setup
