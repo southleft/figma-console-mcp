@@ -10,7 +10,7 @@ This guide shows real-world scenarios for using Figma Console MCP in your workfl
 
 **One-time setup:** Quit Figma Desktop and relaunch with:
 - **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
-- **Windows:** `start figma://--remote-debugging-port=9222`
+- **Windows:** `cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222`
 
 Then open your design file and run your plugin.
 
