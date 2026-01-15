@@ -207,7 +207,7 @@ figma.ui.onmessage = async (msg) => {
           resultAnalysis.warning = 'Code returned an empty object. The operation may not have found what it was looking for.';
         }
         // Check for common "found nothing" patterns
-        if (result.length === 0 || result.count === 0 || result.foundCount === 0 || result.nodes?.length === 0) {
+        if (result.length === 0 || result.count === 0 || result.foundCount === 0 || (result.nodes && result.nodes.length === 0)) {
           resultAnalysis.warning = 'Code returned a result indicating nothing was found (count/length is 0).';
         }
       } else if (result === null) {
