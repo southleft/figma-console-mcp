@@ -568,6 +568,141 @@ function evictOldestCacheEntry(
 }
 
 /**
+ * Resolve variable aliases to their final values for all modes
+ * @param variables Array of variables to resolve
+ * @param allVariablesMap Map of all variables by ID for lookup
+ * @param collectionsMap Map of collections by ID for mode info
+ * @returns Variables with added resolvedValuesByMode field
+ */
+function resolveVariableAliases(
+	variables: any[],
+	allVariablesMap: Map<string, any>,
+	collectionsMap: Map<string, any>
+): any[] {
+	// Helper to format color value to hex
+	const formatColorToHex = (color: any): string | null => {
+		if (typeof color === 'string') return color;
+		if (color && typeof color.r === 'number' && typeof color.g === 'number' && typeof color.b === 'number') {
+			const r = Math.round(color.r * 255);
+			const g = Math.round(color.g * 255);
+			const b = Math.round(color.b * 255);
+			const a = typeof color.a === 'number' ? color.a : 1;
+			if (a < 1) {
+				const aHex = Math.round(a * 255).toString(16).padStart(2, '0');
+				return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}${aHex}`.toUpperCase();
+			}
+			return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+		}
+		return null;
+	};
+
+	// Helper to get mode ID from a mode object (handles both 'modeId' and 'id' properties)
+	const getModeId = (mode: any): string | null => {
+		return mode?.modeId || mode?.id || null;
+	};
+
+	// Helper to get default mode ID from a collection
+	const getDefaultModeId = (collection: any, variable: any): string | null => {
+		// Try explicit defaultModeId first
+		if (collection?.defaultModeId) {
+			return collection.defaultModeId;
+		}
+		// Try first mode's ID
+		if (collection?.modes?.length > 0) {
+			return getModeId(collection.modes[0]);
+		}
+		// Fallback to first key in valuesByMode
+		const modeKeys = Object.keys(variable?.valuesByMode || {});
+		return modeKeys.length > 0 ? modeKeys[0] : null;
+	};
+
+	// Helper to resolve a single value, following alias chains
+	const resolveValue = (value: any, resolvedType: string, visited: Set<string> = new Set(), depth = 0): { resolved: any; aliasChain?: string[] } => {
+		if (depth > 10) {
+			logger.warn({ depth }, 'Max alias resolution depth reached');
+			return { resolved: null, aliasChain: Array.from(visited) };
+		}
+
+		// Check if this is an alias
+		if (value && typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
+			const targetId = value.id;
+
+			// Prevent circular references
+			if (visited.has(targetId)) {
+				logger.warn({ targetId, visited: Array.from(visited) }, 'Circular alias reference detected');
+				return { resolved: null, aliasChain: Array.from(visited) };
+			}
+
+			visited.add(targetId);
+
+			const targetVar = allVariablesMap.get(targetId);
+			if (!targetVar) {
+				logger.debug({ targetId }, 'Target variable not found in map');
+				return { resolved: null, aliasChain: Array.from(visited) };
+			}
+
+			// Get the target's collection to find its default mode
+			const targetCollection = collectionsMap.get(targetVar.variableCollectionId);
+			const targetModeId = getDefaultModeId(targetCollection, targetVar);
+
+			if (!targetModeId) {
+				logger.debug({ targetId, collectionId: targetVar.variableCollectionId }, 'Could not determine target mode ID');
+				return { resolved: null, aliasChain: Array.from(visited) };
+			}
+
+			const targetValue = targetVar.valuesByMode?.[targetModeId];
+			if (targetValue === undefined) {
+				logger.debug({ targetId, targetModeId, availableModes: Object.keys(targetVar.valuesByMode || {}) }, 'Target value not found for mode');
+				return { resolved: null, aliasChain: Array.from(visited) };
+			}
+
+			// Recursively resolve
+			const result = resolveValue(targetValue, targetVar.resolvedType, visited, depth + 1);
+			return {
+				resolved: result.resolved,
+				aliasChain: [targetVar.name, ...(result.aliasChain || [])]
+			};
+		}
+
+		// Not an alias - format the value based on type
+		if (resolvedType === 'COLOR') {
+			return { resolved: formatColorToHex(value) };
+		}
+
+		return { resolved: value };
+	};
+
+	// Process each variable
+	return variables.map(variable => {
+		const collection = collectionsMap.get(variable.variableCollectionId);
+		const modes = collection?.modes || [];
+
+		const resolvedValuesByMode: Record<string, { value: any; aliasTo?: string }> = {};
+
+		for (const mode of modes) {
+			const modeId = getModeId(mode);
+			if (!modeId) continue;
+
+			const rawValue = variable.valuesByMode?.[modeId];
+			if (rawValue === undefined) continue;
+
+			const { resolved, aliasChain } = resolveValue(rawValue, variable.resolvedType, new Set());
+
+			const modeName = mode.name || modeId;
+			resolvedValuesByMode[modeName] = {
+				value: resolved,
+				...(aliasChain && aliasChain.length > 0 && { aliasTo: aliasChain[0] })
+			};
+		}
+
+		return {
+			...variable,
+			resolvedValuesByMode
+		};
+	});
+}
+
+/**
  * Register Figma API tools with the MCP server
  */
 export function registerFigmaAPITools(
@@ -933,6 +1068,16 @@ export function registerFigmaAPITools(
 				.optional()
 				.default(50)
 				.describe("Number of variables per page (1-100). Default: 50. Smaller values reduce response size."),
+			resolveAliases: z
+				.boolean()
+				.optional()
+				.default(false)
+				.describe(
+					"Automatically resolve variable aliases to their final values (hex colors, numbers, etc.). " +
+					"When true, each variable will include a 'resolvedValuesByMode' field with the actual values " +
+					"instead of just alias references. Useful for getting color hex values without manual resolution. " +
+					"Default: false."
+				),
 		},
 		async ({
 			fileUrl,
@@ -952,7 +1097,8 @@ export function registerFigmaAPITools(
 			useConsoleFallback,
 			parseFromConsole,
 			page,
-			pageSize
+			pageSize,
+			resolveAliases
 		}) => {
 			// Extract fileKey outside try block so it's available in catch block
 			const url = fileUrl || getCurrentUrl();
@@ -1167,6 +1313,31 @@ export function registerFigmaAPITools(
 							},
 							'Applied filters, pagination, and verbosity filtering to cached data'
 						);
+
+						// Apply alias resolution if requested
+						if (resolveAliases && responseData.variables?.length > 0) {
+							// Build maps from ALL cached variables (not just filtered) for resolution
+							const allVariablesMap = new Map<string, any>();
+							const collectionsMap = new Map<string, any>();
+
+							for (const v of cachedData.variables || []) {
+								allVariablesMap.set(v.id, v);
+							}
+							for (const c of cachedData.variableCollections || []) {
+								collectionsMap.set(c.id, c);
+							}
+
+							responseData.variables = resolveVariableAliases(
+								responseData.variables,
+								allVariablesMap,
+								collectionsMap
+							);
+
+							logger.info(
+								{ fileKey, resolvedCount: responseData.variables.length },
+								'Applied alias resolution to filtered variables'
+							);
+						}
 					} else {
 						// format === 'full'
 						// Check if we need to auto-summarize
@@ -1197,6 +1368,31 @@ export function registerFigmaAPITools(
 								],
 							};
 						}
+					}
+
+					// Apply alias resolution for 'full' format if not already applied (filtered format handles it above)
+					if (resolveAliases && format !== 'filtered' && responseData.variables?.length > 0) {
+						// Build maps from ALL cached variables for resolution
+						const allVariablesMap = new Map<string, any>();
+						const collectionsMap = new Map<string, any>();
+
+						for (const v of cachedData.variables || []) {
+							allVariablesMap.set(v.id, v);
+						}
+						for (const c of cachedData.variableCollections || []) {
+							collectionsMap.set(c.id, c);
+						}
+
+						responseData.variables = resolveVariableAliases(
+							responseData.variables,
+							allVariablesMap,
+							collectionsMap
+						);
+
+						logger.info(
+							{ fileKey, resolvedCount: responseData.variables.length, format },
+							'Applied alias resolution to variables (full/summary format)'
+						);
 					}
 
 					// Return cached/processed data
@@ -1442,6 +1638,51 @@ export function registerFigmaAPITools(
 						if (variablesCache) {
 							variablesCache.set(fileKey, { data: dataForCache, timestamp: Date.now() });
 							logger.info({ fileKey }, "Cached REST API variables");
+						}
+
+						// Apply alias resolution if requested (REST API format has local.variables)
+						if (resolveAliases && localFormatted.variables?.length > 0) {
+							// Build maps from local variables and collections
+							const allVariablesMap = new Map<string, any>();
+							const collectionsMap = new Map<string, any>();
+
+							for (const v of localFormatted.variables || []) {
+								allVariablesMap.set(v.id, v);
+							}
+							for (const c of localFormatted.collections || []) {
+								collectionsMap.set(c.id, c);
+							}
+
+							// Also include published variables if available
+							if (publishedFormatted?.variables) {
+								for (const v of publishedFormatted.variables) {
+									allVariablesMap.set(v.id, v);
+								}
+							}
+							if (publishedFormatted?.collections) {
+								for (const c of publishedFormatted.collections) {
+									collectionsMap.set(c.id, c);
+								}
+							}
+
+							localFormatted.variables = resolveVariableAliases(
+								localFormatted.variables,
+								allVariablesMap,
+								collectionsMap
+							);
+
+							if (publishedFormatted?.variables) {
+								publishedFormatted.variables = resolveVariableAliases(
+									publishedFormatted.variables,
+									allVariablesMap,
+									collectionsMap
+								);
+							}
+
+							logger.info(
+								{ fileKey, resolvedCount: localFormatted.variables.length },
+								'Applied alias resolution to REST API variables'
+							);
 						}
 
 						// Handle resource_links format
@@ -1730,6 +1971,31 @@ export function registerFigmaAPITools(
 										],
 									};
 								}
+							}
+
+							// Apply alias resolution if requested
+							if (resolveAliases && responseData.variables?.length > 0) {
+								// Build maps from ALL variables for resolution
+								const allVariablesMap = new Map<string, any>();
+								const collectionsMap = new Map<string, any>();
+
+								for (const v of dataForCache.variables || []) {
+									allVariablesMap.set(v.id, v);
+								}
+								for (const c of dataForCache.variableCollections || []) {
+									collectionsMap.set(c.id, c);
+								}
+
+								responseData.variables = resolveVariableAliases(
+									responseData.variables,
+									allVariablesMap,
+									collectionsMap
+								);
+
+								logger.info(
+									{ fileKey, resolvedCount: responseData.variables.length },
+									'Applied alias resolution to Desktop variables'
+								);
 							}
 
 							// If returnAsLinks=true, return resource_link references

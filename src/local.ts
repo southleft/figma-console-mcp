@@ -1642,6 +1642,126 @@ Common issues to check:
 		// to minimize context window usage. Start with summary, then search,
 		// then get details for specific components.
 
+		// Helper function to ensure design system cache is loaded (auto-loads if needed)
+		const ensureDesignSystemCache = async (): Promise<{ cacheEntry: any; fileKey: string; wasLoaded: boolean }> => {
+			const {
+				DesignSystemManifestCache,
+				createEmptyManifest,
+				figmaColorToHex,
+			} = await import('./core/design-system-manifest.js');
+
+			const cache = DesignSystemManifestCache.getInstance();
+			const currentUrl = this.browserManager?.getCurrentUrl();
+			const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
+			const fileKey = fileKeyMatch ? fileKeyMatch[2] : 'unknown';
+
+			// Check cache first
+			let cacheEntry = cache.get(fileKey);
+			if (cacheEntry) {
+				return { cacheEntry, fileKey, wasLoaded: false };
+			}
+
+			// Need to extract fresh data - do this silently without returning an error
+			logger.info({ fileKey }, "Auto-loading design system cache");
+			const connector = await this.getDesktopConnector();
+			const manifest = createEmptyManifest(fileKey);
+			manifest.fileUrl = currentUrl || undefined;
+
+			// Get variables (tokens)
+			try {
+				const variablesResult = await connector.getVariables(fileKey);
+				if (variablesResult.success && variablesResult.data) {
+					for (const collection of variablesResult.data.variableCollections || []) {
+						manifest.collections.push({
+							id: collection.id,
+							name: collection.name,
+							modes: collection.modes.map((m: any) => ({ modeId: m.modeId, name: m.name })),
+							defaultModeId: collection.defaultModeId,
+						});
+					}
+					for (const variable of variablesResult.data.variables || []) {
+						const tokenName = variable.name;
+						const defaultModeId = manifest.collections.find((c: any) => c.id === variable.variableCollectionId)?.defaultModeId;
+						const defaultValue = defaultModeId ? variable.valuesByMode?.[defaultModeId] : undefined;
+
+						if (variable.resolvedType === 'COLOR') {
+							manifest.tokens.colors[tokenName] = {
+								name: tokenName,
+								value: figmaColorToHex(defaultValue),
+								variableId: variable.id,
+								scopes: variable.scopes,
+							};
+						} else if (variable.resolvedType === 'FLOAT') {
+							manifest.tokens.spacing[tokenName] = {
+								name: tokenName,
+								value: typeof defaultValue === 'number' ? defaultValue : 0,
+								variableId: variable.id,
+							};
+						}
+					}
+				}
+			} catch (error) {
+				logger.warn({ error }, "Could not fetch variables during auto-load");
+			}
+
+			// Get components
+			let rawComponents: { components: any[]; componentSets: any[] } | undefined;
+			try {
+				const componentsResult = await connector.getLocalComponents();
+				if (componentsResult.success && componentsResult.data) {
+					rawComponents = {
+						components: componentsResult.data.components || [],
+						componentSets: componentsResult.data.componentSets || [],
+					};
+					for (const comp of rawComponents.components) {
+						manifest.components[comp.name] = {
+							key: comp.key,
+							nodeId: comp.nodeId,
+							name: comp.name,
+							description: comp.description || undefined,
+							defaultSize: { width: comp.width, height: comp.height },
+						};
+					}
+					for (const compSet of rawComponents.componentSets) {
+						manifest.componentSets[compSet.name] = {
+							key: compSet.key,
+							nodeId: compSet.nodeId,
+							name: compSet.name,
+							description: compSet.description || undefined,
+							variants: compSet.variants?.map((v: any) => ({
+								key: v.key,
+								nodeId: v.nodeId,
+								name: v.name,
+							})) || [],
+							variantAxes: compSet.variantAxes?.map((a: any) => ({
+								name: a.name,
+								values: a.values,
+							})) || [],
+						};
+					}
+				}
+			} catch (error) {
+				logger.warn({ error }, "Could not fetch components during auto-load");
+			}
+
+			// Update summary
+			manifest.summary = {
+				totalTokens: Object.keys(manifest.tokens.colors).length + Object.keys(manifest.tokens.spacing).length,
+				totalComponents: Object.keys(manifest.components).length,
+				totalComponentSets: Object.keys(manifest.componentSets).length,
+				colorPalette: Object.keys(manifest.tokens.colors).slice(0, 10),
+				spacingScale: Object.values(manifest.tokens.spacing).map((s: any) => s.value).sort((a: number, b: number) => a - b).slice(0, 10),
+				typographyScale: [],
+				componentCategories: [],
+			};
+
+			// Cache the result
+			cache.set(fileKey, manifest, rawComponents);
+			cacheEntry = cache.get(fileKey);
+
+			return { cacheEntry, fileKey, wasLoaded: true };
+		};
+
 		// Tool 1: Get Design System Summary (~1000 tokens response)
 		this.server.tool(
 			"figma_get_design_system_summary",
@@ -1828,7 +1948,7 @@ Common issues to check:
 		// Tool 2: Search Components (~3000 tokens response max, paginated)
 		this.server.tool(
 			"figma_search_components",
-			"Search for components by name, category, or description. Returns paginated results with component keys for instantiation. Use after figma_get_design_system_summary to find specific components.",
+			"Search for components by name, category, or description. Returns paginated results with component keys for instantiation. Automatically loads the design system cache if needed.",
 			{
 				query: z.string().optional().default("").describe(
 					"Search query to match component names or descriptions"
@@ -1845,24 +1965,16 @@ Common issues to check:
 			},
 			async ({ query, category, limit, offset }) => {
 				try {
-					const {
-						DesignSystemManifestCache,
-						searchComponents,
-					} = await import('./core/design-system-manifest.js');
+					const { searchComponents } = await import('./core/design-system-manifest.js');
 
-					const cache = DesignSystemManifestCache.getInstance();
-					const currentUrl = this.browserManager?.getCurrentUrl();
-					const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
-					const fileKey = fileKeyMatch ? fileKeyMatch[2] : 'unknown';
-
-					const cacheEntry = cache.get(fileKey);
+					// Auto-load design system cache if needed (no error returned to user)
+					const { cacheEntry } = await ensureDesignSystemCache();
 					if (!cacheEntry) {
 						return {
 							content: [{
 								type: "text",
 								text: JSON.stringify({
-									error: "No cached design system data. Call figma_get_design_system_summary first to load the design system.",
-									hint: "The summary tool extracts and caches design system data for efficient searching.",
+									error: "Could not load design system data. Make sure the Desktop Bridge plugin is running.",
 								}, null, 2),
 							}],
 							isError: true,
@@ -1925,8 +2037,6 @@ Common issues to check:
 			},
 			async ({ componentKey, componentName }) => {
 				try {
-					const { DesignSystemManifestCache } = await import('./core/design-system-manifest.js');
-
 					if (!componentKey && !componentName) {
 						return {
 							content: [{
@@ -1939,18 +2049,14 @@ Common issues to check:
 						};
 					}
 
-					const cache = DesignSystemManifestCache.getInstance();
-					const currentUrl = this.browserManager?.getCurrentUrl();
-					const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
-					const fileKey = fileKeyMatch ? fileKeyMatch[2] : 'unknown';
-
-					const cacheEntry = cache.get(fileKey);
+					// Auto-load design system cache if needed
+					const { cacheEntry } = await ensureDesignSystemCache();
 					if (!cacheEntry) {
 						return {
 							content: [{
 								type: "text",
 								text: JSON.stringify({
-									error: "No cached design system data. Call figma_get_design_system_summary first.",
+									error: "Could not load design system data. Make sure the Desktop Bridge plugin is running.",
 								}, null, 2),
 							}],
 							isError: true,
@@ -1962,7 +2068,7 @@ Common issues to check:
 					let isComponentSet = false;
 
 					// Check component sets first (they have variants)
-					for (const [name, compSet] of Object.entries(cacheEntry.manifest.componentSets)) {
+					for (const [name, compSet] of Object.entries(cacheEntry.manifest.componentSets) as [string, any][]) {
 						if ((componentKey && compSet.key === componentKey) || (componentName && name === componentName)) {
 							component = compSet;
 							isComponentSet = true;
@@ -1972,7 +2078,7 @@ Common issues to check:
 
 					// Check standalone components
 					if (!component) {
-						for (const [name, comp] of Object.entries(cacheEntry.manifest.components)) {
+						for (const [name, comp] of Object.entries(cacheEntry.manifest.components) as [string, any][]) {
 							if ((componentKey && comp.key === componentKey) || (componentName && name === componentName)) {
 								component = comp;
 								break;
@@ -2039,20 +2145,14 @@ Common issues to check:
 			},
 			async ({ type, filter, limit }) => {
 				try {
-					const { DesignSystemManifestCache } = await import('./core/design-system-manifest.js');
-
-					const cache = DesignSystemManifestCache.getInstance();
-					const currentUrl = this.browserManager?.getCurrentUrl();
-					const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
-					const fileKey = fileKeyMatch ? fileKeyMatch[2] : 'unknown';
-
-					const cacheEntry = cache.get(fileKey);
+					// Auto-load design system cache if needed
+					const { cacheEntry } = await ensureDesignSystemCache();
 					if (!cacheEntry) {
 						return {
 							content: [{
 								type: "text",
 								text: JSON.stringify({
-									error: "No cached design system data. Call figma_get_design_system_summary first.",
+									error: "Could not load design system data. Make sure the Desktop Bridge plugin is running.",
 								}, null, 2),
 							}],
 							isError: true,
@@ -2068,7 +2168,7 @@ Common issues to check:
 					if (type === "colors" || type === "all") {
 						const colors: Record<string, any> = {};
 						let count = 0;
-						for (const [name, token] of Object.entries(tokens.colors)) {
+						for (const [name, token] of Object.entries(tokens.colors) as [string, any][]) {
 							if (count >= effectiveLimit) break;
 							if (!filterLower || name.toLowerCase().includes(filterLower)) {
 								colors[name] = { value: token.value, scopes: token.scopes };
@@ -2081,7 +2181,7 @@ Common issues to check:
 					if (type === "spacing" || type === "all") {
 						const spacing: Record<string, any> = {};
 						let count = 0;
-						for (const [name, token] of Object.entries(tokens.spacing)) {
+						for (const [name, token] of Object.entries(tokens.spacing) as [string, any][]) {
 							if (count >= effectiveLimit) break;
 							if (!filterLower || name.toLowerCase().includes(filterLower)) {
 								spacing[name] = { value: token.value };
