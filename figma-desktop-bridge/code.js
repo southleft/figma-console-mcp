@@ -225,7 +225,12 @@ figma.ui.onmessage = async (msg) => {
         requestId: msg.requestId,
         success: true,
         result: result,
-        resultAnalysis: resultAnalysis
+        resultAnalysis: resultAnalysis,
+        // Include file context so users know which file this executed against
+        fileContext: {
+          fileName: figma.root.name,
+          fileKey: figma.fileKey || null
+        }
       });
 
     } catch (error) {
@@ -870,6 +875,8 @@ figma.ui.onmessage = async (msg) => {
           componentSets: componentSets,
           totalComponents: components.length,
           totalComponentSets: componentSets.length,
+          // Include file metadata for context verification
+          fileName: figma.root.name,
           fileKey: figma.fileKey || null,
           timestamp: Date.now()
         }

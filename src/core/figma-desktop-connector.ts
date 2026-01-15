@@ -295,10 +295,15 @@ export class FigmaDesktopConnector {
           const variables = await figma.variables.getLocalVariablesAsync();
           const collections = await figma.variables.getLocalVariableCollectionsAsync();
 
-          // Format the response
+          // Format the response with file metadata for context verification
           const result = {
             success: true,
             timestamp: Date.now(),
+            // Include file metadata so we can verify we're querying the right file
+            fileMetadata: {
+              fileName: figma.root.name,
+              fileKey: figma.fileKey || null
+            },
             variables: variables.map(v => ({
               id: v.id,
               name: v.name,

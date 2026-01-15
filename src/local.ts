@@ -887,6 +887,23 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 						}
 					}
 
+					// Try to get the current file name for better context
+					let currentFileName: string | null = null;
+					if (browserRunning && debugPortAccessible) {
+						try {
+							const connector = await this.getDesktopConnector();
+							const fileInfo = await connector.executeCodeViaUI(
+								"return { fileName: figma.root.name, fileKey: figma.fileKey }",
+								5000
+							);
+							if (fileInfo.success && fileInfo.result) {
+								currentFileName = fileInfo.result.fileName;
+							}
+						} catch {
+							// Non-critical - Desktop Bridge might not be running yet
+						}
+					}
+
 					return {
 						content: [
 							{
@@ -894,6 +911,8 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 								text: JSON.stringify(
 									{
 										mode: "local",
+										// Surface file name prominently for context clarity
+										currentFileName: currentFileName || "(Desktop Bridge not running - file name unavailable)",
 										monitoredPageUrl: currentUrl,
 										monitorWorkerCount: monitorStatus?.workerCount ?? 0,
 										setup: {
@@ -982,6 +1001,21 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 
 					const currentUrl = this.browserManager.getCurrentUrl();
 
+					// Try to get the file name for better context clarity
+					let fileName: string | null = null;
+					try {
+						const connector = await this.getDesktopConnector();
+						const fileInfo = await connector.executeCodeViaUI(
+							"return { fileName: figma.root.name, fileKey: figma.fileKey }",
+							5000
+						);
+						if (fileInfo.success && fileInfo.result) {
+							fileName = fileInfo.result.fileName;
+						}
+					} catch {
+						// Non-critical - just for context
+					}
+
 					return {
 						content: [
 							{
@@ -990,8 +1024,12 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 									{
 										status: "reconnected",
 										currentUrl,
+										// Include file name prominently for clarity
+										fileName: fileName || "(unknown - Desktop Bridge may need to be restarted)",
 										timestamp: Date.now(),
-										message: "Successfully reconnected to Figma Desktop. Console monitoring restarted.",
+										message: fileName
+											? `Successfully reconnected to Figma Desktop. Now monitoring: "${fileName}"`
+											: "Successfully reconnected to Figma Desktop. Console monitoring restarted.",
 									},
 									null,
 									2,
@@ -1093,6 +1131,8 @@ Common issues to check:
 											error: result.error,
 											// Include resultAnalysis for silent failure detection
 											resultAnalysis: result.resultAnalysis,
+											// Include file context so users know which file was queried
+											fileContext: result.fileContext,
 											timestamp: Date.now(),
 											...(attempt > 0 ? { reconnected: true, attempts: attempt + 1 } : {}),
 										},
