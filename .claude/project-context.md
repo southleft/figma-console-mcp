@@ -9,77 +9,63 @@
 
 ## Purpose
 
-Enable AI coding assistants (Claude Code, Cursor) to access Figma plugin console logs and screenshots in real-time, allowing autonomous debugging without manual copy-paste.
+Enable AI coding assistants (Claude Code, Cursor, etc.) to interact with Figma in real-time through a two-tier architecture:
+
+1. **REST API Mode** - Read-only access to Figma file data, components, variables, and styles
+2. **Desktop Bridge Mode** - Full read/write access via a Figma plugin that executes commands locally
 
 ## Key Technologies
 
 - **@modelcontextprotocol/sdk** - MCP protocol implementation
-- **Puppeteer** - Browser automation
-- **Chrome DevTools Protocol (CDP)** - Console log capture
+- **Puppeteer / Chrome DevTools Protocol** - Browser automation for console capture
+- **Figma Plugin API** - Design manipulation via Desktop Bridge
 - **TypeScript** - Type-safe development
+- **Biome** - Formatting and linting
 - **Jest** - Testing framework
 
-## Architecture Pattern
+## Architecture
 
-3-tier architecture:
-1. **MCP Server** - Protocol handling and tool registration
-2. **Tool Implementations** - Business logic for each MCP tool
-3. **Managers** - Browser automation, console monitoring, screenshots
+Two deployment modes:
 
-## Core Features
+### Local Mode (Desktop Bridge)
+- Connects to Figma Desktop via plugin
+- Full read/write capabilities
+- Execute arbitrary Figma Plugin API code via `figma_execute`
 
-1. `figma_get_console_logs()` - Retrieve console logs from plugin
-2. `figma_take_screenshot()` - Capture plugin UI screenshots
-3. `figma_watch_console()` - Stream logs in real-time
-4. `figma_reload_plugin()` - Reload plugin after code changes
-5. `figma_clear_console()` - Clear console log buffer
+### Cloudflare Mode
+- REST API for read-only operations
+- Scalable cloud deployment
+
+## Core Tool Categories
+
+### Console & Debugging
+- `figma_get_console_logs` - Retrieve plugin console output
+- `figma_take_screenshot` - Capture plugin UI
+- `figma_watch_console` - Stream logs in real-time
+- `figma_reload_plugin` - Reload after code changes
+
+### Design System (Read)
+- `figma_get_file_data` - File structure and metadata
+- `figma_get_variables` - Design tokens and variables
+- `figma_get_component` - Component definitions
+- `figma_get_styles` - Color, text, effect styles
+
+### Design Manipulation (Desktop Bridge)
+- `figma_execute` - Run arbitrary Plugin API code
+- `figma_create_child` - Add nodes to frames
+- `figma_set_fills` / `figma_set_strokes` - Modify appearance
+- `figma_resize_node` / `figma_move_node` - Transform nodes
+- Component property management tools
 
 ## Development Workflow
 
-1. Plan feature → Use `/sc:implement`
-2. Write code → Follow MCP SDK patterns
-3. Add tests → Maintain 70%+ coverage
-4. Run tests → Use `/sc:test`
-5. Review code → Use `senior-code-reviewer` agent
-6. Document → Update relevant docs
-
-## Important Patterns
-
-### MCP Tool Registration
-```typescript
-server.registerTool(
-  "tool-name",
-  {
-    description: "What the tool does",
-    inputSchema: { param: z.string() }
-  },
-  async ({ param }) => ({
-    content: [{ type: "text", text: "result" }]
-  })
-);
-```
-
-### Console Log Truncation
-Always truncate logs to prevent overwhelming AI context:
-- Max string length: 500 chars
-- Max array length: 10 elements
-- Max object depth: 3 levels
-
-### Error Handling
-All tools must handle errors gracefully:
-```typescript
-try {
-  // Tool logic
-} catch (error) {
-  return {
-    content: [{ type: "text", text: `Error: ${error.message}` }],
-    isError: true
-  };
-}
-```
+1. Write code → Follow MCP SDK patterns
+2. Format → `npm run format`
+3. Lint → `npm run lint:fix`
+4. Test → `npm test`
+5. Build → `npm run build`
 
 ## References
 
-- [Product Plan](../PRODUCT_PLAN.md) - Complete requirements
-- [Architecture](../ARCHITECTURE.md) - Technical design
-- [README](../README.md) - User documentation
+- [README](../README.md) - Setup and usage
+- [docs/](../docs/) - Detailed documentation

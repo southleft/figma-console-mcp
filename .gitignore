@@ -204,3 +204,6 @@ Temporary Items
 # Development documentation (internal use only)
 docs/testing/
 docs/analysis/
+
+# Claude Code local settings (user-specific)
+.claude/settings.local.json
