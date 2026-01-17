@@ -21,17 +21,20 @@ When implementing features for the Figma Console MCP server:
 3. **Code Quality**
    - Write TypeScript with strict mode
    - Add JSDoc comments for public APIs
-   - Follow existing code style (Prettier + ESLint)
+   - Follow existing code style (Biome)
    - Write tests for new features (Jest)
 
-4. **Testing**
+4. **Code Style**
+   - Use Biome for formatting and linting
+   - Run `npm run format` and `npm run lint:fix`
+
+5. **Testing**
    - Unit tests for business logic
    - Integration tests for tool handlers
    - Maintain 70%+ code coverage
 
-5. **Documentation**
+6. **Documentation**
    - Update README.md if adding new tools
-   - Update ARCHITECTURE.md for significant changes
    - Add inline comments for complex logic
 
 ## Example Usage
