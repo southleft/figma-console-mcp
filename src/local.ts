@@ -3390,26 +3390,24 @@ rowLabelsFrame.appendChild(rowLabelSpacer);
 // IMPORTANT: Set layoutSizing AFTER appendChild (node must be in auto-layout parent first)
 rowLabelSpacer.layoutSizingVertical = 'FIXED';
 
-// Create row labels - each with height matching cell height + gap
+// Create row labels - each with VERTICAL layout for direct vertical centering
+// Using VERTICAL layout: primaryAxis = vertical, counterAxis = horizontal
+// So primaryAxisAlignItems = 'CENTER' directly controls vertical centering
 for (let i = 0; i < rowCombinations.length; i++) {
 	const combo = rowCombinations[i];
 	const labelText = rowProps.map(p => combo[p]).join(" / ");
 	const isLastRow = (i === rowCombinations.length - 1);
 
-	// Create a frame to hold the label (for precise height control)
+	// Create a frame to hold the label with VERTICAL layout
 	const rowLabelContainer = figma.createFrame();
 	rowLabelContainer.name = "Row: " + labelText;
 	rowLabelContainer.fills = [];
-	rowLabelContainer.layoutMode = 'HORIZONTAL';
-	rowLabelContainer.counterAxisAlignItems = 'CENTER';  // Vertically center text
+	rowLabelContainer.layoutMode = 'VERTICAL';  // VERTICAL so primaryAxis controls Y
+	rowLabelContainer.primaryAxisAlignItems = 'CENTER';  // CENTER = vertically centered
+	rowLabelContainer.counterAxisAlignItems = 'MAX';  // MAX = right-aligned horizontally
 
-	// Set height to match cell + gap (except last row)
-	// Use paddingBottom to push the gap BELOW the centered text area
-	const rowHeight = isLastRow ? cellHeight : cellHeight + gap;
-	rowLabelContainer.resize(10, rowHeight);
-	if (!isLastRow) {
-		rowLabelContainer.paddingBottom = gap;  // Gap goes below, text centers in cellHeight
-	}
+	// Fixed height = cellHeight only (gap handled separately below)
+	rowLabelContainer.resize(10, cellHeight);
 
 	const label = figma.createText();
 	label.characters = labelText;
@@ -3423,6 +3421,18 @@ for (let i = 0; i < rowCombinations.length; i++) {
 	rowLabelsFrame.appendChild(rowLabelContainer);
 	rowLabelContainer.layoutSizingHorizontal = 'HUG';
 	rowLabelContainer.layoutSizingVertical = 'FIXED';
+
+	// Add gap spacer AFTER the row label (except for the last row)
+	// This separates the gap from the centering calculation entirely
+	if (!isLastRow) {
+		const gapSpacer = figma.createFrame();
+		gapSpacer.name = "Row Gap";
+		gapSpacer.fills = [];
+		gapSpacer.resize(1, gap);
+		rowLabelsFrame.appendChild(gapSpacer);
+		gapSpacer.layoutSizingHorizontal = 'HUG';
+		gapSpacer.layoutSizingVertical = 'FIXED';
+	}
 }
 
 contentRow.appendChild(rowLabelsFrame);
