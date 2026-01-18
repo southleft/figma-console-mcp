@@ -3354,9 +3354,10 @@ titleText.characters = csOriginalName;
 titleText.fontSize = TITLE_FONT_SIZE;
 titleText.fontName = { family: "Inter", style: "Semi Bold" };
 titleText.fills = [{ type: 'SOLID', color: TITLE_COLOR }];
+// Append to parent FIRST, then set layoutSizing
+containerFrame.appendChild(titleText);
 titleText.layoutSizingHorizontal = 'HUG';
 titleText.layoutSizingVertical = 'HUG';
-containerFrame.appendChild(titleText);
 
 // Create content row (horizontal: row labels + grid column)
 const contentRow = figma.createFrame();
@@ -3430,7 +3431,8 @@ for (let i = 0; i < rowCombinations.length; i++) {
 		gapSpacer.fills = [];
 		gapSpacer.resize(1, gap);
 		rowLabelsFrame.appendChild(gapSpacer);
-		gapSpacer.layoutSizingHorizontal = 'HUG';
+		// Plain frames can only use FIXED or FILL (not HUG)
+		gapSpacer.layoutSizingHorizontal = 'FIXED';
 		gapSpacer.layoutSizingVertical = 'FIXED';
 	}
 }
