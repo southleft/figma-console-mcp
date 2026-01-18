@@ -13,9 +13,6 @@ import type { EnrichmentOptions } from "./types/enriched.js";
 import { SnippetInjector } from "./snippet-injector.js";
 import type { ConsoleMonitor } from "./console-monitor.js";
 import { extractNodeSpec, validateReconstructionSpec, listVariants } from "./figma-reconstruction-spec.js";
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
 
 const logger = createChildLogger({ component: "figma-tools" });
 
@@ -3399,20 +3396,12 @@ export function registerFigmaAPITools(
 					throw new Error(result.error || "Screenshot capture failed");
 				}
 
-				// Save screenshot to temp file to avoid token bloat from base64 data
-				const tempDir = os.tmpdir();
-				const timestamp = Date.now();
-				const nodeIdSafe = nodeId ? nodeId.replace(/:/g, "-") : "page";
-				const extension = (format || "PNG").toLowerCase();
-				const filename = `figma-screenshot-${nodeIdSafe}-${timestamp}.${extension}`;
-				const filePath = path.join(tempDir, filename);
+				// Determine MIME type based on format
+				const mimeType = format === "JPG" ? "image/jpeg" : format === "SVG" ? "image/svg+xml" : "image/png";
 
-				// Write base64 to file
-				const imageBuffer = Buffer.from(result.image.base64, "base64");
-				fs.writeFileSync(filePath, imageBuffer);
+				logger.info({ byteLength: result.image.byteLength, format, mimeType }, "Screenshot captured via plugin");
 
-				logger.info({ filePath, byteLength: result.image.byteLength }, "Screenshot saved to temp file");
-
+				// Return as MCP image content type so Claude can actually see and analyze the image
 				return {
 					content: [
 						{
@@ -3425,14 +3414,17 @@ export function registerFigmaAPITools(
 									byteLength: result.image.byteLength,
 									node: result.image.node,
 									bounds: result.image.bounds,
-									// File path instead of base64 to save tokens
-									filePath: filePath,
 								},
 								metadata: {
 									source: "plugin_export_async",
-									note: "Screenshot saved to temp file. Use the filePath to view the image. The file contains the current plugin runtime state (guaranteed current).",
+									note: "Screenshot captured successfully. The image is included below for visual analysis. This shows the CURRENT plugin runtime state (guaranteed to reflect recent changes).",
 								},
 							}, null, 2),
+						},
+						{
+							type: "image",
+							data: result.image.base64,
+							mimeType: mimeType,
 						},
 					],
 				};
