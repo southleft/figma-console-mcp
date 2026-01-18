@@ -3383,10 +3383,11 @@ rowLabelsFrame.counterAxisAlignItems = 'MAX';  // Right-align text
 rowLabelsFrame.itemSpacing = 0;  // No spacing - we'll use fixed heights
 
 // Add spacer for column headers alignment
+// Must account for: column header height + gap + component set's internal edgePadding
 const rowLabelSpacer = figma.createFrame();
 rowLabelSpacer.name = "Spacer";
 rowLabelSpacer.fills = [];
-rowLabelSpacer.resize(10, COLUMN_HEADER_HEIGHT + gap);  // Height of column headers + gap
+rowLabelSpacer.resize(10, COLUMN_HEADER_HEIGHT + gap + edgePadding);  // Align with first row inside component set
 rowLabelsFrame.appendChild(rowLabelSpacer);
 // IMPORTANT: Set layoutSizing AFTER appendChild (node must be in auto-layout parent first)
 rowLabelSpacer.layoutSizingVertical = 'FIXED';
@@ -3404,7 +3405,8 @@ for (let i = 0; i < rowCombinations.length; i++) {
 	rowLabelContainer.name = "Row: " + labelText;
 	rowLabelContainer.fills = [];
 	rowLabelContainer.layoutMode = 'VERTICAL';  // VERTICAL so primaryAxis controls Y
-	rowLabelContainer.primaryAxisAlignItems = 'CENTER';  // CENTER = vertically centered
+	rowLabelContainer.primaryAxisSizingMode = 'FIXED';  // CRITICAL: Don't hug content, maintain fixed height
+	rowLabelContainer.primaryAxisAlignItems = 'CENTER';  // CENTER = vertically centered within fixed height
 	rowLabelContainer.counterAxisAlignItems = 'MAX';  // MAX = right-aligned horizontally
 
 	// Fixed height = cellHeight only (gap handled separately below)
