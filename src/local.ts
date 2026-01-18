@@ -3394,6 +3394,7 @@ rowLabelSpacer.layoutSizingVertical = 'FIXED';
 for (let i = 0; i < rowCombinations.length; i++) {
 	const combo = rowCombinations[i];
 	const labelText = rowProps.map(p => combo[p]).join(" / ");
+	const isLastRow = (i === rowCombinations.length - 1);
 
 	// Create a frame to hold the label (for precise height control)
 	const rowLabelContainer = figma.createFrame();
@@ -3403,8 +3404,12 @@ for (let i = 0; i < rowCombinations.length; i++) {
 	rowLabelContainer.counterAxisAlignItems = 'CENTER';  // Vertically center text
 
 	// Set height to match cell + gap (except last row)
-	const rowHeight = (i < rowCombinations.length - 1) ? cellHeight + gap : cellHeight;
+	// Use paddingBottom to push the gap BELOW the centered text area
+	const rowHeight = isLastRow ? cellHeight : cellHeight + gap;
 	rowLabelContainer.resize(10, rowHeight);
+	if (!isLastRow) {
+		rowLabelContainer.paddingBottom = gap;  // Gap goes below, text centers in cellHeight
+	}
 
 	const label = figma.createText();
 	label.characters = labelText;
@@ -3446,6 +3451,7 @@ columnHeadersRow.paddingRight = edgePadding;
 // Create column header labels - each with width matching cell + gap
 for (let i = 0; i < columnValues.length; i++) {
 	const colValue = columnValues[i];
+	const isLastCol = (i === columnValues.length - 1);
 
 	const colHeaderContainer = figma.createFrame();
 	colHeaderContainer.name = "Col: " + colValue;
@@ -3455,8 +3461,12 @@ for (let i = 0; i < columnValues.length; i++) {
 	colHeaderContainer.counterAxisAlignItems = 'MAX';  // Align to bottom
 
 	// Set width to match cell + gap (except last column)
-	const colWidth = (i < columnValues.length - 1) ? cellWidth + gap : cellWidth;
+	// Use paddingRight to push the gap to the RIGHT of the centered text area
+	const colWidth = isLastCol ? cellWidth : cellWidth + gap;
 	colHeaderContainer.resize(colWidth, COLUMN_HEADER_HEIGHT);
+	if (!isLastCol) {
+		colHeaderContainer.paddingRight = gap;  // Gap goes right, text centers in cellWidth
+	}
 
 	const label = figma.createText();
 	label.characters = colValue;
