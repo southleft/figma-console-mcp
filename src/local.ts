@@ -3072,12 +3072,24 @@ After instantiating components, use figma_take_screenshot to verify the result l
 **Result Structure:**
 \`\`\`
 Page
-└── COMPONENT_SET (with native purple dashed frame)
-    ├── Purple dashed border around entire set
-    ├── Organized grid layout
-    ├── Property labels (Type, Size, State, etc.)
-    └── COMPONENT variants positioned in grid
+└── Component Container (white frame, auto-sized)
+    ├── Title (component name)
+    ├── Content Row
+    │   ├── Row Labels (vertically aligned with grid rows)
+    │   │   ├── Spacer (for column header height)
+    │   │   └── Row labels with exact row heights
+    │   └── Grid Column
+    │       ├── Column Headers (horizontally aligned with grid columns)
+    │       └── COMPONENT_SET (purple dashed border)
+    │           └── COMPONENT variants in grid
 \`\`\`
+
+**Layout features:**
+- White container frame that auto-sizes to fit all content
+- Row labels: Vertically centered with their corresponding grid rows
+- Column headers: Horizontally centered with their corresponding grid columns
+- Component set: Uses Figma's native purple dashed border
+- All elements properly contained (no floating labels)
 
 **Grid structure:**
 - Columns = last property (usually State: Default, Hover, Disabled)
@@ -3107,14 +3119,26 @@ Page
 
 					// Build the code to execute in Figma
 					const code = `
-// Recreate component set using figma.combineAsVariants() for proper native visualization
-// This ensures Figma shows the purple dashed frame, grid lines, and property labels
+// ============================================================================
+// COMPONENT SET ARRANGEMENT WITH PROPER LABELS AND CONTAINER
+// Creates: White container frame → Row labels (left) → Column headers (top) → Component set (center)
+// Uses auto-layout for proper alignment of labels with grid cells
+// ============================================================================
 
 // Configuration
 const config = ${JSON.stringify(options || {})};
 const gap = config.gap ?? 24;
 const cellPadding = config.cellPadding ?? 20;
 const columnProperty = config.columnProperty || null;
+
+// Layout constants
+const LABEL_FONT_SIZE = 12;
+const LABEL_COLOR = { r: 0.4, g: 0.4, b: 0.4 };  // Gray text
+const TITLE_FONT_SIZE = 24;
+const TITLE_COLOR = { r: 0.1, g: 0.1, b: 0.1 };  // Dark text
+const CONTAINER_PADDING = 40;
+const LABEL_GAP = 16;  // Gap between labels and component set
+const COLUMN_HEADER_HEIGHT = 32;
 
 // Find the component set
 let componentSet = null;
@@ -3203,14 +3227,6 @@ const rowCombinations = generateRowCombinations(rowProps, propertyValues);
 const totalCols = columnValues.length;
 const totalRows = rowCombinations.length;
 
-// Remove any old custom labels from page
-const oldLabels = page.children.filter(n =>
-	n.type === "TEXT" && (n.name.startsWith("Row: ") || n.name.startsWith("Col: "))
-);
-for (const label of oldLabels) {
-	label.remove();
-}
-
 // Calculate max variant dimensions
 let maxVariantWidth = 0;
 let maxVariantHeight = 0;
@@ -3219,11 +3235,29 @@ for (const v of variants) {
 	if (v.height > maxVariantHeight) maxVariantHeight = v.height;
 }
 
-// Calculate cell dimensions
+// Calculate cell dimensions (each cell in the grid)
 const cellWidth = Math.ceil(maxVariantWidth + cellPadding);
 const cellHeight = Math.ceil(maxVariantHeight + cellPadding);
 
-// STEP 1: Clone all variants to the page temporarily
+// Calculate component set dimensions
+const edgePadding = 24;  // Padding inside component set
+const csWidth = (totalCols * cellWidth) + ((totalCols - 1) * gap) + (edgePadding * 2);
+const csHeight = (totalRows * cellHeight) + ((totalRows - 1) * gap) + (edgePadding * 2);
+
+// ============================================================================
+// STEP 1: Remove old labels and container frames from previous arrangements
+// ============================================================================
+const oldElements = page.children.filter(n =>
+	(n.type === "TEXT" && (n.name.startsWith("Row: ") || n.name.startsWith("Col: "))) ||
+	(n.type === "FRAME" && (n.name === "Component Container" || n.name === "Row Labels" || n.name === "Column Headers"))
+);
+for (const el of oldElements) {
+	el.remove();
+}
+
+// ============================================================================
+// STEP 2: Clone variants and recreate component set with native visualization
+// ============================================================================
 const clonedVariants = [];
 for (const variant of variants) {
 	const clone = variant.clone();
@@ -3231,15 +3265,14 @@ for (const variant of variants) {
 	clonedVariants.push(clone);
 }
 
-// STEP 2: Delete the old component set
+// Delete the old component set
 componentSet.remove();
 
-// STEP 3: Recreate using figma.combineAsVariants() - this is the KEY to getting native visualization
+// Recreate using figma.combineAsVariants() for native purple dashed frame
 const newComponentSet = figma.combineAsVariants(clonedVariants, page);
 newComponentSet.name = csOriginalName;
 
-// STEP 3.5: Apply purple dashed border - figma.combineAsVariants() doesn't auto-apply this styling
-// The UI does it automatically, but the API requires manual application
+// Apply purple dashed border (Figma's native component set styling)
 newComponentSet.strokes = [{
 	type: 'SOLID',
 	color: { r: 151/255, g: 71/255, b: 255/255 }  // Figma's purple: #9747FF
@@ -3248,8 +3281,9 @@ newComponentSet.dashPattern = [10, 5];
 newComponentSet.strokeWeight = 1;
 newComponentSet.strokeAlign = "INSIDE";
 
-// STEP 4: Arrange variants in grid pattern
-// The new component set is created with layoutMode "NONE" by default
+// ============================================================================
+// STEP 3: Arrange variants in grid pattern inside component set
+// ============================================================================
 const newVariants = newComponentSet.children.filter(n => n.type === "COMPONENT");
 
 for (const variant of newVariants) {
@@ -3275,12 +3309,11 @@ for (const variant of newVariants) {
 	}
 
 	if (colIdx >= 0 && rowIdx >= 0) {
-		// Calculate cell position with padding
-		const edgePadding = 24;
+		// Calculate cell position
 		const cellX = edgePadding + colIdx * (cellWidth + gap);
 		const cellY = edgePadding + rowIdx * (cellHeight + gap);
 
-		// Center variant within cell (integer positions)
+		// Center variant within cell
 		const variantX = Math.round(cellX + (cellWidth - variant.width) / 2);
 		const variantY = Math.round(cellY + (cellHeight - variant.height) / 2);
 
@@ -3289,28 +3322,193 @@ for (const variant of newVariants) {
 	}
 }
 
-// STEP 5: Resize component set to fit grid
-const edgePadding = 24;
-const csWidth = (totalCols * cellWidth) + ((totalCols - 1) * gap) + (edgePadding * 2);
-const csHeight = (totalRows * cellHeight) + ((totalRows - 1) * gap) + (edgePadding * 2);
+// Resize component set to fit grid
 newComponentSet.resize(csWidth, csHeight);
 
-// Restore position
-newComponentSet.x = csOriginalX;
-newComponentSet.y = csOriginalY;
+// ============================================================================
+// STEP 4: Create white container frame with proper structure
+// ============================================================================
+
+// Load font for labels
+await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
+
+// Create the main container frame (white background)
+const containerFrame = figma.createFrame();
+containerFrame.name = "Component Container";
+containerFrame.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];  // White
+containerFrame.cornerRadius = 8;
+containerFrame.layoutMode = 'VERTICAL';
+containerFrame.primaryAxisSizingMode = 'AUTO';
+containerFrame.counterAxisSizingMode = 'AUTO';
+containerFrame.paddingTop = CONTAINER_PADDING;
+containerFrame.paddingRight = CONTAINER_PADDING;
+containerFrame.paddingBottom = CONTAINER_PADDING;
+containerFrame.paddingLeft = CONTAINER_PADDING;
+containerFrame.itemSpacing = 24;
+
+// Add title
+const titleText = figma.createText();
+titleText.name = "Title";
+titleText.characters = csOriginalName;
+titleText.fontSize = TITLE_FONT_SIZE;
+titleText.fontName = { family: "Inter", style: "Semi Bold" };
+titleText.fills = [{ type: 'SOLID', color: TITLE_COLOR }];
+titleText.layoutSizingHorizontal = 'HUG';
+titleText.layoutSizingVertical = 'HUG';
+containerFrame.appendChild(titleText);
+
+// Create content row (horizontal: row labels + grid column)
+const contentRow = figma.createFrame();
+contentRow.name = "Content Row";
+contentRow.fills = [];  // Transparent
+contentRow.layoutMode = 'HORIZONTAL';
+contentRow.primaryAxisSizingMode = 'AUTO';
+contentRow.counterAxisSizingMode = 'AUTO';
+contentRow.itemSpacing = LABEL_GAP;
+contentRow.counterAxisAlignItems = 'MIN';  // Align to top
+containerFrame.appendChild(contentRow);
+
+// ============================================================================
+// STEP 5: Create row labels column (left side)
+// ============================================================================
+const rowLabelsFrame = figma.createFrame();
+rowLabelsFrame.name = "Row Labels";
+rowLabelsFrame.fills = [];  // Transparent
+rowLabelsFrame.layoutMode = 'VERTICAL';
+rowLabelsFrame.primaryAxisSizingMode = 'AUTO';
+rowLabelsFrame.counterAxisSizingMode = 'AUTO';
+rowLabelsFrame.counterAxisAlignItems = 'MAX';  // Right-align text
+rowLabelsFrame.itemSpacing = 0;  // No spacing - we'll use fixed heights
+
+// Add spacer for column headers alignment
+const rowLabelSpacer = figma.createFrame();
+rowLabelSpacer.name = "Spacer";
+rowLabelSpacer.fills = [];
+rowLabelSpacer.resize(10, COLUMN_HEADER_HEIGHT + gap);  // Height of column headers + gap
+rowLabelsFrame.appendChild(rowLabelSpacer);
+// IMPORTANT: Set layoutSizing AFTER appendChild (node must be in auto-layout parent first)
+rowLabelSpacer.layoutSizingVertical = 'FIXED';
+
+// Create row labels - each with height matching cell height + gap
+for (let i = 0; i < rowCombinations.length; i++) {
+	const combo = rowCombinations[i];
+	const labelText = rowProps.map(p => combo[p]).join(" / ");
+
+	// Create a frame to hold the label (for precise height control)
+	const rowLabelContainer = figma.createFrame();
+	rowLabelContainer.name = "Row: " + labelText;
+	rowLabelContainer.fills = [];
+	rowLabelContainer.layoutMode = 'HORIZONTAL';
+	rowLabelContainer.counterAxisAlignItems = 'CENTER';  // Vertically center text
+
+	// Set height to match cell + gap (except last row)
+	const rowHeight = (i < rowCombinations.length - 1) ? cellHeight + gap : cellHeight;
+	rowLabelContainer.resize(10, rowHeight);
+
+	const label = figma.createText();
+	label.characters = labelText;
+	label.fontSize = LABEL_FONT_SIZE;
+	label.fontName = { family: "Inter", style: "Regular" };
+	label.fills = [{ type: 'SOLID', color: LABEL_COLOR }];
+	label.textAlignHorizontal = 'RIGHT';
+	rowLabelContainer.appendChild(label);
+
+	// Append to parent FIRST, then set layoutSizing properties
+	rowLabelsFrame.appendChild(rowLabelContainer);
+	rowLabelContainer.layoutSizingHorizontal = 'HUG';
+	rowLabelContainer.layoutSizingVertical = 'FIXED';
+}
+
+contentRow.appendChild(rowLabelsFrame);
+
+// ============================================================================
+// STEP 6: Create grid column (column headers + component set)
+// ============================================================================
+const gridColumn = figma.createFrame();
+gridColumn.name = "Grid Column";
+gridColumn.fills = [];  // Transparent
+gridColumn.layoutMode = 'VERTICAL';
+gridColumn.primaryAxisSizingMode = 'AUTO';
+gridColumn.counterAxisSizingMode = 'AUTO';
+gridColumn.itemSpacing = gap;
+
+// Create column headers row
+const columnHeadersRow = figma.createFrame();
+columnHeadersRow.name = "Column Headers";
+columnHeadersRow.fills = [];
+columnHeadersRow.layoutMode = 'HORIZONTAL';
+columnHeadersRow.resize(csWidth, COLUMN_HEADER_HEIGHT);
+columnHeadersRow.itemSpacing = 0;  // No spacing - we control widths precisely
+columnHeadersRow.paddingLeft = edgePadding;  // Match component set edge padding
+columnHeadersRow.paddingRight = edgePadding;
+
+// Create column header labels - each with width matching cell + gap
+for (let i = 0; i < columnValues.length; i++) {
+	const colValue = columnValues[i];
+
+	const colHeaderContainer = figma.createFrame();
+	colHeaderContainer.name = "Col: " + colValue;
+	colHeaderContainer.fills = [];
+	colHeaderContainer.layoutMode = 'HORIZONTAL';
+	colHeaderContainer.primaryAxisAlignItems = 'CENTER';  // Center horizontally
+	colHeaderContainer.counterAxisAlignItems = 'MAX';  // Align to bottom
+
+	// Set width to match cell + gap (except last column)
+	const colWidth = (i < columnValues.length - 1) ? cellWidth + gap : cellWidth;
+	colHeaderContainer.resize(colWidth, COLUMN_HEADER_HEIGHT);
+
+	const label = figma.createText();
+	label.characters = colValue;
+	label.fontSize = LABEL_FONT_SIZE;
+	label.fontName = { family: "Inter", style: "Regular" };
+	label.fills = [{ type: 'SOLID', color: LABEL_COLOR }];
+	label.textAlignHorizontal = 'CENTER';
+	colHeaderContainer.appendChild(label);
+
+	// Append to parent FIRST, then set layoutSizing
+	columnHeadersRow.appendChild(colHeaderContainer);
+	colHeaderContainer.layoutSizingHorizontal = 'FIXED';
+	colHeaderContainer.layoutSizingVertical = 'FILL';
+}
+
+// Append to parent FIRST, then set layoutSizing
+gridColumn.appendChild(columnHeadersRow);
+columnHeadersRow.layoutSizingHorizontal = 'FIXED';
+columnHeadersRow.layoutSizingVertical = 'FIXED';
+
+// Create a wrapper frame to hold the component set (since component sets don't work well in auto-layout)
+const componentSetWrapper = figma.createFrame();
+componentSetWrapper.name = "Component Set Wrapper";
+componentSetWrapper.fills = [];
+componentSetWrapper.resize(csWidth, csHeight);
+
+// Move component set inside wrapper (positioned at 0,0)
+componentSetWrapper.appendChild(newComponentSet);
+newComponentSet.x = 0;
+newComponentSet.y = 0;
+
+// Append to parent FIRST, then set layoutSizing
+gridColumn.appendChild(componentSetWrapper);
+componentSetWrapper.layoutSizingHorizontal = 'FIXED';
+componentSetWrapper.layoutSizingVertical = 'FIXED';
+
+contentRow.appendChild(gridColumn);
+
+// Position container at original location
+containerFrame.x = csOriginalX - CONTAINER_PADDING - 120;  // Account for row labels width
+containerFrame.y = csOriginalY - CONTAINER_PADDING - TITLE_FONT_SIZE - 24 - COLUMN_HEADER_HEIGHT - gap;
 
 // Select and zoom to show result
-figma.currentPage.selection = [newComponentSet];
-figma.viewport.scrollAndZoomIntoView([newComponentSet]);
+figma.currentPage.selection = [containerFrame];
+figma.viewport.scrollAndZoomIntoView([containerFrame]);
 
 return {
 	success: true,
-	message: "Component set recreated with figma.combineAsVariants() for native visualization",
-	oldComponentSetId: csId,
-	newComponentSetId: newComponentSet.id,
+	message: "Component set arranged with proper container, labels, and alignment",
+	containerId: containerFrame.id,
+	componentSetId: newComponentSet.id,
 	componentSetName: newComponentSet.name,
-	layoutMode: newComponentSet.layoutMode,
-	variantGroupProperties: newComponentSet.variantGroupProperties,
 	grid: {
 		rows: totalRows,
 		columns: totalCols,
@@ -3319,11 +3517,16 @@ return {
 		gap: gap,
 		columnProperty: columnProp,
 		columnValues: columnValues,
-		rowProperties: rowProps
+		rowProperties: rowProps,
+		rowLabels: rowCombinations.map(combo => rowProps.map(p => combo[p]).join(" / "))
 	},
 	componentSetSize: { width: csWidth, height: csHeight },
 	variantCount: newVariants.length,
-	note: "Component set now uses Figma's native visualization with purple dashed frame, grid lines, and property labels"
+	structure: {
+		container: "White frame with title, row labels, column headers, and component set",
+		rowLabels: "Vertically aligned with each row's center",
+		columnHeaders: "Horizontally aligned with each column's center"
+	}
 };
 `;
 
@@ -3339,7 +3542,7 @@ return {
 							text: JSON.stringify({
 								...result.result,
 								hint: result.result?.success
-									? "Component set recreated with native Figma visualization. Purple dashed frame and grid lines should now be visible. Note: The component set ID has changed."
+									? "Component set arranged in a white container frame with properly aligned row and column labels. The purple dashed border is visible. Use figma_capture_screenshot to validate the layout."
 									: undefined,
 							}, null, 2),
 						}],
