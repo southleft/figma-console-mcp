@@ -13,6 +13,9 @@ import type { EnrichmentOptions } from "./types/enriched.js";
 import { SnippetInjector } from "./snippet-injector.js";
 import type { ConsoleMonitor } from "./console-monitor.js";
 import { extractNodeSpec, validateReconstructionSpec, listVariants } from "./figma-reconstruction-spec.js";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 const logger = createChildLogger({ component: "figma-tools" });
 
@@ -3396,6 +3399,20 @@ export function registerFigmaAPITools(
 					throw new Error(result.error || "Screenshot capture failed");
 				}
 
+				// Save screenshot to temp file to avoid token bloat from base64 data
+				const tempDir = os.tmpdir();
+				const timestamp = Date.now();
+				const nodeIdSafe = nodeId ? nodeId.replace(/:/g, "-") : "page";
+				const extension = (format || "PNG").toLowerCase();
+				const filename = `figma-screenshot-${nodeIdSafe}-${timestamp}.${extension}`;
+				const filePath = path.join(tempDir, filename);
+
+				// Write base64 to file
+				const imageBuffer = Buffer.from(result.image.base64, "base64");
+				fs.writeFileSync(filePath, imageBuffer);
+
+				logger.info({ filePath, byteLength: result.image.byteLength }, "Screenshot saved to temp file");
+
 				return {
 					content: [
 						{
@@ -3408,12 +3425,12 @@ export function registerFigmaAPITools(
 									byteLength: result.image.byteLength,
 									node: result.image.node,
 									bounds: result.image.bounds,
-									// Base64 data is included but may be large
-									base64: result.image.base64,
+									// File path instead of base64 to save tokens
+									filePath: filePath,
 								},
 								metadata: {
 									source: "plugin_export_async",
-									note: "Screenshot captured from plugin runtime state (guaranteed current). Use base64 data to verify visual changes.",
+									note: "Screenshot saved to temp file. Use the filePath to view the image. The file contains the current plugin runtime state (guaranteed current).",
 								},
 							}, null, 2),
 						},
