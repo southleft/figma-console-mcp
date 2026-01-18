@@ -343,10 +343,17 @@ When you first use design system tools:
   - Create frames, shapes, text, components
   - Apply auto-layout, styles, effects
   - Build complete UI mockups programmatically
-- `figma_arrange_component_set` - **Organize variants into component sets**
+- `figma_arrange_component_set` - **Organize variants into professional component sets**
   - Convert multiple component variants into a proper Figma component set
   - Applies native purple dashed border visualization automatically
+  - Creates white container frame with title, row labels, and column headers
+  - Row labels vertically centered with each grid row
+  - Column headers horizontally centered with each column
   - Use natural language like "arrange these variants" or "organize as component set"
+- `figma_set_description` - **Document components with rich descriptions**
+  - Add descriptions to components, component sets, and styles
+  - Supports markdown formatting for rich documentation
+  - Descriptions appear in Dev Mode for developers
 
 ### 🔧 Variable Management (Local Mode + Desktop Bridge)
 - `figma_create_variable_collection` - Create new variable collections with modes
