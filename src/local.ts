@@ -81,7 +81,35 @@ After creating or modifying ANY visual design elements:
 - Elements using "hug contents" instead of "fill container" (causes lopsided layouts)
 - Inconsistent padding (elements not visually balanced)
 - Text/inputs not filling available width
-- Items not centered properly in their containers`,
+- Items not centered properly in their containers
+- Components floating on blank canvas - always place within a Section or Frame
+
+### COMPONENT PLACEMENT (REQUIRED)
+Before creating ANY component, check for or create a proper parent container:
+1. First, check if a Section or Frame already exists on the current page
+2. If no container exists, create a Section first (e.g., "Design Components")
+3. Place all new components INSIDE the Section/Frame, not on blank canvas
+4. This keeps designs organized and prevents "floating" components
+
+Example pattern:
+\`\`\`javascript
+// Find or create a Section for components
+let section = figma.currentPage.findOne(n => n.type === 'SECTION' && n.name === 'Components');
+if (!section) {
+  section = figma.createSection();
+  section.name = 'Components';
+  section.x = 0;
+  section.y = 0;
+}
+// Now create your component INSIDE the section
+const frame = figma.createFrame();
+section.appendChild(frame);
+\`\`\`
+
+### DESIGN BEST PRACTICES
+For component-specific design guidance (sizing, proportions, accessibility, etc.), query the Design Systems Assistant MCP which provides up-to-date best practices for any component type.
+
+If Design Systems Assistant MCP is not available, install it from: https://github.com/southleft/design-systems-mcp`,
 		});
 	}
 
@@ -511,23 +539,37 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 						);
 					}
 
+					// Fetch the image and convert to base64 so Claude can actually see it
+					logger.info({ imageUrl }, "Fetching image from Figma S3 URL");
+					const imageResponse = await fetch(imageUrl);
+					if (!imageResponse.ok) {
+						throw new Error(`Failed to fetch image: ${imageResponse.status} ${imageResponse.statusText}`);
+					}
+
+					const imageBuffer = await imageResponse.arrayBuffer();
+					const base64Data = Buffer.from(imageBuffer).toString('base64');
+					const mimeType = format === 'jpg' ? 'image/jpeg' : format === 'svg' ? 'image/svg+xml' : format === 'pdf' ? 'application/pdf' : 'image/png';
+
+					logger.info({ byteLength: imageBuffer.byteLength, mimeType }, "Image fetched and converted to base64");
+
+					// Return as MCP image content type so Claude can actually see the image
 					return {
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										fileKey,
-										nodeId: targetNodeId,
-										imageUrl,
-										scale,
-										format,
-										expiresIn: "30 days",
-										note: "Image URL provided above. Use this URL to view or download the screenshot. URLs expire after 30 days.",
-									},
-									null,
-									2
-								),
+								text: JSON.stringify({
+									fileKey,
+									nodeId: targetNodeId,
+									scale,
+									format,
+									byteLength: imageBuffer.byteLength,
+									note: "Screenshot captured successfully. The image is included below for visual analysis.",
+								}, null, 2),
+							},
+							{
+								type: "image",
+								data: base64Data,
+								mimeType: mimeType,
 							},
 						],
 					};
@@ -1103,7 +1145,35 @@ Common issues to check:
 - Inconsistent padding (elements not visually balanced)
 - Text/inputs not filling available width
 - Component text not changing (use figma_set_instance_properties instead)
-- Duplicate pages created (check before creating new pages)`,
+- Duplicate pages created (check before creating new pages)
+- Components on blank canvas - ALWAYS create inside a Section or Frame
+
+**COMPONENT PLACEMENT (REQUIRED):**
+Before creating components, find or create a parent Section:
+\`\`\`javascript
+let section = figma.currentPage.findOne(n => n.type === 'SECTION');
+if (!section) {
+  section = figma.createSection();
+  section.name = 'Components';
+}
+// Create component INSIDE the section
+section.appendChild(newComponent);
+\`\`\`
+
+**Z-ORDER / LAYER ORDERING:**
+When creating background frames or containers, newly created elements render on TOP by default. To put backgrounds behind content:
+\`\`\`javascript
+// Option 1: Insert at index 0 (back)
+parent.insertChild(0, backgroundFrame);
+// Option 2: Create background FIRST, then content
+const bg = figma.createFrame(); // created first = behind
+const content = figma.createFrame(); // created second = in front
+\`\`\`
+
+**DESIGN BEST PRACTICES:**
+For component-specific design guidance (sizing, proportions, accessibility, variants, properties, metadata), query the Design Systems Assistant MCP before creating any component. It provides up-to-date best practices for any component type (buttons, tabs, accordions, badges, etc.).
+
+If Design Systems Assistant MCP is not available, install it from: https://github.com/southleft/design-systems-mcp`,
 			{
 				code: z.string().describe(
 					"JavaScript code to execute. Has access to the 'figma' global object. " +
