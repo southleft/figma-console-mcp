@@ -343,6 +343,10 @@ When you first use design system tools:
   - Create frames, shapes, text, components
   - Apply auto-layout, styles, effects
   - Build complete UI mockups programmatically
+- `figma_arrange_component_set` - **Organize variants into component sets**
+  - Convert multiple component variants into a proper Figma component set
+  - Applies native purple dashed border visualization automatically
+  - Use natural language like "arrange these variants" or "organize as component set"
 
 ### 🔧 Variable Management (Local Mode + Desktop Bridge)
 - `figma_create_variable_collection` - Create new variable collections with modes
@@ -381,6 +385,8 @@ Create a success notification card with a checkmark icon and message
 Design a button component with hover and disabled states
 Build a navigation bar with logo, menu items, and user avatar
 Create a modal dialog with header, content area, and action buttons
+Arrange these button variants into a component set
+Organize my icon variants as a proper component set with the purple border
 ```
 
 ### Variable Management (Local Mode)

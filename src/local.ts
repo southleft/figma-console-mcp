@@ -2967,6 +2967,329 @@ After instantiating components, use figma_take_screenshot to verify the result l
 			},
 		);
 
+		// Tool: Arrange Component Set (Professional Layout with Native Visualization)
+		// Recreates component set using figma.combineAsVariants() for proper purple dashed frame
+		this.server.tool(
+			"figma_arrange_component_set",
+			`Organize and style a component set with Figma's native purple dashed visualization.
+
+**🎯 USE THIS TOOL WHEN THE USER:**
+- Asks to "create variants" or "add variants" to a component
+- Wants to "add states" like hover, disabled, pressed, focus
+- Requests "different sizes" (small, medium, large) of a component
+- Says "make this a component with variants"
+- Asks to "organize" or "arrange" or "fix" a component set
+- Mentions the component set looks "messy" or variants are "overlapping"
+- Wants a "proper component set" or "professional component layout"
+- After creating multiple component variants that need to be combined
+- When component variants exist but lack the purple dashed border styling
+
+**🔄 TYPICAL WORKFLOW:**
+1. User designs a UI element (button, card, input, etc.)
+2. User requests variants → AI creates component variants
+3. **→ CALL THIS TOOL** to combine variants into a proper component set with:
+   - Purple dashed border (Figma's native component set styling)
+   - Organized grid layout
+   - Auto-generated property labels
+
+**What this tool does:**
+1. Takes an existing component set (or selected components)
+2. Recreates it using figma.combineAsVariants() for proper Figma integration
+3. Applies purple dashed border styling (Figma's default component set appearance)
+4. Arranges variants in a clean grid pattern
+5. Returns the new component set ready for use
+
+**Result Structure:**
+\`\`\`
+Page
+└── COMPONENT_SET (with native purple dashed frame)
+    ├── Purple dashed border around entire set
+    ├── Organized grid layout
+    ├── Property labels (Type, Size, State, etc.)
+    └── COMPONENT variants positioned in grid
+\`\`\`
+
+**Grid structure:**
+- Columns = last property (usually State: Default, Hover, Disabled)
+- Rows = combination of other properties (Type + Size)`,
+			{
+				componentSetId: z.string().optional().describe(
+					"Node ID of the component set to arrange. If not provided, will look for a selected component set."
+				),
+				componentSetName: z.string().optional().describe(
+					"Name of the component set to find. Used if componentSetId not provided."
+				),
+				options: z.object({
+					gap: z.number().optional().default(24).describe(
+						"Gap between grid cells in pixels (default: 24)"
+					),
+					cellPadding: z.number().optional().default(20).describe(
+						"Padding inside each cell around the variant (default: 20)"
+					),
+					columnProperty: z.string().optional().describe(
+						"Property to use for columns (default: auto-detect last property, usually 'State')"
+					),
+				}).optional().describe("Layout options"),
+			},
+			async ({ componentSetId, componentSetName, options }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+
+					// Build the code to execute in Figma
+					const code = `
+// Recreate component set using figma.combineAsVariants() for proper native visualization
+// This ensures Figma shows the purple dashed frame, grid lines, and property labels
+
+// Configuration
+const config = ${JSON.stringify(options || {})};
+const gap = config.gap ?? 24;
+const cellPadding = config.cellPadding ?? 20;
+const columnProperty = config.columnProperty || null;
+
+// Find the component set
+let componentSet = null;
+const csId = ${JSON.stringify(componentSetId || null)};
+const csName = ${JSON.stringify(componentSetName || null)};
+
+if (csId) {
+	componentSet = await figma.getNodeByIdAsync(csId);
+} else if (csName) {
+	const allNodes = figma.currentPage.findAll(n => n.type === "COMPONENT_SET" && n.name === csName);
+	componentSet = allNodes[0];
+} else {
+	const selection = figma.currentPage.selection;
+	componentSet = selection.find(n => n.type === "COMPONENT_SET");
+}
+
+if (!componentSet || componentSet.type !== "COMPONENT_SET") {
+	return { error: "Component set not found. Provide componentSetId, componentSetName, or select a component set." };
+}
+
+const page = figma.currentPage;
+const csOriginalX = componentSet.x;
+const csOriginalY = componentSet.y;
+const csOriginalName = componentSet.name;
+
+// Get all variant components
+const variants = componentSet.children.filter(n => n.type === "COMPONENT");
+if (variants.length === 0) {
+	return { error: "No variants found in component set" };
+}
+
+// Parse variant properties from names
+const parseVariantName = (name) => {
+	const props = {};
+	const parts = name.split(", ");
+	for (const part of parts) {
+		const [key, value] = part.split("=");
+		if (key && value) {
+			props[key.trim()] = value.trim();
+		}
+	}
+	return props;
+};
+
+// Collect all properties and their unique values (preserving order)
+const propertyValues = {};
+const propertyOrder = [];
+for (const variant of variants) {
+	const props = parseVariantName(variant.name);
+	for (const [key, value] of Object.entries(props)) {
+		if (!propertyValues[key]) {
+			propertyValues[key] = new Set();
+			propertyOrder.push(key);
+		}
+		propertyValues[key].add(value);
+	}
+}
+for (const key of Object.keys(propertyValues)) {
+	propertyValues[key] = Array.from(propertyValues[key]);
+}
+
+// Determine grid structure: columns = last property (usually State), rows = other properties
+const columnProp = columnProperty || propertyOrder[propertyOrder.length - 1];
+const columnValues = propertyValues[columnProp] || [];
+const rowProps = propertyOrder.filter(p => p !== columnProp);
+
+// Generate all row combinations
+const generateRowCombinations = (props, values) => {
+	if (props.length === 0) return [{}];
+	if (props.length === 1) {
+		return values[props[0]].map(v => ({ [props[0]]: v }));
+	}
+	const result = [];
+	const firstProp = props[0];
+	const restProps = props.slice(1);
+	const restCombos = generateRowCombinations(restProps, values);
+	for (const value of values[firstProp]) {
+		for (const combo of restCombos) {
+			result.push({ [firstProp]: value, ...combo });
+		}
+	}
+	return result;
+};
+const rowCombinations = generateRowCombinations(rowProps, propertyValues);
+
+const totalCols = columnValues.length;
+const totalRows = rowCombinations.length;
+
+// Remove any old custom labels from page
+const oldLabels = page.children.filter(n =>
+	n.type === "TEXT" && (n.name.startsWith("Row: ") || n.name.startsWith("Col: "))
+);
+for (const label of oldLabels) {
+	label.remove();
+}
+
+// Calculate max variant dimensions
+let maxVariantWidth = 0;
+let maxVariantHeight = 0;
+for (const v of variants) {
+	if (v.width > maxVariantWidth) maxVariantWidth = v.width;
+	if (v.height > maxVariantHeight) maxVariantHeight = v.height;
+}
+
+// Calculate cell dimensions
+const cellWidth = Math.ceil(maxVariantWidth + cellPadding);
+const cellHeight = Math.ceil(maxVariantHeight + cellPadding);
+
+// STEP 1: Clone all variants to the page temporarily
+const clonedVariants = [];
+for (const variant of variants) {
+	const clone = variant.clone();
+	page.appendChild(clone);
+	clonedVariants.push(clone);
+}
+
+// STEP 2: Delete the old component set
+componentSet.remove();
+
+// STEP 3: Recreate using figma.combineAsVariants() - this is the KEY to getting native visualization
+const newComponentSet = figma.combineAsVariants(clonedVariants, page);
+newComponentSet.name = csOriginalName;
+
+// STEP 3.5: Apply purple dashed border - figma.combineAsVariants() doesn't auto-apply this styling
+// The UI does it automatically, but the API requires manual application
+newComponentSet.strokes = [{
+	type: 'SOLID',
+	color: { r: 151/255, g: 71/255, b: 255/255 }  // Figma's purple: #9747FF
+}];
+newComponentSet.dashPattern = [10, 5];
+newComponentSet.strokeWeight = 1;
+newComponentSet.strokeAlign = "INSIDE";
+
+// STEP 4: Arrange variants in grid pattern
+// The new component set is created with layoutMode "NONE" by default
+const newVariants = newComponentSet.children.filter(n => n.type === "COMPONENT");
+
+for (const variant of newVariants) {
+	const props = parseVariantName(variant.name);
+	const colValue = props[columnProp];
+	const colIdx = columnValues.indexOf(colValue);
+
+	// Find matching row
+	let rowIdx = -1;
+	for (let i = 0; i < rowCombinations.length; i++) {
+		const combo = rowCombinations[i];
+		let match = true;
+		for (const [key, value] of Object.entries(combo)) {
+			if (props[key] !== value) {
+				match = false;
+				break;
+			}
+		}
+		if (match) {
+			rowIdx = i;
+			break;
+		}
+	}
+
+	if (colIdx >= 0 && rowIdx >= 0) {
+		// Calculate cell position with padding
+		const edgePadding = 24;
+		const cellX = edgePadding + colIdx * (cellWidth + gap);
+		const cellY = edgePadding + rowIdx * (cellHeight + gap);
+
+		// Center variant within cell (integer positions)
+		const variantX = Math.round(cellX + (cellWidth - variant.width) / 2);
+		const variantY = Math.round(cellY + (cellHeight - variant.height) / 2);
+
+		variant.x = variantX;
+		variant.y = variantY;
+	}
+}
+
+// STEP 5: Resize component set to fit grid
+const edgePadding = 24;
+const csWidth = (totalCols * cellWidth) + ((totalCols - 1) * gap) + (edgePadding * 2);
+const csHeight = (totalRows * cellHeight) + ((totalRows - 1) * gap) + (edgePadding * 2);
+newComponentSet.resize(csWidth, csHeight);
+
+// Restore position
+newComponentSet.x = csOriginalX;
+newComponentSet.y = csOriginalY;
+
+// Select and zoom to show result
+figma.currentPage.selection = [newComponentSet];
+figma.viewport.scrollAndZoomIntoView([newComponentSet]);
+
+return {
+	success: true,
+	message: "Component set recreated with figma.combineAsVariants() for native visualization",
+	oldComponentSetId: csId,
+	newComponentSetId: newComponentSet.id,
+	componentSetName: newComponentSet.name,
+	layoutMode: newComponentSet.layoutMode,
+	variantGroupProperties: newComponentSet.variantGroupProperties,
+	grid: {
+		rows: totalRows,
+		columns: totalCols,
+		cellWidth: cellWidth,
+		cellHeight: cellHeight,
+		gap: gap,
+		columnProperty: columnProp,
+		columnValues: columnValues,
+		rowProperties: rowProps
+	},
+	componentSetSize: { width: csWidth, height: csHeight },
+	variantCount: newVariants.length,
+	note: "Component set now uses Figma's native visualization with purple dashed frame, grid lines, and property labels"
+};
+`;
+
+					const result = await connector.executeCodeViaUI(code, 25000);
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to arrange component set");
+					}
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								...result.result,
+								hint: result.result?.success
+									? "Component set recreated with native Figma visualization. Purple dashed frame and grid lines should now be visible. Note: The component set ID has changed."
+									: undefined,
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to arrange component set");
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the Desktop Bridge plugin is running and a component set exists.",
+							}, null, 2),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
 		// Register Figma API tools (Tools 8-11)
 		registerFigmaAPITools(
 			this.server,
