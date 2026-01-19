@@ -1285,7 +1285,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				modeId: z.string().describe(
 					"The mode ID to update the value in (e.g., '1:0'). Get this from the variable's collection modes."
 				),
-				value: z.any().describe(
+				value: z.union([z.string(), z.number(), z.boolean()]).describe(
 					"The new value. For COLOR: hex string like '#FF0000'. For FLOAT: number. For STRING: text. For BOOLEAN: true/false."
 				),
 			},
@@ -1347,7 +1347,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					"The variable type: COLOR, FLOAT, STRING, or BOOLEAN"
 				),
 				description: z.string().optional().describe("Optional description for the variable"),
-				valuesByMode: z.record(z.any()).optional().describe(
+				valuesByMode: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe(
 					"Optional initial values by mode ID. Example: { '1:0': '#FF0000', '1:1': '#0000FF' }"
 				),
 			},
@@ -2350,7 +2350,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 				variant: z.record(z.string()).optional().describe(
 					"Variant properties to set (e.g., { Type: 'Simple', State: 'Active' })"
 				),
-				overrides: z.record(z.any()).optional().describe(
+				overrides: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe(
 					"Property overrides (e.g., { 'Button Label': 'Click Me' })"
 				),
 				position: z.object({
@@ -2489,7 +2489,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 				type: z.enum(["BOOLEAN", "TEXT", "INSTANCE_SWAP", "VARIANT"]).describe(
 					"Property type: BOOLEAN for toggles, TEXT for strings, INSTANCE_SWAP for component swaps, VARIANT for variant selection"
 				),
-				defaultValue: z.any().describe(
+				defaultValue: z.union([z.string(), z.number(), z.boolean()]).describe(
 					"Default value for the property. BOOLEAN: true/false, TEXT: string, INSTANCE_SWAP: component key, VARIANT: variant value"
 				),
 			},
@@ -2542,8 +2542,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 				),
 				newValue: z.object({
 					name: z.string().optional().describe("New name for the property"),
-					defaultValue: z.any().optional().describe("New default value"),
-					preferredValues: z.array(z.any()).optional().describe("Preferred values (INSTANCE_SWAP only)"),
+					defaultValue: z.union([z.string(), z.number(), z.boolean()]).optional().describe("New default value"),
+					preferredValues: z.array(z.object({
+						type: z.enum(["COMPONENT", "COMPONENT_SET"]).describe("Type of preferred value"),
+						key: z.string().describe("Component or component set key"),
+					})).optional().describe("Preferred values (INSTANCE_SWAP only)"),
 				}).describe("Object with the values to update"),
 			},
 			async ({ nodeId, propertyName, newValue }) => {
