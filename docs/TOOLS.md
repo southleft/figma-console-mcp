@@ -8,6 +8,7 @@ This guide provides detailed documentation for each tool, including when to use 
 |----------|------|---------|------|
 | **🧭 Navigation** | `figma_navigate` | Open a Figma URL and start monitoring | All |
 | | `figma_get_status` | Check browser and monitoring status | All |
+| | `figma_reconnect` | Reconnect to Figma Desktop | Local |
 | **📋 Console** | `figma_get_console_logs` | Retrieve console logs with filters | All |
 | | `figma_watch_console` | Stream logs in real-time | All |
 | | `figma_clear_console` | Clear log buffer | All |
@@ -20,7 +21,17 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_get_component_image` | Just the component image | All |
 | | `figma_get_file_data` | File structure with verbosity control | All |
 | | `figma_get_file_for_plugin` | File data optimized for plugins | All |
+| | `figma_get_design_system_summary` | Overview of design system | Local |
+| | `figma_get_token_values` | Get variable values by mode | Local |
 | **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local |
+| | `figma_arrange_component_set` | Organize variants with labels | Local |
+| | `figma_set_description` | Add component descriptions | Local |
+| **🧩 Components** | `figma_search_components` | Find components by name | Local |
+| | `figma_get_component_details` | Get component details | Local |
+| | `figma_instantiate_component` | Create component instance | Local |
+| | `figma_add_component_property` | Add component property | Local |
+| | `figma_edit_component_property` | Edit component property | Local |
+| | `figma_delete_component_property` | Remove component property | Local |
 | **🔧 Variables** | `figma_create_variable_collection` | Create collections with modes | Local |
 | | `figma_create_variable` | Create new variables | Local |
 | | `figma_update_variable` | Update variable values | Local |
@@ -29,6 +40,15 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_delete_variable_collection` | Delete collections | Local |
 | | `figma_add_mode` | Add modes to collections | Local |
 | | `figma_rename_mode` | Rename modes | Local |
+| **📐 Node Manipulation** | `figma_resize_node` | Resize a node | Local |
+| | `figma_move_node` | Move a node | Local |
+| | `figma_clone_node` | Clone a node | Local |
+| | `figma_delete_node` | Delete a node | Local |
+| | `figma_rename_node` | Rename a node | Local |
+| | `figma_set_text` | Set text content | Local |
+| | `figma_set_fills` | Set fill colors | Local |
+| | `figma_set_strokes` | Set stroke colors | Local |
+| | `figma_create_child` | Create child node | Local |
 
 ---
 
@@ -811,6 +831,397 @@ figma_rename_mode({
 - `collectionId` (required): Collection containing the mode
 - `modeId` (required): Mode ID to rename
 - `newName` (required): New name for the mode
+
+---
+
+## 🧩 Component Tools (Local Mode Only)
+
+> **⚠️ Requires Desktop Bridge Plugin**: These tools only work in Local Mode with the Desktop Bridge plugin running in Figma.
+
+### `figma_search_components`
+
+Search for components in the current file by name or description.
+
+**When to Use:**
+- Finding existing components to instantiate
+- Discovering available UI building blocks
+- Checking if a component already exists before creating
+
+**Usage:**
+```javascript
+figma_search_components({
+  query: "Button",           // Search term
+  includeDescription: true   // Include description in results
+})
+```
+
+**Parameters:**
+- `query` (required): Search term to match against component names
+- `includeDescription` (optional): Include component descriptions (default: true)
+
+**Returns:**
+- Array of matching components with ID, name, key, and description
+
+---
+
+### `figma_get_component_details`
+
+Get detailed information about a specific component.
+
+**Usage:**
+```javascript
+figma_get_component_details({
+  componentKey: "abc123def456"  // Component key from search results
+})
+```
+
+**Parameters:**
+- `componentKey` (required): The component's key identifier
+
+**Returns:**
+- Full component details including properties, variants, and metadata
+
+---
+
+### `figma_instantiate_component`
+
+Create an instance of a component on the canvas.
+
+**When to Use:**
+- Adding existing components to your design
+- Building compositions from component library
+- Creating layouts using design system components
+
+**Usage:**
+```javascript
+figma_instantiate_component({
+  componentKey: "abc123def456",
+  x: 100,                        // X position
+  y: 200,                        // Y position
+  overrides: {                   // Property overrides
+    "Button Label": "Click Me",
+    "Show Icon": true
+  }
+})
+```
+
+**Parameters:**
+- `componentKey` (required): Component key to instantiate
+- `x` (optional): X position on canvas
+- `y` (optional): Y position on canvas
+- `overrides` (optional): Property overrides for the instance
+
+**Returns:**
+- Created instance with node ID
+
+---
+
+### `figma_arrange_component_set`
+
+Organize component variants into a professional component set with labels and proper structure.
+
+**When to Use:**
+- After creating multiple component variants
+- Organizing messy component sets
+- Adding row/column labels to variant grids
+- Getting the purple dashed border Figma styling
+
+**Usage:**
+```javascript
+figma_arrange_component_set({
+  componentSetId: "123:456",     // Component set to arrange
+  options: {
+    gap: 24,                     // Gap between cells
+    cellPadding: 20,             // Padding inside cells
+    columnProperty: "State"      // Property to use for columns
+  }
+})
+```
+
+**Parameters:**
+- `componentSetId` (optional): ID of component set to arrange (uses selection if not provided)
+- `componentSetName` (optional): Find component set by name
+- `options` (optional): Layout options
+  - `gap`: Gap between grid cells (default: 24)
+  - `cellPadding`: Padding inside each cell (default: 20)
+  - `columnProperty`: Property to use for columns (default: auto-detect, usually "State")
+
+**Returns:**
+- Arranged component set with:
+  - White container frame with title
+  - Row labels (vertically centered)
+  - Column headers (horizontally centered)
+  - Purple dashed border (Figma's native styling)
+
+**Example Result:**
+```
+┌─────────────────────────────────────────┐
+│  Button                                 │
+│         Default  Hover  Pressed  Disabled
+│  ┌─────────────────────────────────────┐
+│  │ Primary/Small  [btn] [btn] [btn] [btn]
+│  │ Primary/Medium [btn] [btn] [btn] [btn]
+│  │ Primary/Large  [btn] [btn] [btn] [btn]
+│  │ Secondary/...  [btn] [btn] [btn] [btn]
+│  └─────────────────────────────────────┘
+└─────────────────────────────────────────┘
+```
+
+---
+
+### `figma_set_description`
+
+Add or update a description on a component, component set, or style.
+
+**When to Use:**
+- Documenting components for developers
+- Adding usage guidelines
+- Writing design system documentation
+
+**Usage:**
+```javascript
+figma_set_description({
+  nodeId: "123:456",
+  description: "Primary action button. Use for main CTAs.\n\n**Variants:**\n- Size: Small, Medium, Large\n- State: Default, Hover, Pressed, Disabled"
+})
+```
+
+**Parameters:**
+- `nodeId` (required): Node ID of component/style to document
+- `description` (required): Description text (supports markdown)
+
+**Returns:**
+- Confirmation with updated node info
+
+**Note:** Descriptions appear in Figma's Dev Mode for developers.
+
+---
+
+## 🔧 Node Manipulation Tools (Local Mode Only)
+
+### `figma_resize_node`
+
+Resize a node to specific dimensions.
+
+**Usage:**
+```javascript
+figma_resize_node({
+  nodeId: "123:456",
+  width: 200,
+  height: 100
+})
+```
+
+---
+
+### `figma_move_node`
+
+Move a node to a specific position.
+
+**Usage:**
+```javascript
+figma_move_node({
+  nodeId: "123:456",
+  x: 100,
+  y: 200
+})
+```
+
+---
+
+### `figma_clone_node`
+
+Create a copy of a node.
+
+**Usage:**
+```javascript
+figma_clone_node({
+  nodeId: "123:456"
+})
+```
+
+**Returns:**
+- New node ID of the clone
+
+---
+
+### `figma_delete_node`
+
+Delete a node from the canvas.
+
+**Usage:**
+```javascript
+figma_delete_node({
+  nodeId: "123:456"
+})
+```
+
+**⚠️ Warning:** This cannot be undone programmatically.
+
+---
+
+### `figma_rename_node`
+
+Rename a node.
+
+**Usage:**
+```javascript
+figma_rename_node({
+  nodeId: "123:456",
+  newName: "Header Section"
+})
+```
+
+---
+
+### `figma_set_text`
+
+Set the text content of a text node.
+
+**Usage:**
+```javascript
+figma_set_text({
+  nodeId: "123:456",
+  characters: "Hello World"
+})
+```
+
+---
+
+### `figma_set_fills`
+
+Set the fill colors of a node.
+
+**Usage:**
+```javascript
+figma_set_fills({
+  nodeId: "123:456",
+  fills: [{ type: "SOLID", color: "#FF0000" }]
+})
+```
+
+---
+
+### `figma_set_strokes`
+
+Set the stroke colors of a node.
+
+**Usage:**
+```javascript
+figma_set_strokes({
+  nodeId: "123:456",
+  strokes: [{ type: "SOLID", color: "#000000" }],
+  strokeWeight: 2
+})
+```
+
+---
+
+### `figma_create_child`
+
+Create a child node inside a parent.
+
+**Usage:**
+```javascript
+figma_create_child({
+  parentId: "123:456",
+  type: "FRAME",
+  name: "New Frame"
+})
+```
+
+---
+
+## 🏷️ Component Property Tools (Local Mode Only)
+
+### `figma_add_component_property`
+
+Add a new property to a component.
+
+**Usage:**
+```javascript
+figma_add_component_property({
+  nodeId: "123:456",
+  propertyName: "Show Icon",
+  propertyType: "BOOLEAN",
+  defaultValue: true
+})
+```
+
+**Parameters:**
+- `nodeId` (required): Component node ID
+- `propertyName` (required): Name for the new property
+- `propertyType` (required): `"BOOLEAN"`, `"TEXT"`, `"INSTANCE_SWAP"`, or `"VARIANT"`
+- `defaultValue` (required): Default value for the property
+
+---
+
+### `figma_edit_component_property`
+
+Edit an existing component property.
+
+**Usage:**
+```javascript
+figma_edit_component_property({
+  nodeId: "123:456",
+  propertyName: "Label",
+  newValue: {
+    name: "Button Text",
+    defaultValue: "Click me"
+  }
+})
+```
+
+---
+
+### `figma_delete_component_property`
+
+Remove a property from a component.
+
+**Usage:**
+```javascript
+figma_delete_component_property({
+  nodeId: "123:456",
+  propertyName: "Deprecated Prop"
+})
+```
+
+---
+
+## 📊 Design System Summary Tools (Local Mode Only)
+
+### `figma_get_design_system_summary`
+
+Get a high-level overview of the design system in the current file.
+
+**Usage:**
+```javascript
+figma_get_design_system_summary()
+```
+
+**Returns:**
+- Component count and categories
+- Variable collections and counts
+- Style summary (colors, text, effects)
+- Page structure overview
+
+---
+
+### `figma_get_token_values`
+
+Get all variable values organized by collection and mode.
+
+**Usage:**
+```javascript
+figma_get_token_values({
+  collectionName: "Brand Colors"  // Optional: filter by collection
+})
+```
+
+**Returns:**
+- Variables organized by collection
+- Values for each mode
+- Variable metadata
 
 ---
 
