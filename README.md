@@ -52,7 +52,7 @@ Perfect for design system extraction and basic debugging. No installation requir
 5. Done! ✅
 
 **What you get:**
-- ✅ All 14 Figma tools available immediately
+- ✅ Figma tools available immediately
 - ✅ OAuth authentication (automatic when you first use API tools)
 - ✅ Design system extraction (variables*, components, styles)
 - ✅ Console debugging and screenshots
@@ -546,11 +546,19 @@ The **Figma Desktop Bridge** plugin enables powerful capabilities:
 
 ## 🛤️ Roadmap
 
-- [ ] **Real-time collaboration** - Multi-user debugging sessions
-- [ ] **Component screenshot diffs** - Visual regression testing
-- [ ] **Batch operations** - Process multiple files at once
-- [ ] **Design linting** - Automated compliance checks
-- [ ] **Plugin template generation** - Generate plugin boilerplate
+**Current Status:** v1.2.x (Stable) - Production-ready with comprehensive capabilities
+
+**Coming Soon:**
+- [ ] **Enhanced error messages** - Actionable suggestions for design operations
+- [ ] **Component template library** - Common UI pattern generation
+- [ ] **Batch variant operations** - Create multiple variants efficiently
+- [ ] **Visual regression testing** - Screenshot diff capabilities
+
+**Future:**
+- [ ] **Multi-user debugging** - Collaborative debugging sessions
+- [ ] **Design linting** - Automated compliance and accessibility checks
+- [ ] **VS Code extension** - Simplified setup and integration
+- [ ] **AI enhancements** - Intelligent component suggestions and auto-layout optimization
 
 **📖 [Full Roadmap](docs/ROADMAP.md)**
 
