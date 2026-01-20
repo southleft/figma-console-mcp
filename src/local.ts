@@ -53,10 +53,13 @@ class LocalFigmaConsoleMCP {
 	}> = new Map();
 
 	constructor() {
-		this.server = new McpServer({
-			name: "Figma Console MCP (Local)",
-			version: "0.1.0",
-			instructions: `## Figma Console MCP - Visual Design Workflow
+		this.server = new McpServer(
+			{
+				name: "Figma Console MCP (Local)",
+				version: "0.1.0",
+			},
+			{
+				instructions: `## Figma Console MCP - Visual Design Workflow
 
 This MCP server enables AI-assisted design creation in Figma. Follow these mandatory workflows:
 
@@ -110,7 +113,8 @@ section.appendChild(frame);
 For component-specific design guidance (sizing, proportions, accessibility, etc.), query the Design Systems Assistant MCP which provides up-to-date best practices for any component type.
 
 If Design Systems Assistant MCP is not available, install it from: https://github.com/southleft/design-systems-mcp`,
-		});
+			}
+		);
 	}
 
 	/**
