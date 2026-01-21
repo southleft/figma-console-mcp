@@ -2,10 +2,10 @@
   "$schema": "https://mintlify.com/schema.json",
   "name": "Figma Console MCP",
   "logo": {
-    "dark": "/docs/logo/dark.svg",
-    "light": "/docs/logo/light.svg"
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
   },
-  "favicon": "/docs/favicon.svg",
+  "favicon": "/favicon.svg",
   "colors": {
     "primary": "#A259FF",
     "light": "#C084FC",
@@ -17,7 +17,7 @@
   },
   "topbarCtaButton": {
     "name": "Get Started",
-    "url": "/docs/SETUP"
+    "url": "/SETUP"
   },
   "anchors": [
     {
@@ -35,25 +35,25 @@
     {
       "group": "Getting Started",
       "pages": [
-        "docs/index",
-        "docs/SETUP",
-        "docs/MODE_COMPARISON"
+        "index",
+        "SETUP",
+        "MODE_COMPARISON"
       ]
     },
     {
       "group": "Guides",
       "pages": [
-        "docs/USE_CASES",
-        "docs/TROUBLESHOOTING"
+        "USE_CASES",
+        "TROUBLESHOOTING"
       ]
     },
     {
       "group": "Reference",
       "pages": [
-        "docs/TOOLS",
-        "docs/RECONSTRUCTION_FORMAT",
-        "docs/OAUTH_SETUP",
-        "docs/SELF_HOSTING"
+        "TOOLS",
+        "RECONSTRUCTION_FORMAT",
+        "OAUTH_SETUP",
+        "SELF_HOSTING"
       ]
     }
   ],
