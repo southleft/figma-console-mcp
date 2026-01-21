@@ -1,17 +1,198 @@
 ---
 title: "Figma Console MCP"
-description: "Your design system as a programmable API."
+description: "Your design system as a programmable API. Connect AI to Figma for extraction, creation, and debugging."
 ---
 
-# Figma Console MCP
+# Your Design System, Programmable
 
-Your design system, programmable.
+**"I can just do this in Figma myself."**
 
-## Getting Started
+You're right. You can manually export design tokens. You can screenshot components and describe them to developers. You can copy-paste hex codes into Slack. You can document every button variant by hand.
 
-Connect AI assistants to Figma for extraction, creation, and debugging.
+But should you?
 
-- Extract design tokens
-- Debug Figma plugins
-- Create components programmatically
-- Implement with real specifications
+## The Real Problem
+
+Design systems aren't static documents. They're living APIs that need to:
+
+- **Stay synchronized** between design and code
+- **Be queryable** by the tools developers already use
+- **Generate code** in the formats your stack requires
+- **Evolve** without breaking existing implementations
+
+Every time a designer says "just check Figma," a developer opens a new tab, squints at a modal, eyeballs the padding, and writes `margin: 16px` instead of `var(--spacing-md)`.
+
+Every time a design system update ships, someone somewhere hardcodes a color because "I'll fix it later."
+
+## What If Your Design System Was an API?
+
+Imagine asking your AI assistant:
+
+> "Get the Button component specs and implement it in React with our design tokens."
+
+And it just... works. Real component data. Real token values. Real code that uses your actual design system.
+
+That's what Figma Console MCP enables.
+
+<CardGroup cols="2">
+  <Card title="Extract Design Tokens" icon="palette">
+    Get variables, styles, and components as structured data. Export to CSS, Tailwind, Sass—whatever your stack needs.
+  </Card>
+  <Card title="Debug Figma Plugins" icon="bug">
+    Real-time console logs from your plugins. No more console.log archaeology.
+  </Card>
+  <Card title="Create Components" icon="paintbrush">
+    Execute Figma Plugin API code directly. Build, modify, and organize components programmatically.
+  </Card>
+  <Card title="Implement with Context" icon="code">
+    AI can see your components visually AND as structured data. Implementation guidance that actually matches the design.
+  </Card>
+</CardGroup>
+
+## Two Paths, One Goal
+
+<Tabs>
+  <Tab title="For Designers">
+    ### Make Your Work Programmable
+
+    Your design system is a product. Developers are your users. Give them an API.
+
+    **What you'll do:**
+    - Define tokens and components in Figma (what you already do)
+    - Let AI extract and translate them into developer-ready formats
+    - Keep a single source of truth that auto-syncs
+
+    **What changes:**
+    - Developers stop guessing at values
+    - Design debt decreases because correct tokens are easier than wrong ones
+    - Your documentation is always accurate (it's generated from the source)
+
+    <Card title="Quick Start for Designers" icon="rocket" href="/docs/SETUP">
+      Connect in 2 minutes with zero setup required.
+    </Card>
+  </Tab>
+  <Tab title="For Developers">
+    ### Consume Design Systems Like APIs
+
+    Stop treating Figma as a screenshot machine. Query it.
+
+    **What you'll get:**
+    - Real token values in your preferred format (CSS, Tailwind, Sass)
+    - Component specs with actual measurements, not approximations
+    - Visual references alongside structured data
+
+    **What changes:**
+    - Implement components correctly the first time
+    - Auto-generate design token files from source
+    - Debug Figma plugins without Figma's dev tools
+
+    <Card title="Quick Start for Developers" icon="terminal" href="/docs/SETUP">
+      `npx` install or URL-based connection—your choice.
+    </Card>
+  </Tab>
+</Tabs>
+
+## Not Just Extraction—Creation
+
+Most tools stop at reading. Figma Console MCP also writes.
+
+In Local Mode, you can:
+- Create variable collections with modes (Light/Dark/High Contrast)
+- Generate component variants programmatically
+- Organize component sets with professional labeling
+- Modify existing designs through the Plugin API
+
+```javascript
+// Create a button with proper design system bindings
+"Create a button component with 4 types, 3 sizes, 5 states.
+Bind colors to my design system variables and
+use spacing tokens for padding."
+```
+
+The AI understands your existing design system and creates new components that follow the same patterns.
+
+## 36 Tools. One Connection.
+
+<Accordion title="Navigation & Status">
+  - `figma_navigate` — Open any Figma URL
+  - `figma_get_status` — Check connection health
+  - `figma_reconnect` — Reconnect to Figma Desktop
+</Accordion>
+
+<Accordion title="Console & Debugging">
+  - `figma_get_console_logs` — Retrieve logs with filters
+  - `figma_watch_console` — Real-time log streaming
+  - `figma_clear_console` — Clear log buffer
+  - `figma_take_screenshot` — Capture UI state
+  - `figma_reload_plugin` — Reload current page
+</Accordion>
+
+<Accordion title="Design System Extraction">
+  - `figma_get_variables` — Extract tokens with multi-format export
+  - `figma_get_styles` — Color, text, effect styles
+  - `figma_get_component` — Component metadata or reconstruction spec
+  - `figma_get_component_for_development` — Visual reference + specs
+  - `figma_get_component_image` — Render as image
+  - `figma_get_file_data` — File structure with verbosity control
+  - `figma_get_file_for_plugin` — Optimized for plugin development
+  - `figma_get_design_system_summary` — Overview of entire system
+  - `figma_get_token_values` — Variable values by mode
+</Accordion>
+
+<Accordion title="Design Creation (Local Mode)">
+  - `figma_execute` — Run any Plugin API code
+  - `figma_create_variable_collection` — Create token collections
+  - `figma_create_variable` — Add design tokens
+  - `figma_update_variable` — Modify token values
+  - `figma_rename_variable` — Reorganize tokens
+  - `figma_delete_variable` — Remove tokens
+  - `figma_add_mode` — Add Light/Dark/etc modes
+  - `figma_rename_mode` — Rename modes
+  - `figma_arrange_component_set` — Organize variants with labels
+  - `figma_set_description` — Add component documentation
+  - Plus 12 more node manipulation tools...
+</Accordion>
+
+## Start in 2 Minutes
+
+<Steps>
+  <Step title="Open Claude Desktop Settings">
+    Claude menu → Settings → Connectors
+  </Step>
+  <Step title="Add Custom Connector">
+    Click "Add Custom Connector"
+  </Step>
+  <Step title="Enter URL">
+    Name: `Figma Console`
+    URL: `https://figma-console-mcp.southleft.com/sse`
+  </Step>
+  <Step title="Done">
+    All tools are now available. OAuth happens automatically on first use.
+  </Step>
+</Steps>
+
+<Card title="View Full Setup Guide" icon="book-open" href="/docs/SETUP">
+  Remote, Local, and NPX installation options with detailed instructions.
+</Card>
+
+---
+
+## Built for Production
+
+- **Free hosted server** at `figma-console-mcp.southleft.com`
+- **Self-hosting option** for enterprise requirements
+- **OAuth authentication** — no token management for end users
+- **Local mode** for desktop bridge plugin and offline use
+- **Open source** under MIT license
+
+<CardGroup cols="3">
+  <Card title="Use Cases" icon="lightbulb" href="/docs/USE_CASES">
+    Real scenarios for plugin debugging, token extraction, and component implementation.
+  </Card>
+  <Card title="All Tools" icon="wrench" href="/docs/TOOLS">
+    Complete reference for every tool with parameters and examples.
+  </Card>
+  <Card title="Troubleshooting" icon="circle-question" href="/docs/TROUBLESHOOTING">
+    Solutions to common issues and workflow best practices.
+  </Card>
+</CardGroup>
