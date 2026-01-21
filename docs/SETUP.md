@@ -1,3 +1,8 @@
+---
+title: "Setup Guide"
+description: "Complete setup instructions for connecting Figma Console MCP to Claude Desktop, Cursor, Windsurf, and other AI clients."
+---
+
 # Figma Console MCP - Setup Guide
 
 Complete setup instructions for connecting Figma Console MCP to various AI clients (Claude Desktop, Cursor, Windsurf, etc.).

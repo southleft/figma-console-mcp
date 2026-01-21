@@ -1,3 +1,8 @@
+---
+title: "Self-Hosting"
+description: "Deploy your own instance of Figma Console MCP on Cloudflare Workers for enterprise requirements or custom configurations."
+---
+
 # Self-Hosting Guide
 
 Deploy your own instance of Figma Console MCP on Cloudflare Workers.

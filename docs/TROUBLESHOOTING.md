@@ -1,3 +1,8 @@
+---
+title: "Troubleshooting"
+description: "Solutions to common issues including browser connection, console logs, screenshots, and configuration problems."
+---
+
 # Troubleshooting Guide
 
 ## Common Issues and Solutions

@@ -1,3 +1,8 @@
+---
+title: "OAuth Setup"
+description: "Configure OAuth authentication for the Figma Console MCP server, enabling automatic browser-based authentication."
+---
+
 # OAuth Setup Guide
 
 This guide explains how to set up OAuth authentication for the Figma Console MCP server, allowing users to authenticate with their own Figma accounts.
