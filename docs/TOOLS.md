@@ -1,3 +1,8 @@
+---
+title: "Tools Reference"
+description: "Complete API reference for all 36+ MCP tools including parameters, return values, and usage examples."
+---
+
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.

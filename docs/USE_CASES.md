@@ -1,3 +1,8 @@
+---
+title: "Use Cases"
+description: "Real-world scenarios for plugin debugging, design system extraction, component implementation, and AI-assisted design creation."
+---
+
 # Use Cases & Scenarios
 
 This guide shows real-world scenarios for using Figma Console MCP in your workflow.

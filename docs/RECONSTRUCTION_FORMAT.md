@@ -1,3 +1,8 @@
+---
+title: "Reconstruction Format"
+description: "Generate node tree specifications for programmatic component creation with the Figma Component Reconstructor plugin."
+---
+
 # Reconstruction Format Guide
 
 The reconstruction format generates node tree construction specifications compatible with the Figma Component Reconstructor plugin, enabling programmatic component creation.

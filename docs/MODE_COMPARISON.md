@@ -1,3 +1,8 @@
+---
+title: "Mode Comparison"
+description: "Understand the differences between Remote, Local, and NPX installation methods and when to use each."
+---
+
 # Installation Methods & Execution Modes - Complete Comparison
 
 This document clarifies the differences between installation methods and execution modes to help you choose the right setup.
