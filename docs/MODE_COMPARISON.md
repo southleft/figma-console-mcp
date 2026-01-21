@@ -131,7 +131,7 @@ Variables & Components Data
 
 ## Tool Availability by Mode
 
-### All 14 Tools Available in Both Modes
+### Core Tools Available in Both Modes
 
 | Tool | Remote | Local | Notes |
 |------|--------|-------|-------|

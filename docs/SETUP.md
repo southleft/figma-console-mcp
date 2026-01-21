@@ -39,7 +39,7 @@ This is the new, easier way to add MCP servers in Claude Desktop.
 
 **That's it!** ✅
 
-The MCP server is now connected. All 14 Figma tools are available.
+The MCP server is now connected. All Figma tools are available.
 
 ---
 
@@ -169,10 +169,45 @@ cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
 
 ---
 
+## 📦 NPX Installation (Local Mode Alternative)
+
+> **Note:** This is an alternative to Local Git installation. Both use the same code and require the same prerequisites (Node.js, Figma Desktop with debug port, Personal Access Token).
+
+### Why Use NPX?
+
+- ✅ No git clone required
+- ✅ Automatic updates with `@latest`
+- ✅ Same functionality as Local Git mode
+
+### NPX Configuration
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      }
+    }
+  }
+}
+```
+
+**Pin to specific version** (for stability):
+```json
+"args": ["-y", "figma-console-mcp@1.2.4"]
+```
+
+**First run:** NPX downloads and caches the package. Subsequent runs use the cached version unless you specify `@latest`.
+
+---
+
 ## What You Get With Each Mode
 
 ### Remote Mode (UI Setup)
-- ✅ **All 14 MCP tools**
+- ✅ **All MCP tools**
 - ✅ **OAuth authentication** (automatic, no token needed)
 - ✅ **Design system extraction** (variables*, components, styles)
 - ✅ **Console logs and screenshots**
@@ -182,7 +217,7 @@ cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
 *Variables require Figma Enterprise plan
 
 ### Local Mode (JSON Setup)
-- ✅ **All 14 MCP tools**
+- ✅ **All MCP tools**
 - ✅ **Desktop Bridge plugin support** (access local variables, no Enterprise needed)
 - ✅ **Zero-latency console debugging**
 - ✅ **Reliable component descriptions** (bypasses API bugs)

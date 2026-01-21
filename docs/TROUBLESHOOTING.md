@@ -411,7 +411,7 @@ If you're still experiencing issues:
 
 2. **Verify Deployment**
    ```bash
-   curl https://figma-console-mcp.southleft-llc.workers.dev/health
+   curl https://figma-console-mcp.southleft.com/health
    ```
 
 3. **Check Cloudflare Status**

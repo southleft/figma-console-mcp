@@ -158,7 +158,7 @@ Update your AI client config to use your instance:
 
 ### 1. Add Custom Domain in Cloudflare Dashboard
 
-1. Go to Workers & Pages ’ figma-console-mcp
+1. Go to Workers & Pages ï¿½ figma-console-mcp
 2. Click "Custom Domains"
 3. Click "Add Custom Domain"
 4. Enter your domain (e.g., `mcp.example.com`)
@@ -235,7 +235,7 @@ npx wrangler tail --status error
 ### Analytics
 
 View analytics in Cloudflare Dashboard:
-1. Go to Workers & Pages ’ figma-console-mcp
+1. Go to Workers & Pages ï¿½ figma-console-mcp
 2. Click "Analytics" tab
 3. See:
    - Request count
@@ -320,24 +320,13 @@ npx wrangler deployments list
 
 ### 3. Rate Limiting (Advanced)
 
-Add rate limiting in your worker:
+For rate limiting, use Cloudflare's built-in Rate Limiting rules:
 
-```typescript
-// src/index.ts
-import { RateLimiter } from '@cloudflare/workers-types';
+1. Go to Cloudflare Dashboard â†’ **Security** â†’ **WAF** â†’ **Rate limiting rules**
+2. Create a rule to limit requests per IP (e.g., 100 requests/minute)
+3. Apply to your worker's route
 
-// Limit to 100 requests per minute per IP
-const rateLimiter = new RateLimiter({
-  limit: 100,
-  period: 60,
-});
-
-// In fetch handler
-const clientIP = request.headers.get('CF-Connecting-IP');
-if (!(await rateLimiter.check(clientIP))) {
-  return new Response('Rate limit exceeded', { status: 429 });
-}
-```
+Alternatively, use Cloudflare's **Rate Limiting binding** for programmatic control - see [Cloudflare Rate Limiting docs](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 
 ### 4. Access Control (Advanced)
 
@@ -372,7 +361,7 @@ npx wrangler login
 **Error:** "Browser Rendering not enabled"
 
 1. Go to Cloudflare Dashboard
-2. Workers & Pages ’ Settings
+2. Workers & Pages ï¿½ Settings
 3. Enable Browser Rendering
 4. Try deploying again
 
@@ -385,9 +374,9 @@ npx wrangler tail --format pretty
 ```
 
 **Common issues:**
-- Browser Rendering API quota exceeded ’ Upgrade plan
-- Timeout too short ’ Increase `BROWSER_TIMEOUT`
-- Cold start delay ’ Normal, wait and retry
+- Browser Rendering API quota exceeded ï¿½ Upgrade plan
+- Timeout too short ï¿½ Increase `BROWSER_TIMEOUT`
+- Cold start delay ï¿½ Normal, wait and retry
 
 ### High Costs
 
@@ -523,8 +512,8 @@ Set secrets in GitHub:
 
 For self-hosting issues:
 
-- =Ö [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
-- =¬ [GitHub Discussions](https://github.com/southleft/figma-console-mcp/discussions)
+- =ï¿½ [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
+- =ï¿½ [GitHub Discussions](https://github.com/southleft/figma-console-mcp/discussions)
 - = [Report Issues](https://github.com/southleft/figma-console-mcp/issues)
 
 For Cloudflare-specific issues:
