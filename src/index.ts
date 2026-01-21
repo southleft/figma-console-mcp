@@ -1161,6 +1161,22 @@ export default {
 		return Response.redirect("https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg", 302);
 	}
 
+	// Proxy /docs to Mintlify
+	if (/^\/docs/.test(url.pathname)) {
+		const DOCS_URL = "southleftllc.mintlify.dev";
+		const CUSTOM_URL = "figma-console-mcp.southleft.com";
+
+		const proxyUrl = new URL(request.url);
+		proxyUrl.hostname = DOCS_URL;
+
+		const proxyRequest = new Request(proxyUrl, request);
+		proxyRequest.headers.set("Host", DOCS_URL);
+		proxyRequest.headers.set("X-Forwarded-Host", CUSTOM_URL);
+		proxyRequest.headers.set("X-Forwarded-Proto", "https");
+
+		return await fetch(proxyRequest);
+	}
+
 	// Root path - serve landing page with proper meta tags
 	if (url.pathname === "/") {
 		return new Response(
@@ -1169,9 +1185,9 @@ export default {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Figma Console MCP</title>
+	<title>Figma Console MCP - Your Design System as an API</title>
 	<link rel="icon" type="image/jpeg" href="https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg">
-	<meta name="description" content="Model Context Protocol server for Figma debugging and design system extraction">
+	<meta name="description" content="Connect AI to Figma. Extract design tokens, implement components with real specs, and debug plugins—all through a programmable API.">
 	<style>
 		* {
 			margin: 0;
@@ -1187,6 +1203,9 @@ export default {
 		.header {
 			padding: 24px 48px;
 			border-bottom: 1px solid #e5e5e5;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
 		}
 		.logo {
 			display: flex;
@@ -1198,30 +1217,67 @@ export default {
 		.logo img {
 			width: 32px;
 			height: 32px;
+			border-radius: 6px;
+		}
+		.nav {
+			display: flex;
+			gap: 32px;
+			align-items: center;
+		}
+		.nav a {
+			color: #666;
+			text-decoration: none;
+			font-size: 15px;
+			font-weight: 500;
+		}
+		.nav a:hover {
+			color: #000;
 		}
 		.container {
 			max-width: 1200px;
 			margin: 0 auto;
-			padding: 80px 48px;
+			padding: 100px 48px 80px;
+		}
+		.badge {
+			display: inline-block;
+			padding: 6px 12px;
+			background: #f3f0ff;
+			color: #7c3aed;
+			border-radius: 20px;
+			font-size: 13px;
+			font-weight: 600;
+			margin-bottom: 24px;
 		}
 		h1 {
-			font-size: 64px;
+			font-size: 56px;
 			font-weight: 700;
 			margin-bottom: 24px;
-			letter-spacing: -0.02em;
+			letter-spacing: -0.03em;
 			line-height: 1.1;
+		}
+		.highlight {
+			background: linear-gradient(135deg, #a259ff 0%, #7c3aed 100%);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+			background-clip: text;
 		}
 		.subtitle {
 			font-size: 20px;
 			color: #666666;
-			margin-bottom: 48px;
-			max-width: 600px;
+			margin-bottom: 40px;
+			max-width: 640px;
+			line-height: 1.6;
+		}
+		.cta-group {
+			display: flex;
+			gap: 16px;
+			flex-wrap: wrap;
 		}
 		.cta {
 			display: inline-flex;
 			align-items: center;
 			gap: 8px;
-			padding: 12px 24px;
+			padding: 14px 28px;
 			background: #000000;
 			color: #ffffff;
 			text-decoration: none;
@@ -1233,25 +1289,69 @@ export default {
 		.cta:hover {
 			background: #333333;
 		}
+		.cta-secondary {
+			background: #f5f5f5;
+			color: #000;
+		}
+		.cta-secondary:hover {
+			background: #e5e5e5;
+		}
 		.features {
 			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-			gap: 32px;
-			margin-top: 80px;
+			grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+			gap: 24px;
+			margin-top: 100px;
 		}
 		.feature {
-			padding: 24px;
+			padding: 28px;
 			border: 1px solid #e5e5e5;
+			border-radius: 12px;
+			transition: border-color 0.2s, box-shadow 0.2s;
+		}
+		.feature:hover {
+			border-color: #a259ff;
+			box-shadow: 0 4px 12px rgba(162, 89, 255, 0.1);
+		}
+		.feature-icon {
+			width: 40px;
+			height: 40px;
+			background: #f3f0ff;
 			border-radius: 8px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			margin-bottom: 16px;
+			font-size: 20px;
 		}
 		.feature h3 {
-			font-size: 20px;
+			font-size: 18px;
 			font-weight: 600;
-			margin-bottom: 12px;
+			margin-bottom: 8px;
 		}
 		.feature p {
 			color: #666666;
 			font-size: 15px;
+			line-height: 1.5;
+		}
+		.stats {
+			display: flex;
+			gap: 48px;
+			margin-top: 80px;
+			padding-top: 48px;
+			border-top: 1px solid #e5e5e5;
+		}
+		.stat {
+			text-align: center;
+		}
+		.stat-value {
+			font-size: 36px;
+			font-weight: 700;
+			color: #a259ff;
+		}
+		.stat-label {
+			font-size: 14px;
+			color: #666;
+			margin-top: 4px;
 		}
 		.footer {
 			padding: 48px;
@@ -1259,7 +1359,25 @@ export default {
 			color: #999999;
 			font-size: 14px;
 			border-top: 1px solid #e5e5e5;
-			margin-top: 120px;
+			margin-top: 100px;
+		}
+		@media (max-width: 768px) {
+			.header {
+				padding: 16px 24px;
+			}
+			.nav {
+				display: none;
+			}
+			.container {
+				padding: 60px 24px;
+			}
+			h1 {
+				font-size: 36px;
+			}
+			.stats {
+				flex-wrap: wrap;
+				gap: 32px;
+			}
 		}
 	</style>
 </head>
@@ -1269,33 +1387,67 @@ export default {
 			<img src="https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg" alt="Figma Console MCP">
 			Figma Console MCP
 		</div>
+		<nav class="nav">
+			<a href="/docs">Documentation</a>
+			<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
+			<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
+		</nav>
 	</div>
 	<div class="container">
-		<h1>Debug Figma plugins<br>with AI assistance</h1>
-		<p class="subtitle">Model Context Protocol server that gives AI assistants real-time access to Figma console logs, design system data, and visual debugging tools.</p>
-		<a href="https://github.com/southleft/figma-console-mcp" class="cta">
-			<svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-				<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-			</svg>
-			View Documentation
-		</a>
+		<div class="badge">Model Context Protocol</div>
+		<h1>Your design system,<br><span class="highlight">programmable</span></h1>
+		<p class="subtitle">Connect AI assistants to Figma. Extract design tokens, implement components with real specifications, create variants programmatically, and debug plugins—all through a single MCP connection.</p>
+		<div class="cta-group">
+			<a href="/docs" class="cta">
+				Get Started
+				<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+			</a>
+			<a href="https://github.com/southleft/figma-console-mcp" class="cta cta-secondary">
+				<svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+					<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+				</svg>
+				View on GitHub
+			</a>
+		</div>
 		<div class="features">
 			<div class="feature">
-				<h3>Real-time Console Access</h3>
-				<p>Capture plugin console logs, errors, and stack traces as they happen</p>
+				<div class="feature-icon">🎨</div>
+				<h3>Design Token Extraction</h3>
+				<p>Pull variables, colors, typography, and spacing directly from Figma. Export as CSS, Tailwind, or Sass.</p>
 			</div>
 			<div class="feature">
-				<h3>Design System Extraction</h3>
-				<p>Pull variables, components, and styles directly from Figma files</p>
+				<div class="feature-icon">🧩</div>
+				<h3>Component Implementation</h3>
+				<p>Get component specs with visual references. AI sees layout, spacing, and properties—not just screenshots.</p>
 			</div>
 			<div class="feature">
-				<h3>Visual Debugging</h3>
-				<p>Take screenshots and export component images for visual reference</p>
+				<div class="feature-icon">✏️</div>
+				<h3>Programmatic Creation</h3>
+				<p>Create variables, build component variants, and organize designs through the Figma Plugin API.</p>
+			</div>
+			<div class="feature">
+				<div class="feature-icon">🐛</div>
+				<h3>Plugin Debugging</h3>
+				<p>Real-time console logs from Figma plugins. No more console.log archaeology.</p>
+			</div>
+		</div>
+		<div class="stats">
+			<div class="stat">
+				<div class="stat-value">36+</div>
+				<div class="stat-label">MCP Tools</div>
+			</div>
+			<div class="stat">
+				<div class="stat-value">2 min</div>
+				<div class="stat-label">Setup Time</div>
+			</div>
+			<div class="stat">
+				<div class="stat-value">Free</div>
+				<div class="stat-label">Hosted Server</div>
 			</div>
 		</div>
 	</div>
 	<div class="footer">
-		© 2025 Figma Console MCP · MIT License
+		<p>© 2025 Figma Console MCP · MIT License · Built by <a href="https://southleft.com" style="color: #666;">Southleft</a></p>
 	</div>
 </body>
 </html>`,
