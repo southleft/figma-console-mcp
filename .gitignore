@@ -207,3 +207,4 @@ docs/analysis/
 
 # Claude Code local settings (user-specific)
 .claude/settings.local.json
+docs/mint.json
