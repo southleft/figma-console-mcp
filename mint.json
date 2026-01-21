@@ -31,34 +31,32 @@
       "url": "https://www.npmjs.com/package/figma-console-mcp"
     }
   ],
-  "navigation": {
-    "groups": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "docs/index",
-          "docs/SETUP",
-          "docs/MODE_COMPARISON"
-        ]
-      },
-      {
-        "group": "Guides",
-        "pages": [
-          "docs/USE_CASES",
-          "docs/TROUBLESHOOTING"
-        ]
-      },
-      {
-        "group": "Reference",
-        "pages": [
-          "docs/TOOLS",
-          "docs/RECONSTRUCTION_FORMAT",
-          "docs/OAUTH_SETUP",
-          "docs/SELF_HOSTING"
-        ]
-      }
-    ]
-  },
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "docs/index",
+        "docs/SETUP",
+        "docs/MODE_COMPARISON"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "docs/USE_CASES",
+        "docs/TROUBLESHOOTING"
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "docs/TOOLS",
+        "docs/RECONSTRUCTION_FORMAT",
+        "docs/OAUTH_SETUP",
+        "docs/SELF_HOSTING"
+      ]
+    }
+  ],
   "footerSocials": {
     "github": "https://github.com/southleft/figma-console-mcp"
   },
