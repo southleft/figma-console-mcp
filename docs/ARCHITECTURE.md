@@ -354,10 +354,10 @@ Used for design system extraction and file queries.
 
 | Operation | Target | Actual |
 |-----------|--------|--------|
-| Console log retrieval | `<100ms` | ~50ms |
-| Screenshot capture | `<2s` | ~1s |
-| Design creation | `<5s` | 1-3s |
-| Variable operations | `<500ms` | ~200ms |
+| Console log retrieval | under 100ms | ~50ms |
+| Screenshot capture | under 2s | ~1s |
+| Design creation | under 5s | 1-3s |
+| Variable operations | under 500ms | ~200ms |
 
 ### Memory Management
 
