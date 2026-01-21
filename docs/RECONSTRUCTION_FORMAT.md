@@ -31,35 +31,31 @@ const result = await figma_get_component({
 
 ### Output Structure
 
+The reconstruction format returns the node specification directly at the root level (compatible with Figma Component Reconstructor plugin):
+
 ```json
 {
-  "fileKey": "abc123",
-  "nodeId": "123:456",
-  "format": "reconstruction",
-  "source": "rest_api",
-  "spec": {
-    "name": "Badge Success Dot",
-    "type": "ELLIPSE",
-    "width": 8,
-    "height": 8,
-    "x": 0,
-    "y": 0,
-    "fills": [{
-      "type": "SOLID",
-      "color": { "r": 0.21, "g": 0.70, "b": 0.44, "a": 1.0 },
-      "opacity": 1,
-      "visible": true
-    }],
-    "strokes": [],
-    "effects": [],
+  "name": "Badge Success Dot",
+  "type": "ELLIPSE",
+  "width": 8,
+  "height": 8,
+  "x": 0,
+  "y": 0,
+  "fills": [{
+    "type": "SOLID",
+    "color": { "r": 0.21, "g": 0.70, "b": 0.44, "a": 1.0 },
     "opacity": 1,
-    "blendMode": "NORMAL",
-    "children": []
-  },
-  "validation": "passed",
-  "usage": "Use this specification with the Figma Component Reconstructor plugin..."
+    "visible": true
+  }],
+  "strokes": [],
+  "effects": [],
+  "opacity": 1,
+  "blendMode": "NORMAL",
+  "children": []
 }
 ```
+
+**Note:** Unlike the metadata format which wraps the response with `fileKey`, `nodeId`, and `source` fields, the reconstruction format returns the raw spec for direct plugin compatibility.
 
 ## Supported Node Types
 
@@ -149,17 +145,7 @@ To extract a specific variant, you can filter the children array or use a custom
 
 ## Validation
 
-All reconstruction specs are automatically validated against plugin requirements:
-
-```json
-{
-  "validation": "passed",  // or "warnings"
-  "validationErrors": [    // only present if validation !== "passed"
-    "Missing required field: name",
-    "Invalid color in fills[0]: RGB values must be between 0 and 1"
-  ]
-}
-```
+Reconstruction specs are validated server-side against plugin requirements. Invalid specs will return error messages. The spec itself doesn't include validation fields - it's just the raw node specification.
 
 ### Validation Checks
 - ✅ Required fields (name, type)

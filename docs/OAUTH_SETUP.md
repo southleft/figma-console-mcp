@@ -6,7 +6,7 @@ This guide explains how to set up OAuth authentication for the Figma Console MCP
 
 OAuth authentication enables:
 - ✅ **Per-user authentication** - Each user authenticates with their own Figma account
-- ✅ **Secure token storage** - Tokens stored securely in Cloudflare Durable Objects
+- ✅ **Secure token storage** - Tokens stored securely in Cloudflare Workers KV (encrypted at rest)
 - ✅ **No credential sharing** - No need to share personal access tokens
 - ✅ **Browser-based flow** - Seamless authentication experience
 - ✅ **Automatic token management** - Tokens managed transparently
@@ -18,7 +18,7 @@ User → Claude Code → Remote MCP Server
                     ↓
         Browser OAuth Flow → Figma Authorization
                     ↓
-        Token stored in Durable Object (per-session)
+        Token stored in Workers KV (per-session)
                     ↓
         All API calls use user's personal token
 ```
@@ -133,17 +133,20 @@ Claude: ✅ Retrieved 247 design variables from your file
 ## Security Considerations
 
 ### Token Storage
-- Tokens stored in Cloudflare Durable Objects (encrypted at rest)
+- Tokens stored in Cloudflare Workers KV (encrypted at rest)
 - Scoped per-session (not shared between users)
-- Automatically cleaned up when sessions expire
+- Automatically cleaned up when tokens expire (90-day TTL)
 
 ### OAuth Scopes
 Currently requesting:
-- `files:read` - Read access to Figma files
+- `file_content:read` - Read access to Figma file content
+- `library_content:read` - Read access to library/component content
+- `file_variables:read` - Read access to design variables (for Enterprise accounts)
 
 ### Token Refresh
-- TODO: Implement automatic token refresh
-- Currently, users must re-authenticate when tokens expire (typically 90 days)
+- ✅ Automatic token refresh implemented
+- Tokens are automatically refreshed when expired using the refresh token
+- Users only need to re-authenticate if refresh fails or after extended inactivity
 
 ### Best Practices
 ✅ **DO**:
@@ -214,9 +217,10 @@ If you're currently using `FIGMA_ACCESS_TOKEN` (deprecated):
 
 ## OAuth App Settings
 
-### Recommended Scopes
-- `files:read` (current)
-- `file_variables:read` (for Enterprise accounts)
+### Scopes Requested
+- `file_content:read` - Read Figma file content
+- `library_content:read` - Read library/component data
+- `file_variables:read` - Read design variables (Enterprise)
 
 ### Webhook Configuration (Optional)
 Future enhancement: Set up webhooks for token revocation notifications
