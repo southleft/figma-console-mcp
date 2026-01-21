@@ -1163,7 +1163,8 @@ export default {
 
 	// Proxy /docs to Mintlify
 	if (/^\/docs/.test(url.pathname)) {
-		const DOCS_URL = "southleftllc.mintlify.dev";
+		// Try mintlify.app domain (Mintlify's standard hosting)
+		const DOCS_URL = "southleftllc.mintlify.app";
 		const CUSTOM_URL = "figma-console-mcp.southleft.com";
 
 		const proxyUrl = new URL(request.url);
