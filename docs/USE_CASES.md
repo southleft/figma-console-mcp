@@ -106,7 +106,7 @@ Then run your plugin in Figma Desktop, and say:
 
 ## 🎨 Design System Extraction
 
-### Scenario 4: Extract Design Tokens
+### Scenario 5: Extract Design Tokens
 
 **Your situation:** You need to extract all design variables from your Figma design system.
 
@@ -140,7 +140,7 @@ Then run your plugin in Figma Desktop, and say:
 
 ---
 
-### Scenario 5: Generate Tailwind Config
+### Scenario 6: Generate Tailwind Config
 
 **Your situation:** You want to sync your Figma variables to Tailwind CSS.
 
@@ -157,7 +157,7 @@ Then run your plugin in Figma Desktop, and say:
 
 ---
 
-### Scenario 6: Audit Design System Usage
+### Scenario 7: Audit Design System Usage
 
 **Your situation:** You want to see which components are using specific design tokens.
 
@@ -176,7 +176,7 @@ Then run your plugin in Figma Desktop, and say:
 
 ## 🔧 Component Implementation
 
-### Scenario 7: Implement Component from Figma
+### Scenario 8: Implement Component from Figma
 
 **Your situation:** You need to implement a Tooltip component from your design file.
 
@@ -199,7 +199,7 @@ Then run your plugin in Figma Desktop, and say:
 
 ---
 
-### Scenario 8: Get Component Specifications
+### Scenario 9: Get Component Specifications
 
 **Your situation:** You just need the specs for a component, not implementation help.
 
@@ -217,7 +217,7 @@ Then run your plugin in Figma Desktop, and say:
 
 ---
 
-### Scenario 9: Compare Multiple Component Variants
+### Scenario 10: Compare Multiple Component Variants
 
 **Your situation:** You have a Button component with Primary, Secondary, and Tertiary variants.
 
@@ -238,7 +238,7 @@ Then run your plugin in Figma Desktop, and say:
 
 These scenarios require Local Mode with the Desktop Bridge plugin installed. They enable AI-assisted design creation directly in Figma.
 
-### Scenario 10: Create Component Variants with Variables
+### Scenario 11: Create Component Variants with Variables
 
 **Your situation:** You want to create a complete button component set with multiple variants, sizes, and states—all bound to design system variables.
 
@@ -272,7 +272,7 @@ Bind the colors to my design system variables (piccolo for primary, beerus for s
 
 ---
 
-### Scenario 11: Build a Design System from Scratch
+### Scenario 12: Build a Design System from Scratch
 
 **Your situation:** You're starting a new project and need to set up design system foundations.
 
@@ -298,7 +298,7 @@ Then create a basic button component using these variables."
 
 ---
 
-### Scenario 12: Organize Existing Component Set
+### Scenario 13: Organize Existing Component Set
 
 **Your situation:** You have a messy component set that needs proper organization with labels.
 
@@ -319,7 +319,7 @@ Then create a basic button component using these variables."
 
 ---
 
-### Scenario 13: Create Component with Auto-Layout
+### Scenario 14: Create Component with Auto-Layout
 
 **Your situation:** You need a card component with proper auto-layout settings.
 
@@ -343,7 +343,7 @@ Then create a basic button component using these variables."
 
 ---
 
-### Scenario 14: Add Documentation to Components
+### Scenario 15: Add Documentation to Components
 
 **Your situation:** You want to add descriptions to your components for design system documentation.
 
@@ -365,7 +365,7 @@ Use markdown formatting."
 
 ---
 
-### Scenario 15: Clone and Modify Existing Design
+### Scenario 16: Clone and Modify Existing Design
 
 **Your situation:** You want to create variations of an existing component.
 
@@ -386,7 +386,7 @@ Use markdown formatting."
 
 ---
 
-### Scenario 16: Variable Mode Management
+### Scenario 17: Variable Mode Management
 
 **Your situation:** You need to add a dark mode to your design system variables.
 
@@ -412,7 +412,7 @@ Use markdown formatting."
 
 ---
 
-### Scenario 17: Batch Component Creation
+### Scenario 18: Batch Component Creation
 
 **Your situation:** You need to create a set of icon buttons with consistent styling.
 
@@ -437,7 +437,7 @@ Each should have 3 sizes (24px, 32px, 40px) and use the same variable bindings a
 
 ---
 
-### Scenario 18: Interactive Iteration Workflow
+### Scenario 19: Interactive Iteration Workflow
 
 **Your situation:** You're creating a component and want to refine it based on visual feedback.
 
@@ -459,7 +459,7 @@ This workflow leverages the screenshot feedback loop for precise design control.
 
 ## 🔍 Visual Debugging Workflows
 
-### Scenario 19: Document Plugin State
+### Scenario 20: Document Plugin State
 
 **Your situation:** You want to show someone what your plugin looks like at a specific point.
 
@@ -476,7 +476,7 @@ This workflow leverages the screenshot feedback loop for precise design control.
 
 ---
 
-### Scenario 20: Monitor Visual Changes
+### Scenario 21: Monitor Visual Changes
 
 **Your situation:** Testing if plugin UI updates correctly.
 
@@ -496,7 +496,7 @@ This workflow leverages the screenshot feedback loop for precise design control.
 
 ## 🚀 Advanced Workflows
 
-### Scenario 21: Full Design System Export
+### Scenario 22: Full Design System Export
 
 **Your situation:** Migrating from Figma to code.
 
@@ -517,7 +517,7 @@ This workflow leverages the screenshot feedback loop for precise design control.
 
 ---
 
-### Scenario 22: Plugin Development Sprint
+### Scenario 23: Plugin Development Sprint
 
 **Your situation:** Rapid plugin development with continuous debugging.
 
@@ -541,7 +541,7 @@ This workflow leverages the screenshot feedback loop for precise design control.
 
 ---
 
-### Scenario 23: Design Token Migration
+### Scenario 24: Design Token Migration
 
 **Your situation:** Moving from Figma Styles to Variables.
 

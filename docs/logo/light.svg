@@ -1,7 +1,7 @@
-<svg width="120" height="32" viewBox="0 0 120 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="2" y="4" width="24" height="24" rx="4" fill="#A259FF"/>
+<svg width="200" height="32" viewBox="0 0 200 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="4" width="24" height="24" rx="4" fill="#0D9488"/>
   <rect x="6" y="8" width="8" height="8" rx="2" fill="white"/>
   <rect x="6" y="18" width="8" height="6" rx="1" fill="white" opacity="0.7"/>
   <rect x="16" y="8" width="6" height="16" rx="1" fill="white" opacity="0.5"/>
-  <text x="32" y="22" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" fill="#1a1a1a">Figma Console</text>
+  <text x="32" y="22" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" fill="#1a1a1a">Figma Console MCP</text>
 </svg>
