@@ -1,0 +1,9 @@
+/* Custom styles for Figma Console MCP docs */
+
+/* Increase header logo size */
+.navbar-logo img,
+header img[alt*="logo"],
+nav img {
+  height: 28px !important;
+  max-height: 28px !important;
+}
