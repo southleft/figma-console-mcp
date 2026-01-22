@@ -21,7 +21,7 @@
   },
   "topbarCtaButton": {
     "name": "Get Started",
-    "url": "/SETUP"
+    "url": "/setup"
   },
   "anchors": [
     {
@@ -40,26 +40,26 @@
       "group": "Getting Started",
       "pages": [
         "index",
-        "INTRODUCTION",
-        "SETUP",
-        "MODE_COMPARISON"
+        "introduction",
+        "setup",
+        "mode-comparison"
       ]
     },
     {
       "group": "Guides",
       "pages": [
-        "USE_CASES",
-        "TROUBLESHOOTING"
+        "use-cases",
+        "troubleshooting"
       ]
     },
     {
       "group": "Reference",
       "pages": [
-        "TOOLS",
-        "ARCHITECTURE",
-        "RECONSTRUCTION_FORMAT",
-        "OAUTH_SETUP",
-        "SELF_HOSTING"
+        "tools",
+        "architecture",
+        "reconstruction-format",
+        "oauth-setup",
+        "self-hosting"
       ]
     }
   ],
