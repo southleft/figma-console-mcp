@@ -1910,7 +1910,11 @@ export default {
 			.prompts-cell { grid-column: span 12; }
 			.audience-cell {
 				grid-column: span 6;
-				padding: 0;
+				padding-left: 0;
+			}
+			.audience-cell.rule-left {
+				padding-left: 32px;
+				border-left: 1px solid var(--color-rule);
 			}
 			h1 { font-size: 40px; }
 			.value-cell { padding: 48px 32px; }
@@ -1932,7 +1936,15 @@ export default {
 			.mobile-menu-btn { display: flex; }
 			.main { padding: 32px 20px; }
 			.grid { gap: 32px; }
+
+			/* Remove all vertical rules and left padding on mobile */
+			.grid-cell.rule-left {
+				padding-left: 0;
+				border-left: none;
+			}
+
 			.hero-cell {
+				padding-right: 0;
 				padding-bottom: 32px;
 			}
 			.showcase-cell {
@@ -1941,15 +1953,14 @@ export default {
 			.capability-card {
 				grid-column: span 12;
 				padding: 0 !important;
-				border-left: none !important;
-				border-top: none !important;
+				border: none !important;
 			}
 			.audience-cell {
 				grid-column: span 12;
-				padding: 0;
+				padding: 0 !important;
 			}
 			.audience-cell.rule-left {
-				padding-top: 32px;
+				padding-top: 32px !important;
 				margin-top: 8px;
 				border-top: 1px solid var(--color-rule);
 			}
