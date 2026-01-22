@@ -610,7 +610,7 @@ This workflow leverages the screenshot feedback loop for precise design control.
 ## 📚 More Examples
 
 See also:
-- [Tool Documentation](TOOLS.md) - Complete API reference for all 36+ tools
+- [Tool Documentation](TOOLS.md) - Complete API reference for all 40+ tools
 - [Architecture Overview](ARCHITECTURE.md) - Understanding deployment modes
 - [Example Prompts](../README.md#example-prompts) - Quick prompt examples
 - [Troubleshooting](TROUBLESHOOTING.md) - Solutions to common issues
