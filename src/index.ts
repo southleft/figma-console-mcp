@@ -1185,7 +1185,7 @@ export default {
 		return await fetch(proxyRequest);
 	}
 
-	// Root path - serve landing page with bento-box layout and light/dark mode
+	// Root path - serve landing page with editorial layout and light/dark mode
 	if (url.pathname === "/") {
 		return new Response(
 			`<!DOCTYPE html>
@@ -1193,9 +1193,9 @@ export default {
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Figma Console MCP - Bridge AI to Your Design System</title>
+	<title>Figma Console MCP - The Most Comprehensive MCP Server for Figma</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="The Model Context Protocol server that connects AI assistants to Figma. Extract design tokens, implement components with accurate specs, and create designs programmatically.">
+	<meta name="description" content="Turn your Figma design system into a living API. 36+ tools give AI assistants deep access to design tokens, component specs, variables, and programmatic design creation.">
 	<meta name="theme-color" content="#0D9488">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1210,6 +1210,7 @@ export default {
 			--color-bg-card: #1A1A1A;
 			--color-border: #2A2A2A;
 			--color-border-hover: #3A3A3A;
+			--color-rule: #2A2A2A;
 			--color-text: #FAFAFA;
 			--color-text-secondary: #A1A1A1;
 			--color-text-tertiary: #666666;
@@ -1226,6 +1227,7 @@ export default {
 			--color-bg-card: #FFFFFF;
 			--color-border: #E5E5E5;
 			--color-border-hover: #D4D4D4;
+			--color-rule: #E5E5E5;
 			--color-text: #171717;
 			--color-text-secondary: #525252;
 			--color-text-tertiary: #A3A3A3;
@@ -1258,7 +1260,7 @@ export default {
 			justify-content: space-between;
 			align-items: center;
 			background: var(--color-bg);
-			border-bottom: 1px solid var(--color-border);
+			border-bottom: 1px solid var(--color-rule);
 			backdrop-filter: blur(12px);
 			transition: background var(--transition), border-color var(--transition);
 		}
@@ -1297,7 +1299,7 @@ export default {
 			justify-content: center;
 			width: 36px;
 			height: 36px;
-			background: var(--color-bg-card);
+			background: transparent;
 			border: 1px solid var(--color-border);
 			border-radius: var(--radius-sm);
 			cursor: pointer;
@@ -1319,36 +1321,42 @@ export default {
 		.main {
 			max-width: 1280px;
 			margin: 0 auto;
-			padding: 32px;
+			padding: 48px 32px;
 		}
 
-		/* Bento Grid */
-		.bento-grid {
+		/* Section dividers */
+		.section-rule {
+			border: none;
+			border-top: 1px solid var(--color-rule);
+			margin: 48px 0;
+		}
+
+		/* Grid layout */
+		.grid {
 			display: grid;
 			grid-template-columns: repeat(12, 1fr);
-			grid-template-rows: auto;
-			gap: 16px;
+			gap: 32px 48px;
 		}
 
-		.bento-card {
-			background: var(--color-bg-card);
-			border: 1px solid var(--color-border);
-			border-radius: var(--radius-lg);
-			padding: 28px;
+		.grid-cell {
 			transition: all var(--transition);
 		}
 
-		.bento-card:hover {
-			border-color: var(--color-border-hover);
+		/* Rule-based separators for grid cells */
+		.grid-cell.rule-left {
+			padding-left: 48px;
+			border-left: 1px solid var(--color-rule);
 		}
 
-		/* Hero section - spans full width */
-		.hero-card {
+		.grid-cell.rule-top {
+			padding-top: 32px;
+			border-top: 1px solid var(--color-rule);
+		}
+
+		/* Hero section */
+		.hero-cell {
 			grid-column: span 7;
-			display: flex;
-			flex-direction: column;
-			justify-content: center;
-			padding: 40px;
+			padding-right: 48px;
 		}
 
 		.badge {
@@ -1371,11 +1379,11 @@ export default {
 		.badge svg { width: 14px; height: 14px; }
 
 		h1 {
-			font-size: 44px;
+			font-size: 48px;
 			font-weight: 700;
 			letter-spacing: -0.03em;
 			line-height: 1.1;
-			margin-bottom: 16px;
+			margin-bottom: 20px;
 		}
 
 		.highlight {
@@ -1383,11 +1391,11 @@ export default {
 		}
 
 		.hero-subtitle {
-			font-size: 17px;
+			font-size: 18px;
 			color: var(--color-text-secondary);
 			line-height: 1.7;
-			max-width: 500px;
-			margin-bottom: 28px;
+			max-width: 560px;
+			margin-bottom: 32px;
 		}
 
 		.cta-row {
@@ -1419,145 +1427,105 @@ export default {
 		.btn-primary:hover { background: var(--color-primary-dark); }
 
 		.btn-secondary {
-			background: var(--color-bg-elevated);
+			background: transparent;
 			color: var(--color-text);
 			border: 1px solid var(--color-border);
 		}
 
 		.btn-secondary:hover {
 			border-color: var(--color-border-hover);
-			background: var(--color-bg-card);
+			background: var(--color-bg-elevated);
 		}
 
-		/* Quick start card */
-		.quickstart-card {
+		/* Hero right - capabilities showcase */
+		.showcase-cell {
 			grid-column: span 5;
-			display: flex;
-			flex-direction: column;
 		}
 
-		.quickstart-label {
+		.showcase-label {
 			font-size: 11px;
 			font-weight: 600;
 			text-transform: uppercase;
 			letter-spacing: 0.5px;
 			color: var(--color-text-tertiary);
-			margin-bottom: 12px;
+			margin-bottom: 16px;
 		}
 
-		.install-box {
+		.showcase-stat {
 			display: flex;
-			align-items: center;
+			align-items: baseline;
 			gap: 12px;
-			padding: 14px 16px;
-			background: var(--color-bg);
-			border: 1px solid var(--color-border);
-			border-radius: var(--radius-md);
-			font-family: var(--font-mono);
-			font-size: 14px;
 			margin-bottom: 24px;
-			transition: all var(--transition);
 		}
 
-		.install-box:hover { border-color: var(--color-primary); }
-
-		.install-box .prompt { color: var(--color-text-tertiary); }
-		.install-box code { color: var(--color-primary-light); flex: 1; }
-
-		.copy-btn {
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			width: 32px;
-			height: 32px;
-			background: transparent;
-			border: none;
-			border-radius: var(--radius-sm);
-			cursor: pointer;
-			color: var(--color-text-tertiary);
-			transition: all var(--transition);
-		}
-
-		.copy-btn:hover {
-			background: var(--color-border);
-			color: var(--color-text);
-		}
-
-		.copy-btn svg { width: 16px; height: 16px; }
-
-		.steps {
-			display: flex;
-			flex-direction: column;
-			gap: 16px;
-			flex: 1;
-		}
-
-		.step {
-			display: flex;
-			gap: 14px;
-			align-items: flex-start;
-		}
-
-		.step-num {
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			width: 24px;
-			height: 24px;
-			background: rgba(13, 148, 136, 0.15);
-			color: var(--color-primary-light);
-			border-radius: 50%;
-			font-size: 12px;
-			font-weight: 600;
-			flex-shrink: 0;
-		}
-
-		.step-content h4 {
-			font-size: 14px;
-			font-weight: 600;
-			margin-bottom: 2px;
-		}
-
-		.step-content p {
-			font-size: 13px;
-			color: var(--color-text-secondary);
-		}
-
-		/* Stats card */
-		.stats-card {
-			grid-column: span 3;
-			display: flex;
-			flex-direction: column;
-			align-items: center;
-			justify-content: center;
-			text-align: center;
-			background: linear-gradient(135deg, rgba(13, 148, 136, 0.1) 0%, transparent 100%);
-		}
-
-		.stats-card:hover { border-color: var(--color-primary); }
-
-		.stat-number {
+		.showcase-stat .number {
 			font-size: 56px;
 			font-weight: 700;
 			color: var(--color-primary-light);
 			line-height: 1;
-			margin-bottom: 8px;
 		}
 
-		.stat-label {
-			font-size: 14px;
-			font-weight: 500;
+		.showcase-stat .label {
+			font-size: 16px;
 			color: var(--color-text-secondary);
 		}
 
-		/* Capability cards */
-		.capability-card {
-			grid-column: span 3;
+		.capability-list {
 			display: flex;
 			flex-direction: column;
+			gap: 12px;
 		}
 
-		.capability-card:hover { border-color: var(--color-primary); }
+		.capability-item {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			padding: 12px 16px;
+			background: var(--color-bg-elevated);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-md);
+			font-size: 14px;
+			color: var(--color-text-secondary);
+			transition: all var(--transition);
+		}
+
+		.capability-item:hover {
+			border-color: var(--color-primary);
+			color: var(--color-text);
+		}
+
+		.capability-item svg {
+			width: 18px;
+			height: 18px;
+			color: var(--color-primary-light);
+			flex-shrink: 0;
+		}
+
+		/* Value proposition section */
+		.value-cell {
+			grid-column: span 12;
+			text-align: center;
+			padding: 32px 0;
+		}
+
+		.value-cell h2 {
+			font-size: 28px;
+			font-weight: 600;
+			margin-bottom: 12px;
+			letter-spacing: -0.02em;
+		}
+
+		.value-cell p {
+			font-size: 16px;
+			color: var(--color-text-secondary);
+			max-width: 640px;
+			margin: 0 auto;
+		}
+
+		/* Capabilities grid */
+		.capability-card {
+			grid-column: span 3;
+		}
 
 		.capability-icon {
 			width: 44px;
@@ -1574,7 +1542,7 @@ export default {
 		.capability-icon svg { width: 22px; height: 22px; }
 
 		.capability-card h3 {
-			font-size: 16px;
+			font-size: 17px;
 			font-weight: 600;
 			margin-bottom: 8px;
 		}
@@ -1586,32 +1554,32 @@ export default {
 		}
 
 		/* Prompt showcase */
-		.prompts-card {
+		.prompts-cell {
 			grid-column: span 6;
 		}
 
-		.prompts-header {
+		.section-header {
 			display: flex;
 			align-items: center;
 			gap: 10px;
-			margin-bottom: 20px;
+			margin-bottom: 24px;
 		}
 
-		.prompts-header svg {
+		.section-header svg {
 			width: 20px;
 			height: 20px;
 			color: var(--color-primary-light);
 		}
 
-		.prompts-header h3 {
-			font-size: 16px;
+		.section-header h3 {
+			font-size: 17px;
 			font-weight: 600;
 		}
 
 		.prompt-list {
 			display: flex;
 			flex-direction: column;
-			gap: 10px;
+			gap: 12px;
 		}
 
 		.prompt-item {
@@ -1619,7 +1587,7 @@ export default {
 			align-items: center;
 			gap: 12px;
 			padding: 14px 16px;
-			background: var(--color-bg);
+			background: var(--color-bg-elevated);
 			border: 1px solid var(--color-border);
 			border-radius: var(--radius-md);
 			font-family: var(--font-mono);
@@ -1640,8 +1608,8 @@ export default {
 			flex-shrink: 0;
 		}
 
-		/* Audience cards */
-		.audience-card {
+		/* Audience cells */
+		.audience-cell {
 			grid-column: span 6;
 		}
 
@@ -1674,7 +1642,7 @@ export default {
 			list-style: none;
 			display: flex;
 			flex-direction: column;
-			gap: 12px;
+			gap: 14px;
 		}
 
 		.audience-list li {
@@ -1693,17 +1661,46 @@ export default {
 			margin-top: 1px;
 		}
 
-		/* Blog CTA */
-		.blog-card {
+		/* Getting started CTA */
+		.getting-started-cell {
 			grid-column: span 12;
 			display: flex;
 			align-items: center;
 			justify-content: space-between;
-			padding: 24px 32px;
-			background: linear-gradient(135deg, rgba(13, 148, 136, 0.08) 0%, transparent 100%);
+			padding: 32px 40px;
+			background: var(--color-bg-elevated);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-lg);
+			margin-top: 16px;
 		}
 
-		.blog-card:hover { border-color: var(--color-primary); }
+		.getting-started-content h3 {
+			font-size: 20px;
+			font-weight: 600;
+			margin-bottom: 8px;
+		}
+
+		.getting-started-content p {
+			font-size: 14px;
+			color: var(--color-text-secondary);
+			max-width: 480px;
+		}
+
+		.getting-started-actions {
+			display: flex;
+			gap: 12px;
+		}
+
+		/* Blog CTA */
+		.blog-cell {
+			grid-column: span 12;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 28px 0;
+			border-top: 1px solid var(--color-rule);
+			margin-top: 16px;
+		}
 
 		.blog-content {
 			display: flex;
@@ -1717,7 +1714,7 @@ export default {
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			background: rgba(13, 148, 136, 0.15);
+			background: rgba(13, 148, 136, 0.12);
 			border-radius: var(--radius-md);
 			color: var(--color-primary-light);
 		}
@@ -1756,7 +1753,7 @@ export default {
 			display: flex;
 			justify-content: space-between;
 			align-items: center;
-			border-top: 1px solid var(--color-border);
+			border-top: 1px solid var(--color-rule);
 			color: var(--color-text-tertiary);
 			font-size: 13px;
 		}
@@ -1790,30 +1787,69 @@ export default {
 
 		/* Responsive */
 		@media (max-width: 1024px) {
-			.hero-card { grid-column: span 12; }
-			.quickstart-card { grid-column: span 12; }
-			.stats-card { grid-column: span 4; }
-			.capability-card { grid-column: span 4; }
-			.prompts-card { grid-column: span 12; }
-			.audience-card { grid-column: span 6; }
-			h1 { font-size: 38px; }
+			.hero-cell {
+				grid-column: span 12;
+				padding-right: 0;
+				padding-bottom: 32px;
+				border-bottom: 1px solid var(--color-rule);
+			}
+			.showcase-cell {
+				grid-column: span 12;
+				padding-left: 0;
+				border-left: none;
+			}
+			.capability-card {
+				grid-column: span 6;
+			}
+			.capability-card.rule-left {
+				padding-left: 0;
+				border-left: none;
+			}
+			.capability-card:nth-child(odd) {
+				padding-left: 0;
+				border-left: none;
+			}
+			.capability-card:nth-child(even) {
+				padding-left: 32px;
+				border-left: 1px solid var(--color-rule);
+			}
+			.prompts-cell { grid-column: span 12; }
+			.audience-cell { grid-column: span 6; }
+			h1 { font-size: 40px; }
+			.getting-started-cell {
+				flex-direction: column;
+				gap: 24px;
+				text-align: center;
+			}
+			.getting-started-content p {
+				max-width: 100%;
+			}
 		}
 
 		@media (max-width: 768px) {
 			.header { padding: 12px 20px; }
 			.nav { display: none; }
 			.mobile-menu-btn { display: flex; }
-			.main { padding: 20px; }
-			.bento-grid { gap: 12px; }
-			.bento-card { padding: 20px; }
-			.hero-card { padding: 24px; }
-			.stats-card { grid-column: span 6; }
-			.capability-card { grid-column: span 6; }
-			.audience-card { grid-column: span 12; }
-			h1 { font-size: 32px; }
-			.hero-subtitle { font-size: 15px; }
-			.stat-number { font-size: 44px; }
-			.blog-card {
+			.main { padding: 32px 20px; }
+			.grid { gap: 24px 32px; }
+			.capability-card {
+				grid-column: span 12;
+				padding-left: 0 !important;
+				border-left: none !important;
+			}
+			.audience-cell {
+				grid-column: span 12;
+			}
+			.audience-cell.rule-left {
+				padding-left: 0;
+				border-left: none;
+				padding-top: 24px;
+				border-top: 1px solid var(--color-rule);
+			}
+			h1 { font-size: 34px; }
+			.hero-subtitle { font-size: 16px; }
+			.showcase-stat .number { font-size: 48px; }
+			.blog-cell {
 				flex-direction: column;
 				gap: 16px;
 				text-align: center;
@@ -1824,11 +1860,20 @@ export default {
 				gap: 16px;
 				text-align: center;
 			}
+			.section-rule { margin: 32px 0; }
+			.getting-started-cell {
+				padding: 24px;
+			}
+			.getting-started-actions {
+				flex-direction: column;
+				width: 100%;
+			}
+			.getting-started-actions .btn {
+				justify-content: center;
+			}
 		}
 
 		@media (max-width: 480px) {
-			.stats-card { grid-column: span 12; }
-			.capability-card { grid-column: span 12; }
 			.cta-row { flex-direction: column; }
 			.btn { justify-content: center; }
 		}
@@ -1858,18 +1903,18 @@ export default {
 	</header>
 
 	<main class="main">
-		<div class="bento-grid">
+		<div class="grid">
 			<!-- Hero -->
-			<div class="bento-card hero-card">
+			<div class="grid-cell hero-cell">
 				<div class="badge">
 					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
 					Model Context Protocol
 				</div>
-				<h1>Bridge AI to your <span class="highlight">design system</span></h1>
-				<p class="hero-subtitle">Connect Claude, Cursor, and other AI assistants directly to Figma. Extract tokens, generate component specs, and create designs programmatically.</p>
+				<h1>Your design system, now a <span class="highlight">living API</span></h1>
+				<p class="hero-subtitle">The most comprehensive MCP server for Figma. Give AI assistants deep access to your design tokens, components, and variables. Read, query, and even create designs programmatically through natural language.</p>
 				<div class="cta-row">
-					<a href="https://docs.figma-console-mcp.southleft.com/setup" class="btn btn-primary">
-						Get Started
+					<a href="https://docs.figma-console-mcp.southleft.com" class="btn btn-primary">
+						Read the Docs
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 					</a>
 					<a href="https://github.com/southleft/figma-console-mcp" class="btn btn-secondary">
@@ -1879,85 +1924,89 @@ export default {
 				</div>
 			</div>
 
-			<!-- Quick Start -->
-			<div class="bento-card quickstart-card">
-				<div class="quickstart-label">Quick Start</div>
-				<div class="install-box">
-					<span class="prompt">$</span>
-					<code id="install-cmd">npx figma-console-mcp init</code>
-					<button class="copy-btn" onclick="copyInstallCmd()" aria-label="Copy command">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-					</button>
+			<!-- Capabilities showcase -->
+			<div class="grid-cell showcase-cell rule-left">
+				<div class="showcase-label">What AI Can Access</div>
+				<div class="showcase-stat">
+					<span class="number">36+</span>
+					<span class="label">MCP tools for Figma</span>
 				</div>
-				<div class="steps">
-					<div class="step">
-						<span class="step-num">1</span>
-						<div class="step-content">
-							<h4>Run the installer</h4>
-							<p>Auto-configures Claude Desktop or Cursor</p>
-						</div>
+				<div class="capability-list">
+					<div class="capability-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
+						<span>Design tokens and variables</span>
 					</div>
-					<div class="step">
-						<span class="step-num">2</span>
-						<div class="step-content">
-							<h4>Authenticate with Figma</h4>
-							<p>OAuth connects your Figma account securely</p>
-						</div>
+					<div class="capability-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+						<span>Component specs and properties</span>
 					</div>
-					<div class="step">
-						<span class="step-num">3</span>
-						<div class="step-content">
-							<h4>Start building</h4>
-							<p>Ask your AI to extract tokens or specs</p>
-						</div>
+					<div class="capability-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+						<span>Programmatic design creation</span>
+					</div>
+					<div class="capability-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+						<span>Real-time plugin debugging</span>
 					</div>
 				</div>
 			</div>
+		</div>
 
-			<!-- Stats -->
-			<div class="bento-card stats-card">
-				<div class="stat-number">36+</div>
-				<div class="stat-label">MCP Tools</div>
+		<hr class="section-rule">
+
+		<!-- Value proposition -->
+		<div class="grid">
+			<div class="grid-cell value-cell">
+				<h2>Design system intelligence for AI assistants</h2>
+				<p>Whether you're maintaining a component library, implementing designs in code, or building Figma plugins, this MCP server gives AI the context it needs to help effectively.</p>
 			</div>
+		</div>
 
-			<!-- Capabilities -->
-			<div class="bento-card capability-card">
+		<hr class="section-rule">
+
+		<!-- Capabilities detail -->
+		<div class="grid">
+			<div class="grid-cell capability-card">
 				<div class="capability-icon">
 					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
 				</div>
 				<h3>Design Tokens</h3>
-				<p>Extract variables, colors, and typography. Export as CSS, Tailwind, or Sass.</p>
+				<p>Extract colors, typography, spacing, and effects. Export as CSS custom properties, Tailwind config, or Sass variables.</p>
 			</div>
 
-			<div class="bento-card capability-card">
+			<div class="grid-cell capability-card rule-left">
 				<div class="capability-icon">
 					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
 				</div>
 				<h3>Component Specs</h3>
-				<p>Get layout, spacing, and property data for any Figma component.</p>
+				<p>Get detailed layout, spacing, variants, and property data for any component in your design system.</p>
 			</div>
 
-			<div class="bento-card capability-card">
+			<div class="grid-cell capability-card rule-left">
 				<div class="capability-icon">
 					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 				</div>
 				<h3>Programmatic Design</h3>
-				<p>Create variables and component variants through natural language.</p>
+				<p>Create and modify variables, build component variants, and generate design elements through natural language.</p>
 			</div>
 
-			<div class="bento-card capability-card">
+			<div class="grid-cell capability-card rule-left">
 				<div class="capability-icon">
 					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
 				</div>
 				<h3>Plugin Debugging</h3>
-				<p>Capture real-time console logs from Figma plugins.</p>
+				<p>Capture real-time console logs from Figma plugins. Let AI analyze errors and suggest fixes without context switching.</p>
 			</div>
+		</div>
 
+		<hr class="section-rule">
+
+		<div class="grid">
 			<!-- Example Prompts -->
-			<div class="bento-card prompts-card">
-				<div class="prompts-header">
+			<div class="grid-cell prompts-cell">
+				<div class="section-header">
 					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-					<h3>Try these prompts</h3>
+					<h3>What you can ask</h3>
 				</div>
 				<div class="prompt-list">
 					<div class="prompt-item">
@@ -1970,17 +2019,17 @@ export default {
 					</div>
 					<div class="prompt-item">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"Create a dark mode for my color variables"</span>
+						<span>"Create a dark mode version of my color variables"</span>
 					</div>
 					<div class="prompt-item">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"Show me console logs from my Figma plugin"</span>
+						<span>"Why is my plugin throwing this error?"</span>
 					</div>
 				</div>
 			</div>
 
 			<!-- For Designers -->
-			<div class="bento-card audience-card">
+			<div class="grid-cell audience-cell rule-left">
 				<div class="audience-header">
 					<div class="audience-icon">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
@@ -2000,15 +2049,13 @@ export default {
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
 						<span>Debug Figma plugins without leaving your workflow</span>
 					</li>
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Maintain consistency across design system files</span>
-					</li>
 				</ul>
 			</div>
+		</div>
 
+		<div class="grid" style="margin-top: 32px;">
 			<!-- For Engineers -->
-			<div class="bento-card audience-card">
+			<div class="grid-cell audience-cell">
 				<div class="audience-header">
 					<div class="audience-icon">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
@@ -2028,15 +2075,56 @@ export default {
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
 						<span>Query your design system via MCP-enabled AI tools</span>
 					</li>
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Keep code in sync with design decisions</span>
-					</li>
 				</ul>
 			</div>
 
+			<!-- For Teams -->
+			<div class="grid-cell audience-cell rule-left">
+				<div class="audience-header">
+					<div class="audience-icon">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+					</div>
+					<h3>For Teams of All Sizes</h3>
+				</div>
+				<ul class="audience-list">
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Indie developers to enterprise design systems</span>
+					</li>
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Local mode for development, remote for production</span>
+					</li>
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Works with Claude, Cursor, and any MCP client</span>
+					</li>
+				</ul>
+			</div>
+		</div>
+
+		<!-- Getting Started CTA -->
+		<div class="grid">
+			<div class="grid-cell getting-started-cell">
+				<div class="getting-started-content">
+					<h3>Ready to get started?</h3>
+					<p>Setup varies based on your needs: remote mode for quick API access, or local mode for full plugin debugging. Our docs will guide you through the right path.</p>
+				</div>
+				<div class="getting-started-actions">
+					<a href="https://docs.figma-console-mcp.southleft.com/setup" class="btn btn-primary">
+						View Setup Guide
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+					</a>
+					<a href="https://docs.figma-console-mcp.southleft.com/capabilities" class="btn btn-secondary">
+						Explore Capabilities
+					</a>
+				</div>
+			</div>
+		</div>
+
+		<div class="grid">
 			<!-- Blog CTA -->
-			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/" class="bento-card blog-card">
+			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/" class="grid-cell blog-cell">
 				<div class="blog-content">
 					<div class="blog-icon">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
@@ -2113,18 +2201,6 @@ export default {
 				setTheme(currentTheme === 'light' ? 'dark' : 'light');
 			});
 		})();
-
-		// Copy install command
-		function copyInstallCmd() {
-			const cmd = document.getElementById('install-cmd').textContent;
-			navigator.clipboard.writeText(cmd).then(() => {
-				const btn = document.querySelector('.copy-btn');
-				btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>';
-				setTimeout(() => {
-					btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-				}, 2000);
-			});
-		}
 	</script>
 </body>
 </html>`,
