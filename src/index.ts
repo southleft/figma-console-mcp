@@ -2112,7 +2112,7 @@ export default {
 		<div class="grid">
 			<div class="grid-cell value-cell">
 				<h2>Design system intelligence for AI assistants</h2>
-				<p>Whether you're maintaining a component library, implementing designs in code, or building Figma plugins, this MCP server gives AI the context it needs to help effectively.</p>
+				<p>Whether you're maintaining a component library, implementing designs in code, or building Figma plugins, this MCP server gives AI the deep context it needs.</p>
 			</div>
 		</div>
 
