@@ -1266,7 +1266,7 @@ export default {
 		}
 
 		.logo img {
-			height: 26px;
+			height: 30px;
 			transition: opacity var(--transition);
 		}
 
@@ -1321,21 +1321,21 @@ export default {
 		.main {
 			max-width: 1280px;
 			margin: 0 auto;
-			padding: 48px 32px;
+			padding: 64px 32px 80px;
 		}
 
 		/* Section dividers */
 		.section-rule {
 			border: none;
 			border-top: 1px solid var(--color-rule);
-			margin: 48px 0;
+			margin: 72px 0;
 		}
 
 		/* Grid layout */
 		.grid {
 			display: grid;
 			grid-template-columns: repeat(12, 1fr);
-			gap: 32px 48px;
+			gap: 48px 48px;
 		}
 
 		.grid-cell {
@@ -1360,23 +1360,14 @@ export default {
 		}
 
 		.badge {
-			display: inline-flex;
-			align-items: center;
-			gap: 6px;
+			display: inline-block;
 			width: fit-content;
-			padding: 6px 12px;
-			background: rgba(13, 148, 136, 0.12);
-			color: var(--color-primary-light);
-			border: 1px solid rgba(13, 148, 136, 0.25);
-			border-radius: 20px;
-			font-size: 12px;
-			font-weight: 600;
-			text-transform: uppercase;
-			letter-spacing: 0.5px;
+			color: var(--color-text-secondary);
+			font-size: 13px;
+			font-weight: 500;
+			letter-spacing: 0.02em;
 			margin-bottom: 20px;
 		}
-
-		.badge svg { width: 14px; height: 14px; }
 
 		h1 {
 			font-size: 48px;
@@ -1505,21 +1496,49 @@ export default {
 		.value-cell {
 			grid-column: span 12;
 			text-align: center;
-			padding: 32px 0;
+			padding: 64px 48px;
+			position: relative;
+			background: linear-gradient(135deg, rgba(13, 148, 136, 0.06) 0%, rgba(13, 148, 136, 0.02) 50%, transparent 100%);
+			border-radius: var(--radius-lg);
+			border: 1px solid rgba(13, 148, 136, 0.1);
+		}
+
+		.value-cell::before {
+			content: '';
+			position: absolute;
+			top: -1px;
+			left: 50%;
+			transform: translateX(-50%);
+			width: 120px;
+			height: 3px;
+			background: linear-gradient(90deg, transparent, var(--color-primary-light), transparent);
+			border-radius: 2px;
 		}
 
 		.value-cell h2 {
-			font-size: 28px;
-			font-weight: 600;
-			margin-bottom: 12px;
-			letter-spacing: -0.02em;
+			font-size: 36px;
+			font-weight: 700;
+			margin-bottom: 16px;
+			letter-spacing: -0.03em;
+			background: linear-gradient(135deg, var(--color-text) 0%, var(--color-primary-light) 100%);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+			background-clip: text;
+		}
+
+		[data-theme="light"] .value-cell h2 {
+			background: linear-gradient(135deg, var(--color-text) 0%, var(--color-primary-dark) 100%);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+			background-clip: text;
 		}
 
 		.value-cell p {
-			font-size: 16px;
+			font-size: 18px;
 			color: var(--color-text-secondary);
-			max-width: 640px;
+			max-width: 680px;
 			margin: 0 auto;
+			line-height: 1.7;
 		}
 
 		/* Capabilities grid */
@@ -1544,13 +1563,13 @@ export default {
 		.capability-card h3 {
 			font-size: 17px;
 			font-weight: 600;
-			margin-bottom: 8px;
+			margin-bottom: 10px;
 		}
 
 		.capability-card p {
 			font-size: 14px;
 			color: var(--color-text-secondary);
-			line-height: 1.6;
+			line-height: 1.7;
 		}
 
 		/* Prompt showcase */
@@ -1561,18 +1580,28 @@ export default {
 		.section-header {
 			display: flex;
 			align-items: center;
-			gap: 10px;
+			gap: 12px;
 			margin-bottom: 24px;
 		}
 
-		.section-header svg {
-			width: 20px;
-			height: 20px;
+		.section-header-icon {
+			width: 40px;
+			height: 40px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: rgba(13, 148, 136, 0.12);
+			border-radius: var(--radius-md);
 			color: var(--color-primary-light);
 		}
 
+		.section-header-icon svg {
+			width: 20px;
+			height: 20px;
+		}
+
 		.section-header h3 {
-			font-size: 17px;
+			font-size: 18px;
 			font-weight: 600;
 		}
 
@@ -1642,7 +1671,7 @@ export default {
 			list-style: none;
 			display: flex;
 			flex-direction: column;
-			gap: 14px;
+			gap: 16px;
 		}
 
 		.audience-list li {
@@ -1667,11 +1696,11 @@ export default {
 			display: flex;
 			align-items: center;
 			justify-content: space-between;
-			padding: 32px 40px;
+			padding: 40px 48px;
 			background: var(--color-bg-elevated);
 			border: 1px solid var(--color-border);
 			border-radius: var(--radius-lg);
-			margin-top: 16px;
+			margin-top: 32px;
 		}
 
 		.getting-started-content h3 {
@@ -1697,9 +1726,9 @@ export default {
 			display: flex;
 			align-items: center;
 			justify-content: space-between;
-			padding: 28px 0;
+			padding: 32px 0;
 			border-top: 1px solid var(--color-rule);
-			margin-top: 16px;
+			margin-top: 40px;
 		}
 
 		.blog-content {
@@ -1816,6 +1845,9 @@ export default {
 			.prompts-cell { grid-column: span 12; }
 			.audience-cell { grid-column: span 6; }
 			h1 { font-size: 40px; }
+			.value-cell { padding: 48px 32px; }
+			.value-cell h2 { font-size: 30px; }
+			.section-rule { margin: 56px 0; }
 			.getting-started-cell {
 				flex-direction: column;
 				gap: 24px;
@@ -1849,6 +1881,10 @@ export default {
 			h1 { font-size: 34px; }
 			.hero-subtitle { font-size: 16px; }
 			.showcase-stat .number { font-size: 48px; }
+			.value-cell { padding: 40px 24px; }
+			.value-cell h2 { font-size: 26px; }
+			.value-cell p { font-size: 16px; }
+			.section-rule { margin: 48px 0; }
 			.blog-cell {
 				flex-direction: column;
 				gap: 16px;
@@ -1860,7 +1896,6 @@ export default {
 				gap: 16px;
 				text-align: center;
 			}
-			.section-rule { margin: 32px 0; }
 			.getting-started-cell {
 				padding: 24px;
 			}
@@ -1906,10 +1941,7 @@ export default {
 		<div class="grid">
 			<!-- Hero -->
 			<div class="grid-cell hero-cell">
-				<div class="badge">
-					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-					Model Context Protocol
-				</div>
+				<div class="badge">Model Context Protocol</div>
 				<h1>Your design system, now a <span class="highlight">living API</span></h1>
 				<p class="hero-subtitle">The most comprehensive MCP server for Figma. Give AI assistants deep access to your design tokens, components, and variables. Read, query, and even create designs programmatically through natural language.</p>
 				<div class="cta-row">
@@ -2005,7 +2037,9 @@ export default {
 			<!-- Example Prompts -->
 			<div class="grid-cell prompts-cell">
 				<div class="section-header">
-					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+					<div class="section-header-icon">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+					</div>
 					<h3>What you can ask</h3>
 				</div>
 				<div class="prompt-list">
@@ -2053,7 +2087,7 @@ export default {
 			</div>
 		</div>
 
-		<div class="grid" style="margin-top: 32px;">
+		<div class="grid" style="margin-top: 48px;">
 			<!-- For Engineers -->
 			<div class="grid-cell audience-cell">
 				<div class="audience-header">
