@@ -1640,13 +1640,14 @@ export default {
 		/* Audience cells */
 		.audience-cell {
 			grid-column: span 6;
+			padding: 24px 0;
 		}
 
 		.audience-header {
 			display: flex;
 			align-items: center;
 			gap: 12px;
-			margin-bottom: 20px;
+			margin-bottom: 28px;
 		}
 
 		.audience-icon {
@@ -1671,7 +1672,7 @@ export default {
 			list-style: none;
 			display: flex;
 			flex-direction: column;
-			gap: 16px;
+			gap: 24px;
 		}
 
 		.audience-list li {
