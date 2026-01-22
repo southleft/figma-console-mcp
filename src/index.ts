@@ -1815,17 +1815,81 @@ export default {
 
 		.mobile-menu-btn svg { width: 24px; height: 24px; }
 
+		/* Mobile menu overlay */
+		.mobile-menu {
+			display: none;
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			background: var(--color-bg);
+			z-index: 1000;
+			padding: 20px;
+			flex-direction: column;
+		}
+
+		.mobile-menu.active {
+			display: flex;
+		}
+
+		.mobile-menu-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 48px;
+		}
+
+		.mobile-menu-close {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 36px;
+			height: 36px;
+			background: transparent;
+			border: none;
+			cursor: pointer;
+			color: var(--color-text);
+		}
+
+		.mobile-menu-close svg { width: 24px; height: 24px; }
+
+		.mobile-menu-nav {
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+
+		.mobile-menu-nav a {
+			display: block;
+			padding: 16px 0;
+			font-size: 18px;
+			font-weight: 500;
+			color: var(--color-text);
+			border-bottom: 1px solid var(--color-border);
+			transition: color var(--transition);
+		}
+
+		.mobile-menu-nav a:hover {
+			color: var(--color-primary-light);
+		}
+
+		body.menu-open {
+			overflow: hidden;
+		}
+
 		/* Responsive */
 		@media (max-width: 1024px) {
 			.hero-cell {
 				grid-column: span 12;
 				padding-right: 0;
-				padding-bottom: 32px;
+				padding-bottom: 40px;
 				border-bottom: 1px solid var(--color-rule);
 			}
 			.showcase-cell {
 				grid-column: span 12;
 				padding-left: 0;
+				padding-top: 40px;
 				border-left: none;
 			}
 			.capability-card {
@@ -1844,7 +1908,10 @@ export default {
 				border-left: 1px solid var(--color-rule);
 			}
 			.prompts-cell { grid-column: span 12; }
-			.audience-cell { grid-column: span 6; }
+			.audience-cell {
+				grid-column: span 6;
+				padding: 0;
+			}
 			h1 { font-size: 40px; }
 			.value-cell { padding: 48px 32px; }
 			.value-cell h2 { font-size: 30px; }
@@ -1864,19 +1931,26 @@ export default {
 			.nav { display: none; }
 			.mobile-menu-btn { display: flex; }
 			.main { padding: 32px 20px; }
-			.grid { gap: 24px 32px; }
+			.grid { gap: 32px; }
+			.hero-cell {
+				padding-bottom: 32px;
+			}
+			.showcase-cell {
+				padding-top: 32px;
+			}
 			.capability-card {
 				grid-column: span 12;
-				padding-left: 0 !important;
+				padding: 0 !important;
 				border-left: none !important;
+				border-top: none !important;
 			}
 			.audience-cell {
 				grid-column: span 12;
+				padding: 0;
 			}
 			.audience-cell.rule-left {
-				padding-left: 0;
-				border-left: none;
-				padding-top: 24px;
+				padding-top: 32px;
+				margin-top: 8px;
 				border-top: 1px solid var(--color-rule);
 			}
 			h1 { font-size: 34px; }
@@ -1937,6 +2011,25 @@ export default {
 			</button>
 		</div>
 	</header>
+
+	<!-- Mobile Menu -->
+	<div class="mobile-menu" id="mobileMenu">
+		<div class="mobile-menu-header">
+			<a href="/" class="logo">
+				<img src="https://docs.figma-console-mcp.southleft.com/logo/light.svg" alt="Figma Console MCP" class="logo-dark">
+				<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP" class="logo-light" style="display: none;">
+			</a>
+			<button class="mobile-menu-close" aria-label="Close menu">
+				<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
+			</button>
+		</div>
+		<nav class="mobile-menu-nav">
+			<a href="https://docs.figma-console-mcp.southleft.com">Documentation</a>
+			<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
+			<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
+			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">Blog</a>
+		</nav>
+	</div>
 
 	<main class="main">
 		<div class="grid">
@@ -2191,8 +2284,8 @@ export default {
 		(function() {
 			const html = document.documentElement;
 			const toggle = document.querySelector('.theme-toggle');
-			const logoDark = document.querySelector('.logo-dark');
-			const logoLight = document.querySelector('.logo-light');
+			const logosDark = document.querySelectorAll('.logo-dark');
+			const logosLight = document.querySelectorAll('.logo-light');
 
 			function getSystemTheme() {
 				return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
@@ -2209,13 +2302,12 @@ export default {
 			}
 
 			function updateLogos(theme) {
-				if (theme === 'light') {
-					logoDark.style.display = 'none';
-					logoLight.style.display = 'block';
-				} else {
-					logoDark.style.display = 'block';
-					logoLight.style.display = 'none';
-				}
+				logosDark.forEach(logo => {
+					logo.style.display = theme === 'light' ? 'none' : 'block';
+				});
+				logosLight.forEach(logo => {
+					logo.style.display = theme === 'light' ? 'block' : 'none';
+				});
 			}
 
 			// Initialize theme
@@ -2234,6 +2326,39 @@ export default {
 			toggle.addEventListener('click', () => {
 				const currentTheme = html.getAttribute('data-theme');
 				setTheme(currentTheme === 'light' ? 'dark' : 'light');
+			});
+		})();
+
+		// Mobile menu toggle
+		(function() {
+			const menuBtn = document.querySelector('.mobile-menu-btn');
+			const menu = document.getElementById('mobileMenu');
+			const closeBtn = document.querySelector('.mobile-menu-close');
+			const menuLinks = document.querySelectorAll('.mobile-menu-nav a');
+
+			function openMenu() {
+				menu.classList.add('active');
+				document.body.classList.add('menu-open');
+			}
+
+			function closeMenu() {
+				menu.classList.remove('active');
+				document.body.classList.remove('menu-open');
+			}
+
+			menuBtn.addEventListener('click', openMenu);
+			closeBtn.addEventListener('click', closeMenu);
+
+			// Close menu when clicking a link
+			menuLinks.forEach(link => {
+				link.addEventListener('click', closeMenu);
+			});
+
+			// Close menu on escape key
+			document.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape' && menu.classList.contains('active')) {
+					closeMenu();
+				}
 			});
 		})();
 	</script>
