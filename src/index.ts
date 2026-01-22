@@ -1266,7 +1266,7 @@ export default {
 		}
 
 		.logo img {
-			height: 30px;
+			height: 35px;
 			transition: opacity var(--transition);
 		}
 
