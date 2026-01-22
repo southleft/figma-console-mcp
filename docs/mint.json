@@ -3,8 +3,8 @@
   "name": "Figma Console MCP",
   "theme": "quill",
   "logo": {
-    "dark": "/logo/dark.svg",
-    "light": "/logo/light.svg"
+    "dark": "/logo/light.svg",
+    "light": "/logo/dark.svg"
   },
   "favicon": "/favicon.svg",
   "colors": {

@@ -1918,8 +1918,8 @@ export default {
 <body>
 	<header class="header">
 		<a href="/" class="logo">
-			<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP" class="logo-dark">
-			<img src="https://docs.figma-console-mcp.southleft.com/logo/light.svg" alt="Figma Console MCP" class="logo-light" style="display: none;">
+			<img src="https://docs.figma-console-mcp.southleft.com/logo/light.svg" alt="Figma Console MCP" class="logo-dark">
+			<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP" class="logo-light" style="display: none;">
 		</a>
 		<div class="header-right">
 			<nav class="nav">
