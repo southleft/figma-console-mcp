@@ -312,7 +312,7 @@ cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
    - Enables variables without Enterprise API
 
 3. **Read tool documentation:**
-   - See [TOOLS.md](TOOLS.md) for all 36+ available tools
+   - See [TOOLS.md](TOOLS.md) for all 40+ available tools
    - See [USE_CASES.md](USE_CASES.md) for example workflows
 
 ---

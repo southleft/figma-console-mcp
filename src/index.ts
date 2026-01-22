@@ -1195,7 +1195,7 @@ export default {
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Figma Console MCP - The Most Comprehensive MCP Server for Figma</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="Turn your Figma design system into a living API. 36+ tools give AI assistants deep access to design tokens, component specs, variables, and programmatic design creation.">
+	<meta name="description" content="Turn your Figma design system into a living API. 40+ tools give AI assistants deep access to design tokens, component specs, variables, and programmatic design creation.">
 	<meta name="theme-color" content="#0D9488">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2066,7 +2066,7 @@ export default {
 			<div class="grid-cell showcase-cell rule-left">
 				<div class="showcase-label">What AI Can Access</div>
 				<div class="showcase-stat">
-					<span class="number">36+</span>
+					<span class="number">40+</span>
 					<span class="label">MCP tools for Figma</span>
 				</div>
 				<div class="capability-list">
