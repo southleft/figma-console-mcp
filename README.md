@@ -1,9 +1,11 @@
 # Figma Console MCP Server
 
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io/)
+[![npm](https://img.shields.io/npm/v/figma-console-mcp)](https://www.npmjs.com/package/figma-console-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Documentation](https://img.shields.io/badge/docs-docs.figma--console--mcp.southleft.com-0D9488)](https://docs.figma-console-mcp.southleft.com)
 
-> **Model Context Protocol server** that provides AI assistants with **real-time console access, visual debugging, design system extraction, and design creation** for Figma.
+> **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
 ## What is this?
 
@@ -593,7 +595,8 @@ MIT - See [LICENSE](LICENSE) file for details.
 
 ## 🔗 Links
 
-- 📖 [Full Documentation](docs/)
+- 📚 **[Documentation Site](https://docs.figma-console-mcp.southleft.com)** — Complete guides, tutorials, and API reference
+- 📖 [Local Docs](docs/) — Documentation source files
 - 🐛 [Report Issues](https://github.com/southleft/figma-console-mcp/issues)
 - 💬 [Discussions](https://github.com/southleft/figma-console-mcp/discussions)
 - 🌐 [Model Context Protocol](https://modelcontextprotocol.io/)

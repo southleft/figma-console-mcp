@@ -40,6 +40,7 @@
       "group": "Getting Started",
       "pages": [
         "index",
+        "INTRODUCTION",
         "SETUP",
         "MODE_COMPARISON"
       ]
@@ -55,6 +56,7 @@
       "group": "Reference",
       "pages": [
         "TOOLS",
+        "ARCHITECTURE",
         "RECONSTRUCTION_FORMAT",
         "OAUTH_SETUP",
         "SELF_HOSTING"
