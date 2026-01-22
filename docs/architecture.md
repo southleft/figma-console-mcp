@@ -17,17 +17,12 @@ Figma Console MCP provides AI assistants with real-time access to Figma for debu
 
 ```mermaid
 flowchart TB
-    AI["🤖 AI Coding Assistant<br/>(Claude Desktop, Cursor, etc.)"]
-
-    AI -->|"SSE Connection"| CF
-
-    subgraph CF["Cloudflare Workers"]
-        MCP["MCP Protocol Layer<br/>• OAuth token management<br/>• Request routing"]
-        REST["Figma REST API Client<br/>• Design system extraction<br/>• Component/style retrieval"]
-        MCP --> REST
-    end
-
-    CF -->|"HTTPS"| FIG["Figma REST API<br/>(api.figma.com)"]
+    AI[AI Assistant]
+    AI -->|SSE| WORKER
+    WORKER[Cloudflare Worker]
+    WORKER --> MCP[MCP Protocol]
+    MCP --> CLIENT[REST Client]
+    CLIENT -->|HTTPS| API[Figma API]
 ```
 
 **Capabilities:**
@@ -46,29 +41,19 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    AI["🤖 AI Coding Assistant<br/>(Claude Desktop, Cursor, etc.)"]
+    AI[AI Assistant]
+    AI -->|stdio| SERVER[Local MCP Server]
 
-    AI -->|"MCP Protocol (stdio)"| LOCAL
+    SERVER --> REST[REST Client]
+    SERVER --> CDP[CDP Client]
+    SERVER --> BRIDGE[Bridge Client]
 
-    subgraph LOCAL["Local MCP Server (Node.js)"]
-        MCP["MCP Protocol Layer<br/>• Tool registration & dispatch<br/>• Request/response handling"]
-        REST["REST API Client"]
-        BRIDGE["Desktop Bridge Client"]
-        CDP["Chrome DevTools Protocol"]
+    REST -->|HTTPS| API[Figma API]
+    CDP -->|WebSocket| FIGMA[Figma Desktop]
+    BRIDGE -->|Messages| FIGMA
 
-        MCP --> REST
-        MCP --> BRIDGE
-        MCP --> CDP
-    end
-
-    REST -->|"HTTPS"| FIGAPI["Figma REST API"]
-    CDP -->|"WebSocket :9222"| FIGMA
-    BRIDGE -->|"Plugin Messages"| FIGMA
-
-    subgraph FIGMA["Figma Desktop"]
-        PLUGIN["Desktop Bridge Plugin<br/>• figma.createFrame()<br/>• figma.variables.*<br/>• Full Plugin API"]
-        FILE["User's Design File"]
-    end
+    FIGMA --> PLUGIN[Desktop Bridge Plugin]
+    FIGMA --> FILE[Design File]
 ```
 
 **Capabilities:**
@@ -114,22 +99,14 @@ The Desktop Bridge is a Figma plugin that runs inside Figma Desktop and provides
 **Architecture:**
 
 ```mermaid
-flowchart LR
-    subgraph BRIDGE["Desktop Bridge Plugin"]
-        direction TB
-        HANDLER["Message Handler"]
-        EXEC["Execute Handler"]
-        VARS["Variables Handler"]
-        COMP["Components Handler"]
-        API["Figma Plugin API"]
-
-        HANDLER --> EXEC
-        HANDLER --> VARS
-        HANDLER --> COMP
-        EXEC --> API
-        VARS --> API
-        COMP --> API
-    end
+flowchart TB
+    MSG[Message Handler]
+    MSG --> EXEC[Execute]
+    MSG --> VARS[Variables]
+    MSG --> COMP[Components]
+    EXEC --> API[Figma Plugin API]
+    VARS --> API
+    COMP --> API
 ```
 
 **Communication Protocol:**
@@ -215,65 +192,61 @@ Used for design system extraction and file queries.
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant AI as AI Assistant
-    participant MCP as MCP Server
-    participant Bridge as Desktop Bridge
-    participant Figma as Figma Plugin API
+    participant U as User
+    participant A as AI
+    participant M as MCP
+    participant B as Bridge
+    participant F as Figma
 
-    User->>AI: "Create a button component"
-    AI->>MCP: figma_execute({ code: "..." })
-    MCP->>Bridge: Send code via CDP
-    Bridge->>Figma: figma.createComponent()
-    Bridge->>Figma: figma.createText()
-    Bridge->>Figma: Set properties, styles, auto-layout
-    Figma-->>Bridge: Node created
-    Bridge-->>MCP: { nodeId, name }
-    AI->>MCP: figma_capture_screenshot({ nodeId })
-    MCP-->>AI: Screenshot image
-    AI->>AI: Validate result, iterate if needed
-    AI-->>User: "Button created successfully"
+    U->>A: Create button
+    A->>M: figma_execute()
+    M->>B: Send code
+    B->>F: createComponent()
+    F-->>B: Node created
+    B-->>M: {nodeId}
+    A->>M: capture_screenshot()
+    M-->>A: Image
+    A-->>U: Done
 ```
 
 ### Variable Management Flow
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant AI as AI Assistant
-    participant MCP as MCP Server
-    participant Bridge as Desktop Bridge
-    participant Figma as Figma Variables API
+    participant U as User
+    participant A as AI
+    participant M as MCP
+    participant B as Bridge
+    participant F as Figma
 
-    User->>AI: "Create a color variable for primary brand"
-    AI->>MCP: figma_create_variable()
-    MCP->>Bridge: Send command
-    Bridge->>Figma: figma.variables.createVariable(...)
-    Bridge->>Figma: variable.setValueForMode(...)
-    Figma-->>Bridge: Variable created
-    Bridge-->>MCP: Variable with ID
-    MCP-->>AI: Success response
-    AI-->>User: "Created colors/primary variable"
+    U->>A: Create variable
+    A->>M: create_variable()
+    M->>B: Send command
+    B->>F: createVariable()
+    F-->>B: Created
+    B-->>M: Variable ID
+    M-->>A: Success
+    A-->>U: Done
 ```
 
 ### Console Debugging Flow
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Plugin as User's Figma Plugin
-    participant CDP as Chrome DevTools Protocol
-    participant MCP as MCP Server
-    participant AI as AI Assistant
+    participant U as User
+    participant P as Plugin
+    participant C as CDP
+    participant M as MCP
+    participant A as AI
 
-    User->>Plugin: Run plugin
-    Plugin->>CDP: console.log("[Main] Starting...")
-    CDP->>MCP: Runtime.consoleAPICalled event
-    MCP->>MCP: Buffer log entry
-    User->>AI: "Show me console logs"
-    AI->>MCP: figma_get_console_logs()
-    MCP-->>AI: Timestamped, filtered logs
-    AI-->>User: Display formatted logs
+    U->>P: Run plugin
+    P->>C: console.log()
+    C->>M: Log event
+    M->>M: Buffer entry
+    U->>A: Show logs
+    A->>M: get_console_logs()
+    M-->>A: Logs
+    A-->>U: Display
 ```
 
 ---
