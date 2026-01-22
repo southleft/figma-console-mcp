@@ -1189,274 +1189,362 @@ export default {
 	if (url.pathname === "/") {
 		return new Response(
 			`<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Figma Console MCP - Your Design System as an API</title>
+	<title>Figma Console MCP - Bridge AI to Your Design System</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="Connect AI to Figma. Extract design tokens, implement components with real specs, and debug plugins—all through a programmable API.">
+	<meta name="description" content="The Model Context Protocol server that connects AI assistants to Figma. Extract design tokens, implement components with accurate specs, and create designs programmatically.">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 	<style>
-		* {
-			margin: 0;
-			padding: 0;
-			box-sizing: border-box;
-		}
+		* { margin: 0; padding: 0; box-sizing: border-box; }
 		body {
 			font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-			background: #ffffff;
-			color: #000000;
-			line-height: 1.5;
+			background: #0F0F0F;
+			color: #FAFAFA;
+			line-height: 1.6;
 		}
+		a { color: inherit; text-decoration: none; }
 		.header {
-			padding: 24px 48px;
-			border-bottom: 1px solid #e5e5e5;
+			padding: 20px 48px;
 			display: flex;
 			justify-content: space-between;
 			align-items: center;
+			border-bottom: 1px solid #1f1f1f;
 		}
 		.logo {
 			display: flex;
 			align-items: center;
 			gap: 12px;
-			font-size: 18px;
-			font-weight: 600;
 		}
-		.logo img {
-			width: 32px;
-			height: 32px;
-			border-radius: 6px;
-		}
+		.logo img { height: 28px; }
 		.nav {
 			display: flex;
 			gap: 32px;
 			align-items: center;
 		}
 		.nav a {
-			color: #666;
-			text-decoration: none;
-			font-size: 15px;
+			color: #a1a1a1;
+			font-size: 14px;
+			font-weight: 500;
+			transition: color 0.2s;
+		}
+		.nav a:hover { color: #FAFAFA; }
+		.nav-cta {
+			background: #0D9488;
+			color: #FAFAFA !important;
+			padding: 8px 16px;
+			border-radius: 6px;
 			font-weight: 500;
 		}
-		.nav a:hover {
-			color: #000;
-		}
-		.container {
-			max-width: 1200px;
+		.nav-cta:hover { background: #0F766E; }
+		.hero {
+			max-width: 1000px;
 			margin: 0 auto;
 			padding: 100px 48px 80px;
+			text-align: center;
 		}
 		.badge {
 			display: inline-block;
-			padding: 6px 12px;
-			background: #f3f0ff;
-			color: #7c3aed;
+			padding: 6px 14px;
+			background: rgba(13, 148, 136, 0.15);
+			color: #14B8A6;
+			border: 1px solid rgba(13, 148, 136, 0.3);
 			border-radius: 20px;
 			font-size: 13px;
-			font-weight: 600;
-			margin-bottom: 24px;
+			font-weight: 500;
+			margin-bottom: 28px;
 		}
 		h1 {
-			font-size: 56px;
+			font-size: 52px;
 			font-weight: 700;
 			margin-bottom: 24px;
 			letter-spacing: -0.03em;
 			line-height: 1.1;
 		}
 		.highlight {
-			background: linear-gradient(135deg, #a259ff 0%, #7c3aed 100%);
-			-webkit-background-clip: text;
-			-webkit-text-fill-color: transparent;
-			background-clip: text;
+			color: #14B8A6;
 		}
 		.subtitle {
-			font-size: 20px;
-			color: #666666;
+			font-size: 18px;
+			color: #a1a1a1;
 			margin-bottom: 40px;
 			max-width: 640px;
-			line-height: 1.6;
+			margin-left: auto;
+			margin-right: auto;
+			line-height: 1.7;
 		}
 		.cta-group {
 			display: flex;
-			gap: 16px;
+			gap: 12px;
+			justify-content: center;
 			flex-wrap: wrap;
 		}
 		.cta {
 			display: inline-flex;
 			align-items: center;
 			gap: 8px;
-			padding: 14px 28px;
-			background: #000000;
-			color: #ffffff;
-			text-decoration: none;
-			border-radius: 8px;
+			padding: 12px 24px;
+			background: #0D9488;
+			color: #FAFAFA;
+			border-radius: 6px;
 			font-weight: 500;
-			font-size: 16px;
+			font-size: 15px;
 			transition: background 0.2s;
 		}
-		.cta:hover {
-			background: #333333;
-		}
+		.cta:hover { background: #0F766E; }
 		.cta-secondary {
-			background: #f5f5f5;
-			color: #000;
+			background: #1f1f1f;
+			border: 1px solid #2a2a2a;
 		}
-		.cta-secondary:hover {
-			background: #e5e5e5;
+		.cta-secondary:hover { background: #2a2a2a; border-color: #3a3a3a; }
+		.install-cmd {
+			display: inline-flex;
+			align-items: center;
+			gap: 12px;
+			margin-top: 32px;
+			padding: 12px 20px;
+			background: #1a1a1a;
+			border: 1px solid #2a2a2a;
+			border-radius: 8px;
+			font-family: "SF Mono", Monaco, monospace;
+			font-size: 14px;
+			color: #a1a1a1;
 		}
+		.install-cmd code { color: #14B8A6; }
 		.features {
+			max-width: 1100px;
+			margin: 0 auto;
+			padding: 60px 48px 80px;
+		}
+		.features-heading {
+			text-align: center;
+			margin-bottom: 48px;
+		}
+		.features-heading h2 {
+			font-size: 32px;
+			font-weight: 600;
+			margin-bottom: 12px;
+		}
+		.features-heading p {
+			color: #a1a1a1;
+			font-size: 16px;
+		}
+		.features-grid {
 			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-			gap: 24px;
-			margin-top: 100px;
+			grid-template-columns: repeat(2, 1fr);
+			gap: 20px;
 		}
 		.feature {
 			padding: 28px;
-			border: 1px solid #e5e5e5;
+			background: #1a1a1a;
+			border: 1px solid #2a2a2a;
 			border-radius: 12px;
-			transition: border-color 0.2s, box-shadow 0.2s;
+			transition: border-color 0.2s;
 		}
-		.feature:hover {
-			border-color: #a259ff;
-			box-shadow: 0 4px 12px rgba(162, 89, 255, 0.1);
-		}
+		.feature:hover { border-color: #0D9488; }
 		.feature-icon {
 			width: 40px;
 			height: 40px;
-			background: #f3f0ff;
+			background: rgba(13, 148, 136, 0.15);
 			border-radius: 8px;
 			display: flex;
 			align-items: center;
 			justify-content: center;
 			margin-bottom: 16px;
-			font-size: 20px;
+			color: #14B8A6;
 		}
 		.feature h3 {
-			font-size: 18px;
+			font-size: 17px;
 			font-weight: 600;
 			margin-bottom: 8px;
 		}
 		.feature p {
-			color: #666666;
-			font-size: 15px;
-			line-height: 1.5;
+			color: #a1a1a1;
+			font-size: 14px;
+			line-height: 1.6;
 		}
-		.stats {
+		.audience {
+			max-width: 900px;
+			margin: 0 auto;
+			padding: 60px 48px;
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 32px;
+		}
+		.audience-card {
+			padding: 32px;
+			background: #1a1a1a;
+			border: 1px solid #2a2a2a;
+			border-radius: 12px;
+		}
+		.audience-card h3 {
+			font-size: 18px;
+			font-weight: 600;
+			margin-bottom: 16px;
 			display: flex;
-			gap: 48px;
-			margin-top: 80px;
-			padding-top: 48px;
-			border-top: 1px solid #e5e5e5;
+			align-items: center;
+			gap: 10px;
 		}
-		.stat {
+		.audience-card ul {
+			list-style: none;
+			color: #a1a1a1;
+			font-size: 14px;
+		}
+		.audience-card li {
+			padding: 8px 0;
+			display: flex;
+			align-items: flex-start;
+			gap: 10px;
+		}
+		.audience-card li svg {
+			flex-shrink: 0;
+			margin-top: 2px;
+			color: #0D9488;
+		}
+		.blog-cta {
+			max-width: 800px;
+			margin: 0 auto;
+			padding: 40px 48px 80px;
 			text-align: center;
 		}
-		.stat-value {
-			font-size: 36px;
-			font-weight: 700;
-			color: #a259ff;
+		.blog-cta a {
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
+			color: #14B8A6;
+			font-size: 15px;
+			font-weight: 500;
 		}
-		.stat-label {
-			font-size: 14px;
-			color: #666;
-			margin-top: 4px;
-		}
+		.blog-cta a:hover { text-decoration: underline; }
 		.footer {
-			padding: 48px;
+			padding: 32px 48px;
 			text-align: center;
-			color: #999999;
-			font-size: 14px;
-			border-top: 1px solid #e5e5e5;
-			margin-top: 100px;
+			color: #666;
+			font-size: 13px;
+			border-top: 1px solid #1f1f1f;
 		}
+		.footer a { color: #a1a1a1; }
+		.footer a:hover { color: #FAFAFA; }
 		@media (max-width: 768px) {
-			.header {
-				padding: 16px 24px;
-			}
-			.nav {
-				display: none;
-			}
-			.container {
-				padding: 60px 24px;
-			}
-			h1 {
-				font-size: 36px;
-			}
-			.stats {
-				flex-wrap: wrap;
-				gap: 32px;
-			}
+			.header { padding: 16px 24px; }
+			.nav { display: none; }
+			.hero { padding: 60px 24px 40px; }
+			h1 { font-size: 32px; }
+			.subtitle { font-size: 16px; }
+			.features { padding: 40px 24px; }
+			.features-grid { grid-template-columns: 1fr; }
+			.audience { grid-template-columns: 1fr; padding: 40px 24px; }
+			.blog-cta { padding: 24px; }
 		}
 	</style>
 </head>
 <body>
-	<div class="header">
-		<div class="logo">
-			<img src="https://docs.figma-console-mcp.southleft.com/favicon.svg" alt="Figma Console MCP">
-			Figma Console MCP
-		</div>
+	<header class="header">
+		<a href="/" class="logo">
+			<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP">
+		</a>
 		<nav class="nav">
-			<a href="https://docs.figma-console-mcp.southleft.com">Documentation</a>
+			<a href="https://docs.figma-console-mcp.southleft.com">Docs</a>
 			<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
 			<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
+			<a href="https://docs.figma-console-mcp.southleft.com/setup" class="nav-cta">Get Started</a>
 		</nav>
-	</div>
-	<div class="container">
-		<div class="badge">Model Context Protocol</div>
-		<h1>Your design system,<br><span class="highlight">programmable</span></h1>
-		<p class="subtitle">Connect AI assistants to Figma. Extract design tokens, implement components with real specifications, create variants programmatically, and debug plugins—all through a single MCP connection.</p>
-		<div class="cta-group">
-			<a href="https://docs.figma-console-mcp.southleft.com/SETUP" class="cta">
-				Get Started
+	</header>
+	<main>
+		<section class="hero">
+			<div class="badge">Model Context Protocol</div>
+			<h1>Bridge AI to your <span class="highlight">design system</span></h1>
+			<p class="subtitle">Connect Claude, Cursor, and other AI assistants directly to Figma. Extract tokens, get accurate component specs, and create designs programmatically.</p>
+			<div class="cta-group">
+				<a href="https://docs.figma-console-mcp.southleft.com/setup" class="cta">
+					Read the Docs
+					<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+				</a>
+				<a href="https://github.com/southleft/figma-console-mcp" class="cta cta-secondary">
+					<svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+					View on GitHub
+				</a>
+			</div>
+			<div class="install-cmd">
+				<code>npx figma-console-mcp init</code>
+			</div>
+		</section>
+		<section class="features">
+			<div class="features-heading">
+				<h2>What it does</h2>
+				<p>36+ MCP tools for design system management and Figma integration</p>
+			</div>
+			<div class="features-grid">
+				<div class="feature">
+					<div class="feature-icon">
+						<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
+					</div>
+					<h3>Design Token Extraction</h3>
+					<p>Pull variables, colors, typography, and spacing from Figma. Export as CSS custom properties, Tailwind config, or Sass variables.</p>
+				</div>
+				<div class="feature">
+					<div class="feature-icon">
+						<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+					</div>
+					<h3>Component Specs</h3>
+					<p>Get layout, spacing, and property data for any component. AI receives structured specs, not just screenshots.</p>
+				</div>
+				<div class="feature">
+					<div class="feature-icon">
+						<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+					</div>
+					<h3>Programmatic Design</h3>
+					<p>Create variables, build component variants, and organize designs through natural language and the Figma Plugin API.</p>
+				</div>
+				<div class="feature">
+					<div class="feature-icon">
+						<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+					</div>
+					<h3>Plugin Debugging</h3>
+					<p>Capture real-time console logs from Figma plugins. Debug faster with AI-assisted error analysis.</p>
+				</div>
+			</div>
+		</section>
+		<section class="audience">
+			<div class="audience-card">
+				<h3>
+					<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg>
+					For Product Designers
+				</h3>
+				<ul>
+					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Generate design token documentation automatically</li>
+					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Create component variants with AI assistance</li>
+					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Debug Figma plugins without leaving your workflow</li>
+					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Maintain consistency across design system files</li>
+				</ul>
+			</div>
+			<div class="audience-card">
+				<h3>
+					<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+					For Product Engineers
+				</h3>
+				<ul>
+					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Extract tokens as CSS, Tailwind, or Sass</li>
+					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Get accurate component specs for implementation</li>
+					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Query design system via MCP-enabled AI tools</li>
+					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Keep code in sync with design decisions</li>
+				</ul>
+			</div>
+		</section>
+		<section class="blog-cta">
+			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">
+				Read the announcement: AI-Powered Design System Management
 				<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 			</a>
-			<a href="https://github.com/southleft/figma-console-mcp" class="cta cta-secondary">
-				<svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-					<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-				</svg>
-				View on GitHub
-			</a>
-		</div>
-		<div class="features">
-			<div class="feature">
-				<div class="feature-icon">🎨</div>
-				<h3>Design Token Extraction</h3>
-				<p>Pull variables, colors, typography, and spacing directly from Figma. Export as CSS, Tailwind, or Sass.</p>
-			</div>
-			<div class="feature">
-				<div class="feature-icon">🧩</div>
-				<h3>Component Implementation</h3>
-				<p>Get component specs with visual references. AI sees layout, spacing, and properties—not just screenshots.</p>
-			</div>
-			<div class="feature">
-				<div class="feature-icon">✏️</div>
-				<h3>Programmatic Creation</h3>
-				<p>Create variables, build component variants, and organize designs through the Figma Plugin API.</p>
-			</div>
-			<div class="feature">
-				<div class="feature-icon">🐛</div>
-				<h3>Plugin Debugging</h3>
-				<p>Real-time console logs from Figma plugins. No more console.log archaeology.</p>
-			</div>
-		</div>
-		<div class="stats">
-			<div class="stat">
-				<div class="stat-value">36+</div>
-				<div class="stat-label">MCP Tools</div>
-			</div>
-			<div class="stat">
-				<div class="stat-value">2 min</div>
-				<div class="stat-label">Setup Time</div>
-			</div>
-			<div class="stat">
-				<div class="stat-value">Free</div>
-				<div class="stat-label">Hosted Server</div>
-			</div>
-		</div>
-	</div>
-	<div class="footer">
-		<p>© 2026 Figma Console MCP · MIT License · Built by <a href="https://southleft.com" style="color: #666;">Southleft</a></p>
-	</div>
+		</section>
+	</main>
+	<footer class="footer">
+		<p>MIT License · Built by <a href="https://southleft.com">Southleft</a></p>
+	</footer>
 </body>
 </html>`,
 			{
