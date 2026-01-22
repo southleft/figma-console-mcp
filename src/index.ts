@@ -1194,7 +1194,7 @@ export default {
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Figma Console MCP - Your Design System as an API</title>
-	<link rel="icon" type="image/jpeg" href="https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg">
+	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
 	<meta name="description" content="Connect AI to Figma. Extract design tokens, implement components with real specs, and debug plugins—all through a programmable API.">
 	<style>
 		* {
@@ -1392,11 +1392,11 @@ export default {
 <body>
 	<div class="header">
 		<div class="logo">
-			<img src="https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg" alt="Figma Console MCP">
+			<img src="https://docs.figma-console-mcp.southleft.com/favicon.svg" alt="Figma Console MCP">
 			Figma Console MCP
 		</div>
 		<nav class="nav">
-			<a href="/docs">Documentation</a>
+			<a href="https://docs.figma-console-mcp.southleft.com">Documentation</a>
 			<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
 			<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
 		</nav>
@@ -1406,7 +1406,7 @@ export default {
 		<h1>Your design system,<br><span class="highlight">programmable</span></h1>
 		<p class="subtitle">Connect AI assistants to Figma. Extract design tokens, implement components with real specifications, create variants programmatically, and debug plugins—all through a single MCP connection.</p>
 		<div class="cta-group">
-			<a href="/docs" class="cta">
+			<a href="https://docs.figma-console-mcp.southleft.com/SETUP" class="cta">
 				Get Started
 				<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 			</a>
@@ -1455,7 +1455,7 @@ export default {
 		</div>
 	</div>
 	<div class="footer">
-		<p>© 2025 Figma Console MCP · MIT License · Built by <a href="https://southleft.com" style="color: #666;">Southleft</a></p>
+		<p>© 2026 Figma Console MCP · MIT License · Built by <a href="https://southleft.com" style="color: #666;">Southleft</a></p>
 	</div>
 </body>
 </html>`,
