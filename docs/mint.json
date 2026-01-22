@@ -70,6 +70,7 @@
   "feedback": {
     "thumbsRating": true,
     "suggestEdit": true
-  }
+  },
+  "css": "/custom.css"
 }
 
