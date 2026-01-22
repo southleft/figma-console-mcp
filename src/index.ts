@@ -680,7 +680,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										clearedCount,
 										timestamp: Date.now(),
 										ai_instruction:
-											"⚠️ CRITICAL: Console cleared successfully, but this operation disrupts the monitoring connection. You MUST reconnect the MCP server using `/mcp reconnect figma-console` before calling figma_get_console_logs again. Best practice: Avoid clearing console - filter/parse logs instead to maintain monitoring connection.",
+											"CRITICAL: Console cleared successfully, but this operation disrupts the monitoring connection. You MUST reconnect the MCP server using `/mcp reconnect figma-console` before calling figma_get_console_logs again. Best practice: Avoid clearing console - filter/parse logs instead to maintain monitoring connection.",
 									},
 									null,
 									2,
@@ -927,7 +927,7 @@ export default {
 			if (error) {
 				return new Response(
 					`<html><body>
-						<h1>❌ Authentication Failed</h1>
+						<h1>Authentication Failed</h1>
 						<p>Error: ${error}</p>
 						<p>Description: ${url.searchParams.get("error_description") || "Unknown error"}</p>
 						<p>You can close this window and try again.</p>
@@ -949,7 +949,7 @@ export default {
 			if (!sessionId) {
 				return new Response(
 					`<html><body>
-						<h1>❌ Invalid or Expired Request</h1>
+						<h1>Invalid or Expired Request</h1>
 						<p>The authentication request has expired or is invalid.</p>
 						<p>Please try authenticating again.</p>
 					</body></html>`,
@@ -1126,7 +1126,7 @@ export default {
 				logger.error({ error, sessionId }, "OAuth callback failed");
 				return new Response(
 					`<html><body>
-						<h1>❌ Authentication Error</h1>
+						<h1>Authentication Error</h1>
 						<p>Failed to complete authentication: ${error instanceof Error ? error.message : String(error)}</p>
 						<p>Please try again or contact support.</p>
 					</body></html>`,
@@ -1185,7 +1185,7 @@ export default {
 		return await fetch(proxyRequest);
 	}
 
-	// Root path - serve landing page with proper meta tags
+	// Root path - serve landing page with bento-box layout and light/dark mode
 	if (url.pathname === "/") {
 		return new Response(
 			`<!DOCTYPE html>
@@ -1196,355 +1196,936 @@ export default {
 	<title>Figma Console MCP - Bridge AI to Your Design System</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
 	<meta name="description" content="The Model Context Protocol server that connects AI assistants to Figma. Extract design tokens, implement components with accurate specs, and create designs programmatically.">
+	<meta name="theme-color" content="#0D9488">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 	<style>
+		:root {
+			--color-primary: #0D9488;
+			--color-primary-light: #14B8A6;
+			--color-primary-dark: #0F766E;
+			--color-bg: #0F0F0F;
+			--color-bg-elevated: #161616;
+			--color-bg-card: #1A1A1A;
+			--color-border: #2A2A2A;
+			--color-border-hover: #3A3A3A;
+			--color-text: #FAFAFA;
+			--color-text-secondary: #A1A1A1;
+			--color-text-tertiary: #666666;
+			--font-mono: "JetBrains Mono", "SF Mono", Monaco, monospace;
+			--radius-sm: 6px;
+			--radius-md: 10px;
+			--radius-lg: 16px;
+			--transition: 0.2s ease;
+		}
+
+		[data-theme="light"] {
+			--color-bg: #FAFAFA;
+			--color-bg-elevated: #FFFFFF;
+			--color-bg-card: #FFFFFF;
+			--color-border: #E5E5E5;
+			--color-border-hover: #D4D4D4;
+			--color-text: #171717;
+			--color-text-secondary: #525252;
+			--color-text-tertiary: #A3A3A3;
+		}
+
 		* { margin: 0; padding: 0; box-sizing: border-box; }
+
+		html {
+			scroll-behavior: smooth;
+		}
+
 		body {
 			font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-			background: #0F0F0F;
-			color: #FAFAFA;
+			background: var(--color-bg);
+			color: var(--color-text);
 			line-height: 1.6;
+			min-height: 100vh;
+			transition: background var(--transition), color var(--transition);
 		}
+
 		a { color: inherit; text-decoration: none; }
+
+		/* Header */
 		.header {
-			padding: 20px 48px;
+			position: sticky;
+			top: 0;
+			z-index: 100;
+			padding: 16px 32px;
 			display: flex;
 			justify-content: space-between;
 			align-items: center;
-			border-bottom: 1px solid #1f1f1f;
+			background: var(--color-bg);
+			border-bottom: 1px solid var(--color-border);
+			backdrop-filter: blur(12px);
+			transition: background var(--transition), border-color var(--transition);
 		}
-		.logo {
+
+		.logo img {
+			height: 26px;
+			transition: opacity var(--transition);
+		}
+
+		.logo img:hover { opacity: 0.8; }
+
+		.header-right {
 			display: flex;
 			align-items: center;
-			gap: 12px;
+			gap: 24px;
 		}
-		.logo img { height: 28px; }
+
 		.nav {
 			display: flex;
-			gap: 32px;
+			gap: 24px;
 			align-items: center;
 		}
+
 		.nav a {
-			color: #a1a1a1;
+			color: var(--color-text-secondary);
 			font-size: 14px;
 			font-weight: 500;
-			transition: color 0.2s;
+			transition: color var(--transition);
 		}
-		.nav a:hover { color: #FAFAFA; }
-		.nav-cta {
-			background: #0D9488;
-			color: #FAFAFA !important;
-			padding: 8px 16px;
-			border-radius: 6px;
-			font-weight: 500;
+
+		.nav a:hover { color: var(--color-text); }
+
+		.theme-toggle {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 36px;
+			height: 36px;
+			background: var(--color-bg-card);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-sm);
+			cursor: pointer;
+			color: var(--color-text-secondary);
+			transition: all var(--transition);
 		}
-		.nav-cta:hover { background: #0F766E; }
-		.hero {
-			max-width: 1000px;
+
+		.theme-toggle:hover {
+			border-color: var(--color-border-hover);
+			color: var(--color-text);
+		}
+
+		.theme-toggle svg { width: 18px; height: 18px; }
+		.theme-toggle .sun { display: none; }
+		[data-theme="light"] .theme-toggle .moon { display: none; }
+		[data-theme="light"] .theme-toggle .sun { display: block; }
+
+		/* Main layout */
+		.main {
+			max-width: 1280px;
 			margin: 0 auto;
-			padding: 100px 48px 80px;
-			text-align: center;
+			padding: 32px;
 		}
+
+		/* Bento Grid */
+		.bento-grid {
+			display: grid;
+			grid-template-columns: repeat(12, 1fr);
+			grid-template-rows: auto;
+			gap: 16px;
+		}
+
+		.bento-card {
+			background: var(--color-bg-card);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-lg);
+			padding: 28px;
+			transition: all var(--transition);
+		}
+
+		.bento-card:hover {
+			border-color: var(--color-border-hover);
+		}
+
+		/* Hero section - spans full width */
+		.hero-card {
+			grid-column: span 7;
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			padding: 40px;
+		}
+
 		.badge {
-			display: inline-block;
-			padding: 6px 14px;
-			background: rgba(13, 148, 136, 0.15);
-			color: #14B8A6;
-			border: 1px solid rgba(13, 148, 136, 0.3);
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			width: fit-content;
+			padding: 6px 12px;
+			background: rgba(13, 148, 136, 0.12);
+			color: var(--color-primary-light);
+			border: 1px solid rgba(13, 148, 136, 0.25);
 			border-radius: 20px;
-			font-size: 13px;
-			font-weight: 500;
-			margin-bottom: 28px;
+			font-size: 12px;
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			margin-bottom: 20px;
 		}
+
+		.badge svg { width: 14px; height: 14px; }
+
 		h1 {
-			font-size: 52px;
+			font-size: 44px;
 			font-weight: 700;
-			margin-bottom: 24px;
 			letter-spacing: -0.03em;
 			line-height: 1.1;
+			margin-bottom: 16px;
 		}
+
 		.highlight {
-			color: #14B8A6;
+			color: var(--color-primary-light);
 		}
-		.subtitle {
-			font-size: 18px;
-			color: #a1a1a1;
-			margin-bottom: 40px;
-			max-width: 640px;
-			margin-left: auto;
-			margin-right: auto;
+
+		.hero-subtitle {
+			font-size: 17px;
+			color: var(--color-text-secondary);
 			line-height: 1.7;
+			max-width: 500px;
+			margin-bottom: 28px;
 		}
-		.cta-group {
+
+		.cta-row {
 			display: flex;
 			gap: 12px;
-			justify-content: center;
 			flex-wrap: wrap;
 		}
-		.cta {
+
+		.btn {
 			display: inline-flex;
 			align-items: center;
 			gap: 8px;
-			padding: 12px 24px;
-			background: #0D9488;
-			color: #FAFAFA;
-			border-radius: 6px;
-			font-weight: 500;
-			font-size: 15px;
-			transition: background 0.2s;
-		}
-		.cta:hover { background: #0F766E; }
-		.cta-secondary {
-			background: #1f1f1f;
-			border: 1px solid #2a2a2a;
-		}
-		.cta-secondary:hover { background: #2a2a2a; border-color: #3a3a3a; }
-		.install-cmd {
-			display: inline-flex;
-			align-items: center;
-			gap: 12px;
-			margin-top: 32px;
 			padding: 12px 20px;
-			background: #1a1a1a;
-			border: 1px solid #2a2a2a;
-			border-radius: 8px;
-			font-family: "SF Mono", Monaco, monospace;
+			border-radius: var(--radius-sm);
+			font-weight: 500;
 			font-size: 14px;
-			color: #a1a1a1;
+			transition: all var(--transition);
+			border: none;
+			cursor: pointer;
 		}
-		.install-cmd code { color: #14B8A6; }
-		.features {
-			max-width: 1100px;
-			margin: 0 auto;
-			padding: 60px 48px 80px;
+
+		.btn svg { width: 16px; height: 16px; }
+
+		.btn-primary {
+			background: var(--color-primary);
+			color: #FFFFFF;
 		}
-		.features-heading {
-			text-align: center;
-			margin-bottom: 48px;
+
+		.btn-primary:hover { background: var(--color-primary-dark); }
+
+		.btn-secondary {
+			background: var(--color-bg-elevated);
+			color: var(--color-text);
+			border: 1px solid var(--color-border);
 		}
-		.features-heading h2 {
-			font-size: 32px;
+
+		.btn-secondary:hover {
+			border-color: var(--color-border-hover);
+			background: var(--color-bg-card);
+		}
+
+		/* Quick start card */
+		.quickstart-card {
+			grid-column: span 5;
+			display: flex;
+			flex-direction: column;
+		}
+
+		.quickstart-label {
+			font-size: 11px;
 			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			color: var(--color-text-tertiary);
 			margin-bottom: 12px;
 		}
-		.features-heading p {
-			color: #a1a1a1;
-			font-size: 16px;
+
+		.install-box {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			padding: 14px 16px;
+			background: var(--color-bg);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-md);
+			font-family: var(--font-mono);
+			font-size: 14px;
+			margin-bottom: 24px;
+			transition: all var(--transition);
 		}
-		.features-grid {
-			display: grid;
-			grid-template-columns: repeat(2, 1fr);
-			gap: 20px;
-		}
-		.feature {
-			padding: 28px;
-			background: #1a1a1a;
-			border: 1px solid #2a2a2a;
-			border-radius: 12px;
-			transition: border-color 0.2s;
-		}
-		.feature:hover { border-color: #0D9488; }
-		.feature-icon {
-			width: 40px;
-			height: 40px;
-			background: rgba(13, 148, 136, 0.15);
-			border-radius: 8px;
+
+		.install-box:hover { border-color: var(--color-primary); }
+
+		.install-box .prompt { color: var(--color-text-tertiary); }
+		.install-box code { color: var(--color-primary-light); flex: 1; }
+
+		.copy-btn {
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			margin-bottom: 16px;
-			color: #14B8A6;
+			width: 32px;
+			height: 32px;
+			background: transparent;
+			border: none;
+			border-radius: var(--radius-sm);
+			cursor: pointer;
+			color: var(--color-text-tertiary);
+			transition: all var(--transition);
 		}
-		.feature h3 {
-			font-size: 17px;
+
+		.copy-btn:hover {
+			background: var(--color-border);
+			color: var(--color-text);
+		}
+
+		.copy-btn svg { width: 16px; height: 16px; }
+
+		.steps {
+			display: flex;
+			flex-direction: column;
+			gap: 16px;
+			flex: 1;
+		}
+
+		.step {
+			display: flex;
+			gap: 14px;
+			align-items: flex-start;
+		}
+
+		.step-num {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 24px;
+			height: 24px;
+			background: rgba(13, 148, 136, 0.15);
+			color: var(--color-primary-light);
+			border-radius: 50%;
+			font-size: 12px;
+			font-weight: 600;
+			flex-shrink: 0;
+		}
+
+		.step-content h4 {
+			font-size: 14px;
+			font-weight: 600;
+			margin-bottom: 2px;
+		}
+
+		.step-content p {
+			font-size: 13px;
+			color: var(--color-text-secondary);
+		}
+
+		/* Stats card */
+		.stats-card {
+			grid-column: span 3;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			text-align: center;
+			background: linear-gradient(135deg, rgba(13, 148, 136, 0.1) 0%, transparent 100%);
+		}
+
+		.stats-card:hover { border-color: var(--color-primary); }
+
+		.stat-number {
+			font-size: 56px;
+			font-weight: 700;
+			color: var(--color-primary-light);
+			line-height: 1;
+			margin-bottom: 8px;
+		}
+
+		.stat-label {
+			font-size: 14px;
+			font-weight: 500;
+			color: var(--color-text-secondary);
+		}
+
+		/* Capability cards */
+		.capability-card {
+			grid-column: span 3;
+			display: flex;
+			flex-direction: column;
+		}
+
+		.capability-card:hover { border-color: var(--color-primary); }
+
+		.capability-icon {
+			width: 44px;
+			height: 44px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: rgba(13, 148, 136, 0.12);
+			border-radius: var(--radius-md);
+			color: var(--color-primary-light);
+			margin-bottom: 16px;
+		}
+
+		.capability-icon svg { width: 22px; height: 22px; }
+
+		.capability-card h3 {
+			font-size: 16px;
 			font-weight: 600;
 			margin-bottom: 8px;
 		}
-		.feature p {
-			color: #a1a1a1;
+
+		.capability-card p {
 			font-size: 14px;
+			color: var(--color-text-secondary);
 			line-height: 1.6;
 		}
-		.audience {
-			max-width: 900px;
-			margin: 0 auto;
-			padding: 60px 48px;
-			display: grid;
-			grid-template-columns: 1fr 1fr;
-			gap: 32px;
+
+		/* Prompt showcase */
+		.prompts-card {
+			grid-column: span 6;
 		}
+
+		.prompts-header {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			margin-bottom: 20px;
+		}
+
+		.prompts-header svg {
+			width: 20px;
+			height: 20px;
+			color: var(--color-primary-light);
+		}
+
+		.prompts-header h3 {
+			font-size: 16px;
+			font-weight: 600;
+		}
+
+		.prompt-list {
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+		}
+
+		.prompt-item {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			padding: 14px 16px;
+			background: var(--color-bg);
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-md);
+			font-family: var(--font-mono);
+			font-size: 13px;
+			color: var(--color-text-secondary);
+			transition: all var(--transition);
+		}
+
+		.prompt-item:hover {
+			border-color: var(--color-primary);
+			color: var(--color-text);
+		}
+
+		.prompt-item svg {
+			width: 16px;
+			height: 16px;
+			color: var(--color-primary-light);
+			flex-shrink: 0;
+		}
+
+		/* Audience cards */
 		.audience-card {
-			padding: 32px;
-			background: #1a1a1a;
-			border: 1px solid #2a2a2a;
-			border-radius: 12px;
+			grid-column: span 6;
 		}
-		.audience-card h3 {
+
+		.audience-header {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			margin-bottom: 20px;
+		}
+
+		.audience-icon {
+			width: 40px;
+			height: 40px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: rgba(13, 148, 136, 0.12);
+			border-radius: var(--radius-md);
+			color: var(--color-primary-light);
+		}
+
+		.audience-icon svg { width: 20px; height: 20px; }
+
+		.audience-header h3 {
 			font-size: 18px;
 			font-weight: 600;
-			margin-bottom: 16px;
-			display: flex;
-			align-items: center;
-			gap: 10px;
 		}
-		.audience-card ul {
+
+		.audience-list {
 			list-style: none;
-			color: #a1a1a1;
-			font-size: 14px;
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
 		}
-		.audience-card li {
-			padding: 8px 0;
+
+		.audience-list li {
 			display: flex;
 			align-items: flex-start;
-			gap: 10px;
+			gap: 12px;
+			font-size: 14px;
+			color: var(--color-text-secondary);
 		}
-		.audience-card li svg {
+
+		.audience-list li svg {
+			width: 18px;
+			height: 18px;
+			color: var(--color-primary);
 			flex-shrink: 0;
-			margin-top: 2px;
-			color: #0D9488;
+			margin-top: 1px;
 		}
-		.blog-cta {
-			max-width: 800px;
-			margin: 0 auto;
-			padding: 40px 48px 80px;
-			text-align: center;
+
+		/* Blog CTA */
+		.blog-card {
+			grid-column: span 12;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 24px 32px;
+			background: linear-gradient(135deg, rgba(13, 148, 136, 0.08) 0%, transparent 100%);
 		}
-		.blog-cta a {
-			display: inline-flex;
+
+		.blog-card:hover { border-color: var(--color-primary); }
+
+		.blog-content {
+			display: flex;
+			align-items: center;
+			gap: 16px;
+		}
+
+		.blog-icon {
+			width: 44px;
+			height: 44px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: rgba(13, 148, 136, 0.15);
+			border-radius: var(--radius-md);
+			color: var(--color-primary-light);
+		}
+
+		.blog-icon svg { width: 22px; height: 22px; }
+
+		.blog-text h4 {
+			font-size: 15px;
+			font-weight: 600;
+			margin-bottom: 2px;
+		}
+
+		.blog-text p {
+			font-size: 13px;
+			color: var(--color-text-secondary);
+		}
+
+		.blog-link {
+			display: flex;
 			align-items: center;
 			gap: 8px;
-			color: #14B8A6;
-			font-size: 15px;
+			color: var(--color-primary-light);
+			font-size: 14px;
 			font-weight: 500;
+			transition: gap var(--transition);
 		}
-		.blog-cta a:hover { text-decoration: underline; }
+
+		.blog-link:hover { gap: 12px; }
+		.blog-link svg { width: 16px; height: 16px; }
+
+		/* Footer */
 		.footer {
-			padding: 32px 48px;
-			text-align: center;
-			color: #666;
+			max-width: 1280px;
+			margin: 0 auto;
+			padding: 24px 32px;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			border-top: 1px solid var(--color-border);
+			color: var(--color-text-tertiary);
 			font-size: 13px;
-			border-top: 1px solid #1f1f1f;
 		}
-		.footer a { color: #a1a1a1; }
-		.footer a:hover { color: #FAFAFA; }
+
+		.footer a {
+			color: var(--color-text-secondary);
+			transition: color var(--transition);
+		}
+
+		.footer a:hover { color: var(--color-text); }
+
+		.footer-links {
+			display: flex;
+			gap: 24px;
+		}
+
+		/* Mobile nav */
+		.mobile-menu-btn {
+			display: none;
+			align-items: center;
+			justify-content: center;
+			width: 36px;
+			height: 36px;
+			background: transparent;
+			border: none;
+			cursor: pointer;
+			color: var(--color-text);
+		}
+
+		.mobile-menu-btn svg { width: 24px; height: 24px; }
+
+		/* Responsive */
+		@media (max-width: 1024px) {
+			.hero-card { grid-column: span 12; }
+			.quickstart-card { grid-column: span 12; }
+			.stats-card { grid-column: span 4; }
+			.capability-card { grid-column: span 4; }
+			.prompts-card { grid-column: span 12; }
+			.audience-card { grid-column: span 6; }
+			h1 { font-size: 38px; }
+		}
+
 		@media (max-width: 768px) {
-			.header { padding: 16px 24px; }
+			.header { padding: 12px 20px; }
 			.nav { display: none; }
-			.hero { padding: 60px 24px 40px; }
+			.mobile-menu-btn { display: flex; }
+			.main { padding: 20px; }
+			.bento-grid { gap: 12px; }
+			.bento-card { padding: 20px; }
+			.hero-card { padding: 24px; }
+			.stats-card { grid-column: span 6; }
+			.capability-card { grid-column: span 6; }
+			.audience-card { grid-column: span 12; }
 			h1 { font-size: 32px; }
-			.subtitle { font-size: 16px; }
-			.features { padding: 40px 24px; }
-			.features-grid { grid-template-columns: 1fr; }
-			.audience { grid-template-columns: 1fr; padding: 40px 24px; }
-			.blog-cta { padding: 24px; }
+			.hero-subtitle { font-size: 15px; }
+			.stat-number { font-size: 44px; }
+			.blog-card {
+				flex-direction: column;
+				gap: 16px;
+				text-align: center;
+			}
+			.blog-content { flex-direction: column; }
+			.footer {
+				flex-direction: column;
+				gap: 16px;
+				text-align: center;
+			}
+		}
+
+		@media (max-width: 480px) {
+			.stats-card { grid-column: span 12; }
+			.capability-card { grid-column: span 12; }
+			.cta-row { flex-direction: column; }
+			.btn { justify-content: center; }
 		}
 	</style>
 </head>
 <body>
 	<header class="header">
 		<a href="/" class="logo">
-			<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP">
+			<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP" class="logo-dark">
+			<img src="https://docs.figma-console-mcp.southleft.com/logo/light.svg" alt="Figma Console MCP" class="logo-light" style="display: none;">
 		</a>
-		<nav class="nav">
+		<div class="header-right">
+			<nav class="nav">
+				<a href="https://docs.figma-console-mcp.southleft.com">Documentation</a>
+				<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
+				<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
+				<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">Blog</a>
+			</nav>
+			<button class="theme-toggle" aria-label="Toggle theme">
+				<svg class="moon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+				<svg class="sun" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+			</button>
+			<button class="mobile-menu-btn" aria-label="Menu">
+				<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+			</button>
+		</div>
+	</header>
+
+	<main class="main">
+		<div class="bento-grid">
+			<!-- Hero -->
+			<div class="bento-card hero-card">
+				<div class="badge">
+					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+					Model Context Protocol
+				</div>
+				<h1>Bridge AI to your <span class="highlight">design system</span></h1>
+				<p class="hero-subtitle">Connect Claude, Cursor, and other AI assistants directly to Figma. Extract tokens, generate component specs, and create designs programmatically.</p>
+				<div class="cta-row">
+					<a href="https://docs.figma-console-mcp.southleft.com/setup" class="btn btn-primary">
+						Get Started
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+					</a>
+					<a href="https://github.com/southleft/figma-console-mcp" class="btn btn-secondary">
+						<svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+						View on GitHub
+					</a>
+				</div>
+			</div>
+
+			<!-- Quick Start -->
+			<div class="bento-card quickstart-card">
+				<div class="quickstart-label">Quick Start</div>
+				<div class="install-box">
+					<span class="prompt">$</span>
+					<code id="install-cmd">npx figma-console-mcp init</code>
+					<button class="copy-btn" onclick="copyInstallCmd()" aria-label="Copy command">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+					</button>
+				</div>
+				<div class="steps">
+					<div class="step">
+						<span class="step-num">1</span>
+						<div class="step-content">
+							<h4>Run the installer</h4>
+							<p>Auto-configures Claude Desktop or Cursor</p>
+						</div>
+					</div>
+					<div class="step">
+						<span class="step-num">2</span>
+						<div class="step-content">
+							<h4>Authenticate with Figma</h4>
+							<p>OAuth connects your Figma account securely</p>
+						</div>
+					</div>
+					<div class="step">
+						<span class="step-num">3</span>
+						<div class="step-content">
+							<h4>Start building</h4>
+							<p>Ask your AI to extract tokens or specs</p>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Stats -->
+			<div class="bento-card stats-card">
+				<div class="stat-number">36+</div>
+				<div class="stat-label">MCP Tools</div>
+			</div>
+
+			<!-- Capabilities -->
+			<div class="bento-card capability-card">
+				<div class="capability-icon">
+					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
+				</div>
+				<h3>Design Tokens</h3>
+				<p>Extract variables, colors, and typography. Export as CSS, Tailwind, or Sass.</p>
+			</div>
+
+			<div class="bento-card capability-card">
+				<div class="capability-icon">
+					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+				</div>
+				<h3>Component Specs</h3>
+				<p>Get layout, spacing, and property data for any Figma component.</p>
+			</div>
+
+			<div class="bento-card capability-card">
+				<div class="capability-icon">
+					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+				</div>
+				<h3>Programmatic Design</h3>
+				<p>Create variables and component variants through natural language.</p>
+			</div>
+
+			<div class="bento-card capability-card">
+				<div class="capability-icon">
+					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+				</div>
+				<h3>Plugin Debugging</h3>
+				<p>Capture real-time console logs from Figma plugins.</p>
+			</div>
+
+			<!-- Example Prompts -->
+			<div class="bento-card prompts-card">
+				<div class="prompts-header">
+					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+					<h3>Try these prompts</h3>
+				</div>
+				<div class="prompt-list">
+					<div class="prompt-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+						<span>"Extract all color variables as Tailwind config"</span>
+					</div>
+					<div class="prompt-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+						<span>"Get the Button component specs from my design system"</span>
+					</div>
+					<div class="prompt-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+						<span>"Create a dark mode for my color variables"</span>
+					</div>
+					<div class="prompt-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+						<span>"Show me console logs from my Figma plugin"</span>
+					</div>
+				</div>
+			</div>
+
+			<!-- For Designers -->
+			<div class="bento-card audience-card">
+				<div class="audience-header">
+					<div class="audience-icon">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+					</div>
+					<h3>For Designers</h3>
+				</div>
+				<ul class="audience-list">
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Generate design token documentation automatically</span>
+					</li>
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Create component variants with AI assistance</span>
+					</li>
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Debug Figma plugins without leaving your workflow</span>
+					</li>
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Maintain consistency across design system files</span>
+					</li>
+				</ul>
+			</div>
+
+			<!-- For Engineers -->
+			<div class="bento-card audience-card">
+				<div class="audience-header">
+					<div class="audience-icon">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+					</div>
+					<h3>For Engineers</h3>
+				</div>
+				<ul class="audience-list">
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Extract tokens as CSS, Tailwind, or Sass variables</span>
+					</li>
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Get accurate component specs for implementation</span>
+					</li>
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Query your design system via MCP-enabled AI tools</span>
+					</li>
+					<li>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+						<span>Keep code in sync with design decisions</span>
+					</li>
+				</ul>
+			</div>
+
+			<!-- Blog CTA -->
+			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/" class="bento-card blog-card">
+				<div class="blog-content">
+					<div class="blog-icon">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+					</div>
+					<div class="blog-text">
+						<h4>Read the announcement</h4>
+						<p>AI-Powered Design System Management with Figma Console MCP</p>
+					</div>
+				</div>
+				<span class="blog-link">
+					Read article
+					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+				</span>
+			</a>
+		</div>
+	</main>
+
+	<footer class="footer">
+		<p>MIT License. Built by <a href="https://southleft.com">Southleft</a></p>
+		<div class="footer-links">
 			<a href="https://docs.figma-console-mcp.southleft.com">Docs</a>
 			<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
 			<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
-			<a href="https://docs.figma-console-mcp.southleft.com/setup" class="nav-cta">Get Started</a>
-		</nav>
-	</header>
-	<main>
-		<section class="hero">
-			<div class="badge">Model Context Protocol</div>
-			<h1>Bridge AI to your <span class="highlight">design system</span></h1>
-			<p class="subtitle">Connect Claude, Cursor, and other AI assistants directly to Figma. Extract tokens, get accurate component specs, and create designs programmatically.</p>
-			<div class="cta-group">
-				<a href="https://docs.figma-console-mcp.southleft.com/setup" class="cta">
-					Read the Docs
-					<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-				</a>
-				<a href="https://github.com/southleft/figma-console-mcp" class="cta cta-secondary">
-					<svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-					View on GitHub
-				</a>
-			</div>
-			<div class="install-cmd">
-				<code>npx figma-console-mcp init</code>
-			</div>
-		</section>
-		<section class="features">
-			<div class="features-heading">
-				<h2>What it does</h2>
-				<p>36+ MCP tools for design system management and Figma integration</p>
-			</div>
-			<div class="features-grid">
-				<div class="feature">
-					<div class="feature-icon">
-						<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
-					</div>
-					<h3>Design Token Extraction</h3>
-					<p>Pull variables, colors, typography, and spacing from Figma. Export as CSS custom properties, Tailwind config, or Sass variables.</p>
-				</div>
-				<div class="feature">
-					<div class="feature-icon">
-						<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-					</div>
-					<h3>Component Specs</h3>
-					<p>Get layout, spacing, and property data for any component. AI receives structured specs, not just screenshots.</p>
-				</div>
-				<div class="feature">
-					<div class="feature-icon">
-						<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-					</div>
-					<h3>Programmatic Design</h3>
-					<p>Create variables, build component variants, and organize designs through natural language and the Figma Plugin API.</p>
-				</div>
-				<div class="feature">
-					<div class="feature-icon">
-						<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
-					</div>
-					<h3>Plugin Debugging</h3>
-					<p>Capture real-time console logs from Figma plugins. Debug faster with AI-assisted error analysis.</p>
-				</div>
-			</div>
-		</section>
-		<section class="audience">
-			<div class="audience-card">
-				<h3>
-					<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg>
-					For Product Designers
-				</h3>
-				<ul>
-					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Generate design token documentation automatically</li>
-					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Create component variants with AI assistance</li>
-					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Debug Figma plugins without leaving your workflow</li>
-					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Maintain consistency across design system files</li>
-				</ul>
-			</div>
-			<div class="audience-card">
-				<h3>
-					<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
-					For Product Engineers
-				</h3>
-				<ul>
-					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Extract tokens as CSS, Tailwind, or Sass</li>
-					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Get accurate component specs for implementation</li>
-					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Query design system via MCP-enabled AI tools</li>
-					<li><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Keep code in sync with design decisions</li>
-				</ul>
-			</div>
-		</section>
-		<section class="blog-cta">
-			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">
-				Read the announcement: AI-Powered Design System Management
-				<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-			</a>
-		</section>
-	</main>
-	<footer class="footer">
-		<p>MIT License · Built by <a href="https://southleft.com">Southleft</a></p>
+		</div>
 	</footer>
+
+	<script>
+		// Theme toggle with system preference detection
+		(function() {
+			const html = document.documentElement;
+			const toggle = document.querySelector('.theme-toggle');
+			const logoDark = document.querySelector('.logo-dark');
+			const logoLight = document.querySelector('.logo-light');
+
+			function getSystemTheme() {
+				return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+			}
+
+			function getStoredTheme() {
+				return localStorage.getItem('theme');
+			}
+
+			function setTheme(theme) {
+				html.setAttribute('data-theme', theme);
+				localStorage.setItem('theme', theme);
+				updateLogos(theme);
+			}
+
+			function updateLogos(theme) {
+				if (theme === 'light') {
+					logoDark.style.display = 'none';
+					logoLight.style.display = 'block';
+				} else {
+					logoDark.style.display = 'block';
+					logoLight.style.display = 'none';
+				}
+			}
+
+			// Initialize theme
+			const storedTheme = getStoredTheme();
+			const initialTheme = storedTheme || getSystemTheme();
+			setTheme(initialTheme);
+
+			// Listen for system theme changes
+			window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+				if (!getStoredTheme()) {
+					setTheme(e.matches ? 'light' : 'dark');
+				}
+			});
+
+			// Toggle button
+			toggle.addEventListener('click', () => {
+				const currentTheme = html.getAttribute('data-theme');
+				setTheme(currentTheme === 'light' ? 'dark' : 'light');
+			});
+		})();
+
+		// Copy install command
+		function copyInstallCmd() {
+			const cmd = document.getElementById('install-cmd').textContent;
+			navigator.clipboard.writeText(cmd).then(() => {
+				const btn = document.querySelector('.copy-btn');
+				btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>';
+				setTimeout(() => {
+					btn.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+				}, 2000);
+			});
+		}
+	</script>
 </body>
 </html>`,
 			{
