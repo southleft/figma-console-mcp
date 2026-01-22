@@ -188,7 +188,7 @@ Getting connected takes about **2 minutes** with our recommended setup.
 **First time using design tools?** The AI will automatically open a browser window for Figma authorization. Just click "Allow" once and you're connected.
 </Note>
 
-<Card title="Full Setup Guide" icon="book-open" href="/SETUP">
+<Card title="Full Setup Guide" icon="book-open" href="/setup">
   Detailed instructions for Claude Desktop, Claude Code, Cursor, and other AI clients.
 </Card>
 
@@ -259,7 +259,7 @@ Figma Console MCP offers two ways to connect:
 
 **Start with Remote Mode.** It's the fastest way to get value. If you need write capabilities or plugin debugging, you can upgrade to Local Mode later.
 
-<Card title="Compare Modes in Detail" icon="code-compare" href="/MODE_COMPARISON">
+<Card title="Compare Modes in Detail" icon="code-compare" href="/mode-comparison">
   Understand the technical differences and choose the right setup.
 </Card>
 
@@ -294,13 +294,13 @@ Figma Console MCP offers two ways to connect:
 ## Next Steps
 
 <Columns cols={3}>
-  <Card title="Setup Guide" icon="rocket" href="/SETUP">
+  <Card title="Setup Guide" icon="rocket" href="/setup">
     Connect your AI assistant in minutes
   </Card>
-  <Card title="Use Cases" icon="lightbulb" href="/USE_CASES">
+  <Card title="Use Cases" icon="lightbulb" href="/use-cases">
     Real-world examples and workflows
   </Card>
-  <Card title="All Tools" icon="wrench" href="/TOOLS">
+  <Card title="All Tools" icon="wrench" href="/tools">
     Complete reference for 36+ tools
   </Card>
 </Columns>
