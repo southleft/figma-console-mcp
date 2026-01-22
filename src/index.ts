@@ -857,6 +857,13 @@ export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url);
 
+		// Redirect /docs to subdomain
+		if (url.pathname === "/docs" || url.pathname.startsWith("/docs/")) {
+			const newPath = url.pathname.replace(/^\/docs\/?/, "/");
+			const redirectUrl = `https://docs.figma-console-mcp.southleft.com${newPath}${url.search}`;
+			return Response.redirect(redirectUrl, 301);
+		}
+
 		// SSE endpoint for remote MCP clients
 		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
 			return FigmaConsoleMCPv3.serveSSE("/sse").fetch(request, env, ctx);
