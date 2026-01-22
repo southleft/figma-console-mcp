@@ -1363,9 +1363,10 @@ export default {
 			display: inline-block;
 			width: fit-content;
 			color: var(--color-text-secondary);
-			font-size: 13px;
-			font-weight: 500;
-			letter-spacing: 0.02em;
+			font-size: 11px;
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
 			margin-bottom: 20px;
 		}
 
