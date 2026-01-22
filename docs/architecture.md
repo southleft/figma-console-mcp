@@ -17,31 +17,17 @@ Figma Console MCP provides AI assistants with real-time access to Figma for debu
 
 ```mermaid
 flowchart TB
-    subgraph AI["AI Coding Assistant"]
-        direction TB
-        A1["Claude Desktop, Cursor, etc."]
-    end
+    AI["🤖 AI Coding Assistant<br/>(Claude Desktop, Cursor, etc.)"]
 
-    subgraph CF["Cloudflare Workers (Remote Server)"]
-        direction TB
-        subgraph MCP["MCP Protocol Layer (SSE Transport)"]
-            M1["OAuth token management"]
-            M2["Request routing"]
-        end
-        subgraph REST["Figma REST API Client"]
-            R1["Design system extraction"]
-            R2["Component/style retrieval"]
-            R3["File structure queries"]
-        end
+    AI -->|"SSE Connection"| CF
+
+    subgraph CF["Cloudflare Workers"]
+        MCP["MCP Protocol Layer<br/>• OAuth token management<br/>• Request routing"]
+        REST["Figma REST API Client<br/>• Design system extraction<br/>• Component/style retrieval"]
         MCP --> REST
     end
 
-    subgraph FIG["Figma REST API"]
-        F1["api.figma.com"]
-    end
-
-    AI -->|"SSE Connection"| CF
-    CF -->|"HTTPS"| FIG
+    CF -->|"HTTPS"| FIG["Figma REST API<br/>(api.figma.com)"]
 ```
 
 **Capabilities:**
@@ -60,59 +46,29 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph AI["AI Coding Assistant"]
-        A1["Claude Desktop, Cursor, etc."]
-    end
-
-    subgraph LOCAL["Local MCP Server (Node.js)"]
-        subgraph MCPL["MCP Protocol Layer (stdio)"]
-            ML1["Tool registration & dispatch"]
-            ML2["Request/response handling"]
-        end
-        subgraph CLIENTS["Client Modules"]
-            subgraph RESTC["Figma REST API"]
-                RC1["File queries"]
-                RC2["Component data"]
-                RC3["Style extraction"]
-            end
-            subgraph BRIDGE["Desktop Bridge Client"]
-                BC1["Plugin API execution"]
-                BC2["Variable management"]
-                BC3["Design creation"]
-            end
-        end
-        subgraph PROTO["Protocol Clients"]
-            subgraph CDP["Chrome DevTools Protocol"]
-                CD1["Console capture"]
-                CD2["Screenshot"]
-            end
-            subgraph WS["WebSocket Connection"]
-                WS1["localhost:9222"]
-            end
-        end
-        MCPL --> CLIENTS
-        CLIENTS --> PROTO
-    end
-
-    subgraph FIGMA["Figma Desktop Application"]
-        direction TB
-        FD1["--remote-debugging-port=9222"]
-        subgraph PLUGIN["Desktop Bridge Plugin"]
-            subgraph RUNTIME["Plugin Runtime (Figma Plugin API)"]
-                PR1["figma.createFrame()"]
-                PR2["figma.variables.*"]
-                PR3["Full Plugin API access"]
-            end
-        end
-        subgraph FILE["User's Design File"]
-            UF1["Components, frames, styles"]
-            UF2["Variables and collections"]
-        end
-    end
+    AI["🤖 AI Coding Assistant<br/>(Claude Desktop, Cursor, etc.)"]
 
     AI -->|"MCP Protocol (stdio)"| LOCAL
-    CDP -->|"CDP WebSocket"| FIGMA
-    WS -->|"Plugin Message"| FIGMA
+
+    subgraph LOCAL["Local MCP Server (Node.js)"]
+        MCP["MCP Protocol Layer<br/>• Tool registration & dispatch<br/>• Request/response handling"]
+        REST["REST API Client"]
+        BRIDGE["Desktop Bridge Client"]
+        CDP["Chrome DevTools Protocol"]
+
+        MCP --> REST
+        MCP --> BRIDGE
+        MCP --> CDP
+    end
+
+    REST -->|"HTTPS"| FIGAPI["Figma REST API"]
+    CDP -->|"WebSocket :9222"| FIGMA
+    BRIDGE -->|"Plugin Messages"| FIGMA
+
+    subgraph FIGMA["Figma Desktop"]
+        PLUGIN["Desktop Bridge Plugin<br/>• figma.createFrame()<br/>• figma.variables.*<br/>• Full Plugin API"]
+        FILE["User's Design File"]
+    end
 ```
 
 **Capabilities:**
@@ -158,40 +114,21 @@ The Desktop Bridge is a Figma plugin that runs inside Figma Desktop and provides
 **Architecture:**
 
 ```mermaid
-flowchart TB
+flowchart LR
     subgraph BRIDGE["Desktop Bridge Plugin"]
-        subgraph HANDLER["Message Handler"]
-            H1["Receives commands from MCP server"]
-            H2["Routes to appropriate handler"]
-            H3["Returns results via postMessage"]
-        end
+        direction TB
+        HANDLER["Message Handler"]
+        EXEC["Execute Handler"]
+        VARS["Variables Handler"]
+        COMP["Components Handler"]
+        API["Figma Plugin API"]
 
-        subgraph COMMANDS["Command Handlers"]
-            subgraph EXEC["Execute"]
-                E1["Run code"]
-                E2["Return results"]
-            end
-            subgraph VARS["Variables"]
-                V1["CRUD ops"]
-                V2["Modes"]
-                V3["Bindings"]
-            end
-            subgraph COMP["Components"]
-                C1["Search"]
-                C2["Instantiate"]
-                C3["Arrange"]
-            end
-        end
-
-        subgraph API["Figma Plugin API Access"]
-            A1["figma.currentPage"]
-            A2["figma.variables.*"]
-            A3["figma.createFrame(), figma.createComponent()"]
-            A4["Full async API support"]
-        end
-
-        HANDLER --> COMMANDS
-        COMMANDS --> API
+        HANDLER --> EXEC
+        HANDLER --> VARS
+        HANDLER --> COMP
+        EXEC --> API
+        VARS --> API
+        COMP --> API
     end
 ```
 
@@ -309,7 +246,7 @@ sequenceDiagram
     participant Figma as Figma Variables API
 
     User->>AI: "Create a color variable for primary brand"
-    AI->>MCP: figma_create_variable({<br/>name: "colors/primary",<br/>collectionId: "...",<br/>resolvedType: "COLOR",<br/>valuesByMode: { "1:0": "#3B82F6" }})
+    AI->>MCP: figma_create_variable()
     MCP->>Bridge: Send command
     Bridge->>Figma: figma.variables.createVariable(...)
     Bridge->>Figma: variable.setValueForMode(...)
