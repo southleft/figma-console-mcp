@@ -1196,6 +1196,22 @@ export default {
 	<title>Figma Console MCP - The Most Comprehensive MCP Server for Figma</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
 	<meta name="description" content="Turn your Figma design system into a living API. 40+ tools give AI assistants deep access to design tokens, component specs, variables, and programmatic design creation.">
+
+	<!-- Open Graph -->
+	<meta property="og:type" content="website">
+	<meta property="og:url" content="https://figma-console-mcp.southleft.com">
+	<meta property="og:title" content="Figma Console MCP - Turn Your Design System Into a Living API">
+	<meta property="og:description" content="The most comprehensive MCP server for Figma. 40+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
+	<meta property="og:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
+	<meta property="og:image:width" content="1200">
+	<meta property="og:image:height" content="630">
+
+	<!-- Twitter -->
+	<meta name="twitter:card" content="summary_large_image">
+	<meta name="twitter:title" content="Figma Console MCP - Turn Your Design System Into a Living API">
+	<meta name="twitter:description" content="The most comprehensive MCP server for Figma. 40+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
+	<meta name="twitter:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
+
 	<meta name="theme-color" content="#0D9488">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
