@@ -271,7 +271,7 @@ figma_reload_plugin({
 
 ### `figma_get_variables`
 
-Extract design tokens/variables from a Figma file.
+Extract design tokens/variables from a Figma file. Supports both main files and branches.
 
 **Usage:**
 ```javascript
@@ -285,13 +285,40 @@ figma_get_variables({
 })
 ```
 
+**Branch Support:**
+
+The tool automatically detects and handles Figma branch URLs in both formats:
+
+```javascript
+// Path-based branch URL
+figma_get_variables({
+  fileUrl: 'https://figma.com/design/abc123/branch/xyz789/My-File'
+})
+
+// Query-based branch URL
+figma_get_variables({
+  fileUrl: 'https://figma.com/design/abc123/My-File?branch-id=xyz789'
+})
+```
+
+**Auto-Detection:** If you've navigated to a file using `figma_navigate`, you can omit `fileUrl` entirely:
+
+```javascript
+// First navigate to the branch
+figma_navigate({ url: 'https://figma.com/design/abc123/branch/xyz789/My-File' })
+
+// Then get variables from the current file
+figma_get_variables({ refreshCache: true })
+```
+
 **Parameters:**
-- `fileUrl` (optional): Figma file URL (uses current if navigated)
+- `fileUrl` (optional): Figma file URL - supports main files and branches (uses current if navigated)
 - `includePublished` (optional): Include published variables (default: true)
 - `enrich` (optional): Add exports and usage analysis (default: false)
 - `export_formats` (optional): Code formats to generate
 - `include_usage` (optional): Include usage in styles/components
 - `include_dependencies` (optional): Include dependency graph
+- `refreshCache` (optional): Force fresh data fetch, bypassing cache
 
 **Returns:**
 - Variable collections
@@ -299,6 +326,7 @@ figma_get_variables({
 - Summary statistics
 - Export code (if `enrich: true`)
 - Usage information (if `include_usage: true`)
+- Branch info (when using branch URL): `fileKey`, `branchId`, `isBranch`
 
 **Note:** Figma Variables API requires Enterprise plan. If unavailable, the tool automatically falls back to Styles API or console-based extraction.
 
