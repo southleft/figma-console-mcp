@@ -206,3 +206,7 @@ Temporary Items
 
 # Playwright MCP temp files
 .playwright-mcp/
+
+# VS Code MCP config (contains tokens)
+.vscode/mcp.json
+.env.mcp
