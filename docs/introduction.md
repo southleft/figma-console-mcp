@@ -11,7 +11,7 @@ New to AI-powered design tools? This guide explains everything you need to knowâ
 
 ## What is an MCP?
 
-**MCP** stands for **Model Context Protocol**. Think of it as a universal translator that lets AI assistants (like Claude, ChatGPT, or Cursor) communicate with external tools and services.
+**MCP** stands for **Model Context Protocol**. Think of it as a universal translator that lets AI assistants (like Claude, GitHub Copilot, Cursor, or ChatGPT) communicate with external tools and services.
 
 Without MCP, AI assistants are limited to what they already know. With MCP, they can:
 - **Connect** to tools like Figma, GitHub, or databases
@@ -281,7 +281,7 @@ Figma Console MCP offers two ways to connect:
   </Accordion>
 
   <Accordion title="What AI assistants work with this?">
-    Any MCP-compatible client: Claude Desktop, Claude Code, Cursor, Windsurf, Zed, and others. If your AI tool supports MCP servers, it works with Figma Console MCP.
+    Any MCP-compatible client: Claude Desktop, Claude Code, GitHub Copilot (VS Code 1.102+), Cursor, Windsurf, Zed, and others. If your AI tool supports MCP servers, it works with Figma Console MCP.
   </Accordion>
 
   <Accordion title="Is this free?">
