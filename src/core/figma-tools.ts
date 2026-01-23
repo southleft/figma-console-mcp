@@ -5,8 +5,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { FigmaAPI } from "./figma-api.js";
-import { extractFileKey, formatVariables, formatComponentData } from "./figma-api.js";
+import type { FigmaAPI, FigmaUrlInfo } from "./figma-api.js";
+import { extractFileKey, extractFigmaUrlInfo, formatVariables, formatComponentData, withTimeout } from "./figma-api.js";
 import { createChildLogger } from "./logger.js";
 import { EnrichmentService } from "./enrichment/index.js";
 import type { EnrichmentOptions } from "./types/enriched.js";
@@ -1100,7 +1100,7 @@ export function registerFigmaAPITools(
 			pageSize,
 			resolveAliases
 		}) => {
-			// Extract fileKey outside try block so it's available in catch block
+			// Extract fileKey and optional branchId outside try block so they're available in catch block
 			const url = fileUrl || getCurrentUrl();
 			if (!url) {
 				return {
@@ -1121,8 +1121,9 @@ export function registerFigmaAPITools(
 				};
 			}
 
-			const fileKey = extractFileKey(url);
-			if (!fileKey) {
+			// Use extractFigmaUrlInfo to get fileKey, branchId, and nodeId
+			const urlInfo = extractFigmaUrlInfo(url);
+			if (!urlInfo) {
 				return {
 					content: [
 						{
@@ -1139,6 +1140,16 @@ export function registerFigmaAPITools(
 					],
 					isError: true,
 				};
+			}
+
+			// For branch URLs, the branchId IS the file key to use for API calls
+			// Figma branch URLs contain the branch key directly in the path
+			const fileKey = urlInfo.branchId || urlInfo.fileKey;
+			const mainFileKey = urlInfo.fileKey;
+			const branchId = urlInfo.branchId;
+
+			if (branchId) {
+				logger.info({ mainFileKey, branchId, effectiveFileKey: fileKey }, 'Branch URL detected, using branch key for API calls');
 			}
 
 			try {
@@ -1494,7 +1505,13 @@ export function registerFigmaAPITools(
 					try {
 						logger.info({ fileKey, includePublished, verbosity, enrich }, "Fetching variables via REST API (priority: token detected)");
 						const api = await getFigmaAPI();
-						const { local, published } = await api.getAllVariables(fileKey);
+
+						// Wrap API call with timeout to prevent indefinite hangs (30s timeout)
+						const { local, published } = await withTimeout(
+							api.getAllVariables(fileKey),
+							30000,
+							'Figma Variables API'
+						);
 
 						let localFormatted = formatVariables(local);
 						let publishedFormatted = includePublished
@@ -1777,7 +1794,21 @@ export function registerFigmaAPITools(
 						});
 					} catch (restError) {
 						const errorMessage = restError instanceof Error ? restError.message : String(restError);
-						logger.warn({ error: errorMessage }, "REST API failed, will try Desktop Bridge fallback");
+
+						// Detect specific error types for better logging and handling
+						const isTimeout = errorMessage.includes('timed out');
+						const isRateLimit = errorMessage.includes('429') || errorMessage.toLowerCase().includes('rate limit');
+						const isAuthError = errorMessage.includes('403') || errorMessage.includes('401');
+
+						if (isTimeout) {
+							logger.warn({ error: errorMessage, fileKey }, "REST API timed out after 30s, falling back to Desktop Bridge");
+						} else if (isRateLimit) {
+							logger.warn({ error: errorMessage, fileKey }, "REST API rate limited (429), falling back to Desktop Bridge");
+						} else if (isAuthError) {
+							logger.warn({ error: errorMessage, fileKey }, "REST API auth error, check FIGMA_ACCESS_TOKEN validity");
+						} else {
+							logger.warn({ error: errorMessage, fileKey }, "REST API failed, will try Desktop Bridge fallback");
+						}
 						// Don't throw - fall through to Desktop Bridge
 					}
 				}

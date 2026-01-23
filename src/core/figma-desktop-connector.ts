@@ -123,6 +123,12 @@ export class FigmaDesktopConnector {
       // Try to find plugin UI iframe with variables data
       for (const frame of frames) {
         try {
+          // Check if frame is still attached before accessing it
+          if (frame.isDetached()) {
+            logger.debug('Skipping detached frame');
+            continue;
+          }
+
           const frameUrl = frame.url();
 
           await this.page.evaluate((url) => {
@@ -161,11 +167,30 @@ export class FigmaDesktopConnector {
             return result;
           }
         } catch (frameError) {
-          await this.page.evaluate((url, err) => {
-            console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
-          }, frame.url(), frameError instanceof Error ? frameError.message : String(frameError));
+          const errorMsg = frameError instanceof Error ? frameError.message : String(frameError);
+          const isDetachedError = errorMsg.includes('detached') || errorMsg.includes('Execution context was destroyed');
 
-          logger.debug({ error: frameError, frameUrl: frame.url() }, 'Frame check failed, trying next');
+          // Safely get frame URL (may fail if frame is detached)
+          let safeFrameUrl = 'unknown';
+          try {
+            safeFrameUrl = frame.url();
+          } catch {
+            safeFrameUrl = '(detached)';
+          }
+
+          if (isDetachedError) {
+            logger.debug({ frameUrl: safeFrameUrl }, 'Frame was detached during variables check, trying next');
+          } else {
+            // Only log to browser console if we can (page may still be accessible)
+            try {
+              await this.page.evaluate((url, err) => {
+                console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
+              }, safeFrameUrl, errorMsg);
+            } catch {
+              // Page also unavailable, just log locally
+            }
+            logger.debug({ error: frameError, frameUrl: safeFrameUrl }, 'Frame check failed, trying next');
+          }
           continue;
         }
       }
@@ -209,6 +234,12 @@ export class FigmaDesktopConnector {
       // Try to find plugin UI iframe with requestComponentData function
       for (const frame of frames) {
         try {
+          // Check if frame is still attached before accessing it
+          if (frame.isDetached()) {
+            logger.debug('Skipping detached frame');
+            continue;
+          }
+
           const frameUrl = frame.url();
 
           await this.page.evaluate((url) => {
@@ -249,11 +280,30 @@ export class FigmaDesktopConnector {
             return result;
           }
         } catch (frameError) {
-          await this.page.evaluate((url, err) => {
-            console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
-          }, frame.url(), frameError instanceof Error ? frameError.message : String(frameError));
+          const errorMsg = frameError instanceof Error ? frameError.message : String(frameError);
+          const isDetachedError = errorMsg.includes('detached') || errorMsg.includes('Execution context was destroyed');
 
-          logger.debug({ error: frameError, frameUrl: frame.url() }, 'Frame check failed, trying next');
+          // Safely get frame URL (may fail if frame is detached)
+          let safeFrameUrl = 'unknown';
+          try {
+            safeFrameUrl = frame.url();
+          } catch {
+            safeFrameUrl = '(detached)';
+          }
+
+          if (isDetachedError) {
+            logger.debug({ frameUrl: safeFrameUrl }, 'Frame was detached during component check, trying next');
+          } else {
+            // Only log to browser console if we can (page may still be accessible)
+            try {
+              await this.page.evaluate((url, err) => {
+                console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
+              }, safeFrameUrl, errorMsg);
+            } catch {
+              // Page also unavailable, just log locally
+            }
+            logger.debug({ error: frameError, frameUrl: safeFrameUrl }, 'Frame check failed, trying next');
+          }
           continue;
         }
       }
