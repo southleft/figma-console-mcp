@@ -210,3 +210,6 @@ Temporary Items
 # VS Code MCP config (contains tokens)
 .vscode/mcp.json
 .env.mcp
+
+# Internal notes and drafts
+.notes/
