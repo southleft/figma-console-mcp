@@ -69,6 +69,12 @@
         "oauth-setup",
         "self-hosting"
       ]
+    },
+    {
+      "group": "Project",
+      "pages": [
+        "changelog"
+      ]
     }
   ],
   "footerSocials": {
