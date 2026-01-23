@@ -41,6 +41,11 @@
       "name": "npm",
       "icon": "npm",
       "url": "https://www.npmjs.com/package/figma-console-mcp"
+    },
+    {
+      "name": "Changelog",
+      "icon": "clock-rotate-left",
+      "url": "https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md"
     }
   ],
   "navigation": [
@@ -68,12 +73,6 @@
         "reconstruction-format",
         "oauth-setup",
         "self-hosting"
-      ]
-    },
-    {
-      "group": "Project",
-      "pages": [
-        "changelog"
       ]
     }
   ],
