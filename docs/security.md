@@ -1,10 +1,7 @@
 ---
-title: Security
+title: Security & Privacy
 description: Security architecture, data handling, and compliance information
-icon: shield-check
 ---
-
-# Security
 
 Figma Console MCP is designed with security as a priority. The project is **fully open source** (MIT licensed), allowing complete code auditing by security teams.
 
