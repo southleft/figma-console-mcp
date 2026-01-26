@@ -70,6 +70,7 @@
       "pages": [
         "tools",
         "architecture",
+        "security",
         "reconstruction-format",
         "oauth-setup",
         "self-hosting"
