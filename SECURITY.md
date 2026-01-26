@@ -122,7 +122,7 @@ For maximum security, enterprises can:
 
 If you discover a security vulnerability, please report it responsibly:
 
-1. **Email**: security@southleft.com
+1. Open a [private security advisory](https://github.com/southleft/figma-console-mcp/security/advisories/new) on GitHub
 2. **Do not** open a public GitHub issue for security vulnerabilities
 3. Include steps to reproduce and potential impact
 4. We aim to respond within 48 hours
@@ -141,4 +141,4 @@ If you discover a security vulnerability, please report it responsibly:
 
 ## Questions?
 
-For security-related inquiries, contact security@southleft.com or open a discussion on [GitHub](https://github.com/southleft/figma-console-mcp/discussions).
+For security-related inquiries, open a [GitHub Discussion](https://github.com/southleft/figma-console-mcp/discussions) or use the [private security advisory](https://github.com/southleft/figma-console-mcp/security/advisories/new) feature for sensitive matters.

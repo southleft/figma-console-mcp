@@ -132,13 +132,15 @@ All network communication is limited to:
 
 ## Vulnerability Reporting
 
-<Note>
-**Do not** open public GitHub issues for security vulnerabilities.
-</Note>
+To report a security vulnerability:
 
-1. Email: security@southleft.com
+1. Open a [private security advisory](https://github.com/southleft/figma-console-mcp/security/advisories/new) on GitHub
 2. Include steps to reproduce and potential impact
 3. We aim to respond within 48 hours
+
+<Note>
+Please use GitHub's private security advisory feature rather than public issues.
+</Note>
 
 ## Security Checklist
 
@@ -155,4 +157,4 @@ All network communication is limited to:
 
 ## Questions?
 
-For security inquiries, contact security@southleft.com or open a [GitHub Discussion](https://github.com/southleft/figma-console-mcp/discussions).
+For security inquiries, open a [GitHub Discussion](https://github.com/southleft/figma-console-mcp/discussions) or use the [private security advisory](https://github.com/southleft/figma-console-mcp/security/advisories/new) feature for sensitive matters.
