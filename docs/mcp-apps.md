@@ -8,7 +8,7 @@ description: "Interactive UI experiences powered by the MCP Apps protocol extens
 MCP Apps are rich, interactive UI panels that render directly inside your AI assistant. Instead of receiving plain text responses, you get fully interactive applications — with search, filtering, click-to-copy, and real-time data refresh.
 
 <Note>
-**Experimental** — MCP Apps use the [ext-apps protocol extension](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps) and require Claude Desktop with MCP Apps support. The protocol may evolve.
+**Experimental** — MCP Apps use the [ext-apps protocol extension](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps) and require an MCP client with ext-apps support. The protocol may evolve.
 </Note>
 
 ---
