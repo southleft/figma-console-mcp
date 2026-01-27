@@ -3,8 +3,6 @@ title: "MCP Apps"
 description: "Interactive UI experiences powered by the MCP Apps protocol extension. Browse design tokens, inspect components, and more — rendered inline in your AI assistant."
 ---
 
-# MCP Apps
-
 MCP Apps are rich, interactive UI panels that render directly inside your AI assistant. Instead of receiving plain text responses, you get fully interactive applications — with search, filtering, click-to-copy, and real-time data refresh.
 
 <Note>
