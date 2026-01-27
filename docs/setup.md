@@ -138,6 +138,17 @@ npm run build:local
    - Replace `figd_XXX...` with your actual Figma token
    - Use forward slashes `/` even on Windows
 
+   **Optional — Enable MCP Apps:**
+
+   To enable interactive MCP Apps (like the Token Browser), add `ENABLE_MCP_APPS` to your env:
+   ```json
+   "env": {
+     "FIGMA_ACCESS_TOKEN": "figd_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+     "ENABLE_MCP_APPS": "true"
+   }
+   ```
+   MCP Apps require a client with [ext-apps protocol](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps) support. See the [MCP Apps guide](/mcp-apps) for details.
+
 3. **Save the file**
 
 #### 4. Restart Figma Desktop with Remote Debugging

@@ -520,7 +520,7 @@ The **Figma Desktop Bridge** plugin enables powerful capabilities:
 
 ## 🧩 MCP Apps (Experimental)
 
-Figma Console MCP includes support for **MCP Apps** — rich interactive UI experiences that render directly inside Claude Desktop. MCP Apps use the [MCP Apps protocol extension](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps) and the official [`@modelcontextprotocol/ext-apps`](https://www.npmjs.com/package/@modelcontextprotocol/ext-apps) SDK.
+Figma Console MCP includes support for **MCP Apps** — rich interactive UI experiences that render directly inside any MCP client that supports the [MCP Apps protocol extension](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps). Built with the official [`@modelcontextprotocol/ext-apps`](https://www.npmjs.com/package/@modelcontextprotocol/ext-apps) SDK.
 
 > **What are MCP Apps?** Traditional MCP tools return text or images to the AI. MCP Apps go further — they render interactive HTML interfaces inline in the chat, allowing users to browse, filter, and interact with data directly without consuming AI context.
 
@@ -556,7 +556,7 @@ MCP Apps are gated behind an environment variable. Add to your MCP config:
 }
 ```
 
-> **Note:** MCP Apps require Claude Desktop with MCP Apps support. This feature is experimental and the protocol may evolve.
+> **Note:** MCP Apps require an MCP client with [ext-apps protocol](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps) support (e.g. Claude Desktop). This feature is experimental and the protocol may evolve.
 
 ### Future MCP Apps Roadmap
 
