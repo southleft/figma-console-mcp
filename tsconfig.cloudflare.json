@@ -8,6 +8,6 @@
 		"sourceMap": false,
 		"moduleResolution": "bundler"
 	},
-	"include": ["worker-configuration.d.ts", "src/index.ts", "src/core/**/*.ts", "src/browser/base.ts", "src/browser/cloudflare.ts", "src/test-browser.ts"],
+	"include": ["worker-configuration.d.ts", "src/index.ts", "src/core/**/*.ts", "src/browser/base.ts", "src/browser/cloudflare.ts", "src/test-browser.ts", "src/apps/**/server.ts"],
 	"exclude": ["src/local.ts", "src/browser/local.ts", "node_modules", "dist"]
 }

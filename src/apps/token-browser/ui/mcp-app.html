@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token Browser</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      line-height: 1.4;
+      padding: 12px;
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .header h1 { font-size: 17px; font-weight: 600; color: #fff; }
+    .controls { display: flex; gap: 6px; align-items: center; }
+    .search-input {
+      padding: 6px 10px;
+      border-radius: 5px;
+      border: 1px solid #333;
+      background: #2a2a2a;
+      color: #e0e0e0;
+      font-size: 13px;
+      width: 180px;
+    }
+    .search-input:focus { outline: none; border-color: #0d9488; }
+    .refresh-btn {
+      padding: 6px 10px;
+      border-radius: 5px;
+      border: 1px solid #333;
+      background: #2a2a2a;
+      color: #e0e0e0;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .refresh-btn:hover { background: #333; border-color: #0d9488; }
+
+    /* Stats */
+    .stats {
+      font-size: 12px;
+      color: #999;
+      padding: 4px 0 8px;
+      border-bottom: 1px solid #2a2a2a;
+      margin-bottom: 8px;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 10px;
+      background: #222;
+      padding: 3px;
+      border-radius: 6px;
+    }
+    .tab {
+      padding: 5px 14px;
+      border-radius: 4px;
+      border: none;
+      background: transparent;
+      color: #999;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .tab:hover { color: #e0e0e0; }
+    .tab.active { background: #0d9488; color: #fff; }
+
+    /* Collections */
+    .collection {
+      margin-bottom: 8px;
+      background: #222;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .collection-header {
+      padding: 10px 12px;
+      background: #2a2a2a;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+    .collection-header:hover { background: #333; }
+    .collection-name { font-weight: 600; font-size: 14px; color: #fff; }
+    .collection-meta { font-size: 12px; color: #999; margin-left: 8px; }
+    .collection-toggle {
+      color: #666;
+      font-size: 10px;
+      transition: transform 0.15s;
+    }
+    .collection.expanded .collection-toggle { transform: rotate(90deg); }
+
+    .collection-content {
+      max-height: 0;
+      overflow: hidden;
+    }
+    .collection.expanded .collection-content {
+      max-height: none;
+      overflow: auto;
+    }
+
+    /* Token table */
+    .token-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .token-table th {
+      text-align: left;
+      padding: 6px 10px;
+      background: #252525;
+      color: #777;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      border-bottom: 1px solid #333;
+    }
+    .token-table td {
+      padding: 5px 10px;
+      border-bottom: 1px solid #2a2a2a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .token-table tr:hover td { background: #282828; }
+    .col-name { min-width: 160px; width: 30%; }
+    .col-type { width: 72px; min-width: 72px; }
+    .col-value { min-width: 120px; }
+
+    /* Group header row */
+    .group-row td {
+      padding: 8px 10px 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: #1e1e1e;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    /* Cells */
+    .cell-name {
+      font-weight: 500;
+      color: #ddd;
+      cursor: pointer;
+    }
+    .cell-name:hover { color: #fff; }
+
+    .type-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: #333;
+      color: #999;
+      text-transform: uppercase;
+      display: inline-block;
+    }
+    .type-badge.color { background: #1e3a3a; color: #5eead4; }
+    .type-badge.float { background: #1e2d3a; color: #7dd3fc; }
+    .type-badge.string { background: #2d1e3a; color: #d8b4fe; }
+    .type-badge.boolean { background: #3a2d1e; color: #fcd34d; }
+
+    .cell-value {
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      color: #aaa;
+      font-size: 12px;
+    }
+    /* Copyable value cells */
+    .cell-value[data-copy] {
+      cursor: pointer;
+    }
+    .cell-value[data-copy]:hover {
+      color: #ddd;
+    }
+
+    /* Color swatch */
+    .swatch {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      border: 1px solid #444;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    /* Alias values */
+    .alias-ref {
+      color: #777;
+      font-style: italic;
+      font-size: 11px;
+    }
+    .alias-unresolved {
+      color: #555;
+      text-decoration: underline dotted #444;
+    }
+
+    /* Copy feedback */
+    .copied-toast {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #0d9488;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .copied-toast.show { opacity: 1; }
+
+    /* States */
+    .loading, .empty, .error-msg {
+      text-align: center;
+      padding: 32px;
+      color: #777;
+    }
+    .error-msg { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="loading">Loading design tokens...</div>
+  </div>
+  <div id="toast" class="copied-toast">Copied!</div>
+  <script type="module" src="./mcp-app.ts"></script>
+</body>
+</html>
