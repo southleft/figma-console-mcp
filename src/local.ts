@@ -31,7 +31,6 @@ import { FigmaAPI, extractFileKey, extractFigmaUrlInfo, formatVariables } from "
 import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
 import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
-import { registerHelloWorldApp } from "./apps/hello-world/server.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -3609,8 +3608,6 @@ return {
 
 		// MCP Apps - gated behind ENABLE_MCP_APPS env var
 		if (process.env.ENABLE_MCP_APPS === "true") {
-			registerHelloWorldApp(this.server);
-
 			registerTokenBrowserApp(this.server, async (fileUrl?: string) => {
 				const url = fileUrl || this.browserManager?.getCurrentUrl() || null;
 				if (!url) {
