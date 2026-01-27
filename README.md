@@ -518,6 +518,59 @@ The **Figma Desktop Bridge** plugin enables powerful capabilities:
 
 ---
 
+## 🧩 MCP Apps (Experimental)
+
+Figma Console MCP includes support for **MCP Apps** — rich interactive UI experiences that render directly inside Claude Desktop. MCP Apps use the [MCP Apps protocol extension](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps) and the official [`@modelcontextprotocol/ext-apps`](https://www.npmjs.com/package/@modelcontextprotocol/ext-apps) SDK.
+
+> **What are MCP Apps?** Traditional MCP tools return text or images to the AI. MCP Apps go further — they render interactive HTML interfaces inline in the chat, allowing users to browse, filter, and interact with data directly without consuming AI context.
+
+### Token Browser
+
+The first MCP App is the **Token Browser** — an interactive design token explorer.
+
+**Usage:** Ask Claude to "browse design tokens" or "show me the design tokens" for any Figma file.
+
+**Features:**
+- Browse all tokens organized by collection with expandable sections
+- Filter by type (Colors, Numbers, Strings) and search by name/description
+- Per-collection mode columns (Light, Dark, Custom) matching Figma's Variables panel
+- Color swatches, alias resolution, and click-to-copy on any value
+- Works without Enterprise plan via Desktop Bridge (local mode)
+
+**Enabling MCP Apps:**
+
+MCP Apps are gated behind an environment variable. Add to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "figma-console-local": {
+      "command": "node",
+      "args": ["/path/to/figma-console-mcp/dist/local.js"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
+      }
+    }
+  }
+}
+```
+
+> **Note:** MCP Apps require Claude Desktop with MCP Apps support. This feature is experimental and the protocol may evolve.
+
+### Future MCP Apps Roadmap
+
+The Token Browser is the first of several planned MCP Apps:
+
+- **Component Gallery** — Visual browser for searching and previewing components with variant exploration
+- **Style Inspector** — Interactive panel for exploring color, text, and effect styles with live previews
+- **Variable Diff Viewer** — Side-by-side comparison of token values across modes and branches
+- **Design System Dashboard** — Overview of your design system health with coverage metrics
+
+The architecture supports adding new apps with minimal boilerplate — each app is a self-contained module with its own server-side tool registration and client-side UI.
+
+---
+
 ## 🚀 Advanced Topics
 
 - **[Setup Guide](docs/SETUP.md)** - Complete setup guide for all MCP clients

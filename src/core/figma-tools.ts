@@ -1507,11 +1507,17 @@ export function registerFigmaAPITools(
 						const api = await getFigmaAPI();
 
 						// Wrap API call with timeout to prevent indefinite hangs (30s timeout)
-						const { local, published } = await withTimeout(
+						const { local, published, localError, publishedError } = await withTimeout(
 							api.getAllVariables(fileKey),
 							30000,
 							'Figma Variables API'
 						);
+
+						// If local variables failed (e.g., 403 without Enterprise), fall through to Desktop Bridge
+						if (localError) {
+							logger.warn({ error: localError, fileKey }, "REST API failed to get local variables, falling back to Desktop Bridge");
+							throw new Error(localError);
+						}
 
 						let localFormatted = formatVariables(local);
 						let publishedFormatted = includePublished

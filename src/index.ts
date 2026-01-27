@@ -19,6 +19,7 @@ import { createChildLogger } from "./core/logger.js";
 import { testBrowserRendering } from "./test-browser.js";
 import { FigmaAPI, extractFileKey, formatVariables, formatComponentData } from "./core/figma-api.js";
 import { registerFigmaAPITools } from "./core/figma-tools.js";
+import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 
 const logger = createChildLogger({ component: "mcp-server" });
 
@@ -845,6 +846,43 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			() => this.consoleMonitor || null,
 			() => this.browserManager || null,
 			() => this.ensureInitialized()
+		);
+
+		// Register Token Browser MCP App
+		registerTokenBrowserApp(
+			this.server,
+			async (fileUrl?: string) => {
+				// Remote mode requires file URL and Enterprise access for Variables API
+				if (!fileUrl) {
+					throw new Error(
+						"File URL required for Token Browser in remote mode. " +
+						"For browsing without a URL, use local mode with Desktop Bridge."
+					);
+				}
+
+				const fileKey = extractFileKey(fileUrl);
+				if (!fileKey) {
+					throw new Error("Invalid Figma file URL");
+				}
+
+				const api = await this.getFigmaAPI();
+				const result = await api.getLocalVariables(fileKey);
+
+				if (!result?.meta?.variables) {
+					throw new Error(
+						"Could not fetch variables. This may require Enterprise access for the Variables API."
+					);
+				}
+
+				const variables = Object.values(result.meta.variables);
+				const collections = Object.values(result.meta.variableCollections || {});
+
+				return {
+					variables,
+					collections,
+					source: "rest-api",
+				};
+			}
 		);
 	}
 }

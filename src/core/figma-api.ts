@@ -362,18 +362,33 @@ export class FigmaAPI {
 
   /**
    * Helper: Get all design tokens (variables) with formatted output
+   * Both local and published can fail gracefully (e.g., 403 without Enterprise plan)
    */
   async getAllVariables(fileKey: string): Promise<{
     local: any;
     published: any;
+    localError?: string;
+    publishedError?: string;
   }> {
-    // Don't catch errors - let them bubble up so proper error messages are shown
-    const [local, published] = await Promise.all([
-      this.getLocalVariables(fileKey),
-      this.getPublishedVariables(fileKey).catch(() => ({ variables: {} })), // Published can fail gracefully
+    // Wrap both in catch handlers to prevent unhandled promise rejections
+    // which can crash the server when REST API returns 403
+    const [localResult, publishedResult] = await Promise.all([
+      this.getLocalVariables(fileKey).catch((err) => {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return { error: errorMsg, variables: {}, variableCollections: {} };
+      }),
+      this.getPublishedVariables(fileKey).catch((err) => {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return { error: errorMsg, variables: {} };
+      }),
     ]);
 
-    return { local, published };
+    return {
+      local: 'error' in localResult ? { meta: { variables: {}, variableCollections: {} } } : localResult,
+      published: 'error' in publishedResult ? { variables: {} } : publishedResult,
+      ...(('error' in localResult) && { localError: localResult.error }),
+      ...(('error' in publishedResult) && { publishedError: publishedResult.error }),
+    };
   }
 
   /**

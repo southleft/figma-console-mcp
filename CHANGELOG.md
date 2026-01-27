@@ -5,6 +5,28 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-01-27
+
+### Added
+- **MCP Apps Framework** — Extensible architecture for rich interactive UI experiences powered by the [MCP Apps protocol](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps)
+  - Modular multi-app build system using Vite with single-file HTML output
+  - Parameterized `vite.config.ts` supporting unlimited apps via `APP_NAME` env var
+  - Gated behind `ENABLE_MCP_APPS=true` — zero impact on existing tools
+- **Token Browser MCP App** — Interactive design token explorer rendered inline in Claude Desktop
+  - Browse all design tokens organized by collection with expandable sections
+  - Filter by type (Colors, Numbers, Strings) and search by name or description
+  - Per-collection mode columns (Light/Dark/Custom) matching Figma's Variables panel layout
+  - Color swatches with hex/rgba values, alias reference resolution, and click-to-copy
+  - Desktop Bridge priority — works without Enterprise plan via local plugin
+  - Compact table layout with sticky headers and horizontal scroll for many modes
+  - `figma_browse_tokens` tool with context-efficient summary (full data stays in UI)
+  - `token_browser_refresh` app-only tool for UI-initiated data refresh
+
+### Documentation
+- New MCP Apps section in README with explanation, usage, and future roadmap
+- New `docs/mcp-apps.md` documentation page with MCP Apps overview and architecture
+- Updated Mintlify docs navigation to include MCP Apps guide
+
 ## [1.3.0] - 2025-01-23
 
 ### Added
@@ -76,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.4.0]: https://github.com/southleft/figma-console-mcp/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/southleft/figma-console-mcp/compare/v1.2.5...v1.3.0
 [1.2.5]: https://github.com/southleft/figma-console-mcp/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/southleft/figma-console-mcp/compare/v1.2.3...v1.2.4

@@ -27,9 +27,11 @@ import { LocalBrowserManager } from "./browser/local.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
 import { createChildLogger } from "./core/logger.js";
-import { FigmaAPI, extractFileKey } from "./core/figma-api.js";
+import { FigmaAPI, extractFileKey, extractFigmaUrlInfo, formatVariables } from "./core/figma-api.js";
 import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
+import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
+import { registerHelloWorldApp } from "./apps/hello-world/server.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -3604,6 +3606,93 @@ return {
 			() => this.ensureInitialized(),
 			this.variablesCache  // Pass cache for efficient variable queries
 		);
+
+		// MCP Apps - gated behind ENABLE_MCP_APPS env var
+		if (process.env.ENABLE_MCP_APPS === "true") {
+			registerHelloWorldApp(this.server);
+
+			registerTokenBrowserApp(this.server, async (fileUrl?: string) => {
+				const url = fileUrl || this.browserManager?.getCurrentUrl() || null;
+				if (!url) {
+					throw new Error(
+						"No Figma file URL provided. Either pass a fileUrl or navigate to a Figma file first.",
+					);
+				}
+
+				const urlInfo = extractFigmaUrlInfo(url);
+				if (!urlInfo) {
+					throw new Error(`Invalid Figma URL: ${url}`);
+				}
+
+				const fileKey = urlInfo.branchId || urlInfo.fileKey;
+
+				// Check cache first (works for both Desktop Bridge and REST API data)
+				const cacheEntry = this.variablesCache.get(fileKey);
+				if (cacheEntry && Date.now() - cacheEntry.timestamp < 5 * 60 * 1000) {
+					const cached = cacheEntry.data;
+					// Desktop Bridge caches arrays directly; REST API data needs formatVariables
+					if (Array.isArray(cached.variables)) {
+						return {
+							variables: cached.variables,
+							collections: cached.variableCollections || [],
+						};
+					}
+					const formatted = formatVariables(cached);
+					return { variables: formatted.variables, collections: formatted.collections };
+				}
+
+				// Priority 1: Try Desktop Bridge (works without Enterprise plan)
+				if (this.browserManager) {
+					try {
+						const { FigmaDesktopConnector } = await import("./core/figma-desktop-connector.js");
+						const page = await this.browserManager.getPage();
+						const connector = new FigmaDesktopConnector(page);
+						await connector.initialize();
+
+						const desktopResult = await connector.getVariablesFromPluginUI(fileKey);
+
+						if (desktopResult.success && desktopResult.variables) {
+							// Cache the desktop result
+							this.variablesCache.set(fileKey, {
+								data: {
+									variables: desktopResult.variables,
+									variableCollections: desktopResult.variableCollections,
+								},
+								timestamp: Date.now(),
+							});
+
+							return {
+								variables: desktopResult.variables,
+								collections: desktopResult.variableCollections || [],
+							};
+						}
+					} catch (desktopErr) {
+						logger.warn(
+							{ error: desktopErr instanceof Error ? desktopErr.message : String(desktopErr) },
+							"Desktop Bridge failed for token browser, trying REST API",
+						);
+					}
+				}
+
+				// Priority 2: Fall back to REST API (requires Enterprise plan)
+				const api = await this.getFigmaAPI();
+				const { local, localError } = await api.getAllVariables(fileKey);
+
+				if (localError) {
+					throw new Error(
+						`Could not fetch variables. Desktop Bridge unavailable and REST API returned: ${localError}`,
+					);
+				}
+
+				// Cache raw REST API data
+				this.variablesCache.set(fileKey, { data: local, timestamp: Date.now() });
+
+				const formatted = formatVariables(local);
+				return { variables: formatted.variables, collections: formatted.collections };
+			});
+
+			logger.info("MCP Apps registered (ENABLE_MCP_APPS=true)");
+		}
 
 		logger.info("All MCP tools registered successfully (including write operations)");
 	}
