@@ -23,6 +23,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { fileURLToPath } from "url";
 import { resolve } from "path";
+import { realpathSync } from "fs";
 import { LocalBrowserManager } from "./browser/local.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
@@ -3789,8 +3790,10 @@ async function main() {
 // Run if executed directly
 // Note: On Windows, import.meta.url uses file:/// (3 slashes) while process.argv uses backslashes
 // We normalize both paths to compare correctly across platforms
+// realpathSync resolves symlinks (e.g. node_modules/.bin/figma-console-mcp -> dist/local.js)
+// which is required for npx to work, since npx runs the binary via a symlink
 const currentFile = fileURLToPath(import.meta.url);
-const entryFile = process.argv[1] ? resolve(process.argv[1]) : "";
+const entryFile = process.argv[1] ? realpathSync(resolve(process.argv[1])) : "";
 
 if (currentFile === entryFile) {
 	main().catch((error) => {
