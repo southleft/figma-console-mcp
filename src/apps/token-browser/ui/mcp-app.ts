@@ -252,8 +252,10 @@ function render(): void {
 			<button class="tab ${activeTab === "numbers" ? "active" : ""}" data-tab="numbers">Numbers</button>
 			<button class="tab ${activeTab === "strings" ? "active" : ""}" data-tab="strings">Strings</button>
 		</div>
-		${collectionsHtml}
-		${filtered.length === 0 ? '<div class="empty">No tokens match your search.</div>' : ""}
+		<div class="collections-scroll">
+			${collectionsHtml}
+			${filtered.length === 0 ? '<div class="empty">No tokens match your search.</div>' : ""}
+		</div>
 	`;
 
 	// Restore search focus
