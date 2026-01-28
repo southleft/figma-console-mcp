@@ -13,8 +13,19 @@
       color: #e0e0e0;
       line-height: 1.4;
       padding: 12px;
-      min-height: 100vh;
       font-size: 14px;
+      max-height: 600px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+      flex: 1;
     }
 
     /* Header */
@@ -25,6 +36,7 @@
       margin-bottom: 8px;
       gap: 8px;
       flex-wrap: wrap;
+      flex-shrink: 0;
     }
     .header h1 { font-size: 17px; font-weight: 600; color: #fff; }
     .controls { display: flex; gap: 6px; align-items: center; }
@@ -56,6 +68,7 @@
       padding: 4px 0 8px;
       border-bottom: 1px solid #2a2a2a;
       margin-bottom: 8px;
+      flex-shrink: 0;
     }
 
     /* Tabs */
@@ -66,6 +79,7 @@
       background: #222;
       padding: 3px;
       border-radius: 6px;
+      flex-shrink: 0;
     }
     .tab {
       padding: 5px 14px;
@@ -78,6 +92,13 @@
     }
     .tab:hover { color: #e0e0e0; }
     .tab.active { background: #0d9488; color: #fff; }
+
+    /* Scrollable collections area */
+    .collections-scroll {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
 
     /* Collections */
     .collection {
