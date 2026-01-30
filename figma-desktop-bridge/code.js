@@ -521,6 +521,41 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // SET_VARIABLE_DESCRIPTION - Set description on a variable
+  // ============================================================================
+  else if (msg.type === 'SET_VARIABLE_DESCRIPTION') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting description on variable:', msg.variableId);
+
+      var variable = await figma.variables.getVariableByIdAsync(msg.variableId);
+      if (!variable) {
+        throw new Error('Variable not found: ' + msg.variableId);
+      }
+
+      variable.description = msg.description || '';
+
+      console.log('🌉 [Desktop Bridge] Variable description set successfully');
+
+      figma.ui.postMessage({
+        type: 'SET_VARIABLE_DESCRIPTION_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        variable: serializeVariable(variable)
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set variable description error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_VARIABLE_DESCRIPTION_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
   // ADD_MODE - Add a mode to a variable collection
   // ============================================================================
   else if (msg.type === 'ADD_MODE') {

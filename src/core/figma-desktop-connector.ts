@@ -881,6 +881,36 @@ export class FigmaDesktopConnector {
   }
 
   /**
+   * Set the description on a variable (not a node — variables use a separate API)
+   */
+  async setVariableDescription(variableId: string, description: string): Promise<any> {
+    await this.page.evaluate((vId, desc) => {
+      console.log(`[DESKTOP_CONNECTOR] setVariableDescription() called: ${vId} -> "${desc}"`);
+    }, variableId, description);
+
+    logger.info({ variableId, description }, 'Setting variable description via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setVariableDescription(${JSON.stringify(variableId)}, ${JSON.stringify(description)})`
+      );
+
+      logger.info({ success: result.success, variableId }, 'Variable description set');
+
+      await this.page.evaluate((vId: string, success: boolean) => {
+        console.log(`[DESKTOP_CONNECTOR] ${success ? '✅' : '❌'} Variable description ${success ? 'set' : 'failed'} for ${vId}`);
+      }, variableId, result.success);
+
+      return result;
+    } catch (error) {
+      logger.error({ error, variableId }, 'Set variable description failed');
+      throw error;
+    }
+  }
+
+  /**
    * Add a mode to a variable collection
    */
   async addMode(collectionId: string, modeName: string): Promise<any> {

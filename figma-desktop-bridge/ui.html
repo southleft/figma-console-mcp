@@ -207,6 +207,11 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
+    window.setVariableDescription = (variableId, description) => {
+      return window.sendPluginCommand('SET_VARIABLE_DESCRIPTION', { variableId: variableId, description: description })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
     window.addMode = (collectionId, modeName) => {
       return window.sendPluginCommand('ADD_MODE', { collectionId: collectionId, modeName: modeName })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });

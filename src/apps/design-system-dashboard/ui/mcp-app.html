@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Design System Health</title>
+	<style>
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+			background: #1a1a1a;
+			color: #e0e0e0;
+			line-height: 1.4;
+			padding: 12px;
+			font-size: 14px;
+			max-height: 600px;
+			overflow: hidden;
+			display: flex;
+			flex-direction: column;
+		}
+
+		#app {
+			display: flex;
+			flex-direction: column;
+			min-height: 0;
+			overflow: hidden;
+			flex: 1;
+		}
+
+		/* Header */
+		.header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 8px;
+			gap: 8px;
+			flex-wrap: wrap;
+			flex-shrink: 0;
+		}
+		.header h1 { font-size: 17px; font-weight: 600; color: #fff; }
+		.refresh-btn {
+			padding: 6px 10px;
+			border-radius: 5px;
+			border: 1px solid #333;
+			background: #2a2a2a;
+			color: #e0e0e0;
+			font-size: 13px;
+			cursor: pointer;
+		}
+		.refresh-btn:hover { background: #333; border-color: #0d9488; }
+
+		/* Overall score banner */
+		.overall-banner {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			padding: 10px 14px;
+			background: #222;
+			border-radius: 6px;
+			margin-bottom: 10px;
+			flex-shrink: 0;
+		}
+		.overall-score {
+			font-size: 36px;
+			font-weight: 700;
+			line-height: 1;
+			color: #fff;
+		}
+		.overall-details {
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+		}
+		.overall-status {
+			font-size: 15px;
+			font-weight: 600;
+		}
+		.overall-meta {
+			font-size: 12px;
+			color: #999;
+		}
+
+		/* Gauge row */
+		.gauge-row {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			justify-content: center;
+			padding: 8px 0 12px;
+			border-bottom: 1px solid #2a2a2a;
+			margin-bottom: 8px;
+			flex-shrink: 0;
+		}
+		.gauge-item {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 4px;
+			min-width: 72px;
+		}
+		.gauge-svg {
+			width: 72px;
+			height: 72px;
+		}
+		.gauge-ring {
+			fill: none;
+			stroke-width: 6;
+			stroke-linecap: round;
+		}
+		.gauge-track { stroke: #333; }
+		.gauge-fill { transition: stroke-dashoffset 0.5s ease; }
+		.gauge-score {
+			font-size: 18px;
+			font-weight: 700;
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+			fill: currentColor;
+		}
+		.gauge-label {
+			font-size: 11px;
+			color: #999;
+			text-align: center;
+			max-width: 72px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		/* Score colors (color for HTML, fill for SVG text) */
+		.score-good { color: #0cce6b; fill: #0cce6b; }
+		.score-needs-work { color: #ffa400; fill: #ffa400; }
+		.score-poor { color: #ff4e42; fill: #ff4e42; }
+		.stroke-good { stroke: #0cce6b; }
+		.stroke-needs-work { stroke: #ffa400; }
+		.stroke-poor { stroke: #ff4e42; }
+
+		/* Scrollable area */
+		.content-scroll {
+			flex: 1;
+			overflow-y: auto;
+			min-height: 0;
+		}
+
+		/* Category sections */
+		.category {
+			margin-bottom: 8px;
+			background: #222;
+			border-radius: 6px;
+			overflow: hidden;
+		}
+		.category-header {
+			padding: 10px 12px;
+			background: #2a2a2a;
+			cursor: pointer;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			user-select: none;
+		}
+		.category-header:hover { background: #333; }
+		.category-left {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			min-width: 0;
+		}
+		.category-name { font-weight: 600; font-size: 14px; color: #fff; }
+		.category-meta { font-size: 12px; color: #999; }
+		.category-right {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			flex-shrink: 0;
+		}
+		.category-score {
+			font-size: 14px;
+			font-weight: 600;
+		}
+		.category-toggle {
+			color: #666;
+			font-size: 10px;
+			transition: transform 0.15s;
+		}
+		.category.expanded .category-toggle { transform: rotate(90deg); }
+
+		.category-content {
+			max-height: 0;
+			overflow: hidden;
+		}
+		.category.expanded .category-content {
+			max-height: none;
+			overflow: auto;
+		}
+
+		/* Findings list */
+		.findings-list {
+			padding: 4px 0;
+		}
+		.finding {
+			display: flex;
+			align-items: flex-start;
+			padding: 8px 12px;
+			gap: 8px;
+			border-bottom: 1px solid #2a2a2a;
+		}
+		.finding:last-child { border-bottom: none; }
+		.finding-icon {
+			flex-shrink: 0;
+			width: 18px;
+			height: 18px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 12px;
+			border-radius: 50%;
+			margin-top: 1px;
+		}
+		.finding-icon.pass {
+			background: rgba(12, 206, 107, 0.15);
+			color: #0cce6b;
+		}
+		.finding-icon.warning {
+			background: rgba(255, 164, 0, 0.15);
+			color: #ffa400;
+		}
+		.finding-icon.fail {
+			background: rgba(255, 78, 66, 0.15);
+			color: #ff4e42;
+		}
+		.finding-icon.info {
+			background: rgba(96, 165, 250, 0.15);
+			color: #60a5fa;
+		}
+		.finding-body {
+			flex: 1;
+			min-width: 0;
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+		}
+		.finding-label {
+			font-size: 13px;
+			font-weight: 500;
+			color: #ccc;
+		}
+		.finding-details {
+			font-size: 12px;
+			color: #888;
+			line-height: 1.4;
+			word-wrap: break-word;
+		}
+		.finding-score {
+			font-size: 13px;
+			font-weight: 600;
+			flex-shrink: 0;
+			min-width: 28px;
+			text-align: right;
+			margin-top: 1px;
+		}
+
+		/* File info section */
+		.file-info {
+			font-size: 12px;
+			color: #999;
+			margin-bottom: 4px;
+		}
+		.file-info .file-name {
+			font-size: 14px;
+			font-weight: 500;
+			color: #ccc;
+		}
+
+		/* Data availability notice */
+		.data-notice {
+			padding: 8px 12px;
+			background: rgba(96, 165, 250, 0.1);
+			border: 1px solid rgba(96, 165, 250, 0.2);
+			border-radius: 6px;
+			font-size: 12px;
+			color: #93bbf5;
+			margin-bottom: 8px;
+			flex-shrink: 0;
+		}
+
+		/* Summary section */
+		.summary-section {
+			margin-top: 4px;
+			padding: 10px 12px;
+			background: #222;
+			border-radius: 6px;
+		}
+		.summary-heading {
+			font-size: 13px;
+			font-weight: 600;
+			color: #fff;
+			margin-bottom: 8px;
+		}
+		.summary-list {
+			list-style: none;
+			padding: 0;
+		}
+		.summary-item {
+			padding: 4px 0;
+			font-size: 13px;
+			color: #ccc;
+			display: flex;
+			align-items: baseline;
+			gap: 8px;
+		}
+		.summary-item::before {
+			content: "";
+			display: inline-block;
+			width: 5px;
+			height: 5px;
+			border-radius: 50%;
+			background: #0d9488;
+			flex-shrink: 0;
+			position: relative;
+			top: -1px;
+		}
+
+		/* Finding examples (collapsible) */
+		.finding-examples {
+			margin-top: 4px;
+		}
+		.finding-examples summary {
+			font-size: 11px;
+			color: #888;
+			cursor: pointer;
+			user-select: none;
+		}
+		.finding-examples summary:hover {
+			color: #aaa;
+		}
+		.examples-list {
+			list-style: none;
+			padding: 4px 0 0 0;
+			margin: 0;
+		}
+		.examples-list li {
+			font-size: 11px;
+			color: #888;
+			padding: 1px 0;
+			border-left: 2px solid #2a2a2a;
+			padding-left: 8px;
+			word-break: break-all;
+		}
+
+		/* Fix buttons */
+		.fix-btn {
+			flex-shrink: 0;
+			padding: 3px 8px;
+			border-radius: 4px;
+			border: 1px solid #0d9488;
+			background: rgba(13, 148, 136, 0.15);
+			color: #0d9488;
+			font-size: 11px;
+			cursor: pointer;
+			white-space: nowrap;
+		}
+		.fix-btn:hover {
+			background: rgba(13, 148, 136, 0.3);
+		}
+		.fix-confirm {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			font-size: 11px;
+			color: #999;
+			flex-shrink: 0;
+		}
+		.fix-confirm button {
+			padding: 2px 8px;
+			border-radius: 3px;
+			border: 1px solid #333;
+			background: #2a2a2a;
+			color: #e0e0e0;
+			font-size: 11px;
+			cursor: pointer;
+		}
+		.fix-confirm .fix-yes {
+			border-color: #0d9488;
+			color: #0d9488;
+		}
+		.fix-status {
+			font-size: 11px;
+			flex-shrink: 0;
+		}
+		.fix-status.success { color: #0cce6b; }
+		.fix-status.error { color: #ff4e42; }
+		.fix-status.loading { color: #999; }
+
+		/* States */
+		.loading, .empty, .error-msg {
+			text-align: center;
+			padding: 32px;
+			color: #777;
+		}
+		.error-msg { color: #f87171; }
+	</style>
+</head>
+<body>
+	<div id="app">
+		<div class="loading">Analyzing design system...</div>
+	</div>
+	<script type="module" src="./mcp-app.ts"></script>
+</body>
+</html>
