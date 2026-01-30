@@ -528,7 +528,7 @@ Figma Console MCP includes support for **MCP Apps** — rich interactive UI expe
 
 An interactive design token explorer.
 
-**Usage:** Ask Claude to "browse design tokens" or "show me the design tokens" for any Figma file.
+**Usage:** Ask Claude to "browse the design tokens" or "show me the design tokens" while connected to a Figma file.
 
 **Features:**
 - Browse all tokens organized by collection with expandable sections
@@ -541,7 +541,7 @@ An interactive design token explorer.
 
 A Lighthouse-style health scorecard that audits your design system across six categories.
 
-**Usage:** Ask Claude to "audit the design system" or "show me design system health" for any Figma file.
+**Usage:** Ask Claude to "audit the design system" or "show me design system health" while connected to a Figma file.
 
 **Features:**
 - Overall weighted score (0–100) with six category gauges: Naming, Tokens, Components, Accessibility, Consistency, Coverage
