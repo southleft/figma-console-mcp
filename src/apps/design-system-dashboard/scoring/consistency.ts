@@ -54,6 +54,8 @@ function scoreDelimiterConsistency(data: DesignSystemRawData): Finding {
 			label: "Naming delimiter consistency",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Variable names should use the same delimiter throughout (/ or . or -). Mixed delimiters make tokens harder to find and autocomplete.",
 			details: "No variables to evaluate.",
 		};
 	}
@@ -71,6 +73,8 @@ function scoreDelimiterConsistency(data: DesignSystemRawData): Finding {
 			label: "Naming delimiter consistency",
 			score: 100,
 			severity: "pass",
+			tooltip:
+				"Variable names should use the same delimiter throughout (/ or . or -). Mixed delimiters make tokens harder to find and autocomplete.",
 			details: "No delimiters used in variable names (single-segment names).",
 		};
 	}
@@ -104,6 +108,8 @@ function scoreDelimiterConsistency(data: DesignSystemRawData): Finding {
 		label: "Naming delimiter consistency",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Variable names should use the same delimiter throughout (/ or . or -). Mixed delimiters make tokens harder to find and autocomplete.",
 		details: `${Math.round(ratio * 100)}% of variables use "${dominantDelimiter}" as delimiter. Consistent delimiter usage improves navigability.`,
 		examples:
 			nonDominantVars.length > 0
@@ -164,6 +170,8 @@ function scoreCasingConsistency(data: DesignSystemRawData): Finding {
 			label: "Casing consistency",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Name segments should use a consistent casing convention (PascalCase, camelCase, etc.) across all components and variables.",
 			details: "No name segments to evaluate.",
 		};
 	}
@@ -198,6 +206,8 @@ function scoreCasingConsistency(data: DesignSystemRawData): Finding {
 		label: "Casing consistency",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Name segments should use a consistent casing convention (PascalCase, camelCase, etc.) across all components and variables.",
 		details: `${Math.round(ratio * 100)}% of name segments use ${dominantCasing}. Consistent casing improves readability.`,
 		examples:
 			nonDominantSegments.length > 0
@@ -255,6 +265,8 @@ function scoreSizeValueConsistency(data: DesignSystemRawData): Finding {
 			label: "Size value consistency",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Numeric token values should follow a consistent scale (e.g. multiples of 4 or 8). Consistent scales create visual rhythm and predictable spacing.",
 			details: "No numeric variables to evaluate.",
 		};
 	}
@@ -276,6 +288,8 @@ function scoreSizeValueConsistency(data: DesignSystemRawData): Finding {
 			label: "Size value consistency",
 			score: 50,
 			severity: "warning",
+			tooltip:
+				"Numeric token values should follow a consistent scale (e.g. multiples of 4 or 8). Consistent scales create visual rhythm and predictable spacing.",
 			details: "No direct numeric values found (all aliases).",
 		};
 	}
@@ -288,6 +302,8 @@ function scoreSizeValueConsistency(data: DesignSystemRawData): Finding {
 		label: "Size value consistency",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Numeric token values should follow a consistent scale (e.g. multiples of 4 or 8). Consistent scales create visual rhythm and predictable spacing.",
 		details:
 			pattern !== "none"
 				? `${Math.round(matchRatio * 100)}% of numeric values follow a ${pattern} scale.`
@@ -308,6 +324,8 @@ function scoreModeNamingConsistency(data: DesignSystemRawData): Finding {
 			label: "Mode naming consistency",
 			score: 100,
 			severity: collections.length === 0 ? "info" : "pass",
+			tooltip:
+				"All collections with multiple modes should use the same mode names (e.g. Light/Dark). Inconsistent mode names cause confusion.",
 			details:
 				collections.length === 0
 					? "No collections to evaluate."
@@ -332,6 +350,8 @@ function scoreModeNamingConsistency(data: DesignSystemRawData): Finding {
 			label: "Mode naming consistency",
 			score: 100,
 			severity: "pass",
+			tooltip:
+				"All collections with multiple modes should use the same mode names (e.g. Light/Dark). Inconsistent mode names cause confusion.",
 			details: "Only one collection has modes; consistency is not applicable.",
 		};
 	}
@@ -358,6 +378,8 @@ function scoreModeNamingConsistency(data: DesignSystemRawData): Finding {
 		label: "Mode naming consistency",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"All collections with multiple modes should use the same mode names (e.g. Light/Dark). Inconsistent mode names cause confusion.",
 		details:
 			ratio < 1
 				? `${Math.round(ratio * 100)}% of collections share the same mode names. Align mode names across collections.`
@@ -384,7 +406,7 @@ export function scoreConsistency(data: DesignSystemRawData): CategoryScore {
 	return {
 		id: "consistency",
 		label: "Consistency",
-		shortLabel: "Cons",
+		shortLabel: "Consistency",
 		score,
 		weight: 0.15,
 		findings,

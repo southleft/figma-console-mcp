@@ -115,6 +115,8 @@ function scoreVariableNaming(data: DesignSystemRawData): Finding {
 			label: "Variable naming",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Variables should describe intent (e.g. color/action/primary) rather than appearance (e.g. color/blue/500). Semantic names survive theme changes.",
 			details: "No color variables to evaluate.",
 		};
 	}
@@ -129,6 +131,8 @@ function scoreVariableNaming(data: DesignSystemRawData): Finding {
 		label: "Variable naming",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Variables should describe intent (e.g. color/action/primary) rather than appearance (e.g. color/blue/500). Semantic names survive theme changes.",
 		details:
 			visualVars.length > 0
 				? `${visualVars.length} of ${colorVars.length} color variables use visual names instead of semantic names.`
@@ -161,6 +165,8 @@ function scoreComponentNaming(data: DesignSystemRawData): Finding {
 			label: "Component naming",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Component names should use consistent PascalCase (e.g. Button, IconStar). Consistent casing improves discoverability.",
 			details: "No components to evaluate.",
 		};
 	}
@@ -186,6 +192,8 @@ function scoreComponentNaming(data: DesignSystemRawData): Finding {
 		label: "Component naming",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Component names should use consistent PascalCase (e.g. Button, IconStar). Consistent casing improves discoverability.",
 		details: `${pascalCount} of ${components.length} components use consistent PascalCase naming.`,
 		examples:
 			nonPascalComps.length > 0
@@ -215,6 +223,8 @@ function scoreVariantNaming(data: DesignSystemRawData): Finding {
 			label: "Variant naming",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Variant values should use semantic terms (primary, danger) rather than visual ones (red, blue). This decouples design from implementation.",
 			details: "No variant components to evaluate.",
 		};
 	}
@@ -253,6 +263,8 @@ function scoreVariantNaming(data: DesignSystemRawData): Finding {
 			label: "Variant naming",
 			score: 75,
 			severity: "warning",
+			tooltip:
+				"Variant values should use semantic terms (primary, danger) rather than visual ones (red, blue). This decouples design from implementation.",
 			details: "Variant values could not be classified as semantic or visual.",
 		};
 	}
@@ -265,6 +277,8 @@ function scoreVariantNaming(data: DesignSystemRawData): Finding {
 		label: "Variant naming",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Variant values should use semantic terms (primary, danger) rather than visual ones (red, blue). This decouples design from implementation.",
 		details:
 			visualCount > 0
 				? `${visualCount} variant values use visual names. Prefer semantic names like "primary", "danger".`
@@ -289,6 +303,8 @@ function scoreBooleanNaming(data: DesignSystemRawData): Finding {
 			label: "Boolean naming",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Boolean variables should start with is, has, can, show, or similar prefixes (e.g. isDisabled). This makes their purpose immediately clear.",
 			details: "No boolean variables to evaluate.",
 		};
 	}
@@ -309,6 +325,8 @@ function scoreBooleanNaming(data: DesignSystemRawData): Finding {
 		label: "Boolean naming",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Boolean variables should start with is, has, can, show, or similar prefixes (e.g. isDisabled). This makes their purpose immediately clear.",
 		details:
 			missingPrefix.length > 0
 				? `${missingPrefix.length} of ${boolVars.length} boolean variables lack is*/has*/can* prefixes.`
@@ -347,7 +365,7 @@ export function scoreNamingSemantics(data: DesignSystemRawData): CategoryScore {
 	return {
 		id: "naming-semantics",
 		label: "Naming & Semantics",
-		shortLabel: "Name",
+		shortLabel: "Naming",
 		score,
 		weight: 0.2,
 		findings,

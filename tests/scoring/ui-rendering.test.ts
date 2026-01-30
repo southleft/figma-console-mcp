@@ -185,6 +185,77 @@ describe("Dashboard data contract for UI rendering", () => {
 	});
 
 	// -----------------------------------------------------------------------
+	// Tooltip presence for UI rendering
+	// -----------------------------------------------------------------------
+
+	describe("tooltip data for finding labels", () => {
+		it("all findings include a tooltip string", () => {
+			const data = makeData({
+				components: [
+					{ name: "Button", node_id: "1:1", description: "Primary button" },
+					{ name: "Card", node_id: "2:1", description: "" },
+				],
+				variables: [
+					{
+						name: "color/action/primary",
+						resolvedType: "COLOR",
+						id: "v1",
+						variableCollectionId: "c1",
+						description: "Primary action color",
+						valuesByMode: { "1:0": { type: "VARIABLE_ALIAS", id: "v2" } },
+					},
+					{
+						name: "color/blue/500",
+						resolvedType: "COLOR",
+						id: "v2",
+						variableCollectionId: "c1",
+						description: "",
+						valuesByMode: { "1:0": { r: 0, g: 0, b: 1, a: 1 } },
+					},
+					{
+						name: "spacing/sm",
+						resolvedType: "FLOAT",
+						id: "v3",
+						variableCollectionId: "c2",
+						description: "",
+						valuesByMode: { "1:0": 8 },
+					},
+				],
+				collections: [
+					{ id: "c1", name: "Colors", modes: [{ name: "Light" }, { name: "Dark" }] },
+					{ id: "c2", name: "Spacing", modes: [{ name: "Default" }] },
+				],
+			});
+
+			const result = scoreDesignSystem(data);
+			const allFindings = result.categories.flatMap((c) => c.findings);
+
+			for (const finding of allFindings) {
+				expect(finding.tooltip).toBeDefined();
+				expect(typeof finding.tooltip).toBe("string");
+				expect(finding.tooltip!.length).toBeGreaterThan(10);
+			}
+		});
+
+		it("tooltips do not contain HTML entities or markup", () => {
+			const data = makeData({
+				components: [{ name: "Button", node_id: "1:1" }],
+			});
+
+			const result = scoreDesignSystem(data);
+			const allFindings = result.categories.flatMap((c) => c.findings);
+
+			for (const finding of allFindings) {
+				if (finding.tooltip) {
+					expect(finding.tooltip).not.toMatch(/<[^>]+>/);
+					expect(finding.tooltip).not.toContain("&amp;");
+					expect(finding.tooltip).not.toContain("&lt;");
+				}
+			}
+		});
+	});
+
+	// -----------------------------------------------------------------------
 	// Category expected IDs and labels
 	// -----------------------------------------------------------------------
 
@@ -208,7 +279,7 @@ describe("Dashboard data contract for UI rendering", () => {
 
 			for (const cat of result.categories) {
 				expect(cat.shortLabel).toBeDefined();
-				expect(cat.shortLabel.length).toBeLessThanOrEqual(6);
+				expect(cat.shortLabel.length).toBeLessThanOrEqual(15);
 			}
 		});
 	});

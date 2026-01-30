@@ -51,6 +51,8 @@ function scoreCollectionOrganization(data: DesignSystemRawData): Finding {
 			label: "Collection organization",
 			score: 0,
 			severity: "info",
+			tooltip:
+				"Variables should be grouped into collections by concern (colors, spacing, typography). More collections = better organization.",
 			details: variableUnavailableMessage(data),
 		};
 	}
@@ -71,6 +73,8 @@ function scoreCollectionOrganization(data: DesignSystemRawData): Finding {
 		label: "Collection organization",
 		score: clamp(score),
 		severity: getSeverity(score),
+		tooltip:
+			"Variables should be grouped into collections by concern (colors, spacing, typography). More collections = better organization.",
 		details:
 			count === 0
 				? "No variable collections found. Organize variables into collections."
@@ -89,6 +93,8 @@ function scoreModeCoverage(data: DesignSystemRawData): Finding {
 			label: "Mode coverage",
 			score: 0,
 			severity: variableDataUnavailable(data) ? "info" : "fail",
+			tooltip:
+				"Collections should support multiple modes (e.g. Light/Dark). This enables theming without duplicating tokens.",
 			details: variableDataUnavailable(data)
 				? variableUnavailableMessage(data)
 				: "No collections found to evaluate mode coverage.",
@@ -113,6 +119,8 @@ function scoreModeCoverage(data: DesignSystemRawData): Finding {
 		label: "Mode coverage",
 		score: clamp(score),
 		severity: getSeverity(score),
+		tooltip:
+			"Collections should support multiple modes (e.g. Light/Dark). This enables theming without duplicating tokens.",
 		details:
 			maxModes >= 2
 				? `Collections support up to ${maxModes} modes (e.g., light/dark).`
@@ -133,6 +141,8 @@ function scoreAliasUsage(data: DesignSystemRawData): Finding {
 			label: "Alias usage",
 			score: 0,
 			severity: variableDataUnavailable(data) ? "info" : "fail",
+			tooltip:
+				"Semantic tokens should reference primitive tokens via aliases rather than hard-coding values. Aliases enable single-source-of-truth updates.",
 			details: variableDataUnavailable(data)
 				? variableUnavailableMessage(data)
 				: "No variables to evaluate alias usage.",
@@ -166,6 +176,8 @@ function scoreAliasUsage(data: DesignSystemRawData): Finding {
 			label: "Alias usage",
 			score: 0,
 			severity: "fail",
+			tooltip:
+				"Semantic tokens should reference primitive tokens via aliases rather than hard-coding values. Aliases enable single-source-of-truth updates.",
 			details: "No variable values found to evaluate.",
 		};
 	}
@@ -178,6 +190,8 @@ function scoreAliasUsage(data: DesignSystemRawData): Finding {
 		label: "Alias usage",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Semantic tokens should reference primitive tokens via aliases rather than hard-coding values. Aliases enable single-source-of-truth updates.",
 		details: `${aliasCount} of ${totalValues} values are aliases (${Math.round(ratio * 100)}%). Higher alias usage indicates better token layering.`,
 		examples:
 			rawValueVars.length > 0 ? rawValueVars.slice(0, MAX_EXAMPLES).map((v: any) => v.name) : undefined,
@@ -247,6 +261,8 @@ function scoreTokenTierDepth(data: DesignSystemRawData): Finding {
 			label: "Token tier depth",
 			score: 0,
 			severity: variableDataUnavailable(data) ? "info" : "fail",
+			tooltip:
+				"A layered token system (primitive -> semantic -> component) enables scalable theming. 3+ tiers indicates mature architecture.",
 			details: variableDataUnavailable(data)
 				? variableUnavailableMessage(data)
 				: "No variables to evaluate tier depth.",
@@ -277,6 +293,8 @@ function scoreTokenTierDepth(data: DesignSystemRawData): Finding {
 		label: "Token tier depth",
 		score: clamp(score),
 		severity: getSeverity(score),
+		tooltip:
+			"A layered token system (primitive -> semantic -> component) enables scalable theming. 3+ tiers indicates mature architecture.",
 		details: `Maximum alias chain depth: ${maxDepth} tier${maxDepth === 1 ? "" : "s"}. 3+ tiers indicates a well-layered token architecture.`,
 	};
 }
@@ -292,6 +310,8 @@ function scoreTypeDistribution(data: DesignSystemRawData): Finding {
 			label: "Type distribution",
 			score: 0,
 			severity: variableDataUnavailable(data) ? "info" : "fail",
+			tooltip:
+				"A complete token system includes COLOR, FLOAT, and STRING variables. Missing types indicate gaps in the design language.",
 			details: variableDataUnavailable(data)
 				? variableUnavailableMessage(data)
 				: "No variables to evaluate type distribution.",
@@ -309,6 +329,8 @@ function scoreTypeDistribution(data: DesignSystemRawData): Finding {
 		label: "Type distribution",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"A complete token system includes COLOR, FLOAT, and STRING variables. Missing types indicate gaps in the design language.",
 		details: `${matchCount} of ${expectedTypes.length} expected types (COLOR, FLOAT, STRING) present. Found: ${[...presentTypes].join(", ") || "none"}.`,
 	};
 }
@@ -324,6 +346,8 @@ function scoreDescriptionCoverage(data: DesignSystemRawData): Finding {
 			label: "Description coverage",
 			score: 0,
 			severity: variableDataUnavailable(data) ? "info" : "fail",
+			tooltip:
+				"Variables should have descriptions explaining their purpose and usage context. Descriptions help consumers choose the right token.",
 			details: variableDataUnavailable(data)
 				? variableUnavailableMessage(data)
 				: "No variables to evaluate description coverage.",
@@ -347,6 +371,8 @@ function scoreDescriptionCoverage(data: DesignSystemRawData): Finding {
 		label: "Description coverage",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Variables should have descriptions explaining their purpose and usage context. Descriptions help consumers choose the right token.",
 		details: `${withDesc.length} of ${data.variables.length} variables have descriptions (${Math.round(ratio * 100)}%).`,
 		examples:
 			withoutDesc.length > 0
@@ -386,7 +412,7 @@ export function scoreTokenArchitecture(
 	return {
 		id: "token-architecture",
 		label: "Token Architecture",
-		shortLabel: "Token",
+		shortLabel: "Tokens",
 		score,
 		weight: 0.2,
 		findings,
