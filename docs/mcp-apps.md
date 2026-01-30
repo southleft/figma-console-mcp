@@ -57,10 +57,10 @@ Browse all design tokens from your Figma file in an interactive table.
 **Usage:**
 
 ```
-Browse the design tokens from https://figma.com/design/YOUR_FILE_ID
+Browse the design tokens in the current file
 ```
 
-The AI calls `figma_browse_tokens` which returns a brief summary to the conversation and renders the full interactive Token Browser inline.
+The AI calls `figma_browse_tokens` which returns a brief summary to the conversation and renders the full interactive Token Browser inline. The tool auto-detects the current file from your connected browser tab — no URL required.
 
 ### Design System Dashboard
 
@@ -76,10 +76,10 @@ Audit your design system with a Lighthouse-style health scorecard rendered inlin
 **Usage:**
 
 ```
-Audit the design system in https://figma.com/design/YOUR_FILE_ID
+Audit the design system in the current file
 ```
 
-The AI calls `figma_audit_design_system` which returns a brief text summary and renders the full interactive dashboard inline. The dashboard scores six categories:
+The AI calls `figma_audit_design_system` which returns a brief text summary and renders the full interactive dashboard inline. The tool auto-detects the current file from your connected browser tab — no URL required. The dashboard scores six categories:
 
 | Category | Weight | What it checks |
 |----------|--------|---------------|

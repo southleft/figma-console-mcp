@@ -5,6 +5,27 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-01-30
+
+### Added
+- **Design System Health Dashboard** — Lighthouse-style MCP App that audits design system quality across six weighted categories
+  - Scoring categories: Naming & Semantics (25%), Token Architecture (20%), Component Metadata (20%), Consistency (15%), Accessibility (10%), Coverage (10%)
+  - Overall weighted score (0–100) with per-category gauge rings and severity indicators
+  - Expandable category sections with individual findings, actionable details, and diagnostic locations
+  - Tooltips explaining each check's purpose and scoring criteria
+  - Refresh button for re-auditing without consuming AI context
+  - Pure scoring engine with no external dependencies — all analysis runs locally
+  - `figma_audit_design_system` tool with context-efficient summary (full data stays in UI)
+  - `ds_dashboard_refresh` app-only tool for UI-initiated re-audit
+
+### Fixed
+- **Smart tab navigation** — `figma_navigate` now detects when a file is already open in a browser tab and switches to it instead of overwriting a different tab. Console monitoring automatically transfers to the switched tab.
+
+### Documentation
+- Design System Dashboard added to README and MCP Apps documentation
+- Updated MCP Apps roadmap (dashboard moved from planned to shipped)
+- Updated docs site banner for v1.5
+
 ## [1.4.0] - 2025-01-27
 
 ### Added
