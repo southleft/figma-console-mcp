@@ -7,7 +7,7 @@
  */
 
 import type { CategoryScore, DesignSystemRawData, Finding } from "./types.js";
-import { clamp, getSeverity } from "./types.js";
+import { buildCollectionNameMap, clamp, getSeverity } from "./types.js";
 
 /** Maximum examples to include in a finding. */
 const MAX_EXAMPLES = 5;
@@ -89,8 +89,11 @@ function scoreDelimiterConsistency(data: DesignSystemRawData): Finding {
 	const ratio = dominantCount / varsWithDelimiter.length;
 	const score = clamp(ratio * 100);
 
+	const collectionNames = buildCollectionNameMap(data.collections);
+
 	// Find variables using non-dominant delimiters
-	const nonDominantVars = names.filter((name) => {
+	const nonDominantVars = data.variables.filter((v) => {
+		const name = v.name;
 		const usesDelimiter = DELIMITERS.some((d) => name.includes(d));
 		if (!usesDelimiter) return false;
 		return !name.includes(dominantDelimiter);
@@ -104,7 +107,15 @@ function scoreDelimiterConsistency(data: DesignSystemRawData): Finding {
 		details: `${Math.round(ratio * 100)}% of variables use "${dominantDelimiter}" as delimiter. Consistent delimiter usage improves navigability.`,
 		examples:
 			nonDominantVars.length > 0
-				? nonDominantVars.slice(0, MAX_EXAMPLES)
+				? nonDominantVars.slice(0, MAX_EXAMPLES).map((v) => v.name)
+				: undefined,
+		locations:
+			nonDominantVars.length > 0
+				? nonDominantVars.slice(0, MAX_EXAMPLES).map((v) => ({
+						name: v.name,
+						collection: collectionNames.get(v.variableCollectionId),
+						type: "variable",
+					}))
 				: undefined,
 	};
 }

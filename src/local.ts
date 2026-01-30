@@ -4580,6 +4580,30 @@ return {
 						);
 					}
 
+					// Fallback: extract file name from URL if getFile failed
+					if (!fileInfo) {
+						try {
+							const urlObj = new URL(url);
+							const segments = urlObj.pathname.split("/").filter(Boolean);
+							// /design/KEY/File-Name or /design/KEY/branch/BRANCHKEY/File-Name
+							const branchIdx = segments.indexOf("branch");
+							const nameSegment =
+								branchIdx >= 0
+									? segments[branchIdx + 2]
+									: segments.length >= 3
+										? segments[2]
+										: undefined;
+							if (nameSegment) {
+								fileInfo = {
+									name: decodeURIComponent(nameSegment).replace(/-/g, " "),
+									lastModified: "",
+								};
+							}
+						} catch {
+							// URL parsing failed — leave fileInfo undefined
+						}
+					}
+
 					return {
 						variables,
 						collections,
@@ -4594,81 +4618,6 @@ return {
 							styles: styles.length > 0,
 							variableError,
 						},
-					};
-				},
-				async (operations) => {
-					const connector = await this.getDesktopConnector();
-					const errors: string[] = [];
-					let completed = 0;
-
-					for (const op of operations) {
-						try {
-							switch (op.action) {
-								case "set-description":
-									await connector.setNodeDescription(
-										op.targetId,
-										op.params.description as string,
-									);
-									break;
-								case "set-variable-description":
-									await connector.setVariableDescription(
-										op.targetId,
-										op.params.description as string,
-									);
-									break;
-								case "rename-variable":
-									await connector.renameVariable(
-										op.targetId,
-										op.params.newName as string,
-									);
-									break;
-								case "rename-node":
-									await connector.renameNode(
-										op.targetId,
-										op.params.newName as string,
-									);
-									break;
-								case "update-variable":
-									await connector.updateVariable(
-										op.targetId,
-										op.params.modeId as string,
-										op.params.value,
-									);
-									break;
-								case "create-variable":
-									await connector.createVariable(
-										op.params.name as string,
-										op.params.collectionId as string,
-										op.params.resolvedType as
-											| "COLOR"
-											| "FLOAT"
-											| "STRING"
-											| "BOOLEAN",
-									);
-									break;
-								case "create-collection":
-									await connector.createVariableCollection(
-										op.params.name as string,
-									);
-									break;
-								default:
-									errors.push(`Unknown action: ${op.action}`);
-									continue;
-							}
-							completed++;
-						} catch (err) {
-							errors.push(
-								`${op.action} on ${op.targetName}: ${err instanceof Error ? err.message : String(err)}`,
-							);
-						}
-					}
-
-					return {
-						findingId: "",
-						success: errors.length === 0,
-						operationsCompleted: completed,
-						operationsTotal: operations.length,
-						errors,
 					};
 				},
 			);

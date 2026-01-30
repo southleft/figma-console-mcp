@@ -16,12 +16,12 @@ interface Finding {
 	severity: "pass" | "warning" | "fail" | "info";
 	details?: string;
 	examples?: string[];
-	fixable?: boolean;
-	fix?: {
-		description: string;
-		operationCount: number;
-		requiresDesktopBridge: boolean;
-	};
+	locations?: Array<{
+		name: string;
+		collection?: string;
+		nodeId?: string;
+		type?: string;
+	}>;
 }
 
 interface CategoryScore {
@@ -140,59 +140,6 @@ async function fetchData(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Fix execution
-// ---------------------------------------------------------------------------
-
-async function executeFix(findingId: string): Promise<void> {
-	try {
-		const result = await app.callServerTool({
-			name: "ds_dashboard_fix",
-			arguments: { findingId },
-		});
-
-		let success = false;
-		let message = "Fix completed";
-
-		if (result.content) {
-			const textBlock = result.content.find(
-				(b: { type: string }) => b.type === "text",
-			);
-			if (textBlock && "text" in textBlock) {
-				const data = JSON.parse(textBlock.text as string);
-				success = data.success;
-				if (data.success) {
-					message = `Fixed ${data.operationsCompleted} of ${data.operationsTotal}`;
-				} else {
-					message = data.errors?.[0] || "Fix failed";
-				}
-			}
-		}
-
-		// Update the status element for this finding
-		const statusEl = appContainer.querySelector(
-			`.finding[data-finding-id="${findingId}"] .fix-status`,
-		);
-		if (statusEl) {
-			statusEl.className = `fix-status ${success ? "success" : "error"}`;
-			statusEl.textContent = message;
-		}
-
-		// Auto-refresh dashboard after successful fix
-		if (success) {
-			setTimeout(() => fetchData(), 1500);
-		}
-	} catch (err) {
-		const statusEl = appContainer.querySelector(
-			`.finding[data-finding-id="${findingId}"] .fix-status`,
-		);
-		if (statusEl) {
-			statusEl.className = "fix-status error";
-			statusEl.textContent = String(err);
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Event delegation
 // ---------------------------------------------------------------------------
 
@@ -207,10 +154,11 @@ appContainer.addEventListener("click", (e) => {
 			const id = catEl.dataset.id;
 			if (expandedCategories.has(id)) {
 				expandedCategories.delete(id);
+				catEl.classList.remove("expanded");
 			} else {
 				expandedCategories.add(id);
+				catEl.classList.add("expanded");
 			}
-			render();
 		}
 		return;
 	}
@@ -223,42 +171,6 @@ appContainer.addEventListener("click", (e) => {
 			const refreshBtn = appContainer.querySelector(".refresh-btn");
 			if (refreshBtn) refreshBtn.textContent = "Refresh";
 		});
-		return;
-	}
-
-	// Fix button → show inline confirmation
-	const fixBtn = target.closest(".fix-btn") as HTMLElement | null;
-	if (fixBtn) {
-		const findingId = fixBtn.dataset.findingId;
-		if (!findingId) return;
-		const findingEl = fixBtn.closest(".finding") as HTMLElement | null;
-		if (!findingEl) return;
-
-		// Replace fix button with confirmation
-		const description = fixBtn.title || "Apply fix";
-		fixBtn.outerHTML = `<span class="fix-confirm" data-finding-id="${escAttr(findingId)}">
-			<span>${esc(description)}?</span>
-			<button class="fix-yes">Yes</button>
-			<button class="fix-no">Cancel</button>
-		</span>`;
-		return;
-	}
-
-	// Fix confirm → execute fix
-	if (target.closest(".fix-yes")) {
-		const confirmEl = target.closest(".fix-confirm") as HTMLElement | null;
-		if (!confirmEl) return;
-		const findingId = confirmEl.dataset.findingId;
-		if (!findingId) return;
-
-		confirmEl.outerHTML = `<span class="fix-status loading">Fixing...</span>`;
-		executeFix(findingId);
-		return;
-	}
-
-	// Fix cancel → re-render to restore button
-	if (target.closest(".fix-no")) {
-		render();
 		return;
 	}
 });
@@ -307,10 +219,6 @@ function render(): void {
 		metaParts.push(`${meta.collectionCount} collections`);
 	if (meta.styleCount > 0) metaParts.push(`${meta.styleCount} styles`);
 
-	const fileInfoHtml = fileInfo
-		? `<div class="file-info"><span class="file-name">${esc(fileInfo.name)}</span></div>`
-		: "";
-
 	const dataNoticeHtml =
 		dataAvailability && !dataAvailability.variables
 			? `<div class="data-notice">Variable and token data unavailable. ${esc(dataAvailability.variableError || "Requires Figma Enterprise plan or Desktop Bridge plugin.")} Token-related scores may not reflect actual design system quality.</div>`
@@ -319,8 +227,8 @@ function render(): void {
 	appContainer.innerHTML = `
 		<div class="header">
 			<div>
-				${fileInfoHtml}
 				<h1>Design System Health</h1>
+				${fileInfo ? `<div class="header-subtitle">${esc(fileInfo.name)}</div>` : ""}
 			</div>
 			<button class="refresh-btn">Refresh</button>
 		</div>
@@ -420,17 +328,21 @@ function buildFindings(findings: Finding[]): string {
 			const detailsHtml = f.details
 				? `<div class="finding-details">${esc(f.details)}</div>`
 				: "";
-			const examplesHtml =
-				f.examples && f.examples.length > 0
+			const locationItems = f.locations && f.locations.length > 0 ? f.locations : null;
+			const examplesHtml = locationItems
+				? `<details class="finding-examples">
+					<summary>${locationItems.length} example${locationItems.length !== 1 ? "s" : ""}</summary>
+					<ul class="examples-list">${locationItems.map((loc) => {
+						const ctx = loc.collection
+							? ` <span class="example-ctx">${esc(loc.collection)}</span>` : "";
+						return `<li>${esc(loc.name)}${ctx}</li>`;
+					}).join("")}</ul>
+				</details>`
+				: f.examples && f.examples.length > 0
 					? `<details class="finding-examples">
 						<summary>${f.examples.length} example${f.examples.length !== 1 ? "s" : ""}</summary>
 						<ul class="examples-list">${f.examples.map((ex) => `<li>${esc(ex)}</li>`).join("")}</ul>
 					</details>`
-					: "";
-			const fixBtnHtml =
-				f.fixable && f.fix
-					? `<button class="fix-btn" data-finding-id="${escAttr(f.id)}"
-						title="${escAttr(f.fix.description)}">Fix (${f.fix.operationCount})</button>`
 					: "";
 
 			return `
@@ -441,7 +353,6 @@ function buildFindings(findings: Finding[]): string {
 					${detailsHtml}
 					${examplesHtml}
 				</div>
-				${fixBtnHtml}
 				<span class="finding-score ${scoreClass}">${f.score}</span>
 			</div>`;
 		})

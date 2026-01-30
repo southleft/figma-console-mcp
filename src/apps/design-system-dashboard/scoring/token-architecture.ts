@@ -7,7 +7,7 @@
  */
 
 import type { CategoryScore, DesignSystemRawData, Finding } from "./types.js";
-import { clamp, getSeverity } from "./types.js";
+import { buildCollectionNameMap, clamp, getSeverity } from "./types.js";
 
 /** Maximum examples to include in a finding. */
 const MAX_EXAMPLES = 5;
@@ -139,9 +139,11 @@ function scoreAliasUsage(data: DesignSystemRawData): Finding {
 		};
 	}
 
+	const collectionNames = buildCollectionNameMap(data.collections);
+
 	let aliasCount = 0;
 	let totalValues = 0;
-	const rawValueVars: string[] = [];
+	const rawValueVars: any[] = [];
 
 	for (const variable of data.variables) {
 		if (!variable.valuesByMode) continue;
@@ -154,7 +156,7 @@ function scoreAliasUsage(data: DesignSystemRawData): Finding {
 			}
 		}
 		if (!hasAnyAlias) {
-			rawValueVars.push(variable.name);
+			rawValueVars.push(variable);
 		}
 	}
 
@@ -178,7 +180,15 @@ function scoreAliasUsage(data: DesignSystemRawData): Finding {
 		severity: getSeverity(score),
 		details: `${aliasCount} of ${totalValues} values are aliases (${Math.round(ratio * 100)}%). Higher alias usage indicates better token layering.`,
 		examples:
-			rawValueVars.length > 0 ? rawValueVars.slice(0, MAX_EXAMPLES) : undefined,
+			rawValueVars.length > 0 ? rawValueVars.slice(0, MAX_EXAMPLES).map((v: any) => v.name) : undefined,
+		locations:
+			rawValueVars.length > 0
+				? rawValueVars.slice(0, MAX_EXAMPLES).map((v: any) => ({
+						name: v.name,
+						collection: collectionNames.get(v.variableCollectionId),
+						type: "variable",
+					}))
+				: undefined,
 	};
 }
 
@@ -320,6 +330,8 @@ function scoreDescriptionCoverage(data: DesignSystemRawData): Finding {
 		};
 	}
 
+	const collectionNames = buildCollectionNameMap(data.collections);
+
 	const withDesc = data.variables.filter(
 		(v) => v.description && v.description.trim().length > 0,
 	);
@@ -339,6 +351,14 @@ function scoreDescriptionCoverage(data: DesignSystemRawData): Finding {
 		examples:
 			withoutDesc.length > 0
 				? withoutDesc.slice(0, MAX_EXAMPLES).map((v) => v.name)
+				: undefined,
+		locations:
+			withoutDesc.length > 0
+				? withoutDesc.slice(0, MAX_EXAMPLES).map((v) => ({
+						name: v.name,
+						collection: collectionNames.get(v.variableCollectionId),
+						type: "variable",
+					}))
 				: undefined,
 	};
 }
