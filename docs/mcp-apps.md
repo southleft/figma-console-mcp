@@ -62,6 +62,34 @@ Browse the design tokens from https://figma.com/design/YOUR_FILE_ID
 
 The AI calls `figma_browse_tokens` which returns a brief summary to the conversation and renders the full interactive Token Browser inline.
 
+### Design System Dashboard
+
+Audit your design system with a Lighthouse-style health scorecard rendered inline.
+
+**Features:**
+- Overall weighted score (0–100) with six category gauges: Naming, Tokens, Components, Accessibility, Consistency, Coverage
+- Expandable category sections with individual findings, severity indicators, and actionable details
+- Diagnostic locations linking findings to specific variables, components, or collections
+- Tooltips explaining each check's purpose and scoring criteria
+- Refresh button to re-run the audit without consuming AI context
+
+**Usage:**
+
+```
+Audit the design system in https://figma.com/design/YOUR_FILE_ID
+```
+
+The AI calls `figma_audit_design_system` which returns a brief text summary and renders the full interactive dashboard inline. The dashboard scores six categories:
+
+| Category | Weight | What it checks |
+|----------|--------|---------------|
+| Naming & Semantics | 25% | Semantic variable naming, component naming conventions |
+| Token Architecture | 20% | Alias usage, depth layering, mode support, descriptions |
+| Component Metadata | 20% | Descriptions, variant structure, standalone vs. set ratio |
+| Accessibility | 10% | Contrast-ready tokens, focus state components, readable naming |
+| Consistency | 15% | Delimiter usage, casing patterns, scale adherence, mode naming |
+| Coverage | 10% | Token type coverage, core component presence, variable count |
+
 ---
 
 ## Enabling MCP Apps
@@ -133,12 +161,11 @@ Adding a new app requires:
 
 ## Roadmap
 
-The Token Browser is the first of several planned MCP Apps:
+Planned MCP Apps:
 
 - **Component Gallery** — Visual browser for searching and previewing components with variant exploration
 - **Style Inspector** — Interactive panel for exploring color, text, and effect styles with live previews
 - **Variable Diff Viewer** — Side-by-side comparison of token values across modes and branches
-- **Design System Dashboard** — Overview of your design system health with coverage metrics
 
 ---
 
