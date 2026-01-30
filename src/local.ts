@@ -907,7 +907,7 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 		// Tool 6: Navigate to Figma
 		this.server.tool(
 			"figma_navigate",
-			"Navigate browser to a Figma URL and start console monitoring. ALWAYS use this first when starting a new debugging session or switching files. Initializes browser connection and begins capturing console logs. Use when user provides a Figma URL or says: 'open this file', 'debug this design', 'switch to'. Returns navigation status and current URL.",
+			"Navigate browser to a Figma URL and start console monitoring. ALWAYS use this first when starting a new debugging session or switching files. Initializes browser connection and begins capturing console logs. Use when user provides a Figma URL or says: 'open this file', 'debug this design', 'switch to'. Returns navigation status and current URL. If the file is already open in a tab, switches to it without reloading.",
 			{
 				url: z
 					.string()
@@ -924,10 +924,40 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 						throw new Error("Browser manager not initialized");
 					}
 
-					// Navigate to the URL
-					await this.browserManager.navigateToFigma(url);
+					// Navigate to the URL (may switch to existing tab)
+					const result = await this.browserManager.navigateToFigma(url);
 
-					// Give page time to load and start capturing logs
+					if (result.action === 'switched_to_existing') {
+						// Switch console monitor to the existing tab's page
+						if (this.consoleMonitor) {
+							this.consoleMonitor.stopMonitoring();
+							await this.consoleMonitor.startMonitoring(result.page);
+						}
+
+						// No delay needed — page is already loaded
+						const currentUrl = this.browserManager.getCurrentUrl();
+
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											status: "switched_to_existing",
+											url: currentUrl,
+											timestamp: Date.now(),
+											message:
+												"Switched to existing tab for this Figma file. Console monitoring is active.",
+										},
+										null,
+										2,
+									),
+								},
+							],
+						};
+					}
+
+					// Normal navigation — give page time to load
 					await new Promise((resolve) => setTimeout(resolve, 2000));
 
 					const currentUrl = this.browserManager.getCurrentUrl();

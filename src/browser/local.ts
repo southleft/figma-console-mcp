@@ -5,7 +5,8 @@
 
 import puppeteer, { type Browser, type Page } from 'puppeteer-core';
 import { createChildLogger } from '../core/logger.js';
-import type { IBrowserManager } from './base.js';
+import { extractFileKey } from '../core/figma-api.js';
+import type { IBrowserManager, NavigationResult } from './base.js';
 
 const logger = createChildLogger({ component: 'local-browser' });
 
@@ -125,6 +126,32 @@ export class LocalBrowserManager implements IBrowserManager {
 	}
 
 	/**
+	 * Find an existing browser tab whose URL matches the given Figma file key
+	 */
+	private async findPageByFileKey(targetFileKey: string): Promise<Page | null> {
+		if (!this.browser) {
+			return null;
+		}
+
+		const pages = await this.browser.pages();
+
+		for (const page of pages) {
+			const pageUrl = page.url();
+			if (!pageUrl.includes('figma.com') || pageUrl.includes('devtools')) {
+				continue;
+			}
+
+			const pageFileKey = extractFileKey(pageUrl);
+			if (pageFileKey && pageFileKey === targetFileKey) {
+				logger.info({ url: pageUrl, fileKey: pageFileKey }, 'Found existing tab for file key');
+				return page;
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Get active Figma page or create new one
 	 * Prefers pages with active plugin workers for plugin debugging
 	 */
@@ -167,15 +194,29 @@ export class LocalBrowserManager implements IBrowserManager {
 
 	/**
 	 * Navigate to Figma URL
+	 * If the target file is already open in a tab, switches to it instead of navigating.
 	 */
-	async navigateToFigma(figmaUrl?: string): Promise<Page> {
+	async navigateToFigma(figmaUrl?: string): Promise<NavigationResult> {
 		// Ensure connection is alive before navigation
 		await this.ensureConnection();
-		
-		const page = await this.getPage();
 
 		// Default to Figma homepage if no URL provided
 		const url = figmaUrl || 'https://www.figma.com';
+
+		// Check if the target file is already open in an existing tab
+		const targetFileKey = extractFileKey(url);
+		if (targetFileKey) {
+			const existingPage = await this.findPageByFileKey(targetFileKey);
+			if (existingPage) {
+				logger.info({ url, fileKey: targetFileKey }, 'Switching to existing tab instead of navigating');
+				await existingPage.bringToFront();
+				this.page = existingPage;
+				return { page: existingPage, action: 'switched_to_existing', url: existingPage.url() };
+			}
+		}
+
+		// No existing tab found — fall through to normal navigation
+		const page = await this.getPage();
 
 		logger.info({ url }, 'Navigating to Figma');
 
@@ -186,7 +227,7 @@ export class LocalBrowserManager implements IBrowserManager {
 			});
 
 			logger.info({ url }, 'Navigation successful');
-			return page;
+			return { page, action: 'navigated', url };
 		} catch (error) {
 			logger.error({ error, url }, 'Navigation failed');
 			throw new Error(`Failed to navigate to ${url}: ${error}`);
