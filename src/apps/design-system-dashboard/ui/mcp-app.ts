@@ -14,6 +14,7 @@ interface Finding {
 	label: string;
 	score: number;
 	severity: "pass" | "warning" | "fail" | "info";
+	tooltip?: string;
 	details?: string;
 	examples?: string[];
 	locations?: Array<{
@@ -325,6 +326,7 @@ function buildFindings(findings: Finding[]): string {
 		.map((f) => {
 			const icon = severityIcon(f.severity);
 			const scoreClass = scoreColorClass(f.score);
+			const tooltipAttr = f.tooltip ? ` title="${escAttr(f.tooltip)}"` : "";
 			const detailsHtml = f.details
 				? `<div class="finding-details">${esc(f.details)}</div>`
 				: "";
@@ -349,7 +351,7 @@ function buildFindings(findings: Finding[]): string {
 			<div class="finding" data-finding-id="${escAttr(f.id)}">
 				<span class="finding-icon ${f.severity}">${icon}</span>
 				<div class="finding-body">
-					<div class="finding-label">${esc(f.label)}</div>
+					<div class="finding-label"${tooltipAttr}>${esc(f.label)}</div>
 					${detailsHtml}
 					${examplesHtml}
 				</div>

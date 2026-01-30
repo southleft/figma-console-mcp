@@ -127,6 +127,8 @@ function scoreColorContrast(data: DesignSystemRawData): Finding {
 			label: "Color contrast",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Foreground/background color pairs should meet WCAG AA contrast ratio (4.5:1). Low contrast makes content unreadable for users with vision impairments.",
 			details:
 				colors.length === 0
 					? "No direct color values to evaluate."
@@ -171,6 +173,8 @@ function scoreColorContrast(data: DesignSystemRawData): Finding {
 			label: "Color contrast",
 			score: 50,
 			severity: "warning",
+			tooltip:
+				"Foreground/background color pairs should meet WCAG AA contrast ratio (4.5:1). Low contrast makes content unreadable for users with vision impairments.",
 			details:
 				"Could not identify foreground/background color pairs to check contrast.",
 		};
@@ -201,6 +205,8 @@ function scoreColorContrast(data: DesignSystemRawData): Finding {
 		label: "Color contrast",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Foreground/background color pairs should meet WCAG AA contrast ratio (4.5:1). Low contrast makes content unreadable for users with vision impairments.",
 		details: `${passingPairs} of ${pairs.length} color pairs meet WCAG AA contrast ratio (${WCAG_AA_RATIO}:1).`,
 		examples: failingExamples.length > 0 ? failingExamples : undefined,
 	};
@@ -219,6 +225,8 @@ function scoreStateVariants(data: DesignSystemRawData): Finding {
 			label: "State variants",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Interactive components should include state variants (disabled, error, focus, hover, active, pressed, selected) for accessible interactions.",
 			details: "No components to evaluate.",
 		};
 	}
@@ -240,6 +248,8 @@ function scoreStateVariants(data: DesignSystemRawData): Finding {
 		label: "State variants",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Interactive components should include state variants (disabled, error, focus, hover, active, pressed, selected) for accessible interactions.",
 		details:
 			missingStates.length > 0
 				? `Found ${foundStates.length} of ${STATE_VARIANTS.length} state variants. Missing: ${missingStates.join(", ")}.`
@@ -267,6 +277,8 @@ function scoreSemanticColorNaming(data: DesignSystemRawData): Finding {
 			label: "Semantic color naming",
 			score: 0,
 			severity: unavailable ? "info" : "fail",
+			tooltip:
+				"The token set should include semantic color categories (error, warning, success, info, danger) to convey meaning beyond color alone.",
 			details: unavailable
 				? `Variable data unavailable: ${data.dataAvailability?.variableError || "Requires Desktop Bridge or Enterprise plan."}`
 				: "No color variables found.",
@@ -302,6 +314,8 @@ function scoreSemanticColorNaming(data: DesignSystemRawData): Finding {
 		label: "Semantic color naming",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"The token set should include semantic color categories (error, warning, success, info, danger) to convey meaning beyond color alone.",
 		details:
 			missingSemantic.length > 0
 				? `Found ${foundSemantic.length} of ${SEMANTIC_COLOR_NAMES.length} semantic color categories. Missing: ${missingSemantic.join(", ")}.`
@@ -331,7 +345,7 @@ export function scoreAccessibility(data: DesignSystemRawData): CategoryScore {
 	return {
 		id: "accessibility",
 		label: "Accessibility",
-		shortLabel: "A11y",
+		shortLabel: "Accessibility",
 		score,
 		weight: 0.15,
 		findings,

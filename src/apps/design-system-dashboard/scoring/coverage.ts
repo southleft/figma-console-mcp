@@ -46,6 +46,8 @@ function scoreTokenTypeCoverage(data: DesignSystemRawData): Finding {
 			label: "Token type coverage",
 			score: 0,
 			severity: variableDataUnavailable(data) ? "info" : "fail",
+			tooltip:
+				"A complete design system should include all variable types: COLOR, FLOAT, STRING, and BOOLEAN. Missing types indicate gaps.",
 			details: variableDataUnavailable(data)
 				? variableUnavailableMessage(data)
 				: "No variables found in the design system.",
@@ -80,6 +82,8 @@ function scoreTokenTypeCoverage(data: DesignSystemRawData): Finding {
 		label: "Token type coverage",
 		score: clamp(score),
 		severity: getSeverity(score),
+		tooltip:
+			"A complete design system should include all variable types: COLOR, FLOAT, STRING, and BOOLEAN. Missing types indicate gaps.",
 		details:
 			missingTypes.length > 0
 				? `${foundTypes.length} of ${ALL_VARIABLE_TYPES.length} variable types present. Missing: ${missingTypes.join(", ")}.`
@@ -98,6 +102,8 @@ function scoreCoreComponentPresence(data: DesignSystemRawData): Finding {
 			label: "Core component presence",
 			score: 0,
 			severity: "fail",
+			tooltip:
+				"A mature design system should include core UI patterns: button, input, card, modal/dialog, navigation, and alert/toast.",
 			details: "No components found in the design system.",
 		};
 	}
@@ -131,6 +137,8 @@ function scoreCoreComponentPresence(data: DesignSystemRawData): Finding {
 		label: "Core component presence",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"A mature design system should include core UI patterns: button, input, card, modal/dialog, navigation, and alert/toast.",
 		details:
 			missingCategories.length > 0
 				? `${foundCategories.length} of ${CORE_COMPONENT_PATTERNS.length} core component categories found. Missing: ${missingCategories.join(", ")}.`
@@ -155,6 +163,8 @@ function scoreVariableCountHealth(data: DesignSystemRawData): Finding {
 			label: "Variable count health",
 			score: 0,
 			severity: "info",
+			tooltip:
+				"A healthy token system typically has 50+ variables. Fewer tokens may indicate the system relies on hard-coded values.",
 			details: variableUnavailableMessage(data),
 		};
 	}
@@ -179,6 +189,8 @@ function scoreVariableCountHealth(data: DesignSystemRawData): Finding {
 		label: "Variable count health",
 		score: clamp(score),
 		severity: getSeverity(score),
+		tooltip:
+			"A healthy token system typically has 50+ variables. Fewer tokens may indicate the system relies on hard-coded values.",
 		details,
 	};
 }
@@ -199,6 +211,8 @@ function scoreCollectionCompleteness(data: DesignSystemRawData): Finding {
 			label: "Collection completeness",
 			score: 0,
 			severity: "info",
+			tooltip:
+				"Multiple collections (3+) indicate good separation of concerns. Tokens should be organized by domain: colors, spacing, typography, etc.",
 			details: variableUnavailableMessage(data),
 		};
 	}
@@ -224,6 +238,8 @@ function scoreCollectionCompleteness(data: DesignSystemRawData): Finding {
 		label: "Collection completeness",
 		score: clamp(score),
 		severity: getSeverity(score),
+		tooltip:
+			"Multiple collections (3+) indicate good separation of concerns. Tokens should be organized by domain: colors, spacing, typography, etc.",
 		details,
 	};
 }
@@ -247,7 +263,7 @@ export function scoreCoverage(data: DesignSystemRawData): CategoryScore {
 	return {
 		id: "coverage",
 		label: "Coverage",
-		shortLabel: "Cover",
+		shortLabel: "Coverage",
 		score,
 		weight: 0.1,
 		findings,

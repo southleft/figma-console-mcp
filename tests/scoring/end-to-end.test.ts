@@ -218,6 +218,16 @@ describe("End-to-end scoring pipeline", () => {
 			// "/" is the dominant delimiter
 			expect(delimiter.details).toContain("/");
 		});
+
+		it("component-metadata detects generic layer names", () => {
+			const compMeta = result.categories.find((c) => c.id === "component-metadata")!;
+			expect(compMeta).toBeDefined();
+			const genericNaming = compMeta.findings.find((f) => f.id === "component-generic-naming")!;
+			expect(genericNaming).toBeDefined();
+			// The test data uses intentional names, so score should be high
+			expect(genericNaming.score).toBe(100);
+			expect(genericNaming.label).toBe("Layer naming");
+		});
 	});
 
 	// -----------------------------------------------------------------------

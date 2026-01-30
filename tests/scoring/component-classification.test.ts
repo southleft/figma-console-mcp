@@ -9,6 +9,7 @@ import {
 	classifyComponents,
 	type ComponentClassification,
 } from "../../src/apps/design-system-dashboard/scoring/component-metadata";
+import { scoreComponentMetadata } from "../../src/apps/design-system-dashboard/scoring/component-metadata";
 import type { DesignSystemRawData } from "../../src/apps/design-system-dashboard/scoring/types";
 
 function makeData(
@@ -223,6 +224,93 @@ describe("classifyComponents", () => {
 			const result = classifyComponents(data);
 			expect(result.variants).toHaveLength(1);
 			expect(result.standalone).toHaveLength(1);
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// Generic name detection
+	// -----------------------------------------------------------------------
+
+	describe("generic layer name detection", () => {
+		it("flags components with auto-generated Figma names", () => {
+			const data = makeData({
+				components: [
+					{ name: "Frame 347", node_id: "1:1" },
+					{ name: "Group 12", node_id: "1:2" },
+					{ name: "Rectangle 5", node_id: "1:3" },
+					{ name: "Button", node_id: "1:4" },
+				],
+				componentSets: [],
+			});
+
+			const result = scoreComponentMetadata(data);
+			const genericNaming = result.findings.find(
+				(f) => f.id === "component-generic-naming",
+			);
+			expect(genericNaming).toBeDefined();
+			// 3 of 4 are generic → score = 25
+			expect(genericNaming!.score).toBe(25);
+			expect(genericNaming!.examples).toHaveLength(3);
+			expect(genericNaming!.locations).toHaveLength(3);
+		});
+
+		it("flags generic names within path segments", () => {
+			const data = makeData({
+				components: [
+					{ name: "Forms / Frame 99", node_id: "1:1" },
+					{ name: "Forms / Input", node_id: "1:2" },
+				],
+				componentSets: [],
+			});
+
+			const result = scoreComponentMetadata(data);
+			const genericNaming = result.findings.find(
+				(f) => f.id === "component-generic-naming",
+			);
+			expect(genericNaming).toBeDefined();
+			// 1 of 2 is generic → score = 50
+			expect(genericNaming!.score).toBe(50);
+		});
+
+		it("scores 100 when all names are intentional", () => {
+			const data = makeData({
+				components: [
+					{ name: "Button", node_id: "1:1" },
+					{ name: "Card", node_id: "1:2" },
+					{ name: "Icon / Star", node_id: "1:3" },
+				],
+				componentSets: [],
+			});
+
+			const result = scoreComponentMetadata(data);
+			const genericNaming = result.findings.find(
+				(f) => f.id === "component-generic-naming",
+			);
+			expect(genericNaming).toBeDefined();
+			expect(genericNaming!.score).toBe(100);
+		});
+
+		it("detects various Figma auto-generated types", () => {
+			const data = makeData({
+				components: [
+					{ name: "Ellipse", node_id: "1:1" },
+					{ name: "Vector 2", node_id: "1:2" },
+					{ name: "Text 15", node_id: "1:3" },
+					{ name: "Boolean Group 1", node_id: "1:4" },
+					{ name: "Section 3", node_id: "1:5" },
+					{ name: "Instance 7", node_id: "1:6" },
+					{ name: "RealComponent", node_id: "1:7" },
+				],
+				componentSets: [],
+			});
+
+			const result = scoreComponentMetadata(data);
+			const genericNaming = result.findings.find(
+				(f) => f.id === "component-generic-naming",
+			);
+			expect(genericNaming).toBeDefined();
+			// 6 of 7 are generic → score ≈ 14
+			expect(genericNaming!.score).toBe(14);
 		});
 	});
 

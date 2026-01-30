@@ -126,6 +126,8 @@ function scoreDescriptionPresence(
 			label: "Description presence",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Components and component sets should have descriptions. Descriptions appear in Figma's asset panel and help designers find the right component.",
 			details: "No components to evaluate.",
 		};
 	}
@@ -145,6 +147,8 @@ function scoreDescriptionPresence(
 		label: "Description presence",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Components and component sets should have descriptions. Descriptions appear in Figma's asset panel and help designers find the right component.",
 		details: `${withDesc.length} of ${scorableUnits.length} components have descriptions (${Math.round(ratio * 100)}%).`,
 		examples:
 			withoutDesc.length > 0
@@ -179,6 +183,8 @@ function scoreDescriptionQuality(
 			label: "Description quality",
 			score: 0,
 			severity: scorableUnits.length === 0 ? "info" : "fail",
+			tooltip:
+				"Descriptions should be meaningful (20+ characters) and explain usage, not just repeat the name. Good descriptions reduce misuse.",
 			details:
 				scorableUnits.length === 0
 					? "No components to evaluate."
@@ -199,6 +205,8 @@ function scoreDescriptionQuality(
 		label: "Description quality",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Descriptions should be meaningful (20+ characters) and explain usage, not just repeat the name. Good descriptions reduce misuse.",
 		details:
 			shortDescs.length > 0
 				? `${shortDescs.length} of ${withDesc.length} descriptions are too short (<${MIN_QUALITY_DESC_LENGTH} chars). Provide usage guidance, not just names.`
@@ -226,6 +234,8 @@ function scorePropertyCompleteness(
 			label: "Property completeness",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Components should expose properties or use variant sets. Properties make components flexible and reduce the need for detaching instances.",
 			details: "No components to evaluate.",
 		};
 	}
@@ -252,6 +262,8 @@ function scorePropertyCompleteness(
 		label: "Property completeness",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Components should expose properties or use variant sets. Properties make components flexible and reduce the need for detaching instances.",
 		details: `${withProperties} of ${scorableUnits.length} components have defined properties or variants (${Math.round(ratio * 100)}%).`,
 		examples:
 			standaloneWithoutProps.length > 0
@@ -284,6 +296,8 @@ function scoreVariantStructure(
 			label: "Variant structure",
 			score: 100,
 			severity: "info",
+			tooltip:
+				"Related component variants should be organized into component sets. Sets make variant switching easy and reduce component sprawl.",
 			details: "No components to evaluate.",
 		};
 	}
@@ -297,6 +311,8 @@ function scoreVariantStructure(
 		label: "Variant structure",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			"Related component variants should be organized into component sets. Sets make variant switching easy and reduce component sprawl.",
 		details:
 			setCount > 0
 				? `${setCount} of ${scorableUnits.length} components use variant sets (${Math.round(ratio * 100)}%). ${standalone.length} standalone component${standalone.length === 1 ? "" : "s"}.`
@@ -323,6 +339,8 @@ function scoreCategoryOrganization(
 			label: "Category organization",
 			score: 100,
 			severity: "info",
+			tooltip:
+				'Component names should use path separators (/) for grouping (e.g. Forms/Input). Organized naming improves asset panel navigation.',
 			details: "No components to evaluate.",
 		};
 	}
@@ -337,6 +355,8 @@ function scoreCategoryOrganization(
 		label: "Category organization",
 		score,
 		severity: getSeverity(score),
+		tooltip:
+			'Component names should use path separators (/) for grouping (e.g. Forms/Input). Organized naming improves asset panel navigation.',
 		details:
 			withPath.length > 0
 				? `${withPath.length} of ${scorableUnits.length} components use path-based grouping (${Math.round(ratio * 100)}%).`
@@ -348,6 +368,63 @@ function scoreCategoryOrganization(
 		locations:
 			withoutPath.length > 0
 				? withoutPath.slice(0, MAX_EXAMPLES).map((c) => ({
+						name: c.name,
+						nodeId: c.node_id,
+						type: "component",
+					}))
+				: undefined,
+	};
+}
+
+/** Matches Figma auto-generated layer names like "Frame 347", "Group 12", "Rectangle 5". */
+const GENERIC_NAME_RE =
+	/^(Frame|Group|Rectangle|Ellipse|Line|Polygon|Vector|Text|Image|Slice|Component|Instance|Section|Boolean\s*Group)\s*\d*$/i;
+
+/**
+ * Score generic layer naming.
+ * Published components should have intentional names, not auto-generated ones.
+ */
+function scoreGenericNaming(classification: ComponentClassification): Finding {
+	const { scorableUnits } = classification;
+
+	if (scorableUnits.length === 0) {
+		return {
+			id: "component-generic-naming",
+			label: "Layer naming",
+			score: 100,
+			severity: "info",
+			tooltip:
+				"Published components should have intentional names. Auto-generated names like Frame 347 or Group 12 indicate layers that were never renamed.",
+			details: "No components to evaluate.",
+		};
+	}
+
+	const genericComps = scorableUnits.filter((c) => {
+		const segments = (c.name || "").split("/").map((s: string) => s.trim());
+		return segments.some((seg: string) => GENERIC_NAME_RE.test(seg));
+	});
+
+	const ratio = 1 - genericComps.length / scorableUnits.length;
+	const score = clamp(ratio * 100);
+
+	return {
+		id: "component-generic-naming",
+		label: "Layer naming",
+		score,
+		severity: getSeverity(score),
+		tooltip:
+			"Published components should have intentional names. Auto-generated names like Frame 347 or Group 12 indicate layers that were never renamed.",
+		details:
+			genericComps.length > 0
+				? `${genericComps.length} of ${scorableUnits.length} components have auto-generated layer names (e.g. Frame, Group, Rectangle).`
+				: "All components have intentional names.",
+		examples:
+			genericComps.length > 0
+				? genericComps.slice(0, MAX_EXAMPLES).map((c) => c.name)
+				: undefined,
+		locations:
+			genericComps.length > 0
+				? genericComps.slice(0, MAX_EXAMPLES).map((c) => ({
 						name: c.name,
 						nodeId: c.node_id,
 						type: "component",
@@ -371,6 +448,7 @@ export function scoreComponentMetadata(
 		scorePropertyCompleteness(classification),
 		scoreVariantStructure(classification),
 		scoreCategoryOrganization(classification),
+		scoreGenericNaming(classification),
 	];
 
 	const score = clamp(
@@ -380,7 +458,7 @@ export function scoreComponentMetadata(
 	return {
 		id: "component-metadata",
 		label: "Component Metadata",
-		shortLabel: "Comp",
+		shortLabel: "Components",
 		score,
 		weight: 0.2,
 		findings,

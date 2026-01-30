@@ -17,6 +17,7 @@ export interface Finding {
 	label: string;
 	score: number; // 0-100
 	severity: FindingSeverity;
+	tooltip?: string; // Hover explanation for this check
 	details?: string;
 	examples?: string[]; // Up to 5 specific item names
 	locations?: Array<{
@@ -40,7 +41,7 @@ export function buildCollectionNameMap(collections: any[]): Map<string, string> 
 export interface CategoryScore {
 	id: string;
 	label: string;
-	shortLabel: string; // For gauge display (max ~5 chars)
+	shortLabel: string; // For gauge display
 	score: number; // 0-100
 	weight: number; // 0-1 (sum of all weights = 1)
 	findings: Finding[];

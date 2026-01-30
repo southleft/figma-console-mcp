@@ -91,7 +91,7 @@
 		.gauge-row {
 			display: flex;
 			flex-wrap: wrap;
-			gap: 8px;
+			gap: 18px;
 			justify-content: center;
 			padding: 8px 0 12px;
 			border-bottom: 1px solid #2a2a2a;
@@ -126,9 +126,6 @@
 			font-size: 11px;
 			color: #999;
 			text-align: center;
-			max-width: 72px;
-			overflow: hidden;
-			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
 
@@ -248,6 +245,12 @@
 			font-size: 13px;
 			font-weight: 500;
 			color: #ccc;
+		}
+		.finding-label[title] {
+			text-decoration: underline dotted;
+			text-decoration-color: #555;
+			text-underline-offset: 2px;
+			cursor: help;
 		}
 		.finding-details {
 			font-size: 12px;
