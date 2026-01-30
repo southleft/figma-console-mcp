@@ -20,7 +20,7 @@
 		"dev": "wrangler dev",
 		"dev:local": "tsx src/local.ts",
 		"build": "npm run build:local && npm run build:cloudflare && npm run build:apps",
-		"build:apps": "cross-env APP_NAME=token-browser vite build",
+		"build:apps": "cross-env APP_NAME=token-browser vite build && cross-env APP_NAME=design-system-dashboard vite build",
 		"dev:apps": "vite build --watch",
 		"build:local": "tsc -p tsconfig.local.json",
 		"build:cloudflare": "tsc -p tsconfig.cloudflare.json",
