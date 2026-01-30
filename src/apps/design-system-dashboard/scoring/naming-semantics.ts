@@ -7,7 +7,7 @@
  */
 
 import type { CategoryScore, DesignSystemRawData, Finding } from "./types.js";
-import { clamp, getSeverity } from "./types.js";
+import { buildCollectionNameMap, clamp, getSeverity } from "./types.js";
 
 /** Maximum examples to include in a finding. */
 const MAX_EXAMPLES = 5;
@@ -119,6 +119,7 @@ function scoreVariableNaming(data: DesignSystemRawData): Finding {
 		};
 	}
 
+	const collectionNames = buildCollectionNameMap(data.collections);
 	const visualVars = colorVars.filter((v) => containsVisualColorWord(v.name));
 	const semanticRatio = 1 - visualVars.length / colorVars.length;
 	const score = clamp(semanticRatio * 100);
@@ -135,6 +136,14 @@ function scoreVariableNaming(data: DesignSystemRawData): Finding {
 		examples:
 			visualVars.length > 0
 				? visualVars.slice(0, MAX_EXAMPLES).map((v) => v.name)
+				: undefined,
+		locations:
+			visualVars.length > 0
+				? visualVars.slice(0, MAX_EXAMPLES).map((v) => ({
+						name: v.name,
+						collection: collectionNames.get(v.variableCollectionId),
+						type: "variable",
+					}))
 				: undefined,
 	};
 }
@@ -191,8 +200,14 @@ function scoreComponentNaming(data: DesignSystemRawData): Finding {
  * visual (blue, red). Also checks for consistent size naming.
  */
 function scoreVariantNaming(data: DesignSystemRawData): Finding {
-	// Components with variants have a componentSetId
-	const variantComponents = data.components.filter((c) => c.componentSetId);
+	// Components with variants have a componentSetId (Plugin API),
+	// containing_frame.containingComponentSet (REST API), or component_set_id (file JSON)
+	const variantComponents = data.components.filter(
+		(c) =>
+			c.componentSetId ||
+			c.containing_frame?.containingComponentSet ||
+			c.component_set_id,
+	);
 
 	if (variantComponents.length === 0) {
 		return {
@@ -278,6 +293,8 @@ function scoreBooleanNaming(data: DesignSystemRawData): Finding {
 		};
 	}
 
+	const collectionNames = buildCollectionNameMap(data.collections);
+
 	const missingPrefix = boolVars.filter((v) => {
 		const leaf = getLeafName(v.name);
 		return !BOOLEAN_PREFIX_RE.test(leaf);
@@ -299,6 +316,14 @@ function scoreBooleanNaming(data: DesignSystemRawData): Finding {
 		examples:
 			missingPrefix.length > 0
 				? missingPrefix.slice(0, MAX_EXAMPLES).map((v) => v.name)
+				: undefined,
+		locations:
+			missingPrefix.length > 0
+				? missingPrefix.slice(0, MAX_EXAMPLES).map((v) => ({
+						name: v.name,
+						collection: collectionNames.get(v.variableCollectionId),
+						type: "variable",
+					}))
 				: undefined,
 	};
 }

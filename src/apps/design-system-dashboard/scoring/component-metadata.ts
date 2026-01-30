@@ -29,31 +29,53 @@ export interface ComponentClassification {
 	scorableUnits: any[]; // standalone + componentSets = meaningful count
 }
 
+interface ComponentSetLookup {
+	nodeIds: Set<string>;
+	namePrefixes: Set<string>; // "SetName/" for prefix matching (fallback)
+}
+
 /**
- * Build a set of component set node IDs for matching components to variant groups.
+ * Build a lookup structure for matching components to variant groups.
+ * Collects component set node IDs for `containing_frame.containingComponentSet`
+ * matching (primary REST API path) and name prefixes as fallback.
  */
-function getComponentSetNodeIds(data: DesignSystemRawData): Set<string> {
-	const ids = new Set<string>();
+function buildComponentSetLookup(data: DesignSystemRawData): ComponentSetLookup {
+	const nodeIds = new Set<string>();
+	const namePrefixes = new Set<string>();
 	for (const cs of data.componentSets) {
-		if (cs.node_id) ids.add(cs.node_id);
+		if (cs.node_id) nodeIds.add(cs.node_id);
+		if (cs.name) namePrefixes.add(cs.name + "/");
 	}
-	return ids;
+	return { nodeIds, namePrefixes };
 }
 
 /**
  * Check if a component belongs to a variant set.
- * Uses componentSetId (from file data), containing_frame (from REST API), or componentSets match.
+ *
+ * Detection order:
+ * 1. Plugin API: `componentSetId` (set on ComponentNode by Figma plugin runtime)
+ * 2. REST API: `containing_frame.containingComponentSet` (present on variants
+ *    returned by GET /v1/files/:key/components)
+ * 3. File JSON: `component_set_id` (snake_case field on COMPONENT nodes in file tree)
+ * 4. Name prefix: variant names starting with "SetName/" (some API formats)
+ * 5. Frame node ID: containing_frame.nodeId matching a known component set node
  */
-function isComponentInSet(component: any, setNodeIds: Set<string>): boolean {
+function isComponentInSet(component: any, lookup: ComponentSetLookup): boolean {
+	// Plugin API: direct componentSetId
 	if (component.componentSetId) return true;
-	if (
-		component.componentPropertyDefinitions &&
-		Object.keys(component.componentPropertyDefinitions).length > 0
-	)
-		return true;
-	// REST API components have containing_frame with nodeId
+	// REST API: containing_frame.containingComponentSet is set on variant components
+	if (component.containing_frame?.containingComponentSet) return true;
+	// File JSON: snake_case variant of componentSetId
+	if (component.component_set_id) return true;
+	// Name-based fallback: variant names may start with "SetName/"
+	if (component.name) {
+		for (const prefix of lookup.namePrefixes) {
+			if (component.name.startsWith(prefix)) return true;
+		}
+	}
+	// Frame node ID fallback
 	const frameNodeId = component.containing_frame?.nodeId;
-	if (frameNodeId && setNodeIds.has(frameNodeId)) return true;
+	if (frameNodeId && lookup.nodeIds.has(frameNodeId)) return true;
 	return false;
 }
 
@@ -65,12 +87,12 @@ function isComponentInSet(component: any, setNodeIds: Set<string>): boolean {
 export function classifyComponents(
 	data: DesignSystemRawData,
 ): ComponentClassification {
-	const setNodeIds = getComponentSetNodeIds(data);
+	const lookup = buildComponentSetLookup(data);
 	const standalone: any[] = [];
 	const variants: any[] = [];
 
 	for (const comp of data.components) {
-		if (isComponentInSet(comp, setNodeIds)) {
+		if (isComponentInSet(comp, lookup)) {
 			variants.push(comp);
 		} else {
 			standalone.push(comp);
@@ -127,6 +149,14 @@ function scoreDescriptionPresence(
 		examples:
 			withoutDesc.length > 0
 				? withoutDesc.slice(0, MAX_EXAMPLES).map((c) => c.name)
+				: undefined,
+		locations:
+			withoutDesc.length > 0
+				? withoutDesc.slice(0, MAX_EXAMPLES).map((c) => ({
+						name: c.name,
+						nodeId: c.node_id,
+						type: "component",
+					}))
 				: undefined,
 	};
 }
@@ -227,6 +257,14 @@ function scorePropertyCompleteness(
 			standaloneWithoutProps.length > 0
 				? standaloneWithoutProps.slice(0, MAX_EXAMPLES).map((c) => c.name)
 				: undefined,
+		locations:
+			standaloneWithoutProps.length > 0
+				? standaloneWithoutProps.slice(0, MAX_EXAMPLES).map((c) => ({
+						name: c.name,
+						nodeId: c.node_id,
+						type: "component",
+					}))
+				: undefined,
 	};
 }
 
@@ -306,6 +344,14 @@ function scoreCategoryOrganization(
 		examples:
 			withoutPath.length > 0
 				? withoutPath.slice(0, MAX_EXAMPLES).map((c) => c.name)
+				: undefined,
+		locations:
+			withoutPath.length > 0
+				? withoutPath.slice(0, MAX_EXAMPLES).map((c) => ({
+						name: c.name,
+						nodeId: c.node_id,
+						type: "component",
+					}))
 				: undefined,
 	};
 }

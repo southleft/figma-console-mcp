@@ -19,12 +19,21 @@ export interface Finding {
 	severity: FindingSeverity;
 	details?: string;
 	examples?: string[]; // Up to 5 specific item names
-	fixable?: boolean;
-	fix?: {
-		description: string;
-		operationCount: number;
-		requiresDesktopBridge: boolean;
-	};
+	locations?: Array<{
+		name: string;
+		collection?: string; // variable collection name
+		nodeId?: string; // Figma node ID
+		type?: string; // "component" | "variable" | "collection"
+	}>;
+}
+
+/** Build a map of collection ID → collection name for location context. */
+export function buildCollectionNameMap(collections: any[]): Map<string, string> {
+	const map = new Map<string, string>();
+	for (const col of collections) {
+		if (col.id && col.name) map.set(col.id, col.name);
+	}
+	return map;
 }
 
 /** A scored category (one of the 6 gauge rings). */

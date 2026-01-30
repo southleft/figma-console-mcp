@@ -10,7 +10,6 @@
  *      returns SHORT summary to LLM (avoids context exhaustion)
  *   2. UI opens, connects, calls ds_dashboard_refresh (app-only visibility)
  *   3. ds_dashboard_refresh returns full JSON → UI renders
- *   4. UI calls ds_dashboard_fix with findingId → server executes fix
  */
 
 import { readFile } from "node:fs/promises";
@@ -24,12 +23,6 @@ import {
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { scoreDesignSystem } from "./scoring/engine.js";
-import { generateAllFixes } from "./scoring/fix-generator.js";
-import type {
-	FixDefinition,
-	FixExecutor,
-	FixResult,
-} from "./scoring/fix-types.js";
 import type { DashboardData, DesignSystemRawData } from "./scoring/types.js";
 
 const DASHBOARD_URI = "ui://figma-console/design-system-dashboard";
@@ -39,42 +32,16 @@ const __dirname = dirname(__filename);
 
 // Shared state
 let lastFileUrl: string | undefined;
-let storedFixes = new Map<string, FixDefinition>();
-
-/**
- * Annotate dashboard findings with fixable flags from generated fixes.
- */
-function annotateFixes(
-	scored: DashboardData,
-	fixes: Map<string, FixDefinition>,
-): DashboardData {
-	for (const category of scored.categories) {
-		for (const finding of category.findings) {
-			const fix = fixes.get(finding.id);
-			if (fix) {
-				finding.fixable = true;
-				finding.fix = {
-					description: fix.description,
-					operationCount: fix.operations.length,
-					requiresDesktopBridge: fix.requiresDesktopBridge,
-				};
-			}
-		}
-	}
-	return scored;
-}
 
 /**
  * Register the Design System Dashboard MCP App with the server.
  *
  * @param server - The MCP server instance
  * @param getDesignSystemData - Function to fetch raw design system data from Figma
- * @param executeDesktopBridgeFix - Optional callback to execute fix operations via Desktop Bridge
  */
 export function registerDesignSystemDashboardApp(
 	server: McpServer,
 	getDesignSystemData: (fileUrl?: string) => Promise<DesignSystemRawData>,
-	executeDesktopBridgeFix?: FixExecutor,
 ): void {
 	// Tool: fetches + scores data, returns SHORT summary to LLM
 	registerAppTool(
@@ -164,16 +131,11 @@ export function registerDesignSystemDashboardApp(
 				const data = await getDesignSystemData(url);
 				const scored = scoreDesignSystem(data);
 
-				// Generate and store fixes, annotate findings
-				const fixes = generateAllFixes(data);
-				storedFixes = fixes;
-				const annotated = annotateFixes(scored, fixes);
-
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(annotated),
+							text: JSON.stringify(scored),
 						},
 					],
 				};
@@ -201,101 +163,6 @@ export function registerDesignSystemDashboardApp(
 									timestamp: Date.now(),
 								},
 							}),
-						},
-					],
-					isError: true,
-				};
-			}
-		},
-	);
-
-	// Tool: execute a fix for a specific finding (app-only)
-	registerAppTool(
-		server,
-		"ds_dashboard_fix",
-		{
-			title: "Dashboard Fix",
-			description:
-				"Execute an auto-fix for a specific finding (called from MCP App UI)",
-			inputSchema: {
-				findingId: z
-					.string()
-					.describe("The finding ID to fix (e.g., 'component-desc-presence')"),
-			},
-			_meta: {
-				ui: {
-					resourceUri: DASHBOARD_URI,
-					visibility: ["app"],
-				},
-			},
-		},
-		async ({ findingId }) => {
-			try {
-				const fix = storedFixes.get(findingId);
-				if (!fix) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: JSON.stringify({
-									findingId,
-									success: false,
-									operationsCompleted: 0,
-									operationsTotal: 0,
-									errors: [`No fix available for finding "${findingId}".`],
-								} satisfies FixResult),
-							},
-						],
-						isError: true,
-					};
-				}
-
-				if (!executeDesktopBridgeFix) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: JSON.stringify({
-									findingId,
-									success: false,
-									operationsCompleted: 0,
-									operationsTotal: fix.operations.length,
-									errors: [
-										"Desktop Bridge not available. Connect Figma Desktop with the plugin to enable auto-fixes.",
-									],
-								} satisfies FixResult),
-							},
-						],
-						isError: true,
-					};
-				}
-
-				const result = await executeDesktopBridgeFix(fix.operations);
-				result.findingId = findingId;
-
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: JSON.stringify(result),
-						},
-					],
-					isError: !result.success,
-				};
-			} catch (error) {
-				const errorMessage =
-					error instanceof Error ? error.message : String(error);
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: JSON.stringify({
-								findingId,
-								success: false,
-								operationsCompleted: 0,
-								operationsTotal: 0,
-								errors: [errorMessage],
-							} satisfies FixResult),
 						},
 					],
 					isError: true,

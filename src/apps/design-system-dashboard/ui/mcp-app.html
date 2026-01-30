@@ -39,6 +39,12 @@
 			flex-shrink: 0;
 		}
 		.header h1 { font-size: 17px; font-weight: 600; color: #fff; }
+		.header-subtitle {
+			font-size: 12px;
+			color: #999;
+			font-weight: 400;
+			margin-top: 2px;
+		}
 		.refresh-btn {
 			padding: 6px 10px;
 			border-radius: 5px;
@@ -258,18 +264,6 @@
 			margin-top: 1px;
 		}
 
-		/* File info section */
-		.file-info {
-			font-size: 12px;
-			color: #999;
-			margin-bottom: 4px;
-		}
-		.file-info .file-name {
-			font-size: 14px;
-			font-weight: 500;
-			color: #ccc;
-		}
-
 		/* Data availability notice */
 		.data-notice {
 			padding: 8px 12px;
@@ -346,49 +340,8 @@
 			word-break: break-all;
 		}
 
-		/* Fix buttons */
-		.fix-btn {
-			flex-shrink: 0;
-			padding: 3px 8px;
-			border-radius: 4px;
-			border: 1px solid #0d9488;
-			background: rgba(13, 148, 136, 0.15);
-			color: #0d9488;
-			font-size: 11px;
-			cursor: pointer;
-			white-space: nowrap;
-		}
-		.fix-btn:hover {
-			background: rgba(13, 148, 136, 0.3);
-		}
-		.fix-confirm {
-			display: flex;
-			align-items: center;
-			gap: 6px;
-			font-size: 11px;
-			color: #999;
-			flex-shrink: 0;
-		}
-		.fix-confirm button {
-			padding: 2px 8px;
-			border-radius: 3px;
-			border: 1px solid #333;
-			background: #2a2a2a;
-			color: #e0e0e0;
-			font-size: 11px;
-			cursor: pointer;
-		}
-		.fix-confirm .fix-yes {
-			border-color: #0d9488;
-			color: #0d9488;
-		}
-		.fix-status {
-			font-size: 11px;
-			flex-shrink: 0;
-		}
-		.fix-status.success { color: #0cce6b; }
-		.fix-status.error { color: #ff4e42; }
-		.fix-status.loading { color: #999; }
+		/* Location context */
+		.example-ctx { color: #666; font-style: italic; }
 
 		/* States */
 		.loading, .empty, .error-msg {
