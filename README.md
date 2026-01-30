@@ -526,7 +526,7 @@ Figma Console MCP includes support for **MCP Apps** — rich interactive UI expe
 
 ### Token Browser
 
-The first MCP App is the **Token Browser** — an interactive design token explorer.
+An interactive design token explorer.
 
 **Usage:** Ask Claude to "browse design tokens" or "show me the design tokens" for any Figma file.
 
@@ -536,6 +536,20 @@ The first MCP App is the **Token Browser** — an interactive design token explo
 - Per-collection mode columns (Light, Dark, Custom) matching Figma's Variables panel
 - Color swatches, alias resolution, and click-to-copy on any value
 - Works without Enterprise plan via Desktop Bridge (local mode)
+
+### Design System Dashboard
+
+A Lighthouse-style health scorecard that audits your design system across six categories.
+
+**Usage:** Ask Claude to "audit the design system" or "show me design system health" for any Figma file.
+
+**Features:**
+- Overall weighted score (0–100) with six category gauges: Naming, Tokens, Components, Accessibility, Consistency, Coverage
+- Expandable category sections with individual findings, severity indicators, and actionable details
+- Diagnostic locations linking findings to specific variables, components, or collections
+- Tooltips explaining each check's purpose and scoring criteria
+- Refresh button to re-run the audit without consuming AI context
+- Pure scoring engine with no external dependencies — all analysis runs locally
 
 **Enabling MCP Apps:**
 
@@ -560,12 +574,11 @@ MCP Apps are gated behind an environment variable. Add to your MCP config:
 
 ### Future MCP Apps Roadmap
 
-The Token Browser is the first of several planned MCP Apps:
+Planned MCP Apps:
 
 - **Component Gallery** — Visual browser for searching and previewing components with variant exploration
 - **Style Inspector** — Interactive panel for exploring color, text, and effect styles with live previews
 - **Variable Diff Viewer** — Side-by-side comparison of token values across modes and branches
-- **Design System Dashboard** — Overview of your design system health with coverage metrics
 
 The architecture supports adding new apps with minimal boilerplate — each app is a self-contained module with its own server-side tool registration and client-side UI.
 
