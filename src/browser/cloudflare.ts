@@ -6,7 +6,7 @@
 import puppeteer, { type Browser, type Page } from '@cloudflare/puppeteer';
 import { createChildLogger } from '../core/logger.js';
 import type { BrowserConfig } from '../core/types/index.js';
-import type { IBrowserManager } from './base.js';
+import type { IBrowserManager, NavigationResult } from './base.js';
 
 const logger = createChildLogger({ component: 'cloudflare-browser' });
 
@@ -86,7 +86,7 @@ export class CloudflareBrowserManager implements IBrowserManager {
 	/**
 	 * Navigate to Figma URL
 	 */
-	async navigateToFigma(figmaUrl?: string): Promise<Page> {
+	async navigateToFigma(figmaUrl?: string): Promise<NavigationResult> {
 		const page = await this.getPage();
 
 		// Default to Figma homepage if no URL provided
@@ -101,7 +101,7 @@ export class CloudflareBrowserManager implements IBrowserManager {
 			});
 
 			logger.info({ url }, 'Navigation successful');
-			return page;
+			return { page, action: 'navigated', url };
 		} catch (error) {
 			logger.error({ error, url }, 'Navigation failed');
 			throw new Error(`Failed to navigate to ${url}: ${error}`);

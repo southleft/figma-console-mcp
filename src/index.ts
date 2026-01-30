@@ -730,8 +730,36 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 						throw new Error("Browser manager not initialized");
 					}
 
-					// Navigate to the URL
-					await this.browserManager.navigateToFigma(url);
+					// Navigate to the URL (may switch to existing tab in local mode)
+					const result = await this.browserManager.navigateToFigma(url);
+
+					if (result.action === 'switched_to_existing') {
+						// Switch console monitor to the page
+						if (this.consoleMonitor) {
+							this.consoleMonitor.stopMonitoring();
+							await this.consoleMonitor.startMonitoring(result.page);
+						}
+
+						const currentUrl = this.browserManager.getCurrentUrl();
+
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											status: "switched_to_existing",
+											url: currentUrl,
+											timestamp: Date.now(),
+											message: "Switched to existing tab for this Figma file. Console monitoring is active.",
+										},
+										null,
+										2,
+									),
+								},
+							],
+						};
+					}
 
 					// Give page time to load and start capturing logs
 					await new Promise((resolve) => setTimeout(resolve, 2000));

@@ -4,6 +4,15 @@
  */
 
 /**
+ * Result of a navigateToFigma call indicating what action was taken
+ */
+export interface NavigationResult {
+	page: any;
+	action: 'switched_to_existing' | 'navigated';
+	url: string;
+}
+
+/**
  * Browser Manager Interface
  * Provides unified API for browser automation regardless of runtime (Cloudflare/Local)
  *
@@ -24,7 +33,7 @@ export interface IBrowserManager {
 	/**
 	 * Navigate to Figma URL
 	 */
-	navigateToFigma(url?: string): Promise<any>;
+	navigateToFigma(url?: string): Promise<NavigationResult>;
 
 	/**
 	 * Reload current page
