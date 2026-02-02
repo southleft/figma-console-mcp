@@ -930,9 +930,7 @@ export function registerFigmaAPITools(
 									error: errorMessage,
 									message: "Failed to retrieve Figma file data",
 									hint: "Make sure FIGMA_ACCESS_TOKEN is configured and the file is accessible",
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -1111,9 +1109,7 @@ export function registerFigmaAPITools(
 								{
 									error: "No Figma file URL provided",
 									message: "Either pass fileUrl parameter or call figma_navigate first."
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -1132,9 +1128,7 @@ export function registerFigmaAPITools(
 								{
 									error: `Invalid Figma URL: ${url}`,
 									message: "Could not extract file key from URL"
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -1371,9 +1365,7 @@ export function registerFigmaAPITools(
 												suggestion: 'Use format="summary" for overview or format="filtered" with collection/namePattern/mode filters to get specific variables',
 												estimatedTokens,
 												summary,
-											},
-											null,
-											2
+											}
 										),
 									},
 								],
@@ -2174,9 +2166,7 @@ export function registerFigmaAPITools(
 										},
 										timestamp: parsedData.timestamp,
 										enriched: false,
-									},
-									null,
-									2
+									}
 								),
 							},
 						],
@@ -2246,9 +2236,7 @@ export function registerFigmaAPITools(
 											message: "Variables API requires an Enterprise plan. Retrieved your design system styles instead.",
 											data: formattedStyles,
 											fallback_method: true,
-										},
-										null,
-										2
+										}
 									),
 								},
 							],
@@ -2272,9 +2260,7 @@ export function registerFigmaAPITools(
 											],
 											suggestion: "Please ensure the file is accessible and try again, or check if your token has the necessary permissions.",
 											technical: styleError instanceof Error ? styleError.message : String(styleError)
-										},
-										null,
-										2
+										}
 									),
 								},
 							],
@@ -2294,9 +2280,7 @@ export function registerFigmaAPITools(
 									hint: errorMessage.includes("403")
 										? "Variables API requires Enterprise plan. Set useConsoleFallback=true for alternative method."
 										: "Make sure FIGMA_ACCESS_TOKEN is configured and has appropriate permissions",
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -2409,7 +2393,7 @@ export function registerFigmaAPITools(
 														"4. Use figma_get_component with that variant's node ID"
 													],
 													note: "COMPONENT_SET is automatically created by Figma when you have variants. The plugin can only create individual COMPONENT nodes."
-												}, null, 2),
+												}),
 											},
 										],
 									};
@@ -2421,7 +2405,7 @@ export function registerFigmaAPITools(
 									content: [
 										{
 											type: "text",
-											text: JSON.stringify(reconstructionSpec, null, 2),
+											text: JSON.stringify(reconstructionSpec),
 										},
 									],
 								};
@@ -2456,9 +2440,7 @@ export function registerFigmaAPITools(
 												source: "desktop_bridge_plugin",
 												enriched: enrich || false,
 												note: "Retrieved via Desktop Bridge plugin - description fields and annotations are reliable and current"
-											},
-											null,
-											2
+											}
 										),
 									},
 								],
@@ -2524,7 +2506,7 @@ export function registerFigmaAPITools(
 											"4. Use figma_get_component with that variant's node ID"
 										],
 										note: "COMPONENT_SET is automatically created by Figma when you have variants. The plugin can only create individual COMPONENT nodes."
-									}, null, 2),
+									}),
 								},
 							],
 						};
@@ -2536,7 +2518,7 @@ export function registerFigmaAPITools(
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(reconstructionSpec, null, 2),
+								text: JSON.stringify(reconstructionSpec),
 							},
 						],
 					};
@@ -2572,9 +2554,7 @@ export function registerFigmaAPITools(
 									enriched: enrich || false,
 									warning: "Retrieved via REST API - description field may be missing due to known Figma API bug",
 									action_required: formatted.description || formatted.descriptionMarkdown ? null : "To get reliable component descriptions, run the Desktop Bridge plugin in Figma Desktop: Right-click → Plugins → Development → Figma Desktop Bridge, then try again."
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -2592,9 +2572,7 @@ export function registerFigmaAPITools(
 									error: errorMessage,
 									message: "Failed to retrieve component data",
 									hint: "Make sure the node ID is correct and the file is accessible",
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -2779,9 +2757,7 @@ export function registerFigmaAPITools(
 								{
 									error: errorMessage,
 									message: "Failed to retrieve styles",
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -2882,9 +2858,7 @@ export function registerFigmaAPITools(
 											"4. Use figma_get_component_image with that variant's node ID"
 										],
 										note: "COMPONENT_SET is a container for variants. Only individual variant components can be rendered as images."
-									},
-									null,
-									2
+									}
 								),
 							},
 						],
@@ -2919,9 +2893,7 @@ export function registerFigmaAPITools(
 									format,
 									expiresIn: "30 days",
 									note: "Use this image as visual reference for component development. Image URLs expire after 30 days.",
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -2939,9 +2911,7 @@ export function registerFigmaAPITools(
 									error: errorMessage,
 									message: "Failed to render component image",
 									hint: "Make sure the node ID is correct and the component is renderable",
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -3121,9 +3091,7 @@ export function registerFigmaAPITools(
 											? "Image URL provided above (valid for 30 days). Full component data optimized for UI implementation."
 											: "Full component data optimized for UI implementation.",
 									},
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -3140,9 +3108,7 @@ export function registerFigmaAPITools(
 								{
 									error: errorMessage,
 									message: "Failed to retrieve component development data",
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -3346,9 +3312,7 @@ export function registerFigmaAPITools(
 								{
 									error: errorMessage,
 									message: "Failed to retrieve file data for plugin development",
-								},
-								null,
-								2
+								}
 							),
 						},
 					],
@@ -3456,7 +3420,7 @@ export function registerFigmaAPITools(
 									source: "plugin_export_async",
 									note: "Screenshot captured successfully. The image is included below for visual analysis. This shows the CURRENT plugin runtime state (guaranteed to reflect recent changes).",
 								},
-							}, null, 2),
+							}),
 						},
 						{
 							type: "image",
@@ -3476,7 +3440,7 @@ export function registerFigmaAPITools(
 								error: errorMessage,
 								message: "Failed to capture screenshot via Desktop Bridge",
 								suggestion: "Ensure Figma Desktop is open with the plugin running",
-							}, null, 2),
+							}),
 						},
 					],
 					isError: true,
@@ -3564,7 +3528,7 @@ export function registerFigmaAPITools(
 								metadata: {
 									note: "Instance properties updated successfully. Use figma_capture_screenshot to verify visual changes.",
 								},
-							}, null, 2),
+							}),
 						},
 					],
 				};
@@ -3585,7 +3549,7 @@ export function registerFigmaAPITools(
 									"For TEXT properties, provide string values",
 									"For BOOLEAN properties, provide true/false",
 								],
-							}, null, 2),
+							}),
 						},
 					],
 					isError: true,

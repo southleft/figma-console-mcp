@@ -14,9 +14,35 @@ import { logger } from './logger.js';
 
 export class FigmaDesktopConnector {
   private page: Page;
+  private cachedPluginFrame: any | null = null;
+  private static readonly DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
 
   constructor(page: Page) {
     this.page = page;
+  }
+
+  /**
+   * Clear the cached plugin UI frame reference.
+   * Called automatically when a detached frame is detected.
+   */
+  clearFrameCache(): void {
+    if (this.cachedPluginFrame) {
+      logger.debug('Clearing cached plugin UI frame reference');
+      this.cachedPluginFrame = null;
+    }
+  }
+
+  /**
+   * Conditionally log to Figma's browser console (only when DEBUG is enabled).
+   * Skips the CDP roundtrip entirely in production, eliminating ~5-15ms per call.
+   */
+  private async logToFigmaConsole(fn: (...args: any[]) => void, ...args: any[]): Promise<void> {
+    if (!FigmaDesktopConnector.DEBUG) return;
+    try {
+      await this.page.evaluate(fn as any, ...args);
+    } catch {
+      // Ignore logging failures
+    }
   }
 
   /**
@@ -38,7 +64,7 @@ export class FigmaDesktopConnector {
       const workers = this.page.workers();
 
       // Log to browser console so MCP can capture it
-      await this.page.evaluate((count, urls) => {
+      await this.logToFigmaConsole((count, urls) => {
         console.log(`[DESKTOP_CONNECTOR] Found ${count} workers via Puppeteer API:`, urls);
       }, workers.length, workers.map(w => w.url()));
 
@@ -51,7 +77,7 @@ export class FigmaDesktopConnector {
       for (const worker of workers) {
         try {
           // Log to browser console
-          await this.page.evaluate((url) => {
+          await this.logToFigmaConsole((url) => {
             console.log(`[DESKTOP_CONNECTOR] Checking worker: ${url}`);
           }, worker.url());
 
@@ -60,14 +86,14 @@ export class FigmaDesktopConnector {
           const hasFigmaApi = await worker.evaluate('typeof figma !== "undefined"');
 
           // Log result to browser console
-          await this.page.evaluate((url, hasApi) => {
+          await this.logToFigmaConsole((url, hasApi) => {
             console.log(`[DESKTOP_CONNECTOR] Worker ${url} has figma API: ${hasApi}`);
           }, worker.url(), hasFigmaApi);
 
           if (hasFigmaApi) {
             logger.info({ workerUrl: worker.url() }, 'Found worker with Figma API');
 
-            await this.page.evaluate((url) => {
+            await this.logToFigmaConsole((url) => {
               console.log(`[DESKTOP_CONNECTOR] ✅ SUCCESS! Found worker with Figma API: ${url}`);
             }, worker.url());
 
@@ -79,7 +105,7 @@ export class FigmaDesktopConnector {
           }
         } catch (workerError) {
           // This worker doesn't have figma API or evaluation failed, try next
-          await this.page.evaluate((url, err) => {
+          await this.logToFigmaConsole((url, err) => {
             console.error(`[DESKTOP_CONNECTOR] ❌ Worker ${url} check failed:`, err);
           }, worker.url(), workerError instanceof Error ? workerError.message : String(workerError));
 
@@ -105,7 +131,7 @@ export class FigmaDesktopConnector {
   async getVariablesFromPluginUI(fileKey?: string): Promise<any> {
     try {
       // Log to browser console
-      await this.page.evaluate((key) => {
+      await this.logToFigmaConsole((key) => {
         console.log(`[DESKTOP_CONNECTOR] 🚀 getVariablesFromPluginUI() called, fileKey: ${key}`);
       }, fileKey);
 
@@ -114,7 +140,7 @@ export class FigmaDesktopConnector {
       // Get all frames (iframes) in the page
       const frames = this.page.frames();
 
-      await this.page.evaluate((count) => {
+      await this.logToFigmaConsole((count) => {
         console.log(`[DESKTOP_CONNECTOR] Found ${count} frames (iframes)`);
       }, frames.length);
 
@@ -131,21 +157,21 @@ export class FigmaDesktopConnector {
 
           const frameUrl = frame.url();
 
-          await this.page.evaluate((url) => {
+          await this.logToFigmaConsole((url) => {
             console.log(`[DESKTOP_CONNECTOR] Checking frame: ${url}`);
           }, frameUrl);
 
           // Check if this frame has our variables data
           const hasData = await frame.evaluate('typeof window.__figmaVariablesData !== "undefined" && window.__figmaVariablesReady === true');
 
-          await this.page.evaluate((url, has) => {
+          await this.logToFigmaConsole((url, has) => {
             console.log(`[DESKTOP_CONNECTOR] Frame ${url} has variables data: ${has}`);
           }, frameUrl, hasData);
 
           if (hasData) {
             logger.info({ frameUrl }, 'Found frame with variables data');
 
-            await this.page.evaluate((url) => {
+            await this.logToFigmaConsole((url) => {
               console.log(`[DESKTOP_CONNECTOR] ✅ SUCCESS! Found plugin UI with variables data: ${url}`);
             }, frameUrl);
 
@@ -160,7 +186,7 @@ export class FigmaDesktopConnector {
               'Successfully retrieved variables from plugin UI'
             );
 
-            await this.page.evaluate((varCount, collCount) => {
+            await this.logToFigmaConsole((varCount, collCount) => {
               console.log(`[DESKTOP_CONNECTOR] ✅ Retrieved ${varCount} variables in ${collCount} collections`);
             }, result.variables?.length || 0, result.variableCollections?.length || 0);
 
@@ -181,14 +207,9 @@ export class FigmaDesktopConnector {
           if (isDetachedError) {
             logger.debug({ frameUrl: safeFrameUrl }, 'Frame was detached during variables check, trying next');
           } else {
-            // Only log to browser console if we can (page may still be accessible)
-            try {
-              await this.page.evaluate((url, err) => {
-                console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
-              }, safeFrameUrl, errorMsg);
-            } catch {
-              // Page also unavailable, just log locally
-            }
+            await this.logToFigmaConsole((url: string, err: string) => {
+              console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
+            }, safeFrameUrl, errorMsg);
             logger.debug({ error: frameError, frameUrl: safeFrameUrl }, 'Frame check failed, trying next');
           }
           continue;
@@ -200,7 +221,7 @@ export class FigmaDesktopConnector {
     } catch (error) {
       logger.error({ error }, 'Failed to get variables from plugin UI');
 
-      await this.page.evaluate((msg) => {
+      await this.logToFigmaConsole((msg) => {
         console.error('[DESKTOP_CONNECTOR] ❌ getVariablesFromPluginUI failed:', msg);
       }, error instanceof Error ? error.message : String(error));
 
@@ -216,7 +237,7 @@ export class FigmaDesktopConnector {
   async getComponentFromPluginUI(nodeId: string): Promise<any> {
     try {
       // Log to browser console
-      await this.page.evaluate((id) => {
+      await this.logToFigmaConsole((id) => {
         console.log(`[DESKTOP_CONNECTOR] 🎯 getComponentFromPluginUI() called, nodeId: ${id}`);
       }, nodeId);
 
@@ -225,7 +246,7 @@ export class FigmaDesktopConnector {
       // Get all frames (iframes) in the page
       const frames = this.page.frames();
 
-      await this.page.evaluate((count) => {
+      await this.logToFigmaConsole((count) => {
         console.log(`[DESKTOP_CONNECTOR] Found ${count} frames (iframes)`);
       }, frames.length);
 
@@ -242,21 +263,21 @@ export class FigmaDesktopConnector {
 
           const frameUrl = frame.url();
 
-          await this.page.evaluate((url) => {
+          await this.logToFigmaConsole((url) => {
             console.log(`[DESKTOP_CONNECTOR] Checking frame: ${url}`);
           }, frameUrl);
 
           // Check if this frame has our requestComponentData function
           const hasFunction = await frame.evaluate('typeof window.requestComponentData === "function"');
 
-          await this.page.evaluate((url, has) => {
+          await this.logToFigmaConsole((url, has) => {
             console.log(`[DESKTOP_CONNECTOR] Frame ${url} has requestComponentData: ${has}`);
           }, frameUrl, hasFunction);
 
           if (hasFunction) {
             logger.info({ frameUrl }, 'Found frame with requestComponentData function');
 
-            await this.page.evaluate((url) => {
+            await this.logToFigmaConsole((url) => {
               console.log(`[DESKTOP_CONNECTOR] ✅ SUCCESS! Found plugin UI with requestComponentData: ${url}`);
             }, frameUrl);
 
@@ -273,7 +294,7 @@ export class FigmaDesktopConnector {
               'Successfully retrieved component from plugin UI'
             );
 
-            await this.page.evaluate((name, hasDesc) => {
+            await this.logToFigmaConsole((name, hasDesc) => {
               console.log(`[DESKTOP_CONNECTOR] ✅ Retrieved component "${name}", has description: ${hasDesc}`);
             }, result.component?.name, !!result.component?.description);
 
@@ -294,14 +315,9 @@ export class FigmaDesktopConnector {
           if (isDetachedError) {
             logger.debug({ frameUrl: safeFrameUrl }, 'Frame was detached during component check, trying next');
           } else {
-            // Only log to browser console if we can (page may still be accessible)
-            try {
-              await this.page.evaluate((url, err) => {
-                console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
-              }, safeFrameUrl, errorMsg);
-            } catch {
-              // Page also unavailable, just log locally
-            }
+            await this.logToFigmaConsole((url: string, err: string) => {
+              console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
+            }, safeFrameUrl, errorMsg);
             logger.debug({ error: frameError, frameUrl: safeFrameUrl }, 'Frame check failed, trying next');
           }
           continue;
@@ -313,7 +329,7 @@ export class FigmaDesktopConnector {
     } catch (error) {
       logger.error({ error, nodeId }, 'Failed to get component from plugin UI');
 
-      await this.page.evaluate((msg) => {
+      await this.logToFigmaConsole((msg) => {
         console.error('[DESKTOP_CONNECTOR] ❌ getComponentFromPluginUI failed:', msg);
       }, error instanceof Error ? error.message : String(error));
 
@@ -327,7 +343,7 @@ export class FigmaDesktopConnector {
    */
   async getVariables(fileKey?: string): Promise<any> {
     // Log to browser console
-    await this.page.evaluate((key) => {
+    await this.logToFigmaConsole((key) => {
       console.log(`[DESKTOP_CONNECTOR] 🚀 getVariables() called, fileKey: ${key}`);
     }, fileKey);
 
@@ -416,7 +432,7 @@ export class FigmaDesktopConnector {
    * This bypasses the REST API bug where descriptions are missing
    */
   async getComponentByNodeId(nodeId: string): Promise<any> {
-    await this.page.evaluate((id) => {
+    await this.logToFigmaConsole((id) => {
       console.log(`[DESKTOP_CONNECTOR] 🎯 getComponentByNodeId() called, nodeId: ${id}`);
     }, nodeId);
 
@@ -502,7 +518,7 @@ export class FigmaDesktopConnector {
         'Successfully retrieved component via Desktop Plugin API'
       );
 
-      await this.page.evaluate((name, hasDesc) => {
+      await this.logToFigmaConsole((name, hasDesc) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Retrieved component "${name}", has description: ${hasDesc}`);
       }, result.component?.name, !!result.component?.description);
 
@@ -510,7 +526,7 @@ export class FigmaDesktopConnector {
     } catch (error) {
       logger.error({ error, nodeId }, 'Failed to get component via Desktop Plugin API');
       
-      await this.page.evaluate((id, err) => {
+      await this.logToFigmaConsole((id, err) => {
         console.error(`[DESKTOP_CONNECTOR] ❌ getComponentByNodeId failed for ${id}:`, err);
       }, nodeId, error instanceof Error ? error.message : String(error));
       
@@ -533,7 +549,19 @@ export class FigmaDesktopConnector {
    * Handles detached frame errors gracefully
    */
   private async findPluginUIFrame(): Promise<any> {
-    // Get fresh frames - don't cache this
+    // Return cached frame if still valid
+    if (this.cachedPluginFrame) {
+      try {
+        if (!this.cachedPluginFrame.isDetached()) {
+          return this.cachedPluginFrame;
+        }
+      } catch {
+        // Frame reference is stale
+      }
+      this.cachedPluginFrame = null;
+      logger.debug('Cached plugin frame was detached, rescanning');
+    }
+
     const frames = this.page.frames();
 
     logger.debug({ frameCount: frames.length }, 'Searching for Desktop Bridge plugin UI frame');
@@ -550,6 +578,7 @@ export class FigmaDesktopConnector {
 
         if (hasWriteOps) {
           logger.info({ frameUrl: frame.url() }, 'Found Desktop Bridge plugin UI frame');
+          this.cachedPluginFrame = frame;
           return frame;
         }
       } catch (error) {
@@ -574,20 +603,9 @@ export class FigmaDesktopConnector {
    * Includes retry logic for detached frame errors
    */
   async executeCodeViaUI(code: string, timeout: number = 5000): Promise<any> {
-    // Log to console (but don't fail if page is stale - this is just for debugging)
-    try {
-      await this.page.evaluate((codeStr, timeoutMs) => {
-        console.log(`[DESKTOP_CONNECTOR] executeCodeViaUI() called, code length: ${codeStr.length}, timeout: ${timeoutMs}ms`);
-      }, code, timeout);
-    } catch (logError) {
-      // If even page logging fails, the page is likely stale
-      const errorMsg = logError instanceof Error ? logError.message : String(logError);
-      if (errorMsg.includes('detached')) {
-        throw new Error(`Page or frame is detached. Please refresh the Figma page or reconnect. Original error: ${errorMsg}`);
-      }
-      // For other errors, just continue - logging is not critical
-      logger.warn({ error: errorMsg }, 'Failed to log to page console');
-    }
+    await this.logToFigmaConsole((codeStr: string, timeoutMs: number) => {
+      console.log(`[DESKTOP_CONNECTOR] executeCodeViaUI() called, code length: ${codeStr.length}, timeout: ${timeoutMs}ms`);
+    }, code, timeout);
 
     logger.info({ codeLength: code.length, timeout }, 'Executing code via plugin UI');
 
@@ -611,7 +629,7 @@ export class FigmaDesktopConnector {
 
         logger.info({ success: result.success, error: result.error }, 'Code execution completed');
 
-        await this.page.evaluate((success: boolean, errorMsg: string) => {
+        await this.logToFigmaConsole((success: boolean, errorMsg: string) => {
           if (success) {
             console.log('[DESKTOP_CONNECTOR] ✅ Code execution succeeded');
           } else {
@@ -627,6 +645,7 @@ export class FigmaDesktopConnector {
         // Check if it's a detached frame error
         if (errorMsg.includes('detached') && attempt < maxRetries) {
           logger.warn({ attempt, maxRetries }, 'Frame detached, retrying with fresh frames');
+          this.clearFrameCache();
           // Small delay before retry
           await new Promise(resolve => setTimeout(resolve, 100));
           continue;
@@ -635,13 +654,9 @@ export class FigmaDesktopConnector {
         // Not a detached frame error or we've exhausted retries
         logger.error({ error: errorMsg, attempt }, 'Code execution failed');
 
-        try {
-          await this.page.evaluate((err: string) => {
-            console.error('[DESKTOP_CONNECTOR] ❌ executeCodeViaUI failed:', err);
-          }, errorMsg);
-        } catch {
-          // Ignore errors from logging
-        }
+        await this.logToFigmaConsole((err: string) => {
+          console.error('[DESKTOP_CONNECTOR] ❌ executeCodeViaUI failed:', err);
+        }, errorMsg);
 
         throw lastError;
       }
@@ -654,7 +669,7 @@ export class FigmaDesktopConnector {
    * Update a variable's value in a specific mode
    */
   async updateVariable(variableId: string, modeId: string, value: any): Promise<any> {
-    await this.page.evaluate((vId, mId) => {
+    await this.logToFigmaConsole((vId, mId) => {
       console.log(`[DESKTOP_CONNECTOR] updateVariable() called: ${vId} mode ${mId}`);
     }, variableId, modeId);
 
@@ -669,7 +684,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, variableName: result.variable?.name }, 'Variable updated');
 
-      await this.page.evaluate((name: string) => {
+      await this.logToFigmaConsole((name: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${name}" updated successfully`);
       }, result.variable?.name || variableId);
 
@@ -693,7 +708,7 @@ export class FigmaDesktopConnector {
       scopes?: string[];
     }
   ): Promise<any> {
-    await this.page.evaluate((n, cId, type) => {
+    await this.logToFigmaConsole((n, cId, type) => {
       console.log(`[DESKTOP_CONNECTOR] createVariable() called: "${n}" in collection ${cId}, type: ${type}`);
     }, name, collectionId, resolvedType);
 
@@ -708,7 +723,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, variableId: result.variable?.id }, 'Variable created');
 
-      await this.page.evaluate((id: string, n: string) => {
+      await this.logToFigmaConsole((id: string, n: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${n}" created with ID: ${id}`);
       }, result.variable?.id || 'unknown', name);
 
@@ -729,7 +744,7 @@ export class FigmaDesktopConnector {
       additionalModes?: string[];
     }
   ): Promise<any> {
-    await this.page.evaluate((n) => {
+    await this.logToFigmaConsole((n) => {
       console.log(`[DESKTOP_CONNECTOR] createVariableCollection() called: "${n}"`);
     }, name);
 
@@ -744,7 +759,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, collectionId: result.collection?.id }, 'Collection created');
 
-      await this.page.evaluate((id: string, n: string) => {
+      await this.logToFigmaConsole((id: string, n: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Collection "${n}" created with ID: ${id}`);
       }, result.collection?.id || 'unknown', name);
 
@@ -759,7 +774,7 @@ export class FigmaDesktopConnector {
    * Delete a variable
    */
   async deleteVariable(variableId: string): Promise<any> {
-    await this.page.evaluate((vId) => {
+    await this.logToFigmaConsole((vId) => {
       console.log(`[DESKTOP_CONNECTOR] deleteVariable() called: ${vId}`);
     }, variableId);
 
@@ -774,7 +789,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, deletedName: result.deleted?.name }, 'Variable deleted');
 
-      await this.page.evaluate((name: string) => {
+      await this.logToFigmaConsole((name: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${name}" deleted`);
       }, result.deleted?.name || variableId);
 
@@ -789,7 +804,7 @@ export class FigmaDesktopConnector {
    * Delete a variable collection
    */
   async deleteVariableCollection(collectionId: string): Promise<any> {
-    await this.page.evaluate((cId) => {
+    await this.logToFigmaConsole((cId) => {
       console.log(`[DESKTOP_CONNECTOR] deleteVariableCollection() called: ${cId}`);
     }, collectionId);
 
@@ -804,7 +819,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, deletedName: result.deleted?.name }, 'Collection deleted');
 
-      await this.page.evaluate((name: string, count: number) => {
+      await this.logToFigmaConsole((name: string, count: number) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Collection "${name}" deleted (had ${count} variables)`);
       }, result.deleted?.name || collectionId, result.deleted?.variableCount || 0);
 
@@ -819,7 +834,7 @@ export class FigmaDesktopConnector {
    * Refresh variables data from Figma
    */
   async refreshVariables(): Promise<any> {
-    await this.page.evaluate(() => {
+    await this.logToFigmaConsole(() => {
       console.log('[DESKTOP_CONNECTOR] refreshVariables() called');
     });
 
@@ -839,7 +854,7 @@ export class FigmaDesktopConnector {
         'Variables refreshed'
       );
 
-      await this.page.evaluate((vCount: number, cCount: number) => {
+      await this.logToFigmaConsole((vCount: number, cCount: number) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Variables refreshed: ${vCount} variables in ${cCount} collections`);
       }, result.data?.variables?.length || 0, result.data?.variableCollections?.length || 0);
 
@@ -854,7 +869,7 @@ export class FigmaDesktopConnector {
    * Rename a variable
    */
   async renameVariable(variableId: string, newName: string): Promise<any> {
-    await this.page.evaluate((vId, name) => {
+    await this.logToFigmaConsole((vId, name) => {
       console.log(`[DESKTOP_CONNECTOR] renameVariable() called: ${vId} -> "${name}"`);
     }, variableId, newName);
 
@@ -869,7 +884,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, oldName: result.oldName, newName: result.variable?.name }, 'Variable renamed');
 
-      await this.page.evaluate((oldN: string, newN: string) => {
+      await this.logToFigmaConsole((oldN: string, newN: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Variable renamed from "${oldN}" to "${newN}"`);
       }, result.oldName || 'unknown', result.variable?.name || newName);
 
@@ -884,7 +899,7 @@ export class FigmaDesktopConnector {
    * Set the description on a variable (not a node — variables use a separate API)
    */
   async setVariableDescription(variableId: string, description: string): Promise<any> {
-    await this.page.evaluate((vId, desc) => {
+    await this.logToFigmaConsole((vId, desc) => {
       console.log(`[DESKTOP_CONNECTOR] setVariableDescription() called: ${vId} -> "${desc}"`);
     }, variableId, description);
 
@@ -899,7 +914,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, variableId }, 'Variable description set');
 
-      await this.page.evaluate((vId: string, success: boolean) => {
+      await this.logToFigmaConsole((vId: string, success: boolean) => {
         console.log(`[DESKTOP_CONNECTOR] ${success ? '✅' : '❌'} Variable description ${success ? 'set' : 'failed'} for ${vId}`);
       }, variableId, result.success);
 
@@ -914,7 +929,7 @@ export class FigmaDesktopConnector {
    * Add a mode to a variable collection
    */
   async addMode(collectionId: string, modeName: string): Promise<any> {
-    await this.page.evaluate((cId, name) => {
+    await this.logToFigmaConsole((cId, name) => {
       console.log(`[DESKTOP_CONNECTOR] addMode() called: "${name}" to collection ${cId}`);
     }, collectionId, modeName);
 
@@ -929,7 +944,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, newModeId: result.newMode?.modeId }, 'Mode added');
 
-      await this.page.evaluate((name: string, modeId: string) => {
+      await this.logToFigmaConsole((name: string, modeId: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Mode "${name}" added with ID: ${modeId}`);
       }, modeName, result.newMode?.modeId || 'unknown');
 
@@ -944,7 +959,7 @@ export class FigmaDesktopConnector {
    * Rename a mode in a variable collection
    */
   async renameMode(collectionId: string, modeId: string, newName: string): Promise<any> {
-    await this.page.evaluate((cId, mId, name) => {
+    await this.logToFigmaConsole((cId, mId, name) => {
       console.log(`[DESKTOP_CONNECTOR] renameMode() called: mode ${mId} in collection ${cId} -> "${name}"`);
     }, collectionId, modeId, newName);
 
@@ -959,7 +974,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, oldName: result.oldName, newName }, 'Mode renamed');
 
-      await this.page.evaluate((oldN: string, newN: string) => {
+      await this.logToFigmaConsole((oldN: string, newN: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Mode renamed from "${oldN}" to "${newN}"`);
       }, result.oldName || 'unknown', newName);
 
@@ -985,7 +1000,7 @@ export class FigmaDesktopConnector {
     };
     error?: string;
   }> {
-    await this.page.evaluate(() => {
+    await this.logToFigmaConsole(() => {
       console.log('[DESKTOP_CONNECTOR] getLocalComponents() called');
     });
 
@@ -1005,7 +1020,7 @@ export class FigmaDesktopConnector {
         'Local components retrieved'
       );
 
-      await this.page.evaluate((cCount: number, csCount: number) => {
+      await this.logToFigmaConsole((cCount: number, csCount: number) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Found ${cCount} components and ${csCount} component sets`);
       }, result.data?.totalComponents || 0, result.data?.totalComponentSets || 0);
 
@@ -1042,7 +1057,7 @@ export class FigmaDesktopConnector {
     };
     error?: string;
   }> {
-    await this.page.evaluate((key, nodeId) => {
+    await this.logToFigmaConsole((key, nodeId) => {
       console.log(`[DESKTOP_CONNECTOR] instantiateComponent() called: key=${key}, nodeId=${nodeId}`);
     }, componentKey, options?.nodeId || null);
 
@@ -1057,7 +1072,7 @@ export class FigmaDesktopConnector {
 
       logger.info({ success: result.success, instanceId: result.instance?.id }, 'Component instantiated');
 
-      await this.page.evaluate((instanceId: string, name: string) => {
+      await this.logToFigmaConsole((instanceId: string, name: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Component instantiated: ${name} (${instanceId})`);
       }, result.instance?.id || 'unknown', result.instance?.name || 'unknown');
 

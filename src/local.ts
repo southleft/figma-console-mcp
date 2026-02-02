@@ -467,7 +467,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(responseData, null, 2),
+								text: JSON.stringify(responseData),
 							},
 						],
 					};
@@ -513,8 +513,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											? "Try: figma_navigate({ url: 'https://www.figma.com/design/your-file' })"
 											: undefined,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -528,17 +526,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Note: For screenshots of specific components, use figma_get_component_image instead
 		this.server.tool(
 			"figma_take_screenshot",
-			`Export an image of the currently viewed Figma page or specific node using Figma's REST API. Returns an image URL (valid for 30 days). For specific components, use figma_get_component_image instead.
-
-**CRITICAL: Use this tool for visual validation after ANY design creation or modification.**
-This is an essential part of the visual validation workflow:
-1. After creating/modifying designs with figma_execute, ALWAYS take a screenshot
-2. Analyze the screenshot to verify the design matches specifications
-3. Check for alignment, spacing, proportions, and visual balance
-4. If issues are found, iterate with fixes and take another screenshot
-5. Continue until the design looks correct (max 3 iterations)
-
-Pass a nodeId to screenshot specific frames/elements, or omit to capture the current view.`,
+			`Export an image of the current Figma page or specific node via REST API. Returns an image URL (valid 30 days). Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image.`,
 			{
 				nodeId: z
 					.string()
@@ -651,8 +639,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 										byteLength: imageBuffer.byteLength,
 										note: "Screenshot captured successfully. The image is included below for visual analysis.",
 									},
-									null,
-									2,
 								),
 							},
 							{
@@ -676,8 +662,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 										message: "Failed to capture screenshot via Figma API",
 										hint: "Make sure you've called figma_navigate to open a file, or provide a valid nodeId parameter",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -752,8 +736,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 									},
 									logs: watchedLogs,
 								},
-								null,
-								2,
 							),
 						},
 					],
@@ -803,8 +785,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 										consoleCleared: clearConsoleBefore,
 										clearedCount: clearConsoleBefore ? clearedCount : 0,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -838,8 +818,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 											? "The browser connection was lost (computer likely went to sleep). Call figma_navigate to reconnect, then retry."
 											: "Connection issue detected. Call figma_get_status first to diagnose, then figma_navigate to reconnect.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -876,8 +854,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 										ai_instruction:
 											"⚠️ CRITICAL: Console cleared successfully, but this operation disrupts the monitoring connection. You MUST reconnect the MCP server using `/mcp reconnect figma-console` before calling figma_get_console_logs again. Best practice: Avoid clearing console - filter/parse logs instead to maintain monitoring connection.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -893,8 +869,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 										error: String(error),
 										message: "Failed to clear console buffer",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -949,8 +923,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 											message:
 												"Switched to existing tab for this Figma file. Console monitoring is active.",
 										},
-										null,
-										2,
 									),
 								},
 							],
@@ -974,8 +946,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 										message:
 											"Browser navigated to Figma. Console monitoring is active.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -998,8 +968,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 											"Check that the debug port (9222) is accessible",
 										],
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1132,8 +1100,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 											this.consoleMonitor !== null,
 										timestamp: Date.now(),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1149,8 +1115,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 										error: String(error),
 										message: "Failed to retrieve status",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1224,8 +1188,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 											? `Successfully reconnected to Figma Desktop. Now monitoring: "${fileName}"`
 											: "Successfully reconnected to Figma Desktop. Console monitoring restarted.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1243,8 +1205,6 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 										message: "Failed to reconnect to Figma Desktop",
 										hint: "Make sure Figma Desktop is running with --remote-debugging-port=9222",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1261,69 +1221,15 @@ Pass a nodeId to screenshot specific frames/elements, or omit to capture the cur
 		// Tool: Execute arbitrary code in Figma plugin context (Power Tool)
 		this.server.tool(
 			"figma_execute",
-			`Execute arbitrary JavaScript code in Figma's plugin context. This is a POWER TOOL that can run any Figma Plugin API code. Use for complex operations not covered by other tools. Requires the Desktop Bridge plugin to be running in Figma. Returns the result of the code execution. CAUTION: Can modify your Figma document - use carefully.
+			`Execute arbitrary JavaScript in Figma's plugin context with full access to the figma API. Use for complex operations not covered by other tools. Requires Desktop Bridge plugin. CAUTION: Can modify your document.
 
-**IMPORTANT: COMPONENT INSTANCES vs DIRECT NODE EDITING**
-When working with component instances (node.type === 'INSTANCE'), you must use the correct approach:
-- Components expose TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties
-- Direct editing of text nodes inside instances often FAILS SILENTLY
-- Use figma_set_instance_properties tool to update component properties
-- Use instance.componentProperties to see available properties
-- Property names may have #nodeId suffixes (e.g., 'Label#1:234')
+**COMPONENT INSTANCES:** For instances (node.type === 'INSTANCE'), use figma_set_instance_properties — direct text editing FAILS SILENTLY. Check instance.componentProperties for available props (may have #nodeId suffixes).
 
-**SILENT FAILURE DETECTION:**
-This tool now returns a 'resultAnalysis' field that warns when operations may have failed:
-- Empty arrays/objects indicate searches found nothing
-- Null/undefined returns may indicate missing nodes
-- Always check resultAnalysis.warning for potential issues
+**RESULT ANALYSIS:** Check resultAnalysis.warning for silent failures (empty arrays, null returns).
 
-**VISUAL VALIDATION WORKFLOW (REQUIRED for design creation):**
-After creating or modifying any visual design elements, you MUST follow this validation loop:
-1. CREATE: Execute the design code
-2. SCREENSHOT: Use figma_capture_screenshot (NOT figma_take_screenshot) for reliable validation - it reads from plugin runtime, not cloud state
-3. ANALYZE: Compare screenshot against specifications for:
-   - Alignment: Are elements properly aligned and balanced?
-   - Spacing: Is padding/margin consistent and visually correct?
-   - Proportions: Do widths fill containers appropriately?
-   - Typography: Are fonts, sizes, and weights correct?
-   - Visual balance: Does it look professional and centered?
-4. ITERATE: If issues found, fix and repeat (max 3 iterations)
-5. VERIFY: Take final screenshot to confirm fixes
+**VALIDATION:** After creating/modifying visuals: screenshot with figma_capture_screenshot, check alignment/spacing/proportions, iterate up to 3x.
 
-Common issues to check:
-- Elements using "hug contents" instead of "fill container" (causes lopsided layouts)
-- Inconsistent padding (elements not visually balanced)
-- Text/inputs not filling available width
-- Component text not changing (use figma_set_instance_properties instead)
-- Duplicate pages created (check before creating new pages)
-- Components on blank canvas - ALWAYS create inside a Section or Frame
-
-**COMPONENT PLACEMENT (REQUIRED):**
-Before creating components, find or create a parent Section:
-\`\`\`javascript
-let section = figma.currentPage.findOne(n => n.type === 'SECTION');
-if (!section) {
-  section = figma.createSection();
-  section.name = 'Components';
-}
-// Create component INSIDE the section
-section.appendChild(newComponent);
-\`\`\`
-
-**Z-ORDER / LAYER ORDERING:**
-When creating background frames or containers, newly created elements render on TOP by default. To put backgrounds behind content:
-\`\`\`javascript
-// Option 1: Insert at index 0 (back)
-parent.insertChild(0, backgroundFrame);
-// Option 2: Create background FIRST, then content
-const bg = figma.createFrame(); // created first = behind
-const content = figma.createFrame(); // created second = in front
-\`\`\`
-
-**DESIGN BEST PRACTICES:**
-For component-specific design guidance (sizing, proportions, accessibility, variants, properties, metadata), query the Design Systems Assistant MCP before creating any component. It provides up-to-date best practices for any component type (buttons, tabs, accordions, badges, etc.).
-
-If Design Systems Assistant MCP is not available, install it from: https://github.com/southleft/design-systems-mcp`,
+**PLACEMENT:** Always create components inside a Section or Frame, never on blank canvas. Use parent.insertChild(0, bg) for z-ordering backgrounds behind content.`,
 			{
 				code: z
 					.string()
@@ -1369,8 +1275,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												? { reconnected: true, attempts: attempt + 1 }
 												: {}),
 										},
-										null,
-										2,
 									),
 								},
 							],
@@ -1436,8 +1340,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									message: "Failed to execute code in Figma plugin context",
 									hint: "Make sure the Desktop Bridge plugin is running in Figma",
 								},
-								null,
-								2,
 							),
 						},
 					],
@@ -1487,8 +1389,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										variable: result.variable,
 										timestamp: Date.now(),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1506,8 +1406,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to update variable",
 										hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1574,8 +1472,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										variable: result.variable,
 										timestamp: Date.now(),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1593,8 +1489,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to create variable",
 										hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1644,8 +1538,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										collection: result.collection,
 										timestamp: Date.now(),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1663,8 +1555,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to create variable collection",
 										hint: "Make sure the Desktop Bridge plugin is running in Figma",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1703,8 +1593,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										warning:
 											"This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1722,8 +1610,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to delete variable",
 										hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1762,8 +1648,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										warning:
 											"This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1781,8 +1665,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to delete variable collection",
 										hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1825,8 +1707,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										variable: result.variable,
 										timestamp: Date.now(),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1844,8 +1724,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to rename variable",
 										hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1888,8 +1766,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										collection: result.collection,
 										timestamp: Date.now(),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1907,8 +1783,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to add mode to collection",
 										hint: "Make sure the Desktop Bridge plugin is running, the collection ID is correct, and you haven't exceeded Figma's mode limit",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1960,8 +1834,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										collection: result.collection,
 										timestamp: Date.now(),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -1979,8 +1851,454 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to rename mode",
 										hint: "Make sure the Desktop Bridge plugin is running, the collection ID and mode ID are correct",
 									},
-									null,
-									2,
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// ============================================================================
+		// BATCH OPERATIONS (Performance-Optimized)
+		// ============================================================================
+		// Execute multiple variable operations in a single CDP call,
+		// reducing per-operation overhead from ~60-170ms to near-zero.
+		// Use these instead of calling individual tools repeatedly.
+
+		// Tool: Batch create variables
+		this.server.tool(
+			"figma_batch_create_variables",
+			"Create multiple variables in one operation. Use instead of calling figma_create_variable repeatedly — up to 50x faster for bulk operations. Get collection IDs from figma_get_variables first. Requires Desktop Bridge plugin.",
+			{
+				collectionId: z
+					.string()
+					.describe(
+						"Collection ID to create all variables in (e.g., 'VariableCollectionId:123:456')",
+					),
+				variables: z
+					.array(
+						z.object({
+							name: z.string().describe("Variable name (e.g., 'primary-blue')"),
+							resolvedType: z
+								.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
+								.describe("Variable type"),
+							description: z
+								.string()
+								.optional()
+								.describe("Optional description"),
+							valuesByMode: z
+								.record(
+									z.string(),
+									z.union([z.string(), z.number(), z.boolean()]),
+								)
+								.optional()
+								.describe(
+									"Values by mode ID. For COLOR: hex like '#FF0000'. Example: { '1:0': '#FF0000' }",
+								),
+						}),
+					)
+					.min(1)
+					.max(100)
+					.describe("Array of variables to create (1-100)"),
+			},
+			async ({ collectionId, variables }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+
+					const script = `
+const results = [];
+const collectionId = ${JSON.stringify(collectionId)};
+const vars = ${JSON.stringify(variables)};
+
+function hexToRgba(hex) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  return {
+    r: parseInt(hex.substring(0, 2), 16) / 255,
+    g: parseInt(hex.substring(2, 4), 16) / 255,
+    b: parseInt(hex.substring(4, 6), 16) / 255,
+    a: hex.length === 8 ? parseInt(hex.substring(6, 8), 16) / 255 : 1
+  };
+}
+
+for (const v of vars) {
+  try {
+    const variable = figma.variables.createVariable(v.name, collectionId, v.resolvedType);
+    if (v.description) variable.description = v.description;
+    if (v.valuesByMode) {
+      for (const [modeId, value] of Object.entries(v.valuesByMode)) {
+        const processed = v.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
+        variable.setValueForMode(modeId, processed);
+      }
+    }
+    results.push({ success: true, name: v.name, id: variable.id });
+  } catch (err) {
+    results.push({ success: false, name: v.name, error: String(err) });
+  }
+}
+
+return {
+  created: results.filter(r => r.success).length,
+  failed: results.filter(r => !r.success).length,
+  results
+};`;
+
+					const timeout = Math.max(5000, variables.length * 200);
+					const result = await connector.executeCodeViaUI(
+						script,
+						Math.min(timeout, 30000),
+					);
+
+					if (result.error) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											error: result.error,
+											message:
+												"Batch create failed during execution",
+											hint: "Check that the collection ID is valid and the Desktop Bridge plugin is running",
+										},
+									),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Batch created ${result.result?.created ?? 0} variables (${result.result?.failed ?? 0} failed)`,
+										...result.result,
+										timestamp: Date.now(),
+									},
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to batch create variables");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error:
+											error instanceof Error
+												? error.message
+												: String(error),
+										message: "Failed to batch create variables",
+										hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
+									},
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Batch update variables
+		this.server.tool(
+			"figma_batch_update_variables",
+			"Update multiple variable values in one operation. Use instead of calling figma_update_variable repeatedly — up to 50x faster for bulk updates. Get variable/mode IDs from figma_get_variables first. Requires Desktop Bridge plugin.",
+			{
+				updates: z
+					.array(
+						z.object({
+							variableId: z
+								.string()
+								.describe(
+									"Variable ID (e.g., 'VariableID:123:456')",
+								),
+							modeId: z
+								.string()
+								.describe("Mode ID (e.g., '1:0')"),
+							value: z
+								.union([z.string(), z.number(), z.boolean()])
+								.describe(
+									"New value. COLOR: hex like '#FF0000'. FLOAT: number. STRING: text. BOOLEAN: true/false.",
+								),
+						}),
+					)
+					.min(1)
+					.max(100)
+					.describe("Array of updates to apply (1-100)"),
+			},
+			async ({ updates }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+
+					const script = `
+const results = [];
+const updates = ${JSON.stringify(updates)};
+
+function hexToRgba(hex) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  return {
+    r: parseInt(hex.substring(0, 2), 16) / 255,
+    g: parseInt(hex.substring(2, 4), 16) / 255,
+    b: parseInt(hex.substring(4, 6), 16) / 255,
+    a: hex.length === 8 ? parseInt(hex.substring(6, 8), 16) / 255 : 1
+  };
+}
+
+for (const u of updates) {
+  try {
+    const variable = figma.variables.getVariableById(u.variableId);
+    if (!variable) throw new Error('Variable not found: ' + u.variableId);
+    const isColor = variable.resolvedType === 'COLOR';
+    const processed = isColor && typeof u.value === 'string' ? hexToRgba(u.value) : u.value;
+    variable.setValueForMode(u.modeId, processed);
+    results.push({ success: true, variableId: u.variableId, name: variable.name });
+  } catch (err) {
+    results.push({ success: false, variableId: u.variableId, error: String(err) });
+  }
+}
+
+return {
+  updated: results.filter(r => r.success).length,
+  failed: results.filter(r => !r.success).length,
+  results
+};`;
+
+					const timeout = Math.max(5000, updates.length * 150);
+					const result = await connector.executeCodeViaUI(
+						script,
+						Math.min(timeout, 30000),
+					);
+
+					if (result.error) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											error: result.error,
+											message:
+												"Batch update failed during execution",
+											hint: "Check that variable IDs and mode IDs are valid",
+										},
+									),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Batch updated ${result.result?.updated ?? 0} variables (${result.result?.failed ?? 0} failed)`,
+										...result.result,
+										timestamp: Date.now(),
+									},
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to batch update variables");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error:
+											error instanceof Error
+												? error.message
+												: String(error),
+										message: "Failed to batch update variables",
+										hint: "Make sure the Desktop Bridge plugin is running and variable/mode IDs are correct",
+									},
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Setup design tokens (collection + modes + variables atomically)
+		this.server.tool(
+			"figma_setup_design_tokens",
+			"Create a complete design token structure in one operation: collection, modes, and all variables. Ideal for importing CSS custom properties or design tokens into Figma. Requires Desktop Bridge plugin.",
+			{
+				collectionName: z
+					.string()
+					.describe("Name for the token collection (e.g., 'Brand Tokens')"),
+				modes: z
+					.array(z.string())
+					.min(1)
+					.max(4)
+					.describe(
+						"Mode names (first becomes default). Example: ['Light', 'Dark']",
+					),
+				tokens: z
+					.array(
+						z.object({
+							name: z
+								.string()
+								.describe("Token name (e.g., 'color/primary')"),
+							resolvedType: z
+								.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
+								.describe("Token type"),
+							description: z
+								.string()
+								.optional()
+								.describe("Optional description"),
+							values: z
+								.record(
+									z.string(),
+									z.union([z.string(), z.number(), z.boolean()]),
+								)
+								.describe(
+									"Values keyed by mode NAME (not ID). Example: { 'Light': '#FFFFFF', 'Dark': '#000000' }",
+								),
+						}),
+					)
+					.min(1)
+					.max(100)
+					.describe("Token definitions (1-100)"),
+			},
+			async ({ collectionName, modes, tokens }) => {
+				try {
+					const connector = await this.getDesktopConnector();
+
+					const script = `
+const collectionName = ${JSON.stringify(collectionName)};
+const modeNames = ${JSON.stringify(modes)};
+const tokenDefs = ${JSON.stringify(tokens)};
+
+function hexToRgba(hex) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  return {
+    r: parseInt(hex.substring(0, 2), 16) / 255,
+    g: parseInt(hex.substring(2, 4), 16) / 255,
+    b: parseInt(hex.substring(4, 6), 16) / 255,
+    a: hex.length === 8 ? parseInt(hex.substring(6, 8), 16) / 255 : 1
+  };
+}
+
+// Step 1: Create collection
+const collection = figma.variables.createVariableCollection(collectionName);
+const modeMap = {};
+
+// Step 2: Set up modes - first mode uses the default mode that was auto-created
+const defaultModeId = collection.modes[0].modeId;
+collection.renameMode(defaultModeId, modeNames[0]);
+modeMap[modeNames[0]] = defaultModeId;
+
+for (let i = 1; i < modeNames.length; i++) {
+  const newModeId = collection.addMode(modeNames[i]);
+  modeMap[modeNames[i]] = newModeId;
+}
+
+// Step 3: Create all variables with values
+const results = [];
+for (const t of tokenDefs) {
+  try {
+    const variable = figma.variables.createVariable(t.name, collection.id, t.resolvedType);
+    if (t.description) variable.description = t.description;
+    for (const [modeName, value] of Object.entries(t.values)) {
+      const modeId = modeMap[modeName];
+      if (!modeId) { results.push({ success: false, name: t.name, error: 'Unknown mode: ' + modeName }); continue; }
+      const processed = t.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
+      variable.setValueForMode(modeId, processed);
+    }
+    results.push({ success: true, name: t.name, id: variable.id });
+  } catch (err) {
+    results.push({ success: false, name: t.name, error: String(err) });
+  }
+}
+
+return {
+  collectionId: collection.id,
+  collectionName: collectionName,
+  modes: modeMap,
+  created: results.filter(r => r.success).length,
+  failed: results.filter(r => !r.success).length,
+  results
+};`;
+
+					const timeout = Math.max(
+						10000,
+						tokens.length * 200 + modes.length * 500,
+					);
+					const result = await connector.executeCodeViaUI(
+						script,
+						Math.min(timeout, 30000),
+					);
+
+					if (result.error) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											error: result.error,
+											message:
+												"Design token setup failed during execution",
+											hint: "Check the token definitions and ensure the Desktop Bridge plugin is running",
+										},
+									),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										message: `Created collection "${collectionName}" with ${modes.length} mode(s) and ${result.result?.created ?? 0} tokens`,
+										...result.result,
+										timestamp: Date.now(),
+									},
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to setup design tokens");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error:
+											error instanceof Error
+												? error.message
+												: String(error),
+										message: "Failed to setup design tokens",
+										hint: "Make sure the Desktop Bridge plugin is running in Figma",
+									},
 								),
 							},
 						],
@@ -2195,8 +2513,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											},
 											hint: "Use figma_search_components to find specific components by name or category.",
 										},
-										null,
-										2,
 									),
 								},
 							],
@@ -2337,8 +2653,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										},
 										hint: "Use figma_search_components to find specific components by name or category.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2355,8 +2669,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											error instanceof Error ? error.message : String(error),
 										hint: "Make sure the Desktop Bridge plugin is running in Figma",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2409,8 +2721,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											error:
 												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
 										},
-										null,
-										2,
 									),
 								},
 							],
@@ -2445,8 +2755,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											? `Use offset=${(offset || 0) + effectiveLimit} to get more results.`
 											: "Use figma_get_component_details with a component key for full details.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2462,8 +2770,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2498,8 +2804,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										{
 											error: "Either componentKey or componentName is required",
 										},
-										null,
-										2,
 									),
 								},
 							],
@@ -2519,8 +2823,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											error:
 												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
 										},
-										null,
-										2,
 									),
 								},
 							],
@@ -2571,8 +2873,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											error: `Component not found: ${componentKey || componentName}`,
 											hint: "Use figma_search_components to find available components.",
 										},
-										null,
-										2,
 									),
 								},
 							],
@@ -2594,8 +2894,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											example: `Use figma_instantiate_component with componentKey: "${component.key}"`,
 										},
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2611,8 +2909,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2658,8 +2954,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											error:
 												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
 										},
-										null,
-										2,
 									),
 								},
 							],
@@ -2717,8 +3011,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										tokens: result,
 										hint: "Use these exact token names and values when generating designs.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2734,8 +3026,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2831,8 +3121,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										instance: result.instance,
 										timestamp: Date.now(),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2850,8 +3138,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: "Failed to instantiate component",
 										hint: "Make sure the component key is correct and the Desktop Bridge plugin is running",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2904,8 +3190,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: "Description set successfully",
 										node: result.node,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2922,8 +3206,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 											error instanceof Error ? error.message : String(error),
 										hint: "Make sure the node supports descriptions (components, component sets, styles)",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2980,8 +3262,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										propertyName: result.propertyName,
 										hint: "The property name includes a unique suffix (e.g., 'Show Icon#123:456'). Use the full name for editing/deleting.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -2998,8 +3278,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 											error instanceof Error ? error.message : String(error),
 										hint: "Cannot add properties to variant components. Add to the parent component set instead.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3064,8 +3342,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: "Component property updated",
 										propertyName: result.propertyName,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3081,8 +3357,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3125,8 +3399,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										success: true,
 										message: "Component property deleted",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3143,8 +3415,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 											error instanceof Error ? error.message : String(error),
 										hint: "Cannot delete VARIANT properties. Only BOOLEAN, TEXT, and INSTANCE_SWAP can be deleted.",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3198,8 +3468,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: `Node resized to ${width}x${height}`,
 										node: result.node,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3215,8 +3483,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3254,8 +3520,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: `Node moved to (${x}, ${y})`,
 										node: result.node,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3271,8 +3535,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3326,8 +3588,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: "Fills updated",
 										node: result.node,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3343,8 +3603,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3397,8 +3655,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: "Strokes updated",
 										node: result.node,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3414,8 +3670,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3451,8 +3705,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: "Node cloned",
 										clonedNode: result.node,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3468,8 +3720,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3505,8 +3755,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: "Node deleted",
 										deleted: result.deleted,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3522,8 +3770,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3560,8 +3806,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: `Node renamed to "${newName}"`,
 										node: result.node,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3577,8 +3821,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										error:
 											error instanceof Error ? error.message : String(error),
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3620,8 +3862,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: "Text content updated",
 										node: result.node,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3638,8 +3878,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 											error instanceof Error ? error.message : String(error),
 										hint: "Make sure the node is a TEXT node",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3705,8 +3943,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										message: `Created ${nodeType} node`,
 										node: result.node,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3723,8 +3959,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 											error instanceof Error ? error.message : String(error),
 										hint: "Make sure the parent node supports children (frames, groups, etc.)",
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -3738,59 +3972,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 		// Recreates component set using figma.combineAsVariants() for proper purple dashed frame
 		this.server.tool(
 			"figma_arrange_component_set",
-			`Organize and style a component set with Figma's native purple dashed visualization.
+			`Organize a component set with Figma's native purple dashed visualization. Use after creating variants, adding states (hover/disabled/pressed), or when component sets need cleanup.
 
-**🎯 USE THIS TOOL WHEN THE USER:**
-- Asks to "create variants" or "add variants" to a component
-- Wants to "add states" like hover, disabled, pressed, focus
-- Requests "different sizes" (small, medium, large) of a component
-- Says "make this a component with variants"
-- Asks to "organize" or "arrange" or "fix" a component set
-- Mentions the component set looks "messy" or variants are "overlapping"
-- Wants a "proper component set" or "professional component layout"
-- After creating multiple component variants that need to be combined
-- When component variants exist but lack the purple dashed border styling
-
-**🔄 TYPICAL WORKFLOW:**
-1. User designs a UI element (button, card, input, etc.)
-2. User requests variants → AI creates component variants
-3. **→ CALL THIS TOOL** to combine variants into a proper component set with:
-   - Purple dashed border (Figma's native component set styling)
-   - Organized grid layout
-   - Auto-generated property labels
-
-**What this tool does:**
-1. Takes an existing component set (or selected components)
-2. Recreates it using figma.combineAsVariants() for proper Figma integration
-3. Applies purple dashed border styling (Figma's default component set appearance)
-4. Arranges variants in a clean grid pattern
-5. Returns the new component set ready for use
-
-**Result Structure:**
-\`\`\`
-Page
-└── Component Container (white frame, auto-sized)
-    ├── Title (component name)
-    ├── Content Row
-    │   ├── Row Labels (vertically aligned with grid rows)
-    │   │   ├── Spacer (for column header height)
-    │   │   └── Row labels with exact row heights
-    │   └── Grid Column
-    │       ├── Column Headers (horizontally aligned with grid columns)
-    │       └── COMPONENT_SET (purple dashed border)
-    │           └── COMPONENT variants in grid
-\`\`\`
-
-**Layout features:**
-- White container frame that auto-sizes to fit all content
-- Row labels: Vertically centered with their corresponding grid rows
-- Column headers: Horizontally centered with their corresponding grid columns
-- Component set: Uses Figma's native purple dashed border
-- All elements properly contained (no floating labels)
-
-**Grid structure:**
-- Columns = last property (usually State: Default, Hover, Disabled)
-- Rows = combination of other properties (Type + Size)`,
+Recreates the set using figma.combineAsVariants() for proper Figma integration, applies purple dashed border styling, and arranges variants in a labeled grid (columns = last property like State, rows = other properties like Type+Size). Creates a white container with title, row/column labels, and the component set.`,
 			{
 				componentSetId: z
 					.string()
@@ -4286,8 +4470,6 @@ return {
 											? "Component set arranged in a white container frame with properly aligned row and column labels. The purple dashed border is visible. Use figma_capture_screenshot to validate the layout."
 											: undefined,
 									},
-									null,
-									2,
 								),
 							},
 						],
@@ -4304,8 +4486,6 @@ return {
 											error instanceof Error ? error.message : String(error),
 										hint: "Make sure the Desktop Bridge plugin is running and a component set exists.",
 									},
-									null,
-									2,
 								),
 							},
 						],
