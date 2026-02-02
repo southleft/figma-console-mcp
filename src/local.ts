@@ -1923,9 +1923,12 @@ function hexToRgba(hex) {
   };
 }
 
+const collection = await figma.variables.getVariableCollectionByIdAsync(collectionId);
+if (!collection) return { created: 0, failed: vars.length, results: vars.map(v => ({ success: false, name: v.name, error: 'Collection not found: ' + collectionId })) };
+
 for (const v of vars) {
   try {
-    const variable = figma.variables.createVariable(v.name, collectionId, v.resolvedType);
+    const variable = figma.variables.createVariable(v.name, collection, v.resolvedType);
     if (v.description) variable.description = v.description;
     if (v.valuesByMode) {
       for (const [modeId, value] of Object.entries(v.valuesByMode)) {
@@ -2057,7 +2060,7 @@ function hexToRgba(hex) {
 
 for (const u of updates) {
   try {
-    const variable = figma.variables.getVariableById(u.variableId);
+    const variable = await figma.variables.getVariableByIdAsync(u.variableId);
     if (!variable) throw new Error('Variable not found: ' + u.variableId);
     const isColor = variable.resolvedType === 'COLOR';
     const processed = isColor && typeof u.value === 'string' ? hexToRgba(u.value) : u.value;
@@ -2218,7 +2221,7 @@ for (let i = 1; i < modeNames.length; i++) {
 const results = [];
 for (const t of tokenDefs) {
   try {
-    const variable = figma.variables.createVariable(t.name, collection.id, t.resolvedType);
+    const variable = figma.variables.createVariable(t.name, collection, t.resolvedType);
     if (t.description) variable.description = t.description;
     for (const [modeName, value] of Object.entries(t.values)) {
       const modeId = modeMap[modeName];
