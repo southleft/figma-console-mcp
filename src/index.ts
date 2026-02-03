@@ -877,13 +877,16 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		);
 
 		// Register Figma API tools (Tools 8-14)
+		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
 		registerFigmaAPITools(
 			this.server,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			() => this.consoleMonitor || null,
 			() => this.browserManager || null,
-			() => this.ensureInitialized()
+			() => this.ensureInitialized(),
+			undefined, // variablesCache
+			{ isRemoteMode: true }
 		);
 
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
@@ -1447,6 +1450,17 @@ export default {
 				await env.OAUTH_TOKENS.put(tokenKey, JSON.stringify(storedToken), {
 					expirationTtl: expiresIn
 				});
+
+				// CRITICAL: Also store under the fixed session ID that Durable Objects use
+				// This ensures getFigmaAPI() can retrieve the token regardless of which
+				// session ID was used during OAuth (e.g., mcp-remote's client_id)
+				const fixedTokenKey = `oauth_token:figma-console-mcp-default-session`;
+				if (tokenKey !== fixedTokenKey) {
+					await env.OAUTH_TOKENS.put(fixedTokenKey, JSON.stringify(storedToken), {
+						expirationTtl: expiresIn
+					});
+					logger.info({ fixedTokenKey }, "Token also stored under fixed session ID for Durable Object access");
+				}
 
 				// Store reverse lookup for Bearer token validation on SSE endpoint
 				// This allows us to validate Authorization: Bearer <token> headers

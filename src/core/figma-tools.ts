@@ -703,6 +703,14 @@ function resolveVariableAliases(
 }
 
 /**
+ * Options for registering Figma API tools
+ */
+interface FigmaAPIToolsOptions {
+	/** When true, suppresses Desktop Bridge mentions in tool descriptions (for remote/cloud mode) */
+	isRemoteMode?: boolean;
+}
+
+/**
  * Register Figma API tools with the MCP server
  */
 export function registerFigmaAPITools(
@@ -712,8 +720,10 @@ export function registerFigmaAPITools(
 	getConsoleMonitor?: () => ConsoleMonitor | null,
 	getBrowserManager?: () => any,
 	ensureInitialized?: () => Promise<void>,
-	variablesCache?: Map<string, { data: any; timestamp: number }>
+	variablesCache?: Map<string, { data: any; timestamp: number }>,
+	options?: FigmaAPIToolsOptions
 ) {
+	const isRemoteMode = options?.isRemoteMode ?? false;
 	// Tool 8: Get File Data (General Purpose)
 	// NOTE: For specific use cases, consider using specialized tools:
 	// - figma_get_component_for_development: For UI component implementation
@@ -2291,9 +2301,12 @@ export function registerFigmaAPITools(
 	);
 
 	// Tool 10: Get Component Data
+	const componentDescription = isRemoteMode
+		? "Get component metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation."
+		: "Get component metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation. IMPORTANT: For local/unpublished components with metadata format, ensure the Figma Desktop Bridge plugin is running (Right-click in Figma → Plugins → Development → Figma Desktop Bridge) to get complete description data.";
 	server.tool(
 		"figma_get_component",
-		"Get component metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation. IMPORTANT: For local/unpublished components with metadata format, ensure the Figma Desktop Bridge plugin is running (Right-click in Figma → Plugins → Development → Figma Desktop Bridge) to get complete description data.",
+		componentDescription,
 		{
 			fileUrl: z
 				.string()
