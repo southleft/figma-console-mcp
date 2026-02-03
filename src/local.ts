@@ -916,6 +916,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							await this.consoleMonitor.startMonitoring(result.page);
 						}
 
+						// Clear desktop connector's cached plugin frame - it's from the old tab
+						if (this.desktopConnector) {
+							this.desktopConnector.clearFrameCache();
+						}
+
 						// No delay needed — page is already loaded
 						const currentUrl = this.browserManager.getCurrentUrl();
 
@@ -937,7 +942,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						};
 					}
 
-					// Normal navigation — give page time to load
+					// Normal navigation — clear old plugin frame cache first
+					if (this.desktopConnector) {
+						this.desktopConnector.clearFrameCache();
+					}
+
+					// Give page time to load
 					await new Promise((resolve) => setTimeout(resolve, 2000));
 
 					const currentUrl = this.browserManager.getCurrentUrl();

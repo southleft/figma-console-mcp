@@ -163,15 +163,19 @@ export class LocalBrowserManager implements IBrowserManager {
 			await this.launch();
 		}
 
-		// ALWAYS re-check for best page (don't cache if we might have missed workers)
+		// If we already have a page from explicit navigation, use it (don't override with findBestPage)
+		if (this.page && !this.page.isClosed()) {
+			return this.page;
+		}
+
+		// No explicit page set — find the best page (most workers) for initial connection
 		const bestPage = await this.findBestPage();
 		if (bestPage) {
 			const workerCount = bestPage.workers().length;
 			logger.info({
 				url: bestPage.url(),
-				workerCount,
-				cached: this.page === bestPage
-			}, 'Selected page for monitoring');
+				workerCount
+			}, 'Selected page for monitoring (auto-detected)');
 
 			this.page = bestPage;
 			return this.page;
