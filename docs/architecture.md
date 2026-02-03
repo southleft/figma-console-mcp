@@ -73,7 +73,7 @@ flowchart TB
 The main server implements the Model Context Protocol with stdio transport for local mode.
 
 **Key Responsibilities:**
-- Tool registration (40+ tools)
+- Tool registration (43+ tools)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication

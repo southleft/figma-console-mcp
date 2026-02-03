@@ -292,7 +292,7 @@ Create `.vscode/mcp.json` in your project (workspace-level) or configure globall
 
 1. Open **Copilot Chat** (Cmd+Shift+I or click Copilot icon)
 2. Try: *"Use the figma-console tools to get status"*
-3. Copilot should now have access to all 45+ Figma tools
+3. Copilot should now have access to all 43+ Figma tools
 
 ### Enterprise Considerations
 
@@ -425,7 +425,7 @@ For organizations using GitHub Enterprise:
    - Enables variables without Enterprise API
 
 3. **Read tool documentation:**
-   - See [TOOLS.md](TOOLS.md) for all 40+ available tools
+   - See [TOOLS.md](TOOLS.md) for all 43+ available tools
    - See [USE_CASES.md](USE_CASES.md) for example workflows
 
 ---

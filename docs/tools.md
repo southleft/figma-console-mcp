@@ -1,6 +1,6 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 40+ MCP tools including parameters, return values, and usage examples."
+description: "Complete API reference for all 43+ MCP tools including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
@@ -45,6 +45,9 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_delete_variable_collection` | Delete collections | Local |
 | | `figma_add_mode` | Add modes to collections | Local |
 | | `figma_rename_mode` | Rename modes | Local |
+| | `figma_batch_create_variables` | Create up to 100 variables at once | Local |
+| | `figma_batch_update_variables` | Update up to 100 variables at once | Local |
+| | `figma_setup_design_tokens` | Create collection + modes + variables atomically | Local |
 | **📐 Node Manipulation** | `figma_resize_node` | Resize a node | Local |
 | | `figma_move_node` | Move a node | Local |
 | | `figma_clone_node` | Clone a node | Local |
@@ -867,6 +870,181 @@ figma_rename_mode({
 
 ---
 
+### `figma_batch_create_variables`
+
+Create multiple variables in a single operation — up to 50x faster than calling `figma_create_variable` repeatedly.
+
+**When to Use:**
+- Creating multiple design tokens at once (e.g., a full color palette)
+- Importing variables from an external source
+- Any time you need to create more than 2-3 variables
+
+**Usage:**
+```javascript
+figma_batch_create_variables({
+  collectionId: "VariableCollectionId:123:456",
+  variables: [
+    {
+      name: "colors/primary/500",
+      resolvedType: "COLOR",
+      description: "Primary brand color",
+      valuesByMode: { "1:0": "#3B82F6", "1:1": "#60A5FA" }
+    },
+    {
+      name: "colors/primary/600",
+      resolvedType: "COLOR",
+      valuesByMode: { "1:0": "#2563EB", "1:1": "#3B82F6" }
+    },
+    {
+      name: "spacing/md",
+      resolvedType: "FLOAT",
+      valuesByMode: { "1:0": 16 }
+    }
+  ]
+})
+```
+
+**Parameters:**
+- `collectionId` (required): Collection ID to create all variables in
+- `variables` (required): Array of 1-100 variable definitions, each with:
+  - `name` (required): Variable name (use `/` for grouping)
+  - `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, or `"BOOLEAN"`
+  - `description` (optional): Variable description
+  - `valuesByMode` (optional): Object mapping mode IDs to values
+
+**Returns:**
+```json
+{
+  "success": true,
+  "message": "Batch created 3 variables (0 failed)",
+  "created": 3,
+  "failed": 0,
+  "results": [
+    { "success": true, "name": "colors/primary/500", "id": "VariableID:1:1" },
+    { "success": true, "name": "colors/primary/600", "id": "VariableID:1:2" },
+    { "success": true, "name": "spacing/md", "id": "VariableID:1:3" }
+  ]
+}
+```
+
+**Performance:** Executes in a single CDP roundtrip. 10-50x faster than individual calls for bulk operations.
+
+---
+
+### `figma_batch_update_variables`
+
+Update multiple variable values in a single operation — up to 50x faster than calling `figma_update_variable` repeatedly.
+
+**When to Use:**
+- Updating many token values at once (e.g., theme refresh)
+- Syncing variable values from an external source
+- Any time you need to update more than 2-3 variables
+
+**Usage:**
+```javascript
+figma_batch_update_variables({
+  updates: [
+    { variableId: "VariableID:1:1", modeId: "1:0", value: "#2563EB" },
+    { variableId: "VariableID:1:2", modeId: "1:0", value: "#1D4ED8" },
+    { variableId: "VariableID:1:3", modeId: "1:0", value: 20 }
+  ]
+})
+```
+
+**Parameters:**
+- `updates` (required): Array of 1-100 updates, each with:
+  - `variableId` (required): Variable ID to update
+  - `modeId` (required): Mode ID to update value in
+  - `value` (required): New value (COLOR: hex `"#FF0000"`, FLOAT: number, STRING: text, BOOLEAN: true/false)
+
+**Returns:**
+```json
+{
+  "success": true,
+  "message": "Batch updated 3 variables (0 failed)",
+  "updated": 3,
+  "failed": 0,
+  "results": [
+    { "success": true, "variableId": "VariableID:1:1", "name": "colors/primary/500" },
+    { "success": true, "variableId": "VariableID:1:2", "name": "colors/primary/600" },
+    { "success": true, "variableId": "VariableID:1:3", "name": "spacing/md" }
+  ]
+}
+```
+
+**Performance:** Executes in a single CDP roundtrip. 10-50x faster than individual calls for bulk updates.
+
+---
+
+### `figma_setup_design_tokens`
+
+Create a complete design token structure in one atomic operation: collection, modes, and all variables.
+
+**When to Use:**
+- Setting up a new design system from scratch
+- Importing CSS custom properties or design tokens into Figma
+- Creating themed token sets (Light/Dark) with all values at once
+- Bootstrapping a new project with a full token foundation
+
+**Usage:**
+```javascript
+figma_setup_design_tokens({
+  collectionName: "Brand Tokens",
+  modes: ["Light", "Dark"],
+  tokens: [
+    {
+      name: "color/background",
+      resolvedType: "COLOR",
+      description: "Page background",
+      values: { "Light": "#FFFFFF", "Dark": "#1A1A2E" }
+    },
+    {
+      name: "color/text",
+      resolvedType: "COLOR",
+      values: { "Light": "#111827", "Dark": "#F9FAFB" }
+    },
+    {
+      name: "spacing/page",
+      resolvedType: "FLOAT",
+      values: { "Light": 24, "Dark": 24 }
+    }
+  ]
+})
+```
+
+**Parameters:**
+- `collectionName` (required): Name for the new collection
+- `modes` (required): Array of 1-4 mode names (first becomes default)
+- `tokens` (required): Array of 1-100 token definitions, each with:
+  - `name` (required): Token name (use `/` for grouping)
+  - `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, or `"BOOLEAN"`
+  - `description` (optional): Token description
+  - `values` (required): Object mapping **mode names** (not IDs) to values
+
+**Returns:**
+```json
+{
+  "success": true,
+  "message": "Created collection 'Brand Tokens' with 2 modes and 3 tokens (0 failed)",
+  "collectionId": "VariableCollectionId:1:1",
+  "collectionName": "Brand Tokens",
+  "modes": { "Light": "1:0", "Dark": "1:1" },
+  "created": 3,
+  "failed": 0,
+  "results": [
+    { "success": true, "name": "color/background", "id": "VariableID:1:1" },
+    { "success": true, "name": "color/text", "id": "VariableID:1:2" },
+    { "success": true, "name": "spacing/page", "id": "VariableID:1:3" }
+  ]
+}
+```
+
+**Key Difference from Other Tools:** Values are keyed by **mode name** (e.g., `"Light"`, `"Dark"`) instead of mode ID — the tool resolves names to IDs internally.
+
+**Performance:** Creates everything in a single CDP roundtrip. Ideal for bootstrapping entire token systems.
+
+---
+
 ## 🧩 Component Tools (Local Mode Only)
 
 > **⚠️ Requires Desktop Bridge Plugin**: These tools only work in Local Mode with the Desktop Bridge plugin running in Figma.
@@ -1276,8 +1454,11 @@ figma_get_token_values({
 | Task | Tool |
 |------|------|
 | Create new token collection | `figma_create_variable_collection` |
-| Add design tokens | `figma_create_variable` |
-| Change token values | `figma_update_variable` |
+| Add a single design token | `figma_create_variable` |
+| Add multiple design tokens (3+) | `figma_batch_create_variables` |
+| Change a single token value | `figma_update_variable` |
+| Change multiple token values (3+) | `figma_batch_update_variables` |
+| Set up a full token system from scratch | `figma_setup_design_tokens` |
 | Reorganize token names | `figma_rename_variable` |
 | Remove tokens | `figma_delete_variable` |
 | Add themes (Light/Dark) | `figma_add_mode` |

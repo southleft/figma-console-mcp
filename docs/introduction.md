@@ -301,7 +301,7 @@ Figma Console MCP offers two ways to connect:
     Real-world examples and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 40+ tools
+    Complete reference for 43+ tools
   </Card>
 </Columns>
 

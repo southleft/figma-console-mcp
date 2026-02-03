@@ -5,6 +5,22 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-02-02
+
+### Added
+- **Batch variable tools** for high-performance bulk operations
+  - `figma_batch_create_variables` — Create up to 100 variables in one call (10-50x faster than individual calls)
+  - `figma_batch_update_variables` — Update up to 100 variable values in one call
+  - `figma_setup_design_tokens` — Create a complete token system (collection + modes + variables) atomically
+- **Plugin frame caching** — Cached Desktop Bridge plugin frame reference eliminates redundant DOM lookups
+- **Diagnostic gating** — Console log capture gated behind active monitoring to reduce idle overhead
+- **Batch routing guidance** in MCP server instructions so AI models prefer batch tools automatically
+
+### Changed
+- Tool descriptions trimmed for token efficiency (`figma_execute` -75%, `figma_arrange_component_set` -78%)
+- JSON responses compacted across 113 `JSON.stringify` calls (removed `null, 2` formatting)
+- Individual variable tool descriptions now cross-reference batch alternatives
+
 ## [1.5.0] - 2026-01-30
 
 ### Added
@@ -119,6 +135,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.6.0]: https://github.com/southleft/figma-console-mcp/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/southleft/figma-console-mcp/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/southleft/figma-console-mcp/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/southleft/figma-console-mcp/compare/v1.2.5...v1.3.0
 [1.2.5]: https://github.com/southleft/figma-console-mcp/compare/v1.2.4...v1.2.5

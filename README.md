@@ -366,6 +366,9 @@ When you first use design system tools:
 - `figma_delete_variable_collection` - Delete collections and all their variables
 - `figma_add_mode` - Add modes to collections (e.g., "Dark", "Mobile")
 - `figma_rename_mode` - Rename existing modes
+- `figma_batch_create_variables` - Create up to 100 variables in one call (10-50x faster)
+- `figma_batch_update_variables` - Update up to 100 variable values in one call
+- `figma_setup_design_tokens` - Create complete token system (collection + modes + variables) atomically
 
 **📖 [Detailed Tool Documentation](docs/TOOLS.md)**
 
