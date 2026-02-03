@@ -81,7 +81,13 @@ const app = new App({ name: "DesignSystemDashboardApp", version: "1.0.0" });
 // SDK handlers (registered before connect)
 // ---------------------------------------------------------------------------
 
-app.ontoolresult = () => {};
+// When a new tool result arrives (e.g., user requested audit for a different file),
+// refresh the data. This handles the case where Claude Desktop reuses the cached
+// UI iframe — the connect() already resolved, so we need ontoolresult to trigger refresh.
+app.ontoolresult = () => {
+	// New tool call detected — fetch fresh data for the new file
+	fetchData();
+};
 
 app.onhostcontextchanged = (ctx) => {
 	applyDocumentTheme(ctx);

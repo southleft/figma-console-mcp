@@ -22,9 +22,13 @@ const app = new App({ name: "TokenBrowserApp", version: "1.0.0" });
 // SDK handlers (registered before connect)
 // ---------------------------------------------------------------------------
 
-// The initial tool result from figma_browse_tokens is now a short summary
-// (no JSON data). We ignore it — data comes from token_browser_refresh.
-app.ontoolresult = () => {};
+// When a new tool result arrives (e.g., user requested tokens for a different file),
+// refresh the data. This handles the case where Claude Desktop reuses the cached
+// UI iframe — the connect() already resolved, so we need ontoolresult to trigger refresh.
+app.ontoolresult = () => {
+	// New tool call detected — fetch fresh data for the new file
+	fetchData();
+};
 
 app.onhostcontextchanged = (ctx) => {
 	applyDocumentTheme(ctx);
