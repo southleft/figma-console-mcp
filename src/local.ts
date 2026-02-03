@@ -4544,6 +4544,36 @@ return {
 
 				const fileKey = urlInfo.branchId || urlInfo.fileKey;
 
+				// Fetch file info for display (non-blocking, best-effort)
+				let fileInfo: { name: string } | undefined;
+				try {
+					const api = await this.getFigmaAPI();
+					const fileData = await api.getFile(fileKey, { depth: 0 });
+					if (fileData?.name) {
+						fileInfo = { name: fileData.name };
+					}
+				} catch {
+					// Fall back to extracting name from URL
+					try {
+						const urlObj = new URL(url);
+						const segments = urlObj.pathname.split("/").filter(Boolean);
+						const branchIdx = segments.indexOf("branch");
+						const nameSegment =
+							branchIdx >= 0
+								? segments[branchIdx + 2]
+								: segments.length >= 3
+									? segments[2]
+									: undefined;
+						if (nameSegment) {
+							fileInfo = {
+								name: decodeURIComponent(nameSegment).replace(/-/g, " "),
+							};
+						}
+					} catch {
+						// Leave fileInfo undefined
+					}
+				}
+
 				// Check cache first (works for both Desktop Bridge and REST API data)
 				const cacheEntry = this.variablesCache.get(fileKey);
 				if (cacheEntry && Date.now() - cacheEntry.timestamp < 5 * 60 * 1000) {
@@ -4553,12 +4583,14 @@ return {
 						return {
 							variables: cached.variables,
 							collections: cached.variableCollections || [],
+							fileInfo,
 						};
 					}
 					const formatted = formatVariables(cached);
 					return {
 						variables: formatted.variables,
 						collections: formatted.collections,
+						fileInfo,
 					};
 				}
 
@@ -4588,6 +4620,7 @@ return {
 							return {
 								variables: desktopResult.variables,
 								collections: desktopResult.variableCollections || [],
+								fileInfo,
 							};
 						}
 					} catch (desktopErr) {
@@ -4623,6 +4656,7 @@ return {
 				return {
 					variables: formatted.variables,
 					collections: formatted.collections,
+					fileInfo,
 				};
 			});
 

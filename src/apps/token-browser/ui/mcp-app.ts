@@ -9,7 +9,11 @@ import {
 // State
 // ---------------------------------------------------------------------------
 
-let tokenData: { variables: any[]; collections: any[] } | null = null;
+let tokenData: {
+	variables: any[];
+	collections: any[];
+	fileInfo?: { name: string };
+} | null = null;
 let searchTerm = "";
 const expandedCollections = new Set<string>();
 let activeTab: "all" | "colors" | "numbers" | "strings" = "all";
@@ -173,7 +177,7 @@ function render(): void {
 		return;
 	}
 
-	const { variables = [], collections = [] } = tokenData;
+	const { variables = [], collections = [], fileInfo } = tokenData;
 
 	if (variables.length === 0) {
 		appContainer.innerHTML = '<div class="empty">No design tokens found.</div>';
@@ -243,7 +247,10 @@ function render(): void {
 
 	appContainer.innerHTML = `
 		<div class="header">
-			<h1>Design Tokens</h1>
+			<div>
+				<h1>Design Tokens</h1>
+				${fileInfo ? `<div class="header-subtitle">${esc(fileInfo.name)}</div>` : ""}
+			</div>
 			<div class="controls">
 				<input type="text" class="search-input" placeholder="Search tokens..." value="${escAttr(searchTerm)}" />
 				<button class="refresh-btn">Refresh</button>
