@@ -5,6 +5,16 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-02-02
+
+### Added
+- **File name subheader** in Token Browser UI — Displays the Figma file name below "Design Tokens" title, matching the Design System Health dashboard style
+
+### Fixed
+- **MCP App UI caching** — Fixed issue where Claude Desktop would show stale data when reusing cached app iframes. Both Token Browser and Dashboard now refresh data via `ontoolresult` when a new tool request is made
+- **Tab switching with Desktop Bridge** — Fixed plugin frame cache not being cleared when `figma_navigate` switches between Figma tabs, causing the bridge to communicate with the wrong file
+- **Dashboard URL tracking** — Fixed `figma_audit_design_system` not tracking the actual file URL when called without an explicit URL parameter, causing the dashboard UI to fetch data for the wrong file
+
 ## [1.6.0] - 2026-02-02
 
 ### Added
