@@ -66,13 +66,32 @@ Perfect for design system extraction and basic debugging. No installation requir
 
 #### Claude Code
 
-One-line install:
+> **⚠️ Known Issue:** Claude Code's native HTTP/SSE transport has a bug where OAuth authentication completes but the connection fails to reconnect afterwards. Use the `mcp-remote` workaround below instead of the native `--transport sse` method.
+
+**Recommended (using mcp-remote):**
 
 ```bash
-claude mcp add --transport sse figma-console https://figma-console-mcp.southleft.com/sse
+claude mcp add figma-console -s user -- npx -y mcp-remote@latest https://figma-console-mcp.southleft.com/sse
 ```
 
-Verify: `/mcp` should show "figma-console: connected"
+Or add to `~/.claude.json` manually:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote@latest", "https://figma-console-mcp.southleft.com/sse"]
+    }
+  }
+}
+```
+
+Restart Claude Code and verify: `/mcp` should show "figma-console: connected"
+
+**Why not use native SSE?** Claude Code's built-in `--transport sse` command has a [known bug](https://github.com/anthropics/claude-code/issues/2466) where the SSE connection doesn't properly reconnect after completing OAuth. The `mcp-remote` package handles OAuth correctly.
+
+**💡 Tip:** If you're using Claude Code, consider using the [Local Mode](#for-plugin-developers-local-mode) instead — it provides the full feature set including the Desktop Bridge plugin, and doesn't require OAuth at all (uses a Personal Access Token).
 
 ---
 

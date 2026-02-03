@@ -76,6 +76,35 @@ The MCP server is now connected. All Figma tools are available.
 
 ---
 
+### Claude Code (CLI)
+
+> **⚠️ Known Issue:** Claude Code's native `--transport sse` command has a [bug](https://github.com/anthropics/claude-code/issues/2466) where the connection fails after OAuth. Use `mcp-remote` instead.
+
+**Recommended setup:**
+
+```bash
+claude mcp add figma-console -s user -- npx -y mcp-remote@latest https://figma-console-mcp.southleft.com/sse
+```
+
+Or add to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote@latest", "https://figma-console-mcp.southleft.com/sse"]
+    }
+  }
+}
+```
+
+Restart Claude Code and run `/mcp` to reconnect. The first time, mcp-remote will open a browser for OAuth.
+
+**💡 Tip:** Claude Code users should consider [Local Mode](#local-mode-setup-advanced) instead — it provides more features and uses a Personal Access Token instead of OAuth.
+
+---
+
 ## 🔧 Local Mode Setup (Advanced)
 
 > **⚠️ Important:** Local mode is for advanced users who need the Figma Desktop Bridge plugin or direct console debugging. Most users should use Remote Mode.

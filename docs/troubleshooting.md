@@ -7,6 +7,43 @@ description: "Solutions to common issues including browser connection, console l
 
 ## Common Issues and Solutions
 
+### Issue: Claude Code OAuth Completes But Connection Fails
+
+**Symptoms:**
+- Using Claude Code with `claude mcp add --transport sse`
+- OAuth opens in browser and you authorize successfully
+- Connection never establishes after OAuth
+- Server shows "figma-console: not connected" in `/mcp`
+
+**Cause:**
+This is a [known bug in Claude Code's HTTP/SSE transport](https://github.com/anthropics/claude-code/issues/2466). The native SSE transport doesn't properly reconnect after completing the OAuth flow.
+
+**Solution:**
+Use the `mcp-remote` package instead of Claude Code's native SSE transport:
+
+```bash
+claude mcp add figma-console -s user -- npx -y mcp-remote@latest https://figma-console-mcp.southleft.com/sse
+```
+
+Or add to `~/.claude.json` manually:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote@latest", "https://figma-console-mcp.southleft.com/sse"]
+    }
+  }
+}
+```
+
+Restart Claude Code (`/mcp` to reconnect) — mcp-remote will open a browser for OAuth, and the connection will work correctly.
+
+**Alternative:** If you're using Claude Code, consider using [Local Mode](/setup#local-mode-setup-advanced) instead. It provides the full feature set including the Desktop Bridge plugin, and doesn't require OAuth (uses a Personal Access Token).
+
+---
+
 ### Plugin Debugging: Simple Workflow ✅
 
 **For Plugin Developers in Local Mode:**
