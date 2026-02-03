@@ -38,10 +38,12 @@ let lastFileUrl: string | undefined;
  *
  * @param server - The MCP server instance
  * @param getDesignSystemData - Function to fetch raw design system data from Figma
+ * @param getCurrentUrl - Optional function to get the current browser URL (for lastFileUrl tracking)
  */
 export function registerDesignSystemDashboardApp(
 	server: McpServer,
 	getDesignSystemData: (fileUrl?: string) => Promise<DesignSystemRawData>,
+	getCurrentUrl?: () => string | null,
 ): void {
 	// Tool: fetches + scores data, returns SHORT summary to LLM
 	registerAppTool(
@@ -66,7 +68,9 @@ export function registerDesignSystemDashboardApp(
 		},
 		async ({ fileUrl }) => {
 			try {
-				lastFileUrl = fileUrl;
+				// Track the actual URL used (explicit or current browser URL)
+				// This ensures ds_dashboard_refresh uses the correct file
+				lastFileUrl = fileUrl || getCurrentUrl?.() || undefined;
 				const data = await getDesignSystemData(fileUrl);
 				const scored = scoreDesignSystem(data);
 

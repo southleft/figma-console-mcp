@@ -4851,6 +4851,8 @@ return {
 						},
 					};
 				},
+				// Pass getCurrentUrl so dashboard can track which file was audited
+				() => this.browserManager?.getCurrentUrl() || null,
 			);
 
 			logger.info("MCP Apps registered (ENABLE_MCP_APPS=true)");
