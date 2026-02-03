@@ -120,6 +120,14 @@ const frame = figma.createFrame();
 section.appendChild(frame);
 \`\`\`
 
+### BATCH OPERATIONS (Performance Critical)
+When creating or updating **multiple variables**, ALWAYS prefer batch tools over repeated individual calls:
+- **figma_batch_create_variables**: Create up to 100 variables in one call (vs. N calls to figma_create_variable)
+- **figma_batch_update_variables**: Update up to 100 variable values in one call (vs. N calls to figma_update_variable)
+- **figma_setup_design_tokens**: Create a complete token system (collection + modes + variables) atomically in one call
+
+Batch tools are 10-50x faster because they execute in a single CDP roundtrip. Use individual tools only for one-off operations.
+
 ### DESIGN BEST PRACTICES
 For component-specific design guidance (sizing, proportions, accessibility, etc.), query the Design Systems Assistant MCP which provides up-to-date best practices for any component type.
 
@@ -1351,7 +1359,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool: Update a variable's value
 		this.server.tool(
 			"figma_update_variable",
-			"Update a Figma variable's value in a specific mode. Use figma_get_variables first to get variable IDs and mode IDs. Supports COLOR (hex string like '#FF0000'), FLOAT (number), STRING (text), and BOOLEAN values. Requires the Desktop Bridge plugin to be running.",
+			"Update a single variable's value. For multiple updates, use figma_batch_update_variables instead (10-50x faster). Use figma_get_variables first for IDs. COLOR: hex '#FF0000', FLOAT: number, STRING: text, BOOLEAN: true/false. Requires Desktop Bridge plugin.",
 			{
 				variableId: z
 					.string()
@@ -1418,7 +1426,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool: Create a new variable
 		this.server.tool(
 			"figma_create_variable",
-			"Create a new Figma variable in an existing collection. Use figma_get_variables first to get collection IDs. Supports COLOR, FLOAT, STRING, and BOOLEAN types. Requires the Desktop Bridge plugin to be running.",
+			"Create a single Figma variable. For multiple variables, use figma_batch_create_variables instead (10-50x faster). Use figma_get_variables first to get collection IDs. Supports COLOR, FLOAT, STRING, BOOLEAN. Requires Desktop Bridge plugin.",
 			{
 				name: z
 					.string()
@@ -1501,7 +1509,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool: Create a new variable collection
 		this.server.tool(
 			"figma_create_variable_collection",
-			"Create a new Figma variable collection. Collections organize variables and define modes (like Light/Dark themes). Requires the Desktop Bridge plugin to be running.",
+			"Create an empty variable collection. To create a collection WITH variables and modes in one step, use figma_setup_design_tokens instead. Requires Desktop Bridge plugin.",
 			{
 				name: z
 					.string()
