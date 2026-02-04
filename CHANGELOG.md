@@ -5,10 +5,18 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.2] - 2026-02-04
+## [1.6.3] - 2026-02-04
+
+### Performance
+- **Batched page processing for large design systems** — Component search now processes pages in batches of 3 with event loop yields between batches. This prevents UI freeze and potential crashes when loading design systems with many pages and components. Progress logging added for debugging large file loads.
 
 ### Fixed
 - **Component instantiation error messages** — Removed misleading "unpublished or deleted from library" wording that caused AI assistants to incorrectly suggest publishing component libraries. New messages clarify that `componentKey` only works for published library components, and that local components require `nodeId`. Guides users to pass both identifiers together for reliable instantiation.
+
+## [1.6.2] - 2026-02-04
+
+### Fixed
+- **Component instantiation error messages** — Same fix as above (released to address immediate user feedback).
 
 ## [1.6.1] - 2026-02-02
 
