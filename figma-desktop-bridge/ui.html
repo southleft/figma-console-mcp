@@ -223,7 +223,7 @@
     };
 
     window.refreshVariables = () => {
-      return window.sendPluginCommand('REFRESH_VARIABLES', {})
+      return window.sendPluginCommand('REFRESH_VARIABLES', {}, 300000)
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
