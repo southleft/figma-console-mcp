@@ -1015,19 +1015,17 @@ figma.ui.onmessage = async (msg) => {
         // Build detailed error message with actionable guidance
         var errorParts = ['Component not found.'];
 
-        if (msg.componentKey) {
-          errorParts.push('Published component key "' + msg.componentKey + '" could not be imported - it may have been unpublished or deleted from the library.');
-        }
-
-        if (msg.nodeId) {
-          errorParts.push('Local nodeId "' + msg.nodeId + '" does not exist in this file - nodeIds are session-specific and may be stale.');
-        }
-
-        if (!msg.componentKey && !msg.nodeId) {
+        if (msg.componentKey && !msg.nodeId) {
+          errorParts.push('Component key "' + msg.componentKey + '" not found. Note: componentKey only works for components from published libraries. For local/unpublished components, you must provide nodeId instead.');
+        } else if (msg.componentKey && msg.nodeId) {
+          errorParts.push('Neither componentKey "' + msg.componentKey + '" nor nodeId "' + msg.nodeId + '" resolved to a valid component. The identifiers may be stale from a previous session.');
+        } else if (msg.nodeId) {
+          errorParts.push('NodeId "' + msg.nodeId + '" does not exist in this file. NodeIds are session-specific and become stale when Figma restarts or the file is closed.');
+        } else {
           errorParts.push('No componentKey or nodeId was provided.');
         }
 
-        errorParts.push('SUGGESTION: Use figma_search_components to get current component identifiers before instantiating.');
+        errorParts.push('SOLUTION: Call figma_search_components to get fresh identifiers, then pass BOTH componentKey AND nodeId together for reliable instantiation.');
 
         throw new Error(errorParts.join(' '));
       }
