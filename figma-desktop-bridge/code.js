@@ -891,13 +891,37 @@ figma.ui.onmessage = async (msg) => {
       // Load all pages first (required before accessing children)
       console.log('🌉 [Desktop Bridge] Loading all pages...');
       await figma.loadAllPagesAsync();
-      console.log('🌉 [Desktop Bridge] All pages loaded, searching for components...');
 
-      // Search through all pages
+      // Process pages in batches with event loop yields to prevent UI freeze
+      // This is critical for large design systems that could otherwise crash
       var pages = figma.root.children;
-      pages.forEach(function(page) {
-        findComponents(page);
-      });
+      var PAGE_BATCH_SIZE = 3;  // Process 3 pages at a time
+      var totalPages = pages.length;
+
+      console.log('🌉 [Desktop Bridge] Processing ' + totalPages + ' pages in batches of ' + PAGE_BATCH_SIZE + '...');
+
+      for (var pageIndex = 0; pageIndex < totalPages; pageIndex += PAGE_BATCH_SIZE) {
+        var batchEnd = Math.min(pageIndex + PAGE_BATCH_SIZE, totalPages);
+        var batchPages = [];
+        for (var j = pageIndex; j < batchEnd; j++) {
+          batchPages.push(pages[j]);
+        }
+
+        // Process this batch of pages
+        batchPages.forEach(function(page) {
+          findComponents(page);
+        });
+
+        // Log progress for large files
+        if (totalPages > PAGE_BATCH_SIZE) {
+          console.log('🌉 [Desktop Bridge] Processed pages ' + (pageIndex + 1) + '-' + batchEnd + ' of ' + totalPages + ' (found ' + components.length + ' components so far)');
+        }
+
+        // Yield to event loop between batches to prevent UI freeze and allow cancellation
+        if (batchEnd < totalPages) {
+          await new Promise(function(resolve) { setTimeout(resolve, 0); });
+        }
+      }
 
       console.log('🌉 [Desktop Bridge] Found ' + components.length + ' components and ' + componentSets.length + ' component sets');
 
