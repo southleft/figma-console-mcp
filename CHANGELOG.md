@@ -5,6 +5,11 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.4] - 2026-02-04
+
+### Fixed
+- **Variables timeout for large design systems** — Increased `REFRESH_VARIABLES` timeout from 15 seconds to 5 minutes, matching the `GET_LOCAL_COMPONENTS` timeout. Fixes MCP disconnects when loading design systems with many variables.
+
 ## [1.6.3] - 2026-02-04
 
 ### Performance

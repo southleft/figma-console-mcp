@@ -1,6 +1,6 @@
 {
 	"name": "figma-console-mcp",
-	"version": "1.6.3",
+	"version": "1.6.4",
 	"description": "MCP server for accessing Figma plugin console logs and screenshots via Cloudflare Workers or local mode",
 	"type": "module",
 	"main": "dist/local.js",
