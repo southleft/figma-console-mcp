@@ -7,117 +7,181 @@ description: "Complete setup instructions for connecting Figma Console MCP to Cl
 
 Complete setup instructions for connecting Figma Console MCP to various AI clients including Claude Desktop, GitHub Copilot (VS Code), Cursor, Windsurf, and more.
 
-> **Quick Start:** For most users, we recommend [Remote Mode](#remote-mode-setup-recommended) with the UI-based setup method - just paste a URL, no config files needed.
+---
+
+## 🎯 Choose Your Setup
+
+**First, decide what you want to do:**
+
+| I want to... | Setup Method | Time |
+|--------------|--------------|------|
+| **Create and modify designs with AI** | [NPX Setup](#-npx-setup-recommended) (Recommended) | ~10 min |
+| **Contribute to the project** | [Local Git Setup](#-local-git-setup-for-contributors) | ~15 min |
+| **Just explore my design data** (read-only) | [Remote SSE](#-remote-sse-read-only-exploration) | ~2 min |
+
+### ⚠️ Important: Capability Differences
+
+| Capability | NPX / Local Git | Remote SSE |
+|------------|-----------------|------------|
+| Read design data | ✅ | ✅ |
+| **Create components & frames** | ✅ | ❌ |
+| **Edit existing designs** | ✅ | ❌ |
+| **Manage design tokens/variables** | ✅ | ❌ |
+| Screenshot validation | ✅ | ✅ |
+| Desktop Bridge plugin | ✅ | ❌ |
+| Variables without Enterprise | ✅ | ❌ |
+| **Total tools available** | **72+** | **16** |
+
+> **Bottom line:** Remote SSE is **read-only** with ~22% of the tools. If you want AI to actually design in Figma, use NPX Setup.
 
 ---
 
-## 🚀 Remote Mode Setup (Recommended)
+## 🚀 NPX Setup (Recommended)
 
-### Prerequisites
-- None! Just Claude Desktop installed
+**Best for:** Designers who want full AI-assisted design capabilities with automatic updates.
 
-### Method 1: UI-Based Setup (Recommended)
+**What you get:** All 72+ tools including design creation, variable management, component instantiation, and Desktop Bridge plugin support.
 
-This is the new, easier way to add MCP servers in Claude Desktop.
+### Prerequisites Checklist
 
-**Steps:**
+Before starting, verify you have:
 
-1. **Open Claude Desktop Settings**
-   - **macOS:** Claude menu → Settings
-   - **Windows:** File menu → Settings
+- [ ] **Node.js 18+** installed — Check with `node --version` ([Download](https://nodejs.org))
+- [ ] **Figma Desktop** installed (not just the web app)
+- [ ] **Claude Desktop** or another MCP client installed
 
-2. **Navigate to Connectors**
-   - Click "Connectors" in the left sidebar
+### Step 1: Get Your Figma Token (~2 min)
 
-3. **Add Custom Connector**
-   - Click "Add Custom Connector" button
-   - You'll see a dialog with two fields
+1. Go to [figma.com/developers/api#access-tokens](https://www.figma.com/developers/api#access-tokens)
+2. Click **"Get personal access token"**
+3. Enter description: `Figma Console MCP`
+4. Click **"Generate token"**
+5. **Copy the token immediately** — you won't see it again!
 
-4. **Enter Connection Details**
-   - **Name:** `Figma Console` (or any name you prefer)
-   - **URL:** `https://figma-console-mcp.southleft.com/sse`
-   - Click "Add"
+> 💡 Your token starts with `figd_` — if it doesn't, something went wrong.
 
-5. **Verify Connection**
-   - Look for "Figma Console" in your connectors list
-   - Status should show "Connected" or "CUSTOM" badge
+### Step 2: Configure Your MCP Client (~3 min)
 
-**That's it!** ✅
+#### Claude Desktop
 
-The MCP server is now connected. All Figma tools are available.
-
----
-
-### Method 2: JSON Config File (Legacy Method)
-
-> **Note:** This method still works but is more complex. Use Method 1 (UI) unless you have a specific reason to edit the config file.
-
-**For advanced users who prefer config file editing:**
-
-1. **Locate config file:**
+1. Open Claude Desktop
+2. Go to **Settings** → **Developer** → **Edit Config** (or manually edit the config file)
    - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
    - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
-2. **Edit the file:**
-   ```json
-   {
-     "mcpServers": {
-       "figma-console": {
-         "command": "npx",
-         "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
-       }
-     }
-   }
-   ```
-
-3. **Save and restart Claude Desktop**
-
-4. **Verify:** Look for 🔌 icon in bottom-right showing "figma-console: connected"
-
----
-
-### Claude Code (CLI)
-
-> **⚠️ Known Issue:** Claude Code's native `--transport sse` command has a [bug](https://github.com/anthropics/claude-code/issues/2466) where the connection fails after OAuth. Use `mcp-remote` instead.
-
-**Recommended setup:**
-
-```bash
-claude mcp add figma-console -s user -- npx -y mcp-remote@latest https://figma-console-mcp.southleft.com/sse
-```
-
-Or add to `~/.claude.json`:
+3. Add this configuration (replace `YOUR_TOKEN_HERE` with your actual token):
 
 ```json
 {
   "mcpServers": {
     "figma-console": {
       "command": "npx",
-      "args": ["-y", "mcp-remote@latest", "https://figma-console-mcp.southleft.com/sse"]
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+      }
     }
   }
 }
 ```
 
-Restart Claude Code and run `/mcp` to reconnect. The first time, mcp-remote will open a browser for OAuth.
+4. **Save the file**
 
-**💡 Tip:** Claude Code users should consider [Local Mode](#local-mode-setup-advanced) instead — it provides more features and uses a Personal Access Token instead of OAuth.
+#### Claude Code (CLI)
+
+Run this command (replace the token):
+
+```bash
+claude mcp add figma-console -s user -- npx -y figma-console-mcp@latest
+```
+
+Then add your token to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+#### Other MCP Clients (Cursor, Windsurf, etc.)
+
+Find your client's MCP config file and add the same JSON block shown above.
+
+### Step 3: Start Figma with Debug Mode (~2 min)
+
+This is **required** for the MCP to communicate with Figma Desktop.
+
+1. **Quit Figma completely** (Cmd+Q on macOS, Alt+F4 on Windows)
+
+2. **Restart Figma with the debug flag:**
+
+   **macOS (Terminal):**
+   ```bash
+   open -a "Figma" --args --remote-debugging-port=9222
+   ```
+
+   **Windows (CMD or PowerShell):**
+   ```
+   cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
+   ```
+
+3. **Verify it worked:** Open Chrome and visit [http://localhost:9222](http://localhost:9222)
+   - ✅ You should see a list of inspectable Figma pages
+   - ❌ If blank or error, Figma wasn't started correctly — try again
+
+> ⚠️ **You must restart Figma with this flag every time** you quit Figma and want to use the MCP again. Consider creating a desktop shortcut or alias.
+
+### Step 4: Restart Claude Desktop (~1 min)
+
+1. **Quit Claude Desktop completely** (Cmd+Q or right-click → Quit)
+2. **Reopen Claude Desktop**
+3. Look for the 🔌 icon showing "figma-console: connected"
+
+### Step 5: Test It! (~2 min)
+
+Try these prompts to verify everything works:
+
+```
+Check Figma status
+```
+→ Should show "✅ Figma Desktop connected via port 9222"
+
+```
+Search for button components
+```
+→ Should return component results from your open Figma file
+
+```
+Create a simple frame with a blue background
+```
+→ Should create a frame in your Figma file (this confirms write access!)
+
+**🎉 You're all set!** You now have full AI-assisted design capabilities.
 
 ---
 
-## 🔧 Local Mode Setup (Advanced)
+## 🔧 Local Git Setup (For Contributors)
 
-> **⚠️ Important:** Local mode is for advanced users who need the Figma Desktop Bridge plugin or direct console debugging. Most users should use Remote Mode.
+**Best for:** Developers who want to modify the source code or contribute to the project.
+
+**What you get:** Same 72+ tools as NPX, plus full source code access.
 
 ### Prerequisites
-- Node.js 18+ installed
-- Figma Desktop installed
-- Git installed
-- Terminal access
 
-### Installation Steps
+- [ ] Node.js 18+ installed
+- [ ] Git installed
+- [ ] Figma Desktop installed
+- [ ] Claude Desktop or another MCP client
 
-#### 1. Install the MCP Server
+### Step 1: Clone and Build
 
 ```bash
 # Clone the repository
@@ -127,173 +191,154 @@ cd figma-console-mcp
 # Install dependencies
 npm install
 
-# Build local mode
+# Build for local mode
 npm run build:local
 ```
 
-#### 2. Get Figma Personal Access Token
+### Step 2: Get Figma Token
 
-1. Visit https://www.figma.com/developers/api#access-tokens
-2. Click "Get personal access token"
-3. Enter description: "Figma Console MCP Local"
-4. Click "Generate token"
-5. **Copy the token** (you won't see it again!)
+Same as [NPX Step 1](#step-1-get-your-figma-token-2-min) above.
 
-#### 3. Configure Claude Desktop (JSON Method Only)
+### Step 3: Configure Claude Desktop
 
-> **Note:** Local mode MUST use JSON config method - UI method only works for remote URLs.
-
-1. **Locate config file:**
-   - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
-2. **Edit the file:**
-   ```json
-   {
-     "mcpServers": {
-       "figma-console-local": {
-         "command": "node",
-         "args": ["/absolute/path/to/figma-console-mcp/dist/local.js"],
-         "env": {
-           "FIGMA_ACCESS_TOKEN": "figd_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-         }
-       }
-     }
-   }
-   ```
-
-   **Important:**
-   - Replace `/absolute/path/to/figma-console-mcp` with actual absolute path
-   - Replace `figd_XXX...` with your actual Figma token
-   - Use forward slashes `/` even on Windows
-
-   **Optional — Enable MCP Apps:**
-
-   To enable interactive MCP Apps (like the Token Browser), add `ENABLE_MCP_APPS` to your env:
-   ```json
-   "env": {
-     "FIGMA_ACCESS_TOKEN": "figd_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-     "ENABLE_MCP_APPS": "true"
-   }
-   ```
-   MCP Apps require a client with [ext-apps protocol](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps) support. See the [MCP Apps guide](/mcp-apps) for details.
-
-3. **Save the file**
-
-#### 4. Restart Figma Desktop with Remote Debugging
-
-**⚠️ CRITICAL STEP:** You MUST restart Figma with the debug flag for local mode to work.
-
-**macOS:**
-```bash
-# Quit Figma completely first (Cmd+Q)
-# Then run:
-open -a "Figma" --args --remote-debugging-port=9222
-```
-
-**Windows (CMD or PowerShell):**
-```
-# Close Figma completely first (Alt+F4)
-# Then run:
-cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
-```
-
-#### 5. Verify Setup
-
-1. **Check remote debugging is active:**
-   - Open Chrome browser
-   - Visit: http://localhost:9222
-   - You should see a list of inspectable Figma pages
-
-2. **Restart Claude Desktop**
-   - Quit completely and relaunch
-
-3. **Test the connection:**
-   - Ask Claude: "Check Figma status"
-   - Should show: "✅ Figma Desktop connected via port 9222"
-
----
-
-## 📦 NPX Installation (Local Mode Alternative)
-
-> **Note:** This is an alternative to Local Git installation. Both use the same code and require the same prerequisites (Node.js, Figma Desktop with debug port, Personal Access Token).
-
-### Why Use NPX?
-
-- ✅ No git clone required
-- ✅ Automatic updates with `@latest`
-- ✅ Same functionality as Local Git mode
-
-### NPX Configuration
+Edit your config file:
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "figma-console": {
-      "command": "npx",
-      "args": ["-y", "figma-console-mcp@latest"],
+      "command": "node",
+      "args": ["/absolute/path/to/figma-console-mcp/dist/local.js"],
       "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
       }
     }
   }
 }
 ```
 
-**Pin to specific version** (for stability):
-```json
-"args": ["-y", "figma-console-mcp@1.2.4"]
+**Important:**
+- Replace `/absolute/path/to/figma-console-mcp` with the actual path where you cloned the repo
+- Use forward slashes `/` even on Windows
+
+### Step 4: Start Figma with Debug Mode
+
+Same as [NPX Step 3](#step-3-start-figma-with-debug-mode-2-min) above.
+
+### Step 5: Restart Claude Desktop and Test
+
+Same as [NPX Steps 4 & 5](#step-4-restart-claude-desktop-1-min) above.
+
+### Updating
+
+To get the latest changes:
+
+```bash
+cd figma-console-mcp
+git pull
+npm install
+npm run build:local
 ```
 
-**First run:** NPX downloads and caches the package. Subsequent runs use the cached version unless you specify `@latest`.
+Then restart Claude Desktop.
 
 ---
 
-## 🤖 GitHub Copilot (VS Code)
+## 📡 Remote SSE (Read-Only Exploration)
 
-GitHub Copilot supports MCP servers as of VS Code 1.102+. This enables all Figma Console MCP tools directly in Copilot Chat.
+**Best for:** Quickly evaluating the tool or read-only design data extraction.
+
+**What you get:** 16 read-only tools for viewing design data, taking screenshots, and reading console logs.
+
+> ⚠️ **Limitation:** Remote mode **cannot create or modify designs**. It's read-only. For design creation, use [NPX Setup](#-npx-setup-recommended).
 
 ### Prerequisites
 
-- VS Code 1.102 or later
-- GitHub Copilot extension installed and active
-- For Local Mode: Node.js 18+ and Figma Personal Access Token
+- [ ] Claude Desktop installed
+- That's it! No Node.js, no tokens, no Figma restart required.
 
-### Method 1: VS Code CLI (Recommended)
+### Method 1: UI-Based Setup (Claude Desktop)
 
-The fastest way to add the MCP server:
+1. Open Claude Desktop → **Settings** → **Connectors**
+2. Click **"Add Custom Connector"**
+3. Enter:
+   - **Name:** `Figma Console (Read-Only)`
+   - **URL:** `https://figma-console-mcp.southleft.com/sse`
+4. Click **"Add"**
+5. Done! ✅
 
-**Remote Mode (No token required):**
-```bash
-code --add-mcp '{"name":"figma-console","type":"sse","url":"https://figma-console-mcp.southleft.com/sse"}'
-```
+OAuth authentication happens automatically when you first use design system tools.
 
-**Local Mode (Full features):**
-```bash
-# First, create an env file for your token
-echo "FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE" > ~/.figma-console-mcp.env
+### Method 2: JSON Config
 
-# Then add the server
-code --add-mcp '{"name":"figma-console","command":"npx","args":["-y","figma-console-mcp@latest"],"envFile":"~/.figma-console-mcp.env"}'
-```
+Add to your Claude Desktop config:
 
-### Method 2: Manual Configuration
-
-Create `.vscode/mcp.json` in your project (workspace-level) or configure globally:
-
-**Remote Mode:**
 ```json
 {
-  "servers": {
+  "mcpServers": {
     "figma-console": {
-      "type": "sse",
-      "url": "https://figma-console-mcp.southleft.com/sse"
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://figma-console-mcp.southleft.com/sse"]
     }
   }
 }
 ```
 
-**Local Mode:**
+### What You Can Do (Read-Only)
+
+✅ View design data and file structure
+✅ Read design tokens/variables (Enterprise plan required)
+✅ Take screenshots
+✅ Read console logs
+✅ Get component metadata
+
+### What You Cannot Do
+
+❌ Create frames, shapes, or components
+❌ Edit existing designs
+❌ Create or modify variables
+❌ Instantiate components
+❌ Use Desktop Bridge plugin
+
+### Upgrading to Full Capabilities
+
+Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide above.
+
+---
+
+## 🤖 GitHub Copilot (VS Code)
+
+GitHub Copilot supports MCP servers as of VS Code 1.102+.
+
+### Prerequisites
+
+- VS Code 1.102 or later
+- GitHub Copilot extension installed and active
+- For full capabilities: Node.js 18+ and Figma Personal Access Token
+
+### Quick Setup (CLI)
+
+**Full capabilities (recommended):**
+```bash
+# Create env file for your token
+echo "FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE" > ~/.figma-console-mcp.env
+
+# Add the server
+code --add-mcp '{"name":"figma-console","command":"npx","args":["-y","figma-console-mcp@latest"],"envFile":"~/.figma-console-mcp.env"}'
+```
+
+**Read-only mode:**
+```bash
+code --add-mcp '{"name":"figma-console","type":"sse","url":"https://figma-console-mcp.southleft.com/sse"}'
+```
+
+### Manual Configuration
+
+Create `.vscode/mcp.json` in your project:
+
+**Full capabilities:**
 ```json
 {
   "servers": {
@@ -308,160 +353,155 @@ Create `.vscode/mcp.json` in your project (workspace-level) or configure globall
 }
 ```
 
-> **Security Tip:** Use `envFile` instead of inline `env` to keep tokens out of version control. Add your mcp.json to `.gitignore`.
+> **Security Tip:** Use `envFile` instead of inline `env` to keep tokens out of version control.
 
 ### Starting the Server
 
 1. Open Command Palette (**Cmd+Shift+P** / **Ctrl+Shift+P**)
 2. Run **"MCP: List Servers"**
-3. Click on **"figma-console"** to start it (if showing "Stopped")
+3. Click on **"figma-console"** to start it
 4. VS Code may prompt you to **trust the server** — click Allow
 
-### Verify It Works
+---
 
-1. Open **Copilot Chat** (Cmd+Shift+I or click Copilot icon)
-2. Try: *"Use the figma-console tools to get status"*
-3. Copilot should now have access to all 43+ Figma tools
+## 🛠️ Troubleshooting
 
-### Enterprise Considerations
+### Quick Fixes
 
-For organizations using GitHub Enterprise:
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| "Failed to connect to Figma Desktop" | Figma not in debug mode | Quit Figma, restart with `--remote-debugging-port=9222` |
+| "FIGMA_ACCESS_TOKEN not configured" | Missing or wrong token | Check token in config, must start with `figd_` |
+| "Command not found: node" | Node.js not installed | Install Node.js 18+ from nodejs.org |
+| Tools not appearing in Claude | Config not loaded | Restart Claude Desktop completely |
+| "Port 9222 already in use" | Another process using port | Close Chrome windows, check Task Manager |
+| NPX using old version | Cached package | Use `figma-console-mcp@latest` explicitly |
 
-- MCP is governed by the **"MCP servers in Copilot"** policy
-- This policy is **disabled by default** for enterprise organizations
-- IT admins must enable it in GitHub organization settings
-- See [GitHub MCP Enterprise Docs](https://docs.github.com/en/enterprise-cloud@latest/copilot/concepts/context/mcp)
+### Node.js Version Issues
 
-### Troubleshooting Copilot
+**Symptom:** Cryptic errors like "parseArgs not exported from 'node:util'"
 
-**Server not appearing in list:**
-- Run **"Developer: Reload Window"** after adding
-- Check **View → Output → MCP** for error logs
-- Verify VS Code version is 1.102+
+**Fix:** You need Node.js 18 or higher.
 
-**Server shows "Stopped":**
-- Click on server name to start it
-- Check for trust prompt notification
-- Verify Node.js is installed (for local mode)
+```bash
+# Check your version
+node --version
 
-**"No Figma tools available" in chat:**
-- Ensure server status shows "Running"
-- Try restarting Copilot Chat
-- Check that you're using Agent mode (not just Chat)
+# Should show v18.x.x or higher
+```
+
+If using **NVM** and having issues, try using the absolute path to Node:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "/Users/yourname/.nvm/versions/node/v20.10.0/bin/node",
+      "args": ["-e", "require('figma-console-mcp')"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+### Figma Debug Mode Not Working
+
+1. **Completely quit Figma** — not just close the window
+   - macOS: Cmd+Q or Figma menu → Quit Figma
+   - Windows: Alt+F4 or right-click taskbar icon → Close window
+
+2. **Verify Figma is fully closed:**
+   - macOS: `ps aux | grep -i figma` should show nothing
+   - Windows: Check Task Manager for Figma processes
+
+3. **Restart with the flag:**
+   - macOS: `open -a "Figma" --args --remote-debugging-port=9222`
+   - Windows: `cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222`
+
+4. **Verify:** Visit http://localhost:9222 — should show inspectable pages
+
+### Claude Code OAuth Issues
+
+> **⚠️ Known Issue:** Claude Code's native `--transport sse` has a bug where OAuth completes but the connection fails. Use `mcp-remote` instead.
+
+**Don't use:**
+```bash
+# This has a known bug
+claude mcp add figma-console --transport sse https://figma-console-mcp.southleft.com/sse
+```
+
+**Use instead:**
+```bash
+# This works correctly
+claude mcp add figma-console -s user -- npx -y mcp-remote@latest https://figma-console-mcp.southleft.com/sse
+```
+
+Or better yet, use the NPX setup for full capabilities:
+```bash
+claude mcp add figma-console -s user -- npx -y figma-console-mcp@latest
+```
+
+### Config File Syntax Errors
+
+If Claude Desktop doesn't see your MCP server:
+
+1. **Validate your JSON:** Use a tool like [jsonlint.com](https://jsonlint.com)
+2. **Check for common mistakes:**
+   - Missing commas between properties
+   - Trailing commas (not allowed in JSON)
+   - Wrong quote characters (must be `"` not `'` or smart quotes)
+3. **Copy the exact config** from this guide — don't retype it
+
+### Still Having Issues?
+
+1. Check the [GitHub Issues](https://github.com/southleft/figma-console-mcp/issues)
+2. Ask in [Discussions](https://github.com/southleft/figma-console-mcp/discussions)
+3. Include:
+   - Your setup method (NPX, Local Git, or Remote)
+   - The exact error message
+   - Output of `node --version`
+   - Your MCP client (Claude Desktop, Claude Code, etc.)
 
 ---
 
-## What You Get With Each Mode
+## Optional: Enable MCP Apps
 
-### Remote Mode (UI Setup)
-- ✅ **All MCP tools**
-- ✅ **OAuth authentication** (automatic, no token needed)
-- ✅ **Design system extraction** (variables*, components, styles)
-- ✅ **Console logs and screenshots**
-- ✅ **Zero maintenance**
-- ❌ **No Desktop Bridge plugin** (can't access local variables without Enterprise)
+MCP Apps provide interactive UI experiences like the Token Browser and Design System Dashboard.
 
-*Variables require Figma Enterprise plan
+Add `ENABLE_MCP_APPS` to your config:
 
-### Local Mode (JSON Setup)
-- ✅ **All MCP tools**
-- ✅ **Desktop Bridge plugin support** (access local variables, no Enterprise needed)
-- ✅ **Zero-latency console debugging**
-- ✅ **Reliable component descriptions** (bypasses API bugs)
-- ⚠️ **Manual token management** (PAT required)
-- ⚠️ **Requires Figma restart** with debug flag
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
+      }
+    }
+  }
+}
+```
 
-**See [MODE_COMPARISON.md](MODE_COMPARISON.md) for detailed feature breakdown.**
-
----
-
-## Troubleshooting
-
-### Remote Mode Issues
-
-**"Connection failed" in UI:**
-- ✅ Check internet connection
-- ✅ Try removing and re-adding the connector
-- ✅ Restart Claude Desktop
-
-**"OAuth authentication required" error:**
-- ✅ This is normal for first design system tool use
-- ✅ Your browser will open automatically
-- ✅ Click "Allow" to authorize
-
-**"Variables API requires Enterprise" error:**
-- ✅ Expected if you don't have Enterprise plan
-- ✅ Solution: Switch to Local Mode + Desktop Bridge plugin
-- ✅ See [MODE_COMPARISON.md](MODE_COMPARISON.md) for details
-
-### Local Mode Issues
-
-**"Failed to connect to Figma Desktop":**
-- ✅ Verify Figma was restarted with `--remote-debugging-port=9222`
-- ✅ Visit http://localhost:9222 in Chrome - should show pages
-- ✅ If blank, quit Figma and relaunch with debug flag
-
-**"FIGMA_ACCESS_TOKEN not configured":**
-- ✅ Check token is set in `claude_desktop_config.json`
-- ✅ Verify no typos in token (should start with `figd_`)
-- ✅ Token must be in `env` object as shown above
-
-**"Command not found: node":**
-- ✅ Install Node.js 18+ from https://nodejs.org
-- ✅ Restart terminal/Claude Desktop after install
-- ✅ Verify with: `node --version`
-
-**"Module not found" errors:**
-- ✅ Run `npm install` in the figma-console-mcp directory
-- ✅ Run `npm run build:local` again
-- ✅ Check that `dist/local.js` file exists
-
-**"Port 9222 already in use":**
-- ✅ Kill other Chrome/Figma processes using that port
-- ✅ Run: `lsof -i :9222` (macOS) or check Task Manager (Windows)
-- ✅ Restart Figma with debug flag
-
----
-
-## Switching Between Modes
-
-### Remote → Local
-
-1. Remove remote connector from Claude Desktop
-2. Follow Local Mode setup steps above
-3. Restart Claude Desktop
-
-### Local → Remote
-
-1. Remove local MCP config from `claude_desktop_config.json`
-2. Use UI method to add remote connector
-3. Restart Claude Desktop
-
-**You can have both configured simultaneously** (with different names like "figma-console-remote" and "figma-console-local"), but be aware they'll both appear in Claude's tool list.
+> **Note:** MCP Apps require a client with [ext-apps protocol](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps) support.
 
 ---
 
 ## Next Steps
 
-**After connecting:**
-
-1. **Test basic tools:**
-   - "Navigate to https://www.figma.com and check status"
-   - "Get design variables from [your Figma file URL]"
-
-2. **For Local Mode users - Install Desktop Bridge plugin:**
-   - See [Figma Desktop Bridge README](../figma-desktop-bridge/README.md)
-   - Enables variables without Enterprise API
-
-3. **Read tool documentation:**
-   - See [TOOLS.md](TOOLS.md) for all 43+ available tools
-   - See [USE_CASES.md](USE_CASES.md) for example workflows
+1. **Try example prompts:** See [Use Cases](use-cases) for workflow examples
+2. **Explore all tools:** See [Tools Reference](tools) for the complete tool list
+3. **Install Desktop Bridge plugin:** For variables without Enterprise — see [Desktop Bridge README](https://github.com/southleft/figma-console-mcp/tree/main/figma-desktop-bridge)
 
 ---
 
 ## Support
 
-- 📖 [Full Documentation](../README.md)
+- 📖 [Full Documentation](/)
 - 🐛 [Report Issues](https://github.com/southleft/figma-console-mcp/issues)
 - 💬 [Discussions](https://github.com/southleft/figma-console-mcp/discussions)
-- 📊 [Mode Comparison](MODE_COMPARISON.md)
+- 📊 [Mode Comparison](mode-comparison)

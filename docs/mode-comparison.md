@@ -28,27 +28,38 @@ The MCP server has **two execution modes** but **three installation methods**:
 
 ## 🎯 Quick Decision Guide
 
-### Use Remote SSE (Recommended for Most Users)
-- ✅ **TRUE zero-setup** - Just paste a URL
-- ✅ **OAuth authentication** - Automatic browser flow, no manual tokens
-- ✅ Works without Figma Desktop restart
-- ✅ No local installation required
-- ❌ Cannot use Desktop Bridge plugin
+### ⚠️ Critical: Tool Count Differences
 
-### Use NPX (For Local Execution Without Source Code)
-- ✅ No git clone required (npm handles it)
+| Mode | Tools Available | Capabilities |
+|------|-----------------|--------------|
+| **Local Mode** (NPX or Git) | **72+** | Full read/write — create, edit, delete |
+| **Remote Mode** (SSE) | **16** | Read-only — view data, screenshots, logs |
+
+> **Bottom line:** Remote SSE has ~22% of the tools and cannot create or modify designs.
+
+### Use NPX Setup (Recommended for Most Users)
+- ✅ **All 72+ tools** including design creation
 - ✅ Automatic updates with `@latest`
 - ✅ Desktop Bridge plugin support
-- ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual)
+- ✅ Variables without Enterprise plan
+- ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual, one-time)
 - ⚠️ Requires Figma Desktop restart with `--remote-debugging-port=9222`
 
-### Use Local Git (For Development & Testing)
+### Use Local Git (For Contributors)
+- ✅ **All 72+ tools** including design creation
 - ✅ Full source code access
 - ✅ Modify and test changes
-- ✅ Desktop Bridge plugin support
 - ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual)
 - ⚠️ Requires Figma Desktop restart with `--remote-debugging-port=9222`
 - ⚠️ Manual updates via `git pull && npm run build`
+
+### Use Remote SSE (Read-Only Exploration)
+- ✅ **TRUE zero-setup** - Just paste a URL
+- ✅ **OAuth authentication** - No manual tokens
+- ✅ Works without Figma Desktop restart
+- ❌ **Only 16 tools** — cannot create or modify designs
+- ❌ Cannot use Desktop Bridge plugin
+- ❌ Variables require Enterprise plan
 
 ---
 
@@ -366,17 +377,11 @@ All three installation methods are completely free:
 
 ## Summary
 
-**For most users: Start with Remote SSE** ⭐
-- Zero setup, just paste URL
-- OAuth authentication (automatic)
-- Perfect for design system extraction
-- No Figma Desktop restart required
-
-**Use NPX when:**
-- You need Desktop Bridge plugin features
-- You want local execution without source code
-- You don't have Enterprise plan but need variables
-- You prefer npm distribution over git
+**For most users: Start with NPX Setup** ⭐
+- All 72+ tools including design creation
+- Automatic updates with `@latest`
+- Desktop Bridge plugin support
+- Variables without Enterprise plan
 
 **Use Local Git when:**
 - You're developing the MCP server
@@ -384,7 +389,16 @@ All three installation methods are completely free:
 - You need unreleased features
 - You're testing changes before contributing
 
-**Key Takeaway:** All three methods provide the same 43+ MCP tools. The difference is in:
-- **Authentication**: OAuth (Remote SSE) vs PAT (NPX + Local Git)
-- **Distribution**: URL (Remote SSE) vs npm (NPX) vs git (Local Git)
-- **Execution**: Cloud (Remote SSE) vs Local (NPX + Local Git)
+**Use Remote SSE when:**
+- You just want to explore/evaluate the tool
+- You only need read-only access to design data
+- You want zero-setup experience
+- You don't need design creation capabilities
+
+**Key Takeaway:** Remote SSE and Local modes have **different tool counts**:
+- **Remote Mode (SSE):** 16 tools — read-only operations
+- **Local Mode (NPX/Git):** 72+ tools — full read/write operations
+
+The difference is not just authentication, but **fundamental capabilities**:
+- **Remote:** Cannot create, modify, or delete anything in Figma
+- **Local:** Full design creation, variable management, and component manipulation

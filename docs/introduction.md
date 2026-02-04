@@ -164,32 +164,51 @@ Figma Console MCP makes this real. Your design system becomes:
 
 ## How Do I Get Started?
 
-Getting connected takes about **2 minutes** with our recommended setup.
+**First, decide what you want to do:**
 
-### Quick Setup (Remote Mode)
+| I want to... | Setup | Time |
+|--------------|-------|------|
+| **Create and modify designs with AI** | NPX Setup (Recommended) | ~10 min |
+| **Just explore my design data** (read-only) | Remote SSE | ~2 min |
+
+### Recommended: NPX Setup (Full Capabilities)
+
+Get all 72+ tools including design creation, variable management, and component instantiation.
+
+<Steps>
+  <Step title="Get a Figma Token">
+    Visit figma.com/developers/api#access-tokens and create a Personal Access Token
+  </Step>
+  <Step title="Add to Claude Desktop Config">
+    Edit your config file and add the server with your token
+  </Step>
+  <Step title="Start Figma with Debug Mode">
+    Restart Figma Desktop with `--remote-debugging-port=9222`
+  </Step>
+  <Step title="Restart Claude Desktop">
+    Quit and reopen Claude Desktop to load the new config
+  </Step>
+</Steps>
+
+### Quick Start: Remote SSE (Read-Only)
+
+If you just want to explore or evaluate the tool, use Remote SSE. It's read-only (16 tools) but requires zero setup.
 
 <Steps>
   <Step title="Open Claude Desktop Settings">
     Claude menu → Settings → Connectors
   </Step>
   <Step title="Add Custom Connector">
-    Click "Add Custom Connector"
-  </Step>
-  <Step title="Enter Connection Details">
-    - **Name:** `Figma Console`
-    - **URL:** `https://figma-console-mcp.southleft.com/sse`
-  </Step>
-  <Step title="Start Using">
-    That's it! Ask Claude anything about your Figma files.
+    Name: `Figma Console (Read-Only)` / URL: `https://figma-console-mcp.southleft.com/sse`
   </Step>
 </Steps>
 
-<Note>
-**First time using design tools?** The AI will automatically open a browser window for Figma authorization. Just click "Allow" once and you're connected.
-</Note>
+<Warning>
+**Remote mode cannot create or modify designs.** It only has 16 read-only tools (~22% of full capabilities). For design creation, use NPX Setup.
+</Warning>
 
 <Card title="Full Setup Guide" icon="book-open" href="/setup">
-  Detailed instructions for Claude Desktop, Claude Code, Cursor, and other AI clients.
+  Detailed step-by-step instructions for all setup methods and AI clients.
 </Card>
 
 ---
@@ -246,18 +265,20 @@ Build a user profile card using the Avatar and Button components
 
 ## Remote vs Local Mode
 
-Figma Console MCP offers two ways to connect:
+Figma Console MCP offers two ways to connect with **very different capabilities**:
 
-| Feature | Remote Mode | Local Mode |
-|---------|-------------|------------|
-| **Setup** | 2 minutes, zero install | 15 minutes, requires Node.js |
-| **Authentication** | Automatic (OAuth) | Manual token setup |
-| **Read operations** | ✅ Full access | ✅ Full access |
-| **Write operations** | ❌ Read-only | ✅ Create designs |
-| **Variables API** | Enterprise plan required | Works with any plan |
-| **Best for** | Most users | Plugin developers, design creation |
+| Feature | Local Mode (NPX/Git) | Remote Mode (SSE) |
+|---------|----------------------|-------------------|
+| **Total tools** | **72+** | **16** (read-only) |
+| **Setup** | ~10 minutes | ~2 minutes |
+| **Create designs** | ✅ Full capability | ❌ Not available |
+| **Edit designs** | ✅ Full capability | ❌ Not available |
+| **Manage variables** | ✅ Full capability | ❌ Not available |
+| **Read design data** | ✅ | ✅ |
+| **Variables API** | Works with any plan | Enterprise required |
+| **Authentication** | Manual token (one-time) | Automatic OAuth |
 
-**Start with Remote Mode.** It's the fastest way to get value. If you need write capabilities or plugin debugging, you can upgrade to Local Mode later.
+**Start with NPX Setup** if you want AI to actually design in Figma. Remote mode is useful for quick exploration but is **read-only** with only ~22% of the tools.
 
 <Card title="Compare Modes in Detail" icon="code-compare" href="/mode-comparison">
   Understand the technical differences and choose the right setup.
@@ -301,7 +322,7 @@ Figma Console MCP offers two ways to connect:
     Real-world examples and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 43+ tools
+    Complete reference for 72+ tools
   </Card>
 </Columns>
 

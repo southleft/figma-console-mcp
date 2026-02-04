@@ -3059,10 +3059,13 @@ return {
 		// Tool 5: Instantiate Component
 		this.server.tool(
 			"figma_instantiate_component",
-			`Create an instance of a component from the design system. Works with both published library components (by key) and local/unpublished components (by nodeId).
+			`Create an instance of a component from the design system.
+
+**CRITICAL: Always pass BOTH componentKey AND nodeId together!**
+Search results return both identifiers. Pass both so the tool can automatically fall back to nodeId if the component isn't published to a library. Most local/unpublished components require nodeId.
 
 **IMPORTANT: Always re-search before instantiating!**
-NodeIds are session-specific and may be stale from previous conversations. ALWAYS call figma_search_components at the start of each design session to get current, valid identifiers.
+NodeIds are session-specific and may be stale from previous conversations. ALWAYS search for components at the start of each design session to get current, valid identifiers.
 
 **VISUAL VALIDATION WORKFLOW:**
 After instantiating components, use figma_take_screenshot to verify the result looks correct. Check placement, sizing, and visual balance.`,
@@ -3071,13 +3074,13 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					.string()
 					.optional()
 					.describe(
-						"The component key (for published library components). Get this from figma_search_components.",
+						"The component key from search results. Pass this WITH nodeId for automatic fallback.",
 					),
 				nodeId: z
 					.string()
 					.optional()
 					.describe(
-						"The node ID (for local/unpublished components). Get this from figma_search_components. Required if componentKey doesn't work.",
+						"The node ID from search results. ALWAYS pass this alongside componentKey - most local components need it.",
 					),
 				variant: z
 					.record(z.string())

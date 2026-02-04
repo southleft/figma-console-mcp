@@ -1,11 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 43+ MCP tools including parameters, return values, and usage examples."
+description: "Complete API reference for all 72+ MCP tools in Local Mode, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
+
+> **Note:** Local Mode (NPX/Git) provides **72+ tools** with full read/write capabilities. Remote Mode (SSE) provides **16 read-only tools**. Tools marked "Local" in the table below are not available in Remote Mode.
 
 ## Quick Reference
 

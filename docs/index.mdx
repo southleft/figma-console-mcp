@@ -128,47 +128,57 @@ Real component data. Real token values. Real code that uses your actual design s
 
 ---
 
-## Quick Start
+## Choose Your Setup
+
+<Warning>
+**Important:** Remote Mode is **read-only** with 16 tools. For design creation, variable management, and full capabilities (72+ tools), use NPX Setup.
+</Warning>
+
+<Columns cols={2}>
+  <Card title="NPX Setup (Recommended)" icon="bolt" href="/setup#-npx-setup-recommended">
+    **Full capabilities — 72+ tools**
+
+    Create designs, manage variables, instantiate components. Requires Node.js and a Figma token. Best for designers who want AI-assisted design creation.
+  </Card>
+  <Card title="Remote SSE (Read-Only)" icon="cloud" href="/setup#-remote-sse-read-only-exploration">
+    **Quick exploration — 16 tools**
+
+    Zero setup, just paste a URL. Read design data, take screenshots. Cannot create or modify designs. Best for evaluating the tool.
+  </Card>
+</Columns>
+
+### Quick Start: NPX Setup (Recommended)
 
 <Steps>
-  <Step title="Open Settings">
-    Claude menu → Settings → Connectors
+  <Step title="Get Figma Token">
+    Visit [figma.com/developers/api#access-tokens](https://www.figma.com/developers/api#access-tokens) and create a Personal Access Token
   </Step>
-  <Step title="Add Connector">
-    Click "Add Custom Connector"
+  <Step title="Add to Claude Desktop">
+    Edit your config file and add the server with your token:
+    ```json
+    {
+      "mcpServers": {
+        "figma-console": {
+          "command": "npx",
+          "args": ["-y", "figma-console-mcp@latest"],
+          "env": {
+            "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+          }
+        }
+      }
+    }
+    ```
   </Step>
-  <Step title="Configure">
-    **Name:** Figma Console
-    **URL:** `https://figma-console-mcp.southleft.com/sse`
+  <Step title="Start Figma with Debug Mode">
+    Quit Figma, then restart with: `open -a "Figma" --args --remote-debugging-port=9222`
   </Step>
-  <Step title="Connect">
-    OAuth authentication happens automatically on first use
+  <Step title="Restart Claude Desktop">
+    Quit and reopen Claude Desktop to load the new config
   </Step>
 </Steps>
 
 <Card title="Full Setup Guide" icon="book-open" href="/setup">
-  Remote, Local, and NPX installation options with detailed configuration instructions.
-</Card>
-
----
-
-## Deployment Options
-
-<Columns cols={2}>
-  <Card title="Remote Mode" icon="cloud">
-    **Zero setup required**
-
-    Connect via hosted server at `figma-console-mcp.southleft.com`. OAuth authentication, no token management. Best for design system extraction.
-  </Card>
-  <Card title="Local Mode" icon="desktop">
-    **Full capabilities**
-
-    Run locally with Desktop Bridge plugin. Console capture, design creation, variable management. Best for plugin development.
-  </Card>
-</Columns>
-
-<Card title="Compare Modes" icon="code-compare" href="/mode-comparison">
-  Detailed comparison of Remote and Local mode capabilities.
+  Detailed instructions for NPX, Local Git, and Remote SSE installation across all AI clients.
 </Card>
 
 ---
@@ -183,7 +193,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Real scenarios and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 43+ tools
+    Complete reference for 72+ tools
   </Card>
   <Card title="Troubleshooting" icon="circle-question" href="/troubleshooting">
     Common issues and solutions
