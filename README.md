@@ -310,6 +310,10 @@ When you first use design system tools:
   - Supports markdown formatting for rich documentation
   - Descriptions appear in Dev Mode for developers
 
+### 🔍 Design-Code Parity (All Modes)
+- `figma_check_design_parity` - Compare Figma component specs against code implementation, producing a scored diff report with actionable fix items
+- `figma_generate_component_doc` - Generate platform-agnostic markdown documentation by merging Figma design data with code-side info
+
 ### 🔧 Variable Management (Local Mode + Desktop Bridge)
 - `figma_create_variable_collection` - Create new variable collections with modes
 - `figma_create_variable` - Create COLOR, FLOAT, STRING, or BOOLEAN variables
@@ -360,6 +364,13 @@ Create a new color collection called "Brand Colors" with Light and Dark modes
 Add a primary color variable with value #3B82F6 for Light and #60A5FA for Dark
 Rename the "Default" mode to "Light Theme"
 Add a "High Contrast" mode to the existing collection
+```
+
+### Design-Code Parity
+```
+Compare the Button component in Figma against our React implementation
+Check design parity for the Card component before sign-off
+Generate component documentation for the Dialog from our design system
 ```
 
 ### Visual Debugging

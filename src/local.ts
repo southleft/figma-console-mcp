@@ -35,6 +35,7 @@ import {
 	formatVariables,
 } from "./core/figma-api.js";
 import { registerFigmaAPITools } from "./core/figma-tools.js";
+import { registerDesignCodeTools } from "./core/design-code-tools.js";
 import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
 import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import { registerDesignSystemDashboardApp } from "./apps/design-system-dashboard/server.js";
@@ -4528,6 +4529,14 @@ return {
 			() => this.browserManager || null,
 			() => this.ensureInitialized(),
 			this.variablesCache, // Pass cache for efficient variable queries
+		);
+
+		// Register Design-Code Parity & Documentation tools
+		registerDesignCodeTools(
+			this.server,
+			() => this.getFigmaAPI(),
+			() => this.browserManager?.getCurrentUrl() || null,
+			this.variablesCache,
 		);
 
 		// MCP Apps - gated behind ENABLE_MCP_APPS env var

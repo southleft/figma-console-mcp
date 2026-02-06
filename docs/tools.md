@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 72+ MCP tools in Local Mode, including parameters, return values, and usage examples."
+description: "Complete API reference for all 74+ MCP tools in Local Mode, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **72+ tools** with full read/write capabilities. Remote Mode (SSE) provides **16 read-only tools**. Tools marked "Local" in the table below are not available in Remote Mode.
+> **Note:** Local Mode (NPX/Git) provides **74+ tools** with full read/write capabilities. Remote Mode (SSE) provides **18 read-only tools** (including design-code parity tools). Tools marked "Local" in the table below are not available in Remote Mode.
 
 ## Quick Reference
 
@@ -50,6 +50,8 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_batch_create_variables` | Create up to 100 variables at once | Local |
 | | `figma_batch_update_variables` | Update up to 100 variables at once | Local |
 | | `figma_setup_design_tokens` | Create collection + modes + variables atomically | Local |
+| **🔍 Design-Code Parity** | `figma_check_design_parity` | Compare Figma specs vs code implementation | All |
+| | `figma_generate_component_doc` | Generate component documentation from Figma + code | All |
 | **📐 Node Manipulation** | `figma_resize_node` | Resize a node | Local |
 | | `figma_move_node` | Move a node | Local |
 | | `figma_clone_node` | Clone a node | Local |
@@ -1466,6 +1468,15 @@ figma_get_token_values({
 | Add themes (Light/Dark) | `figma_add_mode` |
 | Rename themes | `figma_rename_mode` |
 
+### For Design-Code Parity
+
+| Task | Tool |
+|------|------|
+| Compare Figma specs against code | `figma_check_design_parity` |
+| Generate component documentation | `figma_generate_component_doc` |
+| Audit component before sign-off | `figma_check_design_parity` |
+| Create design system reference docs | `figma_generate_component_doc` |
+
 ### Prerequisites Checklist
 
 Before using write tools, ensure:
@@ -1473,6 +1484,145 @@ Before using write tools, ensure:
 2. ✅ Figma Desktop started with `--remote-debugging-port=9222`
 3. ✅ **Desktop Bridge plugin** is running in Figma
 4. ✅ `figma_get_status` returns `setup.valid: true`
+
+---
+
+## 🔍 Design-Code Parity Tools
+
+### `figma_check_design_parity`
+
+Compare a Figma component's design specs against your code implementation. Produces a scored parity report with actionable fix items.
+
+**When to Use:**
+- Before sign-off on a component implementation
+- During design system audits to catch drift between design and code
+- To verify that code accurately reflects the design spec
+
+**Usage:**
+```javascript
+figma_check_design_parity({
+  fileUrl: 'https://figma.com/design/abc123',
+  nodeId: '695:313',
+  codeSpec: {
+    visual: {
+      backgroundColor: '#FFFFFF',
+      borderColor: '#E4E4E7',
+      borderRadius: 12,
+      opacity: 1
+    },
+    spacing: {
+      paddingTop: 24,
+      paddingRight: 24,
+      paddingBottom: 24,
+      paddingLeft: 24,
+      gap: 24
+    },
+    componentAPI: {
+      props: [
+        { name: 'className', type: 'string', required: false },
+        { name: 'children', type: 'ReactNode', required: false }
+      ]
+    },
+    metadata: {
+      name: 'Card',
+      filePath: 'src/components/card/card.tsx'
+    }
+  },
+  canonicalSource: 'design',
+  enrich: true
+})
+```
+
+**Parameters:**
+- `fileUrl` (optional): Figma file URL (uses current URL if omitted)
+- `nodeId` (required): Component node ID
+- `codeSpec` (required): Structured code-side data with sections:
+  - `visual`: backgroundColor, borderColor, borderRadius, opacity, shadow, etc.
+  - `spacing`: paddingTop/Right/Bottom/Left, gap, width, height, minWidth, maxWidth
+  - `typography`: fontFamily, fontSize, fontWeight, lineHeight, letterSpacing, color
+  - `tokens`: usedTokens array, hardcodedValues array, tokenCoverage percentage
+  - `componentAPI`: props array (name, type, required, defaultValue, description)
+  - `accessibility`: role, ariaLabel, keyboardInteraction, focusManagement, contrastRatio
+  - `metadata`: name, filePath, version, status, tags, description
+- `canonicalSource` (optional): Which source is truth — `"design"` (default) or `"code"`
+- `enrich` (optional): Enable token/enrichment analysis (default: true)
+
+**Returns:**
+- `summary`: Total discrepancies, parity score (0-100), counts by severity (critical/major/minor/info), categories breakdown
+- `discrepancies`: Array of property mismatches with category, severity, design value, code value, and suggestion
+- `actionItems`: Structured fix instructions specifying which side to fix, which Figma tool or code change to apply
+- `designData`: Raw Figma data extracted from the component (fills, strokes, spacing, properties)
+- `codeData`: The codeSpec as provided
+- `ai_instruction`: Structured presentation guide for consistent report formatting
+
+**Parity Score:**
+`score = max(0, 100 - (critical×15 + major×8 + minor×3 + info×1))`
+
+**COMPONENT_SET Handling:**
+When given a COMPONENT_SET node, the tool automatically resolves to the default variant (first child) for visual comparisons (fills, strokes, spacing, typography). Component property definitions and naming are read from the COMPONENT_SET itself.
+
+---
+
+### `figma_generate_component_doc`
+
+Generate platform-agnostic markdown documentation for a component by merging Figma design data with code-side info. Output is compatible with Docusaurus, Mintlify, ZeroHeight, Knapsack, Supernova, and any markdown-based docs platform.
+
+**When to Use:**
+- Generating design system component documentation
+- Creating developer handoff documentation
+- Building a component reference library
+
+**Usage:**
+```javascript
+figma_generate_component_doc({
+  fileUrl: 'https://figma.com/design/abc123',
+  nodeId: '695:313',
+  codeInfo: {
+    importStatement: "import { Button } from '@mylib/ui'",
+    props: [
+      { name: 'variant', type: "'primary' | 'secondary' | 'ghost'", required: false, defaultValue: "'primary'", description: 'Visual style variant' },
+      { name: 'size', type: "'sm' | 'md' | 'lg'", required: false, defaultValue: "'md'", description: 'Button size' }
+    ],
+    events: [
+      { name: 'onClick', payload: 'React.MouseEvent<HTMLButtonElement>', description: 'Fires when clicked' }
+    ],
+    usageExamples: [
+      { title: 'Basic', code: '<Button>Click me</Button>' },
+      { title: 'Destructive', code: '<Button variant="destructive"><Trash2 /> Delete</Button>' }
+    ]
+  },
+  systemName: 'MyDesignSystem',
+  includeFrontmatter: true,
+  enrich: true
+})
+```
+
+**Parameters:**
+- `fileUrl` (optional): Figma file URL (uses current URL if omitted)
+- `nodeId` (required): Component node ID
+- `codeInfo` (optional): Code-side documentation info:
+  - `importStatement`: Import path
+  - `props`: Array of prop definitions (name, type, required, defaultValue, description)
+  - `events`: Array of event definitions
+  - `slots`: Array of slot/sub-component definitions
+  - `usageExamples`: Array of code examples (title + code)
+  - `changelog`: Version history entries
+- `sections` (optional): Toggle individual sections on/off (overview, statesAndVariants, visualSpecs, implementation, accessibility, changelog)
+- `outputPath` (optional): Suggested file path for saving
+- `systemName` (optional): Design system name for documentation headers
+- `enrich` (optional): Enable enrichment analysis (default: true)
+- `includeFrontmatter` (optional): Include YAML frontmatter metadata (default: true)
+
+**Returns:**
+- `componentName`: Resolved component name
+- `markdown`: Complete markdown documentation with frontmatter, overview, states & variants, visual specs, implementation, accessibility sections
+- `includedSections`: Which sections were generated
+- `dataSourceSummary`: What data sources were available (Figma enriched, code info, variables, styles)
+- `suggestedOutputPath`: Where to save the file
+- `ai_instruction`: Guidance for the AI on next steps (saving file, asking user for path)
+
+**COMPONENT_SET Handling:**
+Same as parity checker — resolves to default variant for visual specs, reads property definitions from the COMPONENT_SET.
 
 ---
 

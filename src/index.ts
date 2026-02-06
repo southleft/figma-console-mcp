@@ -19,6 +19,7 @@ import { createChildLogger } from "./core/logger.js";
 import { testBrowserRendering } from "./test-browser.js";
 import { FigmaAPI, extractFileKey, formatVariables, formatComponentData } from "./core/figma-api.js";
 import { registerFigmaAPITools } from "./core/figma-tools.js";
+import { registerDesignCodeTools } from "./core/design-code-tools.js";
 // Note: MCP Apps (Token Browser, Dashboard) are only available in local mode
 // They require Node.js file system APIs for serving HTML that don't work in Cloudflare Workers
 
@@ -885,6 +886,15 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			() => this.consoleMonitor || null,
 			() => this.browserManager || null,
 			() => this.ensureInitialized(),
+			undefined, // variablesCache
+			{ isRemoteMode: true }
+		);
+
+		// Register Design-Code Parity & Documentation tools
+		registerDesignCodeTools(
+			this.server,
+			async () => await this.getFigmaAPI(),
+			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
 			{ isRemoteMode: true }
 		);
