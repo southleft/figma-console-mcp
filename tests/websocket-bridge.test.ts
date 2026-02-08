@@ -14,14 +14,16 @@ import { WebSocket } from 'ws';
 jest.setTimeout(10000);
 
 /**
- * Helper: create a WebSocket client, wait for both the client open event
- * AND the server's connected event. This avoids the race where the server
- * emits 'connected' before we register the listener.
+ * Helper: create a WebSocket client and send FILE_INFO to identify the file.
+ * Waits for both the client open event AND the server's 'connected' event
+ * (which fires when FILE_INFO is processed in multi-client architecture).
  */
 function connectClient(
   server: FigmaWebSocketServer,
-  port: number
+  port: number,
+  fileInfo?: { fileKey: string; fileName: string; currentPage?: string }
 ): Promise<WebSocket> {
+  const info = fileInfo || { fileKey: 'test-file-key', fileName: 'Test File', currentPage: 'Page 1' };
   return new Promise((resolve, reject) => {
     const connectedPromise = new Promise<void>((res) =>
       server.once('connected', res)
@@ -29,9 +31,23 @@ function connectClient(
     const ws = new WebSocket(`ws://localhost:${port}`);
     ws.on('error', reject);
     ws.on('open', () => {
-      // Wait for the server-side 'connected' event too
+      // Send FILE_INFO to identify the file (required for multi-client)
+      ws.send(JSON.stringify({ type: 'FILE_INFO', data: info }));
+      // Wait for the server-side 'connected' event (fires after FILE_INFO processing)
       connectedPromise.then(() => resolve(ws));
     });
+  });
+}
+
+/**
+ * Helper: connect a raw WebSocket without sending FILE_INFO.
+ * Used for tests that need to test the pending → identified flow explicitly.
+ */
+function connectRawClient(port: number): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://localhost:${port}`);
+    ws.on('error', reject);
+    ws.on('open', () => resolve(ws));
   });
 }
 
@@ -187,7 +203,7 @@ describe('FigmaWebSocketServer', () => {
 
       await expect(
         server.sendCommand('UPDATE_VARIABLE', {})
-      ).rejects.toThrow('No WebSocket client connected');
+      ).rejects.toThrow('No active file connected');
     });
 
     test('times out on unresponsive client', async () => {
@@ -673,13 +689,17 @@ describe('FigmaWebSocketServer file identity tracking', () => {
     server = new FigmaWebSocketServer({ port: TEST_PORT });
     await server.start();
 
-    const client = await connectClient(server, TEST_PORT);
+    // Use raw client so we can test the pending state before FILE_INFO
+    const client = await connectRawClient(TEST_PORT);
     clients.push(client);
 
-    // No file info yet (just connected, hasn't sent FILE_INFO)
+    // No file info yet — client is pending (hasn't sent FILE_INFO)
     expect(server.getConnectedFileInfo()).toBeNull();
 
     // Simulate plugin sending FILE_INFO
+    const connectedPromise = new Promise<void>((resolve) =>
+      server.once('connected', resolve)
+    );
     client.send(JSON.stringify({
       type: 'FILE_INFO',
       data: {
@@ -688,9 +708,7 @@ describe('FigmaWebSocketServer file identity tracking', () => {
         currentPage: 'Buttons',
       },
     }));
-
-    // Wait for message to be processed
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await connectedPromise;
 
     const info = server.getConnectedFileInfo();
     expect(info).not.toBeNull();
@@ -700,53 +718,55 @@ describe('FigmaWebSocketServer file identity tracking', () => {
     expect(info!.connectedAt).toBeGreaterThan(0);
   });
 
-  test('clears file info on client disconnect', async () => {
+  test('clears file info on client disconnect after grace period', async () => {
     server = new FigmaWebSocketServer({ port: TEST_PORT });
     await server.start();
 
-    const client = await connectClient(server, TEST_PORT);
+    const client = await connectClient(server, TEST_PORT, {
+      fileKey: 'key1', fileName: 'Test File',
+    });
     clients.push(client);
-
-    // Send FILE_INFO
-    client.send(JSON.stringify({
-      type: 'FILE_INFO',
-      data: { fileName: 'Test File', fileKey: 'key1' },
-    }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(server.getConnectedFileInfo()).not.toBeNull();
 
-    // Disconnect
+    // Wait for fileDisconnected (fires after 5s grace period)
+    const disconnectedPromise = new Promise<void>((resolve) =>
+      server.once('fileDisconnected', resolve)
+    );
+
     await closeClient(client);
     clients.length = 0;
 
-    // Wait for disconnect to process + grace period check
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await disconnectedPromise;
     expect(server.getConnectedFileInfo()).toBeNull();
-  });
+  }, 10000);
 
-  test('updates file info when new client connects with different file', async () => {
+  test('multi-client: both files connected, active stays as first', async () => {
     server = new FigmaWebSocketServer({ port: TEST_PORT });
     await server.start();
 
-    // First client
-    const client1 = await connectClient(server, TEST_PORT);
+    // First client — becomes active
+    const client1 = await connectClient(server, TEST_PORT, {
+      fileKey: 'keyA', fileName: 'File A',
+    });
     clients.push(client1);
-    client1.send(JSON.stringify({
-      type: 'FILE_INFO',
-      data: { fileName: 'File A', fileKey: 'keyA' },
-    }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(server.getConnectedFileInfo()!.fileName).toBe('File A');
+    expect(server.getActiveFileKey()).toBe('keyA');
 
-    // Second client replaces first
-    const client2 = await connectClient(server, TEST_PORT);
+    // Second client — connects but first remains active
+    const client2 = await connectClient(server, TEST_PORT, {
+      fileKey: 'keyB', fileName: 'File B',
+    });
     clients.push(client2);
-    client2.send(JSON.stringify({
-      type: 'FILE_INFO',
-      data: { fileName: 'File B', fileKey: 'keyB' },
-    }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(server.getConnectedFileInfo()!.fileName).toBe('File B');
+
+    // Active file is still File A
+    expect(server.getConnectedFileInfo()!.fileName).toBe('File A');
+    expect(server.getActiveFileKey()).toBe('keyA');
+
+    // Both files are connected
+    const files = server.getConnectedFiles();
+    expect(files).toHaveLength(2);
+    expect(files.find(f => f.fileKey === 'keyA')?.isActive).toBe(true);
+    expect(files.find(f => f.fileKey === 'keyB')?.isActive).toBe(false);
   });
 
   test('emits documentChange event for DOCUMENT_CHANGE messages', async () => {
@@ -1071,7 +1091,7 @@ describe('Selection change tracking', () => {
     expect(server.getCurrentSelection()).toBeNull();
   });
 
-  it('should clear selection on disconnect', async () => {
+  it('should clear selection on disconnect after grace period', async () => {
     const selectionData = {
       nodes: [{ id: '1:1', name: 'Frame', type: 'FRAME', width: 100, height: 100 }],
       count: 1,
@@ -1087,15 +1107,17 @@ describe('Selection change tracking', () => {
 
     expect(server.getCurrentSelection()).not.toBeNull();
 
-    // Disconnect
+    // Wait for fileDisconnected (fires after 5s grace period)
+    const disconnectedPromise = new Promise<void>((resolve) =>
+      server.once('fileDisconnected', resolve)
+    );
+
     await closeClient(client);
     client = null as any;
 
-    // Wait for disconnect to process
-    await new Promise((r) => setTimeout(r, 100));
-
+    await disconnectedPromise;
     expect(server.getCurrentSelection()).toBeNull();
-  });
+  }, 10000);
 
   it('should update selection with latest data', async () => {
     const sel1 = {
@@ -1303,16 +1325,7 @@ describe('Page change tracking', () => {
   });
 
   it('should update connectedFileInfo.currentPage on PAGE_CHANGE', async () => {
-    // First set up file info
-    const fileInfoPromise = new Promise<void>((resolve) =>
-      server.once('pluginMessage', () => resolve())
-    );
-    client.send(JSON.stringify({
-      type: 'FILE_INFO',
-      data: { fileName: 'Test File', fileKey: null, currentPage: 'Page 1' },
-    }));
-    await fileInfoPromise;
-
+    // connectClient already sent FILE_INFO with currentPage 'Page 1'
     expect(server.getConnectedFileInfo()?.currentPage).toBe('Page 1');
 
     // Now send page change
@@ -1339,5 +1352,483 @@ describe('Page change tracking', () => {
 
     expect(eventData.pageName).toBe('Icons');
     expect(eventData.pageId).toBe('3:0');
+  });
+});
+
+// =============================================================================
+// Multi-Client WebSocket Architecture
+// =============================================================================
+
+describe('Multi-client WebSocket', () => {
+  let server: FigmaWebSocketServer;
+  const clients: WebSocket[] = [];
+  const TEST_PORT = 19233;
+
+  afterEach(async () => {
+    if (server) await server.stop();
+    for (const c of clients) await closeClient(c);
+    clients.length = 0;
+  });
+
+  describe('multiple file connections', () => {
+    test('connects multiple files simultaneously', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'Design System' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'App Screens' });
+      clients.push(c2);
+      const c3 = await connectClient(server, TEST_PORT, { fileKey: 'file-c', fileName: 'Icons Library' });
+      clients.push(c3);
+
+      const files = server.getConnectedFiles();
+      expect(files).toHaveLength(3);
+      expect(files.map(f => f.fileKey)).toEqual(expect.arrayContaining(['file-a', 'file-b', 'file-c']));
+    });
+
+    test('same-file reconnection replaces old connection', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'Design System' });
+      clients.push(c1);
+      expect(server.getConnectedFiles()).toHaveLength(1);
+
+      // Reconnect same file — old ws should be replaced
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'Design System v2' });
+      clients.push(c2);
+
+      const files = server.getConnectedFiles();
+      expect(files).toHaveLength(1);
+      expect(files[0].fileName).toBe('Design System v2');
+    });
+
+    test('preserves per-file state across same-file reconnection', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'Design System' });
+      clients.push(c1);
+
+      // Add console log to file-a
+      const logPromise = new Promise<void>((resolve) =>
+        server.once('consoleLog', resolve)
+      );
+      c1.send(JSON.stringify({
+        type: 'CONSOLE_CAPTURE',
+        data: { level: 'log', message: 'test log', args: [], timestamp: 1000 },
+      }));
+      await logPromise;
+      expect(server.getConsoleLogs()).toHaveLength(1);
+
+      // Reconnect same file — state should be preserved
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'Design System' });
+      clients.push(c2);
+
+      expect(server.getConsoleLogs()).toHaveLength(1);
+      expect(server.getConsoleLogs()[0].message).toBe('test log');
+    });
+  });
+
+  describe('active file management', () => {
+    test('first connected file becomes active', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'First' }).then(c => clients.push(c));
+      expect(server.getActiveFileKey()).toBe('file-a');
+
+      await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'Second' }).then(c => clients.push(c));
+      expect(server.getActiveFileKey()).toBe('file-a'); // Still first
+    });
+
+    test('setActiveFile switches the targeted file', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'File A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'File B' });
+      clients.push(c2);
+
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.getConnectedFileInfo()!.fileName).toBe('File A');
+
+      const switched = server.setActiveFile('file-b');
+      expect(switched).toBe(true);
+      expect(server.getActiveFileKey()).toBe('file-b');
+      expect(server.getConnectedFileInfo()!.fileName).toBe('File B');
+    });
+
+    test('setActiveFile returns false for unknown file', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'File A' });
+      clients.push(c);
+
+      expect(server.setActiveFile('nonexistent')).toBe(false);
+      expect(server.getActiveFileKey()).toBe('file-a'); // Unchanged
+    });
+
+    test('emits activeFileChanged on setActiveFile', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      const eventPromise = new Promise<any>((resolve) =>
+        server.once('activeFileChanged', resolve)
+      );
+      server.setActiveFile('file-b');
+
+      const event = await eventPromise;
+      expect(event.fileKey).toBe('file-b');
+      expect(event.fileName).toBe('B');
+    });
+
+    test('SELECTION_CHANGE auto-switches active file', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      expect(server.getActiveFileKey()).toBe('file-a');
+
+      // User selects something in file-b → auto-switches
+      const selPromise = new Promise<void>((resolve) =>
+        server.once('selectionChange', resolve)
+      );
+      c2.send(JSON.stringify({
+        type: 'SELECTION_CHANGE',
+        data: {
+          nodes: [{ id: '1:1', name: 'Frame', type: 'FRAME', width: 100, height: 100 }],
+          count: 1,
+          page: 'Page 1',
+          timestamp: Date.now(),
+        },
+      }));
+      await selPromise;
+
+      expect(server.getActiveFileKey()).toBe('file-b');
+    });
+
+    test('PAGE_CHANGE auto-switches active file', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      expect(server.getActiveFileKey()).toBe('file-a');
+
+      // User switches pages in file-b → auto-switches
+      const pagePromise = new Promise<void>((resolve) =>
+        server.once('pageChange', resolve)
+      );
+      c2.send(JSON.stringify({
+        type: 'PAGE_CHANGE',
+        data: { pageId: '5:0', pageName: 'Components', timestamp: Date.now() },
+      }));
+      await pagePromise;
+
+      expect(server.getActiveFileKey()).toBe('file-b');
+    });
+  });
+
+  describe('per-file state isolation', () => {
+    test('console logs are per-file', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      // Send log from file-a
+      let logPromise = new Promise<void>((resolve) => server.once('consoleLog', resolve));
+      c1.send(JSON.stringify({
+        type: 'CONSOLE_CAPTURE',
+        data: { level: 'log', message: 'from-a', args: [], timestamp: 1000 },
+      }));
+      await logPromise;
+
+      // Send log from file-b
+      logPromise = new Promise<void>((resolve) => server.once('consoleLog', resolve));
+      c2.send(JSON.stringify({
+        type: 'CONSOLE_CAPTURE',
+        data: { level: 'warn', message: 'from-b', args: [], timestamp: 2000 },
+      }));
+      await logPromise;
+
+      // Active is file-a — should only see file-a's logs
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.getConsoleLogs()).toHaveLength(1);
+      expect(server.getConsoleLogs()[0].message).toBe('from-a');
+
+      // Switch to file-b — should only see file-b's logs
+      server.setActiveFile('file-b');
+      expect(server.getConsoleLogs()).toHaveLength(1);
+      expect(server.getConsoleLogs()[0].message).toBe('from-b');
+    });
+
+    test('document changes are per-file', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      // Doc change in file-a
+      let changePromise = new Promise<void>((resolve) => server.once('documentChange', resolve));
+      c1.send(JSON.stringify({
+        type: 'DOCUMENT_CHANGE',
+        data: { hasStyleChanges: true, hasNodeChanges: false, changedNodeIds: [], changeCount: 1, timestamp: Date.now() },
+      }));
+      await changePromise;
+
+      // Doc change in file-b
+      changePromise = new Promise<void>((resolve) => server.once('documentChange', resolve));
+      c2.send(JSON.stringify({
+        type: 'DOCUMENT_CHANGE',
+        data: { hasStyleChanges: false, hasNodeChanges: true, changedNodeIds: ['1:1'], changeCount: 2, timestamp: Date.now() },
+      }));
+      await changePromise;
+
+      // Active is file-a — should only see file-a's changes
+      expect(server.getDocumentChanges()).toHaveLength(1);
+      expect(server.getDocumentChanges()[0].hasStyleChanges).toBe(true);
+
+      // Switch to file-b
+      server.setActiveFile('file-b');
+      expect(server.getDocumentChanges()).toHaveLength(1);
+      expect(server.getDocumentChanges()[0].hasNodeChanges).toBe(true);
+    });
+
+    test('selection is per-file', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      // Selection in file-b (note: this auto-switches active to file-b)
+      const selPromise = new Promise<void>((resolve) => server.once('selectionChange', resolve));
+      c2.send(JSON.stringify({
+        type: 'SELECTION_CHANGE',
+        data: {
+          nodes: [{ id: '2:1', name: 'Card', type: 'COMPONENT', width: 300, height: 200 }],
+          count: 1,
+          page: 'Cards',
+          timestamp: Date.now(),
+        },
+      }));
+      await selPromise;
+
+      // Active is now file-b — should see file-b's selection
+      expect(server.getActiveFileKey()).toBe('file-b');
+      expect(server.getCurrentSelection()!.nodes[0].name).toBe('Card');
+
+      // Switch back to file-a — no selection
+      server.setActiveFile('file-a');
+      expect(server.getCurrentSelection()).toBeNull();
+    });
+  });
+
+  describe('command routing', () => {
+    test('sendCommand targets active file by default', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      // Echo handler on file-a (active by default)
+      c1.on('message', (data: Buffer) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.id && msg.method) {
+          c1.send(JSON.stringify({ id: msg.id, result: { file: 'a' } }));
+        }
+      });
+
+      const result = await server.sendCommand('EXECUTE_CODE', { code: 'test' });
+      expect(result.file).toBe('a');
+    });
+
+    test('sendCommand targets specific file via targetFileKey', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      // Echo handlers on both
+      c1.on('message', (data: Buffer) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.id && msg.method) {
+          c1.send(JSON.stringify({ id: msg.id, result: { file: 'a' } }));
+        }
+      });
+      c2.on('message', (data: Buffer) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.id && msg.method) {
+          c2.send(JSON.stringify({ id: msg.id, result: { file: 'b' } }));
+        }
+      });
+
+      // Active is file-a, but target file-b explicitly
+      const result = await server.sendCommand('EXECUTE_CODE', { code: 'test' }, 15000, 'file-b');
+      expect(result.file).toBe('b');
+    });
+
+    test('concurrent commands to different files', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      // Echo handlers
+      c1.on('message', (data: Buffer) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.id && msg.method) {
+          setTimeout(() => c1.send(JSON.stringify({ id: msg.id, result: { file: 'a' } })), 20);
+        }
+      });
+      c2.on('message', (data: Buffer) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.id && msg.method) {
+          setTimeout(() => c2.send(JSON.stringify({ id: msg.id, result: { file: 'b' } })), 20);
+        }
+      });
+
+      // Send commands concurrently to both files
+      const [r1, r2] = await Promise.all([
+        server.sendCommand('EXECUTE_CODE', { code: 'a' }, 15000, 'file-a'),
+        server.sendCommand('EXECUTE_CODE', { code: 'b' }, 15000, 'file-b'),
+      ]);
+
+      expect(r1.file).toBe('a');
+      expect(r2.file).toBe('b');
+    });
+  });
+
+  describe('disconnect behavior', () => {
+    test('disconnecting one file does not affect others', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      expect(server.getConnectedFiles()).toHaveLength(2);
+
+      // Disconnect file-b — file-a should still be active and connected
+      const disconnectedPromise = new Promise<void>((resolve) =>
+        server.once('fileDisconnected', resolve)
+      );
+      c2.terminate();
+      await disconnectedPromise;
+
+      expect(server.isClientConnected()).toBe(true);
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.getConnectedFiles()).toHaveLength(1);
+      expect(server.getConnectedFiles()[0].fileKey).toBe('file-a');
+    }, 10000);
+
+    test('active file falls back when active disconnects', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      expect(server.getActiveFileKey()).toBe('file-a');
+
+      // Disconnect active file (file-a) — should fall back to file-b
+      const disconnectedPromise = new Promise<void>((resolve) =>
+        server.once('fileDisconnected', resolve)
+      );
+      c1.terminate();
+      await disconnectedPromise;
+
+      expect(server.getActiveFileKey()).toBe('file-b');
+      expect(server.getConnectedFileInfo()!.fileName).toBe('B');
+    }, 10000);
+
+    test('pending client timeout when FILE_INFO not sent', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      // Connect raw — no FILE_INFO sent
+      const raw = await connectRawClient(TEST_PORT);
+      clients.push(raw);
+
+      // Client should be pending, not named
+      expect(server.isClientConnected()).toBe(false);
+      expect(server.getConnectedFiles()).toHaveLength(0);
+
+      // Close raw client before timeout
+      await closeClient(raw);
+      clients.length = 0;
+    });
+  });
+
+  describe('fileConnected and fileDisconnected events', () => {
+    test('emits fileConnected with file details', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const eventPromise = new Promise<any>((resolve) =>
+        server.once('fileConnected', resolve)
+      );
+
+      const c = await connectClient(server, TEST_PORT, { fileKey: 'file-x', fileName: 'My File' });
+      clients.push(c);
+
+      const event = await eventPromise;
+      expect(event.fileKey).toBe('file-x');
+      expect(event.fileName).toBe('My File');
+    });
+
+    test('emits fileDisconnected after grace period', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c = await connectClient(server, TEST_PORT, { fileKey: 'file-x', fileName: 'My File' });
+
+      const eventPromise = new Promise<any>((resolve) =>
+        server.once('fileDisconnected', resolve)
+      );
+      c.terminate();
+
+      const event = await eventPromise;
+      expect(event.fileKey).toBe('file-x');
+      expect(event.fileName).toBe('My File');
+    }, 10000);
   });
 });

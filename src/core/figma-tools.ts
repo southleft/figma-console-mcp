@@ -738,7 +738,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
 				),
 			depth: z
 				.number()
@@ -790,7 +790,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
+						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
 					);
 				}
 
@@ -974,7 +974,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
 				),
 			includePublished: z
 				.boolean()
@@ -1118,8 +1118,8 @@ export function registerFigmaAPITools(
 							type: "text",
 							text: JSON.stringify(
 								{
-									error: "No Figma file URL provided",
-									message: "Either pass fileUrl parameter or call figma_navigate first."
+									error: "No Figma file URL available",
+									message: "Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
 								}
 							),
 						},
@@ -2304,7 +2304,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
 				),
 			nodeId: z
 				.string()
@@ -2328,7 +2328,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
+						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
 					);
 				}
 
@@ -2601,7 +2601,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
 				),
 			verbosity: z
 				.enum(["summary", "standard", "full"])
@@ -2650,7 +2650,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
+						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
 					);
 				}
 
@@ -2786,7 +2786,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called. If not provided, ask the user to share their Figma file URL (they can copy it from Figma Desktop via right-click → 'Copy link')."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
 				),
 			nodeId: z
 				.string()
@@ -2825,7 +2825,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
+						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
 					);
 				}
 
@@ -2972,7 +2972,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
+						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
 					);
 				}
 
@@ -3172,7 +3172,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first."
+						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
 					);
 				}
 

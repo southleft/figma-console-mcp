@@ -1,9 +1,14 @@
 /**
- * WebSocket Bridge Server
+ * WebSocket Bridge Server (Multi-Client)
  *
- * Creates a WebSocket server that the Desktop Bridge plugin UI connects to.
- * Provides request/response correlation for command execution and forwards
- * unsolicited data (like VARIABLES_DATA) as events.
+ * Creates a WebSocket server that multiple Desktop Bridge plugin instances connect to.
+ * Each instance represents a different Figma file and is identified by its fileKey
+ * (sent via FILE_INFO on connection). Per-file state (selection, document changes,
+ * console logs) is maintained independently.
+ *
+ * Active file tracking: The "active" file is automatically switched when the user
+ * interacts with a file (selection/page changes) or can be set explicitly via
+ * setActiveFile(). All backward-compatible getters return data from the active file.
  *
  * Data flow: MCP Server ←WebSocket→ ui.html ←postMessage→ code.js ←figma.*→ Figma
  */
@@ -26,6 +31,7 @@ interface PendingRequest {
   method: string;
   timeoutId: ReturnType<typeof setTimeout>;
   createdAt: number;
+  targetFileKey: string;
 }
 
 export interface ConnectedFileInfo {
@@ -56,19 +62,33 @@ export interface DocumentChangeEntry {
   timestamp: number;
 }
 
+/**
+ * Per-file client connection state.
+ * Each Figma file with the Desktop Bridge plugin open gets its own ClientConnection.
+ */
+export interface ClientConnection {
+  ws: WebSocket;
+  fileInfo: ConnectedFileInfo;
+  selection: SelectionInfo | null;
+  documentChanges: DocumentChangeEntry[];
+  consoleLogs: ConsoleLogEntry[];
+  lastActivity: number;
+  gracePeriodTimer: ReturnType<typeof setTimeout> | null;
+}
+
 export class FigmaWebSocketServer extends EventEmitter {
   private wss: WSServer | null = null;
-  private client: WebSocket | null = null;
+  /** Named clients indexed by fileKey — each represents a connected Figma file */
+  private clients: Map<string, ClientConnection> = new Map();
+  /** Clients awaiting FILE_INFO identification, mapped to their pending timeout */
+  private _pendingClients: Map<WebSocket, ReturnType<typeof setTimeout>> = new Map();
+  /** The fileKey of the currently active (targeted) file */
+  private _activeFileKey: string | null = null;
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private requestIdCounter = 0;
   private options: WebSocketServerOptions;
   private _isStarted = false;
-  private gracePeriodTimer: ReturnType<typeof setTimeout> | null = null;
-  private _connectedFileInfo: ConnectedFileInfo | null = null;
-  private consoleLogs: ConsoleLogEntry[] = [];
   private consoleBufferSize = 1000;
-  private _currentSelection: SelectionInfo | null = null;
-  private documentChanges: DocumentChangeEntry[] = [];
   private documentChangeBufferSize = 200;
 
   constructor(options: WebSocketServerOptions) {
@@ -108,52 +128,32 @@ export class FigmaWebSocketServer extends EventEmitter {
         });
 
         this.wss.on('connection', (ws: WebSocket) => {
-          // Cancel any pending grace period from a previous disconnect
-          if (this.gracePeriodTimer) {
-            clearTimeout(this.gracePeriodTimer);
-            this.gracePeriodTimer = null;
-          }
+          // Add to pending until FILE_INFO identifies the file
+          const pendingTimeout = setTimeout(() => {
+            if (this._pendingClients.has(ws)) {
+              this._pendingClients.delete(ws);
+              logger.warn('Pending WebSocket client timed out without sending FILE_INFO');
+              ws.close(1000, 'File identification timeout');
+            }
+          }, 30000);
+          this._pendingClients.set(ws, pendingTimeout);
 
-          // Only allow one client (the plugin UI)
-          if (this.client) {
-            logger.warn('Replacing existing WebSocket client connection');
-            // Reject any pending requests from the old client before replacing
-            this.rejectPendingRequests('Client replaced by new connection');
-            this.client.close(1000, 'Replaced by new connection');
-          }
-
-          this.client = ws;
-          logger.info('Desktop Bridge plugin connected via WebSocket');
-          this.emit('connected');
+          logger.info(
+            { totalClients: this.clients.size, pendingClients: this._pendingClients.size },
+            'New WebSocket connection (pending file identification)'
+          );
 
           ws.on('message', (data: Buffer) => {
             try {
               const message = JSON.parse(data.toString());
-              this.handleMessage(message);
+              this.handleMessage(message, ws);
             } catch (error) {
               logger.error({ error }, 'Failed to parse WebSocket message');
             }
           });
 
           ws.on('close', (code: number, reason: Buffer) => {
-            logger.info(
-              { code, reason: reason.toString() },
-              'Desktop Bridge plugin disconnected'
-            );
-            if (this.client === ws) {
-              this.client = null;
-              this._connectedFileInfo = null;
-              this._currentSelection = null;
-            }
-            this.emit('disconnected');
-
-            // Give pending requests a grace period before rejecting
-            this.gracePeriodTimer = setTimeout(() => {
-              this.gracePeriodTimer = null;
-              if (!this.client) {
-                this.rejectPendingRequests('WebSocket client disconnected');
-              }
-            }, 5000);
+            this.handleClientDisconnect(ws, code, reason.toString());
           });
 
           ws.on('error', (error: any) => {
@@ -167,9 +167,19 @@ export class FigmaWebSocketServer extends EventEmitter {
   }
 
   /**
-   * Handle incoming message from plugin UI
+   * Find a named client connection by its WebSocket reference
    */
-  private handleMessage(message: any): void {
+  private findClientByWs(ws: WebSocket): { fileKey: string; client: ClientConnection } | null {
+    for (const [fileKey, client] of this.clients) {
+      if (client.ws === ws) return { fileKey, client };
+    }
+    return null;
+  }
+
+  /**
+   * Handle incoming message from a plugin UI WebSocket connection
+   */
+  private handleMessage(message: any, ws: WebSocket): void {
     // Response to a command we sent
     if (message.id && this.pendingRequests.has(message.id)) {
       const pending = this.pendingRequests.get(message.id)!;
@@ -184,54 +194,58 @@ export class FigmaWebSocketServer extends EventEmitter {
       return;
     }
 
-    // Unsolicited data from plugin (e.g. VARIABLES_DATA, console messages)
+    // Unsolicited data from plugin (FILE_INFO, events, forwarded data)
     if (message.type) {
-      // Track file identity when the plugin reports it
+      // FILE_INFO promotes pending clients to named clients
       if (message.type === 'FILE_INFO' && message.data) {
-        this._connectedFileInfo = {
-          fileName: message.data.fileName,
-          fileKey: message.data.fileKey || null,
-          currentPage: message.data.currentPage,
-          connectedAt: Date.now(),
-        };
-        logger.info(
-          { fileName: this._connectedFileInfo.fileName, fileKey: this._connectedFileInfo.fileKey },
-          'Connected to Figma file'
-        );
+        this.handleFileInfo(message.data, ws);
       }
 
-      // Buffer document changes and emit event (enables cache invalidation + AI querying)
+      // Buffer document changes for the specific file
       if (message.type === 'DOCUMENT_CHANGE' && message.data) {
-        const entry: DocumentChangeEntry = {
-          hasStyleChanges: message.data.hasStyleChanges,
-          hasNodeChanges: message.data.hasNodeChanges,
-          changedNodeIds: message.data.changedNodeIds || [],
-          changeCount: message.data.changeCount || 0,
-          timestamp: message.data.timestamp || Date.now(),
-        };
-        this.documentChanges.push(entry);
-        if (this.documentChanges.length > this.documentChangeBufferSize) {
-          this.documentChanges.shift();
+        const found = this.findClientByWs(ws);
+        if (found) {
+          const entry: DocumentChangeEntry = {
+            hasStyleChanges: message.data.hasStyleChanges,
+            hasNodeChanges: message.data.hasNodeChanges,
+            changedNodeIds: message.data.changedNodeIds || [],
+            changeCount: message.data.changeCount || 0,
+            timestamp: message.data.timestamp || Date.now(),
+          };
+          found.client.documentChanges.push(entry);
+          if (found.client.documentChanges.length > this.documentChangeBufferSize) {
+            found.client.documentChanges.shift();
+          }
+          found.client.lastActivity = Date.now();
         }
         this.emit('documentChange', message.data);
       }
 
-      // Track selection changes from the plugin
+      // Track selection changes — user interaction makes this the active file
       if (message.type === 'SELECTION_CHANGE' && message.data) {
-        this._currentSelection = message.data as SelectionInfo;
-        this.emit('selectionChange', this._currentSelection);
+        const found = this.findClientByWs(ws);
+        if (found) {
+          found.client.selection = message.data as SelectionInfo;
+          found.client.lastActivity = Date.now();
+          this._activeFileKey = found.fileKey;
+        }
+        this.emit('selectionChange', message.data);
       }
 
-      // Track page changes and update connected file info
+      // Track page changes — user interaction makes this the active file
       if (message.type === 'PAGE_CHANGE' && message.data) {
-        if (this._connectedFileInfo) {
-          this._connectedFileInfo.currentPage = message.data.pageName;
+        const found = this.findClientByWs(ws);
+        if (found) {
+          found.client.fileInfo.currentPage = message.data.pageName;
+          found.client.lastActivity = Date.now();
+          this._activeFileKey = found.fileKey;
         }
         this.emit('pageChange', message.data);
       }
 
-      // Capture console logs forwarded from the plugin sandbox
+      // Capture console logs for the specific file
       if (message.type === 'CONSOLE_CAPTURE' && message.data) {
+        const found = this.findClientByWs(ws);
         const data = message.data;
         const entry: ConsoleLogEntry = {
           timestamp: data.timestamp || Date.now(),
@@ -240,9 +254,12 @@ export class FigmaWebSocketServer extends EventEmitter {
           args: Array.isArray(data.args) ? data.args.slice(0, 10) : [],
           source: 'plugin',
         };
-        this.consoleLogs.push(entry);
-        if (this.consoleLogs.length > this.consoleBufferSize) {
-          this.consoleLogs.shift();
+        if (found) {
+          found.client.consoleLogs.push(entry);
+          if (found.client.consoleLogs.length > this.consoleBufferSize) {
+            found.client.consoleLogs.shift();
+          }
+          found.client.lastActivity = Date.now();
         }
         this.emit('consoleLog', entry);
       }
@@ -255,11 +272,159 @@ export class FigmaWebSocketServer extends EventEmitter {
   }
 
   /**
-   * Send a command to the plugin UI and wait for the response
+   * Handle FILE_INFO message — promotes pending clients to named clients.
+   * This is the critical multi-client identification step: each plugin reports
+   * its fileKey on connect, allowing the server to track multiple files.
    */
-  sendCommand(method: string, params: Record<string, any> = {}, timeoutMs = 15000): Promise<any> {
+  private handleFileInfo(data: any, ws: WebSocket): void {
+    const fileKey = data.fileKey || null;
+
+    if (!fileKey) {
+      logger.warn('FILE_INFO received without fileKey — client remains pending');
+      return;
+    }
+
+    // Remove from pending clients (cancel identification timeout)
+    const pendingTimeout = this._pendingClients.get(ws);
+    if (pendingTimeout) {
+      clearTimeout(pendingTimeout);
+      this._pendingClients.delete(ws);
+    }
+
+    // Check if this ws was already registered under a different fileKey
+    // (shouldn't happen in practice — each plugin instance is per-file)
+    const previousEntry = this.findClientByWs(ws);
+    if (previousEntry && previousEntry.fileKey !== fileKey) {
+      this.clients.delete(previousEntry.fileKey);
+      if (this._activeFileKey === previousEntry.fileKey) {
+        this._activeFileKey = null;
+      }
+      logger.info(
+        { oldFileKey: previousEntry.fileKey, newFileKey: fileKey },
+        'WebSocket client switched files'
+      );
+    }
+
+    // If same fileKey already connected with a DIFFERENT ws, clean up old connection
+    const existing = this.clients.get(fileKey);
+    if (existing && existing.ws !== ws) {
+      logger.info({ fileKey }, 'Replacing existing connection for same file');
+      if (existing.gracePeriodTimer) {
+        clearTimeout(existing.gracePeriodTimer);
+      }
+      if (existing.ws.readyState === WebSocket.OPEN || existing.ws.readyState === WebSocket.CONNECTING) {
+        existing.ws.close(1000, 'Replaced by same file reconnection');
+      }
+    }
+
+    // Create client connection (preserve per-file state from previous connection of same file)
+    this.clients.set(fileKey, {
+      ws,
+      fileInfo: {
+        fileName: data.fileName,
+        fileKey,
+        currentPage: data.currentPage,
+        connectedAt: Date.now(),
+      },
+      selection: existing?.selection || null,
+      documentChanges: existing?.documentChanges || [],
+      consoleLogs: existing?.consoleLogs || [],
+      lastActivity: Date.now(),
+      gracePeriodTimer: null,
+    });
+
+    // Set as active file if no active file or active file is disconnected
+    if (!this._activeFileKey || !this.clients.has(this._activeFileKey) ||
+        this.clients.get(this._activeFileKey)?.ws.readyState !== WebSocket.OPEN) {
+      this._activeFileKey = fileKey;
+    }
+
+    logger.info(
+      {
+        fileName: data.fileName,
+        fileKey,
+        totalClients: this.clients.size,
+        isActive: this._activeFileKey === fileKey,
+      },
+      'File connected via WebSocket'
+    );
+
+    // Emit both events for backward compat and new features
+    this.emit('connected');
+    this.emit('fileConnected', { fileKey, fileName: data.fileName });
+  }
+
+  /**
+   * Handle a client WebSocket disconnecting.
+   * Starts a grace period before removing the client to allow reconnection.
+   */
+  private handleClientDisconnect(ws: WebSocket, code: number, reason: string): void {
+    // Check if it was a pending client (never identified itself)
+    const pendingTimeout = this._pendingClients.get(ws);
+    if (pendingTimeout) {
+      clearTimeout(pendingTimeout);
+      this._pendingClients.delete(ws);
+      logger.info('Pending WebSocket client disconnected before file identification');
+      this.emit('disconnected');
+      return;
+    }
+
+    // Find which named client this belongs to
+    const found = this.findClientByWs(ws);
+    if (!found) {
+      logger.debug('Unknown WebSocket client disconnected');
+      this.emit('disconnected');
+      return;
+    }
+
+    const { fileKey, client } = found;
+    logger.info(
+      { fileKey, fileName: client.fileInfo.fileName, code, reason },
+      'File disconnected from WebSocket'
+    );
+
+    // Start grace period — keep state but clean up if not reconnected
+    client.gracePeriodTimer = setTimeout(() => {
+      client.gracePeriodTimer = null;
+      // Only remove if the client in the map is still the disconnected one
+      const current = this.clients.get(fileKey);
+      if (current && current.ws === ws) {
+        this.clients.delete(fileKey);
+        this.rejectPendingRequestsForFile(fileKey, 'WebSocket client disconnected');
+
+        // If active file disconnected, switch to another connected file
+        if (this._activeFileKey === fileKey) {
+          this._activeFileKey = null;
+          for (const [fk, c] of this.clients) {
+            if (c.ws.readyState === WebSocket.OPEN) {
+              this._activeFileKey = fk;
+              break;
+            }
+          }
+        }
+
+        this.emit('fileDisconnected', { fileKey, fileName: client.fileInfo.fileName });
+      }
+    }, 5000);
+
+    this.emit('disconnected');
+  }
+
+  /**
+   * Send a command to a plugin UI and wait for the response.
+   * By default targets the active file. Pass targetFileKey to target a specific file.
+   */
+  sendCommand(method: string, params: Record<string, any> = {}, timeoutMs = 15000, targetFileKey?: string): Promise<any> {
     return new Promise((resolve, reject) => {
-      if (!this.client || this.client.readyState !== WebSocket.OPEN) {
+      const fileKey = targetFileKey || this._activeFileKey;
+
+      if (!fileKey) {
+        reject(new Error('No active file connected. Make sure the Desktop Bridge plugin is open in Figma.'));
+        return;
+      }
+
+      const client = this.clients.get(fileKey);
+      if (!client || client.ws.readyState !== WebSocket.OPEN) {
         reject(new Error('No WebSocket client connected. Make sure the Desktop Bridge plugin is open in Figma.'));
         return;
       }
@@ -279,20 +444,27 @@ export class FigmaWebSocketServer extends EventEmitter {
         method,
         timeoutId,
         createdAt: Date.now(),
+        targetFileKey: fileKey,
       });
 
       const message = JSON.stringify({ id, method, params });
-      this.client.send(message);
+      client.ws.send(message);
+      client.lastActivity = Date.now();
 
-      logger.debug({ id, method }, 'Sent WebSocket command');
+      logger.debug({ id, method, fileKey }, 'Sent WebSocket command');
     });
   }
 
   /**
-   * Check if a client is connected
+   * Check if any named client is connected (transport availability check)
    */
   isClientConnected(): boolean {
-    return this.client !== null && this.client.readyState === WebSocket.OPEN;
+    for (const [, client] of this.clients) {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -302,23 +474,78 @@ export class FigmaWebSocketServer extends EventEmitter {
     return this._isStarted;
   }
 
+  // ============================================================================
+  // Active file getters (backward compatible — return active file's state)
+  // ============================================================================
+
   /**
-   * Get info about the currently connected Figma file.
-   * Returns null if no client is connected or file info hasn't been reported yet.
+   * Get info about the currently active Figma file.
+   * Returns null if no file is active or connected.
    */
   getConnectedFileInfo(): ConnectedFileInfo | null {
-    return this._connectedFileInfo;
+    if (!this._activeFileKey) return null;
+    const client = this.clients.get(this._activeFileKey);
+    return client?.fileInfo || null;
   }
 
   /**
-   * Get console logs with optional filtering (mirrors ConsoleMonitor.getLogs API)
+   * Get the current user selection in the active Figma file
+   */
+  getCurrentSelection(): SelectionInfo | null {
+    if (!this._activeFileKey) return null;
+    const client = this.clients.get(this._activeFileKey);
+    return client?.selection || null;
+  }
+
+  /**
+   * Get buffered document change events from the active file
+   */
+  getDocumentChanges(options?: {
+    count?: number;
+    since?: number;
+  }): DocumentChangeEntry[] {
+    if (!this._activeFileKey) return [];
+    const client = this.clients.get(this._activeFileKey);
+    if (!client) return [];
+
+    let filtered = [...client.documentChanges];
+
+    if (options?.since) {
+      filtered = filtered.filter((e) => e.timestamp >= options.since!);
+    }
+
+    if (options?.count) {
+      filtered = filtered.slice(-options.count);
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Clear document change buffer for the active file
+   */
+  clearDocumentChanges(): number {
+    if (!this._activeFileKey) return 0;
+    const client = this.clients.get(this._activeFileKey);
+    if (!client) return 0;
+    const count = client.documentChanges.length;
+    client.documentChanges = [];
+    return count;
+  }
+
+  /**
+   * Get console logs from the active file with optional filtering
    */
   getConsoleLogs(options?: {
     count?: number;
     level?: ConsoleLogEntry['level'] | 'all';
     since?: number;
   }): ConsoleLogEntry[] {
-    let filtered = [...this.consoleLogs];
+    if (!this._activeFileKey) return [];
+    const client = this.clients.get(this._activeFileKey);
+    if (!client) return [];
+
+    let filtered = [...client.consoleLogs];
 
     if (options?.since) {
       filtered = filtered.filter((log) => log.timestamp >= options.since!);
@@ -336,69 +563,98 @@ export class FigmaWebSocketServer extends EventEmitter {
   }
 
   /**
-   * Clear console log buffer
+   * Clear console log buffer for the active file
    */
   clearConsoleLogs(): number {
-    const count = this.consoleLogs.length;
-    this.consoleLogs = [];
+    if (!this._activeFileKey) return 0;
+    const client = this.clients.get(this._activeFileKey);
+    if (!client) return 0;
+    const count = client.consoleLogs.length;
+    client.consoleLogs = [];
     return count;
   }
 
   /**
-   * Get the current user selection in Figma
-   */
-  getCurrentSelection(): SelectionInfo | null {
-    return this._currentSelection;
-  }
-
-  /**
-   * Get buffered document change events with optional filtering
-   */
-  getDocumentChanges(options?: {
-    count?: number;
-    since?: number;
-  }): DocumentChangeEntry[] {
-    let filtered = [...this.documentChanges];
-
-    if (options?.since) {
-      filtered = filtered.filter((e) => e.timestamp >= options.since!);
-    }
-
-    if (options?.count) {
-      filtered = filtered.slice(-options.count);
-    }
-
-    return filtered;
-  }
-
-  /**
-   * Clear document change buffer
-   */
-  clearDocumentChanges(): number {
-    const count = this.documentChanges.length;
-    this.documentChanges = [];
-    return count;
-  }
-
-  /**
-   * Get console monitoring status
+   * Get console monitoring status for the active file
    */
   getConsoleStatus() {
+    const client = this._activeFileKey ? this.clients.get(this._activeFileKey) : null;
+    const logs = client?.consoleLogs || [];
+
     return {
       isMonitoring: this.isClientConnected(),
-      logCount: this.consoleLogs.length,
+      logCount: logs.length,
       bufferSize: this.consoleBufferSize,
       workerCount: 0,
-      oldestTimestamp: this.consoleLogs[0]?.timestamp,
-      newestTimestamp: this.consoleLogs[this.consoleLogs.length - 1]?.timestamp,
+      oldestTimestamp: logs[0]?.timestamp,
+      newestTimestamp: logs[logs.length - 1]?.timestamp,
     };
   }
 
+  // ============================================================================
+  // Multi-client methods
+  // ============================================================================
+
   /**
-   * Reject all pending requests (e.g. on disconnect)
+   * Get info about all connected Figma files.
+   * Returns an array of ConnectedFileInfo for each file with an active WebSocket.
+   */
+  getConnectedFiles(): (ConnectedFileInfo & { isActive: boolean })[] {
+    const files: (ConnectedFileInfo & { isActive: boolean })[] = [];
+    for (const [fileKey, client] of this.clients) {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        files.push({
+          ...client.fileInfo,
+          isActive: fileKey === this._activeFileKey,
+        });
+      }
+    }
+    return files;
+  }
+
+  /**
+   * Set the active file by fileKey. Returns true if the file is connected.
+   */
+  setActiveFile(fileKey: string): boolean {
+    const client = this.clients.get(fileKey);
+    if (client && client.ws.readyState === WebSocket.OPEN) {
+      this._activeFileKey = fileKey;
+      logger.info({ fileKey, fileName: client.fileInfo.fileName }, 'Active file switched');
+      this.emit('activeFileChanged', { fileKey, fileName: client.fileInfo.fileName });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Get the currently active file's key
+   */
+  getActiveFileKey(): string | null {
+    return this._activeFileKey;
+  }
+
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
+
+  /**
+   * Reject pending requests that were sent to a specific file
+   */
+  private rejectPendingRequestsForFile(fileKey: string, reason: string): void {
+    for (const [id, pending] of this.pendingRequests) {
+      if (pending.targetFileKey === fileKey) {
+        clearTimeout(pending.timeoutId);
+        pending.reject(new Error(reason));
+        this.pendingRequests.delete(id);
+      }
+    }
+  }
+
+  /**
+   * Reject all pending requests (used during shutdown)
    */
   private rejectPendingRequests(reason: string): void {
-    for (const [id, pending] of this.pendingRequests) {
+    for (const [, pending] of this.pendingRequests) {
       clearTimeout(pending.timeoutId);
       pending.reject(new Error(reason));
     }
@@ -406,13 +662,22 @@ export class FigmaWebSocketServer extends EventEmitter {
   }
 
   /**
-   * Stop the server and clean up
+   * Stop the server and clean up all connections
    */
   async stop(): Promise<void> {
-    if (this.gracePeriodTimer) {
-      clearTimeout(this.gracePeriodTimer);
-      this.gracePeriodTimer = null;
+    // Clear all per-client grace period timers
+    for (const [, client] of this.clients) {
+      if (client.gracePeriodTimer) {
+        clearTimeout(client.gracePeriodTimer);
+        client.gracePeriodTimer = null;
+      }
     }
+
+    // Clear pending client identification timeouts
+    for (const [, timeout] of this._pendingClients) {
+      clearTimeout(timeout);
+    }
+    this._pendingClients.clear();
 
     this.rejectPendingRequests('WebSocket server shutting down');
 
@@ -422,7 +687,8 @@ export class FigmaWebSocketServer extends EventEmitter {
         ws.terminate();
       }
     }
-    this.client = null;
+    this.clients.clear();
+    this._activeFileKey = null;
 
     if (this.wss) {
       return new Promise((resolve) => {

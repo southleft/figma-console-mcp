@@ -542,20 +542,22 @@
         ws.onclose = function(event) {
           wsConnected = false;
 
-          // When replaced by another file's plugin, use a long backoff (30s) to avoid
-          // reconnection cycling. With 3+ files open, aggressive reconnection creates
-          // an infinite loop where background plugins keep displacing the active one.
-          var wasReplaced = (event.code === 1000 && event.reason === 'Replaced by new connection');
-          var delay = wasReplaced ? 30000 : wsReconnectDelay;
+          // If replaced by same file reconnecting (e.g., plugin reloaded), stop
+          // reconnecting — the new connection is authoritative for this file.
+          var wasReplaced = (event.code === 1000 && (
+            event.reason === 'Replaced by new connection' ||
+            event.reason === 'Replaced by same file reconnection'
+          ));
+          if (wasReplaced) {
+            console.log('[MCP Bridge] WebSocket: replaced by newer connection for same file, stopping reconnect');
+            return;
+          }
 
           wsReconnectAttempts++;
           if (wsReconnectAttempts <= wsMaxReconnectAttempts) {
-            console.log('[MCP Bridge] WebSocket disconnected' + (wasReplaced ? ' (replaced by another file)' : '') + ', reconnecting in ' + delay + 'ms (attempt ' + wsReconnectAttempts + '/' + wsMaxReconnectAttempts + ')');
-            setTimeout(wsConnect, delay);
-            // Only advance backoff for non-replacement disconnects
-            if (!wasReplaced) {
-              wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
-            }
+            console.log('[MCP Bridge] WebSocket disconnected, reconnecting in ' + wsReconnectDelay + 'ms (attempt ' + wsReconnectAttempts + '/' + wsMaxReconnectAttempts + ')');
+            setTimeout(wsConnect, wsReconnectDelay);
+            wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
           } else {
             console.log('[MCP Bridge] WebSocket max reconnect attempts reached (' + wsMaxReconnectAttempts + '). Restart the plugin to retry.');
           }

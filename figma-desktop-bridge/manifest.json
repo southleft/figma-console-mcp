@@ -6,6 +6,7 @@
   "ui": "ui.html",
   "editorType": ["figma", "dev"],
   "capabilities": ["inspect"],
+  "enablePrivatePluginApi": true,
   "permissions": ["teamlibrary"],
   "documentAccess": "dynamic-page",
   "networkAccess": {

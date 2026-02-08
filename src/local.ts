@@ -222,6 +222,25 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	}
 
 	/**
+	 * Get the current Figma file URL from the best available source.
+	 * Priority: CDP browser URL (full URL with branch/node info) → WebSocket file identity (synthesized URL).
+	 * The synthesized URL is compatible with extractFileKey() and extractFigmaUrlInfo().
+	 */
+	private getCurrentFileUrl(): string | null {
+		// Priority 1: CDP browser URL (full URL with branch/node info)
+		const browserUrl = this.browserManager?.getCurrentUrl() || null;
+		if (browserUrl) return browserUrl;
+
+		// Priority 2: Synthesize URL from WebSocket file identity
+		const wsFileInfo = this.wsServer?.getConnectedFileInfo() ?? null;
+		if (wsFileInfo?.fileKey) {
+			return `https://www.figma.com/design/${wsFileInfo.fileKey}/${encodeURIComponent(wsFileInfo.fileName || 'Untitled')}`;
+		}
+
+		return null;
+	}
+
+	/**
 	 * Check if Figma Desktop is accessible via CDP or WebSocket
 	 */
 	private async checkFigmaDesktop(): Promise<void> {
@@ -594,11 +613,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					const api = await this.getFigmaAPI();
 
 					// Get current URL to extract file key and node ID if not provided
-					const currentUrl = this.browserManager?.getCurrentUrl() || null;
+					const currentUrl = this.getCurrentFileUrl();
 
 					if (!currentUrl) {
 						throw new Error(
-							"No Figma file open. Either provide a nodeId parameter or call figma_navigate first to open a Figma file.",
+							"No Figma file open. Either provide a nodeId parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode).",
 						);
 					}
 
@@ -983,13 +1002,75 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						// CDP not available — check if WebSocket is connected
 						if (this.wsServer?.isClientConnected()) {
 							const fileInfo = this.wsServer.getConnectedFileInfo();
+							// Check if the requested URL points to the same file already connected via WebSocket
+							const requestedFileKey = extractFileKey(url);
+							const isSameFile = !!(requestedFileKey && fileInfo?.fileKey && requestedFileKey === fileInfo.fileKey);
+
+							if (isSameFile) {
+								return {
+									content: [
+										{
+											type: "text",
+											text: JSON.stringify(
+												{
+													status: "already_connected",
+													timestamp: Date.now(),
+													connectedFile: {
+														fileName: fileInfo!.fileName,
+														fileKey: fileInfo!.fileKey,
+													},
+													message:
+														"Already connected to this file via WebSocket. All tools are ready to use — no navigation needed.",
+													ai_instruction:
+														"The requested file is already connected via WebSocket. You can proceed with any tool calls (figma_get_variables, figma_get_file_data, figma_execute, etc.) without further navigation.",
+												},
+											),
+										},
+									],
+								};
+							}
+
+							// Check if the requested file is connected via multi-client WebSocket
+							if (requestedFileKey) {
+								const connectedFiles = this.wsServer.getConnectedFiles();
+								const targetFile = connectedFiles.find(f => f.fileKey === requestedFileKey);
+								if (targetFile) {
+									this.wsServer.setActiveFile(requestedFileKey);
+									return {
+										content: [
+											{
+												type: "text",
+												text: JSON.stringify(
+													{
+														status: "switched_active_file",
+														timestamp: Date.now(),
+														activeFile: {
+															fileName: targetFile.fileName,
+															fileKey: targetFile.fileKey,
+														},
+														connectedFiles: connectedFiles.map(f => ({
+															fileName: f.fileName,
+															fileKey: f.fileKey,
+															isActive: f.fileKey === requestedFileKey,
+														})),
+														message: `Switched active file to "${targetFile.fileName}". All tools now target this file.`,
+														ai_instruction:
+															"Active file has been switched via WebSocket. All subsequent tool calls (figma_get_variables, figma_execute, etc.) will target this file. No browser navigation needed.",
+													},
+												),
+											},
+										],
+									};
+								}
+							}
+
 							return {
 								content: [
 									{
 										type: "text",
 										text: JSON.stringify(
 											{
-												status: "websocket_connected",
+												status: "websocket_file_not_connected",
 												timestamp: Date.now(),
 												connectedFile: fileInfo
 													? {
@@ -997,10 +1078,16 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 															fileKey: fileInfo.fileKey,
 														}
 													: undefined,
+												connectedFiles: this.wsServer.getConnectedFiles().map(f => ({
+													fileName: f.fileName,
+													fileKey: f.fileKey,
+													isActive: f.isActive,
+												})),
+												requestedFileKey,
 												message:
-													"Navigation requires CDP (--remote-debugging-port=9222). In WebSocket mode, the plugin is already connected to the file shown above. To switch files, open the Desktop Bridge plugin in the target file — it will auto-connect via WebSocket.",
+													"The requested file is not connected via WebSocket. Open the Desktop Bridge plugin in the target file — it will auto-connect. Use figma_list_open_files to see all connected files.",
 												ai_instruction:
-													"figma_navigate is not available in WebSocket-only mode because the Plugin API cannot control browser navigation. The user should manually navigate to the desired file in Figma Desktop and ensure the Desktop Bridge plugin is open there. All other tools will work automatically once the plugin connects.",
+													"The requested file is not in the connected files list. The user needs to open the Desktop Bridge plugin in the target Figma file. Once opened, it will auto-connect and appear in figma_list_open_files. Then use figma_navigate to switch to it.",
 											},
 										),
 									},
@@ -1126,13 +1213,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					// Try CDP initialization if available (but don't fail on error)
 					let browserRunning = this.browserManager?.isRunning() ?? false;
 					let monitorStatus = this.consoleMonitor?.getStatus() ?? null;
-					let currentUrl = this.browserManager?.getCurrentUrl() ?? null;
+					let currentUrl = this.getCurrentFileUrl();
 					if (cdpAvailable && !browserRunning) {
 						try {
 							await this.ensureInitialized();
 							browserRunning = this.browserManager?.isRunning() ?? false;
 							monitorStatus = this.consoleMonitor?.getStatus() ?? null;
-							currentUrl = this.browserManager?.getCurrentUrl() ?? null;
+							currentUrl = this.getCurrentFileUrl();
 						} catch {
 							// CDP init failed - continue with WebSocket status
 						}
@@ -1231,6 +1318,17 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 													currentPage: wsFileInfo.currentPage,
 													connectedAt: new Date(wsFileInfo.connectedAt).toISOString(),
 												} : undefined,
+												connectedFiles: (() => {
+													const files = this.wsServer?.getConnectedFiles();
+													if (!files || files.length === 0) return undefined;
+													return files.map(f => ({
+														fileName: f.fileName,
+														fileKey: f.fileKey,
+														currentPage: f.currentPage,
+														isActive: f.isActive,
+														connectedAt: new Date(f.connectedAt).toISOString(),
+													}));
+												})(),
 												currentSelection: (() => {
 													const sel = this.wsServer?.getCurrentSelection();
 													if (!sel || sel.count === 0) return undefined;
@@ -1327,7 +1425,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							const page = await this.browserManager.getPage();
 							await this.consoleMonitor!.startMonitoring(page);
 
-							currentUrl = this.browserManager.getCurrentUrl();
+							currentUrl = this.getCurrentFileUrl();
 							transport = "cdp";
 						} catch (cdpError) {
 							logger.debug({ error: cdpError }, "CDP reconnection failed, checking WebSocket");
@@ -1588,6 +1686,88 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							text: JSON.stringify({
 								error: error instanceof Error ? error.message : String(error),
 								message: "Failed to get design changes",
+							}),
+						}],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: List all open files connected via WebSocket
+		this.server.tool(
+			"figma_list_open_files",
+			"List all Figma files currently connected via the Desktop Bridge plugin. Shows which files have the plugin open and which one is the active target for tool calls. Use figma_navigate to switch between files. WebSocket multi-client mode — each file with the Desktop Bridge plugin maintains its own connection.",
+			{},
+			async () => {
+				try {
+					if (!this.wsServer?.isClientConnected()) {
+						// Fall back to CDP if available
+						if (this.browserManager) {
+							try {
+								await this.ensureInitialized();
+								const currentUrl = this.browserManager.getCurrentUrl();
+								return {
+									content: [{
+										type: "text",
+										text: JSON.stringify({
+											transport: "cdp",
+											files: currentUrl ? [{ url: currentUrl, isActive: true }] : [],
+											message: "Using CDP transport. WebSocket not connected. Open the Desktop Bridge plugin for multi-file support.",
+										}),
+									}],
+								};
+							} catch {
+								// CDP also unavailable
+							}
+						}
+
+						return {
+							content: [{
+								type: "text",
+								text: JSON.stringify({
+									error: "No files connected. Open the Desktop Bridge plugin in Figma to connect files.",
+									files: [],
+								}),
+							}],
+							isError: true,
+						};
+					}
+
+					const connectedFiles = this.wsServer.getConnectedFiles();
+					const activeFileKey = this.wsServer.getActiveFileKey();
+
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								transport: "websocket",
+								activeFileKey,
+								files: connectedFiles.map(f => ({
+									fileName: f.fileName,
+									fileKey: f.fileKey,
+									currentPage: f.currentPage,
+									isActive: f.isActive,
+									connectedAt: f.connectedAt,
+									url: f.fileKey
+										? `https://www.figma.com/design/${f.fileKey}/${encodeURIComponent(f.fileName || 'Untitled')}`
+										: undefined,
+								})),
+								totalFiles: connectedFiles.length,
+								message: connectedFiles.length === 1
+									? `Connected to 1 file: "${connectedFiles[0].fileName}"`
+									: `Connected to ${connectedFiles.length} files. Active: "${connectedFiles.find(f => f.isActive)?.fileName || 'none'}"`,
+								ai_instruction: "Use figma_navigate with a file URL to switch the active file. All tools target the active file by default.",
+							}),
+						}],
+					};
+				} catch (error) {
+					return {
+						content: [{
+							type: "text",
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to list open files",
 							}),
 						}],
 						isError: true,
@@ -2713,7 +2893,7 @@ return {
 			} = await import("./core/design-system-manifest.js");
 
 			const cache = DesignSystemManifestCache.getInstance();
-			const currentUrl = this.browserManager?.getCurrentUrl();
+			const currentUrl = this.getCurrentFileUrl();
 			const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
 			const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
 
@@ -2865,7 +3045,7 @@ return {
 					} = await import("./core/design-system-manifest.js");
 
 					const cache = DesignSystemManifestCache.getInstance();
-					const currentUrl = this.browserManager?.getCurrentUrl();
+					const currentUrl = this.getCurrentFileUrl();
 					const fileKeyMatch = currentUrl?.match(
 						/\/(file|design)\/([a-zA-Z0-9]+)/,
 					);
@@ -4887,7 +5067,7 @@ return {
 		registerFigmaAPITools(
 			this.server,
 			() => this.getFigmaAPI(),
-			() => this.browserManager?.getCurrentUrl() || null,
+			() => this.getCurrentFileUrl(),
 			() => this.consoleMonitor || null,
 			() => this.browserManager || null,
 			() => this.ensureInitialized(),
@@ -4900,17 +5080,17 @@ return {
 		registerDesignCodeTools(
 			this.server,
 			() => this.getFigmaAPI(),
-			() => this.browserManager?.getCurrentUrl() || null,
+			() => this.getCurrentFileUrl(),
 			this.variablesCache,
 		);
 
 		// MCP Apps - gated behind ENABLE_MCP_APPS env var
 		if (process.env.ENABLE_MCP_APPS === "true") {
 			registerTokenBrowserApp(this.server, async (fileUrl?: string) => {
-				const url = fileUrl || this.browserManager?.getCurrentUrl() || null;
+				const url = fileUrl || this.getCurrentFileUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL provided. Either pass a fileUrl or navigate to a Figma file first.",
+						"No Figma file URL available. Either pass a fileUrl, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode).",
 					);
 				}
 
@@ -5032,10 +5212,10 @@ return {
 			registerDesignSystemDashboardApp(
 				this.server,
 				async (fileUrl?: string) => {
-					const url = fileUrl || this.browserManager?.getCurrentUrl() || null;
+					const url = fileUrl || this.getCurrentFileUrl();
 					if (!url) {
 						throw new Error(
-							"No Figma file URL provided. Either pass a fileUrl or navigate to a Figma file first.",
+							"No Figma file URL available. Either pass a fileUrl, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode).",
 						);
 					}
 
@@ -5245,7 +5425,7 @@ return {
 					};
 				},
 				// Pass getCurrentUrl so dashboard can track which file was audited
-				() => this.browserManager?.getCurrentUrl() || null,
+				() => this.getCurrentFileUrl(),
 			);
 
 			logger.info("MCP Apps registered (ENABLE_MCP_APPS=true)");

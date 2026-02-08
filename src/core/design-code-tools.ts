@@ -1475,7 +1475,7 @@ export function registerDesignCodeTools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first.",
+						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode).",
 					);
 				}
 
@@ -1702,7 +1702,7 @@ export function registerDesignCodeTools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL provided. Either pass fileUrl parameter or call figma_navigate first.",
+						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode).",
 					);
 				}
 
