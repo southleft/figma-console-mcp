@@ -582,7 +582,8 @@ export class FigmaWebSocketServer extends EventEmitter {
     const logs = client?.consoleLogs || [];
 
     return {
-      isMonitoring: this.isClientConnected(),
+      isMonitoring: !!(client && client.ws.readyState === WebSocket.OPEN),
+      anyClientConnected: this.isClientConnected(),
       logCount: logs.length,
       bufferSize: this.consoleBufferSize,
       workerCount: 0,

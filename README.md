@@ -500,10 +500,10 @@ Figma Desktop is transitioning away from Chrome DevTools Protocol (CDP) support.
 
 **If you also have CDP available** (Figma launched with `--remote-debugging-port=9222`), CDP serves as a fallback. Console tools work with both transports — CDP captures all page-level logs while WebSocket captures plugin-context logs. `figma_navigate` requires CDP for browser-level navigation; in WebSocket mode it returns the connected file info with guidance instead.
 
-**Multiple files:** The WebSocket server accepts one plugin connection at a time. When you switch between files, the active file's plugin takes over. Background plugins reconnect with a 30-second backoff to avoid connection cycling.
+**Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs). The MCP server routes commands to the appropriate file based on active context. If a plugin instance is replaced (e.g., plugin reloaded in the same file), the displaced client stops reconnecting automatically.
 
 **Environment variables:**
-- `FIGMA_WS_PORT` — Override the WebSocket port (default: 9223)
+- `FIGMA_WS_PORT` — Override the server-side WebSocket port (default: 9223). Note: the plugin UI and manifest are hard-coded to port 9223. Using a custom port also requires updating `wsPort` in `ui.html` and `allowedDomains` in `manifest.json`.
 
 **Checking transport status:**
 ```

@@ -175,9 +175,9 @@ figma_get_component({
 ### WebSocket connection not working
 - Verify the MCP server is running (it starts the WebSocket server on port 9223)
 - Check that the plugin is open in Figma — the WebSocket client is in the plugin UI
-- If using a custom port, set `FIGMA_WS_PORT` in your MCP config
 - Check the browser console (Plugins > Development > Open Console) for `[MCP Bridge] WebSocket connected to port 9223`
 - Only one MCP server can use the WebSocket port at a time
+- **Custom ports:** The plugin and manifest are hard-coded to `ws://localhost:9223`. The `FIGMA_WS_PORT` env var only changes the server-side port. Using a custom port requires also updating `wsPort` in `ui.html` and the `allowedDomains` in `manifest.json`
 
 ### Empty or outdated data
 - Plugin fetches variables on load - rerun plugin after making variable changes
@@ -229,7 +229,7 @@ View logs: **Plugins → Development → Open Console** (Cmd+Option+I on Mac)
 - Data never leaves the local machine
 - Uses standard Figma Plugin API (no unofficial APIs)
 - Component requests are scoped to current file only
-- WebSocket connection authenticated by single-client model (only one client accepted at a time)
+- WebSocket bridge is local-only and unauthenticated — it relies on `localhost` binding for security. Multiple clients may be connected concurrently (one per Figma file). Do not expose the WebSocket port outside `localhost` (e.g., via port forwarding) on untrusted machines
 
 ## Why Desktop Bridge for Components?
 
