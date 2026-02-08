@@ -8,15 +8,19 @@ This plugin enables AI assistants like Claude Code and Claude Desktop to access 
 
 ## Architecture
 
-**For Variables (pre-loaded):**
+The plugin supports two transport layers, automatically negotiated by the MCP server:
+
+**CDP Transport (Chrome DevTools Protocol) — Primary:**
 ```
-Figma Plugin Worker → postMessage → Plugin UI Iframe → window object → Puppeteer → MCP Server
+MCP Server → Puppeteer/CDP (port 9222) → Plugin UI Iframe → postMessage → Plugin Worker → Figma API
 ```
 
-**For Components (on-demand):**
+**WebSocket Transport — Fallback:**
 ```
-MCP Request → Plugin UI → postMessage → Plugin Worker → figma.getNodeByIdAsync() → Returns with description
+MCP Server ←WebSocket (port 9223)→ Plugin UI ←postMessage→ Plugin Worker → Figma API
 ```
+
+The MCP server prefers CDP when available (requires launching Figma with `--remote-debugging-port=9222`). If CDP is unavailable, it automatically falls back to the WebSocket bridge built into the plugin UI.
 
 **Key Features:**
 - ✅ No Enterprise plan required for variables
@@ -27,6 +31,8 @@ MCP Request → Plugin UI → postMessage → Plugin Worker → figma.getNodeByI
 - ✅ Persistent connection (stays open until closed)
 - ✅ Clean, minimal UI
 - ✅ Real-time data updates
+- ✅ Dual transport: CDP (primary) + WebSocket (fallback)
+- ✅ Auto-reconnect on connection loss
 
 ## Installation
 
@@ -123,17 +129,18 @@ figma_get_component({
 
 ### MCP Desktop Connector
 
-**Variables (getVariablesFromPluginUI):**
+**CDP Path (Primary):**
 1. Connects to Figma Desktop via remote debugging port (9222)
 2. Enumerates plugin UI iframes
-3. Checks for `window.__figmaVariablesData` availability
-4. Retrieves pre-loaded variables data
+3. Calls `window.*` functions exposed by ui.html
+4. Returns results via CDP evaluate
 
-**Components (getComponentFromPluginUI):**
-1. Connects to same Figma Desktop instance
-2. Finds iframe with `window.requestComponentData` function
-3. Calls function with nodeId parameter
-4. Returns Promise with component data including descriptions
+**WebSocket Path (Fallback):**
+1. MCP server starts WebSocket server on port 9223
+2. Plugin UI connects as WebSocket client
+3. MCP server sends commands as JSON `{ id, method, params }`
+4. Plugin UI routes to the same `window.*` handlers
+5. Results sent back as `{ id, result }` or `{ id, error }`
 
 ## Troubleshooting
 
@@ -164,6 +171,13 @@ figma_get_component({
 - Check that the component exists in the current file
 - Verify nodeId format is correct
 - Timeout is set to 10 seconds - complex files may take longer
+
+### WebSocket connection not working
+- Verify the MCP server is running (it starts the WebSocket server on port 9223)
+- Check that the plugin is open in Figma — the WebSocket client is in the plugin UI
+- If using a custom port, set `FIGMA_WS_PORT` in your MCP config
+- Check the browser console (Plugins > Development > Open Console) for `[MCP Bridge] WebSocket connected to port 9223`
+- Only one MCP server can use the WebSocket port at a time
 
 ### Empty or outdated data
 - Plugin fetches variables on load - rerun plugin after making variable changes
@@ -211,11 +225,11 @@ View logs: **Plugins → Development → Open Console** (Cmd+Option+I on Mac)
 
 ## Security
 
-- Plugin requires **no network access** (allowedDomains: ["none"])
-- Data never leaves Figma Desktop
+- Plugin network access limited to `localhost` only (for WebSocket bridge)
+- Data never leaves the local machine
 - Uses standard Figma Plugin API (no unofficial APIs)
-- Read-only access (cannot modify variables or components)
 - Component requests are scoped to current file only
+- WebSocket connection authenticated by single-client model (only one client accepted at a time)
 
 ## Why Desktop Bridge for Components?
 

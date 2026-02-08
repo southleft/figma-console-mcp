@@ -483,6 +483,34 @@ The **Figma Desktop Bridge** plugin enables powerful capabilities:
 
 **📖 [Desktop Bridge Documentation](figma-desktop-bridge/README.md)**
 
+### 🔌 WebSocket Bridge
+
+Figma Desktop is transitioning away from Chrome DevTools Protocol (CDP) support. The MCP server includes a **WebSocket bridge** that provides seamless connectivity regardless of which transport is available.
+
+**How it works:**
+- The server tries **WebSocket first** (port 9223, instant check) via the Desktop Bridge plugin
+- If no WebSocket client is connected, it falls back to **CDP** (port 9222)
+- The transport is selected automatically per-command — no configuration needed
+- All 50+ tools work identically through either transport
+
+**Setup:**
+1. Install the Desktop Bridge plugin in Figma (Plugins > Development > Import from manifest)
+2. Open the plugin in your Figma file — it connects to ws://localhost:9223 automatically
+3. The MCP server detects the connection and routes commands through WebSocket
+
+**If you also have CDP available** (Figma launched with `--remote-debugging-port=9222`), CDP serves as a fallback. Console tools work with both transports — CDP captures all page-level logs while WebSocket captures plugin-context logs. `figma_navigate` requires CDP for browser-level navigation; in WebSocket mode it returns the connected file info with guidance instead.
+
+**Multiple files:** The WebSocket server accepts one plugin connection at a time. When you switch between files, the active file's plugin takes over. Background plugins reconnect with a 30-second backoff to avoid connection cycling.
+
+**Environment variables:**
+- `FIGMA_WS_PORT` — Override the WebSocket port (default: 9223)
+
+**Checking transport status:**
+```
+Ask Claude: "Check Figma status"
+```
+The response will show which transport is active (CDP or WebSocket).
+
 ---
 
 ## 🧩 MCP Apps (Experimental)

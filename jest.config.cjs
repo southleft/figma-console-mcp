@@ -21,4 +21,6 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
+  // Required: WebSocket event listeners in tests can keep Node alive after tests complete
+  forceExit: true,
 };
