@@ -589,27 +589,12 @@ describe('FigmaWebSocketServer edge cases', () => {
     const client2 = await connectClient(server, TEST_PORT);
     clients.push(client2);
 
-    // client2 responds to the pending command
-    client2.on('message', (data: Buffer) => {
-      const msg = JSON.parse(data.toString());
-      if (msg.id && msg.method) {
-        client2.send(JSON.stringify({
-          id: msg.id,
-          result: { success: true, reconnected: true },
-        }));
-      }
-    });
+    // When a same-file reconnection occurs, in-flight commands to the old
+    // ws are rejected immediately (the old ws is gone, so they can't get
+    // a response). This prevents commands from hanging until timeout.
+    await expect(cmd).rejects.toThrow('Connection replaced');
 
-    // The command should NOT have been rejected by the grace period
-    // But the pending request was sent to client1 (now dead) so it won't
-    // get a response from client2. It should eventually timeout or be
-    // rejected by the grace period. The key assertion is that the grace
-    // period timer was cancelled on reconnect (no premature rejection).
-    // After 5s (grace period), the request should still be pending since
-    // the timer was cancelled by the new connection.
-    // We'll stop the server which will reject it with 'shutting down'
     await server.stop();
-    await expect(cmd).rejects.toThrow('shutting down');
   }, 15000);
 
   test('handles malformed JSON from client gracefully', async () => {

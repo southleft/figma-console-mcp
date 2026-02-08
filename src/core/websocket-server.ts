@@ -322,6 +322,10 @@ export class FigmaWebSocketServer extends EventEmitter {
       if (existing.gracePeriodTimer) {
         clearTimeout(existing.gracePeriodTimer);
       }
+      // Reject any in-flight commands before replacing — the old ws close event
+      // won't find this fileKey in the map after overwrite, so pending requests
+      // would hang until timeout otherwise.
+      this.rejectPendingRequestsForFile(fileKey, 'Connection replaced by same file reconnection');
       if (existing.ws.readyState === WebSocket.OPEN || existing.ws.readyState === WebSocket.CONNECTING) {
         existing.ws.close(1000, 'Replaced by same file reconnection');
       }
