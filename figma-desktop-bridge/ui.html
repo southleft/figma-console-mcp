@@ -416,6 +416,198 @@
     };
 
     // ============================================================================
+    // WEBSOCKET BRIDGE CLIENT - Fallback transport when CDP is unavailable
+    // ============================================================================
+    (function() {
+      var wsPort = 9223;
+      var ws = null;
+      var wsReconnectDelay = 500;
+      var wsMaxReconnectDelay = 5000;
+      var wsReconnectAttempts = 0;
+      var wsMaxReconnectAttempts = 50;
+      var wsConnected = false;
+
+      // Method-to-function mapping
+      var methodMap = {
+        'EXECUTE_CODE': function(params) { return window.executeCode(params.code, params.timeout); },
+        'UPDATE_VARIABLE': function(params) { return window.updateVariable(params.variableId, params.modeId, params.value); },
+        'CREATE_VARIABLE': function(params) { return window.createVariable(params.name, params.collectionId, params.resolvedType, params); },
+        'DELETE_VARIABLE': function(params) { return window.deleteVariable(params.variableId); },
+        'DELETE_VARIABLE_COLLECTION': function(params) { return window.deleteVariableCollection(params.collectionId); },
+        'RENAME_VARIABLE': function(params) { return window.renameVariable(params.variableId, params.newName); },
+        'SET_VARIABLE_DESCRIPTION': function(params) { return window.setVariableDescription(params.variableId, params.description); },
+        'ADD_MODE': function(params) { return window.addMode(params.collectionId, params.modeName); },
+        'RENAME_MODE': function(params) { return window.renameMode(params.collectionId, params.modeId, params.newName); },
+        'REFRESH_VARIABLES': function() { return window.refreshVariables(); },
+        'CREATE_VARIABLE_COLLECTION': function(params) { return window.createVariableCollection(params.name, params); },
+        'GET_LOCAL_COMPONENTS': function() { return window.getLocalComponents(); },
+        'INSTANTIATE_COMPONENT': function(params) { return window.instantiateComponent(params.componentKey, params); },
+        'GET_COMPONENT': function(params) { return window.requestComponentData(params.nodeId); },
+        'SET_NODE_DESCRIPTION': function(params) { return window.setNodeDescription(params.nodeId, params.description, params.descriptionMarkdown); },
+        'ADD_COMPONENT_PROPERTY': function(params) { return window.addComponentProperty(params.nodeId, params.propertyName, params.propertyType, params.defaultValue, params); },
+        'EDIT_COMPONENT_PROPERTY': function(params) { return window.editComponentProperty(params.nodeId, params.propertyName, params.newValue); },
+        'DELETE_COMPONENT_PROPERTY': function(params) { return window.deleteComponentProperty(params.nodeId, params.propertyName); },
+        'RESIZE_NODE': function(params) { return window.resizeNode(params.nodeId, params.width, params.height, params.withConstraints); },
+        'MOVE_NODE': function(params) { return window.moveNode(params.nodeId, params.x, params.y); },
+        'SET_NODE_FILLS': function(params) { return window.setNodeFills(params.nodeId, params.fills); },
+        'SET_NODE_STROKES': function(params) { return window.setNodeStrokes(params.nodeId, params.strokes, params.strokeWeight); },
+        'SET_NODE_OPACITY': function(params) { return window.setNodeOpacity(params.nodeId, params.opacity); },
+        'SET_NODE_CORNER_RADIUS': function(params) { return window.setNodeCornerRadius(params.nodeId, params.radius); },
+        'CLONE_NODE': function(params) { return window.cloneNode(params.nodeId); },
+        'DELETE_NODE': function(params) { return window.deleteNode(params.nodeId); },
+        'RENAME_NODE': function(params) { return window.renameNode(params.nodeId, params.newName); },
+        'SET_TEXT_CONTENT': function(params) { return window.setTextContent(params.nodeId, params.text, params); },
+        'CREATE_CHILD_NODE': function(params) { return window.createChildNode(params.parentId, params.nodeType, params.properties); },
+        'CAPTURE_SCREENSHOT': function(params) { return window.captureScreenshot(params.nodeId, params); },
+        'SET_INSTANCE_PROPERTIES': function(params) { return window.setInstanceProperties(params.nodeId, params.properties); },
+        'GET_VARIABLES_DATA': function() {
+          // Return the cached variables data directly
+          if (window.__figmaVariablesReady && window.__figmaVariablesData) {
+            return Promise.resolve(window.__figmaVariablesData);
+          }
+          return Promise.reject(new Error('Variables data not ready. Make sure the Desktop Bridge plugin has loaded.'));
+        },
+        'GET_FILE_INFO': function() {
+          return window.sendPluginCommand('GET_FILE_INFO', {});
+        },
+        'CLEAR_CONSOLE': function() {
+          // Console buffer is maintained server-side; this is a no-op ack
+          return Promise.resolve({ cleared: true });
+        },
+        'RELOAD_UI': function() {
+          return window.sendPluginCommand('RELOAD_UI', {});
+        }
+      };
+
+      function wsConnect() {
+        try {
+          ws = new WebSocket('ws://localhost:' + wsPort);
+        } catch (e) {
+          console.log('[MCP Bridge] WebSocket not available:', e.message);
+          return;
+        }
+
+        ws.onopen = function() {
+          wsConnected = true;
+          wsReconnectDelay = 500; // Reset backoff
+          wsReconnectAttempts = 0; // Reset retry counter
+          console.log('[MCP Bridge] WebSocket connected to port ' + wsPort);
+
+          // If variables are already loaded, forward them
+          if (window.__figmaVariablesReady && window.__figmaVariablesData) {
+            ws.send(JSON.stringify({
+              type: 'VARIABLES_DATA',
+              data: window.__figmaVariablesData
+            }));
+          }
+
+          // Proactively report which file this plugin is running in
+          // This lets the MCP server track file identity without a roundtrip
+          window.sendPluginCommand('GET_FILE_INFO', {})
+            .then(function(info) {
+              if (ws && ws.readyState === 1 && info && info.success !== false) {
+                ws.send(JSON.stringify({ type: 'FILE_INFO', data: info.fileInfo || info }));
+              }
+            })
+            .catch(function() { /* non-critical */ });
+        };
+
+        ws.onmessage = function(event) {
+          try {
+            var message = JSON.parse(event.data);
+            if (!message.id || !message.method) {
+              console.log('[MCP Bridge] WS: Ignoring malformed message');
+              return;
+            }
+
+            var handler = methodMap[message.method];
+            if (!handler) {
+              ws.send(JSON.stringify({ id: message.id, error: 'Unknown method: ' + message.method }));
+              return;
+            }
+
+            // Call the handler (returns a Promise) and send back the result
+            Promise.resolve(handler(message.params || {}))
+              .then(function(result) {
+                ws.send(JSON.stringify({ id: message.id, result: result }));
+              })
+              .catch(function(err) {
+                ws.send(JSON.stringify({ id: message.id, error: err.message || String(err) }));
+              });
+          } catch (e) {
+            console.error('[MCP Bridge] WS: Failed to process message:', e);
+          }
+        };
+
+        ws.onclose = function(event) {
+          wsConnected = false;
+
+          // If replaced by same file reconnecting (e.g., plugin reloaded), stop
+          // reconnecting — the new connection is authoritative for this file.
+          var wasReplaced = (event.code === 1000 && (
+            event.reason === 'Replaced by new connection' ||
+            event.reason === 'Replaced by same file reconnection'
+          ));
+          if (wasReplaced) {
+            console.log('[MCP Bridge] WebSocket: replaced by newer connection for same file, stopping reconnect');
+            return;
+          }
+
+          wsReconnectAttempts++;
+          if (wsReconnectAttempts <= wsMaxReconnectAttempts) {
+            console.log('[MCP Bridge] WebSocket disconnected, reconnecting in ' + wsReconnectDelay + 'ms (attempt ' + wsReconnectAttempts + '/' + wsMaxReconnectAttempts + ')');
+            setTimeout(wsConnect, wsReconnectDelay);
+            wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
+          } else {
+            console.log('[MCP Bridge] WebSocket max reconnect attempts reached (' + wsMaxReconnectAttempts + '). Restart the plugin to retry.');
+          }
+        };
+
+        ws.onerror = function() {
+          // onclose will fire after this, triggering reconnect
+        };
+      }
+
+      // Forward VARIABLES_DATA to WebSocket when it arrives from plugin
+      window.__wsForwardVariables = function(data) {
+        if (wsConnected && ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'VARIABLES_DATA', data: data }));
+        }
+      };
+
+      // Forward DOCUMENT_CHANGE events to WebSocket for cache invalidation
+      window.__wsForwardDocumentChange = function(data) {
+        if (wsConnected && ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'DOCUMENT_CHANGE', data: data }));
+        }
+      };
+
+      // Forward CONSOLE_CAPTURE events to WebSocket for console monitoring
+      window.__wsForwardConsoleCapture = function(data) {
+        if (wsConnected && ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'CONSOLE_CAPTURE', data: data }));
+        }
+      };
+
+      // Forward SELECTION_CHANGE events to WebSocket for selection tracking
+      window.__wsForwardSelectionChange = function(data) {
+        if (wsConnected && ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'SELECTION_CHANGE', data: data }));
+        }
+      };
+
+      // Forward PAGE_CHANGE events to WebSocket for page tracking
+      window.__wsForwardPageChange = function(data) {
+        if (wsConnected && ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'PAGE_CHANGE', data: data }));
+        }
+      };
+
+      // Start WebSocket connection
+      wsConnect();
+    })();
+
+    // ============================================================================
     // MESSAGE HANDLER - Process responses from plugin worker
     // ============================================================================
     window.onmessage = (event) => {
@@ -431,6 +623,8 @@
             var result = { success: true };
             if (dataKey && msg[dataKey] !== undefined) result[dataKey] = msg[dataKey];
             if (msg.data !== undefined) result.data = msg.data;
+            if (msg.oldName !== undefined) result.oldName = msg.oldName;
+            if (msg.instance !== undefined) result.instance = msg.instance;
             request.resolve(result);
           } else {
             request.resolve({ success: false, error: msg.error || 'Unknown error' });
@@ -446,6 +640,8 @@
           window.__figmaVariablesReady = true;
           updateStatus('ready', true, false);
           console.log('[MCP Bridge] Active - ' + (msg.data.variables?.length || 0) + ' vars');
+          // Forward to WebSocket client if connected
+          if (window.__wsForwardVariables) window.__wsForwardVariables(msg.data);
           break;
 
         case 'COMPONENT_DATA':
@@ -489,6 +685,9 @@
           break;
         case 'RENAME_VARIABLE_RESULT':
           handleResult('RENAME_VARIABLE', 'variable');
+          break;
+        case 'SET_VARIABLE_DESCRIPTION_RESULT':
+          handleResult('SET_VARIABLE_DESCRIPTION', 'variable');
           break;
         case 'ADD_MODE_RESULT':
           handleResult('ADD_MODE', 'collection');
@@ -558,6 +757,36 @@
           break;
         case 'SET_INSTANCE_PROPERTIES_RESULT':
           handleResult('SET_INSTANCE_PROPERTIES', 'instance');
+          break;
+
+        // File info
+        case 'GET_FILE_INFO_RESULT':
+          handleResult('GET_FILE_INFO', 'fileInfo');
+          break;
+
+        // Plugin UI reload
+        case 'RELOAD_UI_RESULT':
+          handleResult('RELOAD_UI', null);
+          break;
+
+        // Document change events (for cache invalidation via WebSocket)
+        case 'DOCUMENT_CHANGE':
+          if (window.__wsForwardDocumentChange) window.__wsForwardDocumentChange(msg.data);
+          break;
+
+        // Console capture events (for console monitoring via WebSocket)
+        case 'CONSOLE_CAPTURE':
+          if (window.__wsForwardConsoleCapture) window.__wsForwardConsoleCapture(msg);
+          break;
+
+        // Selection change events (for selection tracking via WebSocket)
+        case 'SELECTION_CHANGE':
+          if (window.__wsForwardSelectionChange) window.__wsForwardSelectionChange(msg.data);
+          break;
+
+        // Page change events (for page tracking via WebSocket)
+        case 'PAGE_CHANGE':
+          if (window.__wsForwardPageChange) window.__wsForwardPageChange(msg.data);
           break;
       }
     };

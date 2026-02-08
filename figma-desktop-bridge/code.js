@@ -9,6 +9,59 @@ console.log('🌉 [Desktop Bridge] Plugin loaded and ready');
 // Show minimal UI - compact status indicator
 figma.showUI(__html__, { width: 120, height: 36, visible: true, themeColors: true });
 
+// ============================================================================
+// CONSOLE CAPTURE — Intercept console.* in the QuickJS sandbox and forward
+// to ui.html via postMessage so the WebSocket bridge can relay them to the MCP
+// server. This enables console monitoring without CDP.
+// ============================================================================
+(function() {
+  var levels = ['log', 'info', 'warn', 'error', 'debug'];
+  var originals = {};
+  for (var i = 0; i < levels.length; i++) {
+    originals[levels[i]] = console[levels[i]];
+  }
+
+  function safeSerialize(val) {
+    if (val === null || val === undefined) return val;
+    if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return val;
+    try {
+      // Attempt JSON round-trip for objects/arrays (catches circular refs)
+      return JSON.parse(JSON.stringify(val));
+    } catch (e) {
+      return String(val);
+    }
+  }
+
+  for (var i = 0; i < levels.length; i++) {
+    (function(level) {
+      console[level] = function() {
+        // Call the original so output still appears in Figma DevTools
+        originals[level].apply(console, arguments);
+
+        // Serialize arguments safely
+        var args = [];
+        for (var j = 0; j < arguments.length; j++) {
+          args.push(safeSerialize(arguments[j]));
+        }
+
+        // Build message text from all arguments
+        var messageParts = [];
+        for (var j = 0; j < arguments.length; j++) {
+          messageParts.push(typeof arguments[j] === 'string' ? arguments[j] : String(arguments[j]));
+        }
+
+        figma.ui.postMessage({
+          type: 'CONSOLE_CAPTURE',
+          level: level,
+          message: messageParts.join(' '),
+          args: args,
+          timestamp: Date.now()
+        });
+      };
+    })(levels[i]);
+  }
+})();
+
 // Immediately fetch and send variables data to UI
 (async () => {
   try {
@@ -501,11 +554,13 @@ figma.ui.onmessage = async (msg) => {
 
       console.log('🌉 [Desktop Bridge] Variable renamed from "' + oldName + '" to "' + msg.newName + '"');
 
+      var serializedVar = serializeVariable(variable);
+      serializedVar.oldName = oldName;
       figma.ui.postMessage({
         type: 'RENAME_VARIABLE_RESULT',
         requestId: msg.requestId,
         success: true,
-        variable: serializeVariable(variable),
+        variable: serializedVar,
         oldName: oldName
       });
 
@@ -617,11 +672,13 @@ figma.ui.onmessage = async (msg) => {
 
       console.log('🌉 [Desktop Bridge] Mode renamed from "' + oldName + '" to "' + msg.newName + '"');
 
+      var serializedCol = serializeCollection(collection);
+      serializedCol.oldName = oldName;
       figma.ui.postMessage({
         type: 'RENAME_MODE_RESULT',
         requestId: msg.requestId,
         success: true,
-        collection: serializeCollection(collection),
+        collection: serializedCol,
         oldName: oldName
       });
 
@@ -1909,6 +1966,60 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // GET_FILE_INFO - Report which file this plugin instance is running in
+  // Used by WebSocket bridge to identify the connected file
+  // ============================================================================
+  else if (msg.type === 'GET_FILE_INFO') {
+    try {
+      figma.ui.postMessage({
+        type: 'GET_FILE_INFO_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        fileInfo: {
+          fileName: figma.root.name,
+          fileKey: figma.fileKey || null,
+          currentPage: figma.currentPage.name
+        }
+      });
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      figma.ui.postMessage({
+        type: 'GET_FILE_INFO_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // RELOAD_UI - Reload the plugin UI iframe (re-establishes WebSocket connection)
+  // Uses figma.showUI(__html__) to reload without restarting code.js
+  // ============================================================================
+  else if (msg.type === 'RELOAD_UI') {
+    try {
+      console.log('🌉 [Desktop Bridge] Reloading plugin UI');
+      figma.ui.postMessage({
+        type: 'RELOAD_UI_RESULT',
+        requestId: msg.requestId,
+        success: true
+      });
+      // Short delay to let the response message be sent before reload
+      setTimeout(function() {
+        figma.showUI(__html__, { width: 120, height: 36, visible: true, themeColors: true });
+      }, 100);
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      figma.ui.postMessage({
+        type: 'RELOAD_UI_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
   // SET_INSTANCE_PROPERTIES - Update component properties on an instance
   // Uses instance.setProperties() to update TEXT, BOOLEAN, INSTANCE_SWAP, VARIANT
   // ============================================================================
@@ -1924,6 +2035,9 @@ figma.ui.onmessage = async (msg) => {
       if (node.type !== 'INSTANCE') {
         throw new Error('Node must be an INSTANCE. Got: ' + node.type);
       }
+
+      // Load main component first (required for documentAccess: dynamic-page)
+      var mainComponent = await node.getMainComponentAsync();
 
       // Get current properties for reference
       var currentProps = node.componentProperties;
@@ -1980,7 +2094,7 @@ figma.ui.onmessage = async (msg) => {
         instance: {
           id: node.id,
           name: node.name,
-          componentId: node.mainComponent ? node.mainComponent.id : null,
+          componentId: mainComponent ? mainComponent.id : null,
           propertiesSet: Object.keys(propsToSet),
           currentProperties: Object.keys(updatedProps).reduce(function(acc, key) {
             acc[key] = {
@@ -2004,6 +2118,84 @@ figma.ui.onmessage = async (msg) => {
     }
   }
 };
+
+// ============================================================================
+// DOCUMENT CHANGE LISTENER - Forward change events for cache invalidation
+// Fires when variables, styles, or nodes change (by any means — user edits, API, etc.)
+// Requires figma.loadAllPagesAsync() in dynamic-page mode before registering.
+// ============================================================================
+figma.loadAllPagesAsync().then(function() {
+  figma.on('documentchange', function(event) {
+    var hasStyleChanges = false;
+    var hasNodeChanges = false;
+    var changedNodeIds = [];
+
+    for (var i = 0; i < event.documentChanges.length; i++) {
+      var change = event.documentChanges[i];
+      if (change.type === 'STYLE_CREATE' || change.type === 'STYLE_DELETE' || change.type === 'STYLE_PROPERTY_CHANGE') {
+        hasStyleChanges = true;
+      } else if (change.type === 'CREATE' || change.type === 'DELETE' || change.type === 'PROPERTY_CHANGE') {
+        hasNodeChanges = true;
+        if (change.id && changedNodeIds.length < 50) {
+          changedNodeIds.push(change.id);
+        }
+      }
+    }
+
+    if (hasStyleChanges || hasNodeChanges) {
+      figma.ui.postMessage({
+        type: 'DOCUMENT_CHANGE',
+        data: {
+          hasStyleChanges: hasStyleChanges,
+          hasNodeChanges: hasNodeChanges,
+          changedNodeIds: changedNodeIds,
+          changeCount: event.documentChanges.length,
+          timestamp: Date.now()
+        }
+      });
+    }
+  });
+  // Selection change listener — tracks what the user has selected in Figma
+  figma.on('selectionchange', function() {
+    var selection = figma.currentPage.selection;
+    var selectedNodes = [];
+    for (var i = 0; i < Math.min(selection.length, 50); i++) {
+      var node = selection[i];
+      selectedNodes.push({
+        id: node.id,
+        name: node.name,
+        type: node.type,
+        width: node.width,
+        height: node.height
+      });
+    }
+    figma.ui.postMessage({
+      type: 'SELECTION_CHANGE',
+      data: {
+        nodes: selectedNodes,
+        count: selection.length,
+        page: figma.currentPage.name,
+        timestamp: Date.now()
+      }
+    });
+  });
+
+  // Page change listener — tracks which page the user is viewing
+  figma.on('currentpagechange', function() {
+    figma.ui.postMessage({
+      type: 'PAGE_CHANGE',
+      data: {
+        pageId: figma.currentPage.id,
+        pageName: figma.currentPage.name,
+        timestamp: Date.now()
+      }
+    });
+  });
+
+  console.log('🌉 [Desktop Bridge] Document change, selection, and page listeners registered');
+}).catch(function(err) {
+  console.warn('🌉 [Desktop Bridge] Could not register event listeners:', err);
+});
 
 console.log('🌉 [Desktop Bridge] Ready to handle component requests');
 console.log('🌉 [Desktop Bridge] Plugin will stay open until manually closed');
