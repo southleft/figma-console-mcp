@@ -371,7 +371,7 @@ export class ConsoleMonitor {
 	/**
 	 * Add log to circular buffer
 	 */
-	public addLog(entry: ConsoleLogEntry): void {
+	private addLog(entry: ConsoleLogEntry): void {
 		this.logs.push(entry);
 
 		// Maintain buffer size

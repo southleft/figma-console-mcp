@@ -210,10 +210,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			logger.debug({ error: errorMsg }, "CDP connection also unavailable");
 		}
 
+		const wsPort = process.env.FIGMA_WS_PORT || "9223";
 		throw new Error(
 			"Cannot connect to Figma Desktop.\n\n" +
 			"Option 1 (WebSocket): Open the Desktop Bridge plugin in Figma.\n" +
-			"  The plugin will connect automatically to ws://localhost:9223.\n" +
+			`  The plugin will connect automatically to ws://localhost:${wsPort}.\n` +
 			"  No special launch flags needed.\n\n" +
 			"Option 2 (CDP): Launch Figma with --remote-debugging-port=9222\n" +
 			"  macOS: open -a \"Figma\" --args --remote-debugging-port=9222\n" +

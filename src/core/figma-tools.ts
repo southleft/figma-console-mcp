@@ -1823,9 +1823,9 @@ export function registerFigmaAPITools(
 				}
 
 				// FALLBACK: Try Desktop connection (when no token available OR as secondary fallback)
-				// Ensure browser manager is initialized (CDP mode only)
-				if (ensureInitialized && !parseFromConsole && (!hasToken || !restApiSucceeded)) {
-					logger.info("Calling ensureInitialized to initialize browser manager");
+				// Only call ensureInitialized for CDP path — skip when transport-agnostic connector exists
+				if (ensureInitialized && !getDesktopConnector && !parseFromConsole && (!hasToken || !restApiSucceeded)) {
+					logger.info("Calling ensureInitialized to initialize browser manager (CDP path)");
 					await ensureInitialized();
 				}
 
@@ -3398,7 +3398,7 @@ export function registerFigmaAPITools(
 							const hasFunction = await frame.evaluate('typeof window.captureScreenshot === "function"');
 							if (hasFunction) {
 								result = await frame.evaluate(
-									`window.captureScreenshot(${JSON.stringify(nodeId)}, ${JSON.stringify({ format, scale })})`
+									`window.captureScreenshot(${JSON.stringify(nodeId || '')}, ${JSON.stringify({ format, scale })})`
 								);
 								break;
 							}
