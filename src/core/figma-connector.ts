@@ -3,7 +3,7 @@
  *
  * Transport abstraction that both CDP (FigmaDesktopConnector) and WebSocket
  * (WebSocketConnector) implement. Allows getDesktopConnector() to return
- * whichever transport is available — CDP preferred, WebSocket fallback.
+ * whichever transport is available — WebSocket preferred, CDP fallback.
  */
 
 export interface IFigmaConnector {
