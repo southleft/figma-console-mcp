@@ -145,7 +145,16 @@ export class FigmaWebSocketServer extends EventEmitter {
 
           ws.on('message', (data: import('ws').RawData) => {
             try {
-              const text = typeof data === 'string' ? data : Buffer.isBuffer(data) ? data.toString() : Buffer.from(data as ArrayBuffer).toString();
+              let text: string;
+              if (typeof data === 'string') {
+                text = data;
+              } else if (Buffer.isBuffer(data)) {
+                text = data.toString();
+              } else if (Array.isArray(data)) {
+                text = Buffer.concat(data).toString();
+              } else {
+                text = Buffer.from(data as ArrayBuffer).toString();
+              }
               const message = JSON.parse(text);
               this.handleMessage(message, ws);
             } catch (error) {

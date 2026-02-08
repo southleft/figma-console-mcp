@@ -5470,7 +5470,7 @@ return {
 						if (data.fileKey) {
 							// Per-file cache invalidation — only clear the affected file's cache
 							for (const [key] of this.variablesCache) {
-								if (key.includes(data.fileKey)) {
+								if (key === data.fileKey) {
 									this.variablesCache.delete(key);
 								}
 							}
