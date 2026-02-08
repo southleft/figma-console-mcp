@@ -173,7 +173,7 @@ Figma Console MCP makes this real. Your design system becomes:
 
 ### Recommended: NPX Setup (Full Capabilities)
 
-Get all 72+ tools including design creation, variable management, and component instantiation.
+Get all 50+ tools including design creation, variable management, and component instantiation.
 
 <Steps>
   <Step title="Get a Figma Token">
@@ -204,7 +204,7 @@ If you just want to explore or evaluate the tool, use Remote SSE. It's read-only
 </Steps>
 
 <Warning>
-**Remote mode cannot create or modify designs.** It only has 16 read-only tools (~22% of full capabilities). For design creation, use NPX Setup.
+**Remote mode cannot create or modify designs.** It only has 16 read-only tools (~32% of full capabilities). For design creation, use NPX Setup.
 </Warning>
 
 <Card title="Full Setup Guide" icon="book-open" href="/setup">
@@ -269,7 +269,7 @@ Figma Console MCP offers two ways to connect with **very different capabilities*
 
 | Feature | Local Mode (NPX/Git) | Remote Mode (SSE) |
 |---------|----------------------|-------------------|
-| **Total tools** | **72+** | **16** (read-only) |
+| **Total tools** | **50+** | **16** (read-only) |
 | **Setup** | ~10 minutes | ~2 minutes |
 | **Create designs** | ✅ Full capability | ❌ Not available |
 | **Edit designs** | ✅ Full capability | ❌ Not available |
@@ -278,7 +278,7 @@ Figma Console MCP offers two ways to connect with **very different capabilities*
 | **Variables API** | Works with any plan | Enterprise required |
 | **Authentication** | Manual token (one-time) | Automatic OAuth |
 
-**Start with NPX Setup** if you want AI to actually design in Figma. Remote mode is useful for quick exploration but is **read-only** with only ~22% of the tools.
+**Start with NPX Setup** if you want AI to actually design in Figma. Remote mode is useful for quick exploration but is **read-only** with only ~32% of the tools.
 
 <Card title="Compare Modes in Detail" icon="code-compare" href="/mode-comparison">
   Understand the technical differences and choose the right setup.
@@ -322,7 +322,7 @@ Figma Console MCP offers two ways to connect with **very different capabilities*
     Real-world examples and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 72+ tools
+    Complete reference for 50+ tools
   </Card>
 </Columns>
 
