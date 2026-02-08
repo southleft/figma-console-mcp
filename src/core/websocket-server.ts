@@ -458,7 +458,14 @@ export class FigmaWebSocketServer extends EventEmitter {
       });
 
       const message = JSON.stringify({ id, method, params });
-      client.ws.send(message);
+      try {
+        client.ws.send(message);
+      } catch (sendError) {
+        this.pendingRequests.delete(id);
+        clearTimeout(timeoutId);
+        reject(new Error(`Failed to send WebSocket command ${method}: ${sendError instanceof Error ? sendError.message : String(sendError)}`));
+        return;
+      }
       client.lastActivity = Date.now();
 
       logger.debug({ id, method, fileKey }, 'Sent WebSocket command');
@@ -520,11 +527,11 @@ export class FigmaWebSocketServer extends EventEmitter {
 
     let filtered = [...client.documentChanges];
 
-    if (options?.since) {
+    if (options?.since !== undefined) {
       filtered = filtered.filter((e) => e.timestamp >= options.since!);
     }
 
-    if (options?.count) {
+    if (options?.count !== undefined && options.count > 0) {
       filtered = filtered.slice(-options.count);
     }
 
@@ -557,7 +564,7 @@ export class FigmaWebSocketServer extends EventEmitter {
 
     let filtered = [...client.consoleLogs];
 
-    if (options?.since) {
+    if (options?.since !== undefined) {
       filtered = filtered.filter((log) => log.timestamp >= options.since!);
     }
 
@@ -565,7 +572,7 @@ export class FigmaWebSocketServer extends EventEmitter {
       filtered = filtered.filter((log) => log.level === options.level);
     }
 
-    if (options?.count) {
+    if (options?.count !== undefined && options.count > 0) {
       filtered = filtered.slice(-options.count);
     }
 

@@ -1421,9 +1421,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							// Reinitialize console monitor with new page
 							if (this.consoleMonitor) {
 								this.consoleMonitor.stopMonitoring();
+								const page = await this.browserManager.getPage();
+								await this.consoleMonitor.startMonitoring(page);
 							}
-							const page = await this.browserManager.getPage();
-							await this.consoleMonitor!.startMonitoring(page);
 
 							currentUrl = this.getCurrentFileUrl();
 							transport = "cdp";
@@ -5469,11 +5469,7 @@ return {
 					if (data.hasStyleChanges || data.hasNodeChanges) {
 						if (data.fileKey) {
 							// Per-file cache invalidation — only clear the affected file's cache
-							for (const [key] of this.variablesCache) {
-								if (key === data.fileKey) {
-									this.variablesCache.delete(key);
-								}
-							}
+							this.variablesCache.delete(data.fileKey);
 						} else {
 							this.variablesCache.clear();
 						}
