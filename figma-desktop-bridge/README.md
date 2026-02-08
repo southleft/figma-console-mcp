@@ -15,12 +15,12 @@ The plugin supports two transport layers, automatically negotiated by the MCP se
 MCP Server → Puppeteer/CDP (port 9222) → Plugin UI Iframe → postMessage → Plugin Worker → Figma API
 ```
 
-**WebSocket Transport — Fallback:**
+**WebSocket Transport (Preferred):**
 ```
 MCP Server ←WebSocket (port 9223)→ Plugin UI ←postMessage→ Plugin Worker → Figma API
 ```
 
-The MCP server prefers CDP when available (requires launching Figma with `--remote-debugging-port=9222`). If CDP is unavailable, it automatically falls back to the WebSocket bridge built into the plugin UI.
+The MCP server prefers WebSocket when a plugin client is connected (instant availability check). If no WebSocket client is connected, it falls back to CDP (requires launching Figma with `--remote-debugging-port=9222`).
 
 **Key Features:**
 - ✅ No Enterprise plan required for variables
@@ -31,7 +31,7 @@ The MCP server prefers CDP when available (requires launching Figma with `--remo
 - ✅ Persistent connection (stays open until closed)
 - ✅ Clean, minimal UI
 - ✅ Real-time data updates
-- ✅ Dual transport: CDP (primary) + WebSocket (fallback)
+- ✅ Dual transport: WebSocket (preferred) + CDP (fallback)
 - ✅ Auto-reconnect on connection loss
 
 ## Installation
@@ -129,18 +129,18 @@ figma_get_component({
 
 ### MCP Desktop Connector
 
-**CDP Path (Primary):**
-1. Connects to Figma Desktop via remote debugging port (9222)
-2. Enumerates plugin UI iframes
-3. Calls `window.*` functions exposed by ui.html
-4. Returns results via CDP evaluate
-
-**WebSocket Path (Fallback):**
+**WebSocket Path (Preferred):**
 1. MCP server starts WebSocket server on port 9223
 2. Plugin UI connects as WebSocket client
 3. MCP server sends commands as JSON `{ id, method, params }`
 4. Plugin UI routes to the same `window.*` handlers
 5. Results sent back as `{ id, result }` or `{ id, error }`
+
+**CDP Path (Fallback):**
+1. Connects to Figma Desktop via remote debugging port (9222)
+2. Enumerates plugin UI iframes
+3. Calls `window.*` functions exposed by ui.html
+4. Returns results via CDP evaluate
 
 ## Troubleshooting
 

@@ -270,8 +270,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Check WebSocket availability
 		const wsAvailable = this.wsServer?.isClientConnected() ?? false;
 
-		if (cdpAvailable) {
-			logger.info("Transport: CDP available (preferred)");
+		if (cdpAvailable && wsAvailable) {
+			logger.info("Transport: Both CDP and WebSocket available (WebSocket preferred)");
+		} else if (cdpAvailable) {
+			logger.info("Transport: CDP available");
 		} else if (wsAvailable) {
 			logger.info("Transport: WebSocket bridge connected");
 		} else {
@@ -5453,12 +5455,12 @@ return {
 				await this.wsServer.start();
 				logger.info({ wsPort }, "WebSocket bridge server started");
 
-				// Log when plugin connects/disconnects
-				this.wsServer.on("connected", () => {
-					logger.info("Desktop Bridge plugin connected via WebSocket");
+				// Log when plugin files connect/disconnect (with file identity)
+				this.wsServer.on("fileConnected", (data: { fileKey: string; fileName: string }) => {
+					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin connected via WebSocket");
 				});
-				this.wsServer.on("disconnected", () => {
-					logger.info("Desktop Bridge plugin disconnected from WebSocket");
+				this.wsServer.on("fileDisconnected", (data: { fileKey: string; fileName: string }) => {
+					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin disconnected from WebSocket");
 				});
 
 				// Invalidate variable cache when document changes are reported.
