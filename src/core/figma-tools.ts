@@ -3368,8 +3368,8 @@ export function registerFigmaAPITools(
 					const connector = await getDesktopConnector();
 					logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Screenshot via connector");
 					result = await connector.captureScreenshot(nodeId || '', { format, scale });
-					// Wrap in expected format if connector returns raw data
-					if (result && !result.success && result.image) {
+					// Wrap in expected format only if connector returns raw data without a success flag
+					if (result && typeof result.success === 'undefined' && result.image) {
 						result = { success: true, image: result };
 					}
 				}

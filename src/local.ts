@@ -1201,7 +1201,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					let cdpAvailable = false;
 					let debugPortAccessible = false;
 					try {
-						const response = await fetch("http://localhost:9222/json/version", {
+						const debugHost = this.config?.local?.debugHost ?? "localhost";
+						const debugPort = this.config?.local?.debugPort ?? 9222;
+						const response = await fetch(`http://${debugHost}:${debugPort}/json/version`, {
 							signal: AbortSignal.timeout(2000),
 						});
 						debugPortAccessible = response.ok;
