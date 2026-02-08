@@ -228,7 +228,7 @@ export class FigmaWebSocketServer extends EventEmitter {
           }
           found.client.lastActivity = Date.now();
         }
-        this.emit('documentChange', found ? { fileKey: found.fileKey, ...message.data } : message.data);
+        this.emit('documentChange', { fileKey: found?.fileKey ?? null, ...message.data });
       }
 
       // Track selection changes — user interaction makes this the active file
@@ -239,7 +239,7 @@ export class FigmaWebSocketServer extends EventEmitter {
           found.client.lastActivity = Date.now();
           this._activeFileKey = found.fileKey;
         }
-        this.emit('selectionChange', found ? { fileKey: found.fileKey, ...message.data } : message.data);
+        this.emit('selectionChange', { fileKey: found?.fileKey ?? null, ...message.data });
       }
 
       // Track page changes — user interaction makes this the active file
@@ -250,7 +250,7 @@ export class FigmaWebSocketServer extends EventEmitter {
           found.client.lastActivity = Date.now();
           this._activeFileKey = found.fileKey;
         }
-        this.emit('pageChange', found ? { fileKey: found.fileKey, ...message.data } : message.data);
+        this.emit('pageChange', { fileKey: found?.fileKey ?? null, ...message.data });
       }
 
       // Capture console logs for the specific file
