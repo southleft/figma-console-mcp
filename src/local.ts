@@ -1230,12 +1230,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						}
 					}
 
-					// Determine active transport
+					// Determine active transport (matches getDesktopConnector priority: WS first)
 					let activeTransport: string = "none";
-					if (cdpAvailable && browserRunning) {
-						activeTransport = "cdp";
-					} else if (wsConnected) {
+					if (wsConnected) {
 						activeTransport = "websocket";
+					} else if (cdpAvailable && browserRunning) {
+						activeTransport = "cdp";
 					}
 
 					// List available Figma pages (CDP only)

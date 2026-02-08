@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New `IFigmaConnector` interface abstracts transport layer (`src/core/figma-connector.ts`)
   - `FigmaDesktopConnector` (CDP) and `WebSocketConnector` implementations
   - WebSocket server on port 9223 (configurable via `FIGMA_WS_PORT` env var)
-  - Auto-detection: CDP preferred when available, WebSocket fallback when not
+  - Auto-detection: WebSocket preferred when available, CDP fallback when not
   - Zero user action needed if CDP still works — fully backward compatible
   - Desktop Bridge plugin UI includes WebSocket client with auto-reconnect
   - Request/response correlation for reliable command execution over WebSocket
