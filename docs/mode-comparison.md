@@ -32,13 +32,13 @@ The MCP server has **two execution modes** but **three installation methods**:
 
 | Mode | Tools Available | Capabilities |
 |------|-----------------|--------------|
-| **Local Mode** (NPX or Git) | **72+** | Full read/write — create, edit, delete |
+| **Local Mode** (NPX or Git) | **50+** | Full read/write — create, edit, delete |
 | **Remote Mode** (SSE) | **16** | Read-only — view data, screenshots, logs |
 
-> **Bottom line:** Remote SSE has ~22% of the tools and cannot create or modify designs.
+> **Bottom line:** Remote SSE has ~32% of the tools and cannot create or modify designs.
 
 ### Use NPX Setup (Recommended for Most Users)
-- ✅ **All 72+ tools** including design creation
+- ✅ **All 50+ tools** including design creation
 - ✅ Automatic updates with `@latest`
 - ✅ Desktop Bridge plugin support
 - ✅ Variables without Enterprise plan
@@ -46,7 +46,7 @@ The MCP server has **two execution modes** but **three installation methods**:
 - ⚠️ Requires Figma Desktop restart with `--remote-debugging-port=9222`
 
 ### Use Local Git (For Contributors)
-- ✅ **All 72+ tools** including design creation
+- ✅ **All 50+ tools** including design creation
 - ✅ Full source code access
 - ✅ Modify and test changes
 - ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual)
@@ -378,7 +378,7 @@ All three installation methods are completely free:
 ## Summary
 
 **For most users: Start with NPX Setup** ⭐
-- All 72+ tools including design creation
+- All 50+ tools including design creation
 - Automatic updates with `@latest`
 - Desktop Bridge plugin support
 - Variables without Enterprise plan
@@ -397,7 +397,7 @@ All three installation methods are completely free:
 
 **Key Takeaway:** Remote SSE and Local modes have **different tool counts**:
 - **Remote Mode (SSE):** 16 tools — read-only operations
-- **Local Mode (NPX/Git):** 72+ tools — full read/write operations
+- **Local Mode (NPX/Git):** 50+ tools — full read/write operations
 
 The difference is not just authentication, but **fundamental capabilities**:
 - **Remote:** Cannot create, modify, or delete anything in Figma

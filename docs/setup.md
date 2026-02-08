@@ -30,9 +30,9 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | Screenshot validation | ✅ | ✅ |
 | Desktop Bridge plugin | ✅ | ❌ |
 | Variables without Enterprise | ✅ | ❌ |
-| **Total tools available** | **72+** | **16** |
+| **Total tools available** | **50+** | **16** |
 
-> **Bottom line:** Remote SSE is **read-only** with ~22% of the tools. If you want AI to actually design in Figma, use NPX Setup.
+> **Bottom line:** Remote SSE is **read-only** with ~32% of the tools. If you want AI to actually design in Figma, use NPX Setup.
 
 ---
 
@@ -40,7 +40,7 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 
 **Best for:** Designers who want full AI-assisted design capabilities with automatic updates.
 
-**What you get:** All 72+ tools including design creation, variable management, component instantiation, and Desktop Bridge plugin support.
+**What you get:** All 50+ tools including design creation, variable management, component instantiation, and Desktop Bridge plugin support.
 
 ### Prerequisites Checklist
 
@@ -172,7 +172,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify the source code or contribute to the project.
 
-**What you get:** Same 72+ tools as NPX, plus full source code access.
+**What you get:** Same 50+ tools as NPX, plus full source code access.
 
 ### Prerequisites
 

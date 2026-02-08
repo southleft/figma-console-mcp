@@ -42,7 +42,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | **Edit existing designs** | ✅ | ❌ |
 | **Manage design tokens/variables** | ✅ | ❌ |
 | Desktop Bridge plugin | ✅ | ❌ |
-| **Total tools available** | **72+** | **16** |
+| **Total tools available** | **50+** | **16** |
 
 > **Bottom line:** Remote SSE is **read-only**. If you want AI to actually design in Figma, use NPX Setup.
 
@@ -52,7 +52,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 72+ tools including design creation, variable management, and component instantiation.
+**What you get:** All 50+ tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -125,7 +125,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 72+ tools as NPX, plus full source code access.
+**What you get:** Same 50+ tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -212,7 +212,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 | Feature | NPX (Recommended) | Local Git | Remote SSE |
 |---------|-------------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **72+** | **72+** | **16** (read-only) |
+| **Total tools** | **50+** | **50+** | **16** (read-only) |
 | **Design creation** | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ❌ |
@@ -224,7 +224,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 | **Automatic updates** | ✅ (`@latest`) | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only with ~22% of the tools. Use NPX for full capabilities.
+> **Key insight:** Remote SSE is read-only with ~32% of the tools. Use NPX for full capabilities.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
