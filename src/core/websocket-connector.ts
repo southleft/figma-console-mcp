@@ -42,12 +42,12 @@ export class WebSocketConnector implements IFigmaConnector {
     return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: 5000 }, 7000);
   }
 
-  async getVariablesFromPluginUI(_fileKey?: string): Promise<any> {
+  async getVariablesFromPluginUI(fileKey?: string): Promise<any> {
     // Request the cached variables data that the plugin UI holds in window.__figmaVariablesData
-    return this.wsServer.sendCommand('GET_VARIABLES_DATA', {}, 10000);
+    return this.wsServer.sendCommand('GET_VARIABLES_DATA', {}, 10000, fileKey);
   }
 
-  async getVariables(_fileKey?: string): Promise<any> {
+  async getVariables(fileKey?: string): Promise<any> {
     // Execute the same variables-fetching code in the plugin worker context
     const code = `
       (async () => {
@@ -69,7 +69,7 @@ export class WebSocketConnector implements IFigmaConnector {
         }
       })()
     `;
-    return this.executeCodeViaUI(code, 30000);
+    return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: 30000 }, 32000, fileKey);
   }
 
   async executeCodeViaUI(code: string, timeoutMs = 5000): Promise<any> {

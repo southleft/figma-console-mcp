@@ -1622,7 +1622,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				count: z
 					.number()
 					.optional()
-					.describe("Maximum number of change events to return (most recent first)"),
+					.describe("Maximum number of change events to return (chronological order, oldest to newest; returns the last N events)"),
 				clear: z
 					.boolean()
 					.optional()
@@ -5467,9 +5467,18 @@ return {
 				// on any style or node change to be safe.
 				this.wsServer.on("documentChange", (data: any) => {
 					if (data.hasStyleChanges || data.hasNodeChanges) {
-						this.variablesCache.clear();
+						if (data.fileKey) {
+							// Per-file cache invalidation — only clear the affected file's cache
+							for (const [key] of this.variablesCache) {
+								if (key.includes(data.fileKey)) {
+									this.variablesCache.delete(key);
+								}
+							}
+						} else {
+							this.variablesCache.clear();
+						}
 						logger.debug(
-							{ changeCount: data.changeCount, hasStyleChanges: data.hasStyleChanges, hasNodeChanges: data.hasNodeChanges },
+							{ fileKey: data.fileKey, changeCount: data.changeCount, hasStyleChanges: data.hasStyleChanges, hasNodeChanges: data.hasNodeChanges },
 							"Variable cache invalidated due to document changes"
 						);
 					}

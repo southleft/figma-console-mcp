@@ -143,9 +143,10 @@ export class FigmaWebSocketServer extends EventEmitter {
             'New WebSocket connection (pending file identification)'
           );
 
-          ws.on('message', (data: Buffer) => {
+          ws.on('message', (data: import('ws').RawData) => {
             try {
-              const message = JSON.parse(data.toString());
+              const text = typeof data === 'string' ? data : Buffer.isBuffer(data) ? data.toString() : Buffer.from(data as ArrayBuffer).toString();
+              const message = JSON.parse(text);
               this.handleMessage(message, ws);
             } catch (error) {
               logger.error({ error }, 'Failed to parse WebSocket message');
@@ -218,7 +219,7 @@ export class FigmaWebSocketServer extends EventEmitter {
           }
           found.client.lastActivity = Date.now();
         }
-        this.emit('documentChange', message.data);
+        this.emit('documentChange', found ? { fileKey: found.fileKey, ...message.data } : message.data);
       }
 
       // Track selection changes — user interaction makes this the active file
