@@ -6,9 +6,12 @@
   "ui": "ui.html",
   "editorType": ["figma", "dev"],
   "capabilities": ["inspect"],
+  "enablePrivatePluginApi": true,
   "permissions": ["teamlibrary"],
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["none"]
+    "allowedDomains": ["http://localhost", "ws://localhost", "ws://localhost:9223"],
+    "reasoning": "Connects to local MCP server via WebSocket (ws://localhost:9223) for AI-assisted design tool communication.",
+    "devAllowedDomains": ["http://localhost", "ws://localhost", "ws://localhost:9223"]
   }
 }

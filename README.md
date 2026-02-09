@@ -42,7 +42,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | **Edit existing designs** | ✅ | ❌ |
 | **Manage design tokens/variables** | ✅ | ❌ |
 | Desktop Bridge plugin | ✅ | ❌ |
-| **Total tools available** | **50+** | **16** |
+| **Total tools available** | **53+** | **16** |
 
 > **Bottom line:** Remote SSE is **read-only**. If you want AI to actually design in Figma, use NPX Setup.
 
@@ -52,7 +52,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 50+ tools including design creation, variable management, and component instantiation.
+**What you get:** All 53+ tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -125,7 +125,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 50+ tools as NPX, plus full source code access.
+**What you get:** Same 53+ tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -212,7 +212,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 | Feature | NPX (Recommended) | Local Git | Remote SSE |
 |---------|-------------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **50+** | **50+** | **16** (read-only) |
+| **Total tools** | **53+** | **53+** | **16** (read-only) |
 | **Design creation** | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ❌ |
@@ -224,7 +224,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 | **Automatic updates** | ✅ (`@latest`) | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only with ~32% of the tools. Use NPX for full capabilities.
+> **Key insight:** Remote SSE is read-only with ~30% of the tools. Use NPX for full capabilities.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -482,6 +482,34 @@ The **Figma Desktop Bridge** plugin enables powerful capabilities:
 5. Ask Claude: "Create a button component" or "Show me the design variables"
 
 **📖 [Desktop Bridge Documentation](figma-desktop-bridge/README.md)**
+
+### 🔌 WebSocket Bridge
+
+Figma Desktop is transitioning away from Chrome DevTools Protocol (CDP) support. The MCP server includes a **WebSocket bridge** that provides seamless connectivity regardless of which transport is available.
+
+**How it works:**
+- The server tries **WebSocket first** (port 9223, instant check) via the Desktop Bridge plugin
+- If no WebSocket client is connected, it falls back to **CDP** (port 9222)
+- The transport is selected automatically per-command — no configuration needed
+- All 53+ tools work identically through either transport
+
+**Setup:**
+1. Install the Desktop Bridge plugin in Figma (Plugins > Development > Import from manifest)
+2. Open the plugin in your Figma file — it connects to ws://localhost:9223 automatically
+3. The MCP server detects the connection and routes commands through WebSocket
+
+**If you also have CDP available** (Figma launched with `--remote-debugging-port=9222`), CDP serves as a fallback. Console tools work with both transports — CDP captures all page-level logs while WebSocket captures plugin-context logs. `figma_navigate` requires CDP for browser-level navigation; in WebSocket mode it returns the connected file info with guidance instead.
+
+**Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs). The MCP server routes commands to the appropriate file based on active context. If a plugin instance is replaced (e.g., plugin reloaded in the same file), the displaced client stops reconnecting automatically.
+
+**Environment variables:**
+- `FIGMA_WS_PORT` — Override the server-side WebSocket port (default: 9223). Note: the plugin UI and manifest are hard-coded to port 9223. Using a custom port also requires updating `wsPort` in `ui.html` and `allowedDomains` in `manifest.json`.
+
+**Checking transport status:**
+```
+Ask Claude: "Check Figma status"
+```
+The response will show which transport is active (CDP or WebSocket).
 
 ---
 

@@ -1,6 +1,6 @@
 {
 	"name": "figma-console-mcp",
-	"version": "1.7.0",
+	"version": "1.8.0",
 	"description": "MCP server for accessing Figma plugin console logs and screenshots via Cloudflare Workers or local mode",
 	"type": "module",
 	"main": "dist/local.js",
@@ -64,20 +64,22 @@
 		"pino-pretty": "^13.0.0",
 		"puppeteer-core": "^23.11.1",
 		"uuid": "^11.0.3",
+		"ws": "^8.19.0",
 		"zod": "^3.25.76"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.2.5",
-		"cross-env": "^7.0.3",
-		"vite": "^6.0.0",
-		"vite-plugin-singlefile": "^2.0.0",
 		"@types/jest": "^29.5.14",
 		"@types/node": "^22.10.2",
 		"@types/uuid": "^10.0.0",
+		"@types/ws": "^8.18.1",
+		"cross-env": "^7.0.3",
 		"jest": "^29.7.0",
 		"ts-jest": "^29.2.5",
 		"tsx": "^4.19.2",
 		"typescript": "5.9.3",
+		"vite": "^6.0.0",
+		"vite-plugin-singlefile": "^2.0.0",
 		"wrangler": "^4.42.0",
 		"zod-to-json-schema": "^3.25.1"
 	}

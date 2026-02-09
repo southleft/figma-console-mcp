@@ -5,6 +5,43 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-02-07
+
+### Added
+- **WebSocket Bridge transport** — Automatic fallback transport layer for when Figma removes Chrome DevTools Protocol (CDP) support
+  - New `IFigmaConnector` interface abstracts transport layer (`src/core/figma-connector.ts`)
+  - `FigmaDesktopConnector` (CDP) and `WebSocketConnector` implementations
+  - WebSocket server on port 9223 (configurable via `FIGMA_WS_PORT` env var)
+  - Auto-detection: WebSocket preferred when available, CDP fallback when not
+  - Zero user action needed if CDP still works — fully backward compatible
+  - Desktop Bridge plugin UI includes WebSocket client with auto-reconnect
+  - Request/response correlation for reliable command execution over WebSocket
+- **`figma_reconnect` tool** — Force reconnection to Figma Desktop, useful for switching transports or recovering from connection issues
+- **Transport info in `figma_get_status`** — Status now reports which transport is active (CDP or WebSocket)
+- **File identity tracking** — Plugin proactively reports file name and key on WebSocket connect via `FILE_INFO` message. The MCP server tracks connected file identity instantly (no roundtrip needed), and `figma_get_status` now includes `currentFileKey` and `connectedFile` details. AI instructions warn to verify file identity before destructive operations when multiple files are open.
+- **Document change event forwarding** — Plugin listens to `figma.on('documentchange')` and forwards change events (node changes, style changes) through WebSocket. The MCP server uses these events to automatically invalidate the variable cache when design changes occur, preventing stale data.
+- **WebSocket console monitoring** — Console tools (`figma_get_console_logs`, `figma_watch_console`, `figma_clear_console`) now work without CDP. The plugin overrides `console.log/warn/error/info/debug` in the QuickJS sandbox and forwards captured messages through WebSocket to the MCP server. Captures all plugin-context logs; for full-page monitoring (Figma app internals), CDP is still available.
+- **WebSocket plugin UI reload** — `figma_reload_plugin` now works via WebSocket by re-invoking `figma.showUI()` to reload the plugin UI iframe. The `code.js` context continues running; only the UI is refreshed and the WebSocket connection auto-reconnects.
+- **Graceful `figma_navigate` in WebSocket mode** — Instead of failing silently, `figma_navigate` now detects WebSocket-only mode and returns actionable guidance: the connected file identity and instructions to manually navigate in Figma Desktop.
+- **`figma_get_selection` tool** — Real-time selection tracking via WebSocket. The AI knows what the user has selected in Figma without needing to ask. Returns node IDs, names, types, and dimensions. Optional `verbose` mode fetches fills, strokes, text content, and component properties for selected nodes. Selection state updates automatically as the user clicks around.
+- **`figma_get_design_changes` tool** — Buffered document change event feed. The AI can ask "what changed since I last checked?" instead of re-reading the entire file. Returns change events with node IDs, style/node change flags, and timestamps. Supports `since` timestamp filtering and `clear` for polling workflows. Buffer holds up to 200 events.
+- **Live page tracking** — `figma_get_status` now reports which page the user is currently viewing, updated in real-time via `figma.on('currentpagechange')`. Combined with selection tracking, the AI knows both "where" (page) and "what" (selection) without roundtrips.
+
+### Fixed
+- **`figma_get_component_image` crash** — Was using `api.getFile()` with `ids` param but accessing `fileData.nodes[nodeId]` which doesn't exist on the file endpoint response. Changed to `api.getNodes()` which returns the correct `{ nodes: { nodeId: { document } } }` structure.
+- **`figma_set_instance_properties` crash with dynamic-page access** — Plugin code used synchronous `node.componentProperties` and `node.mainComponent` which fail with `documentAccess: "dynamic-page"`. Added `await node.getMainComponentAsync()` before accessing properties.
+- **Rename tools showing "from undefined"** — The `handleResult` function in `ui.html` was only passing through the `dataKey` field, dropping `oldName` from rename operation responses. Fixed to pass through `oldName` and `instance` fields.
+- **`figma_capture_screenshot` and `figma_set_instance_properties` bypassing WebSocket** — Both tools had a try/catch wrapper around `getDesktopConnector()` that silently swallowed errors and fell through to a legacy CDP fallback path, even when the connector factory was available. Removed the try/catch so errors propagate directly, and added a `!getDesktopConnector` guard so the legacy path only runs when no connector factory exists.
+- **Transport priority reversed for reliability** — `getDesktopConnector()` now tries WebSocket first (instant connectivity check) then falls back to CDP (which involves a network timeout). Previously CDP was tried first, and its timeout delay caused race conditions during file switching.
+- **Multi-file WebSocket client cycling** — When multiple Figma files had the Desktop Bridge plugin open, background plugins would aggressively reconnect (500ms backoff) after being displaced, creating an infinite replacement loop. Fixed by detecting the "Replaced by new connection" close reason in the plugin UI and stopping auto-reconnect for displaced instances, while keeping the standard reconnection backoff (up to 5 seconds) for other disconnections.
+- **MCP Apps (Token Browser + Dashboard) bypassing WebSocket** — Both apps used `browserManager` (CDP-only) to construct a `FigmaDesktopConnector` directly, skipping WebSocket entirely. In WebSocket-only mode, they fell through to REST API (Enterprise plan required). Changed to use the transport-agnostic `getDesktopConnector()` which works with both WebSocket and CDP.
+
+## [1.7.0] - 2026-02-07
+
+### Added
+- **Design-code parity checker** (`figma_check_design_parity`) — Compares a Figma component's design tokens against a code implementation to identify visual discrepancies in colors, typography, spacing, borders, and shadows
+- **Component documentation generator** (`figma_generate_component_doc`) — Generates comprehensive developer documentation for Figma components including props/variants tables, design token mappings, usage examples, and accessibility guidelines
+
 ## [1.6.4] - 2026-02-04
 
 ### Fixed
@@ -163,6 +200,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.8.0]: https://github.com/southleft/figma-console-mcp/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/southleft/figma-console-mcp/compare/v1.6.4...v1.7.0
+[1.6.4]: https://github.com/southleft/figma-console-mcp/compare/v1.6.3...v1.6.4
+[1.6.3]: https://github.com/southleft/figma-console-mcp/compare/v1.6.2...v1.6.3
+[1.6.2]: https://github.com/southleft/figma-console-mcp/compare/v1.6.1...v1.6.2
+[1.6.1]: https://github.com/southleft/figma-console-mcp/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/southleft/figma-console-mcp/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/southleft/figma-console-mcp/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/southleft/figma-console-mcp/compare/v1.3.0...v1.4.0

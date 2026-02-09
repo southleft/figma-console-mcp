@@ -11,8 +11,9 @@
 
 import { Page } from 'puppeteer-core';
 import { logger } from './logger.js';
+import type { IFigmaConnector } from './figma-connector.js';
 
-export class FigmaDesktopConnector {
+export class FigmaDesktopConnector implements IFigmaConnector {
   private page: Page;
   private cachedPluginFrame: any | null = null;
   private static readonly DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
@@ -51,6 +52,10 @@ export class FigmaDesktopConnector {
    */
   async initialize(): Promise<void> {
     logger.info('Figma Desktop connector initialized (using Puppeteer Worker API)');
+  }
+
+  getTransportType(): 'cdp' | 'websocket' {
+    return 'cdp';
   }
 
   /**
@@ -878,8 +883,19 @@ export class FigmaDesktopConnector {
     const frame = await this.findPluginUIFrame();
 
     try {
+      // Look up old name from cached variables data, then rename — single CDP roundtrip
       const result = await frame.evaluate(
-        `window.renameVariable(${JSON.stringify(variableId)}, ${JSON.stringify(newName)})`
+        `(async () => {
+          var oldName;
+          var vars = window.__figmaVariablesData;
+          if (vars && vars.variables) {
+            var v = vars.variables.find(function(v) { return v.id === ${JSON.stringify(variableId)}; });
+            if (v) oldName = v.name;
+          }
+          var result = await window.renameVariable(${JSON.stringify(variableId)}, ${JSON.stringify(newName)});
+          if (oldName) result.oldName = oldName;
+          return result;
+        })()`
       );
 
       logger.info({ success: result.success, oldName: result.oldName, newName: result.variable?.name }, 'Variable renamed');
@@ -968,8 +984,26 @@ export class FigmaDesktopConnector {
     const frame = await this.findPluginUIFrame();
 
     try {
+      // Look up old mode name from cached variables data, then rename — single CDP roundtrip
       const result = await frame.evaluate(
-        `window.renameMode(${JSON.stringify(collectionId)}, ${JSON.stringify(modeId)}, ${JSON.stringify(newName)})`
+        `(async () => {
+          var oldName;
+          var vars = window.__figmaVariablesData;
+          var colls = vars && (vars.variableCollections || vars.collections);
+          if (colls) {
+            for (var i = 0; i < colls.length; i++) {
+              var c = colls[i];
+              if (c.id === ${JSON.stringify(collectionId)}) {
+                var mode = c.modes.find(function(m) { return m.modeId === ${JSON.stringify(modeId)}; });
+                if (mode) oldName = mode.name;
+                break;
+              }
+            }
+          }
+          var result = await window.renameMode(${JSON.stringify(collectionId)}, ${JSON.stringify(modeId)}, ${JSON.stringify(newName)});
+          if (oldName) result.oldName = oldName;
+          return result;
+        })()`
       );
 
       logger.info({ success: result.success, oldName: result.oldName, newName }, 'Mode renamed');
@@ -1424,6 +1458,52 @@ export class FigmaDesktopConnector {
       return result;
     } catch (error) {
       logger.error({ error, parentId, nodeType }, 'Create child node failed');
+      throw error;
+    }
+  }
+
+  // ============================================================================
+  // SCREENSHOT & INSTANCE PROPERTIES (via plugin UI)
+  // ============================================================================
+
+  /**
+   * Capture screenshot via plugin's exportAsync
+   */
+  async captureScreenshot(nodeId: string, options?: { format?: string; scale?: number }): Promise<any> {
+    logger.info({ nodeId, options }, 'Capturing screenshot via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.captureScreenshot(${JSON.stringify(nodeId)}, ${JSON.stringify(options || {})})`
+      );
+
+      logger.info({ success: result.success }, 'Screenshot captured');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Capture screenshot failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Set component instance properties
+   */
+  async setInstanceProperties(nodeId: string, properties: any): Promise<any> {
+    logger.info({ nodeId, properties: Object.keys(properties || {}) }, 'Setting instance properties via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setInstanceProperties(${JSON.stringify(nodeId)}, ${JSON.stringify(properties)})`
+      );
+
+      logger.info({ success: result.success }, 'Instance properties set');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Set instance properties failed');
       throw error;
     }
   }
