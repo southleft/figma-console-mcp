@@ -30,9 +30,9 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | Screenshot validation | ✅ | ✅ |
 | Desktop Bridge plugin | ✅ | ❌ |
 | Variables without Enterprise | ✅ | ❌ |
-| **Total tools available** | **53+** | **16** |
+| **Total tools available** | **53+** | **18** |
 
-> **Bottom line:** Remote SSE is **read-only** with ~30% of the tools. If you want AI to create, modify, or develop from your Figma designs, use NPX Setup.
+> **Bottom line:** Remote SSE is **read-only** with ~34% of the tools. If you want AI to create, modify, or develop from your Figma designs, use NPX Setup.
 
 ---
 
@@ -62,6 +62,30 @@ Before starting, verify you have:
 
 ### Step 2: Configure Your MCP Client (~3 min)
 
+#### Claude Code (CLI)
+
+```bash
+claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -- npx -y figma-console-mcp@latest
+```
+
+#### Cursor / Windsurf / Other MCP Clients
+
+Find your client's MCP config file and add:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
 #### Claude Desktop
 
 1. Open Claude Desktop
@@ -69,55 +93,33 @@ Before starting, verify you have:
    - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
    - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
-3. Add this configuration (replace `YOUR_TOKEN_HERE` with your actual token):
-
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["-y", "figma-console-mcp@latest"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
-      }
-    }
-  }
-}
-```
+3. Add the same JSON configuration shown above
 
 4. **Save the file**
 
-#### Claude Code (CLI)
+### Step 3: Connect to Figma Desktop (~2 min)
 
-Run this command (replace the token):
+Choose one of two connection methods:
 
-```bash
-claude mcp add figma-console -s user -- npx -y figma-console-mcp@latest
-```
+#### Option A: Desktop Bridge Plugin (Recommended)
 
-Then add your token to `~/.claude.json`:
+The Desktop Bridge Plugin connects via WebSocket — no special Figma launch flags needed, and it persists across Figma restarts.
 
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["-y", "figma-console-mcp@latest"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
-      }
-    }
-  }
-}
-```
+1. **Open Figma Desktop** (normal launch, no special flags)
+2. Go to **Plugins** → **Development** → **Import plugin from manifest...**
+3. Navigate to the `figma-desktop-bridge/manifest.json` file in the figma-console-mcp directory
+   - **NPX users:** Run `npx figma-console-mcp@latest --print-path` to find the directory
+4. Click **"Open"** — the plugin appears in your Development plugins list
+5. **Run the plugin** in your Figma file (Plugins → Development → Figma Desktop Bridge)
+6. The plugin auto-connects to `ws://localhost:9223` — you'll see a "Connected" indicator
 
-#### Other MCP Clients (Cursor, Windsurf, etc.)
+> **One-time setup.** Once imported, the plugin stays in your Development plugins list. Just run it whenever you want to use the MCP. No need to restart Figma with special flags.
 
-Find your client's MCP config file and add the same JSON block shown above.
+**📖 [Desktop Bridge Plugin Documentation](https://github.com/southleft/figma-console-mcp/tree/main/figma-desktop-bridge)**
 
-### Step 3: Start Figma with Debug Mode (~2 min)
+#### Option B: CDP Debug Mode (Alternative)
 
-This is **required** for the MCP to communicate with Figma Desktop.
+If the Desktop Bridge Plugin isn't connecting, or you need full-page console monitoring (captures all page-level logs, not just plugin context), you can use Chrome DevTools Protocol instead.
 
 1. **Quit Figma completely** (Cmd+Q on macOS, Alt+F4 on Windows)
 
@@ -137,13 +139,12 @@ This is **required** for the MCP to communicate with Figma Desktop.
    - ✅ You should see a list of inspectable Figma pages
    - ❌ If blank or error, Figma wasn't started correctly — try again
 
-> ⚠️ **You must restart Figma with this flag every time** you quit Figma and want to use the MCP again. Consider creating a desktop shortcut or alias.
+> ⚠️ **You must restart Figma with this flag every time** you quit Figma. Consider creating a desktop shortcut or alias. You can also use **both** methods simultaneously — the MCP server tries WebSocket first and falls back to CDP automatically.
 
-### Step 4: Restart Claude Desktop (~1 min)
+### Step 4: Restart Your MCP Client (~1 min)
 
-1. **Quit Claude Desktop completely** (Cmd+Q or right-click → Quit)
-2. **Reopen Claude Desktop**
-3. Look for the 🔌 icon showing "figma-console: connected"
+1. **Restart your MCP client** (quit and reopen Claude Code, Cursor, Windsurf, Claude Desktop, etc.)
+2. Verify the MCP server is connected (e.g., in Claude Desktop look for the 🔌 icon showing "figma-console: connected")
 
 ### Step 5: Test It! (~2 min)
 
@@ -152,7 +153,7 @@ Try these prompts to verify everything works:
 ```
 Check Figma status
 ```
-→ Should show "✅ Figma Desktop connected via port 9222"
+→ Should show connection status including which transport is active (WebSocket or CDP)
 
 ```
 Search for button components
@@ -199,11 +200,17 @@ npm run build:local
 
 Same as [NPX Step 1](#step-1-get-your-figma-token-2-min) above.
 
-### Step 3: Configure Claude Desktop
+### Step 3: Configure Your MCP Client
 
-Edit your config file:
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+#### Claude Code (CLI)
+
+```bash
+claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -- node /absolute/path/to/figma-console-mcp/dist/local.js
+```
+
+#### Other MCP Clients (Cursor, Windsurf, Claude Desktop, etc.)
+
+Edit your client's MCP config file:
 
 ```json
 {
@@ -223,13 +230,13 @@ Edit your config file:
 - Replace `/absolute/path/to/figma-console-mcp` with the actual path where you cloned the repo
 - Use forward slashes `/` even on Windows
 
-### Step 4: Start Figma with Debug Mode
+### Step 4: Connect to Figma Desktop
 
-Same as [NPX Step 3](#step-3-start-figma-with-debug-mode-2-min) above.
+Same as [NPX Step 3](#step-3-connect-to-figma-desktop-2-min) above — install the Desktop Bridge Plugin (recommended) or use CDP debug mode (alternative).
 
-### Step 5: Restart Claude Desktop and Test
+### Step 5: Restart Your MCP Client and Test
 
-Same as [NPX Steps 4 & 5](#step-4-restart-claude-desktop-1-min) above.
+Same as [NPX Steps 4 & 5](#step-4-restart-your-mcp-client-1-min) above.
 
 ### Updating
 
@@ -250,7 +257,7 @@ Then restart Claude Desktop.
 
 **Best for:** Quickly evaluating the tool or read-only design data extraction.
 
-**What you get:** 16 read-only tools for viewing design data, taking screenshots, and reading console logs.
+**What you get:** 18 read-only tools for viewing design data, taking screenshots, reading console logs, and design-code parity checks.
 
 > ⚠️ **Limitation:** Remote mode **cannot create or modify designs**. It's read-only. For design creation, use [NPX Setup](#-npx-setup-recommended).
 
@@ -370,11 +377,13 @@ Create `.vscode/mcp.json` in your project:
 
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
-| "Failed to connect to Figma Desktop" | Figma not in debug mode | Quit Figma, restart with `--remote-debugging-port=9222` |
+| "Failed to connect to Figma Desktop" | No transport available | Install Desktop Bridge Plugin, or restart Figma with `--remote-debugging-port=9222` |
 | "FIGMA_ACCESS_TOKEN not configured" | Missing or wrong token | Check token in config, must start with `figd_` |
 | "Command not found: node" | Node.js not installed | Install Node.js 18+ from nodejs.org |
-| Tools not appearing in Claude | Config not loaded | Restart Claude Desktop completely |
+| Tools not appearing in MCP client | Config not loaded | Restart your MCP client completely |
 | "Port 9222 already in use" | Another process using port | Close Chrome windows, check Task Manager |
+| "Port 9223 already in use" | Another MCP instance running | Stop the other instance, or set `FIGMA_WS_PORT` to a different port |
+| Plugin shows "Disconnected" | MCP server not running | Start/restart your MCP client so the server starts |
 | NPX using old version | Cached package | Use `figma-console-mcp@latest` explicitly |
 
 ### Node.js Version Issues
@@ -495,7 +504,7 @@ Add `ENABLE_MCP_APPS` to your config:
 
 1. **Try example prompts:** See [Use Cases](use-cases) for workflow examples
 2. **Explore all tools:** See [Tools Reference](tools) for the complete tool list
-3. **Install Desktop Bridge plugin:** For variables without Enterprise — see [Desktop Bridge README](https://github.com/southleft/figma-console-mcp/tree/main/figma-desktop-bridge)
+3. **Learn about the Desktop Bridge plugin:** See [Desktop Bridge README](https://github.com/southleft/figma-console-mcp/tree/main/figma-desktop-bridge) for advanced configuration
 
 ---
 

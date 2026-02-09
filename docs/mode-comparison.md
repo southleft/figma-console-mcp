@@ -33,31 +33,29 @@ The MCP server has **two execution modes** but **three installation methods**:
 | Mode | Tools Available | Capabilities |
 |------|-----------------|--------------|
 | **Local Mode** (NPX or Git) | **53+** | Full read/write — create, edit, delete |
-| **Remote Mode** (SSE) | **16** | Read-only — view data, screenshots, logs |
+| **Remote Mode** (SSE) | **18** | Read-only — view data, screenshots, logs |
 
-> **Bottom line:** Remote SSE has ~30% of the tools and cannot create or modify designs.
+> **Bottom line:** Remote SSE has ~34% of the tools and cannot create or modify designs.
 
 ### Use NPX Setup (Recommended for Most Users)
 - ✅ **All 53+ tools** including design creation
 - ✅ Automatic updates with `@latest`
-- ✅ Desktop Bridge plugin support
+- ✅ Desktop Bridge Plugin support (recommended connection — no debug flags needed)
 - ✅ Variables without Enterprise plan
 - ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual, one-time)
-- ⚠️ Requires Figma Desktop restart with `--remote-debugging-port=9222`
 
 ### Use Local Git (For Contributors)
 - ✅ **All 53+ tools** including design creation
 - ✅ Full source code access
 - ✅ Modify and test changes
 - ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual)
-- ⚠️ Requires Figma Desktop restart with `--remote-debugging-port=9222`
 - ⚠️ Manual updates via `git pull && npm run build`
 
 ### Use Remote SSE (Read-Only Exploration)
 - ✅ **TRUE zero-setup** - Just paste a URL
 - ✅ **OAuth authentication** - No manual tokens
 - ✅ Works without Figma Desktop restart
-- ❌ **Only 16 tools** — cannot create or modify designs
+- ❌ **Only 18 tools** — cannot create or modify designs
 - ❌ Cannot use Desktop Bridge plugin
 - ❌ Variables require Enterprise plan
 
@@ -70,10 +68,10 @@ The MCP server has **two execution modes** but **three installation methods**:
 | **Execution** | Cloudflare Workers | Local Node.js | Local Node.js |
 | **Code** | `src/index.ts` | `dist/local.js` (npm) | `dist/local.js` (source) |
 | **Authentication** | OAuth (automatic) | PAT (manual) | PAT (manual) |
-| **Setup Complexity** | ⭐ Zero-setup | ⚠️ Manual token + restart | ⚠️ Manual token + restart |
+| **Setup Complexity** | ⭐ Zero-setup | ⚠️ Manual token + plugin install | ⚠️ Manual token + plugin install |
 | **Distribution** | URL only | npm package | git clone |
 | **Updates** | Automatic (server-side) | `@latest` auto-updates | Manual `git pull + build` |
-| **Figma Desktop** | Not required | Required with debug port | Required with debug port |
+| **Figma Desktop** | Not required | Required (plugin or debug port) | Required (plugin or debug port) |
 | **Desktop Bridge** | ❌ Not available | ✅ Available | ✅ Available |
 | **Source Access** | No | No | Yes |
 | **Use Case** | Most users | Local execution users | Developers |
@@ -92,7 +90,7 @@ The MCP server has **two execution modes** but **three installation methods**:
 | **Figma Desktop Bridge Plugin** | ❌ | ✅ | **Plugin ONLY works in Local Mode** |
 | **Variables without Enterprise API** | ❌ | ✅ | Requires Desktop Bridge plugin (Local only) |
 | **Reliable Component Descriptions** | ⚠️ | ✅ | API has bugs, plugin method (Local) is reliable |
-| **Zero-Latency Console Logs** | ❌ | ✅ | Local connects directly to Figma Desktop via localhost:9222 |
+| **Zero-Latency Console Logs** | ❌ | ✅ | Local connects via WebSocket (port 9223) or CDP (port 9222) |
 | **Works Behind Corporate Firewall** | ⚠️ | ✅ | Remote requires internet, Local works offline |
 | **Multi-User Shared Token** | ✅ | ❌ | Remote uses per-user OAuth, Local uses single PAT |
 
@@ -126,22 +124,22 @@ Figma Files & Design Data
 
 ### Local Mode Architecture
 ```
-Claude Desktop/Code
+Claude Desktop/Code/Cursor/Windsurf
     ↓ (stdio transport)
 Local MCP Server (Node.js)
-    ↓ (Chrome DevTools Protocol)
-Figma Desktop (localhost:9222)
+    ↓ (WebSocket preferred / CDP fallback)
+Figma Desktop Bridge Plugin (localhost:9223)  ← Recommended
+    or Figma Desktop CDP (localhost:9222)      ← Alternative
     ↓ (Plugin API)
-Figma Desktop Bridge Plugin
-    ↓ (Direct memory access)
 Variables & Components Data
 ```
 
 **Key Points:**
-- Direct connection to Figma Desktop
-- Instant console log capture
+- WebSocket (preferred): Install plugin once, no debug flags needed
+- CDP (fallback): Requires Figma Desktop restart with `--remote-debugging-port=9222`
+- Both transports support all 53+ tools identically
 - Plugin can access local variables (no Enterprise API needed)
-- Requires Figma Desktop restart with debug flag
+- Instant console log capture via either transport
 
 ---
 
@@ -202,8 +200,10 @@ Variables & Components Data
 **Steps:**
 1. Get Figma Personal Access Token
 2. Add to MCP config with `FIGMA_ACCESS_TOKEN` env var
-3. Quit and restart Figma with `--remote-debugging-port=9222`
-4. Verify http://localhost:9222 is accessible
+3. Connect to Figma Desktop:
+   - **Recommended:** Install Desktop Bridge Plugin (one-time — Plugins → Development → Import from manifest)
+   - **Alternative:** Quit and restart Figma with `--remote-debugging-port=9222`
+4. Restart your MCP client
 
 ### Local Git
 **Prerequisites:**
@@ -220,8 +220,10 @@ Variables & Components Data
 3. Get Figma Personal Access Token
 4. Configure MCP client JSON config with path to `dist/local.js`
 5. Set `FIGMA_ACCESS_TOKEN` environment variable
-6. Quit and restart Figma with `--remote-debugging-port=9222`
-7. Verify http://localhost:9222 is accessible
+6. Connect to Figma Desktop:
+   - **Recommended:** Install Desktop Bridge Plugin (one-time — Plugins → Development → Import from manifest)
+   - **Alternative:** Quit and restart Figma with `--remote-debugging-port=9222`
+7. Restart your MCP client
 
 ---
 
@@ -267,7 +269,7 @@ Variables & Components Data
 - ❌ **Manual token creation required**
 - ❌ Must manually refresh every 90 days
 - ❌ Single shared token (no per-user auth)
-- ❌ **Requires Figma Desktop restart** with debug port
+- ❌ **Requires Desktop Bridge Plugin** (recommended) or Figma Desktop restart with debug port
 
 **Why NPX ≠ Simpler:** Despite being distributed via npm, NPX has identical authentication complexity to Local Git. The only difference is distribution method, not setup complexity.
 
@@ -275,19 +277,17 @@ Variables & Components Data
 
 ## Figma Desktop Bridge Plugin
 
-### ⚠️ CRITICAL: Plugin Only Works in Local Mode
+### Recommended Connection Method (Local Mode)
 
-**Why it doesn't work remotely:**
+The Desktop Bridge Plugin is the **recommended way** to connect Figma to the MCP server. It communicates via WebSocket (port 9223) — no special Figma launch flags needed, and it persists across Figma restarts.
 
-The Desktop Bridge plugin requires:
-1. **Direct Chrome DevTools Protocol connection** to `localhost:9222`
-2. **Access to plugin UI iframe's `window` object** via Puppeteer
-3. **Local filesystem access** to read plugin code
+**Plugin Setup:**
+1. Open Figma Desktop (normal launch — no debug flags needed)
+2. Go to **Plugins → Development → Import plugin from manifest...**
+3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
+4. Run the plugin in your Figma file — it auto-connects via WebSocket
 
-Remote mode runs in Cloudflare Workers which:
-- ❌ Cannot connect to `localhost:9222` on your machine
-- ❌ Has no access to your Figma Desktop instance
-- ❌ Uses Browser Rendering API (cloud browser, not local)
+> **One-time import.** Once imported, the plugin stays in your Development plugins list.
 
 **What the plugin provides (Local Mode only):**
 
@@ -298,13 +298,14 @@ Remote mode runs in Cloudflare Workers which:
 | Component descriptions | Often missing (API bug) | ✅ Always present |
 | Data freshness | Cache + API limits | ✅ Real-time from Figma |
 | Multi-mode support | Limited | ✅ All modes (Light/Dark/etc) |
+| Selection tracking | ❌ | ✅ Real-time via WebSocket |
+| Document change monitoring | ❌ | ✅ Real-time via WebSocket |
 
-**Plugin Setup (Local Mode):**
-1. Install Local Mode MCP server
-2. Download `figma-desktop-bridge.zip` from releases
-3. Import plugin in Figma: Plugins → Development → Import plugin from manifest
-4. Run plugin in your Figma file
-5. Query variables/components via MCP
+**Transport priority:** The MCP server tries WebSocket first (instant check). If no plugin client is connected, it falls back to CDP (port 9222) if Figma was launched with `--remote-debugging-port=9222`. Both transports can be active simultaneously. All 53+ tools work identically through either transport.
+
+### Plugin Only Works in Local Mode
+
+Remote mode runs in Cloudflare Workers which cannot connect to `localhost` on your machine. The Desktop Bridge Plugin requires a local MCP server (NPX or Local Git setup).
 
 ---
 
@@ -368,10 +369,11 @@ All three installation methods are completely free:
 - **"Variables API 403 error"** → Enterprise plan required (use Local Mode instead)
 
 ### Local Mode Common Issues
-- **"Failed to connect to Figma Desktop"** → Restart Figma with `--remote-debugging-port=9222`
-- **"No plugin UI found"** → Make sure Desktop Bridge plugin is running
-- **"ECONNREFUSED localhost:9222"** → Verify http://localhost:9222 is accessible
+- **"Failed to connect to Figma Desktop"** → Install Desktop Bridge Plugin (recommended) or restart Figma with `--remote-debugging-port=9222`
+- **"No plugin UI found"** → Make sure Desktop Bridge plugin is running in your Figma file
+- **"ECONNREFUSED localhost:9222"** → This is expected if using WebSocket only. Install the Desktop Bridge Plugin instead, or launch Figma with `--remote-debugging-port=9222`
 - **"Variables cache empty"** → Close and reopen Desktop Bridge plugin
+- **Plugin shows "Disconnected"** → Make sure the MCP server is running (start/restart your MCP client)
 
 ---
 
@@ -396,7 +398,7 @@ All three installation methods are completely free:
 - You don't need design creation capabilities
 
 **Key Takeaway:** Remote SSE and Local modes have **different tool counts**:
-- **Remote Mode (SSE):** 16 tools — read-only operations
+- **Remote Mode (SSE):** 18 tools — read-only operations
 - **Local Mode (NPX/Git):** 53+ tools — full read/write operations
 
 The difference is not just authentication, but **fundamental capabilities**:

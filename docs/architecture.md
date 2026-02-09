@@ -45,16 +45,23 @@ flowchart TB
     AI -->|stdio| SERVER[Local MCP Server]
 
     SERVER --> REST[REST Client]
+    SERVER --> WS[WebSocket Client]
     SERVER --> CDP[CDP Client]
-    SERVER --> BRIDGE[Bridge Client]
 
     REST -->|HTTPS| API[Figma API]
-    CDP -->|WebSocket| FIGMA[Figma Desktop]
-    BRIDGE -->|Messages| FIGMA
+    WS -->|"WebSocket :9223<br/>(preferred)"| PLUGIN[Desktop Bridge Plugin]
+    CDP -->|"CDP :9222<br/>(fallback)"| FIGMA[Figma Desktop]
 
-    FIGMA --> PLUGIN[Desktop Bridge Plugin]
-    FIGMA --> FILE[Design File]
+    PLUGIN --> FILE[Design File]
+    FIGMA --> PLUGIN
+    FIGMA --> FILE
 ```
+
+**Transport Priority:**
+1. **WebSocket (preferred)** — via Desktop Bridge Plugin on port 9223. Instant availability check, no debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
+2. **CDP (fallback)** — via Chrome DevTools Protocol on port 9222. Requires launching Figma with `--remote-debugging-port=9222`. Provides full-page console monitoring and browser-level navigation.
+
+The MCP server checks WebSocket first (instant). If no plugin client is connected, it falls back to CDP. Both transports can be active simultaneously — all 53+ tools work identically through either.
 
 **Capabilities:**
 - Everything in Remote Mode, plus:
@@ -62,6 +69,7 @@ flowchart TB
 - Design creation via Plugin API
 - Variable CRUD operations
 - Component arrangement and organization
+- Real-time selection and document change tracking (WebSocket)
 - Zero-latency local execution
 
 ---
@@ -73,7 +81,7 @@ flowchart TB
 The main server implements the Model Context Protocol with stdio transport for local mode.
 
 **Key Responsibilities:**
-- Tool registration (53+ tools in Local Mode, 16 in Remote Mode)
+- Tool registration (53+ tools in Local Mode, 18 in Remote Mode)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication
@@ -83,12 +91,13 @@ The main server implements the Model Context Protocol with stdio transport for l
 
 | Category | Tools | Transport |
 |----------|-------|-----------|
-| Navigation | `figma_navigate`, `figma_get_status` | CDP |
-| Console | `figma_get_console_logs`, `figma_watch_console`, `figma_clear_console` | CDP |
-| Screenshots | `figma_take_screenshot`, `figma_capture_screenshot` | CDP / Plugin |
+| Navigation | `figma_navigate`, `figma_get_status` | WebSocket / CDP |
+| Console | `figma_get_console_logs`, `figma_watch_console`, `figma_clear_console` | WebSocket / CDP |
+| Screenshots | `figma_take_screenshot`, `figma_capture_screenshot` | WebSocket / CDP |
 | Design System | `figma_get_variables`, `figma_get_styles`, `figma_get_component` | REST API |
-| Design Creation | `figma_execute`, `figma_arrange_component_set` | Plugin |
-| Variables | `figma_create_variable`, `figma_update_variable`, etc. | Plugin |
+| Design Creation | `figma_execute`, `figma_arrange_component_set` | WebSocket / CDP (Plugin) |
+| Variables | `figma_create_variable`, `figma_update_variable`, etc. | WebSocket / CDP (Plugin) |
+| Real-Time | `figma_get_selection`, `figma_get_design_changes` | WebSocket only |
 
 ---
 
@@ -111,8 +120,17 @@ flowchart TB
 
 **Communication Protocol:**
 
-The MCP server communicates with the Desktop Bridge via Chrome DevTools Protocol:
+The MCP server communicates with the Desktop Bridge via either transport:
 
+**Via WebSocket (preferred):**
+1. **MCP Server** sends JSON command via WebSocket (port 9223)
+2. **Plugin UI** receives and forwards via `postMessage` to plugin code
+3. **Plugin Code** executes Figma Plugin API calls
+4. **Plugin Code** returns result via `figma.ui.postMessage`
+5. **Plugin UI** sends response back via WebSocket
+6. **MCP Server** receives correlated response
+
+**Via CDP (fallback):**
 1. **MCP Server** sends command via CDP `Runtime.evaluate`
 2. **Bridge Plugin** receives via `figma.ui.onmessage`
 3. **Bridge Plugin** executes Figma Plugin API calls
@@ -121,11 +139,36 @@ The MCP server communicates with the Desktop Bridge via Chrome DevTools Protocol
 
 ---
 
-### Chrome DevTools Protocol Integration
+### Transport Layer
 
-Used for console log capture and screenshot functionality.
+The MCP server uses a transport abstraction (`IFigmaConnector` interface) that supports two backends:
 
-**Console Monitoring:**
+#### WebSocket Transport (Preferred)
+
+The Desktop Bridge Plugin connects via WebSocket on port 9223. This is the recommended transport — it requires no special Figma launch flags and provides additional real-time capabilities.
+
+**Features unique to WebSocket:**
+- Real-time selection tracking (`figma_get_selection`)
+- Document change monitoring (`figma_get_design_changes`)
+- File identity tracking (file key, name, current page)
+- Plugin-context console capture
+- Instant availability check (no network timeout)
+
+**Communication flow:**
+```
+MCP Server ←WebSocket (port 9223)→ Plugin UI (ui.html) ←postMessage→ Plugin Code (code.js) ←figma.*→ Figma
+```
+
+#### CDP Transport (Fallback)
+
+Chrome DevTools Protocol connects on port 9222 when Figma is launched with `--remote-debugging-port=9222`.
+
+**Features unique to CDP:**
+- Full-page console monitoring (captures all page-level logs, not just plugin context)
+- Browser-level navigation (`figma_navigate` to different files)
+- Viewport screenshot capture
+
+**Console Monitoring via CDP:**
 
 ```typescript
 // Connect to Figma Desktop's DevTools port
@@ -147,22 +190,16 @@ client.Runtime.on('consoleAPICalled', (params) => {
 });
 ```
 
-**Screenshot Capture:**
+#### Transport Auto-Detection
 
-```typescript
-// Via CDP (viewport screenshot)
-const { data } = await client.Page.captureScreenshot({
-  format: 'png',
-  quality: 100
-});
+The MCP server selects the best transport automatically per-command:
 
-// Via Plugin (node-specific screenshot)
-const result = await executeInPlugin(`
-  const node = figma.currentPage.selection[0];
-  const bytes = await node.exportAsync({ format: 'PNG', scale: 2 });
-  return Array.from(bytes);
-`);
-```
+1. Check if a WebSocket client is connected (instant, <1ms)
+2. If yes, route through WebSocket
+3. If no, attempt CDP connection (has network timeout)
+4. If neither is available, return setup instructions
+
+Both transports can be active simultaneously. All 53+ tools work through either transport.
 
 ---
 

@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 74+ MCP tools in Local Mode, including parameters, return values, and usage examples."
+description: "Complete API reference for all 53+ MCP tools in Local Mode, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **74+ tools** with full read/write capabilities. Remote Mode (SSE) provides **18 read-only tools** (including design-code parity tools). Tools marked "Local" in the table below are not available in Remote Mode.
+> **Note:** Local Mode (NPX/Git) provides **53+ tools** with full read/write capabilities. Remote Mode (SSE) provides **18 read-only tools** (including design-code parity tools). Tools marked "Local" in the table below are not available in Remote Mode.
 
 ## Quick Reference
 
@@ -88,7 +88,7 @@ figma_navigate({
 
 ### `figma_get_status`
 
-Check browser and monitoring status. **In local mode, also validates if Figma Desktop is running with the required `--remote-debugging-port=9222` flag.**
+Check connection and monitoring status. **In local mode, validates transport connectivity (WebSocket and/or CDP) and shows which transport is active.**
 
 **Usage:**
 ```javascript
@@ -97,46 +97,57 @@ figma_get_status()
 
 **Returns:**
 - **Setup validation** (local mode only):
-  - `setup.valid` - Whether Figma Desktop is running with debug flag
-  - `setup.message` - Human-readable status
-  - `setup.setupInstructions` - Step-by-step setup guide (if invalid)
+  - `setup.valid` - Whether a transport (WebSocket or CDP) is available
+  - `setup.message` - Human-readable status including active transport
+  - `setup.transport` - Which transport is active (`websocket`, `cdp`, or `none`)
+  - `setup.setupInstructions` - Step-by-step setup guide (if no transport available)
   - `setup.ai_instruction` - Guidance for AI assistants
 - Browser connection status
 - Console monitoring active/inactive
 - Current URL (if navigated)
 - Number of captured console logs
 
-**Example Response (Local Mode - Setup Valid):**
+**Example Response (Local Mode - WebSocket Connected):**
 ```json
 {
   "mode": "local",
   "setup": {
     "valid": true,
-    "message": "✅ Figma Desktop is running with remote debugging enabled"
+    "message": "✅ Figma Desktop connected via WebSocket (Desktop Bridge Plugin)"
   }
 }
 ```
 
-**Example Response (Local Mode - Setup Invalid):**
+**Example Response (Local Mode - CDP Connected):**
+```json
+{
+  "mode": "local",
+  "setup": {
+    "valid": true,
+    "message": "✅ Figma Desktop connected via CDP (debug port 9222)"
+  }
+}
+```
+
+**Example Response (Local Mode - No Transport):**
 ```json
 {
   "mode": "local",
   "setup": {
     "valid": false,
-    "message": "❌ Figma Desktop is NOT running with --remote-debugging-port=9222",
+    "message": "❌ No connection to Figma Desktop",
     "setupInstructions": {
-      "step1": "QUIT Figma Desktop completely",
-      "step2_macOS": "open -a \"Figma\" --args --remote-debugging-port=9222",
-      "step2_windows": "cmd /c \"%LOCALAPPDATA%\\Figma\\Figma.exe\" --remote-debugging-port=9222"
-    },
-    "ai_instruction": "CRITICAL: User must restart Figma with the debug flag"
+      "recommended": "Install Desktop Bridge Plugin: Figma → Plugins → Development → Import from manifest",
+      "alternative_macOS": "open -a \"Figma\" --args --remote-debugging-port=9222",
+      "alternative_windows": "cmd /c \"%LOCALAPPDATA%\\Figma\\Figma.exe\" --remote-debugging-port=9222"
+    }
   }
 }
 ```
 
 **Best Practice:**
-- Call this tool first when starting a debugging session in local mode
-- If `setup.valid` is false, guide user through setup before using console tools
+- Call this tool first when starting a session in local mode
+- If `setup.valid` is false, guide user to install the Desktop Bridge Plugin (recommended) or restart Figma with debug flag (alternative)
 
 ---
 
@@ -1481,8 +1492,8 @@ figma_get_token_values({
 
 Before using write tools, ensure:
 1. ✅ Running in **Local Mode** (not Remote SSE)
-2. ✅ Figma Desktop started with `--remote-debugging-port=9222`
-3. ✅ **Desktop Bridge plugin** is running in Figma
+2. ✅ Connected to Figma Desktop via **Desktop Bridge Plugin** (recommended) or CDP debug mode (alternative)
+3. ✅ **Desktop Bridge plugin** is running in your Figma file
 4. ✅ `figma_get_status` returns `setup.valid: true`
 
 ---

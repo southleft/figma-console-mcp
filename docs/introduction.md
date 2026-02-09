@@ -179,20 +179,20 @@ Get all 53+ tools including design creation, variable management, and component 
   <Step title="Get a Figma Token">
     Visit figma.com/developers/api#access-tokens and create a Personal Access Token
   </Step>
-  <Step title="Add to Claude Desktop Config">
-    Edit your config file and add the server with your token
+  <Step title="Configure Your MCP Client">
+    Add the server config with your token to Claude Code, Cursor, Windsurf, Claude Desktop, or any MCP client
   </Step>
-  <Step title="Start Figma with Debug Mode">
-    Restart Figma Desktop with `--remote-debugging-port=9222`
+  <Step title="Connect to Figma Desktop">
+    Install the Desktop Bridge Plugin (recommended — one-time setup, no debug flags needed) or start Figma with `--remote-debugging-port=9222` as an alternative
   </Step>
-  <Step title="Restart Claude Desktop">
-    Quit and reopen Claude Desktop to load the new config
+  <Step title="Restart Your MCP Client">
+    Restart your MCP client to load the new config
   </Step>
 </Steps>
 
 ### Quick Start: Remote SSE (Read-Only)
 
-If you just want to explore or evaluate the tool, use Remote SSE. It's read-only (16 tools) but requires zero setup.
+If you just want to explore or evaluate the tool, use Remote SSE. It's read-only (18 tools) but requires zero setup.
 
 <Steps>
   <Step title="Open Claude Desktop Settings">
@@ -204,7 +204,7 @@ If you just want to explore or evaluate the tool, use Remote SSE. It's read-only
 </Steps>
 
 <Warning>
-**Remote mode cannot create or modify designs.** It only has 16 read-only tools (~30% of full capabilities). For design creation, use NPX Setup.
+**Remote mode cannot create or modify designs.** It only has 18 read-only tools (~34% of full capabilities). For design creation, use NPX Setup.
 </Warning>
 
 <Card title="Full Setup Guide" icon="book-open" href="/setup">
@@ -269,7 +269,7 @@ Figma Console MCP offers two ways to connect with **very different capabilities*
 
 | Feature | Local Mode (NPX/Git) | Remote Mode (SSE) |
 |---------|----------------------|-------------------|
-| **Total tools** | **53+** | **16** (read-only) |
+| **Total tools** | **53+** | **18** (read-only) |
 | **Setup** | ~10 minutes | ~2 minutes |
 | **Create designs** | ✅ Full capability | ❌ Not available |
 | **Edit designs** | ✅ Full capability | ❌ Not available |
@@ -278,7 +278,7 @@ Figma Console MCP offers two ways to connect with **very different capabilities*
 | **Variables API** | Works with any plan | Enterprise required |
 | **Authentication** | Manual token (one-time) | Automatic OAuth |
 
-**Start with NPX Setup** if you want AI to actually design in Figma. Remote mode is useful for quick exploration but is **read-only** with only ~30% of the tools.
+**Start with NPX Setup** if you want AI to actually design in Figma. Remote mode is useful for quick exploration but is **read-only** with only ~34% of the tools.
 
 <Card title="Compare Modes in Detail" icon="code-compare" href="/mode-comparison">
   Understand the technical differences and choose the right setup.

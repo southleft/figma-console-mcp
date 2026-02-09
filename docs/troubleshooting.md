@@ -48,27 +48,24 @@ Restart Claude Code (`/mcp` to reconnect) — mcp-remote will open a browser for
 
 **For Plugin Developers in Local Mode:**
 
-> **🚨 CRITICAL FIRST-TIME SETUP:**
+> **FIRST-TIME SETUP — Choose one:**
 >
-> **Step 1:** Quit Figma Desktop completely (Cmd+Q on macOS / Alt+F4 on Windows)
+> **Option A: Desktop Bridge Plugin (Recommended)**
+> 1. Open Figma Desktop normally (no special flags)
+> 2. Go to **Plugins → Development → Import plugin from manifest...**
+> 3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
+> 4. Run the plugin in your Figma file — it auto-connects via WebSocket
 >
-> **Step 2:** Relaunch Figma with remote debugging enabled:
-> - **macOS:** Open Terminal and run:
->   ```bash
->   open -a "Figma" --args --remote-debugging-port=9222
->   ```
-> - **Windows:** Open CMD or PowerShell and run:
->   ```
->   cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
->   ```
+> ✅ **One-time import.** The plugin stays in your Development plugins list. Just run it each session.
 >
-> **Step 3:** Verify setup worked by visiting http://localhost:9222 in Chrome
-> - You should see a list of inspectable pages
-> - If you see this, the setup is correct!
+> **Option B: CDP Debug Mode (Alternative)**
+> 1. Quit Figma Desktop completely (Cmd+Q on macOS / Alt+F4 on Windows)
+> 2. Relaunch with remote debugging:
+>    - **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
+>    - **Windows:** `cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222`
+> 3. Verify at http://localhost:9222 — you should see inspectable pages
 >
-> **Step 4:** Open your design file and run your plugin
->
-> ✅ **You only need to do this once per Figma session.** Every time you quit Figma, you'll need to relaunch it with this command.
+> ⚠️ You must relaunch with this flag every time you quit Figma.
 
 ### How to Verify Setup is Working
 
@@ -78,17 +75,41 @@ Before trying to get console logs, verify your setup:
 "Check Figma status"
 ```
 
-You should see:
+You should see something like:
 ```json
 {
   "setup": {
     "valid": true,
-    "message": "✅ Figma Desktop is running with remote debugging enabled"
+    "message": "✅ Figma Desktop connected via WebSocket (Desktop Bridge Plugin)"
   }
 }
 ```
 
 If you see `"valid": false`, the AI will provide step-by-step setup instructions.
+
+---
+
+### WebSocket Bridge Troubleshooting
+
+#### Plugin Shows "Disconnected"
+**Cause:** MCP server is not running (it hosts the WebSocket server on port 9223).
+**Fix:** Start or restart your MCP client (Claude Code, Cursor, etc.) so the MCP server process starts.
+
+#### Plugin Not Appearing in Development Plugins
+**Cause:** Plugin manifest not imported.
+**Fix:** Go to Figma → Plugins → Development → Import plugin from manifest... → select `figma-desktop-bridge/manifest.json`.
+
+#### Port 9223 Already in Use
+**Cause:** Another MCP server instance is running.
+**Fix:** Stop the other instance, or set the `FIGMA_WS_PORT` environment variable to a different port (note: you'll also need to update `wsPort` in the plugin's `ui.html` and `allowedDomains` in `manifest.json`).
+
+#### Plugin Connected but Commands Timeout
+**Cause:** Plugin may be running in a different Figma file than expected.
+**Fix:** The MCP server routes commands to the active file. Make sure the Desktop Bridge Plugin is running in the file you want to work with. Use `figma_get_status` to see which file is connected.
+
+#### WebSocket Works but CDP Doesn't (or Vice Versa)
+**Cause:** These are independent transports. WebSocket requires the Desktop Bridge Plugin running; CDP requires the `--remote-debugging-port=9222` flag.
+**Fix:** You can use either or both. The MCP server tries WebSocket first and falls back to CDP automatically.
 
 ---
 

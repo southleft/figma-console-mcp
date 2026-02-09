@@ -44,7 +44,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Desktop Bridge plugin | ✅ | ❌ |
 | **Total tools available** | **53+** | **16** |
 
-> **Bottom line:** Remote SSE is **read-only**. If you want AI to actually design in Figma, use NPX Setup.
+> **Bottom line:** Remote SSE is **read-only** with ~34% of the tools. If you want AI to actually design in Figma, use NPX Setup.
 
 ---
 
@@ -58,7 +58,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 - [ ] **Node.js 18+** — Check with `node --version` ([Download](https://nodejs.org))
 - [ ] **Figma Desktop** installed (not just the web app)
-- [ ] **Claude Desktop** or another MCP client
+- [ ] **An MCP client** (Claude Code, Cursor, Windsurf, Claude Desktop, etc.)
 
 #### Step 1: Get Your Figma Token
 
@@ -67,9 +67,16 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 3. Enter description: `Figma Console MCP`
 4. **Copy the token** — you won't see it again! (starts with `figd_`)
 
-#### Step 2: Configure Claude Desktop
+#### Step 2: Configure Your MCP Client
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+**Claude Code (CLI):**
+```bash
+claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -- npx -y figma-console-mcp@latest
+```
+
+**Cursor / Windsurf / Claude Desktop:**
+
+Add to your MCP config file:
 
 ```json
 {
@@ -85,32 +92,34 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 }
 ```
 
-#### Step 3: Start Figma with Debug Mode
+#### Step 3: Connect to Figma Desktop
 
-**Quit Figma completely**, then restart with debug flag:
+**Option A — Desktop Bridge Plugin (Recommended):**
+1. Open Figma Desktop normally (no special flags needed)
+2. Go to **Plugins → Development → Import plugin from manifest...**
+3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
+4. Run the plugin in your Figma file — it auto-connects via WebSocket
 
-**macOS:**
-```bash
-open -a "Figma" --args --remote-debugging-port=9222
-```
+> One-time setup. No need to restart Figma with special flags.
 
-**Windows:**
-```
-cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
-```
+**Option B — CDP Debug Mode (Alternative):**
+
+Quit Figma completely, then restart with:
+- **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
+- **Windows:** `cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222`
 
 Verify at [http://localhost:9222](http://localhost:9222) — you should see inspectable Figma pages.
 
-#### Step 4: Restart Claude Desktop
+#### Step 4: Restart Your MCP Client
 
-Quit and reopen Claude Desktop. Look for 🔌 icon showing "figma-console: connected".
+Restart your MCP client to load the new configuration.
 
 #### Step 5: Test It!
 
 ```
 Check Figma status
 ```
-→ Should show "✅ Figma Desktop connected"
+→ Should show connection status with active transport (WebSocket or CDP)
 
 ```
 Create a simple frame with a blue background
@@ -137,7 +146,7 @@ npm install
 npm run build:local
 ```
 
-#### Configure Claude Desktop
+#### Configure Your MCP Client
 
 ```json
 {
@@ -153,7 +162,7 @@ npm run build:local
 }
 ```
 
-Then follow [NPX Steps 3-5](#step-3-start-figma-with-debug-mode) above.
+Then follow [NPX Steps 3-5](#step-3-connect-to-figma-desktop) above.
 
 **📖 [Complete Setup Guide](docs/setup.md)**
 
@@ -163,7 +172,7 @@ Then follow [NPX Steps 3-5](#step-3-start-figma-with-debug-mode) above.
 
 **Best for:** Quickly evaluating the tool or read-only design data extraction.
 
-**What you get:** 16 read-only tools — view data, take screenshots, read logs. **Cannot create or modify designs.**
+**What you get:** 18 read-only tools — view data, take screenshots, read logs, design-code parity. **Cannot create or modify designs.**
 
 #### Claude Desktop (UI Method)
 
@@ -212,7 +221,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 | Feature | NPX (Recommended) | Local Git | Remote SSE |
 |---------|-------------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **53+** | **53+** | **16** (read-only) |
+| **Total tools** | **53+** | **53+** | **18** (read-only) |
 | **Design creation** | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ❌ |
@@ -224,7 +233,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 | **Automatic updates** | ✅ (`@latest`) | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only with ~30% of the tools. Use NPX for full capabilities.
+> **Key insight:** Remote SSE is read-only with ~34% of the tools. Use NPX for full capabilities.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -385,7 +394,7 @@ Navigate to this file and capture what's on screen
 
 ## 🎨 AI-Assisted Design Creation
 
-> **⚠️ Local Mode Only:** This feature requires the Desktop Bridge plugin and only works with [Local Mode installation](#for-plugin-developers-local-mode). Remote Mode is read-only and cannot create or modify designs.
+> **⚠️ Local Mode Only:** This feature requires the Desktop Bridge plugin and only works with Local Mode installation (NPX or Local Git). Remote Mode is read-only and cannot create or modify designs.
 
 One of the most powerful capabilities of this MCP server is the ability to **design complete UI components and pages directly in Figma through natural language conversation** with any MCP-compatible AI assistant like Claude Desktop or Claude Code.
 
@@ -458,58 +467,50 @@ This ensures designs aren't just technically correct—they *look* right.
 
 ---
 
-## 🎨 Desktop Bridge Plugin (Local Mode Only)
+## 🎨 Desktop Bridge Plugin (Recommended Connection)
 
-The **Figma Desktop Bridge** plugin enables powerful capabilities:
+The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to the MCP server. It communicates via WebSocket — no special Figma launch flags needed, and it persists across Figma restarts.
 
-### Read Operations
-- ✅ Variables without Enterprise API
-- ✅ Reliable component descriptions (bypasses API bugs)
-- ✅ Multi-mode support (Light/Dark/Brand variants)
+### Setup
 
-### Write Operations
-- ✅ **Design Creation** - Create frames, shapes, text, components via `figma_execute`
-- ✅ **Variable Management** - Full CRUD operations on variables and collections
-- ✅ **Mode Management** - Add and rename modes for multi-theme support
+1. Open Figma Desktop (normal launch — no debug flags needed)
+2. Go to **Plugins → Development → Import plugin from manifest...**
+3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
+4. Run the plugin in your Figma file — it auto-connects to `ws://localhost:9223`
+5. Ask your AI: "Check Figma status" to verify the connection
 
-**⚠️ Plugin Limitation:** Only works in Local Mode. Remote mode cannot access it.
-
-**Setup:**
-1. Install Local Mode MCP
-2. Download plugin from [Releases](https://github.com/southleft/figma-console-mcp/releases/latest)
-3. Import plugin: Figma Desktop → Plugins → Development → Import plugin from manifest
-4. Run plugin in your Figma file
-5. Ask Claude: "Create a button component" or "Show me the design variables"
+> **One-time import.** Once imported, the plugin stays in your Development plugins list. Just run it whenever you want to use the MCP.
 
 **📖 [Desktop Bridge Documentation](figma-desktop-bridge/README.md)**
 
-### 🔌 WebSocket Bridge
+### Capabilities
 
-Figma Desktop is transitioning away from Chrome DevTools Protocol (CDP) support. The MCP server includes a **WebSocket bridge** that provides seamless connectivity regardless of which transport is available.
+**Read Operations:**
+- Variables without Enterprise API
+- Reliable component descriptions (bypasses API bugs)
+- Multi-mode support (Light/Dark/Brand variants)
+- Real-time selection tracking and document change monitoring
 
-**How it works:**
-- The server tries **WebSocket first** (port 9223, instant check) via the Desktop Bridge plugin
-- If no WebSocket client is connected, it falls back to **CDP** (port 9222)
+**Write Operations:**
+- **Design Creation** - Create frames, shapes, text, components via `figma_execute`
+- **Variable Management** - Full CRUD operations on variables and collections
+- **Mode Management** - Add and rename modes for multi-theme support
+
+### How the Transport Works
+
+- The MCP server tries **WebSocket first** (port 9223, instant check) via the Desktop Bridge plugin
+- If no WebSocket client is connected, it falls back to **CDP** (port 9222) if available
 - The transport is selected automatically per-command — no configuration needed
 - All 53+ tools work identically through either transport
 
-**Setup:**
-1. Install the Desktop Bridge plugin in Figma (Plugins > Development > Import from manifest)
-2. Open the plugin in your Figma file — it connects to ws://localhost:9223 automatically
-3. The MCP server detects the connection and routes commands through WebSocket
+**CDP as fallback:** If you also launch Figma with `--remote-debugging-port=9222`, CDP serves as a fallback transport. CDP captures all page-level console logs while WebSocket captures plugin-context logs. `figma_navigate` requires CDP for browser-level navigation; in WebSocket mode it returns the connected file info with guidance instead.
 
-**If you also have CDP available** (Figma launched with `--remote-debugging-port=9222`), CDP serves as a fallback. Console tools work with both transports — CDP captures all page-level logs while WebSocket captures plugin-context logs. `figma_navigate` requires CDP for browser-level navigation; in WebSocket mode it returns the connected file info with guidance instead.
-
-**Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs). The MCP server routes commands to the appropriate file based on active context. If a plugin instance is replaced (e.g., plugin reloaded in the same file), the displaced client stops reconnecting automatically.
+**Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
 **Environment variables:**
 - `FIGMA_WS_PORT` — Override the server-side WebSocket port (default: 9223). Note: the plugin UI and manifest are hard-coded to port 9223. Using a custom port also requires updating `wsPort` in `ui.html` and `allowedDomains` in `manifest.json`.
 
-**Checking transport status:**
-```
-Ask Claude: "Check Figma status"
-```
-The response will show which transport is active (CDP or WebSocket).
+**Plugin Limitation:** Only works in Local Mode (NPX or Local Git). Remote SSE mode cannot access it.
 
 ---
 
@@ -609,18 +610,18 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.2.x (Stable) - Production-ready with comprehensive capabilities
+**Current Status:** v1.8.0 (Stable) - Production-ready with WebSocket Bridge, 53+ tools, and MCP Apps
 
-**Coming Soon:**
-- [ ] **Enhanced error messages** - Actionable suggestions for design operations
+**Recent Releases:**
+- [x] **v1.8.0** - WebSocket Bridge transport (CDP-free connectivity), real-time selection/document tracking, `figma_get_selection` + `figma_get_design_changes` tools
+- [x] **v1.7.0** - MCP Apps (Token Browser, Design System Dashboard), batch variable operations, design-code parity tools
+- [x] **v1.5.0** - Node manipulation tools, component property management, component set arrangement
+- [x] **v1.3.0** - Design creation via `figma_execute`, variable CRUD operations
+
+**Coming Next:**
 - [ ] **Component template library** - Common UI pattern generation
-- [ ] **Batch variant operations** - Create multiple variants efficiently
 - [ ] **Visual regression testing** - Screenshot diff capabilities
-
-**Future:**
-- [ ] **Multi-user debugging** - Collaborative debugging sessions
 - [ ] **Design linting** - Automated compliance and accessibility checks
-- [ ] **VS Code extension** - Simplified setup and integration
 - [ ] **AI enhancements** - Intelligent component suggestions and auto-layout optimization
 
 **📖 [Full Roadmap](docs/ROADMAP.md)**

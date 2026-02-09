@@ -96,8 +96,15 @@ Code runs in Figma's **plugin sandbox**, not your system. It cannot access your 
 
 All network communication is limited to:
 - `api.figma.com` — Figma's official REST API (HTTPS)
-- `localhost` — Local Desktop Bridge communication
+- `localhost:9223` — WebSocket Bridge (Desktop Bridge Plugin communication)
+- `localhost:9222` — CDP (Chrome DevTools Protocol, alternative transport)
 - `*.workers.dev` — Remote mode only (HTTPS)
+
+### WebSocket Bridge Security
+- **Localhost-only binding** — The WebSocket server binds to `localhost` only, not accessible from external networks
+- **No authentication required** — Since it's localhost-only, the attack surface is limited to local processes
+- **Request/response correlation** — Each command uses a unique correlation ID to prevent response confusion
+- **Per-file isolation** — Multiple connected Figma files maintain independent state (selection, changes, console logs)
 
 <Check>
 **No external dependencies at runtime** — No third-party analytics, CDNs, or external API calls beyond Figma.
