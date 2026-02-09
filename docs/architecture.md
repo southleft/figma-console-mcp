@@ -194,7 +194,7 @@ client.Runtime.on('consoleAPICalled', (params) => {
 
 The MCP server selects the best transport automatically per-command:
 
-1. Check if a WebSocket client is connected (instant, <1ms)
+1. Check if a WebSocket client is connected (instant, under 1ms)
 2. If yes, route through WebSocket
 3. If no, attempt CDP connection (has network timeout)
 4. If neither is available, return setup instructions
