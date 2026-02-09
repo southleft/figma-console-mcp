@@ -108,6 +108,22 @@ export class FigmaWebSocketServer extends EventEmitter {
           port: this.options.port,
           host: this.options.host || 'localhost',
           maxPayload: 100 * 1024 * 1024, // 100MB — screenshots and large component data can be big
+          verifyClient: (info, callback) => {
+            // Mitigate Cross-Site WebSocket Hijacking (CSWSH):
+            // Reject connections from unexpected browser origins.
+            const origin = info.origin;
+            const allowed =
+              !origin ||                           // No origin — local process (e.g. Node.js client)
+              origin === 'null' ||                  // Sandboxed iframe / Figma Desktop plugin UI
+              origin.startsWith('https://www.figma.com') ||
+              origin.startsWith('https://figma.com');
+            if (allowed) {
+              callback(true);
+            } else {
+              logger.warn({ origin }, 'Rejected WebSocket connection from unauthorized origin');
+              callback(false, 403, 'Unauthorized Origin');
+            }
+          },
         });
 
         this.wss.on('listening', () => {
