@@ -2584,7 +2584,7 @@ export default {
 			<div class="grid-cell showcase-cell rule-left">
 				<div class="showcase-label">What AI Can Access</div>
 				<div class="showcase-stat">
-					<span class="number">72+</span>
+					<span class="number">53+</span>
 					<span class="label">MCP tools for Figma</span>
 				</div>
 				<div class="capability-list">
