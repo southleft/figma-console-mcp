@@ -48,7 +48,7 @@ Before starting, verify you have:
 
 - [ ] **Node.js 18+** installed — Check with `node --version` ([Download](https://nodejs.org))
 - [ ] **Figma Desktop** installed (not just the web app)
-- [ ] **Claude Desktop** or another MCP client installed
+- [ ] **An MCP client** installed (Claude Desktop, Claude Code, Cursor, Windsurf, etc.)
 
 ### Step 1: Get Your Figma Token (~2 min)
 
@@ -179,7 +179,7 @@ Create a simple frame with a blue background
 - [ ] Node.js 18+ installed
 - [ ] Git installed
 - [ ] Figma Desktop installed
-- [ ] Claude Desktop or another MCP client
+- [ ] An MCP client installed (Claude Desktop, Claude Code, Cursor, Windsurf, etc.)
 
 ### Step 1: Clone and Build
 
