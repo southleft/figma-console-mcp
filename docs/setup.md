@@ -15,8 +15,8 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 
 | I want to... | Setup Method | Time |
 |--------------|--------------|------|
-| **Create and modify designs with AI** | [NPX Setup](#-npx-setup-recommended) (Recommended) | ~10 min |
-| **Contribute to the project** | [Local Git Setup](#-local-git-setup-for-contributors) | ~15 min |
+| **Create, modify, and develop with AI** | [NPX Setup](#-npx-setup-recommended) (Recommended) | ~10 min |
+| **Full capabilities with manual update control** | [Local Git Setup](#-local-git-setup-alternative) | ~15 min |
 | **Just explore my design data** (read-only) | [Remote SSE](#-remote-sse-read-only-exploration) | ~2 min |
 
 ### ⚠️ Important: Capability Differences
@@ -32,15 +32,15 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | Variables without Enterprise | ✅ | ❌ |
 | **Total tools available** | **53+** | **16** |
 
-> **Bottom line:** Remote SSE is **read-only** with ~30% of the tools. If you want AI to actually design in Figma, use NPX Setup.
+> **Bottom line:** Remote SSE is **read-only** with ~30% of the tools. If you want AI to create, modify, or develop from your Figma designs, use NPX Setup.
 
 ---
 
 ## 🚀 NPX Setup (Recommended)
 
-**Best for:** Designers who want full AI-assisted design capabilities with automatic updates.
+**Best for:** Anyone who wants full AI-assisted design and development capabilities with automatic updates.
 
-**What you get:** All 53+ tools including design creation, variable management, component instantiation, and Desktop Bridge plugin support.
+**What you get:** All 53+ tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
 
 ### Prerequisites Checklist
 
@@ -168,11 +168,11 @@ Create a simple frame with a blue background
 
 ---
 
-## 🔧 Local Git Setup (For Contributors)
+## 🔧 Local Git Setup (Alternative)
 
-**Best for:** Developers who want to modify the source code or contribute to the project.
+**Best for:** Users who want more control over when updates happen, or developers who want to contribute to the project.
 
-**What you get:** Same 53+ tools as NPX, plus full source code access.
+**What you get:** Same 53+ tools as NPX. Updates are manual — you pull and rebuild when you're ready.
 
 ### Prerequisites
 
