@@ -134,7 +134,7 @@ export function registerCommentTools(
 	// -----------------------------------------------------------------------
 	server.tool(
 		"figma_post_comment",
-		"Post a comment on a Figma file, optionally pinned to a specific design node. Use after figma_check_design_parity to notify designers of drift when code is the canonical source. Supports replies to existing comment threads.",
+		"Post a comment on a Figma file, optionally pinned to a specific design node. Use after figma_check_design_parity to notify designers of drift when code is the canonical source. Supports replies to existing comment threads. Limitation: @mentions are a Figma UI-only feature — including '@name' in the message renders as plain text, not a clickable mention tag, and does not trigger Figma notifications.",
 		{
 			fileUrl: z
 				.string()

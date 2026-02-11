@@ -52,6 +52,9 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_setup_design_tokens` | Create collection + modes + variables atomically | Local |
 | **🔍 Design-Code Parity** | `figma_check_design_parity` | Compare Figma specs vs code implementation | All |
 | | `figma_generate_component_doc` | Generate component documentation from Figma + code | All |
+| **💬 Comments** | `figma_get_comments` | Get comments on a Figma file | All |
+| | `figma_post_comment` | Post a comment, optionally pinned to a node | All |
+| | `figma_delete_comment` | Delete a comment by ID | All |
 | **📐 Node Manipulation** | `figma_resize_node` | Resize a node | Local |
 | | `figma_move_node` | Move a node | Local |
 | | `figma_clone_node` | Clone a node | Local |
@@ -1487,6 +1490,9 @@ figma_get_token_values({
 | Generate component documentation | `figma_generate_component_doc` |
 | Audit component before sign-off | `figma_check_design_parity` |
 | Create design system reference docs | `figma_generate_component_doc` |
+| Notify designers of parity drift | `figma_post_comment` |
+| Review existing feedback threads | `figma_get_comments` |
+| Clean up resolved feedback | `figma_delete_comment` |
 
 ### Prerequisites Checklist
 
@@ -1634,6 +1640,107 @@ figma_generate_component_doc({
 
 **COMPONENT_SET Handling:**
 Same as parity checker — resolves to default variant for visual specs, reads property definitions from the COMPONENT_SET.
+
+---
+
+## 💬 Comment Tools
+
+### `figma_get_comments`
+
+Get comments on a Figma file. Returns comment threads with author, message, timestamps, and pinned node locations.
+
+**When to Use:**
+- Reviewing feedback threads on a design file
+- Checking for open comments before a release
+- Retrieving comment IDs to reply to or delete
+
+**Usage:**
+```javascript
+figma_get_comments({
+  fileUrl: 'https://figma.com/design/abc123',
+  include_resolved: false,
+  as_md: true
+})
+```
+
+**Parameters:**
+- `fileUrl` (optional): Figma file URL (uses current URL if omitted)
+- `as_md` (optional): Return comment message bodies as markdown (default: false)
+- `include_resolved` (optional): Include resolved comment threads (default: false)
+
+**Returns:**
+- `comments`: Array of comment objects with `id`, `message`, `user`, `created_at`, `resolved_at`, `client_meta` (pinned location)
+- `summary`: Total, active, resolved, and returned counts
+
+---
+
+### `figma_post_comment`
+
+Post a comment on a Figma file, optionally pinned to a specific design node. Supports replies to existing threads.
+
+**When to Use:**
+- After `figma_check_design_parity` to notify designers of drift
+- Leaving feedback on specific components or elements
+- Replying to an existing comment thread
+
+**Usage:**
+```javascript
+// Pin a comment to a specific node
+figma_post_comment({
+  fileUrl: 'https://figma.com/design/abc123',
+  message: 'Border-radius in code uses 8px but Figma shows 6px. Please update.',
+  node_id: '695:313'
+})
+
+// Reply to an existing comment thread
+figma_post_comment({
+  fileUrl: 'https://figma.com/design/abc123',
+  message: 'Fixed in the latest push.',
+  reply_to_comment_id: '1627922741'
+})
+```
+
+**Parameters:**
+- `fileUrl` (optional): Figma file URL (uses current URL if omitted)
+- `message` (required): The comment message text
+- `node_id` (optional): Node ID to pin the comment to (e.g., `'695:313'`)
+- `x` (optional): X offset for comment placement relative to the node
+- `y` (optional): Y offset for comment placement relative to the node
+- `reply_to_comment_id` (optional): ID of an existing comment to reply to
+
+**Returns:**
+- `comment`: Created comment object with `id`, `message`, `created_at`, `user`, `client_meta`
+
+<Warning>
+**@mentions are not supported via the API.** Including `@name` in the message renders as plain text, not a clickable Figma mention tag. Clickable @mentions with notifications are a Figma UI-only feature. To notify specific people, share the comment link or use Figma's built-in notification system.
+</Warning>
+
+---
+
+### `figma_delete_comment`
+
+Delete a comment from a Figma file by its comment ID.
+
+**When to Use:**
+- Cleaning up test or outdated comments
+- Removing resolved feedback after fixes are confirmed
+- Managing comment threads programmatically
+
+**Usage:**
+```javascript
+figma_delete_comment({
+  fileUrl: 'https://figma.com/design/abc123',
+  comment_id: '1627922741'
+})
+```
+
+**Parameters:**
+- `fileUrl` (optional): Figma file URL (uses current URL if omitted)
+- `comment_id` (required): The ID of the comment to delete (get IDs from `figma_get_comments`)
+
+**Returns:**
+- `success`: Boolean indicating deletion success
+- `deleted_comment_id`: The ID that was deleted
 
 ---
 
