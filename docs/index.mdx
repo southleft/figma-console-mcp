@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.8.0** — WebSocket Bridge transport for CDP-free Figma Desktop communication. Auto-detects and uses WebSocket when available, falls back to CDP. Plus real-time selection tracking, document change events, and live page awareness — all without Chrome DevTools Protocol.
+**New in v1.9.0** — Figma Comments tools: post design-code parity feedback pinned directly to components, retrieve comment threads, and clean up resolved comments. Closes the design-code communication loop without leaving your AI workflow.
 </Note>
 
 # Your Design System as an API
@@ -131,17 +131,17 @@ Real component data. Real token values. Real code that uses your actual design s
 ## Choose Your Setup
 
 <Warning>
-**Important:** Remote Mode is **read-only** with 18 tools. For design creation, development workflows, variable management, and full capabilities (53+ tools), use NPX Setup.
+**Important:** Remote Mode is **read-only** with 21 tools. For design creation, development workflows, variable management, and full capabilities (56+ tools), use NPX Setup.
 </Warning>
 
 <Columns cols={2}>
   <Card title="NPX Setup (Recommended)" icon="bolt" href="/setup#-npx-setup-recommended">
-    **Full capabilities — 53+ tools**
+    **Full capabilities — 56+ tools**
 
     Create, modify, and develop with AI. Manage variables, instantiate components, and bridge design to code. Requires Node.js and a Figma token.
   </Card>
   <Card title="Remote SSE (Read-Only)" icon="cloud" href="/setup#-remote-sse-read-only-exploration">
-    **Quick exploration — 18 tools**
+    **Quick exploration — 21 tools**
 
     Zero setup, just paste a URL. Read design data, take screenshots. Cannot create or modify designs. Best for evaluating the tool.
   </Card>
@@ -193,7 +193,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Real scenarios and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 53+ tools
+    Complete reference for 56+ tools
   </Card>
   <Card title="Troubleshooting" icon="circle-question" href="/troubleshooting">
     Common issues and solutions

@@ -361,6 +361,47 @@ export class FigmaAPI {
 	}
 
   /**
+   * GET /v1/files/:file_key/comments
+   * Get comments on a file
+   */
+  async getComments(fileKey: string, options?: { as_md?: boolean }): Promise<any> {
+    const params = new URLSearchParams();
+    if (options?.as_md) params.set('as_md', 'true');
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request(`/files/${fileKey}/comments${query}`);
+  }
+
+  /**
+   * POST /v1/files/:file_key/comments
+   * Post a comment on a file
+   */
+  async postComment(
+    fileKey: string,
+    message: string,
+    clientMeta?: { node_id?: string; node_offset?: { x: number; y: number } },
+    commentId?: string,
+  ): Promise<any> {
+    return this.request(`/files/${fileKey}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({
+        message,
+        ...(clientMeta && { client_meta: clientMeta }),
+        ...(commentId && { comment_id: commentId }),
+      }),
+    });
+  }
+
+  /**
+   * DELETE /v1/files/:file_key/comments/:comment_id
+   * Delete a comment on a file
+   */
+  async deleteComment(fileKey: string, commentId: string): Promise<any> {
+    return this.request(`/files/${fileKey}/comments/${commentId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
    * Helper: Get all design tokens (variables) with formatted output
    * Both local and published can fail gracefully (e.g., 403 without Enterprise plan)
    */

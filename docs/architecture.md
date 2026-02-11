@@ -61,7 +61,7 @@ flowchart TB
 1. **WebSocket (preferred)** — via Desktop Bridge Plugin on port 9223. Instant availability check, no debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
 2. **CDP (fallback)** — via Chrome DevTools Protocol on port 9222. Requires launching Figma with `--remote-debugging-port=9222`. Provides full-page console monitoring and browser-level navigation.
 
-The MCP server checks WebSocket first (instant). If no plugin client is connected, it falls back to CDP. Both transports can be active simultaneously — all 53+ tools work identically through either.
+The MCP server checks WebSocket first (instant). If no plugin client is connected, it falls back to CDP. Both transports can be active simultaneously — all 56+ tools work identically through either.
 
 **Capabilities:**
 - Everything in Remote Mode, plus:
@@ -81,7 +81,7 @@ The MCP server checks WebSocket first (instant). If no plugin client is connecte
 The main server implements the Model Context Protocol with stdio transport for local mode.
 
 **Key Responsibilities:**
-- Tool registration (53+ tools in Local Mode, 18 in Remote Mode)
+- Tool registration (56+ tools in Local Mode, 18 in Remote Mode)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication
@@ -199,7 +199,7 @@ The MCP server selects the best transport automatically per-command:
 3. If no, attempt CDP connection (has network timeout)
 4. If neither is available, return setup instructions
 
-Both transports can be active simultaneously. All 53+ tools work through either transport.
+Both transports can be active simultaneously. All 56+ tools work through either transport.
 
 ---
 

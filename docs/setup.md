@@ -30,7 +30,7 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | Screenshot validation | ✅ | ✅ |
 | Desktop Bridge plugin | ✅ | ❌ |
 | Variables without Enterprise | ✅ | ❌ |
-| **Total tools available** | **53+** | **18** |
+| **Total tools available** | **56+** | **18** |
 
 > **Bottom line:** Remote SSE is **read-only** with ~34% of the tools. If you want AI to create, modify, or develop from your Figma designs, use NPX Setup.
 
@@ -40,7 +40,7 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 
 **Best for:** Anyone who wants full AI-assisted design and development capabilities with automatic updates.
 
-**What you get:** All 53+ tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
+**What you get:** All 56+ tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
 
 ### Prerequisites Checklist
 
@@ -173,7 +173,7 @@ Create a simple frame with a blue background
 
 **Best for:** Users who want more control over when updates happen, or developers who want to contribute to the project.
 
-**What you get:** Same 53+ tools as NPX. Updates are manual — you pull and rebuild when you're ready.
+**What you get:** Same 56+ tools as NPX. Updates are manual — you pull and rebuild when you're ready.
 
 ### Prerequisites
 
@@ -257,7 +257,7 @@ Then restart Claude Desktop.
 
 **Best for:** Quickly evaluating the tool or read-only design data extraction.
 
-**What you get:** 18 read-only tools for viewing design data, taking screenshots, reading console logs, and design-code parity checks.
+**What you get:** 21 read-only tools for viewing design data, taking screenshots, reading console logs, and design-code parity checks.
 
 > ⚠️ **Limitation:** Remote mode **cannot create or modify designs**. It's read-only. For design creation, use [NPX Setup](#-npx-setup-recommended).
 

@@ -42,7 +42,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | **Edit existing designs** | ✅ | ❌ |
 | **Manage design tokens/variables** | ✅ | ❌ |
 | Desktop Bridge plugin | ✅ | ❌ |
-| **Total tools available** | **53+** | **16** |
+| **Total tools available** | **56+** | **16** |
 
 > **Bottom line:** Remote SSE is **read-only** with ~34% of the tools. If you want AI to actually design in Figma, use NPX Setup.
 
@@ -52,7 +52,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 53+ tools including design creation, variable management, and component instantiation.
+**What you get:** All 56+ tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -134,7 +134,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 53+ tools as NPX, plus full source code access.
+**What you get:** Same 56+ tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -172,7 +172,7 @@ Then follow [NPX Steps 3-5](#step-3-connect-to-figma-desktop) above.
 
 **Best for:** Quickly evaluating the tool or read-only design data extraction.
 
-**What you get:** 18 read-only tools — view data, take screenshots, read logs, design-code parity. **Cannot create or modify designs.**
+**What you get:** 21 read-only tools — view data, take screenshots, read logs, design-code parity. **Cannot create or modify designs.**
 
 #### Claude Desktop (UI Method)
 
@@ -221,7 +221,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 | Feature | NPX (Recommended) | Local Git | Remote SSE |
 |---------|-------------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **53+** | **53+** | **18** (read-only) |
+| **Total tools** | **56+** | **56+** | **21** (read-only) |
 | **Design creation** | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ❌ |
@@ -501,7 +501,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server tries **WebSocket first** (port 9223, instant check) via the Desktop Bridge plugin
 - If no WebSocket client is connected, it falls back to **CDP** (port 9222) if available
 - The transport is selected automatically per-command — no configuration needed
-- All 53+ tools work identically through either transport
+- All 56+ tools work identically through either transport
 
 **CDP as fallback:** If you also launch Figma with `--remote-debugging-port=9222`, CDP serves as a fallback transport. CDP captures all page-level console logs while WebSocket captures plugin-context logs. `figma_navigate` requires CDP for browser-level navigation; in WebSocket mode it returns the connected file info with guidance instead.
 
@@ -610,7 +610,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.8.0 (Stable) - Production-ready with WebSocket Bridge, 53+ tools, and MCP Apps
+**Current Status:** v1.9.0 (Stable) - Production-ready with WebSocket Bridge, 56+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
 - [x] **v1.8.0** - WebSocket Bridge transport (CDP-free connectivity), real-time selection/document tracking, `figma_get_selection` + `figma_get_design_changes` tools

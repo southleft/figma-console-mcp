@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/schema.json",
   "name": "Figma Console MCP",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "theme": "quill",
   "logo": {
     "dark": "/logo/light.svg",
@@ -21,7 +21,7 @@
   "metadata": {
     "og:image": "/images/og-image.jpg",
     "og:title": "Figma Console MCP - Turn Your Design System Into a Living API",
-    "og:description": "The most comprehensive MCP server for Figma. 53+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.",
+    "og:description": "The most comprehensive MCP server for Figma. 56+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.",
     "twitter:card": "summary_large_image",
     "twitter:image": "/images/og-image.jpg"
   },

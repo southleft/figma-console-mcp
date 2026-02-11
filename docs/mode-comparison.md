@@ -32,20 +32,20 @@ The MCP server has **two execution modes** but **three installation methods**:
 
 | Mode | Tools Available | Capabilities |
 |------|-----------------|--------------|
-| **Local Mode** (NPX or Git) | **53+** | Full read/write — create, edit, delete |
-| **Remote Mode** (SSE) | **18** | Read-only — view data, screenshots, logs |
+| **Local Mode** (NPX or Git) | **56+** | Full read/write — create, edit, delete |
+| **Remote Mode** (SSE) | **21** | Read-only — view data, screenshots, logs |
 
 > **Bottom line:** Remote SSE has ~34% of the tools and cannot create or modify designs.
 
 ### Use NPX Setup (Recommended for Most Users)
-- ✅ **All 53+ tools** including design creation
+- ✅ **All 56+ tools** including design creation
 - ✅ Automatic updates with `@latest`
 - ✅ Desktop Bridge Plugin support (recommended connection — no debug flags needed)
 - ✅ Variables without Enterprise plan
 - ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual, one-time)
 
 ### Use Local Git (For Contributors)
-- ✅ **All 53+ tools** including design creation
+- ✅ **All 56+ tools** including design creation
 - ✅ Full source code access
 - ✅ Modify and test changes
 - ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual)
@@ -55,7 +55,7 @@ The MCP server has **two execution modes** but **three installation methods**:
 - ✅ **TRUE zero-setup** - Just paste a URL
 - ✅ **OAuth authentication** - No manual tokens
 - ✅ Works without Figma Desktop restart
-- ❌ **Only 18 tools** — cannot create or modify designs
+- ❌ **Only 21 tools** — cannot create or modify designs
 - ❌ Cannot use Desktop Bridge plugin
 - ❌ Variables require Enterprise plan
 
@@ -137,7 +137,7 @@ Variables & Components Data
 **Key Points:**
 - WebSocket (preferred): Install plugin once, no debug flags needed
 - CDP (fallback): Requires Figma Desktop restart with `--remote-debugging-port=9222`
-- Both transports support all 53+ tools identically
+- Both transports support all 56+ tools identically
 - Plugin can access local variables (no Enterprise API needed)
 - Instant console log capture via either transport
 
@@ -301,7 +301,7 @@ The Desktop Bridge Plugin is the **recommended way** to connect Figma to the MCP
 | Selection tracking | ❌ | ✅ Real-time via WebSocket |
 | Document change monitoring | ❌ | ✅ Real-time via WebSocket |
 
-**Transport priority:** The MCP server tries WebSocket first (instant check). If no plugin client is connected, it falls back to CDP (port 9222) if Figma was launched with `--remote-debugging-port=9222`. Both transports can be active simultaneously. All 53+ tools work identically through either transport.
+**Transport priority:** The MCP server tries WebSocket first (instant check). If no plugin client is connected, it falls back to CDP (port 9222) if Figma was launched with `--remote-debugging-port=9222`. Both transports can be active simultaneously. All 56+ tools work identically through either transport.
 
 ### Plugin Only Works in Local Mode
 
@@ -380,7 +380,7 @@ All three installation methods are completely free:
 ## Summary
 
 **For most users: Start with NPX Setup** ⭐
-- All 53+ tools including design creation
+- All 56+ tools including design creation
 - Automatic updates with `@latest`
 - Desktop Bridge plugin support
 - Variables without Enterprise plan
@@ -398,8 +398,8 @@ All three installation methods are completely free:
 - You don't need design creation capabilities
 
 **Key Takeaway:** Remote SSE and Local modes have **different tool counts**:
-- **Remote Mode (SSE):** 18 tools — read-only operations
-- **Local Mode (NPX/Git):** 53+ tools — full read/write operations
+- **Remote Mode (SSE):** 21 tools — read-only operations
+- **Local Mode (NPX/Git):** 56+ tools — full read/write operations
 
 The difference is not just authentication, but **fundamental capabilities**:
 - **Remote:** Cannot create, modify, or delete anything in Figma

@@ -5,6 +5,19 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-02-10
+
+### Added
+- **Figma Comments tools** — 3 new MCP tools for managing comments on Figma files via REST API
+  - `figma_get_comments` — Retrieve comment threads with author, message, timestamps, and pinned node locations. Supports `as_md` for markdown output and `include_resolved` to filter resolved threads.
+  - `figma_post_comment` — Post comments pinned to specific design nodes. Use after `figma_check_design_parity` to notify designers of drift when code is the canonical source. Supports threaded replies.
+  - `figma_delete_comment` — Delete comments by ID for cleanup after issues are resolved.
+  - Works in both Local (NPX) and Remote (Cloudflare Workers) modes — pure REST API, no Plugin API dependency.
+  - OAuth tokens require `file_comments:write` scope for posting and deleting. Personal access tokens work as-is.
+
+### Fixed
+- **Misleading "No connection" error when WebSocket port is in use** — When another MCP server instance already occupied port 9223, `figma_get_status` reported "No connection to Figma Desktop" and advised opening the Desktop Bridge plugin. Now correctly detects `EADDRINUSE` and reports: "WebSocket port 9223 is already in use by another process" with instructions to close the other shell.
+
 ## [1.8.0] - 2026-02-07
 
 ### Added
