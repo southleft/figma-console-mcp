@@ -383,6 +383,7 @@ Create `.vscode/mcp.json` in your project:
 | Tools not appearing in MCP client | Config not loaded | Restart your MCP client completely |
 | "Port 9222 already in use" | Another process using port | Close Chrome windows, check Task Manager |
 | "Port 9223 already in use" | Another MCP instance running | Stop the other instance, or set `FIGMA_WS_PORT` to a different port |
+| WebSocket unreachable from Docker host | Server bound to localhost | Set `FIGMA_WS_HOST=0.0.0.0` and expose port with `-p 9223:9223` |
 | Plugin shows "Disconnected" | MCP server not running | Start/restart your MCP client so the server starts |
 | NPX using old version | Cached package | Use `figma-console-mcp@latest` explicitly |
 

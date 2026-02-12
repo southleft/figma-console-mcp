@@ -509,6 +509,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 
 **Environment variables:**
 - `FIGMA_WS_PORT` — Override the server-side WebSocket port (default: 9223). Note: the plugin UI and manifest are hard-coded to port 9223. Using a custom port also requires updating `wsPort` in `ui.html` and `allowedDomains` in `manifest.json`.
+- `FIGMA_WS_HOST` — Override the WebSocket server bind address (default: `localhost`). Set to `0.0.0.0` when running inside Docker so the host machine can reach the MCP server.
 
 **Plugin Limitation:** Only works in Local Mode (NPX or Local Git). Remote SSE mode cannot access it.
 

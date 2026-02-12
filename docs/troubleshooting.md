@@ -103,6 +103,10 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 **Cause:** Another MCP server instance is running.
 **Fix:** Stop the other instance, or set the `FIGMA_WS_PORT` environment variable to a different port (note: you'll also need to update `wsPort` in the plugin's `ui.html` and `allowedDomains` in `manifest.json`).
 
+#### Running in Docker
+**Cause:** The WebSocket server binds to `localhost` by default, which is unreachable from the Docker host.
+**Fix:** Set `FIGMA_WS_HOST=0.0.0.0` in your container environment and expose the port with `-p 9223:9223`.
+
 #### Plugin Connected but Commands Timeout
 **Cause:** Plugin may be running in a different Figma file than expected.
 **Fix:** The MCP server routes commands to the active file. Make sure the Desktop Bridge Plugin is running in the file you want to work with. Use `figma_get_status` to see which file is connected.
