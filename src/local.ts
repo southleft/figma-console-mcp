@@ -5477,7 +5477,10 @@ return {
 			// Start WebSocket bridge server (always available as fallback transport)
 			const wsPort = parseInt(process.env.FIGMA_WS_PORT || "9223", 10);
 			try {
-				this.wsServer = new FigmaWebSocketServer({ port: wsPort });
+				this.wsServer = new FigmaWebSocketServer({
+					port: wsPort,
+					host: process.env.FIGMA_WS_HOST || 'localhost'
+				});
 				await this.wsServer.start();
 				logger.info({ wsPort }, "WebSocket bridge server started");
 
