@@ -22,8 +22,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { fileURLToPath } from "url";
-import { resolve } from "path";
-import { realpathSync } from "fs";
+import { dirname, resolve } from "path";
+import { realpathSync, existsSync } from "fs";
 import { LocalBrowserManager } from "./browser/local.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
@@ -302,6 +302,22 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				`Option 2 (WebSocket): Open the Desktop Bridge plugin in Figma.\n` +
 				`  No special launch flags needed — the plugin connects automatically.`,
 			);
+		}
+	}
+
+	/**
+	 * Resolve the path to the Desktop Bridge plugin manifest.
+	 * Works for both NPX installs (buried in npm cache) and local git clones.
+	 */
+	private getPluginPath(): string | null {
+		try {
+			const thisFile = fileURLToPath(import.meta.url);
+			// From dist/local.js → go up to package root, then into figma-desktop-bridge
+			const packageRoot = dirname(dirname(thisFile));
+			const manifestPath = resolve(packageRoot, "figma-desktop-bridge", "manifest.json");
+			return existsSync(manifestPath) ? manifestPath : null;
+		} catch {
+			return null;
 		}
 	}
 
@@ -1389,6 +1405,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 														: "✅ Connected to Figma Desktop via WebSocket Bridge"
 													: this.wsStartupError?.code === "EADDRINUSE"
 														? `❌ All WebSocket ports ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use`
+														: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
+														? `❌ WebSocket server running on port ${this.wsActualPort} (fallback) but no plugin connected. Re-import the Desktop Bridge plugin in Figma to enable multi-port scanning.`
 														: "❌ No connection to Figma Desktop",
 											setupInstructions: !setupValid
 												? this.wsStartupError?.code === "EADDRINUSE"
@@ -1397,20 +1415,23 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 														fix: "Close some of the other Claude Desktop tabs or terminal sessions running the MCP server, then restart this one.",
 													}
 													: {
-														option1_websocket: "Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge). No special launch flags needed.",
+														option1_websocket: `Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge). No special launch flags needed.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`,
 														option2_cdp: 'Launch Figma with: open -a "Figma" --args --remote-debugging-port=9222',
 													}
 												: undefined,
 											ai_instruction: !setupValid
 												? this.wsStartupError?.code === "EADDRINUSE"
 													? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use — most likely multiple Claude Desktop tabs or terminal sessions are running the Figma Console MCP server. Ask the user to close some sessions and restart.`
-													: "No connection to Figma Desktop. The easiest option is to open the Desktop Bridge plugin in Figma. Alternatively, relaunch Figma with --remote-debugging-port=9222 for CDP."
+													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
+														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected — most likely because the plugin has old code that only scans port ${this.wsPreferredPort}. TELL THE USER: Re-import the Desktop Bridge plugin in Figma (Plugins → Development → Import plugin from manifest) to update it with multi-port scanning support. This is a one-time step.${this.getPluginPath() ? ' The manifest file is at: ' + this.getPluginPath() : ''}`
+														: `No connection to Figma Desktop. The easiest option is to open the Desktop Bridge plugin in Figma. Alternatively, relaunch Figma with --remote-debugging-port=9222 for CDP.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`
 												: activeTransport === "websocket"
 													? `Connected via WebSocket Bridge to "${currentFileName || "unknown file"}" on port ${this.wsActualPort}. All design tools and console monitoring tools are available. Console logs are captured from the plugin sandbox (code.js). For full-page console monitoring including Figma app internals, add CDP (--remote-debugging-port=9222). IMPORTANT: Always verify the file name before destructive operations when multiple files have the plugin open.`
 													: availablePages.length > 1
 														? `Multiple Figma pages detected. Current page has ${monitorStatus?.workerCount || 0} workers.`
 														: "All tools are ready to use.",
 										},
+										pluginPath: this.getPluginPath() || undefined,
 										availablePages:
 											availablePages.length > 0 ? availablePages : undefined,
 										browser: {
