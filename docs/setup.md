@@ -65,7 +65,7 @@ Before starting, verify you have:
 #### Claude Code (CLI)
 
 ```bash
-claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -- npx -y figma-console-mcp@latest
+claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -e ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
 ```
 
 #### Cursor / Windsurf / Other MCP Clients
@@ -79,7 +79,8 @@ Find your client's MCP config file and add:
       "command": "npx",
       "args": ["-y", "figma-console-mcp@latest"],
       "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
       }
     }
   }
@@ -111,7 +112,7 @@ The Desktop Bridge Plugin connects via WebSocket — no special Figma launch fla
    - **NPX users:** Run `npx figma-console-mcp@latest --print-path` to find the directory
 4. Click **"Open"** — the plugin appears in your Development plugins list
 5. **Run the plugin** in your Figma file (Plugins → Development → Figma Desktop Bridge)
-6. The plugin auto-connects to `ws://localhost:9223` — you'll see a "Connected" indicator
+6. The plugin auto-connects via WebSocket (scans ports 9223–9232) — you'll see a "Connected" indicator
 
 > **One-time setup.** Once imported, the plugin stays in your Development plugins list. Just run it whenever you want to use the MCP. No need to restart Figma with special flags.
 
@@ -219,7 +220,8 @@ Edit your client's MCP config file:
       "command": "node",
       "args": ["/absolute/path/to/figma-console-mcp/dist/local.js"],
       "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
       }
     }
   }
@@ -382,7 +384,7 @@ Create `.vscode/mcp.json` in your project:
 | "Command not found: node" | Node.js not installed | Install Node.js 18+ from nodejs.org |
 | Tools not appearing in MCP client | Config not loaded | Restart your MCP client completely |
 | "Port 9222 already in use" | Another process using port | Close Chrome windows, check Task Manager |
-| "Port 9223 already in use" | Another MCP instance running | Stop the other instance, or set `FIGMA_WS_PORT` to a different port |
+| "Port 9223 already in use" | Another MCP instance running | As of v1.10.0, the server automatically falls back to ports 9224–9232. If the plugin can't connect, re-import the Desktop Bridge manifest. |
 | WebSocket unreachable from Docker host | Server bound to localhost | Set `FIGMA_WS_HOST=0.0.0.0` and expose port with `-p 9223:9223` |
 | Plugin shows "Disconnected" | MCP server not running | Start/restart your MCP client so the server starts |
 | NPX using old version | Cached package | Use `figma-console-mcp@latest` explicitly |
@@ -478,24 +480,9 @@ If Claude Desktop doesn't see your MCP server:
 
 ## Optional: Enable MCP Apps
 
-MCP Apps provide interactive UI experiences like the Token Browser and Design System Dashboard.
+MCP Apps provide interactive UI experiences like the Token Browser and Design System Dashboard. As of v1.10.0, `ENABLE_MCP_APPS=true` is included in the default configuration examples above.
 
-Add `ENABLE_MCP_APPS` to your config:
-
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["-y", "figma-console-mcp@latest"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
-        "ENABLE_MCP_APPS": "true"
-      }
-    }
-  }
-}
-```
+If you set up before v1.10.0, add `"ENABLE_MCP_APPS": "true"` to the `env` section of your MCP config.
 
 > **Note:** MCP Apps require a client with [ext-apps protocol](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol/ext-apps) support.
 

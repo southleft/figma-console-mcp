@@ -17,10 +17,10 @@ MCP Server → Puppeteer/CDP (port 9222) → Plugin UI Iframe → postMessage �
 
 **WebSocket Transport (Preferred):**
 ```
-MCP Server ←WebSocket (port 9223)→ Plugin UI ←postMessage→ Plugin Worker → Figma API
+MCP Server ←WebSocket (ports 9223-9232)→ Plugin UI ←postMessage→ Plugin Worker → Figma API
 ```
 
-The MCP server prefers WebSocket when a plugin client is connected (instant availability check). If no WebSocket client is connected, it falls back to CDP (requires launching Figma with `--remote-debugging-port=9222`).
+The MCP server prefers WebSocket when a plugin client is connected (instant availability check). If no WebSocket client is connected, it falls back to CDP (requires launching Figma with `--remote-debugging-port=9222`). As of v1.10.0, the server supports multi-instance operation — if port 9223 is already in use, it automatically falls back through ports 9224–9232. The plugin scans all ports and connects to every active server.
 
 **Key Features:**
 - ✅ No Enterprise plan required for variables
@@ -33,6 +33,7 @@ The MCP server prefers WebSocket when a plugin client is connected (instant avai
 - ✅ Real-time data updates
 - ✅ Dual transport: WebSocket (preferred) + CDP (fallback)
 - ✅ Auto-reconnect on connection loss
+- ✅ Multi-instance: connects to all active MCP servers simultaneously (v1.10.0)
 
 ## Installation
 
@@ -130,7 +131,7 @@ figma_get_component({
 ### MCP Desktop Connector
 
 **WebSocket Path (Preferred):**
-1. MCP server starts WebSocket server on port 9223
+1. MCP server starts WebSocket server on port 9223 (or next available port in range 9223–9232)
 2. Plugin UI connects as WebSocket client
 3. MCP server sends commands as JSON `{ id, method, params }`
 4. Plugin UI routes to the same `window.*` handlers
@@ -176,14 +177,41 @@ figma_get_component({
 - Verify the MCP server is running (it starts the WebSocket server on port 9223)
 - Check that the plugin is open in Figma — the WebSocket client is in the plugin UI
 - Check the browser console (Plugins > Development > Open Console) for `[MCP Bridge] WebSocket connected to port 9223`
-- Only one MCP server can use the WebSocket port at a time
-- **Custom ports:** The plugin and manifest are hard-coded to `ws://localhost:9223`. The `FIGMA_WS_PORT` env var only changes the server-side port. Using a custom port requires also updating `wsPort` in `ui.html` and the `allowedDomains` in `manifest.json`
+- As of v1.10.0, multiple MCP servers can run simultaneously on different ports (9223–9232). If tools aren't working on a fallback port, re-import the plugin manifest to enable multi-port scanning.
+- **Custom ports:** As of v1.10.0, the plugin scans ports 9223–9232 automatically. The `FIGMA_WS_PORT` env var sets the preferred starting port. Multi-instance support works out of the box within this range.
 
 ### Empty or outdated data
 - Plugin fetches variables on load - rerun plugin after making variable changes
 - Component data is fetched on-demand - always returns current state
 - Cache TTL is 5 minutes for variables - use `refreshCache: true` for immediate updates
 - Ensure you're in the correct file (plugin reads current file's data)
+
+## Multi-Instance Support (v1.10.0)
+
+The Desktop Bridge plugin supports connecting to **multiple MCP server instances** simultaneously. This is useful when:
+
+- **Claude Desktop** runs both Chat and Code tabs (each spawns a separate MCP server)
+- **Multiple CLI terminals** are running different projects with the MCP
+- **Claude Desktop + Claude Code CLI** are used together
+
+### How It Works
+
+1. The MCP server tries port 9223 first. If it's taken, it falls back to 9224, 9225, etc. (up to 9232)
+2. The plugin scans **all 10 ports** on startup and connects to every active server
+3. All events (selection changes, document changes, variables, console logs) are **broadcast to every connected server**
+4. Each server instance independently receives real-time data from Figma
+
+### Important: One-Time Plugin Update
+
+If you imported the Desktop Bridge plugin **before v1.10.0**, you need to re-import the manifest once to enable multi-port scanning:
+
+1. In Figma: **Plugins → Development → Import plugin from manifest...**
+2. Select the `manifest.json` file from the `figma-desktop-bridge` directory
+3. Run the plugin — it will now scan all ports and connect to all servers
+
+> **Why?** Figma caches plugin files at the application level. Simply restarting the plugin does NOT reload the code from disk. You must re-import the manifest to force Figma to pick up the new multi-port scanning logic.
+
+Without re-importing, the old plugin code only connects to port 9223. If your server fell back to a different port, the plugin won't find it.
 
 ## Development
 

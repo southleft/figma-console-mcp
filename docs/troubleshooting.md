@@ -100,8 +100,19 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 **Fix:** Go to Figma → Plugins → Development → Import plugin from manifest... → select `figma-desktop-bridge/manifest.json`.
 
 #### Port 9223 Already in Use
-**Cause:** Another MCP server instance is running.
-**Fix:** Stop the other instance, or set the `FIGMA_WS_PORT` environment variable to a different port (note: you'll also need to update `wsPort` in the plugin's `ui.html` and `allowedDomains` in `manifest.json`).
+**Cause:** Another MCP server instance is running on port 9223 (common with Claude Desktop's dual-tab architecture).
+**Fix (v1.10.0+):** The server now automatically falls back to the next available port in the range 9223–9232. No action needed on the server side. If the plugin can't connect to the fallback port, re-import the Desktop Bridge manifest in Figma (see below).
+
+#### Plugin Not Connecting After Port Fallback
+**Cause:** The Desktop Bridge plugin was imported before v1.10.0 and only scans port 9223. The server fell back to a different port.
+**Fix:** Re-import the Desktop Bridge plugin manifest in Figma:
+1. Go to **Plugins → Development → Import plugin from manifest...**
+2. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp package directory
+3. Run the plugin — it will now scan ports 9223–9232 and connect to all active servers
+
+> **NPX users:** The manifest is inside the npm cache. Run `figma_get_status` — the AI will show you the exact path via the `pluginPath` field in the status output.
+
+> **Why re-import?** Figma caches plugin files at the application level. Restarting the plugin does NOT reload code from disk. Re-importing the manifest is a one-time step that forces Figma to load the updated multi-port scanning code.
 
 #### Running in Docker
 **Cause:** The WebSocket server binds to `localhost` by default, which is unreachable from the Docker host.
