@@ -7,6 +7,8 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
+> **🆕 v1.10.0 — Multi-Instance Support:** Run Figma Console MCP in multiple Claude Desktop tabs, CLI terminals, or projects simultaneously. No more port conflicts. [See what's new →](#-multi-instance-support-v1100)
+
 ## What is this?
 
 Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
@@ -71,12 +73,12 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Claude Code (CLI):**
 ```bash
-claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -- npx -y figma-console-mcp@latest
+claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -e ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
 ```
 
 **Cursor / Windsurf / Claude Desktop:**
 
-Add to your MCP config file:
+Add to your MCP config file (see [Where to find your config file](#-where-to-find-your-config-file) below):
 
 ```json
 {
@@ -85,12 +87,30 @@ Add to your MCP config file:
       "command": "npx",
       "args": ["-y", "figma-console-mcp@latest"],
       "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
       }
     }
   }
 }
 ```
+
+#### 📂 Where to Find Your Config File
+
+If you're not sure where to put the JSON configuration above, here's where each app stores its MCP config:
+
+| App | macOS | Windows |
+|-----|-------|---------|
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
+| **Claude Code (CLI)** | `~/.claude.json` | `%USERPROFILE%\.claude.json` |
+| **Cursor** | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | `%USERPROFILE%\.codeium\windsurf\mcp_config.json` |
+
+> **Tip for designers:** The `~` symbol means your **home folder**. On macOS, that's `/Users/YourName/`. On Windows, it's `C:\Users\YourName\`. You can open these files in any text editor — even TextEdit or Notepad.
+>
+> **Can't find the file?** If it doesn't exist yet, create it. The app will pick it up on its next restart. Make sure the entire file is valid JSON (watch for missing commas or brackets).
+>
+> **Claude Code users:** You can skip manual editing entirely. Just run the `claude mcp add` command above and it handles everything for you.
 
 #### Step 3: Connect to Figma Desktop
 
@@ -148,6 +168,8 @@ npm run build:local
 
 #### Configure Your MCP Client
 
+Add to your config file (see [Where to find your config file](#-where-to-find-your-config-file)):
+
 ```json
 {
   "mcpServers": {
@@ -155,7 +177,8 @@ npm run build:local
       "command": "node",
       "args": ["/absolute/path/to/figma-console-mcp/dist/local.js"],
       "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE"
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
       }
     }
   }
@@ -476,7 +499,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 1. Open Figma Desktop (normal launch — no debug flags needed)
 2. Go to **Plugins → Development → Import plugin from manifest...**
 3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
-4. Run the plugin in your Figma file — it auto-connects to `ws://localhost:9223`
+4. Run the plugin in your Figma file — it auto-connects via WebSocket (scans ports 9223–9232)
 5. Ask your AI: "Check Figma status" to verify the connection
 
 > **One-time import.** Once imported, the plugin stays in your Development plugins list. Just run it whenever you want to use the MCP.
@@ -508,10 +531,44 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
 **Environment variables:**
-- `FIGMA_WS_PORT` — Override the server-side WebSocket port (default: 9223). Note: the plugin UI and manifest are hard-coded to port 9223. Using a custom port also requires updating `wsPort` in `ui.html` and `allowedDomains` in `manifest.json`.
+- `FIGMA_WS_PORT` — Override the preferred WebSocket port (default: 9223). The server will fall back through a 10-port range starting from this value if the preferred port is occupied.
 - `FIGMA_WS_HOST` — Override the WebSocket server bind address (default: `localhost`). Set to `0.0.0.0` when running inside Docker so the host machine can reach the MCP server.
 
 **Plugin Limitation:** Only works in Local Mode (NPX or Local Git). Remote SSE mode cannot access it.
+
+---
+
+## 🔀 Multi-Instance Support (v1.10.0)
+
+Figma Console MCP now supports **multiple simultaneous instances** — perfect for designers and developers who work across multiple projects or use Claude Desktop's Chat and Code tabs at the same time.
+
+### The Problem (Before v1.10.0)
+
+When two processes tried to start the MCP server (e.g., Claude Desktop's Chat tab and Code tab), the second one would crash with `EADDRINUSE` because both competed for port 9223.
+
+### How It Works Now
+
+- The server tries port **9223** first (the default)
+- If that port is already taken, it automatically tries **9224**, then **9225**, and so on up to **9232**
+- The Desktop Bridge plugin in Figma connects to **all** active servers simultaneously
+- Every server instance receives real-time events (selection changes, document changes, console logs)
+- `figma_get_status` shows which port you're on and lists other active instances
+
+### What This Means for You
+
+| Scenario | Before v1.10.0 | Now |
+|----------|----------------|-----|
+| Two Claude Desktop tabs (Chat + Code) | Second tab crashes | Both work independently |
+| Multiple CLI terminals on different projects | Only one can run | All run simultaneously |
+| Claude Desktop + Claude Code CLI | Port conflict | Both coexist |
+
+### Do I Need to Do Anything?
+
+**If you're running a single instance:** Nothing changes. You'll still use port 9223 as before.
+
+**If you want multi-instance:** Re-import the Desktop Bridge plugin in Figma (Plugins → Development → Import plugin from manifest). This updates the plugin to scan all ports and connect to every active server.
+
+> **Note:** The server-side update happens automatically when you update the npm package. Only the plugin needs a one-time re-import to enable multi-connection support.
 
 ---
 
@@ -550,20 +607,12 @@ A Lighthouse-style health scorecard that audits your design system across six ca
 
 **Enabling MCP Apps:**
 
-MCP Apps are gated behind an environment variable. Add to your MCP config:
+MCP Apps are enabled by default in the setup configurations above (via `"ENABLE_MCP_APPS": "true"`). If you set up before v1.10.0 and don't have this in your config, add it to your `env` section:
 
 ```json
-{
-  "mcpServers": {
-    "figma-console-local": {
-      "command": "node",
-      "args": ["/path/to/figma-console-mcp/dist/local.js"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
-        "ENABLE_MCP_APPS": "true"
-      }
-    }
-  }
+"env": {
+  "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+  "ENABLE_MCP_APPS": "true"
 }
 ```
 
@@ -611,9 +660,11 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.9.0 (Stable) - Production-ready with WebSocket Bridge, 56+ tools, Comments API, and MCP Apps
+**Current Status:** v1.10.0 (Stable) - Production-ready with multi-instance support, WebSocket Bridge, 56+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
+- [x] **v1.10.0** - Multi-instance support (dynamic port fallback 9223–9232, multi-connection plugin, instance discovery)
+- [x] **v1.9.0** - Figma Comments tools, improved port conflict detection
 - [x] **v1.8.0** - WebSocket Bridge transport (CDP-free connectivity), real-time selection/document tracking, `figma_get_selection` + `figma_get_design_changes` tools
 - [x] **v1.7.0** - MCP Apps (Token Browser, Design System Dashboard), batch variable operations, design-code parity tools
 - [x] **v1.5.0** - Node manipulation tools, component property management, component set arrangement

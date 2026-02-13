@@ -5,6 +5,30 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-02-12
+
+### Added
+- **Dynamic port fallback for multi-instance coexistence** — Multiple MCP server instances (e.g., Claude Desktop Chat tab + Code tab, or multiple CLI terminals) can now run simultaneously without port conflicts
+  - Server automatically tries ports 9223–9232 in sequence when the preferred port is occupied
+  - File-based port advertisement (`/tmp/figma-console-mcp-{port}.json`) with PID validation for stale detection
+  - `figma_get_status` now reports actual port, preferred port, fallback flag, and discovered peer instances
+  - Port files automatically cleaned up on shutdown (SIGINT/SIGTERM/exit) and stale entries pruned on startup
+- **Multi-connection Desktop Bridge plugin** — The plugin now connects to ALL active MCP servers, not just the first one found
+  - Parallel port scanning across 9223–9232 on startup
+  - All events (selection changes, document changes, variables, console logs, page changes) broadcast to every connected server
+  - Per-connection reconnect with automatic fallback to full port rescan
+  - Each Claude Desktop tab or CLI session independently receives real-time events from Figma
+- **Port discovery module** (`src/core/port-discovery.ts`) — Reusable module for port range management, instance discovery, and cleanup
+- **`FigmaWebSocketServer.address()`** — Exposes the actual bound port after server starts (critical for OS-assigned port support)
+
+### Changed
+- Desktop Bridge manifest now allows WebSocket connections to ports 9223–9232 (was only 9223)
+- `figma_get_status` transport section includes `preferredPort`, `portFallbackUsed`, and `otherInstances` fields
+- Status messages updated to indicate when a fallback port is in use
+
+### Fixed
+- **EADDRINUSE crash when multiple Claude Desktop tabs spawn MCP servers** — Server now gracefully falls back to the next available port instead of failing to start. This was the primary issue reported by users of Claude Desktop's dual-tab architecture (Chat + Code tabs).
+
 ## [1.9.1] - 2026-02-11
 
 ### Added
@@ -218,6 +242,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.10.0]: https://github.com/southleft/figma-console-mcp/compare/v1.9.1...v1.10.0
+[1.9.1]: https://github.com/southleft/figma-console-mcp/compare/v1.9.0...v1.9.1
+[1.9.0]: https://github.com/southleft/figma-console-mcp/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/southleft/figma-console-mcp/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/southleft/figma-console-mcp/compare/v1.6.4...v1.7.0
 [1.6.4]: https://github.com/southleft/figma-console-mcp/compare/v1.6.3...v1.6.4
