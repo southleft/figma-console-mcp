@@ -10,8 +10,34 @@
   "permissions": ["teamlibrary"],
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["http://localhost", "ws://localhost", "ws://localhost:9223"],
-    "reasoning": "Connects to local MCP server via WebSocket (ws://localhost:9223) for AI-assisted design tool communication.",
-    "devAllowedDomains": ["http://localhost", "ws://localhost", "ws://localhost:9223"]
+    "allowedDomains": [
+      "http://localhost",
+      "ws://localhost",
+      "ws://localhost:9223",
+      "ws://localhost:9224",
+      "ws://localhost:9225",
+      "ws://localhost:9226",
+      "ws://localhost:9227",
+      "ws://localhost:9228",
+      "ws://localhost:9229",
+      "ws://localhost:9230",
+      "ws://localhost:9231",
+      "ws://localhost:9232"
+    ],
+    "reasoning": "Connects to local MCP server via WebSocket. Supports port range 9223-9232 for multi-instance operation (e.g., multiple Claude Desktop tabs or CLI tools).",
+    "devAllowedDomains": [
+      "http://localhost",
+      "ws://localhost",
+      "ws://localhost:9223",
+      "ws://localhost:9224",
+      "ws://localhost:9225",
+      "ws://localhost:9226",
+      "ws://localhost:9227",
+      "ws://localhost:9228",
+      "ws://localhost:9229",
+      "ws://localhost:9230",
+      "ws://localhost:9231",
+      "ws://localhost:9232"
+    ]
   }
 }

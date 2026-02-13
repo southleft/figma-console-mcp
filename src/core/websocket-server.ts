@@ -511,6 +511,18 @@ export class FigmaWebSocketServer extends EventEmitter {
     return this._isStarted;
   }
 
+  /**
+   * Get the bound address info (port, host, family).
+   * Only available after the server has started listening.
+   * Returns the actual port — critical when using port 0 for OS-assigned ports.
+   */
+  address(): import('net').AddressInfo | null {
+    if (!this.wss) return null;
+    const addr = this.wss.address();
+    if (typeof addr === 'string') return null; // Unix socket path, not applicable
+    return addr as import('net').AddressInfo;
+  }
+
   // ============================================================================
   // Active file getters (backward compatible — return active file's state)
   // ============================================================================
