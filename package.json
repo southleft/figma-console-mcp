@@ -1,12 +1,12 @@
 {
-	"name": "figma-console-mcp",
-	"version": "1.10.1",
-	"description": "MCP server for accessing Figma plugin console logs and screenshots via Cloudflare Workers or local mode",
+	"name": "figma-console-mcp-with-slides",
+	"version": "1.0.0",
+	"description": "MCP server for Figma — console logs, design tools, and Figma Slides support",
 	"type": "module",
 	"main": "dist/local.js",
 	"types": "dist/local.d.ts",
 	"bin": {
-		"figma-console-mcp": "./dist/local.js"
+		"figma-console-mcp-with-slides": "./dist/local.js"
 	},
 	"files": [
 		"dist",
@@ -36,6 +36,9 @@
 	"keywords": [
 		"mcp",
 		"figma",
+		"figma-slides",
+		"slides",
+		"presentations",
 		"plugin",
 		"console",
 		"debugging",
@@ -45,11 +48,11 @@
 		"cloudflare",
 		"workers"
 	],
-	"author": "Your Name",
+	"author": "Toni Haidamous",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/southleft/figma-console-mcp.git"
+		"url": "https://github.com/Tonihaydamous/figma-console-mcp-with-slides.git"
 	},
 	"engines": {
 		"node": ">=18.0.0"

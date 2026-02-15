@@ -65,6 +65,23 @@ figma.showUI(__html__, { width: 120, height: 36, visible: true, themeColors: tru
 // Immediately fetch and send variables data to UI
 (async () => {
   try {
+    // Variables API is not available in Figma Slides
+    if (figma.editorType === 'slides') {
+      console.log('🌉 [Desktop Bridge] Running in Slides mode — skipping variables fetch');
+      figma.ui.postMessage({
+        type: 'VARIABLES_DATA',
+        data: {
+          success: true,
+          timestamp: Date.now(),
+          fileKey: figma.fileKey || null,
+          variables: [],
+          variableCollections: [],
+          editorType: 'slides'
+        }
+      });
+      return;
+    }
+
     console.log('🌉 [Desktop Bridge] Fetching variables...');
 
     // Get all local variables and collections
@@ -698,6 +715,17 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   else if (msg.type === 'REFRESH_VARIABLES') {
     try {
+      // Variables API is not available in Figma Slides
+      if (figma.editorType === 'slides') {
+        figma.ui.postMessage({
+          type: 'REFRESH_VARIABLES_RESULT',
+          requestId: msg.requestId,
+          success: true,
+          data: { variables: [], variableCollections: [], editorType: 'slides' }
+        });
+        return;
+      }
+
       console.log('🌉 [Desktop Bridge] Refreshing variables data...');
 
       var variables = await figma.variables.getLocalVariablesAsync();
@@ -814,6 +842,17 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   else if (msg.type === 'GET_LOCAL_COMPONENTS') {
     try {
+      // Components are not available in Figma Slides
+      if (figma.editorType === 'slides') {
+        figma.ui.postMessage({
+          type: 'GET_LOCAL_COMPONENTS_RESULT',
+          requestId: msg.requestId,
+          success: true,
+          data: { components: [], componentSets: [], totalComponents: 0, totalComponentSets: 0, editorType: 'slides' }
+        });
+        return;
+      }
+
       console.log('🌉 [Desktop Bridge] Fetching all local components for manifest...');
 
       // Find all component sets and standalone components in the file
