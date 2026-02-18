@@ -89,7 +89,7 @@ npx wrangler secret put FIGMA_ACCESS_TOKEN
 # Paste your token when prompted
 ```
 
-Get your token at: https://www.figma.com/developers/api#access-tokens
+Get your token at: https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens
 
 #### Optional: Custom Configuration
 

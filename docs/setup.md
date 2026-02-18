@@ -52,8 +52,8 @@ Before starting, verify you have:
 
 ### Step 1: Get Your Figma Token (~2 min)
 
-1. Go to [figma.com/developers/api#access-tokens](https://www.figma.com/developers/api#access-tokens)
-2. Click **"Get personal access token"**
+1. Go to [Manage personal access tokens](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) in Figma Help
+2. Follow the steps to **create a new personal access token**
 3. Enter description: `Figma Console MCP`
 4. Click **"Generate token"**
 5. **Copy the token immediately** — you won't see it again!
@@ -64,9 +64,37 @@ Before starting, verify you have:
 
 #### Claude Code (CLI)
 
+**Option A: CLI command (quickest)**
+
 ```bash
 claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -e ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
 ```
+
+**Option B: Edit the config file**
+
+If you prefer editing the JSON config file directly:
+
+- **macOS / Linux:** `~/.claude.json`
+- **Windows:** `%USERPROFILE%\.claude.json`
+
+Add the following to your `~/.claude.json` (create the file if it doesn't exist):
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
+      }
+    }
+  }
+}
+```
+
+> 💡 If `~/.claude.json` already exists with other MCP servers, just add the `"figma-console"` entry inside the existing `"mcpServers"` object.
 
 #### Cursor / Windsurf / Other MCP Clients
 
@@ -205,8 +233,30 @@ Same as [NPX Step 1](#step-1-get-your-figma-token-2-min) above.
 
 #### Claude Code (CLI)
 
+**Option A: CLI command (quickest)**
+
 ```bash
-claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -- node /absolute/path/to/figma-console-mcp/dist/local.js
+claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -e ENABLE_MCP_APPS=true -- node /absolute/path/to/figma-console-mcp/dist/local.js
+```
+
+**Option B: Edit the config file**
+
+- **macOS / Linux:** `~/.claude.json`
+- **Windows:** `%USERPROFILE%\.claude.json`
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "node",
+      "args": ["/absolute/path/to/figma-console-mcp/dist/local.js"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
+      }
+    }
+  }
+}
 ```
 
 #### Other MCP Clients (Cursor, Windsurf, Claude Desktop, etc.)

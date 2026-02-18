@@ -177,7 +177,7 @@ Get all 56+ tools including design creation, variable management, and component 
 
 <Steps>
   <Step title="Get a Figma Token">
-    Visit figma.com/developers/api#access-tokens and create a Personal Access Token
+    Visit [Figma Help](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) and create a Personal Access Token
   </Step>
   <Step title="Configure Your MCP Client">
     Add the server config with your token to Claude Code, Cursor, Windsurf, Claude Desktop, or any MCP client

@@ -193,7 +193,7 @@ Variables & Components Data
 **Prerequisites:**
 - Node.js 18+
 - Figma Desktop installed
-- Figma Personal Access Token ([get one](https://www.figma.com/developers/api#access-tokens))
+- Figma Personal Access Token ([get one](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens))
 
 **Setup Time:** 10 minutes
 
@@ -210,7 +210,7 @@ Variables & Components Data
 - Node.js 18+
 - Git
 - Figma Desktop installed
-- Figma Personal Access Token ([get one](https://www.figma.com/developers/api#access-tokens))
+- Figma Personal Access Token ([get one](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens))
 
 **Setup Time:** 15 minutes
 
@@ -255,7 +255,7 @@ Variables & Components Data
 **Method:** Both NPX and Local Git modes
 
 **How it works:**
-1. User creates PAT at https://www.figma.com/developers/api#access-tokens
+1. User creates PAT at https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens
 2. Set as `FIGMA_ACCESS_TOKEN` environment variable in MCP config
 3. MCP server uses PAT for all API calls
 4. No automatic refresh (token valid for 90 days)
