@@ -798,6 +798,17 @@
 
       // Start WebSocket connection via port scanning
       wsScanAndConnect();
+
+      // Periodic discovery — find new MCP servers and recover from exhausted retries.
+      // Cost: 10 failed TCP SYNs to localhost every 10s (sub-millisecond, negligible).
+      // wsScanAndConnect() already skips ports with active connections.
+      setInterval(function() {
+        if (!isScanning) {
+          wsReconnectAttempts = 0;
+          wsReconnectDelay = 500;
+          wsScanAndConnect();
+        }
+      }, 10000);
     })();
 
     // ============================================================================
