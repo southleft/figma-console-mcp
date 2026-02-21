@@ -65,9 +65,16 @@ New to MCP servers, JSON configs, and terminal commands? These designer-friendly
 
     [Sergei Zhukov](https://www.linkedin.com/in/friendlyunit) created a comprehensive 17-page guide covering the entire setup process — from installing Homebrew and Node.js to configuring Claude Desktop and the Desktop Bridge Plugin. Includes pro tips on building design library context and creating automation workflows.
 
+    <iframe
+      width="100%"
+      height="450"
+      src="https://www.figma.com/embed?embed_host=share&url=https://www.figma.com/community/file/1606560040358762787/figma-mcp-console-setup-guide"
+      allowFullScreen
+    ></iframe>
+
     > *"Automate routine. Craft exceptional."* — Sergei Zhukov
 
-    [View the guide on LinkedIn →](https://www.linkedin.com/posts/friendlyunit_claude-figma-console-mcp-designers-guide-activity-7430399317426720768-KiBy)
+    [View on Figma Community →](https://www.figma.com/community/file/1606560040358762787/figma-mcp-console-setup-guide) · [View on LinkedIn →](https://www.linkedin.com/posts/friendlyunit_claude-figma-console-mcp-designers-guide-activity-7430399317426720768-KiBy)
   </Tab>
 </Tabs>
 
