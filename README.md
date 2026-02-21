@@ -114,21 +114,14 @@ If you're not sure where to put the JSON configuration above, here's where each 
 
 #### Step 3: Connect to Figma Desktop
 
-**Option A — Desktop Bridge Plugin (Recommended):**
+**Desktop Bridge Plugin:**
 1. Open Figma Desktop normally (no special flags needed)
 2. Go to **Plugins → Development → Import plugin from manifest...**
 3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
-4. Run the plugin in your Figma file — it auto-connects via WebSocket
+   - **NPX users:** Run `npx figma-console-mcp@latest --print-path` to find the directory
+4. Run the plugin in your Figma file — it auto-connects via WebSocket (scans ports 9223–9232)
 
-> One-time setup. No need to restart Figma with special flags.
-
-**Option B — CDP Debug Mode (Alternative):**
-
-Quit Figma completely, then restart with:
-- **macOS:** `open -a "Figma" --args --remote-debugging-port=9222`
-- **Windows:** `cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222`
-
-Verify at [http://localhost:9222](http://localhost:9222) — you should see inspectable Figma pages.
+> One-time setup. The plugin persists in your Development plugins list across sessions.
 
 #### Step 4: Restart Your MCP Client
 
@@ -139,7 +132,7 @@ Restart your MCP client to load the new configuration.
 ```
 Check Figma status
 ```
-→ Should show connection status with active transport (WebSocket or CDP)
+→ Should show connection status with active WebSocket transport
 
 ```
 Create a simple frame with a blue background
@@ -521,12 +514,10 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 
 ### How the Transport Works
 
-- The MCP server tries **WebSocket first** (port 9223, instant check) via the Desktop Bridge plugin
-- If no WebSocket client is connected, it falls back to **CDP** (port 9222) if available
-- The transport is selected automatically per-command — no configuration needed
-- All 56+ tools work identically through either transport
-
-**CDP as fallback:** If you also launch Figma with `--remote-debugging-port=9222`, CDP serves as a fallback transport. CDP captures all page-level console logs while WebSocket captures plugin-context logs. `figma_navigate` requires CDP for browser-level navigation; in WebSocket mode it returns the connected file info with guidance instead.
+- The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
+- The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
+- The plugin scans all ports in the range and connects to every active server it finds
+- All 56+ tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 

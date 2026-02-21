@@ -45,23 +45,18 @@ flowchart TB
     AI -->|stdio| SERVER[Local MCP Server]
 
     SERVER --> REST[REST Client]
-    SERVER --> WS[WebSocket Client]
-    SERVER --> CDP[CDP Client]
+    SERVER --> WS[WebSocket Server]
 
     REST -->|HTTPS| API[Figma API]
-    WS -->|"WebSocket :9223<br/>(preferred)"| PLUGIN[Desktop Bridge Plugin]
-    CDP -->|"CDP :9222<br/>(fallback)"| FIGMA[Figma Desktop]
+    WS -->|"WebSocket :9223–9232"| PLUGIN[Desktop Bridge Plugin]
 
     PLUGIN --> FILE[Design File]
-    FIGMA --> PLUGIN
-    FIGMA --> FILE
 ```
 
-**Transport Priority:**
-1. **WebSocket (preferred)** — via Desktop Bridge Plugin on port 9223. Instant availability check, no debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
-2. **CDP (fallback)** — via Chrome DevTools Protocol on port 9222. Requires launching Figma with `--remote-debugging-port=9222`. Provides full-page console monitoring and browser-level navigation.
-
-The MCP server checks WebSocket first (instant). If no plugin client is connected, it falls back to CDP. Both transports can be active simultaneously — all 56+ tools work identically through either.
+**Transport:**
+- **WebSocket** — via Desktop Bridge Plugin on ports 9223–9232. No debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
+- The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running (multi-instance support since v1.10.0).
+- All 56+ tools work through the WebSocket transport.
 
 **Capabilities:**
 - Everything in Remote Mode, plus:
@@ -84,20 +79,19 @@ The main server implements the Model Context Protocol with stdio transport for l
 - Tool registration (56+ tools in Local Mode, 18 in Remote Mode)
 - Request routing and validation
 - Figma API client management
-- Desktop Bridge communication
-- Chrome DevTools Protocol connection
+- Desktop Bridge communication via WebSocket
 
 **Tool Categories:**
 
 | Category | Tools | Transport |
 |----------|-------|-----------|
-| Navigation | `figma_navigate`, `figma_get_status` | WebSocket / CDP |
-| Console | `figma_get_console_logs`, `figma_watch_console`, `figma_clear_console` | WebSocket / CDP |
-| Screenshots | `figma_take_screenshot`, `figma_capture_screenshot` | WebSocket / CDP |
+| Navigation | `figma_navigate`, `figma_get_status` | WebSocket |
+| Console | `figma_get_console_logs`, `figma_watch_console`, `figma_clear_console` | WebSocket |
+| Screenshots | `figma_take_screenshot`, `figma_capture_screenshot` | WebSocket |
 | Design System | `figma_get_variables`, `figma_get_styles`, `figma_get_component` | REST API |
-| Design Creation | `figma_execute`, `figma_arrange_component_set` | WebSocket / CDP (Plugin) |
-| Variables | `figma_create_variable`, `figma_update_variable`, etc. | WebSocket / CDP (Plugin) |
-| Real-Time | `figma_get_selection`, `figma_get_design_changes` | WebSocket only |
+| Design Creation | `figma_execute`, `figma_arrange_component_set` | WebSocket (Plugin) |
+| Variables | `figma_create_variable`, `figma_update_variable`, etc. | WebSocket (Plugin) |
+| Real-Time | `figma_get_selection`, `figma_get_design_changes` | WebSocket |
 
 ---
 
@@ -120,34 +114,26 @@ flowchart TB
 
 **Communication Protocol:**
 
-The MCP server communicates with the Desktop Bridge via either transport:
+The MCP server communicates with the Desktop Bridge via WebSocket:
 
-**Via WebSocket (preferred):**
-1. **MCP Server** sends JSON command via WebSocket (port 9223)
+1. **MCP Server** sends JSON command via WebSocket (ports 9223–9232)
 2. **Plugin UI** receives and forwards via `postMessage` to plugin code
 3. **Plugin Code** executes Figma Plugin API calls
 4. **Plugin Code** returns result via `figma.ui.postMessage`
 5. **Plugin UI** sends response back via WebSocket
 6. **MCP Server** receives correlated response
 
-**Via CDP (fallback):**
-1. **MCP Server** sends command via CDP `Runtime.evaluate`
-2. **Bridge Plugin** receives via `figma.ui.onmessage`
-3. **Bridge Plugin** executes Figma Plugin API calls
-4. **Bridge Plugin** returns result via `figma.ui.postMessage`
-5. **MCP Server** receives response via CDP
-
 ---
 
 ### Transport Layer
 
-The MCP server uses a transport abstraction (`IFigmaConnector` interface) that supports two backends:
+The MCP server uses a transport abstraction (`IFigmaConnector` interface) backed by WebSocket:
 
-#### WebSocket Transport (Preferred)
+#### WebSocket Transport
 
-The Desktop Bridge Plugin connects via WebSocket on port 9223. This is the recommended transport — it requires no special Figma launch flags and provides additional real-time capabilities.
+The Desktop Bridge Plugin connects via WebSocket on ports 9223–9232. No special Figma launch flags needed.
 
-**Features unique to WebSocket:**
+**Features:**
 - Real-time selection tracking (`figma_get_selection`)
 - Document change monitoring (`figma_get_design_changes`)
 - File identity tracking (file key, name, current page)
@@ -156,50 +142,18 @@ The Desktop Bridge Plugin connects via WebSocket on port 9223. This is the recom
 
 **Communication flow:**
 ```
-MCP Server ←WebSocket (port 9223)→ Plugin UI (ui.html) ←postMessage→ Plugin Code (code.js) ←figma.*→ Figma
+MCP Server ←WebSocket (ports 9223–9232)→ Plugin UI (ui.html) ←postMessage→ Plugin Code (code.js) ←figma.*→ Figma
 ```
 
-#### CDP Transport (Fallback)
+#### Multi-Instance Support (v1.10.0+)
 
-Chrome DevTools Protocol connects on port 9222 when Figma is launched with `--remote-debugging-port=9222`.
+Multiple MCP server processes can run simultaneously (e.g., Claude Desktop Chat tab, Code tab, Cursor, etc.). Each server binds to the first available port in the range 9223–9232. The Desktop Bridge Plugin scans all ports in the range and connects to every active server.
 
-**Features unique to CDP:**
-- Full-page console monitoring (captures all page-level logs, not just plugin context)
-- Browser-level navigation (`figma_navigate` to different files)
-- Viewport screenshot capture
+#### Transport Detection
 
-**Console Monitoring via CDP:**
+The MCP server checks if a WebSocket client is connected (instant, under 1ms). If connected, commands route through WebSocket. If no client is connected, setup instructions are returned.
 
-```typescript
-// Connect to Figma Desktop's DevTools port
-const client = await CDP({ port: 9222 });
-
-// Enable console domain
-await client.Console.enable();
-await client.Runtime.enable();
-
-// Listen for console messages
-client.Runtime.on('consoleAPICalled', (params) => {
-  const entry = {
-    timestamp: Date.now(),
-    level: params.type,
-    message: formatMessage(params.args),
-    stackTrace: params.stackTrace
-  };
-  logBuffer.push(entry);
-});
-```
-
-#### Transport Auto-Detection
-
-The MCP server selects the best transport automatically per-command:
-
-1. Check if a WebSocket client is connected (instant, under 1ms)
-2. If yes, route through WebSocket
-3. If no, attempt CDP connection (has network timeout)
-4. If neither is available, return setup instructions
-
-Both transports can be active simultaneously. All 56+ tools work through either transport.
+All 56+ tools work through the WebSocket transport.
 
 ---
 
@@ -272,13 +226,13 @@ sequenceDiagram
 sequenceDiagram
     participant U as User
     participant P as Plugin
-    participant C as CDP
+    participant B as Bridge
     participant M as MCP
     participant A as AI
 
     U->>P: Run plugin
-    P->>C: console.log()
-    C->>M: Log event
+    P->>B: console.log()
+    B->>M: Log via WebSocket
     M->>M: Buffer entry
     U->>A: Show logs
     A->>M: get_console_logs()
@@ -325,14 +279,14 @@ sequenceDiagram
 
 - **Log Buffer:** Circular buffer, configurable size (default: 1000 entries)
 - **Screenshots:** Disk-based with 1-hour TTL cleanup
-- **Connection Pooling:** Single CDP connection reused
+- **Connection Pooling:** WebSocket connections reused
 
 ### Optimization Strategies
 
 - Batch operations where possible
 - Lazy loading of component data
 - Efficient JSON serialization
-- Connection keepalive for CDP
+- Connection keepalive for WebSocket
 
 ---
 

@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.9.0** — Figma Comments tools: post design-code parity feedback pinned directly to components, retrieve comment threads, and clean up resolved comments. Closes the design-code communication loop without leaving your AI workflow.
+**New in v1.10.0** — Multi-instance support: run Figma Console MCP simultaneously across Claude Desktop, Cursor, Windsurf, and other AI clients. The server automatically selects an available port (9223–9232), and the Desktop Bridge Plugin connects to all active instances. **If upgrading:** update the package, re-import the plugin manifest in Figma, then run the plugin.
 </Note>
 
 # Your Design System as an API
@@ -170,7 +170,7 @@ Real component data. Real token values. Real code that uses your actual design s
     ```
   </Step>
   <Step title="Connect to Figma Desktop">
-    Install the Desktop Bridge Plugin (recommended — one-time setup, no debug flags needed) or start Figma with `--remote-debugging-port=9222` as an alternative
+    Install the Desktop Bridge Plugin — one-time import, no debug flags needed. Run it in your Figma file to connect.
   </Step>
   <Step title="Restart Your MCP Client">
     Restart your MCP client to load the new config

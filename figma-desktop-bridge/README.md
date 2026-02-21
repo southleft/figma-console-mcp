@@ -8,19 +8,13 @@ This plugin enables AI assistants like Claude Code and Claude Desktop to access 
 
 ## Architecture
 
-The plugin supports two transport layers, automatically negotiated by the MCP server:
+The plugin communicates with the MCP server via WebSocket:
 
-**CDP Transport (Chrome DevTools Protocol) — Primary:**
 ```
-MCP Server → Puppeteer/CDP (port 9222) → Plugin UI Iframe → postMessage → Plugin Worker → Figma API
-```
-
-**WebSocket Transport (Preferred):**
-```
-MCP Server ←WebSocket (ports 9223-9232)→ Plugin UI ←postMessage→ Plugin Worker → Figma API
+MCP Server ←WebSocket (ports 9223–9232)→ Plugin UI ←postMessage→ Plugin Worker → Figma API
 ```
 
-The MCP server prefers WebSocket when a plugin client is connected (instant availability check). If no WebSocket client is connected, it falls back to CDP (requires launching Figma with `--remote-debugging-port=9222`). As of v1.10.0, the server supports multi-instance operation — if port 9223 is already in use, it automatically falls back through ports 9224–9232. The plugin scans all ports and connects to every active server.
+As of v1.10.0, the server supports multi-instance operation — if port 9223 is already in use, it automatically falls back through ports 9224–9232. The plugin scans all ports and connects to every active server.
 
 **Key Features:**
 - ✅ No Enterprise plan required for variables
@@ -31,7 +25,7 @@ The MCP server prefers WebSocket when a plugin client is connected (instant avai
 - ✅ Persistent connection (stays open until closed)
 - ✅ Clean, minimal UI
 - ✅ Real-time data updates
-- ✅ Dual transport: WebSocket (preferred) + CDP (fallback)
+- ✅ WebSocket transport — no debug flags needed
 - ✅ Auto-reconnect on connection loss
 - ✅ Multi-instance: connects to all active MCP servers simultaneously (v1.10.0)
 
@@ -137,12 +131,6 @@ figma_get_component({
 4. Plugin UI routes to the same `window.*` handlers
 5. Results sent back as `{ id, result }` or `{ id, error }`
 
-**CDP Path (Fallback):**
-1. Connects to Figma Desktop via remote debugging port (9222)
-2. Enumerates plugin UI iframes
-3. Calls `window.*` functions exposed by ui.html
-4. Returns results via CDP evaluate
-
 ## Troubleshooting
 
 ### Plugin doesn't appear in menu
@@ -153,8 +141,7 @@ figma_get_component({
 ### "No plugin UI found with variables data" or "No plugin UI found with requestComponentData"
 - Ensure plugin is running (check for open plugin window showing "✓ Desktop Bridge active")
 - Try closing and reopening the plugin
-- Check browser console for errors
-- Verify Figma Desktop was launched with `--remote-debugging-port=9222`
+- Check browser console for errors (Plugins → Development → Open Console)
 
 ### Variables not updating
 - Close and reopen the plugin to refresh data

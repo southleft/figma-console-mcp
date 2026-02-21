@@ -14,8 +14,7 @@ This guide shows real-world scenarios for using Figma Console MCP in your workfl
 **Your situation:** You're developing a Figma plugin and want to see console output.
 
 **One-time setup:** Connect to Figma Desktop using one of these methods:
-- **Recommended:** Install the Desktop Bridge Plugin (Plugins → Development → Import from manifest) and run it in your file
-- **Alternative:** Quit Figma and relaunch with `--remote-debugging-port=9222` (`open -a "Figma" --args --remote-debugging-port=9222` on macOS)
+- Install the Desktop Bridge Plugin (Plugins → Development → Import from manifest) and run it in your file
 
 Then open your design file and run your plugin.
 

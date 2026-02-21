@@ -91,7 +91,7 @@ figma_navigate({
 
 ### `figma_get_status`
 
-Check connection and monitoring status. **In local mode, validates transport connectivity (WebSocket and/or CDP) and shows which transport is active.**
+Check connection and monitoring status. **In local mode, validates WebSocket transport connectivity and shows connection state.**
 
 **Usage:**
 ```javascript
@@ -100,9 +100,9 @@ figma_get_status()
 
 **Returns:**
 - **Setup validation** (local mode only):
-  - `setup.valid` - Whether a transport (WebSocket or CDP) is available
-  - `setup.message` - Human-readable status including active transport
-  - `setup.transport` - Which transport is active (`websocket`, `cdp`, or `none`)
+  - `setup.valid` - Whether the WebSocket transport is available
+  - `setup.message` - Human-readable status
+  - `setup.transport` - Transport status (`websocket` or `none`)
   - `setup.setupInstructions` - Step-by-step setup guide (if no transport available)
   - `setup.ai_instruction` - Guidance for AI assistants
 - Browser connection status
@@ -121,17 +121,6 @@ figma_get_status()
 }
 ```
 
-**Example Response (Local Mode - CDP Connected):**
-```json
-{
-  "mode": "local",
-  "setup": {
-    "valid": true,
-    "message": "✅ Figma Desktop connected via CDP (debug port 9222)"
-  }
-}
-```
-
 **Example Response (Local Mode - No Transport):**
 ```json
 {
@@ -140,9 +129,8 @@ figma_get_status()
     "valid": false,
     "message": "❌ No connection to Figma Desktop",
     "setupInstructions": {
-      "recommended": "Install Desktop Bridge Plugin: Figma → Plugins → Development → Import from manifest",
-      "alternative_macOS": "open -a \"Figma\" --args --remote-debugging-port=9222",
-      "alternative_windows": "cmd /c \"%LOCALAPPDATA%\\Figma\\Figma.exe\" --remote-debugging-port=9222"
+      "step1": "Install Desktop Bridge Plugin: Figma → Plugins → Development → Import from manifest",
+      "step2": "Run the plugin in your Figma file"
     }
   }
 }
@@ -150,7 +138,7 @@ figma_get_status()
 
 **Best Practice:**
 - Call this tool first when starting a session in local mode
-- If `setup.valid` is false, guide user to install the Desktop Bridge Plugin (recommended) or restart Figma with debug flag (alternative)
+- If `setup.valid` is false, guide user to install and run the Desktop Bridge Plugin
 
 ---
 
@@ -945,7 +933,7 @@ figma_batch_create_variables({
 }
 ```
 
-**Performance:** Executes in a single CDP roundtrip. 10-50x faster than individual calls for bulk operations.
+**Performance:** Executes in a single Plugin API roundtrip. 10-50x faster than individual calls for bulk operations.
 
 ---
 
@@ -990,7 +978,7 @@ figma_batch_update_variables({
 }
 ```
 
-**Performance:** Executes in a single CDP roundtrip. 10-50x faster than individual calls for bulk updates.
+**Performance:** Executes in a single Plugin API roundtrip. 10-50x faster than individual calls for bulk updates.
 
 ---
 
@@ -1059,7 +1047,7 @@ figma_setup_design_tokens({
 
 **Key Difference from Other Tools:** Values are keyed by **mode name** (e.g., `"Light"`, `"Dark"`) instead of mode ID — the tool resolves names to IDs internally.
 
-**Performance:** Creates everything in a single CDP roundtrip. Ideal for bootstrapping entire token systems.
+**Performance:** Creates everything in a single Plugin API roundtrip. Ideal for bootstrapping entire token systems.
 
 ---
 
@@ -1498,7 +1486,7 @@ figma_get_token_values({
 
 Before using write tools, ensure:
 1. ✅ Running in **Local Mode** (not Remote SSE)
-2. ✅ Connected to Figma Desktop via **Desktop Bridge Plugin** (recommended) or CDP debug mode (alternative)
+2. ✅ Connected to Figma Desktop via **Desktop Bridge Plugin**
 3. ✅ **Desktop Bridge plugin** is running in your Figma file
 4. ✅ `figma_get_status` returns `setup.valid: true`
 

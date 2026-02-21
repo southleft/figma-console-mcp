@@ -183,7 +183,7 @@ Get all 56+ tools including design creation, variable management, and component 
     Add the server config with your token to Claude Code, Cursor, Windsurf, Claude Desktop, or any MCP client
   </Step>
   <Step title="Connect to Figma Desktop">
-    Install the Desktop Bridge Plugin (recommended — one-time setup, no debug flags needed) or start Figma with `--remote-debugging-port=9222` as an alternative
+    Install the Desktop Bridge Plugin — one-time import, no debug flags needed. Run it in your Figma file to connect.
   </Step>
   <Step title="Restart Your MCP Client">
     Restart your MCP client to load the new config

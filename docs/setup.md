@@ -36,6 +36,43 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 
 ---
 
+## 🎓 Community Setup Guides
+
+New to MCP servers, JSON configs, and terminal commands? These designer-friendly guides walk through the full NPX setup process step by step — created by designers, for designers.
+
+<Tabs>
+  <Tab title="Video Walkthrough">
+    ### Joey Banks — Video Walkthrough
+
+    [Joey Banks](https://www.linkedin.com/in/joeyabanks) walks through setting up Figma Console MCP and using it to programmatically create 242 color swatches with linked variables, hex values, and RGB info — a task that would take hours manually.
+
+    <iframe
+      width="100%"
+      height="400"
+      src="https://www.youtube.com/embed/lwUCs6ci3Kg"
+      title="Getting Started with Figma Console MCP"
+      frameBorder="0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowFullScreen
+    ></iframe>
+
+    > *"This to me is incredible. This is such an awesome way to visualize all of the colors or the crayons that we have to work with."* — Joey Banks
+
+    [View on LinkedIn →](https://www.linkedin.com/posts/joeyabanks_if-youve-been-curious-about-getting-started-activity-7430645064974106624-cRk6)
+  </Tab>
+  <Tab title="Written Guide">
+    ### Sergei Zhukov — Designer's Installation Guide
+
+    [Sergei Zhukov](https://www.linkedin.com/in/friendlyunit) created a comprehensive 17-page guide covering the entire setup process — from installing Homebrew and Node.js to configuring Claude Desktop and the Desktop Bridge Plugin. Includes pro tips on building design library context and creating automation workflows.
+
+    > *"Automate routine. Craft exceptional."* — Sergei Zhukov
+
+    [View the guide on LinkedIn →](https://www.linkedin.com/posts/friendlyunit_claude-figma-console-mcp-designers-guide-activity-7430399317426720768-KiBy)
+  </Tab>
+</Tabs>
+
+---
+
 ## 🚀 NPX Setup (Recommended)
 
 **Best for:** Anyone who wants full AI-assisted design and development capabilities with automatic updates.
@@ -128,9 +165,7 @@ Find your client's MCP config file and add:
 
 ### Step 3: Connect to Figma Desktop (~2 min)
 
-Choose one of two connection methods:
-
-#### Option A: Desktop Bridge Plugin (Recommended)
+#### Install the Desktop Bridge Plugin
 
 The Desktop Bridge Plugin connects via WebSocket — no special Figma launch flags needed, and it persists across Figma restarts.
 
@@ -146,29 +181,15 @@ The Desktop Bridge Plugin connects via WebSocket — no special Figma launch fla
 
 **📖 [Desktop Bridge Plugin Documentation](https://github.com/southleft/figma-console-mcp/tree/main/figma-desktop-bridge)**
 
-#### Option B: CDP Debug Mode (Alternative)
+#### Multi-Instance / Port Conflicts
 
-If the Desktop Bridge Plugin isn't connecting, or you need full-page console monitoring (captures all page-level logs, not just plugin context), you can use Chrome DevTools Protocol instead.
+If you're running multiple MCP clients (e.g., Claude Desktop Chat + Code tabs, or Claude + Cursor simultaneously), the server automatically handles port conflicts:
 
-1. **Quit Figma completely** (Cmd+Q on macOS, Alt+F4 on Windows)
+1. **Update** to `figma-console-mcp@latest` and restart your MCP client(s)
+2. **Re-import the Desktop Bridge plugin** in Figma (Plugins → Development → Import plugin from manifest). This is the critical step — the updated plugin scans ports 9223–9232 instead of only 9223
+3. **Run the plugin** in your Figma file — it will find whichever port each server landed on
 
-2. **Restart Figma with the debug flag:**
-
-   **macOS (Terminal):**
-   ```bash
-   open -a "Figma" --args --remote-debugging-port=9222
-   ```
-
-   **Windows (CMD or PowerShell):**
-   ```
-   cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222
-   ```
-
-3. **Verify it worked:** Open Chrome and visit [http://localhost:9222](http://localhost:9222)
-   - ✅ You should see a list of inspectable Figma pages
-   - ❌ If blank or error, Figma wasn't started correctly — try again
-
-> ⚠️ **You must restart Figma with this flag every time** you quit Figma. Consider creating a desktop shortcut or alias. You can also use **both** methods simultaneously — the MCP server tries WebSocket first and falls back to CDP automatically.
+Step 2 is a one-time update. After re-importing, the plugin automatically connects to all active server instances across the full port range.
 
 ### Step 4: Restart Your MCP Client (~1 min)
 
@@ -182,7 +203,7 @@ Try these prompts to verify everything works:
 ```
 Check Figma status
 ```
-→ Should show connection status including which transport is active (WebSocket or CDP)
+→ Should show connection status with active WebSocket transport
 
 ```
 Search for button components
@@ -284,7 +305,7 @@ Edit your client's MCP config file:
 
 ### Step 4: Connect to Figma Desktop
 
-Same as [NPX Step 3](#step-3-connect-to-figma-desktop-2-min) above — install the Desktop Bridge Plugin (recommended) or use CDP debug mode (alternative).
+Same as [NPX Step 3](#step-3-connect-to-figma-desktop-2-min) above — install the Desktop Bridge Plugin.
 
 ### Step 5: Restart Your MCP Client and Test
 
@@ -429,11 +450,10 @@ Create `.vscode/mcp.json` in your project:
 
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
-| "Failed to connect to Figma Desktop" | No transport available | Install Desktop Bridge Plugin, or restart Figma with `--remote-debugging-port=9222` |
+| "Failed to connect to Figma Desktop" | No transport available | Install Desktop Bridge Plugin and run it in your Figma file |
 | "FIGMA_ACCESS_TOKEN not configured" | Missing or wrong token | Check token in config, must start with `figd_` |
 | "Command not found: node" | Node.js not installed | Install Node.js 18+ from nodejs.org |
 | Tools not appearing in MCP client | Config not loaded | Restart your MCP client completely |
-| "Port 9222 already in use" | Another process using port | Close Chrome windows, check Task Manager |
 | "Port 9223 already in use" | Another MCP instance running | As of v1.10.0, the server automatically falls back to ports 9224–9232. If the plugin can't connect, re-import the Desktop Bridge manifest. |
 | WebSocket unreachable from Docker host | Server bound to localhost | Set `FIGMA_WS_HOST=0.0.0.0` and expose port with `-p 9223:9223` |
 | Plugin shows "Disconnected" | MCP server not running | Start/restart your MCP client so the server starts |
@@ -467,22 +487,6 @@ If using **NVM** and having issues, try using the absolute path to Node:
   }
 }
 ```
-
-### Figma Debug Mode Not Working
-
-1. **Completely quit Figma** — not just close the window
-   - macOS: Cmd+Q or Figma menu → Quit Figma
-   - Windows: Alt+F4 or right-click taskbar icon → Close window
-
-2. **Verify Figma is fully closed:**
-   - macOS: `ps aux | grep -i figma` should show nothing
-   - Windows: Check Task Manager for Figma processes
-
-3. **Restart with the flag:**
-   - macOS: `open -a "Figma" --args --remote-debugging-port=9222`
-   - Windows: `cmd /c "%LOCALAPPDATA%\Figma\Figma.exe" --remote-debugging-port=9222`
-
-4. **Verify:** Visit http://localhost:9222 — should show inspectable pages
 
 ### Claude Code OAuth Issues
 
