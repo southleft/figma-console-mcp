@@ -220,6 +220,12 @@ export class FigmaWebSocketServer extends EventEmitter {
       return;
     }
 
+    // Relay command from external client (e.g., CLI compiler tool)
+    if (message.type === 'RELAY_COMMAND') {
+      this.handleRelayCommand(message, ws);
+      return;
+    }
+
     // Unsolicited data from plugin (FILE_INFO, events, forwarded data)
     if (message.type) {
       // FILE_INFO promotes pending clients to named clients
@@ -295,6 +301,45 @@ export class FigmaWebSocketServer extends EventEmitter {
     }
 
     logger.debug({ message }, 'Unhandled WebSocket message');
+  }
+
+  /**
+   * Handle a relay command from an external client (e.g., a CLI compiler).
+   * Allows non-plugin clients to execute commands through the connected plugin.
+   *
+   * Protocol: { type: "RELAY_COMMAND", id: string, method: string, params?: object, timeout?: number }
+   * Response: { id: string, result: any } or { id: string, error: string }
+   */
+  private handleRelayCommand(message: any, ws: WebSocket): void {
+    const { id, method, params, timeout } = message;
+
+    if (!id || !method) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ id: id || null, error: 'RELAY_COMMAND requires id and method' }));
+      }
+      return;
+    }
+
+    // Cancel pending-client timeout — relay clients don't send FILE_INFO
+    const pendingTimeout = this._pendingClients.get(ws);
+    if (pendingTimeout) {
+      clearTimeout(pendingTimeout);
+      this._pendingClients.delete(ws);
+    }
+
+    logger.debug({ id, method }, 'Relaying command from external client');
+
+    this.sendCommand(method, params || {}, timeout || 30000)
+      .then((result) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ id, result }));
+        }
+      })
+      .catch((err) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ id, error: err.message || String(err) }));
+        }
+      });
   }
 
   /**
