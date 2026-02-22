@@ -1,6 +1,6 @@
 /**
  * Console Monitor
- * Captures and manages console logs from Figma plugins via Chrome DevTools Protocol
+ * Captures and manages console logs from Figma plugins
  * Monitors both main page console AND Web Worker consoles (where Figma plugins run)
  */
 

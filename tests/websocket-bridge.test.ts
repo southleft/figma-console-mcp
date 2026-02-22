@@ -725,7 +725,7 @@ describe('FigmaWebSocketServer file identity tracking', () => {
     expect(server.getConnectedFileInfo()).toBeNull();
   }, 10000);
 
-  test('multi-client: both files connected, active stays as first', async () => {
+  test('multi-client: most recently connected file becomes active', async () => {
     server = new FigmaWebSocketServer({ port: TEST_PORT });
     await server.start();
 
@@ -737,21 +737,21 @@ describe('FigmaWebSocketServer file identity tracking', () => {
     expect(server.getConnectedFileInfo()!.fileName).toBe('File A');
     expect(server.getActiveFileKey()).toBe('keyA');
 
-    // Second client — connects but first remains active
+    // Second client — becomes active (most recently connected)
     const client2 = await connectClient(server, TEST_PORT, {
       fileKey: 'keyB', fileName: 'File B',
     });
     clients.push(client2);
 
-    // Active file is still File A
-    expect(server.getConnectedFileInfo()!.fileName).toBe('File A');
-    expect(server.getActiveFileKey()).toBe('keyA');
+    // Active file is now File B
+    expect(server.getConnectedFileInfo()!.fileName).toBe('File B');
+    expect(server.getActiveFileKey()).toBe('keyB');
 
     // Both files are connected
     const files = server.getConnectedFiles();
     expect(files).toHaveLength(2);
-    expect(files.find(f => f.fileKey === 'keyA')?.isActive).toBe(true);
-    expect(files.find(f => f.fileKey === 'keyB')?.isActive).toBe(false);
+    expect(files.find(f => f.fileKey === 'keyA')?.isActive).toBe(false);
+    expect(files.find(f => f.fileKey === 'keyB')?.isActive).toBe(true);
   });
 
   test('emits documentChange event for DOCUMENT_CHANGE messages', async () => {
@@ -1417,7 +1417,7 @@ describe('Multi-client WebSocket', () => {
   });
 
   describe('active file management', () => {
-    test('first connected file becomes active', async () => {
+    test('most recently connected file becomes active', async () => {
       server = new FigmaWebSocketServer({ port: TEST_PORT });
       await server.start();
 
@@ -1425,7 +1425,7 @@ describe('Multi-client WebSocket', () => {
       expect(server.getActiveFileKey()).toBe('file-a');
 
       await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'Second' }).then(c => clients.push(c));
-      expect(server.getActiveFileKey()).toBe('file-a'); // Still first
+      expect(server.getActiveFileKey()).toBe('file-b'); // Most recent wins
     });
 
     test('setActiveFile switches the targeted file', async () => {
@@ -1437,13 +1437,14 @@ describe('Multi-client WebSocket', () => {
       const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'File B' });
       clients.push(c2);
 
-      expect(server.getActiveFileKey()).toBe('file-a');
-      expect(server.getConnectedFileInfo()!.fileName).toBe('File A');
-
-      const switched = server.setActiveFile('file-b');
-      expect(switched).toBe(true);
+      // file-b is active (most recently connected)
       expect(server.getActiveFileKey()).toBe('file-b');
       expect(server.getConnectedFileInfo()!.fileName).toBe('File B');
+
+      const switched = server.setActiveFile('file-a');
+      expect(switched).toBe(true);
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.getConnectedFileInfo()!.fileName).toBe('File A');
     });
 
     test('setActiveFile returns false for unknown file', async () => {
@@ -1469,11 +1470,11 @@ describe('Multi-client WebSocket', () => {
       const eventPromise = new Promise<any>((resolve) =>
         server.once('activeFileChanged', resolve)
       );
-      server.setActiveFile('file-b');
+      server.setActiveFile('file-a');
 
       const event = await eventPromise;
-      expect(event.fileKey).toBe('file-b');
-      expect(event.fileName).toBe('B');
+      expect(event.fileKey).toBe('file-a');
+      expect(event.fileName).toBe('A');
     });
 
     test('SELECTION_CHANGE auto-switches active file', async () => {
@@ -1485,13 +1486,14 @@ describe('Multi-client WebSocket', () => {
       const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
       clients.push(c2);
 
-      expect(server.getActiveFileKey()).toBe('file-a');
+      // file-b is active (most recently connected)
+      expect(server.getActiveFileKey()).toBe('file-b');
 
-      // User selects something in file-b → auto-switches
+      // User selects something in file-a → auto-switches back
       const selPromise = new Promise<void>((resolve) =>
         server.once('selectionChange', resolve)
       );
-      c2.send(JSON.stringify({
+      c1.send(JSON.stringify({
         type: 'SELECTION_CHANGE',
         data: {
           nodes: [{ id: '1:1', name: 'Frame', type: 'FRAME', width: 100, height: 100 }],
@@ -1502,7 +1504,7 @@ describe('Multi-client WebSocket', () => {
       }));
       await selPromise;
 
-      expect(server.getActiveFileKey()).toBe('file-b');
+      expect(server.getActiveFileKey()).toBe('file-a');
     });
 
     test('PAGE_CHANGE auto-switches active file', async () => {
@@ -1514,19 +1516,20 @@ describe('Multi-client WebSocket', () => {
       const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
       clients.push(c2);
 
-      expect(server.getActiveFileKey()).toBe('file-a');
+      // file-b is active (most recently connected)
+      expect(server.getActiveFileKey()).toBe('file-b');
 
-      // User switches pages in file-b → auto-switches
+      // User switches pages in file-a → auto-switches back
       const pagePromise = new Promise<void>((resolve) =>
         server.once('pageChange', resolve)
       );
-      c2.send(JSON.stringify({
+      c1.send(JSON.stringify({
         type: 'PAGE_CHANGE',
         data: { pageId: '5:0', pageName: 'Components', timestamp: Date.now() },
       }));
       await pagePromise;
 
-      expect(server.getActiveFileKey()).toBe('file-b');
+      expect(server.getActiveFileKey()).toBe('file-a');
     });
   });
 
@@ -1556,15 +1559,15 @@ describe('Multi-client WebSocket', () => {
       }));
       await logPromise;
 
-      // Active is file-a — should only see file-a's logs
-      expect(server.getActiveFileKey()).toBe('file-a');
-      expect(server.getConsoleLogs()).toHaveLength(1);
-      expect(server.getConsoleLogs()[0].message).toBe('from-a');
-
-      // Switch to file-b — should only see file-b's logs
-      server.setActiveFile('file-b');
+      // Active is file-b (most recently connected) — should only see file-b's logs
+      expect(server.getActiveFileKey()).toBe('file-b');
       expect(server.getConsoleLogs()).toHaveLength(1);
       expect(server.getConsoleLogs()[0].message).toBe('from-b');
+
+      // Switch to file-a — should only see file-a's logs
+      server.setActiveFile('file-a');
+      expect(server.getConsoleLogs()).toHaveLength(1);
+      expect(server.getConsoleLogs()[0].message).toBe('from-a');
     });
 
     test('document changes are per-file', async () => {
@@ -1592,14 +1595,14 @@ describe('Multi-client WebSocket', () => {
       }));
       await changePromise;
 
-      // Active is file-a — should only see file-a's changes
-      expect(server.getDocumentChanges()).toHaveLength(1);
-      expect(server.getDocumentChanges()[0].hasStyleChanges).toBe(true);
-
-      // Switch to file-b
-      server.setActiveFile('file-b');
+      // Active is file-b (most recently connected) — should only see file-b's changes
       expect(server.getDocumentChanges()).toHaveLength(1);
       expect(server.getDocumentChanges()[0].hasNodeChanges).toBe(true);
+
+      // Switch to file-a
+      server.setActiveFile('file-a');
+      expect(server.getDocumentChanges()).toHaveLength(1);
+      expect(server.getDocumentChanges()[0].hasStyleChanges).toBe(true);
     });
 
     test('selection is per-file', async () => {
@@ -1644,16 +1647,16 @@ describe('Multi-client WebSocket', () => {
       const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
       clients.push(c2);
 
-      // Echo handler on file-a (active by default)
-      c1.on('message', (data: Buffer) => {
+      // Echo handler on file-b (active as most recently connected)
+      c2.on('message', (data: Buffer) => {
         const msg = JSON.parse(data.toString());
         if (msg.id && msg.method) {
-          c1.send(JSON.stringify({ id: msg.id, result: { file: 'a' } }));
+          c2.send(JSON.stringify({ id: msg.id, result: { file: 'b' } }));
         }
       });
 
       const result = await server.sendCommand('EXECUTE_CODE', { code: 'test' });
-      expect(result.file).toBe('a');
+      expect(result.file).toBe('b');
     });
 
     test('sendCommand targets specific file via targetFileKey', async () => {
@@ -1679,9 +1682,9 @@ describe('Multi-client WebSocket', () => {
         }
       });
 
-      // Active is file-a, but target file-b explicitly
-      const result = await server.sendCommand('EXECUTE_CODE', { code: 'test' }, 15000, 'file-b');
-      expect(result.file).toBe('b');
+      // Active is file-b, but target file-a explicitly
+      const result = await server.sendCommand('EXECUTE_CODE', { code: 'test' }, 15000, 'file-a');
+      expect(result.file).toBe('a');
     });
 
     test('concurrent commands to different files', async () => {
@@ -1752,17 +1755,18 @@ describe('Multi-client WebSocket', () => {
       const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
       clients.push(c2);
 
-      expect(server.getActiveFileKey()).toBe('file-a');
+      // file-b is active (most recently connected)
+      expect(server.getActiveFileKey()).toBe('file-b');
 
-      // Disconnect active file (file-a) — should fall back to file-b
+      // Disconnect active file (file-b) — should fall back to file-a
       const disconnectedPromise = new Promise<void>((resolve) =>
         server.once('fileDisconnected', resolve)
       );
-      c1.terminate();
+      c2.terminate();
       await disconnectedPromise;
 
-      expect(server.getActiveFileKey()).toBe('file-b');
-      expect(server.getConnectedFileInfo()!.fileName).toBe('B');
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.getConnectedFileInfo()!.fileName).toBe('A');
     }, 10000);
 
     test('pending client timeout when FILE_INFO not sent', async () => {

@@ -363,11 +363,10 @@ export class FigmaWebSocketServer extends EventEmitter {
       gracePeriodTimer: null,
     });
 
-    // Set as active file if no active file or active file is disconnected
-    if (!this._activeFileKey || !this.clients.has(this._activeFileKey) ||
-        this.clients.get(this._activeFileKey)?.ws.readyState !== WebSocket.OPEN) {
-      this._activeFileKey = fileKey;
-    }
+    // Most recently connected file becomes active (user just opened the plugin there).
+    // On bulk reconnect the order is non-deterministic, but the first user interaction
+    // (SELECTION_CHANGE or PAGE_CHANGE) will correct the active file immediately.
+    this._activeFileKey = fileKey;
 
     logger.info(
       {

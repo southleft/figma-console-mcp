@@ -1971,6 +1971,7 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   else if (msg.type === 'GET_FILE_INFO') {
     try {
+      var selection = figma.currentPage.selection;
       figma.ui.postMessage({
         type: 'GET_FILE_INFO_RESULT',
         requestId: msg.requestId,
@@ -1978,7 +1979,8 @@ figma.ui.onmessage = async (msg) => {
         fileInfo: {
           fileName: figma.root.name,
           fileKey: figma.fileKey || null,
-          currentPage: figma.currentPage.name
+          currentPage: figma.currentPage.name,
+          selectionCount: selection ? selection.length : 0
         }
       });
     } catch (error) {

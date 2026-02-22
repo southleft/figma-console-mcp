@@ -4,18 +4,14 @@
  * Figma Console MCP Server - Local Mode
  *
  * Entry point for local MCP server that connects to Figma Desktop
- * via Chrome Remote Debugging Protocol (port 9222).
+ * via the WebSocket Desktop Bridge plugin.
  *
  * This implementation uses stdio transport for MCP communication,
  * suitable for local IDE integrations and development workflows.
  *
  * Requirements:
- * - Figma Desktop must be launched with: --remote-debugging-port=9222
- * - "Use Developer VM" enabled in Figma: Plugins → Development → Use Developer VM
+ * - Desktop Bridge plugin open in Figma (Plugins → Development → Figma Desktop Bridge)
  * - FIGMA_ACCESS_TOKEN environment variable for API access
- *
- * macOS launch command:
- *   open -a "Figma" --args --remote-debugging-port=9222
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -146,7 +142,7 @@ When creating or updating **multiple variables**, ALWAYS prefer batch tools over
 - **figma_batch_update_variables**: Update up to 100 variable values in one call (vs. N calls to figma_update_variable)
 - **figma_setup_design_tokens**: Create a complete token system (collection + modes + variables) atomically in one call
 
-Batch tools are 10-50x faster because they execute in a single CDP roundtrip. Use individual tools only for one-off operations.
+Batch tools are 10-50x faster because they execute in a single roundtrip. Use individual tools only for one-off operations.
 
 ### DESIGN BEST PRACTICES
 For component-specific design guidance (sizing, proportions, accessibility, etc.), query the Design Systems Assistant MCP which provides up-to-date best practices for any component type.
@@ -187,7 +183,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 	/**
 	 * Get or create Desktop Connector for write operations.
-	 * Tries WebSocket first (instant, no network timeout), falls back to CDP.
+	 * Returns the active WebSocket Desktop Bridge connector.
 	 */
 	private async getDesktopConnector(): Promise<IFigmaConnector> {
 		// Try WebSocket first — instant check, no network timeout delay
@@ -200,11 +196,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				return this.desktopConnector;
 			} catch (wsError) {
 				const errorMsg = wsError instanceof Error ? wsError.message : String(wsError);
-				logger.debug({ error: errorMsg }, "WebSocket connector init failed, trying CDP fallback");
+				logger.debug({ error: errorMsg }, "WebSocket connector init failed, trying legacy fallback");
 			}
 		}
 
-		// CDP fallback (requires --remote-debugging-port=9222)
+		// Legacy fallback path
 		try {
 			await this.ensureInitialized();
 
@@ -217,33 +213,30 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				const cdpConnector = new FigmaDesktopConnector(page);
 				await cdpConnector.initialize();
 				this.desktopConnector = cdpConnector;
-				logger.debug("Desktop connector initialized via CDP with fresh page reference");
+				logger.debug("Desktop connector initialized via legacy fallback with fresh page reference");
 				return this.desktopConnector;
 			}
 		} catch (cdpError) {
 			const errorMsg = cdpError instanceof Error ? cdpError.message : String(cdpError);
-			logger.debug({ error: errorMsg }, "CDP connection also unavailable");
+			logger.debug({ error: errorMsg }, "Legacy fallback connection also unavailable");
 		}
 
 		const wsPort = this.wsActualPort || this.wsPreferredPort || DEFAULT_WS_PORT;
 		throw new Error(
 			"Cannot connect to Figma Desktop.\n\n" +
-			"Option 1 (WebSocket): Open the Desktop Bridge plugin in Figma.\n" +
-			`  The plugin will connect automatically to ws://localhost:${wsPort}.\n` +
-			"  No special launch flags needed.\n\n" +
-			"Option 2 (CDP): Launch Figma with --remote-debugging-port=9222\n" +
-			"  macOS: open -a \"Figma\" --args --remote-debugging-port=9222\n" +
-			"  Windows: start figma://--remote-debugging-port=9222"
+			"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n" +
+			`The plugin will connect automatically to ws://localhost:${wsPort}.\n` +
+			"No special launch flags needed."
 		);
 	}
 
 	/**
 	 * Get the current Figma file URL from the best available source.
-	 * Priority: CDP browser URL (full URL with branch/node info) → WebSocket file identity (synthesized URL).
+	 * Priority: Browser URL (full URL with branch/node info) → WebSocket file identity (synthesized URL).
 	 * The synthesized URL is compatible with extractFileKey() and extractFigmaUrlInfo().
 	 */
 	private getCurrentFileUrl(): string | null {
-		// Priority 1: CDP browser URL (full URL with branch/node info)
+		// Priority 1: Browser URL (full URL with branch/node info)
 		const browserUrl = this.browserManager?.getCurrentUrl() || null;
 		if (browserUrl) return browserUrl;
 
@@ -257,50 +250,25 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	}
 
 	/**
-	 * Check if Figma Desktop is accessible via CDP or WebSocket
+	 * Check if Figma Desktop is accessible via WebSocket
 	 */
 	private async checkFigmaDesktop(): Promise<void> {
 		if (!this.config.local) {
 			throw new Error("Local mode configuration missing");
 		}
 
-		const { debugHost, debugPort } = this.config.local;
-		const browserURL = `http://${debugHost}:${debugPort}`;
-		let cdpAvailable = false;
-
-		try {
-			// Simple HTTP check to see if debug port is accessible
-			const response = await fetch(`${browserURL}/json/version`, {
-				signal: AbortSignal.timeout(3000),
-			});
-
-			if (response.ok) {
-				const versionInfo = await response.json();
-				logger.info({ versionInfo, browserURL }, "Figma Desktop is accessible via CDP");
-				cdpAvailable = true;
-			}
-		} catch {
-			logger.debug("CDP not available at startup (this is OK if using WebSocket bridge)");
-		}
-
 		// Check WebSocket availability
 		const wsAvailable = this.wsServer?.isClientConnected() ?? false;
 
-		if (cdpAvailable && wsAvailable) {
-			logger.info("Transport: Both CDP and WebSocket available (WebSocket preferred)");
-		} else if (cdpAvailable) {
-			logger.info("Transport: CDP available");
-		} else if (wsAvailable) {
+		if (wsAvailable) {
 			logger.info("Transport: WebSocket bridge connected");
 		} else {
-			// Neither available yet — log guidance but don't throw
+			// Not available yet — log guidance but don't throw
 			// The user may open the plugin later
 			logger.warn(
-				`Neither CDP nor WebSocket transport available yet.\n\n` +
-				`Option 1 (CDP): Launch Figma with --remote-debugging-port=${debugPort}\n` +
-				`  macOS: open -a "Figma" --args --remote-debugging-port=${debugPort}\n\n` +
-				`Option 2 (WebSocket): Open the Desktop Bridge plugin in Figma.\n` +
-				`  No special launch flags needed — the plugin connects automatically.`,
+				`WebSocket transport not available yet.\n\n` +
+				`Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n` +
+				`No special launch flags needed — the plugin connects automatically.`,
 			);
 		}
 	}
@@ -521,13 +489,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 			async ({ count, level, since }) => {
 				try {
-					// Try CDP console monitor first, fall back to WebSocket console buffer
+					// Try console monitor first, fall back to WebSocket console buffer
 					let logs: import("./core/types/index.js").ConsoleLogEntry[];
 					let status: ReturnType<import("./core/console-monitor.js").ConsoleMonitor["getStatus"]> | ReturnType<NonNullable<typeof this.wsServer>["getConsoleStatus"]>;
 					let source: "cdp" | "websocket" = "cdp";
 
 					if (this.consoleMonitor?.getStatus().isMonitoring) {
-						// CDP console monitor is active — use it (captures all page logs)
+						// Console monitor is active — use it (captures all page logs)
 						logs = this.consoleMonitor.getLogs({ count, level, since });
 						status = this.consoleMonitor.getStatus();
 					} else if (this.wsServer?.isClientConnected()) {
@@ -536,7 +504,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						status = this.wsServer.getConsoleStatus();
 						source = "websocket";
 					} else {
-						// Neither available — try to initialize CDP
+						// Neither available — try to initialize
 						try {
 							await this.ensureInitialized();
 							if (this.consoleMonitor) {
@@ -547,7 +515,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							}
 						} catch {
 							throw new Error(
-								"No console monitoring available. Either enable CDP (--remote-debugging-port=9222) or open the Desktop Bridge plugin for WebSocket-based console capture.",
+								"No console monitoring available. Open the Desktop Bridge plugin in Figma for console capture.",
 							);
 						}
 					}
@@ -563,7 +531,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 					if (source === "websocket") {
 						responseData.ai_instruction =
-							"Console logs captured via WebSocket Bridge (plugin sandbox only). These logs include output from the Desktop Bridge plugin's code.js context. For full-page console monitoring including Figma app internals, use CDP mode (--remote-debugging-port=9222).";
+							"Console logs captured via WebSocket Bridge (plugin sandbox only). These logs include output from the Desktop Bridge plugin's code.js context.";
 					}
 
 					if (logs.length === 0) {
@@ -605,7 +573,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to retrieve console logs.",
 										troubleshooting: [
 											"Open the Desktop Bridge plugin in Figma for WebSocket-based console capture",
-											"Or enable CDP: Relaunch Figma with --remote-debugging-port=9222",
+											"Ensure the Desktop Bridge plugin is open and connected in Figma",
 										],
 									},
 								),
@@ -651,7 +619,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 					if (!currentUrl) {
 						throw new Error(
-							"No Figma file open. Either provide a nodeId parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode).",
+							"No Figma file open. Either provide a nodeId parameter, call figma_navigate, or ensure the Desktop Bridge plugin is connected.",
 						);
 					}
 
@@ -789,7 +757,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 				if (!useCDP && !useWS) {
 					throw new Error(
-						"No console monitoring available. Either enable CDP (--remote-debugging-port=9222) or open the Desktop Bridge plugin for WebSocket-based console capture.",
+						"No console monitoring available. Open the Desktop Bridge plugin in Figma for console capture.",
 					);
 				}
 
@@ -833,7 +801,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 				if (useWS) {
 					responseData.ai_instruction =
-						"Console logs captured via WebSocket Bridge (plugin sandbox only). For full-page monitoring, use CDP mode.";
+						"Console logs captured via WebSocket Bridge (plugin sandbox only).";
 				}
 
 				return {
@@ -864,7 +832,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					let clearedCount = 0;
 					let currentUrl: string | null = null;
 
-					// Try CDP first (full page reload)
+					// Try browser reload first
 					if (this.browserManager?.isRunning()) {
 						if (clearConsoleBefore && this.consoleMonitor) {
 							clearedCount = this.consoleMonitor.clear();
@@ -881,11 +849,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						// Wait for the UI to reload and WebSocket to reconnect
 						await new Promise((resolve) => setTimeout(resolve, 3000));
 					} else {
-						// Try to initialize CDP
+						// Try to initialize browser manager
 						await this.ensureInitialized();
 						if (!this.browserManager) {
 							throw new Error(
-								"No connection available. Open the Desktop Bridge plugin in Figma or enable CDP.",
+								"No connection available. Open the Desktop Bridge plugin in Figma.",
 							);
 						}
 						if (clearConsoleBefore && this.consoleMonitor) {
@@ -932,7 +900,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to reload plugin",
 										troubleshooting: [
 											"Open the Desktop Bridge plugin in Figma for WebSocket-based reload",
-											"Or enable CDP: Relaunch Figma with --remote-debugging-port=9222",
+											"Ensure the Desktop Bridge plugin is open and connected in Figma",
 										],
 									},
 								),
@@ -947,19 +915,19 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool 5: Clear Console
 		this.server.tool(
 			"figma_clear_console",
-			"Clear the console log buffer. In WebSocket mode, this safely clears the buffer without disrupting the connection. In CDP mode, this disrupts monitoring and requires MCP reconnect. Returns number of logs cleared.",
+			"Clear the console log buffer. Safely clears the buffer without disrupting the connection. Returns number of logs cleared.",
 			{},
 			async () => {
 				try {
 					let clearedCount = 0;
 					let transport: "cdp" | "websocket" = "cdp";
 
-					// Try WebSocket buffer first (non-disruptive), then CDP
+					// Try WebSocket buffer first (non-disruptive)
 					if (this.wsServer?.isClientConnected()) {
 						clearedCount = this.wsServer.clearConsoleLogs();
 						transport = "websocket";
 					} else {
-						// Try CDP (initialize if needed)
+						// Try browser manager (initialize if needed)
 						if (!this.consoleMonitor) {
 							await this.ensureInitialized();
 						}
@@ -967,7 +935,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							clearedCount = this.consoleMonitor.clear();
 						} else {
 							throw new Error(
-								"No console monitoring available. Open the Desktop Bridge plugin or enable CDP.",
+								"No console monitoring available. Open the Desktop Bridge plugin in Figma.",
 							);
 						}
 					}
@@ -984,7 +952,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							"Console buffer cleared via WebSocket. No reconnection needed — monitoring continues automatically.";
 					} else {
 						responseData.ai_instruction =
-							"⚠️ Console cleared via CDP. This may disrupt monitoring. Reconnect MCP if logs stop appearing.";
+							"Console cleared successfully.";
 					}
 
 					return {
@@ -1029,11 +997,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 			async ({ url }) => {
 				try {
-					// Try CDP first (full browser navigation)
+					// Try browser navigation first
 					try {
 						await this.ensureInitialized();
 					} catch {
-						// CDP not available — check if WebSocket is connected
+						// Browser not available — check if WebSocket is connected
 						if (this.wsServer?.isClientConnected()) {
 							const fileInfo = this.wsServer.getConnectedFileInfo();
 							// Check if the requested URL points to the same file already connected via WebSocket
@@ -1129,7 +1097,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							};
 						}
 						throw new Error(
-							"No connection available. Open the Desktop Bridge plugin in Figma or enable CDP (--remote-debugging-port=9222).",
+							"No connection available. Open the Desktop Bridge plugin in Figma.",
 						);
 					}
 
@@ -1209,7 +1177,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										message: "Failed to navigate to Figma URL",
 										troubleshooting: [
 											"In WebSocket mode: navigate manually in Figma and ensure Desktop Bridge plugin is open",
-											"For automatic navigation: relaunch Figma with --remote-debugging-port=9222",
+											"Ensure the Desktop Bridge plugin is open in the target file",
 										],
 									},
 								),
@@ -1224,78 +1192,20 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool 7: Get Status (with setup validation)
 		this.server.tool(
 			"figma_get_status",
-			"Check connection status to Figma Desktop. Reports which transport is active (CDP or WebSocket) and connection health. Works with both CDP (--remote-debugging-port=9222) and WebSocket (Desktop Bridge plugin) transports.",
+			"Check connection status to Figma Desktop. Reports transport status and connection health via the Desktop Bridge plugin (WebSocket transport).",
 			{},
 			async () => {
 				try {
-					// Check CDP availability (non-blocking)
-					let cdpAvailable = false;
-					let debugPortAccessible = false;
-					try {
-						const debugHost = this.config?.local?.debugHost ?? "localhost";
-						const debugPort = this.config?.local?.debugPort ?? 9222;
-						const response = await fetch(`http://${debugHost}:${debugPort}/json/version`, {
-							signal: AbortSignal.timeout(2000),
-						});
-						debugPortAccessible = response.ok;
-						cdpAvailable = debugPortAccessible;
-					} catch (e) {
-						// CDP not available
-					}
-
 					// Check WebSocket availability
 					const wsConnected = this.wsServer?.isClientConnected() ?? false;
 
-					// Try CDP initialization if available (but don't fail on error)
-					let browserRunning = this.browserManager?.isRunning() ?? false;
 					let monitorStatus = this.consoleMonitor?.getStatus() ?? null;
 					let currentUrl = this.getCurrentFileUrl();
-					if (cdpAvailable && !browserRunning) {
-						try {
-							await this.ensureInitialized();
-							browserRunning = this.browserManager?.isRunning() ?? false;
-							monitorStatus = this.consoleMonitor?.getStatus() ?? null;
-							currentUrl = this.getCurrentFileUrl();
-						} catch {
-							// CDP init failed - continue with WebSocket status
-						}
-					}
 
-					// Determine active transport (matches getDesktopConnector priority: WS first)
+					// Determine active transport
 					let activeTransport: string = "none";
 					if (wsConnected) {
 						activeTransport = "websocket";
-					} else if (cdpAvailable && browserRunning) {
-						activeTransport = "cdp";
-					}
-
-					// List available Figma pages (CDP only)
-					let availablePages: Array<{
-						url: string;
-						workerCount: number;
-						isCurrentPage: boolean;
-					}> = [];
-					if (this.browserManager && browserRunning) {
-						try {
-							const browser = (this.browserManager as any).browser;
-							if (browser) {
-								const pages = await browser.pages();
-								availablePages = pages
-									.filter((p: any) => {
-										const url = p.url();
-										return (
-											url.includes("figma.com") && !url.includes("devtools")
-										);
-									})
-									.map((p: any) => ({
-										url: p.url(),
-										workerCount: p.workers().length,
-										isCurrentPage: p.url() === currentUrl,
-									}));
-							}
-						} catch (e) {
-							logger.error({ error: e }, "Failed to list available pages");
-						}
 					}
 
 					// Get current file name — prefer cached info from WebSocket (instant, no roundtrip)
@@ -1339,11 +1249,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										monitorWorkerCount: monitorStatus?.workerCount ?? 0,
 										transport: {
 											active: activeTransport,
-											cdp: {
-												available: cdpAvailable,
-												debugPortAccessible,
-												browserRunning,
-											},
 											websocket: {
 												available: wsConnected,
 												serverRunning: this.wsServer?.isStarted() ?? false,
@@ -1397,17 +1302,15 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										},
 										setup: {
 											valid: setupValid,
-											message: activeTransport === "cdp"
-												? "✅ Connected to Figma Desktop via CDP (Chrome DevTools Protocol)"
-												: activeTransport === "websocket"
-													? this.wsActualPort !== this.wsPreferredPort
-														? `✅ Connected to Figma Desktop via WebSocket Bridge (port ${this.wsActualPort}, fallback from ${this.wsPreferredPort})`
-														: "✅ Connected to Figma Desktop via WebSocket Bridge"
-													: this.wsStartupError?.code === "EADDRINUSE"
-														? `❌ All WebSocket ports ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use`
-														: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
-														? `❌ WebSocket server running on port ${this.wsActualPort} (fallback) but no plugin connected. Re-import the Desktop Bridge plugin in Figma to enable multi-port scanning.`
-														: "❌ No connection to Figma Desktop",
+											message: activeTransport === "websocket"
+												? this.wsActualPort !== this.wsPreferredPort
+													? `✅ Connected to Figma Desktop via WebSocket Bridge (port ${this.wsActualPort}, fallback from ${this.wsPreferredPort})`
+													: "✅ Connected to Figma Desktop via WebSocket Bridge"
+												: this.wsStartupError?.code === "EADDRINUSE"
+													? `❌ All WebSocket ports ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use`
+													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
+													? `❌ WebSocket server running on port ${this.wsActualPort} (fallback) but no plugin connected. Re-import the Desktop Bridge plugin in Figma to enable multi-port scanning.`
+													: "❌ No connection to Figma Desktop",
 											setupInstructions: !setupValid
 												? this.wsStartupError?.code === "EADDRINUSE"
 													? {
@@ -1415,8 +1318,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 														fix: "Close some of the other Claude Desktop tabs or terminal sessions running the MCP server, then restart this one.",
 													}
 													: {
-														option1_websocket: `Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge). No special launch flags needed.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`,
-														option2_cdp: 'Launch Figma with: open -a "Figma" --args --remote-debugging-port=9222',
+														instructions: `Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge). No special launch flags needed.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`,
 													}
 												: undefined,
 											ai_instruction: !setupValid
@@ -1424,20 +1326,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 													? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use — most likely multiple Claude Desktop tabs or terminal sessions are running the Figma Console MCP server. Ask the user to close some sessions and restart.`
 													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
 														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected — most likely because the plugin has old code that only scans port ${this.wsPreferredPort}. TELL THE USER: Re-import the Desktop Bridge plugin in Figma (Plugins → Development → Import plugin from manifest) to update it with multi-port scanning support. This is a one-time step.${this.getPluginPath() ? ' The manifest file is at: ' + this.getPluginPath() : ''}`
-														: `No connection to Figma Desktop. The easiest option is to open the Desktop Bridge plugin in Figma. Alternatively, relaunch Figma with --remote-debugging-port=9222 for CDP.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`
+														: `No connection to Figma Desktop. Open the Desktop Bridge plugin in Figma to connect.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`
 												: activeTransport === "websocket"
-													? `Connected via WebSocket Bridge to "${currentFileName || "unknown file"}" on port ${this.wsActualPort}. All design tools and console monitoring tools are available. Console logs are captured from the plugin sandbox (code.js). For full-page console monitoring including Figma app internals, add CDP (--remote-debugging-port=9222). IMPORTANT: Always verify the file name before destructive operations when multiple files have the plugin open.`
-													: availablePages.length > 1
-														? `Multiple Figma pages detected. Current page has ${monitorStatus?.workerCount || 0} workers.`
-														: "All tools are ready to use.",
+													? `Connected via WebSocket Bridge to "${currentFileName || "unknown file"}" on port ${this.wsActualPort}. All design tools and console monitoring tools are available. Console logs are captured from the plugin sandbox (code.js). IMPORTANT: Always verify the file name before destructive operations when multiple files have the plugin open.`
+													: "All tools are ready to use.",
 										},
 										pluginPath: this.getPluginPath() || undefined,
-										availablePages:
-											availablePages.length > 0 ? availablePages : undefined,
-										browser: {
-											running: browserRunning,
-											currentUrl,
-										},
 										consoleMonitor: monitorStatus,
 										initialized: setupValid,
 										timestamp: Date.now(),
@@ -1473,7 +1367,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool: Force reconnect to Figma Desktop
 		this.server.tool(
 			"figma_reconnect",
-			"Force a complete reconnection to Figma Desktop. Works with both CDP and WebSocket transports. Use when connection seems stale or after switching files.",
+			"Force a complete reconnection to Figma Desktop. Use when connection seems stale or after switching files.",
 			{},
 			async () => {
 				try {
@@ -1484,7 +1378,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					let currentUrl: string | null = null;
 					let fileName: string | null = null;
 
-					// Try CDP reconnection if browser manager exists
+					// Try browser manager reconnection if it exists
 					if (this.browserManager) {
 						try {
 							await this.browserManager.forceReconnect();
@@ -1497,13 +1391,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							}
 
 							currentUrl = this.getCurrentFileUrl();
-							transport = "cdp";
-						} catch (cdpError) {
-							logger.debug({ error: cdpError }, "CDP reconnection failed, checking WebSocket");
+							transport = "websocket";
+						} catch (reconnectError) {
+							logger.debug({ error: reconnectError }, "Browser reconnection failed, checking WebSocket");
 						}
 					}
 
-					// If CDP didn't work, check WebSocket
+					// If browser reconnect didn't work, check WebSocket
 					if (transport === "none" && this.wsServer?.isClientConnected()) {
 						transport = "websocket";
 					}
@@ -1511,8 +1405,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					if (transport === "none") {
 						throw new Error(
 							"Cannot connect to Figma Desktop.\n\n" +
-							"Option 1 (WebSocket): Open the Desktop Bridge plugin in Figma.\n" +
-							"Option 2 (CDP): Launch Figma with --remote-debugging-port=9222"
+							"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge)."
 						);
 					}
 
@@ -1562,7 +1455,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										error:
 											error instanceof Error ? error.message : String(error),
 										message: "Failed to reconnect to Figma Desktop",
-										hint: "Open the Desktop Bridge plugin in Figma, or launch Figma with --remote-debugging-port=9222",
+										hint: "Open the Desktop Bridge plugin in Figma",
 									},
 								),
 							},
@@ -1773,7 +1666,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			async () => {
 				try {
 					if (!this.wsServer?.isClientConnected()) {
-						// Fall back to CDP if available
+						// Fall back to browser manager if available
 						if (this.browserManager) {
 							try {
 								await this.ensureInitialized();
@@ -1782,14 +1675,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									content: [{
 										type: "text",
 										text: JSON.stringify({
-											transport: "cdp",
+											transport: "browser",
 											files: currentUrl ? [{ url: currentUrl, isActive: true }] : [],
-											message: "Using CDP transport. WebSocket not connected. Open the Desktop Bridge plugin for multi-file support.",
+											message: "WebSocket not connected. Open the Desktop Bridge plugin for multi-file support.",
 										}),
 									}],
 								};
 							} catch {
-								// CDP also unavailable
+								// Browser also unavailable
 							}
 						}
 
@@ -2496,7 +2389,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// ============================================================================
 		// BATCH OPERATIONS (Performance-Optimized)
 		// ============================================================================
-		// Execute multiple variable operations in a single CDP call,
+		// Execute multiple variable operations in a single roundtrip,
 		// reducing per-operation overhead from ~60-170ms to near-zero.
 		// Use these instead of calling individual tools repeatedly.
 
@@ -5168,7 +5061,7 @@ return {
 				const url = fileUrl || this.getCurrentFileUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Either pass a fileUrl, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode).",
+						"No Figma file URL available. Either pass a fileUrl, call figma_navigate, or ensure the Desktop Bridge plugin is connected.",
 					);
 				}
 
@@ -5229,7 +5122,7 @@ return {
 					};
 				}
 
-				// Priority 1: Try Desktop Bridge via transport-agnostic connector (WebSocket or CDP)
+				// Priority 1: Try Desktop Bridge via transport-agnostic connector
 				try {
 					const connector = await this.getDesktopConnector();
 					const desktopResult =
@@ -5293,7 +5186,7 @@ return {
 					const url = fileUrl || this.getCurrentFileUrl();
 					if (!url) {
 						throw new Error(
-							"No Figma file URL available. Either pass a fileUrl, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode).",
+							"No Figma file URL available. Either pass a fileUrl, call figma_navigate, or ensure the Desktop Bridge plugin is connected.",
 						);
 					}
 
@@ -5332,7 +5225,7 @@ return {
 						variablesAvailable = variables.length > 0;
 					}
 
-					// 2. Try Desktop Bridge via transport-agnostic connector (WebSocket or CDP)
+					// 2. Try Desktop Bridge via transport-agnostic connector
 					if (variables.length === 0) {
 						desktopBridgeAttempted = true;
 						try {
