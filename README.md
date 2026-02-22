@@ -7,7 +7,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
-> **🆕 v1.10.0 — Multi-Instance Support:** Run Figma Console MCP in multiple Claude Desktop tabs, CLI terminals, or projects simultaneously. No more port conflicts. [See what's new →](#-multi-instance-support-v1100)
+> **🆕 v1.11.0 — CDP Removed, Smarter Multi-File:** All CDP references removed (Figma blocked it). Active file now tracks your focused tab across multiple open projects. [See changelog →](CHANGELOG.md)
 
 ## What is this?
 
@@ -651,9 +651,10 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.10.0 (Stable) - Production-ready with multi-instance support, WebSocket Bridge, 56+ tools, Comments API, and MCP Apps
+**Current Status:** v1.11.0 (Stable) - Production-ready with WebSocket-only connectivity, smart multi-file tracking, 56+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
+- [x] **v1.11.0** - Complete CDP removal, improved multi-file active tracking with focus detection
 - [x] **v1.10.0** - Multi-instance support (dynamic port fallback 9223–9232, multi-connection plugin, instance discovery)
 - [x] **v1.9.0** - Figma Comments tools, improved port conflict detection
 - [x] **v1.8.0** - WebSocket Bridge transport (CDP-free connectivity), real-time selection/document tracking, `figma_get_selection` + `figma_get_design_changes` tools

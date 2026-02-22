@@ -5,6 +5,18 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-02-22
+
+### Changed
+- **Complete removal of CDP (Chrome DevTools Protocol) references** — Figma has blocked `--remote-debugging-port`, making CDP non-functional. All user-facing error messages, tool descriptions, status responses, and AI instructions now reference only the WebSocket Desktop Bridge plugin. Internal legacy code is retained for backwards compatibility but is no longer surfaced to users or AI models.
+- **`figma_get_status` response simplified** — Removed `transport.cdp`, `browser`, and `availablePages` fields. Setup instructions no longer present CDP as an option. The response is now WebSocket-only.
+- **Improved multi-file active tracking** — The most recently connected file now becomes the active file (previously the first connection held priority). When multiple files have the Desktop Bridge plugin open, switching tabs and interacting in Figma (selecting nodes, changing pages) immediately updates the active file via `SELECTION_CHANGE` and `PAGE_CHANGE` events.
+
+### Fixed
+- **Dead CDP probe on startup** — `checkFigmaDesktop()` was making a `fetch()` call to `localhost:9222/json/version` with a 3-second timeout on every server start, even though the result was never used. Removed the dead code path.
+- **Incorrect transport type in `figma_reconnect`** — When the browser manager reconnected, the tool reported `transport: "cdp"` even though CDP is no longer active. Now correctly reports `transport: "websocket"`.
+- **Active file not switching on new plugin open** — When opening the Desktop Bridge plugin in a new Figma tab while other tabs were already connected, the active file stayed on the first-connected file instead of switching to the newly opened one. The server now tracks which file connected most recently and uses `selectionCount` from `FILE_INFO` to identify the user's focused tab.
+
 ## [1.10.0] - 2026-02-12
 
 ### Added
