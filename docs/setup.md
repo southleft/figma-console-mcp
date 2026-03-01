@@ -94,7 +94,7 @@ Before starting, verify you have:
 
 - [ ] **Node.js 18+** installed — Check with `node --version` ([Download](https://nodejs.org))
 - [ ] **Figma Desktop** installed (not just the web app)
-- [ ] **An MCP client** installed (Claude Desktop, Claude Code, Cursor, Windsurf, etc.)
+- [ ] **An MCP client** installed (Claude Desktop, Claude Code, Cursor, Windsurf, Codex CLI, Gemini CLI, etc.)
 
 ### Step 1: Get Your Figma Token (~2 min)
 
@@ -141,6 +141,34 @@ Add the following to your `~/.claude.json` (create the file if it doesn't exist)
 ```
 
 > 💡 If `~/.claude.json` already exists with other MCP servers, just add the `"figma-console"` entry inside the existing `"mcpServers"` object.
+
+#### Codex CLI
+
+```bash
+codex mcp add figma-console --env FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE --env ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
+```
+
+Alternatively, edit `~/.codex/config.toml` directly:
+
+```toml
+[mcp_servers.figma-console]
+command = "npx"
+args = ["-y", "figma-console-mcp@latest"]
+env = { FIGMA_ACCESS_TOKEN = "figd_YOUR_TOKEN_HERE", ENABLE_MCP_APPS = "true" }
+```
+
+Config file locations:
+
+- **macOS / Linux:** `~/.codex/config.toml`
+- **Windows:** `%USERPROFILE%\.codex\config.toml`
+
+#### Gemini CLI
+
+```bash
+gemini mcp add -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE figma-console npx -y figma-console-mcp@latest
+```
+
+Config file: `~/.gemini/settings.json` (macOS/Linux) or `%USERPROFILE%\.gemini\settings.json` (Windows).
 
 #### Cursor / Windsurf / Other MCP Clients
 
@@ -239,7 +267,7 @@ Create a simple frame with a blue background
 - [ ] Node.js 18+ installed
 - [ ] Git installed
 - [ ] Figma Desktop installed
-- [ ] An MCP client installed (Claude Desktop, Claude Code, Cursor, Windsurf, etc.)
+- [ ] An MCP client installed (Claude Desktop, Claude Code, Cursor, Windsurf, Codex CLI, Gemini CLI, etc.)
 
 ### Step 1: Clone and Build
 

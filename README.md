@@ -30,22 +30,22 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **First, decide what you want to do:**
 
-| I want to... | Setup Method | Time |
-|--------------|--------------|------|
-| **Create and modify designs with AI** | [NPX Setup](#-npx-setup-recommended) (Recommended) | ~10 min |
-| **Contribute to the project** | [Local Git Setup](#for-contributors-local-git-mode) | ~15 min |
-| **Just explore my design data** (read-only) | [Remote SSE](#-remote-sse-read-only-exploration) | ~2 min |
+| I want to...                                | Setup Method                                        | Time    |
+| ------------------------------------------- | --------------------------------------------------- | ------- |
+| **Create and modify designs with AI**       | [NPX Setup](#-npx-setup-recommended) (Recommended)  | ~10 min |
+| **Contribute to the project**               | [Local Git Setup](#for-contributors-local-git-mode) | ~15 min |
+| **Just explore my design data** (read-only) | [Remote SSE](#-remote-sse-read-only-exploration)    | ~2 min  |
 
 ### ⚠️ Important: Capability Differences
 
-| Capability | NPX / Local Git | Remote SSE |
-|------------|-----------------|------------|
-| Read design data | ✅ | ✅ |
-| **Create components & frames** | ✅ | ❌ |
-| **Edit existing designs** | ✅ | ❌ |
-| **Manage design tokens/variables** | ✅ | ❌ |
-| Desktop Bridge plugin | ✅ | ❌ |
-| **Total tools available** | **56+** | **16** |
+| Capability                         | NPX / Local Git | Remote SSE |
+| ---------------------------------- | --------------- | ---------- |
+| Read design data                   | ✅              | ✅         |
+| **Create components & frames**     | ✅              | ❌         |
+| **Edit existing designs**          | ✅              | ❌         |
+| **Manage design tokens/variables** | ✅              | ❌         |
+| Desktop Bridge plugin              | ✅              | ❌         |
+| **Total tools available**          | **56+**         | **16**     |
 
 > **Bottom line:** Remote SSE is **read-only** with ~34% of the tools. If you want AI to actually design in Figma, use NPX Setup.
 
@@ -61,7 +61,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 - [ ] **Node.js 18+** — Check with `node --version` ([Download](https://nodejs.org))
 - [ ] **Figma Desktop** installed (not just the web app)
-- [ ] **An MCP client** (Claude Code, Cursor, Windsurf, Claude Desktop, etc.)
+- [ ] **An MCP client** (Claude Code, Cursor, Windsurf, Claude Desktop, Codex CLI, Gemini CLI etc.)
 
 #### Step 1: Get Your Figma Token
 
@@ -73,8 +73,21 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 #### Step 2: Configure Your MCP Client
 
 **Claude Code (CLI):**
+
 ```bash
 claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -e ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
+```
+
+**Codex CLI:**
+
+```bash
+codex mcp add figma-console --env FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE --env ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
+```
+
+**Gemini CLI:**
+
+```bash
+gemini mcp add -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE figma-console npx -y figma-console-mcp@latest
 ```
 
 **Cursor / Windsurf / Claude Desktop:**
@@ -96,16 +109,27 @@ Add to your MCP config file (see [Where to find your config file](#-where-to-fin
 }
 ```
 
+**Codex CLI:**
+
+```toml
+[mcp_servers.figma-console]
+command = "npx"
+args = ["-y", "figma-console-mcp@latest"]
+env = { FIGMA_ACCESS_TOKEN = "figd_YOUR_TOKEN_HERE", ENABLE_MCP_APPS = "true" }
+```
+
 #### 📂 Where to Find Your Config File
 
 If you're not sure where to put the JSON configuration above, here's where each app stores its MCP config:
 
-| App | macOS | Windows |
-|-----|-------|---------|
-| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
-| **Claude Code (CLI)** | `~/.claude.json` | `%USERPROFILE%\.claude.json` |
-| **Cursor** | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | `%USERPROFILE%\.codeium\windsurf\mcp_config.json` |
+| App                   | macOS                                                             | Windows                                           |
+| --------------------- | ----------------------------------------------------------------- | ------------------------------------------------- |
+| **Claude Desktop**    | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json`     |
+| **Claude Code (CLI)** | `~/.claude.json`                                                  | `%USERPROFILE%\.claude.json`                      |
+| **Cursor**            | `~/.cursor/mcp.json`                                              | `%USERPROFILE%\.cursor\mcp.json`                  |
+| **Windsurf**          | `~/.codeium/windsurf/mcp_config.json`                             | `%USERPROFILE%\.codeium\windsurf\mcp_config.json` |
+| **Gemini CLI**        | `~/.gemini/settings.json`                                         | `%USERPROFILE%\.gemini\settings.json`             |
+| **Codex CLI**         | `~/.codex/config.toml`                                            | `%USERPROFILE%\.codex\config.toml`                |
 
 > **Tip for designers:** The `~` symbol means your **home folder**. On macOS, that's `/Users/YourName/`. On Windows, it's `C:\Users\YourName\`. You can open these files in any text editor — even TextEdit or Notepad.
 >
@@ -116,6 +140,7 @@ If you're not sure where to put the JSON configuration above, here's where each 
 #### Step 3: Connect to Figma Desktop
 
 **Desktop Bridge Plugin:**
+
 1. Open Figma Desktop normally (no special flags needed)
 2. Go to **Plugins → Development → Import plugin from manifest...**
 3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
@@ -133,11 +158,13 @@ Restart your MCP client to load the new configuration.
 ```
 Check Figma status
 ```
+
 → Should show connection status with active WebSocket transport
 
 ```
 Create a simple frame with a blue background
 ```
+
 → Should create a frame in Figma (confirms write access!)
 
 **📖 [Complete Setup Guide](docs/setup.md)**
@@ -235,20 +262,20 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 ## 📊 Installation Method Comparison
 
-| Feature | NPX (Recommended) | Local Git | Remote SSE |
-|---------|-------------------|-----------|------------|
-| **Setup time** | ~10 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **56+** | **56+** | **21** (read-only) |
-| **Design creation** | ✅ | ✅ | ❌ |
-| **Variable management** | ✅ | ✅ | ❌ |
-| **Component instantiation** | ✅ | ✅ | ❌ |
-| **Desktop Bridge plugin** | ✅ | ✅ | ❌ |
-| **Variables (no Enterprise)** | ✅ | ✅ | ❌ |
-| **Console logs** | ✅ (zero latency) | ✅ (zero latency) | ✅ |
-| **Read design data** | ✅ | ✅ | ✅ |
-| **Authentication** | PAT (manual) | PAT (manual) | OAuth (automatic) |
-| **Automatic updates** | ✅ (`@latest`) | Manual (`git pull`) | ✅ |
-| **Source code access** | ❌ | ✅ | ❌ |
+| Feature                       | NPX (Recommended) | Local Git           | Remote SSE         |
+| ----------------------------- | ----------------- | ------------------- | ------------------ |
+| **Setup time**                | ~10 minutes       | ~15 minutes         | ~2 minutes         |
+| **Total tools**               | **56+**           | **56+**             | **21** (read-only) |
+| **Design creation**           | ✅                | ✅                  | ❌                 |
+| **Variable management**       | ✅                | ✅                  | ❌                 |
+| **Component instantiation**   | ✅                | ✅                  | ❌                 |
+| **Desktop Bridge plugin**     | ✅                | ✅                  | ❌                 |
+| **Variables (no Enterprise)** | ✅                | ✅                  | ❌                 |
+| **Console logs**              | ✅ (zero latency) | ✅ (zero latency)   | ✅                 |
+| **Read design data**          | ✅                | ✅                  | ✅                 |
+| **Authentication**            | PAT (manual)      | PAT (manual)        | OAuth (automatic)  |
+| **Automatic updates**         | ✅ (`@latest`)    | Manual (`git pull`) | ✅                 |
+| **Source code access**        | ❌                | ✅                  | ❌                 |
 
 > **Key insight:** Remote SSE is read-only with ~34% of the tools. Use NPX for full capabilities.
 
@@ -261,16 +288,19 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 After setup, try these prompts:
 
 **Basic test (both modes):**
+
 ```
 Navigate to https://www.figma.com and check status
 ```
 
 **Design system test (requires auth):**
+
 ```
 Get design variables from [your Figma file URL]
 ```
 
 **Plugin test (Local Mode only):**
+
 ```
 Show me the primary font for [your theme name]
 ```
@@ -282,6 +312,7 @@ Show me the primary font for [your theme name]
 ### Remote Mode - OAuth (Automatic)
 
 When you first use design system tools:
+
 1. Browser opens automatically to Figma authorization page
 2. Click "Allow" to authorize (one-time)
 3. Token stored securely and refreshed automatically
@@ -298,19 +329,23 @@ When you first use design system tools:
 ## 🛠️ Available Tools
 
 ### Navigation & Status
+
 - `figma_navigate` - Open Figma URLs
 - `figma_get_status` - Check connection status
 
 ### Console Debugging
+
 - `figma_get_console_logs` - Retrieve console logs
 - `figma_watch_console` - Real-time log streaming
 - `figma_clear_console` - Clear log buffer
 - `figma_reload_plugin` - Reload current page
 
 ### Visual Debugging
+
 - `figma_take_screenshot` - Capture UI screenshots
 
 ### Design System Extraction
+
 - `figma_get_variables` - Extract design tokens/variables
 - `figma_get_component` - Get component data (metadata or reconstruction spec)
 - `figma_get_component_for_development` - Component + image
@@ -320,6 +355,7 @@ When you first use design system tools:
 - `figma_get_file_for_plugin` - Optimized file data
 
 ### ✏️ Design Creation (Local Mode + Desktop Bridge)
+
 - `figma_execute` - **Power tool**: Run any Figma Plugin API code to create designs
   - Create frames, shapes, text, components
   - Apply auto-layout, styles, effects
@@ -337,10 +373,12 @@ When you first use design system tools:
   - Descriptions appear in Dev Mode for developers
 
 ### 🔍 Design-Code Parity (All Modes)
+
 - `figma_check_design_parity` - Compare Figma component specs against code implementation, producing a scored diff report with actionable fix items
 - `figma_generate_component_doc` - Generate platform-agnostic markdown documentation by merging Figma design data with code-side info
 
 ### 🔧 Variable Management (Local Mode + Desktop Bridge)
+
 - `figma_create_variable_collection` - Create new variable collections with modes
 - `figma_create_variable` - Create COLOR, FLOAT, STRING, or BOOLEAN variables
 - `figma_update_variable` - Update variable values in specific modes
@@ -360,6 +398,7 @@ When you first use design system tools:
 ## 📖 Example Prompts
 
 ### Plugin Debugging
+
 ```
 Navigate to my Figma plugin and show me any console errors
 Watch the console for 30 seconds while I test my plugin
@@ -367,6 +406,7 @@ Get the last 20 console logs
 ```
 
 ### Design System Extraction
+
 ```
 Get all design variables from https://figma.com/design/abc123
 Extract color styles and show me the CSS exports
@@ -375,6 +415,7 @@ Get the Badge component in reconstruction format for programmatic creation
 ```
 
 ### Design Creation (Local Mode)
+
 ```
 Create a success notification card with a checkmark icon and message
 Design a button component with hover and disabled states
@@ -385,6 +426,7 @@ Organize my icon variants as a proper component set with the purple border
 ```
 
 ### Variable Management (Local Mode)
+
 ```
 Create a new color collection called "Brand Colors" with Light and Dark modes
 Add a primary color variable with value #3B82F6 for Light and #60A5FA for Dark
@@ -393,6 +435,7 @@ Add a "High Contrast" mode to the existing collection
 ```
 
 ### Design-Code Parity
+
 ```
 Compare the Button component in Figma against our React implementation
 Check design parity for the Card component before sign-off
@@ -400,6 +443,7 @@ Generate component documentation for the Dialog from our design system
 ```
 
 ### Visual Debugging
+
 ```
 Take a screenshot of the current Figma canvas
 Navigate to this file and capture what's on screen
@@ -418,18 +462,21 @@ One of the most powerful capabilities of this MCP server is the ability to **des
 ### What's Possible
 
 **Create original designs from scratch:**
+
 ```
 Design a login card with email and password fields, a "Forgot password?" link,
 and a primary Sign In button. Use 32px padding, 16px border radius, and subtle shadow.
 ```
 
 **Leverage existing component libraries:**
+
 ```
 Build a dashboard header using the Avatar component for the user profile,
 Button components for actions, and Badge components for notifications.
 ```
 
 **Generate complete page layouts:**
+
 ```
 Create a settings page with a sidebar navigation, a main content area with form fields,
 and a sticky footer with Save and Cancel buttons.
@@ -445,27 +492,30 @@ and a sticky footer with Save and Cancel buttons.
 
 ### Who Benefits
 
-| Role | Use Case |
-|------|----------|
-| **Designers** | Rapidly prototype ideas without manual frame-by-frame construction. Explore variations quickly by describing changes. |
-| **Developers** | Generate UI mockups during planning discussions. Create visual specs without switching to design tools. |
-| **Product Managers** | Sketch out feature concepts during ideation. Communicate visual requirements directly to stakeholders. |
-| **Design System Teams** | Test component flexibility by generating compositions. Identify gaps in component coverage. |
-| **Agencies** | Speed up initial concept delivery. Iterate on client feedback in real-time during calls. |
+| Role                    | Use Case                                                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Designers**           | Rapidly prototype ideas without manual frame-by-frame construction. Explore variations quickly by describing changes. |
+| **Developers**          | Generate UI mockups during planning discussions. Create visual specs without switching to design tools.               |
+| **Product Managers**    | Sketch out feature concepts during ideation. Communicate visual requirements directly to stakeholders.                |
+| **Design System Teams** | Test component flexibility by generating compositions. Identify gaps in component coverage.                           |
+| **Agencies**            | Speed up initial concept delivery. Iterate on client feedback in real-time during calls.                              |
 
 ### Example Workflows
 
 **Brand New Design:**
+
 > "Create a notification toast with an icon on the left, title and description text, and a dismiss button. Use our brand colors."
 
 The AI creates custom frames, applies your design tokens, and builds the component from scratch.
 
 **Component Composition:**
+
 > "Build a user profile card using the Avatar component (large size), two Button components (Edit Profile and Settings), and a Badge for the user's status."
 
 The AI searches your library, finds the exact components, and assembles them with proper spacing and alignment.
 
 **Design Iteration:**
+
 > "The spacing feels too tight. Increase the gap between sections to 24px and make the heading larger."
 
 The AI modifies the existing design, takes a screenshot to verify, and continues iterating until you're satisfied.
@@ -480,7 +530,7 @@ The AI automatically follows a validation workflow after creating designs:
 4. **Iterate** → Fix any issues detected
 5. **Verify** → Final screenshot to confirm
 
-This ensures designs aren't just technically correct—they *look* right.
+This ensures designs aren't just technically correct—they _look_ right.
 
 ---
 
@@ -503,12 +553,14 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 ### Capabilities
 
 **Read Operations:**
+
 - Variables without Enterprise API
 - Reliable component descriptions (bypasses API bugs)
 - Multi-mode support (Light/Dark/Brand variants)
 - Real-time selection tracking and document change monitoring
 
 **Write Operations:**
+
 - **Design Creation** - Create frames, shapes, text, components via `figma_execute`
 - **Variable Management** - Full CRUD operations on variables and collections
 - **Mode Management** - Add and rename modes for multi-theme support
@@ -523,6 +575,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
 **Environment variables:**
+
 - `FIGMA_WS_PORT` — Override the preferred WebSocket port (default: 9223). The server will fall back through a 10-port range starting from this value if the preferred port is occupied.
 - `FIGMA_WS_HOST` — Override the WebSocket server bind address (default: `localhost`). Set to `0.0.0.0` when running inside Docker so the host machine can reach the MCP server.
 
@@ -548,11 +601,11 @@ When two processes tried to start the MCP server (e.g., Claude Desktop's Chat ta
 
 ### What This Means for You
 
-| Scenario | Before v1.10.0 | Now |
-|----------|----------------|-----|
-| Two Claude Desktop tabs (Chat + Code) | Second tab crashes | Both work independently |
-| Multiple CLI terminals on different projects | Only one can run | All run simultaneously |
-| Claude Desktop + Claude Code CLI | Port conflict | Both coexist |
+| Scenario                                     | Before v1.10.0     | Now                     |
+| -------------------------------------------- | ------------------ | ----------------------- |
+| Two Claude Desktop tabs (Chat + Code)        | Second tab crashes | Both work independently |
+| Multiple CLI terminals on different projects | Only one can run   | All run simultaneously  |
+| Claude Desktop + Claude Code CLI             | Port conflict      | Both coexist            |
 
 ### Do I Need to Do Anything?
 
@@ -577,6 +630,7 @@ An interactive design token explorer.
 **Usage:** Ask Claude to "browse the design tokens" or "show me the design tokens" while connected to a Figma file.
 
 **Features:**
+
 - Browse all tokens organized by collection with expandable sections
 - Filter by type (Colors, Numbers, Strings) and search by name/description
 - Per-collection mode columns (Light, Dark, Custom) matching Figma's Variables panel
@@ -590,6 +644,7 @@ A Lighthouse-style health scorecard that audits your design system across six ca
 **Usage:** Ask Claude to "audit the design system" or "show me design system health" while connected to a Figma file.
 
 **Features:**
+
 - Overall weighted score (0–100) with six category gauges: Naming, Tokens, Components, Accessibility, Consistency, Coverage
 - Expandable category sections with individual findings, severity indicators, and actionable details
 - Diagnostic locations linking findings to specific variables, components, or collections
@@ -635,6 +690,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 ## 🤝 vs. Figma Official MCP
 
 **Figma Console MCP (This Project)** - Debugging & data extraction
+
 - ✅ Real-time console logs from Figma plugins
 - ✅ Screenshot capture and visual debugging
 - ✅ Error stack traces and runtime monitoring
@@ -642,6 +698,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 - ✅ Works remotely or locally
 
 **Figma Official Dev Mode MCP** - Code generation
+
 - ✅ Generates React/HTML code from designs
 - ✅ Tailwind/CSS class generation
 - ✅ Component boilerplate scaffolding
@@ -655,6 +712,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 **Current Status:** v1.11.1 (Stable) - Production-ready with WebSocket-only connectivity, smart multi-file tracking, 56+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
+
 - [x] **v1.11.1** - Doc generator fixes: clean markdown tables, Storybook links, property metadata filtering
 - [x] **v1.11.0** - Complete CDP removal, improved multi-file active tracking with focus detection
 - [x] **v1.10.0** - Multi-instance support (dynamic port fallback 9223–9232, multi-connection plugin, instance discovery)
@@ -665,6 +723,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 - [x] **v1.3.0** - Design creation via `figma_execute`, variable CRUD operations
 
 **Coming Next:**
+
 - [ ] **Component template library** - Common UI pattern generation
 - [ ] **Visual regression testing** - Screenshot diff capabilities
 - [ ] **Design linting** - Automated compliance and accessibility checks
