@@ -5613,6 +5613,19 @@ const currentFile = fileURLToPath(import.meta.url);
 const entryFile = process.argv[1] ? realpathSync(resolve(process.argv[1])) : "";
 
 if (currentFile === entryFile) {
+	// Handle --print-path: print the Desktop Bridge manifest path and exit
+	if (process.argv.includes("--print-path")) {
+		const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+		const manifestPath = resolve(packageRoot, "figma-desktop-bridge", "manifest.json");
+		if (existsSync(manifestPath)) {
+			console.log(manifestPath);
+			process.exit(0);
+		} else {
+			console.error("figma-desktop-bridge/manifest.json not found at:", manifestPath);
+			process.exit(1);
+		}
+	}
+
 	main().catch((error) => {
 		console.error("Fatal error:", error);
 		process.exit(1);
