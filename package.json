@@ -57,8 +57,8 @@
 	"dependencies": {
 		"@cloudflare/puppeteer": "^1.0.4",
 		"@modelcontextprotocol/ext-apps": "^1.0.1",
-		"@modelcontextprotocol/sdk": "^1.25.3",
-		"agents": "^0.2.8",
+		"@modelcontextprotocol/sdk": "^1.26.0",
+		"agents": "^0.7.1",
 		"chrome-remote-interface": "^0.33.2",
 		"pino": "^9.5.0",
 		"pino-pretty": "^13.0.0",

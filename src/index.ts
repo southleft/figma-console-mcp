@@ -21,6 +21,7 @@ import { FigmaAPI, extractFileKey, formatVariables, formatComponentData } from "
 import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { registerDesignCodeTools } from "./core/design-code-tools.js";
 import { registerCommentTools } from "./core/comment-tools.js";
+import { registerDesignSystemTools } from "./core/design-system-tools.js";
 // Note: MCP Apps (Token Browser, Dashboard) are only available in local mode
 // They require Node.js file system APIs for serving HTML that don't work in Cloudflare Workers
 
@@ -908,6 +909,15 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			{ isRemoteMode: true },
 		);
 
+		// Register Design System Kit tool
+		registerDesignSystemTools(
+			this.server,
+			async () => await this.getFigmaAPI(),
+			() => this.browserManager?.getCurrentUrl() || null,
+			undefined, // variablesCache
+			{ isRemoteMode: true },
+		);
+
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
 		// They require Node.js file system APIs that don't work in Cloudflare Workers
 	}
@@ -1005,8 +1015,78 @@ export default {
 			return FigmaConsoleMCPv3.serveSSE("/sse").fetch(request, env, ctx);
 		}
 
-		// HTTP endpoint for direct MCP communication
+		// Streamable HTTP endpoint for MCP communication (current spec)
+		// Supports POST (client→server) and optional GET (server→client SSE)
 		if (url.pathname === "/mcp") {
+			// Validate Authorization header per MCP OAuth 2.1 spec
+			const authHeader = request.headers.get("Authorization");
+
+			if (!authHeader || !authHeader.startsWith("Bearer ")) {
+				logger.warn({ pathname: url.pathname }, "MCP request missing Authorization header - returning 401 with resource_metadata");
+				const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
+				return new Response(JSON.stringify({
+					error: "unauthorized",
+					error_description: "Authorization header with Bearer token is required"
+				}), {
+					status: 401,
+					headers: {
+						"Content-Type": "application/json",
+						"WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}"`
+					}
+				});
+			}
+
+			const bearerToken = authHeader.substring(7);
+			const bearerKey = `bearer_token:${bearerToken}`;
+
+			try {
+				const tokenDataJson = await env.OAUTH_TOKENS.get(bearerKey);
+
+				if (!tokenDataJson) {
+					logger.warn({ pathname: url.pathname }, "MCP request with invalid Bearer token");
+					const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
+					return new Response(JSON.stringify({
+						error: "invalid_token",
+						error_description: "Bearer token is invalid or expired"
+					}), {
+						status: 401,
+						headers: {
+							"Content-Type": "application/json",
+							"WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", error="invalid_token"`
+						}
+					});
+				}
+
+				const tokenData = JSON.parse(tokenDataJson) as { sessionId: string; expiresAt: number };
+
+				if (tokenData.expiresAt < Date.now()) {
+					logger.warn({ pathname: url.pathname, sessionId: tokenData.sessionId }, "MCP request with expired Bearer token");
+					const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
+					return new Response(JSON.stringify({
+						error: "invalid_token",
+						error_description: "Bearer token has expired"
+					}), {
+						status: 401,
+						headers: {
+							"Content-Type": "application/json",
+							"WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", error="invalid_token"`
+						}
+					});
+				}
+
+				logger.info({ pathname: url.pathname, sessionId: tokenData.sessionId }, "MCP request authenticated successfully");
+			} catch (error) {
+				logger.error({ error, pathname: url.pathname }, "Error validating Bearer token for MCP endpoint");
+				return new Response(JSON.stringify({
+					error: "server_error",
+					error_description: "Failed to validate authorization"
+				}), {
+					status: 500,
+					headers: { "Content-Type": "application/json" }
+				});
+			}
+
+			// Token is valid, proceed with Streamable HTTP
 			return FigmaConsoleMCPv3.serve("/mcp").fetch(request, env, ctx);
 		}
 
