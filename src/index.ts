@@ -11,6 +11,7 @@
 
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { BrowserManager, type Env } from "./browser-manager.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
@@ -1086,8 +1087,61 @@ export default {
 				});
 			}
 
-			// Token is valid, proceed with Streamable HTTP
-			return FigmaConsoleMCPv3.serve("/mcp").fetch(request, env, ctx);
+			// Token is valid — use stateless transport (no Durable Objects)
+			// The Bearer token IS the Figma access token, so we use it directly
+			const figmaAccessToken = bearerToken;
+			const statelessApi = new FigmaAPI({ accessToken: figmaAccessToken });
+
+			const transport = new WebStandardStreamableHTTPServerTransport({
+				sessionIdGenerator: undefined, // Stateless — no session persistence needed
+			});
+
+			const statelessServer = new McpServer({
+				name: "Figma Console MCP",
+				version: "1.10.1",
+			});
+
+			// Register REST API tools with the authenticated Figma API
+			registerFigmaAPITools(
+				statelessServer,
+				async () => statelessApi,
+				() => null, // No browser URL in stateless mode
+				() => null, // No console monitor
+				() => null, // No browser manager
+				undefined,  // No ensureInitialized
+				new Map(),  // Fresh variables cache per request
+				{ isRemoteMode: true },
+			);
+
+			registerDesignCodeTools(
+				statelessServer,
+				async () => statelessApi,
+				() => null,
+				new Map(), // Fresh variables cache per request
+				{ isRemoteMode: true },
+			);
+
+			registerCommentTools(
+				statelessServer,
+				async () => statelessApi,
+				() => null,
+			);
+
+			registerDesignSystemTools(
+				statelessServer,
+				async () => statelessApi,
+				() => null,
+				new Map(), // Fresh variables cache per request
+				{ isRemoteMode: true },
+			);
+
+			await statelessServer.connect(transport);
+			const response = await transport.handleRequest(request);
+
+			if (response) {
+				return response;
+			}
+			return new Response("No response from MCP transport", { status: 500 });
 		}
 
 		// ============================================================
