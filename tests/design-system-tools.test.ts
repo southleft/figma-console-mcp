@@ -170,7 +170,13 @@ function createMockFigmaAPI(overrides: Record<string, jest.Mock> = {}) {
 		getComponentSets: jest.fn().mockResolvedValue(MOCK_COMPONENT_SETS),
 		getStyles: jest.fn().mockResolvedValue(MOCK_STYLES),
 		getNodes: jest.fn().mockImplementation((_fileKey: string, nodeIds: string[]) => {
-			return Promise.resolve(MOCK_NODE_RESPONSE(nodeIds[0]));
+			// Batched response — merge all requested node responses
+			const nodes: Record<string, any> = {};
+			for (const nodeId of nodeIds) {
+				const response = MOCK_NODE_RESPONSE(nodeId);
+				Object.assign(nodes, response.nodes);
+			}
+			return Promise.resolve({ nodes });
 		}),
 		getImages: jest.fn().mockResolvedValue({
 			images: { "set-1": "https://figma-images.com/button.png", "comp-3": "https://figma-images.com/icon.png" },

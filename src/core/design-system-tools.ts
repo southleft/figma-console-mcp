@@ -94,6 +94,18 @@ function calculateSizeKB(data: any): number {
 }
 
 /**
+ * Wrap a promise with a timeout to prevent indefinite hangs
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	return Promise.race([
+		promise,
+		new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+		),
+	]);
+}
+
+/**
  * Group variables by collection for a clean hierarchical output
  */
 function groupVariablesByCollection(formatted: {
@@ -300,7 +312,11 @@ export function registerDesignSystemTools(
 						}
 
 						if (!variablesData) {
-							variablesData = await api.getLocalVariables(resolvedFileKey);
+							variablesData = await withTimeout(
+								api.getLocalVariables(resolvedFileKey),
+								30000,
+								"getLocalVariables",
+							);
 							if (variablesCache) {
 								variablesCache.set(cacheKey, {
 									data: variablesData,
@@ -331,8 +347,8 @@ export function registerDesignSystemTools(
 						logger.info({ fileKey: resolvedFileKey }, "Fetching components");
 
 						const [componentsResponse, componentSetsResponse] = await Promise.all([
-							api.getComponents(resolvedFileKey),
-							api.getComponentSets(resolvedFileKey),
+							withTimeout(api.getComponents(resolvedFileKey), 30000, "getComponents"),
+							withTimeout(api.getComponentSets(resolvedFileKey), 30000, "getComponentSets"),
 						]);
 
 						const allComponents = componentsResponse?.meta?.components || [];
@@ -358,6 +374,35 @@ export function registerDesignSystemTools(
 						// Build component specs
 						const componentSpecs: ComponentSpec[] = [];
 
+						// Collect all node IDs we need to fetch details for (batched, not N+1)
+						const allNodeIds = [
+							...targetSets.map((s: any) => s.node_id),
+							...targetComponents.map((c: any) => c.node_id),
+						];
+
+						// Batch fetch ALL node details in one call (max 50 per batch)
+						const nodeDetailsMap: Record<string, any> = {};
+						if (allNodeIds.length > 0) {
+							try {
+								const batchSize = 50;
+								for (let i = 0; i < allNodeIds.length; i += batchSize) {
+									const batch = allNodeIds.slice(i, i + batchSize);
+									const nodeResponse = await withTimeout(
+										api.getNodes(resolvedFileKey, batch, { depth: 1 }),
+										30000,
+										`getNodes(batch ${Math.floor(i / batchSize) + 1})`,
+									);
+									if (nodeResponse?.nodes) {
+										for (const [nodeId, nodeData] of Object.entries(nodeResponse.nodes)) {
+											nodeDetailsMap[nodeId] = (nodeData as any)?.document;
+										}
+									}
+								}
+							} catch (err) {
+								logger.warn({ error: err }, "Failed to batch-fetch component node details");
+							}
+						}
+
 						// Process component sets (multi-variant components)
 						for (const set of targetSets) {
 							const spec: ComponentSpec = {
@@ -375,28 +420,16 @@ export function registerDesignSystemTools(
 								spec.variants = variants;
 							}
 
-							// Fetch property definitions from the set node
-							try {
-								const nodeResponse = await api.getNodes(
-									resolvedFileKey,
-									[set.node_id],
-									{ depth: 1 }
-								);
-								const setNode = nodeResponse?.nodes?.[set.node_id]?.document;
-								if (setNode?.componentPropertyDefinitions) {
-									spec.properties = setNode.componentPropertyDefinitions;
-								}
-								if (setNode?.absoluteBoundingBox) {
-									spec.bounds = {
-										width: setNode.absoluteBoundingBox.width,
-										height: setNode.absoluteBoundingBox.height,
-									};
-								}
-							} catch (err) {
-								logger.warn(
-									{ componentSet: set.name, error: err },
-									"Failed to fetch component set node details"
-								);
+							// Use pre-fetched node details
+							const setNode = nodeDetailsMap[set.node_id];
+							if (setNode?.componentPropertyDefinitions) {
+								spec.properties = setNode.componentPropertyDefinitions;
+							}
+							if (setNode?.absoluteBoundingBox) {
+								spec.bounds = {
+									width: setNode.absoluteBoundingBox.width,
+									height: setNode.absoluteBoundingBox.height,
+								};
 							}
 
 							componentSpecs.push(spec);
@@ -410,28 +443,16 @@ export function registerDesignSystemTools(
 								description: comp.description || undefined,
 							};
 
-							// Standalone components may have their own property definitions
-							try {
-								const nodeResponse = await api.getNodes(
-									resolvedFileKey,
-									[comp.node_id],
-									{ depth: 1 }
-								);
-								const node = nodeResponse?.nodes?.[comp.node_id]?.document;
-								if (node?.componentPropertyDefinitions) {
-									spec.properties = node.componentPropertyDefinitions;
-								}
-								if (node?.absoluteBoundingBox) {
-									spec.bounds = {
-										width: node.absoluteBoundingBox.width,
-										height: node.absoluteBoundingBox.height,
-									};
-								}
-							} catch (err) {
-								logger.warn(
-									{ component: comp.name, error: err },
-									"Failed to fetch component node details"
-								);
+							// Use pre-fetched node details
+							const node = nodeDetailsMap[comp.node_id];
+							if (node?.componentPropertyDefinitions) {
+								spec.properties = node.componentPropertyDefinitions;
+							}
+							if (node?.absoluteBoundingBox) {
+								spec.bounds = {
+									width: node.absoluteBoundingBox.width,
+									height: node.absoluteBoundingBox.height,
+								};
 							}
 
 							componentSpecs.push(spec);
@@ -445,11 +466,11 @@ export function registerDesignSystemTools(
 								const batchSize = 50;
 								for (let i = 0; i < nodeIds.length; i += batchSize) {
 									const batch = nodeIds.slice(i, i + batchSize);
-									const imagesResult = await api.getImages(
-										resolvedFileKey,
-										batch,
-										{ scale: 2, format: "png" }
-									);
+									const imagesResult = await withTimeout(
+									api.getImages(resolvedFileKey, batch, { scale: 2, format: "png" }),
+									30000,
+									"getImages",
+								);
 									if (imagesResult?.images) {
 										for (const spec of componentSpecs) {
 											const url = imagesResult.images[spec.id];
@@ -487,7 +508,11 @@ export function registerDesignSystemTools(
 					try {
 						logger.info({ fileKey: resolvedFileKey }, "Fetching styles");
 
-						const stylesResponse = await api.getStyles(resolvedFileKey);
+						const stylesResponse = await withTimeout(
+							api.getStyles(resolvedFileKey),
+							30000,
+							"getStyles",
+						);
 						const allStyles = stylesResponse?.meta?.styles || [];
 
 						const styleSpecs: StyleSpec[] = allStyles.map((s: any) => ({
