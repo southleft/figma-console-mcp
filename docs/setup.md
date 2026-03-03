@@ -335,20 +335,31 @@ Then restart Claude Desktop.
 
 ---
 
-## 📡 Remote SSE (Read-Only Exploration)
+## 📡 Remote Mode (Read-Only Exploration)
 
-**Best for:** Quickly evaluating the tool or read-only design data extraction.
+**Best for:** Quickly evaluating the tool, read-only design data extraction, or connecting AI code generators to your design system.
 
-**What you get:** 22 read-only tools for viewing design data, taking screenshots, reading console logs, and design-code parity checks.
+**What you get:** 22 read-only tools for viewing design data, taking screenshots, reading console logs, design-code parity checks, and full design system extraction via `figma_get_design_system_kit`.
 
 > ⚠️ **Limitation:** Remote mode **cannot create or modify designs**. It's read-only. For design creation, use [NPX Setup](#-npx-setup-recommended).
 
+Two remote endpoints are available — both provide the same 22 tools:
+
+| Endpoint | Transport | Auth | Best For |
+|----------|-----------|------|----------|
+| `/sse` | Server-Sent Events | OAuth 2.1 (automatic) | Claude Desktop, Cursor, Windsurf |
+| `/mcp` | Streamable HTTP | Bearer token (your Figma PAT) | Lovable, v0, Replit, any HTTP-capable client |
+
 ### Prerequisites
 
-- [ ] Claude Desktop installed
-- That's it! No Node.js, no tokens, no Figma restart required.
+- [ ] Claude Desktop installed (for `/sse`), or an MCP-compatible code generator (for `/mcp`)
+- For `/mcp`: A Figma Personal Access Token
 
-### Method 1: UI-Based Setup (Claude Desktop)
+### Option A: SSE Endpoint (Claude Desktop, Cursor, Windsurf)
+
+The `/sse` endpoint uses OAuth — authentication happens automatically when you first connect.
+
+**UI-Based Setup (Claude Desktop):**
 
 1. Open Claude Desktop → **Settings** → **Connectors**
 2. Click **"Add Custom Connector"**
@@ -358,11 +369,7 @@ Then restart Claude Desktop.
 4. Click **"Add"**
 5. Done! ✅
 
-OAuth authentication happens automatically when you first use design system tools.
-
-### Method 2: JSON Config
-
-Add to your Claude Desktop config:
+**JSON Config:**
 
 ```json
 {
@@ -375,21 +382,32 @@ Add to your Claude Desktop config:
 }
 ```
 
+### Option B: Streamable HTTP Endpoint (AI Code Generators)
+
+The `/mcp` endpoint accepts your Figma Personal Access Token as a Bearer token — no OAuth flow needed. This is ideal for AI code generators like Lovable, v0, and Replit that support custom MCP servers with Streamable HTTP transport.
+
+**Endpoint:** `https://figma-console-mcp.southleft.com/mcp`
+
+**Authentication:** Pass your Figma PAT as a Bearer token in the `Authorization` header.
+
+**How to connect** depends on the platform — look for "Add MCP Server" or "Custom Tool" in your code generator's settings, provide the URL above, and add your Figma token as the Bearer token.
+
 ### What You Can Do (Read-Only)
 
-✅ View design data and file structure
-✅ Read design tokens/variables (Enterprise plan required)
-✅ Take screenshots
-✅ Read console logs
-✅ Get component metadata
+- ✅ View design data and file structure
+- ✅ Read design tokens/variables (Enterprise plan required)
+- ✅ Take screenshots
+- ✅ Read console logs
+- ✅ Get component metadata
+- ✅ Extract full design system via `figma_get_design_system_kit`
 
 ### What You Cannot Do
 
-❌ Create frames, shapes, or components
-❌ Edit existing designs
-❌ Create or modify variables
-❌ Instantiate components
-❌ Use Desktop Bridge plugin
+- ❌ Create frames, shapes, or components
+- ❌ Edit existing designs
+- ❌ Create or modify variables
+- ❌ Instantiate components
+- ❌ Use Desktop Bridge plugin
 
 ### Upgrading to Full Capabilities
 
