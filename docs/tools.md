@@ -1605,13 +1605,19 @@ figma_generate_component_doc({
 **Parameters:**
 - `fileUrl` (optional): Figma file URL (uses current URL if omitted)
 - `nodeId` (required): Component node ID
-- `codeInfo` (optional): Code-side documentation info:
+- `codeInfo` (optional): Code-side documentation info. Read the component source code first, then fill in relevant sections:
   - `importStatement`: Import path
+  - `filePath`: Component file path
+  - `packageName`: Package name
   - `props`: Array of prop definitions (name, type, required, defaultValue, description)
-  - `events`: Array of event definitions
-  - `slots`: Array of slot/sub-component definitions
-  - `usageExamples`: Array of code examples (title + code)
-  - `changelog`: Version history entries
+  - `events`: Array of event definitions (name, payload, description)
+  - `slots`: Array of slot/sub-component definitions (name, description)
+  - `usageExamples`: Array of code examples (title, code, language)
+  - `changelog`: Version history entries (version, date, changes)
+  - `variantDefinition`: CVA or variant definition code block (rendered in Implementation section)
+  - `subComponents`: Array of composable sub-parts (name, description, element, dataSlot, props)
+  - `sourceFiles`: Array of related files (path, role, variants, description) — used for Source Files table and Storybook link detection
+  - `baseComponent`: Base component attribution (name, url, description) — e.g., "Built on shadcn/ui Alert"
 - `sections` (optional): Toggle individual sections on/off (overview, statesAndVariants, visualSpecs, implementation, accessibility, changelog)
 - `outputPath` (optional): Suggested file path for saving
 - `systemName` (optional): Design system name for documentation headers

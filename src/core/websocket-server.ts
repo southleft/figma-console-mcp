@@ -38,6 +38,7 @@ export interface ConnectedFileInfo {
   fileName: string;
   fileKey: string | null;
   currentPage?: string;
+  currentPageId?: string;
   connectedAt: number;
 }
 
@@ -263,6 +264,7 @@ export class FigmaWebSocketServer extends EventEmitter {
         const found = this.findClientByWs(ws);
         if (found) {
           found.client.fileInfo.currentPage = message.data.pageName;
+          found.client.fileInfo.currentPageId = message.data.pageId || null;
           found.client.lastActivity = Date.now();
           this._activeFileKey = found.fileKey;
         }
@@ -354,6 +356,7 @@ export class FigmaWebSocketServer extends EventEmitter {
         fileName: data.fileName,
         fileKey,
         currentPage: data.currentPage,
+        currentPageId: data.currentPageId || null,
         connectedAt: Date.now(),
       },
       selection: existing?.selection || null,
@@ -363,11 +366,10 @@ export class FigmaWebSocketServer extends EventEmitter {
       gracePeriodTimer: null,
     });
 
-    // Set as active file if no active file or active file is disconnected
-    if (!this._activeFileKey || !this.clients.has(this._activeFileKey) ||
-        this.clients.get(this._activeFileKey)?.ws.readyState !== WebSocket.OPEN) {
-      this._activeFileKey = fileKey;
-    }
+    // Most recently connected file becomes active (user just opened the plugin there).
+    // On bulk reconnect the order is non-deterministic, but the first user interaction
+    // (SELECTION_CHANGE or PAGE_CHANGE) will correct the active file immediately.
+    this._activeFileKey = fileKey;
 
     logger.info(
       {

@@ -5,8 +5,9 @@
  * to execute code with access to the full Figma Plugin API,
  * including variables without Enterprise access.
  *
- * Uses Puppeteer's Worker API to directly access plugin workers,
- * bypassing CDP context enumeration limitations.
+ * Uses Puppeteer's Worker API to directly access plugin workers.
+ * Note: This is a legacy connector maintained for backwards compatibility.
+ * The WebSocket Desktop Bridge plugin is the primary connection method.
  */
 
 import { Page } from 'puppeteer-core';

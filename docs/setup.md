@@ -75,6 +75,8 @@ New to MCP servers, JSON configs, and terminal commands? These designer-friendly
     > *"Automate routine. Craft exceptional."* — Sergei Zhukov
 
     [View on Figma Community →](https://www.figma.com/community/file/1606560040358762787/figma-mcp-console-setup-guide) · [View on LinkedIn →](https://www.linkedin.com/posts/friendlyunit_claude-figma-console-mcp-designers-guide-activity-7430399317426720768-KiBy)
+
+    Sergei also built [Design Agent Lab](https://designagentlab.com/), which includes a dedicated [Figma Console MCP skill](https://designagentlab.com/figma-console-mcp) for Claude — an interactive setup assistant that walks you through installation and configuration step by step.
   </Tab>
 </Tabs>
 

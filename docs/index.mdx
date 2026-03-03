@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.10.0** — Multi-instance support: run Figma Console MCP simultaneously across Claude Desktop, Cursor, Windsurf, and other AI clients. The server automatically selects an available port (9223–9232), and the Desktop Bridge Plugin connects to all active instances. **If upgrading:** update the package, re-import the plugin manifest in Figma, then run the plugin.
+**New in v1.11.2** — Connect your Figma design system to AI code generators like Lovable, v0, and Replit via the remote MCP endpoint. The `figma_get_design_system_kit` tool extracts your tokens, component specs, and resolved styles in a single call — so generated code builds with your brand, not generic defaults.
 </Note>
 
 # Your Design System as an API
@@ -185,7 +185,7 @@ Real component data. Real token values. Real code that uses your actual design s
 
 ## Resources
 
-<Columns cols={4}>
+<Columns cols={2}>
   <Card title="Introduction" icon="circle-info" href="/introduction">
     New to MCP? Start here.
   </Card>
@@ -205,3 +205,7 @@ Real component data. Real token values. Real code that uses your actual design s
 <Note>
 **Open Source** — MIT licensed. Self-host for enterprise requirements or contribute on [GitHub](https://github.com/southleft/figma-console-mcp).
 </Note>
+
+<Tip>
+**Support this project** — Figma Console MCP is free and open source. If it's improved your workflow, consider [sponsoring its development](https://github.com/sponsors/southleft).
+</Tip>

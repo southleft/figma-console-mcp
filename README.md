@@ -4,10 +4,11 @@
 [![npm](https://img.shields.io/npm/v/figma-console-mcp)](https://www.npmjs.com/package/figma-console-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Documentation](https://img.shields.io/badge/docs-docs.figma--console--mcp.southleft.com-0D9488)](https://docs.figma-console-mcp.southleft.com)
+[![Sponsor](https://img.shields.io/badge/Sponsor-southleft-ea4aaa?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/southleft)
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
-> **🆕 v1.10.0 — Multi-Instance Support:** Run Figma Console MCP in multiple Claude Desktop tabs, CLI terminals, or projects simultaneously. No more port conflicts. [See what's new →](#-multi-instance-support-v1100)
+> **🆕 v1.11.2 — Design System Kit for AI Code Generators:** Connect your Figma design system to Lovable, v0, and Replit via the remote MCP endpoint. `figma_get_design_system_kit` extracts tokens, component specs, and resolved styles in one call — so AI-generated code builds with your brand. [See changelog →](CHANGELOG.md)
 
 ## What is this?
 
@@ -651,9 +652,12 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.10.0 (Stable) - Production-ready with multi-instance support, WebSocket Bridge, 56+ tools, Comments API, and MCP Apps
+**Current Status:** v1.11.2 (Stable) - Production-ready with Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 56+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
+- [x] **v1.11.2** - Screenshot fix: `figma_take_screenshot` works without explicit `nodeId` in WebSocket mode
+- [x] **v1.11.1** - Doc generator fixes: clean markdown tables, Storybook links, property metadata filtering
+- [x] **v1.11.0** - Complete CDP removal, improved multi-file active tracking with focus detection
 - [x] **v1.10.0** - Multi-instance support (dynamic port fallback 9223–9232, multi-connection plugin, instance discovery)
 - [x] **v1.9.0** - Figma Comments tools, improved port conflict detection
 - [x] **v1.8.0** - WebSocket Bridge transport (CDP-free connectivity), real-time selection/document tracking, `figma_get_selection` + `figma_get_design_changes` tools

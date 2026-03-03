@@ -35,7 +35,7 @@ const logger = createChildLogger({ component: "mcp-server" });
 export class FigmaConsoleMCPv3 extends McpAgent {
 	server = new McpServer({
 		name: "Figma Console MCP",
-		version: "1.8.0",
+		version: "1.11.2",
 	});
 
 	private browserManager: BrowserManager | null = null;
@@ -1784,7 +1784,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.8.0",
+					version: "1.11.2",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
@@ -1953,6 +1953,15 @@ export default {
 		}
 
 		.nav a:hover { color: var(--color-text); }
+
+		.nav a.sponsor-link {
+			color: #db61a2;
+			display: flex;
+			align-items: center;
+			gap: 5px;
+		}
+		.nav a.sponsor-link:hover { color: #ea4aaa; }
+		.nav a.sponsor-link svg { width: 14px; height: 14px; fill: currentColor; }
 
 		.theme-toggle {
 			display: flex;
@@ -2674,6 +2683,7 @@ export default {
 				<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
 				<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
 				<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">Blog</a>
+				<a href="https://github.com/sponsors/southleft" class="sponsor-link"><svg viewBox="0 0 16 16"><path d="M4.25 2.5c-1.336 0-2.75 1.164-2.75 3 0 2.15 1.58 4.144 3.365 5.682A20.6 20.6 0 0 0 8 13.393a20.6 20.6 0 0 0 3.135-2.211C12.92 9.644 14.5 7.65 14.5 5.5c0-1.836-1.414-3-2.75-3-1.373 0-2.609.986-3.029 2.456a.749.749 0 0 1-1.442 0C6.859 3.486 5.623 2.5 4.25 2.5"/></svg>Sponsor</a>
 			</nav>
 			<button class="theme-toggle" aria-label="Toggle theme">
 				<svg class="moon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -2701,6 +2711,7 @@ export default {
 			<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
 			<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
 			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">Blog</a>
+			<a href="https://github.com/sponsors/southleft" style="color: #db61a2;">♥ Sponsor</a>
 		</nav>
 	</div>
 
@@ -2949,6 +2960,7 @@ export default {
 			<a href="https://docs.figma-console-mcp.southleft.com">Docs</a>
 			<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
 			<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
+			<a href="https://github.com/sponsors/southleft" style="color: #db61a2;">♥ Sponsor</a>
 		</div>
 	</footer>
 

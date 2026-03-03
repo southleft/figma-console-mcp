@@ -196,19 +196,51 @@ export interface CodeDocInfo {
 	filePath?: string;
 	/** Package name */
 	packageName?: string;
+	/** CVA or variant definition code block */
+	variantDefinition?: string;
+	/** Sub-components that compose this component */
+	subComponents?: Array<{
+		name: string;
+		description?: string;
+		element?: string;
+		dataSlot?: string;
+		props?: Array<{
+			name: string;
+			type: string;
+			required?: boolean;
+			defaultValue?: string;
+			description?: string;
+		}>;
+	}>;
+	/** All source files related to this component */
+	sourceFiles?: Array<{
+		path: string;
+		role: string;
+		variants?: number;
+		description?: string;
+	}>;
+	/** Base component this extends */
+	baseComponent?: {
+		name: string;
+		url?: string;
+		description?: string;
+	};
 }
 
 /** Toggle which doc sections to include */
 export interface DocSections {
 	overview?: boolean;
+	anatomy?: boolean;
 	statesAndVariants?: boolean;
 	visualSpecs?: boolean;
+	typography?: boolean;
 	contentGuidelines?: boolean;
 	behavior?: boolean;
 	implementation?: boolean;
 	accessibility?: boolean;
 	relatedComponents?: boolean;
 	changelog?: boolean;
+	parity?: boolean;
 }
 
 /** Full documentation generation result */
@@ -219,6 +251,7 @@ export interface DocGenerationResult {
 	timestamp: string;
 	markdown: string;
 	includedSections: string[];
+	canonicalSource: "figma" | "code" | "reconciled";
 	dataSourceSummary: {
 		figmaEnriched: boolean;
 		hasCodeInfo: boolean;

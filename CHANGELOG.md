@@ -5,6 +5,33 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.2] - 2026-02-25
+
+### Fixed
+- **`figma_take_screenshot` failing without explicit `nodeId` in WebSocket mode** — The synthesized URL from the Desktop Bridge connection lacked a `?node-id=` parameter, causing the tool to throw "No node ID found" when no `nodeId` was passed. The plugin now reports `currentPageId` alongside `currentPage`, and the server includes it in the synthesized URL so `figma_take_screenshot` (and any future URL-dependent tool) resolves the current page automatically.
+
+## [1.11.1] - 2026-02-24
+
+### Fixed
+- **Frontmatter description overflow in `figma_generate_component_doc`** — When Figma descriptions contained multiple sections (overview, When to Use, Variants, etc.), the entire blob was dumped into the YAML `description` field. Now extracts only the overview paragraph.
+- **Malformed Variant Matrix markdown tables** — Table rows were missing leading/trailing pipe characters, producing invalid markdown. Tables now render correctly in all markdown viewers.
+- **Property metadata leaking into Content Guidelines and Accessibility sections** — Figma per-property documentation blocks (e.g., "Show Left Icon: True – Purpose") were being parsed into content and accessibility sections instead of being filtered out. Added pattern detection to route these to the discard bucket.
+
+### Added
+- **Storybook link in generated docs** — When `codeInfo.sourceFiles` includes a Storybook stories file, a `[View Storybook]` link is added to the doc header alongside Open in Figma and View Source.
+
+## [1.11.0] - 2026-02-22
+
+### Changed
+- **Complete removal of CDP (Chrome DevTools Protocol) references** — Figma has blocked `--remote-debugging-port`, making CDP non-functional. All user-facing error messages, tool descriptions, status responses, and AI instructions now reference only the WebSocket Desktop Bridge plugin. Internal legacy code is retained for backwards compatibility but is no longer surfaced to users or AI models.
+- **`figma_get_status` response simplified** — Removed `transport.cdp`, `browser`, and `availablePages` fields. Setup instructions no longer present CDP as an option. The response is now WebSocket-only.
+- **Improved multi-file active tracking** — The most recently connected file now becomes the active file (previously the first connection held priority). When multiple files have the Desktop Bridge plugin open, switching tabs and interacting in Figma (selecting nodes, changing pages) immediately updates the active file via `SELECTION_CHANGE` and `PAGE_CHANGE` events.
+
+### Fixed
+- **Dead CDP probe on startup** — `checkFigmaDesktop()` was making a `fetch()` call to `localhost:9222/json/version` with a 3-second timeout on every server start, even though the result was never used. Removed the dead code path.
+- **Incorrect transport type in `figma_reconnect`** — When the browser manager reconnected, the tool reported `transport: "cdp"` even though CDP is no longer active. Now correctly reports `transport: "websocket"`.
+- **Active file not switching on new plugin open** — When opening the Desktop Bridge plugin in a new Figma tab while other tabs were already connected, the active file stayed on the first-connected file instead of switching to the newly opened one. The server now tracks which file connected most recently and uses `selectionCount` from `FILE_INFO` to identify the user's focused tab.
+
 ## [1.10.0] - 2026-02-12
 
 ### Added

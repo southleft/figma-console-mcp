@@ -1,6 +1,7 @@
 /**
- * Local Browser Manager
- * Connects to Figma Desktop via Chrome Remote Debugging Protocol
+ * Local Browser Manager (Legacy)
+ * Note: This module is maintained for backwards compatibility but is no longer
+ * the primary connection method. Use the WebSocket Desktop Bridge plugin instead.
  */
 
 import puppeteer, { type Browser, type Page } from 'puppeteer-core';
@@ -65,13 +66,9 @@ export class LocalBrowserManager implements IBrowserManager {
 			logger.error({ error, browserURL }, 'Failed to connect to Figma Desktop');
 
 			throw new Error(
-				`Failed to connect to Figma Desktop at ${browserURL}.\n\n` +
-				`Make sure:\n` +
-				`1. Figma Desktop is running\n` +
-				`2. Figma was launched with: --remote-debugging-port=${debugPort}\n` +
-				`3. "Use Developer VM" is enabled in: Plugins → Development → Use Developer VM\n\n` +
-				`macOS launch command:\n` +
-				`  open -a "Figma" --args --remote-debugging-port=${debugPort}\n\n` +
+				`Failed to connect to Figma Desktop.\n\n` +
+				`Please open the Desktop Bridge plugin in Figma:\n` +
+				`  Plugins → Development → Figma Desktop Bridge\n\n` +
 				`Error: ${error instanceof Error ? error.message : String(error)}`
 			);
 		}

@@ -738,7 +738,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
 				),
 			depth: z
 				.number()
@@ -790,7 +790,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
 					);
 				}
 
@@ -974,7 +974,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
 				),
 			includePublished: z
 				.boolean()
@@ -1119,7 +1119,7 @@ export function registerFigmaAPITools(
 							text: JSON.stringify(
 								{
 									error: "No Figma file URL available",
-									message: "Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
+									message: "Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
 								}
 							),
 						},
@@ -1823,9 +1823,9 @@ export function registerFigmaAPITools(
 				}
 
 				// FALLBACK: Try Desktop connection (when no token available OR as secondary fallback)
-				// Only call ensureInitialized for CDP path — skip when transport-agnostic connector exists
+				// Only call ensureInitialized for legacy path — skip when transport-agnostic connector exists
 				if (ensureInitialized && !getDesktopConnector && !parseFromConsole && (!hasToken || !restApiSucceeded)) {
-					logger.info("Calling ensureInitialized to initialize browser manager (CDP path)");
+					logger.info("Calling ensureInitialized to initialize browser manager (legacy path)");
 					await ensureInitialized();
 				}
 
@@ -1850,7 +1850,7 @@ export function registerFigmaAPITools(
 						if (getDesktopConnector) {
 							connector = await getDesktopConnector();
 						} else {
-							// Fallback: direct CDP connector (legacy path)
+							// Fallback: direct connector (legacy path)
 							const { FigmaDesktopConnector } = await import('./figma-desktop-connector.js');
 							const page = await browserManager.getPage();
 							connector = new FigmaDesktopConnector(page);
@@ -2304,7 +2304,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
 				),
 			nodeId: z
 				.string()
@@ -2328,7 +2328,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
 					);
 				}
 
@@ -2348,7 +2348,7 @@ export function registerFigmaAPITools(
 						if (getDesktopConnector) {
 							connector = await getDesktopConnector();
 						} else {
-							// Fallback: direct CDP connector (legacy path)
+							// Fallback: direct connector (legacy path)
 							if (ensureInitialized) await ensureInitialized();
 							const browserManager = getBrowserManager?.();
 							if (!browserManager) {
@@ -2476,7 +2476,7 @@ export function registerFigmaAPITools(
 						`To fix:\n` +
 						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable, OR ensure Figma Desktop Bridge plugin is running\n` +
 						`2. Cloud mode: Authenticate via OAuth\n` +
-						`3. Make sure figma_navigate was called to initialize browser connection`
+						`3. Ensure the Desktop Bridge plugin is running in Figma Desktop`
 					);
 				}
 
@@ -2601,7 +2601,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
 				),
 			verbosity: z
 				.enum(["summary", "standard", "full"])
@@ -2650,7 +2650,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
 					);
 				}
 
@@ -2786,7 +2786,7 @@ export function registerFigmaAPITools(
 				.url()
 				.optional()
 				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from CDP browser or WebSocket Desktop Bridge connection. Only required if neither is connected."
+					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
 				),
 			nodeId: z
 				.string()
@@ -2817,15 +2817,15 @@ export function registerFigmaAPITools(
 						`To fix:\n` +
 						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
 						`2. Cloud mode: Authenticate via OAuth\n\n` +
-						`Note: For component screenshots, figma_take_screenshot may work as browser-based alternative ` +
-						`if you've called figma_navigate first.`
+						`Note: For component screenshots, figma_capture_screenshot may work as an alternative ` +
+						`if the Desktop Bridge plugin is connected.`
 					);
 				}
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
 					);
 				}
 
@@ -2965,14 +2965,14 @@ export function registerFigmaAPITools(
 						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
 						`2. Cloud mode: Authenticate via OAuth\n\n` +
 						`Note: For component metadata, figma_get_component has Desktop Bridge fallback ` +
-						`that works without token (requires figma_navigate first).`
+						`that works without token (requires the Desktop Bridge plugin to be connected).`
 					);
 				}
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
 					);
 				}
 
@@ -3172,7 +3172,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter, call figma_navigate (CDP mode), or ensure the Desktop Bridge plugin is connected (WebSocket mode)."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
 					);
 				}
 
@@ -3363,7 +3363,7 @@ export function registerFigmaAPITools(
 
 				let result = null;
 
-				// Use the connector abstraction (supports both CDP and WebSocket)
+				// Use the connector abstraction (WebSocket transport)
 				if (getDesktopConnector) {
 					const connector = await getDesktopConnector();
 					logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Screenshot via connector");
@@ -3496,7 +3496,7 @@ export function registerFigmaAPITools(
 
 				let result = null;
 
-				// Use the connector abstraction (supports both CDP and WebSocket)
+				// Use the connector abstraction (WebSocket transport)
 				if (getDesktopConnector) {
 					const connector = await getDesktopConnector();
 					logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Instance properties via connector");

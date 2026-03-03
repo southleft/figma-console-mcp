@@ -1,7 +1,7 @@
 /**
  * WebSocket Figma Connector
  *
- * Implements IFigmaConnector using WebSocket transport instead of CDP.
+ * Implements IFigmaConnector using the WebSocket Desktop Bridge transport.
  * Each method sends a command to the plugin UI via WebSocket and waits
  * for the response — same window.* functions, different transport.
  *

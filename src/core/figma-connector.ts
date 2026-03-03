@@ -1,9 +1,8 @@
 /**
  * Figma Connector Interface
  *
- * Transport abstraction that both CDP (FigmaDesktopConnector) and WebSocket
- * (WebSocketConnector) implement. Allows getDesktopConnector() to return
- * whichever transport is available — WebSocket preferred, CDP fallback.
+ * Transport abstraction for the WebSocket Desktop Bridge plugin.
+ * Allows getDesktopConnector() to return the active WebSocket transport.
  */
 
 export interface IFigmaConnector {
