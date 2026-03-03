@@ -1098,7 +1098,7 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.10.1",
+				version: "1.11.2",
 			});
 
 			// Register REST API tools with the authenticated Figma API
