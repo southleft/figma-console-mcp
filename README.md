@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
-> **🆕 v1.11.1 — Doc Generator Fixes:** Cleaner `figma_generate_component_doc` output—proper markdown tables, filtered property metadata, Storybook links. [See changelog →](CHANGELOG.md)
+> **🆕 v1.11.2 — Design System Kit for AI Code Generators:** Connect your Figma design system to Lovable, v0, and Replit via the remote MCP endpoint. `figma_get_design_system_kit` extracts tokens, component specs, and resolved styles in one call — so AI-generated code builds with your brand. [See changelog →](CHANGELOG.md)
 
 ## What is this?
 
@@ -652,9 +652,10 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.11.1 (Stable) - Production-ready with WebSocket-only connectivity, smart multi-file tracking, 56+ tools, Comments API, and MCP Apps
+**Current Status:** v1.11.2 (Stable) - Production-ready with Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 56+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
+- [x] **v1.11.2** - Screenshot fix: `figma_take_screenshot` works without explicit `nodeId` in WebSocket mode
 - [x] **v1.11.1** - Doc generator fixes: clean markdown tables, Storybook links, property metadata filtering
 - [x] **v1.11.0** - Complete CDP removal, improved multi-file active tracking with focus detection
 - [x] **v1.10.0** - Multi-instance support (dynamic port fallback 9223–9232, multi-connection plugin, instance discovery)
