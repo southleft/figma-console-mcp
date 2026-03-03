@@ -1,6 +1,6 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 57+ MCP tools in Local Mode, including parameters, return values, and usage examples."
+description: "Complete API reference for all 57+ MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
