@@ -118,6 +118,19 @@ const MOCK_COMPONENTS = {
 				description: "A standalone icon",
 				containing_frame: { nodeId: "frame-x", containingComponentSet: false },
 			},
+			// Banner variants — reference set via containingComponentSet.nodeId (intermediate frame pattern)
+			{
+				node_id: "comp-4",
+				name: "Expanded=False, Variant=Info",
+				description: "",
+				containing_frame: { nodeId: "frame-intermediate", containingComponentSet: { name: "Banner", nodeId: "set-2" } },
+			},
+			{
+				node_id: "comp-5",
+				name: "Expanded=False, Variant=Danger",
+				description: "",
+				containing_frame: { nodeId: "frame-intermediate", containingComponentSet: { name: "Banner", nodeId: "set-2" } },
+			},
 		],
 	},
 };
@@ -129,6 +142,11 @@ const MOCK_COMPONENT_SETS = {
 				node_id: "set-1",
 				name: "Button",
 				description: "Interactive button component",
+			},
+			{
+				node_id: "set-2",
+				name: "Banner",
+				description: "Notification banner component",
 			},
 		],
 	},
@@ -144,24 +162,183 @@ const MOCK_STYLES = {
 	},
 };
 
-const MOCK_NODE_RESPONSE = (nodeId: string) => ({
-	nodes: {
-		[nodeId]: {
-			document: {
-				id: nodeId,
-				name: nodeId === "set-1" ? "Button" : "Icon",
-				type: nodeId === "set-1" ? "COMPONENT_SET" : "COMPONENT",
-				componentPropertyDefinitions: {
-					variant: { type: "VARIANT", defaultValue: "primary" },
-					size: { type: "VARIANT", defaultValue: "md" },
-					disabled: { type: "BOOLEAN", defaultValue: false },
-					label: { type: "TEXT", defaultValue: "Click me" },
+const MOCK_NODE_RESPONSE = (nodeId: string) => {
+	// Component set with children (depth: 2)
+	if (nodeId === "set-1") {
+		return {
+			nodes: {
+				[nodeId]: {
+					document: {
+						id: nodeId,
+						name: "Button",
+						type: "COMPONENT_SET",
+						componentPropertyDefinitions: {
+							variant: { type: "VARIANT", defaultValue: "primary" },
+							size: { type: "VARIANT", defaultValue: "md" },
+							disabled: { type: "BOOLEAN", defaultValue: false },
+							label: { type: "TEXT", defaultValue: "Click me" },
+						},
+						absoluteBoundingBox: { x: 0, y: 0, width: 120, height: 40 },
+						fills: [{ type: "SOLID", color: { r: 0.1, g: 0.1, b: 0.1, a: 1 }, visible: true }],
+						cornerRadius: 8,
+						layoutMode: "HORIZONTAL",
+						paddingTop: 12,
+						paddingRight: 24,
+						paddingBottom: 12,
+						paddingLeft: 24,
+						itemSpacing: 8,
+						primaryAxisAlignItems: "CENTER",
+						counterAxisAlignItems: "CENTER",
+						children: [
+							{
+								id: "comp-1",
+								name: "Button",
+								type: "COMPONENT",
+								fills: [{ type: "SOLID", color: { r: 0, g: 0.4, b: 1, a: 1 }, visible: true }],
+								cornerRadius: 8,
+								layoutMode: "HORIZONTAL",
+								paddingTop: 12,
+								paddingRight: 24,
+								paddingBottom: 12,
+								paddingLeft: 24,
+								itemSpacing: 8,
+							},
+							{
+								id: "comp-2",
+								name: "Button/Primary",
+								type: "COMPONENT",
+								fills: [{ type: "SOLID", color: { r: 0, g: 0.2, b: 0.8, a: 1 }, visible: true }],
+								cornerRadius: 8,
+								layoutMode: "HORIZONTAL",
+								paddingTop: 12,
+								paddingRight: 24,
+								paddingBottom: 12,
+								paddingLeft: 24,
+								itemSpacing: 8,
+							},
+						],
+					},
 				},
-				absoluteBoundingBox: { x: 0, y: 0, width: 120, height: 40 },
+			},
+		};
+	}
+
+	// Banner component set with variants via intermediate frame
+	if (nodeId === "set-2") {
+		return {
+			nodes: {
+				[nodeId]: {
+					document: {
+						id: nodeId,
+						name: "Banner",
+						type: "COMPONENT_SET",
+						componentPropertyDefinitions: {
+							Expanded: { type: "VARIANT", defaultValue: "False" },
+							Variant: { type: "VARIANT", defaultValue: "Info" },
+						},
+						absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 200 },
+						cornerRadius: 5,
+						children: [
+							{
+								id: "comp-4",
+								name: "Expanded=False, Variant=Info",
+								type: "COMPONENT",
+								fills: [{ type: "SOLID", color: { r: 0.15, g: 0.18, b: 0.22, a: 1 }, visible: true }],
+								cornerRadius: 5,
+							},
+							{
+								id: "comp-5",
+								name: "Expanded=False, Variant=Danger",
+								type: "COMPONENT",
+								fills: [{ type: "SOLID", color: { r: 0.15, g: 0.18, b: 0.22, a: 1 }, visible: true }],
+								cornerRadius: 5,
+							},
+						],
+					},
+				},
+			},
+		};
+	}
+
+	// Style nodes
+	if (nodeId === "s-1") {
+		return {
+			nodes: {
+				[nodeId]: {
+					document: {
+						id: nodeId,
+						name: "Heading/H1",
+						type: "TEXT",
+						style: {
+							fontFamily: "Inter",
+							fontSize: 32,
+							fontWeight: 700,
+							lineHeightPx: 40,
+							letterSpacing: -0.5,
+						},
+					},
+				},
+			},
+		};
+	}
+	if (nodeId === "s-2") {
+		return {
+			nodes: {
+				[nodeId]: {
+					document: {
+						id: nodeId,
+						name: "Fill/Primary",
+						type: "RECTANGLE",
+						fills: [{ type: "SOLID", color: { r: 0, g: 0.4, b: 1, a: 1 }, visible: true }],
+					},
+				},
+			},
+		};
+	}
+	if (nodeId === "s-3") {
+		return {
+			nodes: {
+				[nodeId]: {
+					document: {
+						id: nodeId,
+						name: "Shadow/Soft",
+						type: "RECTANGLE",
+						effects: [{ type: "DROP_SHADOW", color: { r: 0, g: 0, b: 0, a: 0.15 }, offset: { x: 0, y: 4 }, radius: 8, spread: 0, visible: true }],
+					},
+				},
+			},
+		};
+	}
+
+	// Standalone component (Icon)
+	return {
+		nodes: {
+			[nodeId]: {
+				document: {
+					id: nodeId,
+					name: "Icon",
+					type: "COMPONENT",
+					componentPropertyDefinitions: {
+						variant: { type: "VARIANT", defaultValue: "primary" },
+						size: { type: "VARIANT", defaultValue: "md" },
+						disabled: { type: "BOOLEAN", defaultValue: false },
+						label: { type: "TEXT", defaultValue: "Click me" },
+					},
+					absoluteBoundingBox: { x: 0, y: 0, width: 24, height: 24 },
+					fills: [{ type: "SOLID", color: { r: 0.2, g: 0.2, b: 0.2, a: 1 }, visible: true }],
+					opacity: 0.9,
+					children: [
+						{
+							name: "path",
+							type: "VECTOR",
+							fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0, a: 1 }, visible: true }],
+						},
+					],
+				},
 			},
 		},
-	},
-});
+	};
+};
 
 function createMockFigmaAPI(overrides: Record<string, jest.Mock> = {}) {
 	return {
@@ -226,7 +403,7 @@ describe("Design System Kit Tool", () => {
 			expect(data.tokens).toBeDefined();
 			expect(data.components).toBeDefined();
 			expect(data.styles).toBeDefined();
-			expect(data.ai_instruction).toContain("structured design system specification");
+			expect(data.ai_instruction).toContain("STRICT VISUAL FIDELITY REQUIRED");
 		});
 
 		it("groups tokens by collection with modes", async () => {
@@ -268,19 +445,23 @@ describe("Design System Kit Tool", () => {
 			const data = JSON.parse(result.content[0].text);
 			const { components } = data;
 
-			// Should have 2 items: Button (set) + Icon (standalone)
-			// Variants "Button" and "Button/Primary" should be folded into the set
-			expect(components.items).toHaveLength(2);
+			// Should have 3 items: Button (set) + Banner (set) + Icon (standalone)
+			// Variants should be folded into their parent sets
+			expect(components.items).toHaveLength(3);
 
 			const buttonSet = components.items.find((c: any) => c.name === "Button" && c.variants);
 			expect(buttonSet).toBeDefined();
 			expect(buttonSet.variants).toHaveLength(2);
 
+			const bannerSet = components.items.find((c: any) => c.name === "Banner");
+			expect(bannerSet).toBeDefined();
+			expect(bannerSet.variants).toHaveLength(2);
+
 			const icon = components.items.find((c: any) => c.name === "Icon");
 			expect(icon).toBeDefined();
 			expect(icon.variants).toBeUndefined();
 
-			expect(components.summary.totalComponentSets).toBe(1);
+			expect(components.summary.totalComponentSets).toBe(2);
 		});
 
 		it("fetches property definitions from component set nodes", async () => {
@@ -418,6 +599,40 @@ describe("Design System Kit Tool", () => {
 				}
 			}
 		});
+
+		it("returns compact output with format='compact'", async () => {
+			const tool = server._getTool("figma_get_design_system_kit");
+			const result = await tool.handler({
+				include: ["tokens", "components", "styles"],
+				format: "compact",
+				includeImages: false,
+			});
+
+			const data = JSON.parse(result.content[0].text);
+
+			// Compact: tokens collections should be empty (only summary kept)
+			if (data.tokens) {
+				expect(data.tokens.collections).toEqual([]);
+				expect(data.tokens.summary).toBeDefined();
+			}
+
+			// Compact: components should have no visualSpec or bounds
+			if (data.components) {
+				for (const item of data.components.items) {
+					expect(item.visualSpec).toBeUndefined();
+					expect(item.bounds).toBeUndefined();
+					expect(item.imageUrl).toBeUndefined();
+				}
+			}
+
+			// Compact: styles should have no resolvedValue or description
+			if (data.styles) {
+				for (const item of data.styles.items) {
+					expect(item.resolvedValue).toBeUndefined();
+					expect(item.description).toBeUndefined();
+				}
+			}
+		});
 	});
 
 	describe("Error handling", () => {
@@ -551,6 +766,145 @@ describe("Design System Kit Tool", () => {
 		});
 	});
 
+	describe("Visual spec extraction", () => {
+		it("extracts visual spec from component set root node", async () => {
+			const tool = server._getTool("figma_get_design_system_kit");
+			const result = await tool.handler({
+				include: ["components"],
+				format: "full",
+				includeImages: false,
+			});
+
+			const data = JSON.parse(result.content[0].text);
+			const buttonSet = data.components.items.find((c: any) => c.name === "Button" && c.variants);
+
+			expect(buttonSet.visualSpec).toBeDefined();
+			expect(buttonSet.visualSpec.fills).toHaveLength(1);
+			expect(buttonSet.visualSpec.fills[0].color).toBe("#1A1A1A");
+			expect(buttonSet.visualSpec.cornerRadius).toBe(8);
+			expect(buttonSet.visualSpec.layout).toBeDefined();
+			expect(buttonSet.visualSpec.layout.mode).toBe("HORIZONTAL");
+			expect(buttonSet.visualSpec.layout.paddingTop).toBe(12);
+			expect(buttonSet.visualSpec.layout.paddingRight).toBe(24);
+			expect(buttonSet.visualSpec.layout.itemSpacing).toBe(8);
+		});
+
+		it("extracts visual spec from standalone component", async () => {
+			const tool = server._getTool("figma_get_design_system_kit");
+			const result = await tool.handler({
+				include: ["components"],
+				format: "full",
+				includeImages: false,
+			});
+
+			const data = JSON.parse(result.content[0].text);
+			const icon = data.components.items.find((c: any) => c.name === "Icon");
+
+			expect(icon.visualSpec).toBeDefined();
+			expect(icon.visualSpec.fills).toHaveLength(1);
+			expect(icon.visualSpec.fills[0].color).toBe("#333333");
+			expect(icon.visualSpec.opacity).toBe(0.9);
+		});
+
+		it("matches variants via containingComponentSet.nodeId (intermediate frame)", async () => {
+			const tool = server._getTool("figma_get_design_system_kit");
+			const result = await tool.handler({
+				include: ["components"],
+				format: "full",
+				includeImages: false,
+			});
+
+			const data = JSON.parse(result.content[0].text);
+			const bannerSet = data.components.items.find((c: any) => c.name === "Banner");
+
+			expect(bannerSet).toBeDefined();
+			expect(bannerSet.variants).toHaveLength(2);
+			expect(bannerSet.variants[0].name).toBe("Expanded=False, Variant=Info");
+			expect(bannerSet.variants[1].name).toBe("Expanded=False, Variant=Danger");
+			// Variants should have visual specs from depth-2 children
+			expect(bannerSet.variants[0].visualSpec).toBeDefined();
+			expect(bannerSet.variants[0].visualSpec.cornerRadius).toBe(5);
+		});
+
+		it("attaches visual specs to individual variants", async () => {
+			const tool = server._getTool("figma_get_design_system_kit");
+			const result = await tool.handler({
+				include: ["components"],
+				format: "full",
+				includeImages: false,
+			});
+
+			const data = JSON.parse(result.content[0].text);
+			const buttonSet = data.components.items.find((c: any) => c.name === "Button" && c.variants);
+
+			expect(buttonSet.variants).toHaveLength(2);
+			// First variant (comp-1)
+			const v1 = buttonSet.variants.find((v: any) => v.id === "comp-1");
+			expect(v1.visualSpec).toBeDefined();
+			expect(v1.visualSpec.fills[0].color).toBe("#0066FF");
+			expect(v1.visualSpec.cornerRadius).toBe(8);
+
+			// Second variant (comp-2)
+			const v2 = buttonSet.variants.find((v: any) => v.id === "comp-2");
+			expect(v2.visualSpec).toBeDefined();
+			expect(v2.visualSpec.fills[0].color).toBe("#0033CC");
+		});
+	});
+
+	describe("Style value resolution", () => {
+		it("resolves actual color values for FILL styles", async () => {
+			const tool = server._getTool("figma_get_design_system_kit");
+			const result = await tool.handler({
+				include: ["styles"],
+				format: "full",
+				includeImages: false,
+			});
+
+			const data = JSON.parse(result.content[0].text);
+			const fillStyle = data.styles.items.find((s: any) => s.name === "Fill/Primary");
+
+			expect(fillStyle.resolvedValue).toBeDefined();
+			expect(fillStyle.resolvedValue.fills).toHaveLength(1);
+			expect(fillStyle.resolvedValue.fills[0].color).toBe("#0066FF");
+		});
+
+		it("resolves typography values for TEXT styles", async () => {
+			const tool = server._getTool("figma_get_design_system_kit");
+			const result = await tool.handler({
+				include: ["styles"],
+				format: "full",
+				includeImages: false,
+			});
+
+			const data = JSON.parse(result.content[0].text);
+			const textStyle = data.styles.items.find((s: any) => s.name === "Heading/H1");
+
+			expect(textStyle.resolvedValue).toBeDefined();
+			expect(textStyle.resolvedValue.typography).toBeDefined();
+			expect(textStyle.resolvedValue.typography.fontFamily).toBe("Inter");
+			expect(textStyle.resolvedValue.typography.fontSize).toBe(32);
+			expect(textStyle.resolvedValue.typography.fontWeight).toBe(700);
+		});
+
+		it("resolves effect values for EFFECT styles", async () => {
+			const tool = server._getTool("figma_get_design_system_kit");
+			const result = await tool.handler({
+				include: ["styles"],
+				format: "full",
+				includeImages: false,
+			});
+
+			const data = JSON.parse(result.content[0].text);
+			const effectStyle = data.styles.items.find((s: any) => s.name === "Shadow/Soft");
+
+			expect(effectStyle.resolvedValue).toBeDefined();
+			expect(effectStyle.resolvedValue.effects).toHaveLength(1);
+			expect(effectStyle.resolvedValue.effects[0].type).toBe("DROP_SHADOW");
+			expect(effectStyle.resolvedValue.effects[0].color).toBe("#000000");
+			expect(effectStyle.resolvedValue.effects[0].radius).toBe(8);
+		});
+	});
+
 	describe("AI instruction", () => {
 		it("includes summary counts in ai_instruction", async () => {
 			const tool = server._getTool("figma_get_design_system_kit");
@@ -564,7 +918,7 @@ describe("Design System Kit Tool", () => {
 
 			expect(data.ai_instruction).toContain("3 tokens");
 			expect(data.ai_instruction).toContain("2 collections");
-			expect(data.ai_instruction).toContain("2 components");
+			expect(data.ai_instruction).toContain("3 components");
 			expect(data.ai_instruction).toContain("3 styles");
 		});
 	});

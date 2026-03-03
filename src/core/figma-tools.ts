@@ -967,7 +967,7 @@ export function registerFigmaAPITools(
 	 */
 	server.tool(
 		"figma_get_variables",
-		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Supports filtering by collection/mode/name and verbosity control to prevent token exhaustion. Enterprise plan required for Variables API; automatically falls back to Styles API or console-based extraction if unavailable.",
+		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Supports filtering by collection/mode/name and verbosity control to prevent token exhaustion. Enterprise plan required for Variables API; automatically falls back to Styles API or console-based extraction if unavailable. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
 		{
 			fileUrl: z
 				.string()
@@ -2293,8 +2293,8 @@ export function registerFigmaAPITools(
 
 	// Tool 10: Get Component Data
 	const componentDescription = isRemoteMode
-		? "Get component metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation."
-		: "Get component metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation. IMPORTANT: For local/unpublished components with metadata format, ensure the Figma Desktop Bridge plugin is running (Right-click in Figma → Plugins → Development → Figma Desktop Bridge) to get complete description data.";
+		? "Get a SINGLE component's metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation. TIP: To get ALL components with visual specs in one call, prefer figma_get_design_system_kit instead."
+		: "Get a SINGLE component's metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation. IMPORTANT: For local/unpublished components with metadata format, ensure the Figma Desktop Bridge plugin is running (Right-click in Figma → Plugins → Development → Figma Desktop Bridge) to get complete description data. TIP: To get ALL components with visual specs in one call, prefer figma_get_design_system_kit instead.";
 	server.tool(
 		"figma_get_component",
 		componentDescription,
@@ -2594,7 +2594,7 @@ export function registerFigmaAPITools(
 	// Tool 11: Get Styles
 	server.tool(
 		"figma_get_styles",
-		"Get all styles (color, text, effects, grids) from a Figma file with optional code exports. Use when user asks for: text styles, color palette, design system styles, typography, or style documentation. Returns organized style definitions with resolved values. NOT for design tokens/variables (use figma_get_variables). Set enrich=true for CSS/Tailwind/Sass code examples. Supports verbosity control to manage payload size.",
+		"Get all styles (color, text, effects, grids) from a Figma file with optional code exports. Use when user asks for: text styles, color palette, design system styles, typography, or style documentation. Returns organized style definitions with resolved values. NOT for design tokens/variables (use figma_get_variables). Set enrich=true for CSS/Tailwind/Sass code examples. Supports verbosity control to manage payload size. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
 		{
 			fileUrl: z
 				.string()

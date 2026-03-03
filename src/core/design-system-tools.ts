@@ -33,14 +33,42 @@ interface TokenCollection {
 	}>;
 }
 
+interface VisualSpec {
+	fills?: Array<{ type: string; color?: string; opacity?: number }>;
+	strokes?: Array<{ type: string; color?: string; weight?: number; align?: string }>;
+	effects?: Array<{ type: string; color?: string; offset?: { x: number; y: number }; radius?: number; spread?: number }>;
+	cornerRadius?: number;
+	rectangleCornerRadii?: number[];
+	opacity?: number;
+	layout?: {
+		mode?: string; // HORIZONTAL | VERTICAL
+		paddingTop?: number;
+		paddingRight?: number;
+		paddingBottom?: number;
+		paddingLeft?: number;
+		itemSpacing?: number;
+		primaryAxisAlign?: string;
+		counterAxisAlign?: string;
+	};
+	typography?: {
+		fontFamily?: string;
+		fontSize?: number;
+		fontWeight?: number;
+		lineHeight?: any;
+		letterSpacing?: any;
+		textAlignHorizontal?: string;
+	};
+}
+
 interface ComponentSpec {
 	id: string;
 	name: string;
 	description?: string;
 	properties?: Record<string, any>;
-	variants?: Array<{ name: string; id: string }>;
+	variants?: Array<{ name: string; id: string; visualSpec?: VisualSpec }>;
 	bounds?: { width: number; height: number };
 	imageUrl?: string;
+	visualSpec?: VisualSpec;
 }
 
 interface StyleSpec {
@@ -49,6 +77,7 @@ interface StyleSpec {
 	styleType: string;
 	description?: string;
 	nodeId?: string;
+	resolvedValue?: any;
 }
 
 interface DesignSystemKit {
@@ -106,6 +135,226 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 /**
+ * Convert Figma RGBA (0-1 range) to hex string
+ */
+function rgbaToHex(color: { r: number; g: number; b: number; a?: number }): string {
+	const r = Math.round(color.r * 255);
+	const g = Math.round(color.g * 255);
+	const b = Math.round(color.b * 255);
+	const hex = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+	return hex.toUpperCase();
+}
+
+/**
+ * Extract a compact visual specification from a Figma node.
+ * Captures the essential CSS-equivalent properties an AI needs to reproduce the component.
+ */
+function extractVisualSpec(node: any): VisualSpec | undefined {
+	if (!node) return undefined;
+
+	const spec: VisualSpec = {};
+	let hasData = false;
+
+	// Fills → background colors/gradients
+	if (node.fills && Array.isArray(node.fills) && node.fills.length > 0) {
+		spec.fills = node.fills
+			.filter((f: any) => f.visible !== false)
+			.map((f: any) => {
+				const fill: any = { type: f.type };
+				if (f.color) fill.color = rgbaToHex(f.color);
+				if (f.opacity !== undefined) fill.opacity = f.opacity;
+				return fill;
+			});
+		if (spec.fills!.length > 0) hasData = true;
+	}
+
+	// Strokes → borders
+	if (node.strokes && Array.isArray(node.strokes) && node.strokes.length > 0) {
+		spec.strokes = node.strokes
+			.filter((s: any) => s.visible !== false)
+			.map((s: any) => {
+				const stroke: any = { type: s.type };
+				if (s.color) stroke.color = rgbaToHex(s.color);
+				return stroke;
+			});
+		if (node.strokeWeight !== undefined) spec.strokes!.forEach((s: any) => s.weight = node.strokeWeight);
+		if (node.strokeAlign) spec.strokes!.forEach((s: any) => s.align = node.strokeAlign);
+		if (spec.strokes!.length > 0) hasData = true;
+	}
+
+	// Effects → shadows, blurs
+	if (node.effects && Array.isArray(node.effects) && node.effects.length > 0) {
+		spec.effects = node.effects
+			.filter((e: any) => e.visible !== false)
+			.map((e: any) => {
+				const effect: any = { type: e.type };
+				if (e.color) effect.color = rgbaToHex(e.color);
+				if (e.offset) effect.offset = e.offset;
+				if (e.radius !== undefined) effect.radius = e.radius;
+				if (e.spread !== undefined) effect.spread = e.spread;
+				return effect;
+			});
+		if (spec.effects!.length > 0) hasData = true;
+	}
+
+	// Corner radius
+	if (node.cornerRadius !== undefined && node.cornerRadius > 0) {
+		spec.cornerRadius = node.cornerRadius;
+		hasData = true;
+	}
+	if (node.rectangleCornerRadii) {
+		spec.rectangleCornerRadii = node.rectangleCornerRadii;
+		hasData = true;
+	}
+
+	// Opacity
+	if (node.opacity !== undefined && node.opacity < 1) {
+		spec.opacity = node.opacity;
+		hasData = true;
+	}
+
+	// Auto-layout → CSS flex equivalent
+	if (node.layoutMode && node.layoutMode !== "NONE") {
+		spec.layout = {
+			mode: node.layoutMode,
+		};
+		if (node.paddingTop !== undefined) spec.layout.paddingTop = node.paddingTop;
+		if (node.paddingRight !== undefined) spec.layout.paddingRight = node.paddingRight;
+		if (node.paddingBottom !== undefined) spec.layout.paddingBottom = node.paddingBottom;
+		if (node.paddingLeft !== undefined) spec.layout.paddingLeft = node.paddingLeft;
+		if (node.itemSpacing !== undefined) spec.layout.itemSpacing = node.itemSpacing;
+		if (node.primaryAxisAlignItems) spec.layout.primaryAxisAlign = node.primaryAxisAlignItems;
+		if (node.counterAxisAlignItems) spec.layout.counterAxisAlign = node.counterAxisAlignItems;
+		hasData = true;
+	}
+
+	// Typography (for TEXT nodes)
+	if (node.type === "TEXT" && node.style) {
+		spec.typography = {};
+		const s = node.style;
+		if (s.fontFamily) spec.typography.fontFamily = s.fontFamily;
+		if (s.fontSize) spec.typography.fontSize = s.fontSize;
+		if (s.fontWeight) spec.typography.fontWeight = s.fontWeight;
+		if (s.lineHeightPx) spec.typography.lineHeight = s.lineHeightPx;
+		if (s.letterSpacing) spec.typography.letterSpacing = s.letterSpacing;
+		if (s.textAlignHorizontal) spec.typography.textAlignHorizontal = s.textAlignHorizontal;
+		hasData = true;
+	}
+
+	return hasData ? spec : undefined;
+}
+
+/**
+ * Extract visual specs from a component node and its first-level children.
+ * Returns a compact representation of the component's visual appearance.
+ */
+function extractComponentVisualData(node: any): {
+	visualSpec?: VisualSpec;
+	childSpecs?: Array<{ name: string; type: string; visualSpec?: VisualSpec; characters?: string }>;
+} {
+	if (!node) return {};
+
+	const result: any = {};
+
+	const rootSpec = extractVisualSpec(node);
+	if (rootSpec) result.visualSpec = rootSpec;
+
+	// Extract first-level children specs (the structural elements)
+	if (node.children && Array.isArray(node.children)) {
+		const childSpecs: any[] = [];
+		for (const child of node.children) {
+			const childInfo: any = {
+				name: child.name,
+				type: child.type,
+			};
+			const childVisual = extractVisualSpec(child);
+			if (childVisual) childInfo.visualSpec = childVisual;
+			if (child.characters) childInfo.characters = child.characters;
+			childSpecs.push(childInfo);
+		}
+		if (childSpecs.length > 0) result.childSpecs = childSpecs;
+	}
+
+	return result;
+}
+
+/**
+ * Resolve style node IDs to their actual visual values.
+ * Styles only contain metadata from the styles endpoint — we need getNodes to get actual colors/fonts/effects.
+ */
+async function resolveStyleValues(
+	api: FigmaAPI,
+	fileKey: string,
+	styles: StyleSpec[],
+): Promise<Map<string, any>> {
+	const resolved = new Map<string, any>();
+	const nodeIds = styles.filter((s) => s.nodeId).map((s) => s.nodeId as string);
+
+	if (nodeIds.length === 0) return resolved;
+
+	try {
+		const batchSize = 50;
+		for (let i = 0; i < nodeIds.length; i += batchSize) {
+			const batch = nodeIds.slice(i, i + batchSize);
+			const nodeResponse = await withTimeout(
+				api.getNodes(fileKey, batch),
+				30000,
+				`getStyleNodes(batch ${Math.floor(i / batchSize) + 1})`,
+			);
+			if (nodeResponse?.nodes) {
+				for (const [nodeId, nodeData] of Object.entries(nodeResponse.nodes)) {
+					const doc = (nodeData as any)?.document;
+					if (!doc) continue;
+
+					const value: any = {};
+
+					// FILL styles → extract colors
+					if (doc.fills && Array.isArray(doc.fills)) {
+						value.fills = doc.fills
+							.filter((f: any) => f.visible !== false)
+							.map((f: any) => ({
+								type: f.type,
+								color: f.color ? rgbaToHex(f.color) : undefined,
+								opacity: f.opacity,
+							}));
+					}
+
+					// TEXT styles → extract typography
+					if (doc.type === "TEXT" && doc.style) {
+						value.typography = {
+							fontFamily: doc.style.fontFamily,
+							fontSize: doc.style.fontSize,
+							fontWeight: doc.style.fontWeight,
+							lineHeight: doc.style.lineHeightPx,
+							letterSpacing: doc.style.letterSpacing,
+						};
+					}
+
+					// EFFECT styles → extract shadows/blurs
+					if (doc.effects && Array.isArray(doc.effects)) {
+						value.effects = doc.effects
+							.filter((e: any) => e.visible !== false)
+							.map((e: any) => ({
+								type: e.type,
+								color: e.color ? rgbaToHex(e.color) : undefined,
+								offset: e.offset,
+								radius: e.radius,
+								spread: e.spread,
+							}));
+					}
+
+					resolved.set(nodeId, value);
+				}
+			}
+		}
+	} catch (err) {
+		logger.warn({ error: err }, "Failed to resolve style values");
+	}
+
+	return resolved;
+}
+
+/**
  * Group variables by collection for a clean hierarchical output
  */
 function groupVariablesByCollection(formatted: {
@@ -147,8 +396,12 @@ function deduplicateComponents(
 	const standalone = components.filter((c: any) => {
 		if (c.containing_frame?.containingComponentSet) {
 			// This is a variant — check if parent set is already included
-			const parentNodeId = c.containing_frame?.nodeId;
-			if (parentNodeId && setNodeIds.has(parentNodeId)) {
+			// Check both direct frame nodeId and the containingComponentSet.nodeId
+			// (some designs nest variants inside intermediate frames)
+			const frameNodeId = c.containing_frame?.nodeId;
+			const setNodeId = c.containing_frame?.containingComponentSet?.nodeId;
+			if ((frameNodeId && setNodeIds.has(frameNodeId)) ||
+				(setNodeId && setNodeIds.has(setNodeId))) {
 				return false; // Skip, parent set covers it
 			}
 		}
@@ -161,11 +414,17 @@ function deduplicateComponents(
 /**
  * Compress the kit for large responses
  */
-function compressKit(kit: DesignSystemKit, level: "summary" | "inventory"): DesignSystemKit {
+function compressKit(kit: DesignSystemKit, level: "summary" | "inventory" | "compact"): DesignSystemKit {
 	const compressed = { ...kit };
 
 	if (compressed.tokens) {
-		if (level === "inventory") {
+		if (level === "compact") {
+			// Compact: only summary counts, drop all collections/variables
+			compressed.tokens = {
+				collections: [],
+				summary: compressed.tokens.summary,
+			};
+		} else if (level === "inventory") {
 			// Only keep variable names and types, drop values
 			compressed.tokens = {
 				...compressed.tokens,
@@ -185,8 +444,44 @@ function compressKit(kit: DesignSystemKit, level: "summary" | "inventory"): Desi
 	}
 
 	if (compressed.components) {
-		if (level === "inventory") {
-			// Only keep names and property keys
+		if (level === "compact") {
+			// Compact: drastically reduce for large systems
+			// Separate component sets (design building blocks) from standalone components
+			const sets = compressed.components.items.filter((c) => c.variants && c.variants.length > 0);
+			const standalone = compressed.components.items.filter((c) => !c.variants || c.variants.length === 0);
+
+			// Keep all sets (they're the main building blocks), limit standalone to 100
+			const limitedStandalone = standalone.slice(0, 100);
+			const trimmedItems = [...sets, ...limitedStandalone];
+
+			compressed.components = {
+				...compressed.components,
+				items: trimmedItems.map((c) => ({
+					id: c.id,
+					name: c.name,
+					// Compact: variant count only (not individual names) for very large sets
+					variants: c.variants
+						? c.variants.length > 10
+							? [{ name: `${c.variants.length} variants`, id: "" }]
+							: c.variants.map((v) => ({ name: v.name, id: v.id }))
+						: undefined,
+					properties: c.properties
+						? Object.fromEntries(
+								Object.entries(c.properties).map(([k, v]: [string, any]) => [
+									k,
+									{ type: v.type, defaultValue: v.defaultValue },
+								])
+						  )
+						: undefined,
+				})),
+				summary: {
+					...compressed.components.summary,
+					totalComponents: trimmedItems.length,
+					...(standalone.length > 100 ? { omittedStandaloneComponents: standalone.length - 100 } as any : {}),
+				},
+			};
+		} else if (level === "inventory") {
+			// Only keep names and property keys — strip visual specs and variants
 			compressed.components = {
 				...compressed.components,
 				items: compressed.components.items.map((c) => ({
@@ -203,12 +498,46 @@ function compressKit(kit: DesignSystemKit, level: "summary" | "inventory"): Desi
 						: undefined,
 				})),
 			};
+		} else if (level === "summary") {
+			// Keep visual specs but strip variant-level specs to save space
+			compressed.components = {
+				...compressed.components,
+				items: compressed.components.items.map((c) => ({
+					...c,
+					variants: c.variants?.map((v) => ({ name: v.name, id: v.id })),
+				})),
+			};
 		}
 		// Drop image URLs at any compression level to save tokens
 		compressed.components.items = compressed.components.items.map((c) => {
 			const { imageUrl, ...rest } = c;
 			return rest;
 		});
+	}
+
+	if (compressed.styles) {
+		if (level === "compact") {
+			// Compact: only style names and types grouped by type, no resolved values
+			compressed.styles = {
+				...compressed.styles,
+				items: compressed.styles.items.map((s) => ({
+					key: s.key,
+					name: s.name,
+					styleType: s.styleType,
+				})),
+			};
+		} else if (level === "inventory") {
+			// Strip resolved values in inventory mode
+			compressed.styles = {
+				...compressed.styles,
+				items: compressed.styles.items.map((s) => ({
+					key: s.key,
+					name: s.name,
+					styleType: s.styleType,
+					description: s.description,
+				})),
+			};
+		}
 	}
 
 	return compressed;
@@ -227,10 +556,12 @@ export function registerDesignSystemTools(
 ): void {
 	server.tool(
 		"figma_get_design_system_kit",
-		"Get a complete design system specification (tokens, components, styles) from a Figma file in a single call. " +
-		"Ideal for AI code generation tools that need structured design system data to produce code with accurate " +
-		"component APIs, token values, and style references. Returns hierarchical token collections with modes, " +
-		"component specs with property definitions and variants, and published styles.",
+		"PREFERRED TOOL for design system extraction — replaces separate figma_get_styles, figma_get_variables, and figma_get_component calls. " +
+		"Returns tokens, components, and styles in a single optimized response with adaptive compression for large systems. " +
+		"Includes component visual specs (exact colors, padding, typography, layout), rendered screenshots, " +
+		"token values per mode (light/dark), and resolved style values. " +
+		"Use this instead of calling individual tools to avoid context window overflow. " +
+		"Ideal for AI code generation — use visualSpec for pixel-accurate reproduction.",
 		{
 			fileKey: z
 				.string()
@@ -257,11 +588,14 @@ export function registerDesignSystemTools(
 					"Include image URLs for components (adds latency). Default false."
 				),
 			format: z
-				.enum(["full", "summary"])
+				.enum(["full", "summary", "compact"])
 				.optional()
 				.default("full")
 				.describe(
-					"'full' returns complete data. 'summary' returns names/types/keys without values (smaller payload)."
+					"'full' returns complete data with visual specs and resolved values. " +
+					"'summary' strips variant-level visual specs (medium payload). " +
+					"'compact' returns only names, types, and property definitions (smallest payload, best for large design systems). " +
+					"Auto-compresses if response exceeds safe size regardless of format setting."
 				),
 		},
 		async ({ fileKey, include, componentIds, includeImages, format }) => {
@@ -388,7 +722,7 @@ export function registerDesignSystemTools(
 								for (let i = 0; i < allNodeIds.length; i += batchSize) {
 									const batch = allNodeIds.slice(i, i + batchSize);
 									const nodeResponse = await withTimeout(
-										api.getNodes(resolvedFileKey, batch, { depth: 1 }),
+										api.getNodes(resolvedFileKey, batch, { depth: 2 }),
 										30000,
 										`getNodes(batch ${Math.floor(i / batchSize) + 1})`,
 									);
@@ -411,17 +745,35 @@ export function registerDesignSystemTools(
 								description: set.description || undefined,
 							};
 
+							// Use pre-fetched node details
+							const setNode = nodeDetailsMap[set.node_id];
+
 							// Get variant info from the child components
+							// Match by component_set_id, containing_frame.nodeId, OR containingComponentSet.nodeId
+							// (some designs nest variants inside intermediate frames)
 							const variants = allComponents
-								.filter((c: any) => c.component_set_id === set.node_id || c.containing_frame?.nodeId === set.node_id)
-								.map((c: any) => ({ name: c.name, id: c.node_id }));
+								.filter((c: any) =>
+									c.component_set_id === set.node_id ||
+									c.containing_frame?.nodeId === set.node_id ||
+									c.containing_frame?.containingComponentSet?.nodeId === set.node_id
+								)
+								.map((c: any) => {
+									const entry: { name: string; id: string; visualSpec?: VisualSpec } = { name: c.name, id: c.node_id };
+									// Attach visual spec from depth-2 children of the set node
+									if (setNode?.children) {
+										const variantNode = setNode.children.find((ch: any) => ch.id === c.node_id);
+										if (variantNode) {
+											const vs = extractVisualSpec(variantNode);
+											if (vs) entry.visualSpec = vs;
+										}
+									}
+									return entry;
+								});
 
 							if (variants.length > 0) {
 								spec.variants = variants;
 							}
 
-							// Use pre-fetched node details
-							const setNode = nodeDetailsMap[set.node_id];
 							if (setNode?.componentPropertyDefinitions) {
 								spec.properties = setNode.componentPropertyDefinitions;
 							}
@@ -430,6 +782,14 @@ export function registerDesignSystemTools(
 									width: setNode.absoluteBoundingBox.width,
 									height: setNode.absoluteBoundingBox.height,
 								};
+							}
+
+							// Extract visual spec from the set node (root + children)
+							if (setNode) {
+								const visualData = extractComponentVisualData(setNode);
+								if (visualData.visualSpec) {
+									spec.visualSpec = visualData.visualSpec;
+								}
 							}
 
 							componentSpecs.push(spec);
@@ -453,6 +813,14 @@ export function registerDesignSystemTools(
 									width: node.absoluteBoundingBox.width,
 									height: node.absoluteBoundingBox.height,
 								};
+							}
+
+							// Extract visual spec from the component node (root + children)
+							if (node) {
+								const visualData = extractComponentVisualData(node);
+								if (visualData.visualSpec) {
+									spec.visualSpec = visualData.visualSpec;
+								}
 							}
 
 							componentSpecs.push(spec);
@@ -523,6 +891,20 @@ export function registerDesignSystemTools(
 							nodeId: s.node_id,
 						}));
 
+						// Resolve actual values for styles (colors, typography, effects)
+						if (styleSpecs.length > 0) {
+							try {
+								const resolvedValues = await resolveStyleValues(api, resolvedFileKey, styleSpecs);
+								for (const style of styleSpecs) {
+									if (style.nodeId && resolvedValues.has(style.nodeId)) {
+										style.resolvedValue = resolvedValues.get(style.nodeId);
+									}
+								}
+							} catch (err) {
+								logger.warn({ error: err }, "Failed to resolve style values");
+							}
+						}
+
 						const stylesByType: Record<string, number> = {};
 						for (const s of styleSpecs) {
 							stylesByType[s.styleType] = (stylesByType[s.styleType] || 0) + 1;
@@ -555,29 +937,78 @@ export function registerDesignSystemTools(
 				if (kit.styles) sections.push(`${kit.styles.summary.totalStyles} styles`);
 
 				kit.ai_instruction =
-					"This is a structured design system specification. Use these exact token names, " +
-					"component property definitions, and style references when generating code. " +
-					"Component 'properties' define the props/API the component accepts — generate " +
-					"components with matching prop interfaces. Token 'valuesByMode' contains values " +
-					"per mode (e.g., light/dark) — use CSS custom properties or theme objects to " +
-					"support all modes. " +
-					`Summary: ${sections.join(", ")}.`;
+					"DESIGN SYSTEM SPECIFICATION — STRICT VISUAL FIDELITY REQUIRED\n\n" +
+					`Contains: ${sections.join(", ")}.\n\n` +
+					"RULES:\n" +
+					"1. ONLY use colors, spacing, and typography values from this data. " +
+					"Do NOT invent, guess, or add any visual properties not explicitly present.\n" +
+					"2. Map 'visualSpec' directly to CSS:\n" +
+					"   - fills[].color → background-color (e.g. #181818)\n" +
+					"   - strokes[].color/weight → border (e.g. 1px solid #9747FF)\n" +
+					"   - effects[] → box-shadow (type DROP_SHADOW: offset.x offset.y radius spread color)\n" +
+					"   - cornerRadius → border-radius\n" +
+					"   - layout.mode HORIZONTAL → flex-direction:row, VERTICAL → flex-direction:column\n" +
+					"   - layout.paddingTop/Right/Bottom/Left → padding\n" +
+					"   - layout.itemSpacing → gap\n" +
+					"   - layout.primaryAxisAlign → justify-content, counterAxisAlign → align-items\n" +
+					"   - typography → font-family, font-size, font-weight, line-height, letter-spacing\n" +
+					"3. Do NOT add decorative elements (colored borders, accents, dividers, gradients) " +
+					"unless they appear in the visualSpec data.\n" +
+					"4. Use 'imageUrl' screenshots as the visual ground truth. If the screenshot " +
+					"shows a simple dark card, do not add colored side borders or other embellishments.\n" +
+					"5. Style 'resolvedValue' contains the exact design system colors and typography — " +
+					"match these values precisely, do not substitute similar colors.\n" +
+					"6. Component 'properties' define the component API (props). " +
+					"VARIANT type properties define the visual variants (e.g. Info, Danger, Success). " +
+					"BOOLEAN properties toggle features. TEXT properties accept string content.\n" +
+					"7. When applying to an existing component library (e.g. shadcn, MUI, Chakra), " +
+					"override the library's default theme values with the exact colors, spacing, and " +
+					"typography from this specification. Do not blend with library defaults.";
 
 				// ----------------------------------------------------------------
 				// Adaptive compression for large responses
+				// Thresholds tuned for consumer AI context windows (~128K tokens ≈ ~400KB text)
 				// ----------------------------------------------------------------
 				const sizeKB = calculateSizeKB(kit);
+				logger.info({ sizeKB: sizeKB.toFixed(0), format }, "Kit assembled, checking compression");
 
-				if (format === "summary" || sizeKB > 500) {
-					const level = sizeKB > 1000 ? "inventory" : "summary";
-					const compressed = compressKit(kit, level);
+				// Determine compression level from format + size
+				let compressionLevel: "summary" | "inventory" | "compact" | null = null;
 
-					if (sizeKB > 500) {
-						compressed.ai_instruction =
-							`Response auto-compressed from ${sizeKB.toFixed(0)}KB. ` +
-							compressed.ai_instruction +
-							" For full token values, re-call with include=['tokens'] and specific componentIds.";
+				if (format === "compact") {
+					compressionLevel = "compact";
+				} else if (format === "summary") {
+					compressionLevel = "summary";
+				}
+
+				// Auto-compress based on size regardless of format setting
+				// Lower thresholds to stay within consumer context windows
+				if (sizeKB > 500) {
+					compressionLevel = "compact"; // >500KB → just names and types
+				} else if (sizeKB > 200) {
+					// Upgrade to at least inventory if not already more aggressive
+					if (!compressionLevel || compressionLevel === "summary") {
+						compressionLevel = "inventory";
 					}
+				} else if (sizeKB > 100) {
+					// Upgrade to at least summary
+					if (!compressionLevel) {
+						compressionLevel = "summary";
+					}
+				}
+
+				if (compressionLevel) {
+					const compressed = compressKit(kit, compressionLevel);
+					const compressedSizeKB = calculateSizeKB(compressed);
+
+					if (sizeKB > 100) {
+						compressed.ai_instruction =
+							`Response auto-compressed (${compressionLevel}) from ${sizeKB.toFixed(0)}KB to ${compressedSizeKB.toFixed(0)}KB. ` +
+							compressed.ai_instruction +
+							" For full visual specs of specific components, re-call with specific componentIds and format='full'.";
+					}
+
+					logger.info({ originalKB: sizeKB.toFixed(0), compressedKB: compressedSizeKB.toFixed(0), level: compressionLevel }, "Kit compressed");
 
 					return {
 						content: [
