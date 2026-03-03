@@ -55,7 +55,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 56+ tools including design creation, variable management, and component instantiation.
+**What you get:** All 57+ tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -148,7 +148,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 56+ tools as NPX, plus full source code access.
+**What you get:** Same 57+ tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -189,7 +189,7 @@ Then follow [NPX Steps 3-5](#step-3-connect-to-figma-desktop) above.
 
 **Best for:** Quickly evaluating the tool or read-only design data extraction.
 
-**What you get:** 21 read-only tools — view data, take screenshots, read logs, design-code parity. **Cannot create or modify designs.**
+**What you get:** 22 read-only tools — view data, take screenshots, read logs, design-code parity. **Cannot create or modify designs.**
 
 #### Claude Desktop (UI Method)
 
@@ -238,7 +238,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 | Feature | NPX (Recommended) | Local Git | Remote SSE |
 |---------|-------------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **56+** | **56+** | **21** (read-only) |
+| **Total tools** | **56+** | **56+** | **22** (read-only) |
 | **Design creation** | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ❌ |
@@ -311,6 +311,7 @@ When you first use design system tools:
 - `figma_take_screenshot` - Capture UI screenshots
 
 ### Design System Extraction
+- `figma_get_design_system_kit` - **Full design system in one call** — tokens, components, styles, visual specs
 - `figma_get_variables` - Extract design tokens/variables
 - `figma_get_component` - Get component data (metadata or reconstruction spec)
 - `figma_get_component_for_development` - Component + image
@@ -518,7 +519,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 56+ tools work through the WebSocket transport
+- All 57+ tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -652,7 +653,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.11.2 (Stable) - Production-ready with Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 56+ tools, Comments API, and MCP Apps
+**Current Status:** v1.11.2 (Stable) - Production-ready with Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 57+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
 - [x] **v1.11.2** - Screenshot fix: `figma_take_screenshot` works without explicit `nodeId` in WebSocket mode

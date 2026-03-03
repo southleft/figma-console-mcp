@@ -86,7 +86,7 @@ New to MCP servers, JSON configs, and terminal commands? These designer-friendly
 
 **Best for:** Anyone who wants full AI-assisted design and development capabilities with automatic updates.
 
-**What you get:** All 56+ tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
+**What you get:** All 57+ tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
 
 ### Prerequisites Checklist
 
@@ -232,7 +232,7 @@ Create a simple frame with a blue background
 
 **Best for:** Users who want more control over when updates happen, or developers who want to contribute to the project.
 
-**What you get:** Same 56+ tools as NPX. Updates are manual — you pull and rebuild when you're ready.
+**What you get:** Same 57+ tools as NPX. Updates are manual — you pull and rebuild when you're ready.
 
 ### Prerequisites
 
@@ -339,7 +339,7 @@ Then restart Claude Desktop.
 
 **Best for:** Quickly evaluating the tool or read-only design data extraction.
 
-**What you get:** 21 read-only tools for viewing design data, taking screenshots, reading console logs, and design-code parity checks.
+**What you get:** 22 read-only tools for viewing design data, taking screenshots, reading console logs, and design-code parity checks.
 
 > ⚠️ **Limitation:** Remote mode **cannot create or modify designs**. It's read-only. For design creation, use [NPX Setup](#-npx-setup-recommended).
 

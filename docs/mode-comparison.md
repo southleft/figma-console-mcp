@@ -33,19 +33,19 @@ The MCP server has **two execution modes** but **three installation methods**:
 | Mode | Tools Available | Capabilities |
 |------|-----------------|--------------|
 | **Local Mode** (NPX or Git) | **56+** | Full read/write — create, edit, delete |
-| **Remote Mode** (SSE) | **21** | Read-only — view data, screenshots, logs |
+| **Remote Mode** (SSE) | **22** | Read-only — view data, screenshots, logs |
 
 > **Bottom line:** Remote SSE has ~34% of the tools and cannot create or modify designs.
 
 ### Use NPX Setup (Recommended for Most Users)
-- ✅ **All 56+ tools** including design creation
+- ✅ **All 57+ tools** including design creation
 - ✅ Automatic updates with `@latest`
 - ✅ Desktop Bridge Plugin support (recommended connection — no debug flags needed)
 - ✅ Variables without Enterprise plan
 - ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual, one-time)
 
 ### Use Local Git (For Contributors)
-- ✅ **All 56+ tools** including design creation
+- ✅ **All 57+ tools** including design creation
 - ✅ Full source code access
 - ✅ Modify and test changes
 - ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual)
@@ -55,7 +55,7 @@ The MCP server has **two execution modes** but **three installation methods**:
 - ✅ **TRUE zero-setup** - Just paste a URL
 - ✅ **OAuth authentication** - No manual tokens
 - ✅ Works without Figma Desktop restart
-- ❌ **Only 21 tools** — cannot create or modify designs
+- ❌ **Only 22 tools** — cannot create or modify designs
 - ❌ Cannot use Desktop Bridge plugin
 - ❌ Variables require Enterprise plan
 
@@ -136,7 +136,7 @@ Variables & Components Data
 **Key Points:**
 - Install the Desktop Bridge Plugin once — no debug flags needed
 - Server automatically selects an available port (9223–9232) for multi-instance support
-- All 56+ tools work through WebSocket
+- All 57+ tools work through WebSocket
 - Plugin can access local variables (no Enterprise API needed)
 - Instant console log capture via WebSocket
 
@@ -155,6 +155,7 @@ Variables & Components Data
 | `figma_reload_plugin` | ✅ | ✅ | Reloads current page |
 | `figma_clear_console` | ✅ | ✅ | Clears log buffer |
 | `figma_get_status` | ✅ | ✅ | Check connection status |
+| `figma_get_design_system_kit` | ✅ | ✅ | Full design system in one call — tokens, components, styles, visual specs |
 | `figma_get_variables` | ✅* | ✅** | *Enterprise API required. **Can use Desktop Bridge plugin |
 | `figma_get_component` | ✅* | ✅** | *Descriptions may be missing. **Reliable via plugin |
 | `figma_get_styles` | ✅ | ✅ | Both use Figma REST API |
@@ -296,7 +297,7 @@ The Desktop Bridge Plugin is the **recommended way** to connect Figma to the MCP
 | Selection tracking | ❌ | ✅ Real-time via WebSocket |
 | Document change monitoring | ❌ | ✅ Real-time via WebSocket |
 
-**Transport:** The MCP server communicates via WebSocket through the Desktop Bridge Plugin. The server automatically selects an available port in the range 9223–9232, supporting multiple simultaneous MCP instances. All 56+ tools work through the WebSocket transport.
+**Transport:** The MCP server communicates via WebSocket through the Desktop Bridge Plugin. The server automatically selects an available port in the range 9223–9232, supporting multiple simultaneous MCP instances. All 57+ tools work through the WebSocket transport.
 
 ### Plugin Only Works in Local Mode
 
@@ -374,7 +375,7 @@ All three installation methods are completely free:
 ## Summary
 
 **For most users: Start with NPX Setup** ⭐
-- All 56+ tools including design creation
+- All 57+ tools including design creation
 - Automatic updates with `@latest`
 - Desktop Bridge plugin support
 - Variables without Enterprise plan
@@ -392,8 +393,8 @@ All three installation methods are completely free:
 - You don't need design creation capabilities
 
 **Key Takeaway:** Remote SSE and Local modes have **different tool counts**:
-- **Remote Mode (SSE):** 21 tools — read-only operations
-- **Local Mode (NPX/Git):** 56+ tools — full read/write operations
+- **Remote Mode (SSE):** 22 tools — read-only operations
+- **Local Mode (NPX/Git):** 57+ tools — full read/write operations
 
 The difference is not just authentication, but **fundamental capabilities**:
 - **Remote:** Cannot create, modify, or delete anything in Figma

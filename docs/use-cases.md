@@ -105,6 +105,31 @@ Then run your plugin in Figma Desktop, and say:
 
 ## 🎨 Design System Extraction
 
+### Scenario 4b: Extract Full Design System for AI Code Generation
+
+**Your situation:** You want to feed your design system to an AI code generator (Lovable, v0, Replit, Cursor) so it builds with your actual tokens, components, and styles instead of generic defaults.
+
+**What to say:**
+
+```
+"Use figma_get_design_system_kit to extract my full design system from file key abc123, then use those tokens and component specs to build a signup page"
+```
+
+**What happens:**
+1. AI calls `figma_get_design_system_kit` — gets tokens, components, and styles in one call
+2. Receives visual specs (exact colors, padding, typography, layout) for each component
+3. Uses actual token values (light/dark modes) instead of hardcoded values
+4. Builds the page using your real design system variables
+
+**Variations:**
+- "Extract only my tokens and styles" → `include: ["tokens", "styles"]`
+- "Get my Button and Card components with images" → `componentIds: ["1:234", "5:678"]` + `includeImages: true`
+- "Just get an inventory of what's in my design system" → `format: "compact"`
+
+**Why use this instead of individual tools:** One call replaces `figma_get_variables` + `figma_get_component` + `figma_get_styles`, keeps the AI context window clean, and includes visual specs that individual tools don't provide.
+
+---
+
 ### Scenario 5: Extract Design Tokens
 
 **Your situation:** You need to extract all design variables from your Figma design system.
@@ -609,7 +634,7 @@ This workflow leverages the screenshot feedback loop for precise design control.
 ## 📚 More Examples
 
 See also:
-- [Tool Documentation](tools) - Complete API reference for all 56+ tools
+- [Tool Documentation](tools) - Complete API reference for all 57+ tools
 - [Architecture Overview](architecture) - Understanding deployment modes
 - [Example Prompts](../README.md#example-prompts) - Quick prompt examples
 - [Troubleshooting](troubleshooting) - Solutions to common issues

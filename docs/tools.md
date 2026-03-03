@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 56+ MCP tools in Local Mode, including parameters, return values, and usage examples."
+description: "Complete API reference for all 57+ MCP tools in Local Mode, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **56+ tools** with full read/write capabilities. Remote Mode (SSE) provides **21 read-only tools** (including design-code parity tools). Tools marked "Local" in the table below are not available in Remote Mode.
+> **Note:** Local Mode (NPX/Git) provides **57+ tools** with full read/write capabilities. Remote Mode (SSE) provides **22 read-only tools** (including design-code parity and design system kit tools). Tools marked "Local" in the table below are not available in Remote Mode.
 
 ## Quick Reference
 
@@ -28,6 +28,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_get_component_image` | Just the component image | All |
 | | `figma_get_file_data` | File structure with verbosity control | All |
 | | `figma_get_file_for_plugin` | File data optimized for plugins | All |
+| | `figma_get_design_system_kit` | **Full design system in one call** (tokens, components, styles, visual specs) | All |
 | | `figma_get_design_system_summary` | Overview of design system | Local |
 | | `figma_get_token_values` | Get variable values by mode | Local |
 | **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local |
@@ -1405,6 +1406,112 @@ figma_delete_component_property({
 
 ---
 
+## 📦 Design System Kit
+
+### `figma_get_design_system_kit`
+
+Extract your entire design system — tokens, components, and styles — in a single call. This is the **preferred tool** for design system extraction, replacing separate calls to `figma_get_variables`, `figma_get_component`, and `figma_get_styles`.
+
+Returns component visual specs (exact colors, padding, typography, layout), rendered screenshots, token values per mode (light/dark), and resolved style values. Ideal for AI code generation — the `visualSpec` data provides pixel-accurate reproduction data.
+
+**Available in both Local and Remote modes.**
+
+**Usage:**
+```javascript
+// Full design system extraction
+figma_get_design_system_kit({
+  fileKey: "abc123def"
+})
+
+// Only tokens and components, with images
+figma_get_design_system_kit({
+  fileKey: "abc123def",
+  include: ["tokens", "components"],
+  includeImages: true
+})
+
+// Specific components only
+figma_get_design_system_kit({
+  fileKey: "abc123def",
+  include: ["components"],
+  componentIds: ["1:234", "5:678"]
+})
+
+// Compact format for large design systems
+figma_get_design_system_kit({
+  fileKey: "abc123def",
+  format: "compact"
+})
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `fileKey` | string | *(current file)* | Figma file key. If omitted, extracted from the current browser URL. |
+| `include` | array | `["tokens", "components", "styles"]` | Which sections to include. |
+| `componentIds` | array | *(all)* | Specific component node IDs to include. If omitted, all published components are returned. |
+| `includeImages` | boolean | `false` | Include image URLs for components (adds latency). |
+| `format` | `"full"` \| `"summary"` \| `"compact"` | `"full"` | Response detail level. |
+
+**Format options:**
+- **`full`** — Complete data with visual specs and resolved style values. Best for implementing specific components.
+- **`summary`** — Strips variant-level visual specs (medium payload). Good for overview + a few deep-dives.
+- **`compact`** — Only names, types, and property definitions. Best for large design systems or getting an inventory.
+
+**Adaptive compression:** Regardless of format setting, responses are automatically compressed if they exceed safe size limits for the AI context window.
+
+**Returns:**
+- `tokens` — Variables grouped by collection, with full mode support (light/dark/etc.)
+- `components` — Published components with property definitions, variant specs, and visual specs (fills, strokes, effects, corner radius, layout, typography)
+- `styles` — Color, text, and effect styles with resolved values
+- `ai_instruction` — Guidance for the AI on how to use the extracted data
+- `errors` — Any sections that failed to extract (partial results are still returned)
+
+**Example response structure:**
+```json
+{
+  "fileKey": "abc123",
+  "fileName": "My Design System",
+  "generatedAt": "2025-01-15T10:30:00Z",
+  "format": "full",
+  "tokens": {
+    "collections": [{
+      "name": "Colors",
+      "modes": [{ "name": "Light" }, { "name": "Dark" }],
+      "variables": [{
+        "name": "primary",
+        "type": "COLOR",
+        "valuesByMode": {
+          "Light": { "r": 0.26, "g": 0.46, "b": 1 },
+          "Dark": { "r": 0.37, "g": 0.64, "b": 0.98 }
+        }
+      }]
+    }],
+    "summary": { "totalCollections": 3, "totalVariables": 45 }
+  },
+  "components": {
+    "items": [{
+      "name": "Button",
+      "properties": { "variant": { "type": "VARIANT", "values": ["primary", "secondary"] } },
+      "variants": [{ "name": "variant=primary", "id": "1:234" }],
+      "visualSpec": {
+        "fills": [{ "type": "SOLID", "color": "#4375FF" }],
+        "cornerRadius": 8,
+        "layout": { "mode": "HORIZONTAL", "paddingTop": 12, "paddingLeft": 24 }
+      }
+    }],
+    "summary": { "totalComponents": 12, "totalComponentSets": 5 }
+  },
+  "styles": {
+    "items": [{ "name": "Primary/Default", "styleType": "FILL", "resolvedValue": { "fills": [{ "color": "#4375FF" }] } }],
+    "summary": { "totalStyles": 28 }
+  }
+}
+```
+
+---
+
 ## 📊 Design System Summary Tools (Local Mode Only)
 
 ### `figma_get_design_system_summary`
@@ -1443,6 +1550,19 @@ figma_get_token_values({
 ---
 
 ## AI Decision Guide: Which Tool to Use?
+
+### For Design System Extraction
+
+| Task | Tool |
+|------|------|
+| **Get everything at once** (tokens + components + styles) | `figma_get_design_system_kit` |
+| Get only tokens/variables | `figma_get_design_system_kit` with `include: ["tokens"]` |
+| Get only components with visual specs | `figma_get_design_system_kit` with `include: ["components"]` |
+| Get variables with multi-format export (CSS, Tailwind, Sass) | `figma_get_variables` |
+| Get a quick overview (counts, categories) | `figma_get_design_system_summary` |
+| Feed a design system to an AI code generator | `figma_get_design_system_kit` |
+
+> **Tip:** Prefer `figma_get_design_system_kit` over calling `figma_get_variables`, `figma_get_component`, and `figma_get_styles` separately. It returns all three in a single optimized call with visual specs and resolved values.
 
 ### For Design Creation
 
