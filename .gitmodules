@@ -1,0 +1,3 @@
+[submodule "figma-desktop-bridge"]
+	path = figma-desktop-bridge
+	url = https://github.com/TserreOnepoint/figma-desktop-bridge
