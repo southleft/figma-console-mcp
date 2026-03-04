@@ -23,6 +23,7 @@ import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { registerDesignCodeTools } from "./core/design-code-tools.js";
 import { registerCommentTools } from "./core/comment-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
+import { SupabaseBridgeConnector } from "./core/supabase-bridge-connector.js";
 // Note: MCP Apps (Token Browser, Dashboard) are only available in local mode
 // They require Node.js file system APIs for serving HTML that don't work in Cloudflare Workers
 
@@ -52,7 +53,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		refreshToken?: string;
 		expiresAt: number;
 	}> {
-		const env = this.env as Env;
+		const env = this.env as unknown as Env;
 
 		if (!env.FIGMA_OAUTH_CLIENT_ID || !env.FIGMA_OAUTH_CLIENT_SECRET) {
 			throw new Error("OAuth not configured on server");
@@ -132,10 +133,8 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			return; // Already loaded
 		}
 
-		// IMPORTANT: Use a fixed session ID for all MCP connections
-		// This ensures OAuth tokens persist across MCP server reconnections
-		// Each user of this MCP server will share the same OAuth token
-		const FIXED_SESSION_ID = "figma-console-mcp-default-session";
+		// Each Durable Object instance gets its own unique session ID, persisted across reconnections.
+		// This ensures each user has an isolated OAuth token and bridge session.
 
 		// Try to load from Durable Object storage
 		// @ts-ignore - this.ctx is available in Durable Object context
@@ -149,10 +148,10 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 					logger.info({ sessionId: this.sessionId }, "Loaded persistent session ID from storage");
 					return;
 				} else {
-					// Store the fixed session ID
-					this.sessionId = FIXED_SESSION_ID;
+					// Generate a unique UUID for this DO instance
+					this.sessionId = crypto.randomUUID();
 					await storage.put('sessionId', this.sessionId);
-					logger.info({ sessionId: this.sessionId }, "Initialized fixed session ID");
+					logger.info({ sessionId: this.sessionId }, "Generated and stored new session ID");
 					return;
 				}
 			} catch (e) {
@@ -160,9 +159,9 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			}
 		}
 
-		// Fallback: use fixed session ID directly
-		this.sessionId = FIXED_SESSION_ID;
-		logger.info({ sessionId: this.sessionId }, "Using fixed session ID (storage unavailable)");
+		// Fallback: generate ephemeral UUID (won't persist across restarts)
+		this.sessionId = crypto.randomUUID();
+		logger.info({ sessionId: this.sessionId }, "Generated ephemeral session ID (storage unavailable)");
 	}
 
 	/**
@@ -186,7 +185,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		await this.ensureSessionId();
 
 		// @ts-ignore - this.env is available in Agent/Durable Object context
-		const env = this.env as Env;
+		const env = this.env as unknown as Env;
 
 		// Try OAuth first (per-user authentication)
 		try {
@@ -251,7 +250,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 				logger.info({ sessionId }, "No OAuth token found - user needs to authenticate");
 
 				// No authentication available - direct user to OAuth flow
-				const authUrl = `https://figma-console-mcp.southleft.com/oauth/authorize?session_id=${sessionId}`;
+				const authUrl = `https://figma-console-mcp.thibault-serre.workers.dev/oauth/authorize?session_id=${sessionId}`;
 
 				// Only use PAT fallback if explicitly configured AND no OAuth token exists
 				if (env?.FIGMA_ACCESS_TOKEN) {
@@ -274,7 +273,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			// For other OAuth errors (expired token, refresh failed, etc.), do NOT fall back to PAT
 			logger.error({ error, sessionId }, "OAuth token retrieval failed - re-authentication required");
 
-			const authUrl = `https://figma-console-mcp.southleft.com/oauth/authorize?session_id=${sessionId}`;
+			const authUrl = `https://figma-console-mcp.thibault-serre.workers.dev/oauth/authorize?session_id=${sessionId}`;
 
 			throw new Error(
 				JSON.stringify({
@@ -300,7 +299,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 				// Access env from Durable Object context
 				// @ts-ignore - this.env is available in Agent/Durable Object context
-				const env = this.env as Env;
+				const env = this.env as unknown as Env;
 
 				if (!env) {
 					throw new Error("Environment not available - this.env is undefined");
@@ -880,8 +879,14 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			},
 		);
 
-		// Register Figma API tools (Tools 8-14)
-		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
+		// Supabase Bridge Connector — relays write commands to the Figma Desktop Bridge plugin
+		const getDesktopConnector = async () => {
+			const env = this.env as unknown as Env;
+			const sessionId = this.getSessionId();
+			return new SupabaseBridgeConnector(sessionId, env);
+		};
+
+		// Register Figma API tools
 		registerFigmaAPITools(
 			this.server,
 			async () => await this.getFigmaAPI(),
@@ -890,7 +895,8 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			() => this.browserManager || null,
 			() => this.ensureInitialized(),
 			undefined, // variablesCache
-			{ isRemoteMode: true }
+			{ isRemoteMode: true },
+			getDesktopConnector
 		);
 
 		// Register Design-Code Parity & Documentation tools
@@ -899,7 +905,8 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
-			{ isRemoteMode: true }
+			{ isRemoteMode: true },
+			getDesktopConnector
 		);
 
 		// Register Comment tools
@@ -910,7 +917,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			{ isRemoteMode: true },
 		);
 
-		// Register Design System Kit tool
+		// Register Design System Kit tool (read-only, no connector needed)
 		registerDesignSystemTools(
 			this.server,
 			async () => await this.getFigmaAPI(),
@@ -3056,5 +3063,23 @@ export default {
 	}
 
 	return new Response("Not found", { status: 404 });
+	},
+
+	async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+		const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = env as unknown as { SUPABASE_URL?: string; SUPABASE_SERVICE_KEY?: string };
+		if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
+
+		const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago
+		const baseUrl = `${SUPABASE_URL}/rest/v1/bridge_commands`;
+		const headers = {
+			apikey: SUPABASE_SERVICE_KEY,
+			Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+		};
+
+		// Delete rows older than 1 hour (both resolved and unresolved orphans)
+		await fetch(`${baseUrl}?created_at=lt.${cutoff}`, {
+			method: 'DELETE',
+			headers,
+		}).catch(() => {});
 	},
 };

@@ -5,13 +5,17 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "figma-console-mcp",
-	"account_id": "4718d49e576512c578ff94c6b1ba7d3f",
+	"account_id": "165919c17cf8db21c9812ba7dff2a7a7",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-03-10",
-	"compatibility_flags": ["nodejs_compat"],
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	"migrations": [
 		{
-			"new_sqlite_classes": ["MyMCP"],
+			"new_sqlite_classes": [
+				"MyMCP"
+			],
 			"tag": "v1"
 		},
 		{
@@ -41,21 +45,21 @@
 			}
 		]
 	},
-	"browser": {
-		"binding": "BROWSER"
-	},
 	"kv_namespaces": [
 		{
 			"binding": "OAUTH_TOKENS",
-			"id": "c6b268e475e64764a11641effddd56a3"
+			"id": "24ba14be79c54e6b977edecbb55f77f8"
 		},
 		{
 			"binding": "OAUTH_STATE",
-			"id": "bcdeabb0932e4b0895a82215c6901bc4"
+			"id": "4a7af4c5abc54a1ebc570002d119c3cf"
 		}
 	],
 	"observability": {
 		"enabled": true
+	},
+	"triggers": {
+		"crons": ["0 * * * *"]
 	},
 	// OAuth Configuration (Required for user authentication)
 	// Set these secrets using: wrangler secret put FIGMA_OAUTH_CLIENT_ID

@@ -80,7 +80,7 @@
 		"typescript": "5.9.3",
 		"vite": "^6.0.0",
 		"vite-plugin-singlefile": "^2.0.0",
-		"wrangler": "^4.42.0",
+		"wrangler": "^4.70.0",
 		"zod-to-json-schema": "^3.25.1"
 	}
 }

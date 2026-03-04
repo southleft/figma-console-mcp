@@ -14,13 +14,15 @@ const logger = createChildLogger({ component: 'browser-manager' });
  * Environment interface for Cloudflare Workers
  */
 export interface Env {
-	BROWSER: Fetcher;
+	BROWSER?: Fetcher; // Optional — Cloudflare Browser Rendering API (paid, not used in our architecture)
 	MCP_OBJECT: DurableObjectNamespace;
 	OAUTH_TOKENS: KVNamespace; // KV for OAuth tokens (accessible across Durable Objects)
 	OAUTH_STATE: KVNamespace; // KV for OAuth state CSRF tokens (short-lived, 10 minute TTL)
 	FIGMA_ACCESS_TOKEN?: string; // Optional Figma API token for data extraction (deprecated, use OAuth)
 	FIGMA_OAUTH_CLIENT_ID?: string; // OAuth client ID for user authentication
 	FIGMA_OAUTH_CLIENT_SECRET?: string; // OAuth client secret for token exchange
+	SUPABASE_URL?: string; // Supabase project URL for bridge relay
+	SUPABASE_SERVICE_KEY?: string; // Supabase service role key for bridge relay
 }
 
 /**
@@ -50,7 +52,10 @@ export class BrowserManager {
 		logger.info('Launching browser with Cloudflare Browser Rendering API');
 
 		try {
-			this.browser = await puppeteer.launch(this.env.BROWSER, {
+			if (!this.env.BROWSER) {
+			throw new Error("BROWSER binding not available. This feature requires the Cloudflare Browser Rendering API (paid plan).");
+		}
+		this.browser = await puppeteer.launch(this.env.BROWSER, {
 				keep_alive: 600000, // Keep alive for 10 minutes
 			});
 
