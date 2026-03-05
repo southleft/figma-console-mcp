@@ -24,6 +24,7 @@ import { registerDesignCodeTools } from "./core/design-code-tools.js";
 import { registerCommentTools } from "./core/comment-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { SupabaseBridgeConnector } from "./core/supabase-bridge-connector.js";
+import { registerBridgeTools } from "./core/bridge-tools.js";
 // Note: MCP Apps (Token Browser, Dashboard) are only available in local mode
 // They require Node.js file system APIs for serving HTML that don't work in Cloudflare Workers
 
@@ -930,6 +931,9 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			{ isRemoteMode: true },
 		);
 
+		// Register Desktop Bridge tools (write operations via Supabase relay)
+		registerBridgeTools(this.server, getDesktopConnector);
+
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
 		// They require Node.js file system APIs that don't work in Cloudflare Workers
 	}
@@ -1050,6 +1054,7 @@ export default {
 
 			const bearerToken = authHeader.substring(7);
 			const bearerKey = `bearer_token:${bearerToken}`;
+			let mcpSessionId = "";
 
 			try {
 				const tokenDataJson = await env.OAUTH_TOKENS.get(bearerKey);
@@ -1070,6 +1075,7 @@ export default {
 				}
 
 				const tokenData = JSON.parse(tokenDataJson) as { sessionId: string; expiresAt: number };
+				mcpSessionId = tokenData.sessionId;
 
 				if (tokenData.expiresAt < Date.now()) {
 					logger.warn({ pathname: url.pathname, sessionId: tokenData.sessionId }, "MCP request with expired Bearer token");
@@ -1145,6 +1151,12 @@ export default {
 				new Map(), // Fresh variables cache per request
 				{ isRemoteMode: true },
 			);
+
+			// Register Desktop Bridge tools (write operations via Supabase relay)
+			if (mcpSessionId) {
+				const getBridgeConnector = async () => new SupabaseBridgeConnector(mcpSessionId, env);
+				registerBridgeTools(statelessServer, getBridgeConnector);
+			}
 
 			await statelessServer.connect(transport);
 			const response = await transport.handleRequest(request);
@@ -1592,6 +1604,23 @@ export default {
 				const refreshToken = tokenData.refresh_token;
 				const expiresIn = tokenData.expires_in;
 
+				// Fetch Figma user identity for stable per-user sessionId
+				const meRes = await fetch('https://api.figma.com/v1/me', {
+					headers: { Authorization: `Bearer ${accessToken}` }
+				});
+				const figmaUserId = meRes.ok ? (await meRes.json() as { id: string }).id : null;
+
+				// Look up or create a stable sessionId tied to this Figma user
+				let userSessionId = figmaUserId
+					? await env.OAUTH_TOKENS.get(`user_session:${figmaUserId}`)
+					: null;
+				if (!userSessionId) {
+					userSessionId = crypto.randomUUID();
+					if (figmaUserId) {
+						await env.OAUTH_TOKENS.put(`user_session:${figmaUserId}`, userSessionId);
+					}
+				}
+
 				logger.info({
 					sessionId,
 					hasAccessToken: !!accessToken,
@@ -1630,7 +1659,8 @@ export default {
 				// This allows us to validate Authorization: Bearer <token> headers
 				const bearerKey = `bearer_token:${accessToken}`;
 				await env.OAUTH_TOKENS.put(bearerKey, JSON.stringify({
-					sessionId,
+					sessionId: userSessionId,
+					figmaUserId,
 					expiresAt: tokenExpiresAt
 				}), {
 					expirationTtl: expiresIn
@@ -1675,7 +1705,96 @@ export default {
 						state: mcpAuthData.state
 					}, "Redirecting back to MCP client");
 
-					return Response.redirect(redirectUrl.toString(), 302);
+					// Show intermediate page with Session ID before redirecting to MCP client
+				const mcpRedirectTarget = redirectUrl.toString();
+				return new Response(
+					`<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Session ID — Figma Console MCP</title>
+	<link rel="icon" type="image/jpeg" href="https://p198.p4.n0.cdn.zight.com/items/Qwu1Dywx/b61b7b8f-05dc-4063-8a40-53fa4f8e3e97.jpg">
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body {
+			font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			background: #ffffff; color: #000000;
+			display: flex; align-items: center; justify-content: center;
+			min-height: 100vh; padding: 24px;
+		}
+		.card {
+			max-width: 480px; width: 100%;
+			border: 1.5px solid #e5e5e5; border-radius: 16px;
+			padding: 40px 36px; text-align: center;
+		}
+		.icon { font-size: 48px; margin-bottom: 20px; }
+		h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+		.subtitle { font-size: 14px; color: #666; margin-bottom: 28px; line-height: 1.5; }
+		.session-label { font-size: 12px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+		.session-box {
+			background: #f5f5f5; border: 1.5px solid #e0e0e0; border-radius: 10px;
+			padding: 14px 16px; font-family: monospace; font-size: 13px;
+			word-break: break-all; margin-bottom: 12px; text-align: left; color: #111;
+		}
+		.copy-btn {
+			background: #000; color: #fff; border: none; border-radius: 8px;
+			padding: 10px 24px; font-size: 14px; font-weight: 600; cursor: pointer;
+			margin-bottom: 24px; transition: background 0.15s;
+		}
+		.copy-btn:hover { background: #333; }
+		.copy-btn.copied { background: #16a34a; }
+		.divider { border: none; border-top: 1px solid #eee; margin: 0 0 20px; }
+		.redirect-info { font-size: 13px; color: #888; margin-bottom: 14px; }
+		.continue-btn {
+			background: #f0f0f0; color: #000; border: 1.5px solid #ddd; border-radius: 8px;
+			padding: 10px 24px; font-size: 14px; font-weight: 600; cursor: pointer;
+			text-decoration: none; display: inline-block; transition: background 0.15s;
+		}
+		.continue-btn:hover { background: #e0e0e0; }
+		#countdown { font-weight: 700; color: #000; }
+	</style>
+</head>
+<body>
+<div class="card">
+	<div class="icon">🔑</div>
+	<h1>Your Session ID</h1>
+	<p class="subtitle">Copy this ID and paste it into the Figma Desktop Bridge plugin to enable write commands.</p>
+	<div class="session-label">Session ID</div>
+	<div class="session-box" id="sid">${userSessionId}</div>
+	<button class="copy-btn" id="copyBtn" onclick="copyId()">Copy Session ID</button>
+	<hr class="divider">
+	<p class="redirect-info">Redirecting to Claude Desktop in <span id="countdown">10</span>s…</p>
+	<a class="continue-btn" href="${mcpRedirectTarget}" id="continueBtn">Continue now →</a>
+</div>
+<script>
+	function copyId() {
+		var sid = document.getElementById('sid').textContent.trim();
+		navigator.clipboard.writeText(sid).then(function() {
+			var btn = document.getElementById('copyBtn');
+			btn.textContent = '✓ Copied!';
+			btn.classList.add('copied');
+			setTimeout(function() {
+				btn.textContent = 'Copy Session ID';
+				btn.classList.remove('copied');
+			}, 2000);
+		});
+	}
+	var secs = 10;
+	var iv = setInterval(function() {
+		secs--;
+		var el = document.getElementById('countdown');
+		if (el) el.textContent = secs;
+		if (secs <= 0) {
+			clearInterval(iv);
+			window.location.href = ${JSON.stringify(mcpRedirectTarget)};
+		}
+	}, 1000);
+</script>
+</body>
+</html>`,
+					{ status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } }
+				);
 				}
 
 				// Direct browser flow - show success page
@@ -1752,18 +1871,73 @@ export default {
 			font-size: 14px;
 			color: #999999;
 		}
+		.session-box {
+			margin: 24px 0;
+			padding: 16px;
+			background: #f5f5f5;
+			border-radius: 8px;
+			text-align: left;
+		}
+		.session-label {
+			font-size: 13px;
+			color: #666666;
+			margin-bottom: 8px;
+		}
+		.session-id-row {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+		.session-id {
+			flex: 1;
+			font-family: monospace;
+			font-size: 13px;
+			background: #ffffff;
+			border: 1px solid #e0e0e0;
+			border-radius: 4px;
+			padding: 8px 10px;
+			word-break: break-all;
+			color: #000000;
+		}
+		.copy-btn {
+			padding: 8px 12px;
+			background: #18a0fb;
+			color: #ffffff;
+			border: none;
+			border-radius: 4px;
+			font-size: 13px;
+			cursor: pointer;
+			white-space: nowrap;
+			transition: background 0.2s;
+		}
+		.copy-btn:hover { background: #0d8de3; }
 	</style>
 </head>
 <body>
 	<div class="container">
 		<div class="icon">✓</div>
 		<h1>Authentication successful</h1>
-		<p>You've successfully connected Figma Console MCP to your Figma account. You can now close this window and return to Claude.</p>
+		<p>You've successfully connected Figma Console MCP to your Figma account.</p>
+		<div class="session-box">
+			<div class="session-label">Your Session ID — paste this in the Figma plugin to link it to your account:</div>
+			<div class="session-id-row">
+				<code class="session-id" id="session-id-value">${userSessionId}</code>
+				<button class="copy-btn" id="copy-btn" onclick="copySessionId()">Copy</button>
+			</div>
+		</div>
 		<button class="button" onclick="window.close()">Close this window</button>
-		<div class="footer">This window will automatically close in 5 seconds</div>
+		<div class="footer">This window will automatically close in 30 seconds</div>
 	</div>
 	<script>
-		setTimeout(() => window.close(), 5000);
+		function copySessionId() {
+			var id = document.getElementById('session-id-value').textContent;
+			navigator.clipboard.writeText(id).then(function() {
+				var btn = document.getElementById('copy-btn');
+				btn.textContent = 'Copied!';
+				setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+			});
+		}
+		setTimeout(() => window.close(), 30000);
 	</script>
 </body>
 </html>`,
@@ -1792,8 +1966,10 @@ export default {
 		// Bridge config endpoint — returns Supabase config + session ID for the Figma plugin
 		if (url.pathname === "/bridge/config" && request.method === "GET") {
 			const { SUPABASE_URL, SUPABASE_ANON_KEY, OAUTH_TOKENS } = env as unknown as Env;
-			// Get or create a stable session ID (shared with the Durable Object via KV)
-			let sessionId = await OAUTH_TOKENS.get('bridge:session_id').catch(() => null);
+			// If the plugin provides a session_id (from the OAuth success page), use it directly.
+			// Otherwise fall back to the global bridge:session_id (dev/compat mode).
+			const reqSessionId = url.searchParams.get('session_id');
+			let sessionId = reqSessionId || await OAUTH_TOKENS.get('bridge:session_id').catch(() => null);
 			if (!sessionId) {
 				sessionId = crypto.randomUUID();
 				await OAUTH_TOKENS.put('bridge:session_id', sessionId).catch(() => {});
