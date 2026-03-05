@@ -224,6 +224,32 @@ export class SupabaseBridgeConnector implements IFigmaConnector {
 		return this.send('SET_INSTANCE_PROPERTIES', { nodeId, properties });
 	}
 
+	// Desktop Bridge observability (remote mode)
+	async ping(): Promise<any> {
+		const res = await this.send('PING', {});
+		return res?.data ?? res;
+	}
+
+	async getConsoleLogs(options?: { since?: number; level?: string; lines?: number }): Promise<any> {
+		return this.send('GET_CONSOLE_LOGS', options ?? {});
+	}
+
+	async clearConsole(): Promise<any> {
+		return this.send('CLEAR_CONSOLE', {});
+	}
+
+	async getDesignChanges(options?: { since?: number; clear?: boolean; count?: number }): Promise<any> {
+		return this.send('GET_DESIGN_CHANGES', options ?? {});
+	}
+
+	async getSelection(): Promise<any> {
+		return this.send('GET_SELECTION', {});
+	}
+
+	async reloadPlugin(): Promise<any> {
+		return this.send('RELOAD_UI', {});
+	}
+
 	// Cache management
 	clearFrameCache(): void {
 		// No frame cache in Supabase relay mode

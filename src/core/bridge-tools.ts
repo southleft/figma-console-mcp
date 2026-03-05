@@ -2016,4 +2016,415 @@ return {
 			}
 		},
 	);
+
+	// ============================================================================
+	// DESKTOP BRIDGE OBSERVABILITY (remote / Supabase relay mode)
+	// ============================================================================
+
+	server.tool(
+		"figma_get_status",
+		`Check connection status to Figma Desktop. Reports which transport is active (CDP or WebSocket) and connection health. Works with both CDP (--remote-debugging-port=9222) and WebSocket (Desktop Bridge plugin) transports.`,
+		{},
+		async () => {
+			try {
+				const connector = await getConnector();
+				const result = await connector.ping();
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								connected: result?.connected ?? false,
+								transport: connector.getTransportType(),
+								fileKey: result?.fileKey ?? null,
+								fileName: result?.fileName ?? null,
+								currentPage: result?.currentPage ?? null,
+								selectionCount: result?.selectionCount ?? 0,
+							}),
+						},
+					],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								connected: false,
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
+		"figma_list_open_files",
+		`List all Figma files currently connected via the Desktop Bridge plugin. Shows which files have the plugin open and which one is the active target for tool calls. Use figma_navigate to switch between files. WebSocket multi-client mode — each file with the Desktop Bridge plugin maintains its own connection.`,
+		{},
+		async () => {
+			try {
+				const connector = await getConnector();
+				const result = await connector.ping();
+				const files = result?.connected
+					? [
+							{
+								fileKey: result.fileKey,
+								fileName: result.fileName,
+								currentPage: result.currentPage,
+								currentPageId: result.currentPageId,
+								selectionCount: result.selectionCount,
+								active: true,
+							},
+						]
+					: [];
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({ files, count: files.length }),
+						},
+					],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								files: [],
+								count: 0,
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
+		"figma_get_selection",
+		`Get the currently selected nodes in Figma. Returns node IDs, names, types, and dimensions. WebSocket-only — requires Desktop Bridge plugin. Use this to understand what the user is pointing at instead of asking them to describe it.`,
+		{
+			verbose: z
+				.boolean()
+				.optional()
+				.describe(
+					"If true, fetches additional details (fills, strokes, styles) for each selected node via figma_execute",
+				),
+		},
+		async ({ verbose }) => {
+			try {
+				const connector = await getConnector();
+				let nodes: any[];
+				if (verbose) {
+					const code = `(function() {
+  var sel = figma.currentPage.selection;
+  return sel.map(function(n) {
+    var obj = { id: n.id, name: n.name, type: n.type };
+    if (n.width !== undefined) obj.width = n.width;
+    if (n.height !== undefined) obj.height = n.height;
+    if (n.fills !== undefined) obj.fills = n.fills;
+    if (n.strokes !== undefined) obj.strokes = n.strokes;
+    return obj;
+  });
+})()`;
+					nodes = await connector.executeCodeViaUI(code, 5000);
+				} else {
+					nodes = await connector.getSelection();
+				}
+				const safeNodes = Array.isArray(nodes) ? nodes : [];
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({ nodes: safeNodes, count: safeNodes.length }),
+						},
+					],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								nodes: [],
+								count: 0,
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
+		"figma_reload_plugin",
+		`Reload the current Figma page/plugin to test code changes. Optionally clears console logs before reload. Use when user says: 'reload plugin', 'refresh page', 'restart plugin', 'test my changes'. Returns reload confirmation and current URL. Best for rapid iteration during plugin development.`,
+		{
+			clearConsole: z
+				.boolean()
+				.optional()
+				.describe("Clear console logs before reload"),
+		},
+		async ({ clearConsole: shouldClear }) => {
+			try {
+				const connector = await getConnector();
+				if (shouldClear) {
+					await connector.clearConsole();
+				}
+				const result = await connector.reloadPlugin();
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								reloaded: true,
+								consoleCleared: shouldClear ?? false,
+								result,
+							}),
+						},
+					],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								reloaded: false,
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
+		"figma_get_console_logs",
+		`Get browser console output (log, info, warn, error, debug). Use to check runtime behavior, debug values, or client-side errors. Use 'level' to filter to errors or warnings only.`,
+		{
+			level: z
+				.enum(["all", "error", "warn", "log", "info", "debug"])
+				.optional()
+				.describe(
+					"Filter by level: 'all' (default), 'error' (errors only), 'warn' (warnings + errors)",
+				),
+			lines: z
+				.number()
+				.min(1)
+				.max(200)
+				.optional()
+				.describe("Max lines to return (default: 50, max: 200)"),
+			since: z
+				.number()
+				.optional()
+				.describe("Only logs after this timestamp (Unix ms)"),
+		},
+		async ({ level, lines, since }) => {
+			try {
+				const connector = await getConnector();
+				const opts: { since?: number; level?: string; lines?: number } = {};
+				if (since !== undefined) opts.since = since;
+				if (level && level !== "all") opts.level = level;
+				if (lines !== undefined) opts.lines = lines;
+				let logs: any[] = await connector.getConsoleLogs(opts);
+				if (!Array.isArray(logs)) logs = [];
+				// Apply level filter client-side as well (belt and suspenders)
+				if (level && level !== "all") {
+					const levels = level === "warn" ? ["warn", "error"] : [level];
+					logs = logs.filter((l: any) => levels.includes(l.level));
+				}
+				// Apply lines limit
+				const limit = lines ?? 50;
+				logs = logs.slice(-limit);
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({ logs, count: logs.length }),
+						},
+					],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								logs: [],
+								count: 0,
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
+		"figma_clear_console",
+		`Clear the console log buffer. In WebSocket mode, this safely clears the buffer without disrupting the connection. In CDP mode, this disrupts monitoring and requires MCP reconnect. Returns number of logs cleared.`,
+		{},
+		async () => {
+			try {
+				const connector = await getConnector();
+				const result = await connector.clearConsole();
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({ cleared: true, result }),
+						},
+					],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								cleared: false,
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
+		"figma_get_design_changes",
+		`Get recent document changes detected in Figma. Returns buffered change events including which nodes changed, whether styles were modified, and change counts. WebSocket-only — events are captured via Desktop Bridge plugin. Use this to understand what changed since you last checked.`,
+		{
+			count: z
+				.number()
+				.min(1)
+				.optional()
+				.describe(
+					"Maximum number of change events to return (chronological order, oldest to newest; returns the last N events)",
+				),
+			since: z
+				.number()
+				.optional()
+				.describe(
+					"Only return changes after this Unix timestamp (ms). Useful for incremental polling.",
+				),
+			clear: z
+				.boolean()
+				.optional()
+				.describe(
+					"Clear the change buffer after reading. Set to true for polling workflows.",
+				),
+		},
+		async ({ count, since, clear }) => {
+			try {
+				const connector = await getConnector();
+				const opts: { since?: number; clear?: boolean; count?: number } = {};
+				if (since !== undefined) opts.since = since;
+				if (clear !== undefined) opts.clear = clear;
+				if (count !== undefined) opts.count = count;
+				let changes: any[] = await connector.getDesignChanges(opts);
+				if (!Array.isArray(changes)) changes = [];
+				if (count !== undefined) changes = changes.slice(-count);
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({ changes, count: changes.length }),
+						},
+					],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								changes: [],
+								count: 0,
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
+		"figma_watch_console",
+		`Stream console logs in real-time for a specified duration (max 5 minutes). Use for monitoring plugin execution while user tests manually. Returns all logs captured during watch period with summary statistics. NOT for retrieving past logs (use figma_get_console_logs). Best for: watching plugin output during manual testing, debugging race conditions, monitoring async operations.`,
+		{
+			duration: z
+				.number()
+				.min(1)
+				.max(300)
+				.describe("How long to watch in seconds"),
+			level: z
+				.enum(["all", "error", "warn", "log", "info", "debug"])
+				.optional()
+				.describe("Filter by log level"),
+		},
+		async ({ duration, level }) => {
+			try {
+				const connector = await getConnector();
+				const startTime = Date.now();
+				// Cap sleep at 20 s to stay within Worker wall-time budget
+				const sleepMs = Math.min(duration * 1000, 20_000);
+				await new Promise<void>((resolve) => setTimeout(resolve, sleepMs));
+				const opts: { since?: number; level?: string } = { since: startTime };
+				if (level && level !== "all") opts.level = level;
+				let logs: any[] = await connector.getConsoleLogs(opts);
+				if (!Array.isArray(logs)) logs = [];
+				if (level && level !== "all") {
+					const levels = level === "warn" ? ["warn", "error"] : [level];
+					logs = logs.filter((l: any) => levels.includes(l.level));
+				}
+				const summary = {
+					total: logs.length,
+					errors: logs.filter((l: any) => l.level === "error").length,
+					warnings: logs.filter((l: any) => l.level === "warn").length,
+					info: logs.filter((l: any) => ["log", "info", "debug"].includes(l.level)).length,
+				};
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({ logs, summary, watchedMs: Date.now() - startTime }),
+						},
+					],
+				};
+			} catch (error) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: JSON.stringify({
+								logs: [],
+								summary: { total: 0, errors: 0, warnings: 0, info: 0 },
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
 }

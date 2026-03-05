@@ -63,6 +63,14 @@ export interface IFigmaConnector {
   captureScreenshot(nodeId: string, options?: any): Promise<any>;
   setInstanceProperties(nodeId: string, properties: any): Promise<any>;
 
+  // Desktop Bridge observability (remote mode)
+  ping(): Promise<any>;
+  getConsoleLogs(options?: { since?: number; level?: string; lines?: number }): Promise<any>;
+  clearConsole(): Promise<any>;
+  getDesignChanges(options?: { since?: number; clear?: boolean; count?: number }): Promise<any>;
+  getSelection(): Promise<any>;
+  reloadPlugin(): Promise<any>;
+
   // Cache management
   clearFrameCache(): void;
 }

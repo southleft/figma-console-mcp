@@ -5,6 +5,27 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+---
+
+## Fork Notice
+
+This project is a fork of [southleft/figma-console-mcp](https://github.com/southleft/figma-console-mcp), all credit for the original work goes to the southleft team and contributors.
+
+### What this fork adds — Remote-first, zero-install architecture
+
+The original project runs as a local Node.js process (`npx figma-console-mcp`) that communicates with Figma Desktop via a local WebSocket. This fork transforms it into a **fully remote, hosted MCP service** that any member of an organisation can connect to without installing anything on their machine.
+
+Key additions on top of the upstream codebase:
+
+- **Cloudflare Workers deployment** — The MCP server runs on Cloudflare's edge, reachable via HTTPS from any MCP client (Claude Desktop, Cursor, etc.). No local process needed.
+- **Figma OAuth** — Users authenticate through Figma's official OAuth flow directly from their MCP client. Tokens are stored securely in Cloudflare Workers KV and refreshed automatically.
+- **Per-user stable Session ID** — After OAuth, each Figma user receives a stable UUID derived from their Figma identity (`/v1/me`). This ID is displayed on the post-auth page and persists across reconnects.
+- **Supabase Bridge Relay** — Write commands (design creation, variable management, etc.) are routed through a Supabase `bridge_commands` table: the Worker INSERTs a command, the Figma plugin receives it via Supabase Realtime, executes it in `figma.*()`, and writes the result back. The Worker polls and returns the response to the AI.
+- **Figma Desktop Bridge plugin (remote mode)** — The plugin now connects to Supabase Realtime (instead of a local WebSocket), subscribing to commands scoped to the user's Session ID. The server URL and Session ID are entered once in the plugin UI and persisted via `figma.clientStorage`.
+- **Multi-user support** — Multiple designers in the same organisation each get their own isolated session. The Worker correctly resolves the right user token and session on every request.
+
+---
+
 ## [1.11.2] - 2026-02-25
 
 ### Fixed

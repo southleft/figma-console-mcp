@@ -1508,4 +1508,86 @@ export class FigmaDesktopConnector implements IFigmaConnector {
       throw error;
     }
   }
+
+  // ============================================================================
+  // DESKTOP BRIDGE OBSERVABILITY (reads in-memory buffers from plugin UI)
+  // ============================================================================
+
+  async ping(): Promise<any> {
+    const frame = await this.findPluginUIFrame();
+    try {
+      const res = await frame.evaluate(
+        `typeof methodMap !== 'undefined' && methodMap.PING
+          ? methodMap.PING({})
+          : Promise.resolve({ connected: false })`
+      );
+      return (res as any)?.data ?? res;
+    } catch {
+      return { connected: false };
+    }
+  }
+
+  async getConsoleLogs(options?: { since?: number; level?: string; lines?: number }): Promise<any> {
+    const frame = await this.findPluginUIFrame();
+    try {
+      const since = options && options.since ? options.since : 0;
+      return await frame.evaluate(`(function() {
+        var logs = typeof consoleLogs !== 'undefined' ? consoleLogs.slice() : [];
+        if (${since}) logs = logs.filter(function(l) { return l.timestamp > ${since}; });
+        return logs;
+      })()`);
+    } catch {
+      return [];
+    }
+  }
+
+  async clearConsole(): Promise<any> {
+    const frame = await this.findPluginUIFrame();
+    try {
+      await frame.evaluate('consoleLogs = [];');
+      return { cleared: true };
+    } catch {
+      return { cleared: false };
+    }
+  }
+
+  async getDesignChanges(options?: { since?: number; clear?: boolean; count?: number }): Promise<any> {
+    const frame = await this.findPluginUIFrame();
+    try {
+      const since = options && options.since ? options.since : 0;
+      const shouldClear = options && options.clear ? 'true' : 'false';
+      return await frame.evaluate(`(function() {
+        var changes = typeof designChanges !== 'undefined' ? designChanges.slice() : [];
+        if (${since}) changes = changes.filter(function(c) { return c.timestamp > ${since}; });
+        if (${shouldClear}) designChanges = [];
+        return changes;
+      })()`);
+    } catch {
+      return [];
+    }
+  }
+
+  async getSelection(): Promise<any> {
+    const frame = await this.findPluginUIFrame();
+    try {
+      return await frame.evaluate(
+        'typeof currentSelection !== "undefined" ? currentSelection.slice() : []'
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  async reloadPlugin(): Promise<any> {
+    const frame = await this.findPluginUIFrame();
+    try {
+      return await frame.evaluate(
+        `typeof methodMap !== 'undefined' && methodMap.RELOAD_UI
+          ? methodMap.RELOAD_UI({})
+          : Promise.resolve({ reloaded: false })`
+      );
+    } catch {
+      return { reloaded: false };
+    }
+  }
 }

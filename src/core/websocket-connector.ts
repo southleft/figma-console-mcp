@@ -271,6 +271,35 @@ export class WebSocketConnector implements IFigmaConnector {
   }
 
   // ============================================================================
+  // Desktop Bridge observability
+  // ============================================================================
+
+  async ping(): Promise<any> {
+    const res = await this.wsServer.sendCommand('PING', {}, 5000);
+    return res?.data ?? res;
+  }
+
+  async getConsoleLogs(options?: { since?: number; level?: string; lines?: number }): Promise<any> {
+    return this.wsServer.sendCommand('GET_CONSOLE_LOGS', options ?? {}, 5000);
+  }
+
+  async clearConsole(): Promise<any> {
+    return this.wsServer.sendCommand('CLEAR_CONSOLE', {}, 5000);
+  }
+
+  async getDesignChanges(options?: { since?: number; clear?: boolean; count?: number }): Promise<any> {
+    return this.wsServer.sendCommand('GET_DESIGN_CHANGES', options ?? {}, 5000);
+  }
+
+  async getSelection(): Promise<any> {
+    return this.wsServer.sendCommand('GET_SELECTION', {}, 5000);
+  }
+
+  async reloadPlugin(): Promise<any> {
+    return this.wsServer.sendCommand('RELOAD_UI', {}, 5000);
+  }
+
+  // ============================================================================
   // Cache management (no-op for WebSocket — no frame cache)
   // ============================================================================
 
