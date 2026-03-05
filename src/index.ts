@@ -146,14 +146,18 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 				if (storedSessionId) {
 					this.sessionId = storedSessionId;
 					logger.info({ sessionId: this.sessionId }, "Loaded persistent session ID from storage");
-					return;
 				} else {
 					// Generate a unique UUID for this DO instance
 					this.sessionId = crypto.randomUUID();
 					await storage.put('sessionId', this.sessionId);
 					logger.info({ sessionId: this.sessionId }, "Generated and stored new session ID");
-					return;
 				}
+				// Sync to KV so the main worker can expose it via /bridge/config
+				try {
+					const env = this.env as unknown as Env;
+					await env.OAUTH_TOKENS.put('bridge:session_id', this.sessionId!);
+				} catch {}
+				return;
 			} catch (e) {
 				logger.warn({ error: e }, "Failed to access Durable Object storage for session ID");
 			}
@@ -1783,6 +1787,21 @@ export default {
 					}
 				);
 			}
+		}
+
+		// Bridge config endpoint — returns Supabase config + session ID for the Figma plugin
+		if (url.pathname === "/bridge/config" && request.method === "GET") {
+			const { SUPABASE_URL, SUPABASE_ANON_KEY, OAUTH_TOKENS } = env as unknown as Env;
+			// Get or create a stable session ID (shared with the Durable Object via KV)
+			let sessionId = await OAUTH_TOKENS.get('bridge:session_id').catch(() => null);
+			if (!sessionId) {
+				sessionId = crypto.randomUUID();
+				await OAUTH_TOKENS.put('bridge:session_id', sessionId).catch(() => {});
+			}
+			return new Response(
+				JSON.stringify({ supabaseUrl: SUPABASE_URL ?? null, supabaseAnonKey: SUPABASE_ANON_KEY ?? null, sessionId }),
+				{ headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
+			);
 		}
 
 		// Health check endpoint

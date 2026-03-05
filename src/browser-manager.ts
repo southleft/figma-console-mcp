@@ -23,6 +23,7 @@ export interface Env {
 	FIGMA_OAUTH_CLIENT_SECRET?: string; // OAuth client secret for token exchange
 	SUPABASE_URL?: string; // Supabase project URL for bridge relay
 	SUPABASE_SERVICE_KEY?: string; // Supabase service role key for bridge relay
+	SUPABASE_ANON_KEY?: string; // Supabase anon key — returned to the Figma plugin via /bridge/config
 }
 
 /**
