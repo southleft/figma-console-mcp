@@ -59,7 +59,9 @@
 		"enabled": true
 	},
 	"triggers": {
-		"crons": ["0 * * * *"]
+		"crons": [
+			"0 * * * *"
+		]
 	},
 	// OAuth Configuration (Required for user authentication)
 	// Set these secrets using: wrangler secret put FIGMA_OAUTH_CLIENT_ID
