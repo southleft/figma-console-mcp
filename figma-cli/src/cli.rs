@@ -8,6 +8,7 @@ use crate::commands::{
     desktop::DesktopCommand,
     execute::ExecuteCommand,
     file::FileCommand,
+    init::InitCommand,
     nodes::NodesCommand,
     styles::StylesCommand,
     variables::VariablesCommand,
@@ -102,6 +103,12 @@ pub enum Command {
     Execute {
         #[command(subcommand)]
         cmd: ExecuteCommand,
+    },
+
+    /// Configure Figma credentials (local or global)
+    Init {
+        #[command(subcommand)]
+        cmd: InitCommand,
     },
 }
 

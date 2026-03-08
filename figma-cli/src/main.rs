@@ -12,7 +12,8 @@ use output::print_error;
 
 #[tokio::main]
 async fn main() {
-    // Load .env from the current directory (silently ignored if absent)
+    // Load credentials: global (~/.figma-cli) first, then local (./.env) overrides it
+    commands::init::load_global_config();
     let _ = dotenv::dotenv();
 
     if let Err(e) = run().await {
@@ -24,7 +25,6 @@ async fn main() {
 async fn run() -> Result<()> {
     let cli = Cli::parse();
 
-    // Extract fields before moving cli.command
     let token = cli.token;
     let output = cli.output;
     let quiet = cli.quiet;
@@ -42,10 +42,14 @@ async fn run() -> Result<()> {
             commands::execute::run(cmd).await?;
         }
 
+        Command::Init { cmd } => {
+            commands::init::run(cmd).await?;
+        }
+
         // All remaining commands need a Figma access token
         cmd => {
             let raw_token = token.context(
-                "Figma access token required. Set FIGMA_ACCESS_TOKEN or pass --token.",
+                "Figma access token required. Run `figma-cli init global --token <TOKEN>` or set FIGMA_ACCESS_TOKEN.",
             )?;
 
             let client = FigmaApiClient::new(&raw_token)?;
@@ -73,8 +77,9 @@ async fn run() -> Result<()> {
                 Command::Nodes { cmd } => {
                     commands::nodes::run(cmd, api, &output, quiet).await?;
                 }
-                // Already handled above
-                Command::Desktop { .. } | Command::Execute { .. } => unreachable!(),
+                Command::Desktop { .. } | Command::Execute { .. } | Command::Init { .. } => {
+                    unreachable!()
+                }
             }
         }
     }

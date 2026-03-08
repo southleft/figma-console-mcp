@@ -4,6 +4,7 @@ pub mod design_system;
 pub mod desktop;
 pub mod execute;
 pub mod file;
+pub mod init;
 pub mod nodes;
 pub mod styles;
 pub mod variables;
