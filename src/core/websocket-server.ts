@@ -384,6 +384,13 @@ export class FigmaWebSocketServer extends EventEmitter {
     // Emit both events for backward compat and new features
     this.emit('connected');
     this.emit('fileConnected', { fileKey, fileName: data.fileName });
+
+    // Tell the plugin which server type connected so it can show "MCP Ready" badge.
+    try {
+      ws.send(JSON.stringify({ type: 'SERVER_INFO', serverType: 'mcp', version: '1.11.2' }));
+    } catch (_) {
+      // Non-critical — plugin UI badge is best-effort
+    }
   }
 
   /**

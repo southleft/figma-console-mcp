@@ -90,23 +90,100 @@ figma-cli design-system audit
 
 ### Desktop Bridge (requires Figma plugin)
 
-The CLI implements the same WebSocket server protocol as figma-console-mcp.
-Start the daemon first, then use any desktop/execute/nodes mutation command.
+The CLI runs a WebSocket daemon (`desktop serve`) that the Figma Desktop Bridge plugin
+connects to automatically. Once the daemon is set up as a system service (see below),
+**the user only needs to open the plugin in Figma** — no terminal required.
+
+When connected, the plugin shows an **orange "CLI Ready"** badge alongside the blue
+"MCP Ready" badge (if figma-console-mcp is also running).
+
+#### One-time daemon setup (macOS)
+
+Install `figma-cli desktop serve` as a LaunchAgent so it starts on login:
 
 ```bash
-# Step 1: start the daemon (keep running in a separate terminal)
-figma-cli desktop serve
-# → Listens on ws://localhost:9223, writes /tmp/figma-cli-9223.json
+# 1. Get the absolute path to the binary
+BINARY=$(which figma-cli || echo "/usr/local/bin/figma-cli")
 
-# Step 2: open Figma → Desktop Bridge plugin → it auto-connects on 9223
+# 2. Create the LaunchAgent plist
+cat > ~/Library/LaunchAgents/com.figma-cli.bridge.plist << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.figma-cli.bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${BINARY}</string>
+    <string>desktop</string>
+    <string>serve</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/figma-cli-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/figma-cli-bridge.log</string>
+</dict>
+</plist>
+EOF
 
-# Step 3: run commands (each connects via Unix socket to the daemon)
+# 3. Load it (starts immediately, survives reboots)
+launchctl load ~/Library/LaunchAgents/com.figma-cli.bridge.plist
+```
+
+Verify it's running:
+```bash
+launchctl list | grep figma-cli      # should show the service
+figma-cli desktop status             # should return { "connected": false } until plugin opens
+```
+
+To uninstall:
+```bash
+launchctl unload ~/Library/LaunchAgents/com.figma-cli.bridge.plist
+rm ~/Library/LaunchAgents/com.figma-cli.bridge.plist
+```
+
+#### One-time daemon setup (Linux / systemd)
+
+```bash
+BINARY=$(which figma-cli)
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/figma-cli-bridge.service << EOF
+[Unit]
+Description=figma-cli Desktop Bridge daemon
+After=network.target
+
+[Service]
+ExecStart=${BINARY} desktop serve
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+EOF
+
+systemctl --user enable --now figma-cli-bridge
+systemctl --user status figma-cli-bridge
+```
+
+#### Desktop Bridge commands
+
+```bash
 figma-cli desktop status          # check plugin connection
 figma-cli desktop selection       # get canvas selection
 figma-cli desktop files           # list open files/pages
 figma-cli desktop screenshot [--output out.png] [--scale 2]
-figma-cli execute run --code "figma.root.name"
-figma-cli execute run --code "figma.currentPage.selection.length"
+
+# execute run: code is wrapped in async function, always use return
+figma-cli execute run --code "return figma.currentPage.name"
+figma-cli execute run --code "return figma.currentPage.selection.length"
+figma-cli execute run --code "return figma.root.children.map(p => p.name)"
 
 # Node mutations (all use Desktop Bridge)
 figma-cli nodes resize --node-id "1:234" --width 200 --height 100
@@ -116,8 +193,8 @@ figma-cli nodes delete --node-id "1:234"
 figma-cli nodes clone --node-id "1:234"
 figma-cli nodes set-text --node-id "1:234" --text "Hello"
 figma-cli nodes set-fills --node-id "1:234" \
-  --fills-json '[{"type":"SOLID","color":{"r":1,"g":0,"b":0,"a":1}}]'
-figma-cli nodes create-child --parent-id "0:1" --node-type FRAME --name "Card"
+  --fills-json '[{"type":"SOLID","color":{"r":1,"g":0,"b":0},"opacity":1}]'
+figma-cli nodes create-child --parent-id "0:1" --node-type FRAME
 
 # REST-based node query (no daemon needed)
 figma-cli nodes get --file $FIGMA_FILE_URL --ids "1:234,1:235"

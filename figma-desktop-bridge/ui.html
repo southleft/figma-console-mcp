@@ -79,6 +79,49 @@
       margin-left: 4px;
     }
 
+    .conn-badges {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .conn-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .conn-badge.mcp {
+      background: rgba(100, 120, 255, 0.15);
+      color: #8090ff;
+      border: 1px solid rgba(100, 120, 255, 0.3);
+    }
+
+    .conn-badge.cli {
+      background: rgba(215, 120, 50, 0.15);
+      color: #e08840;
+      border: 1px solid rgba(215, 120, 50, 0.3);
+    }
+
+    .conn-badge.unknown {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .conn-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+
     /* Light theme support */
     @media (prefers-color-scheme: light) {
       body {
@@ -425,7 +468,7 @@
 
       // Multi-connection state: plugin connects to ALL active MCP servers
       // so that every Claude tab/CLI instance gets Figma access.
-      var activeConnections = []; // Array of { port, ws }
+      var activeConnections = []; // Array of { port, ws, serverType }
       var wsReconnectDelay = 500;
       var wsMaxReconnectDelay = 5000;
       var wsReconnectAttempts = 0;
@@ -507,6 +550,32 @@
       function removeConnection(port) {
         activeConnections = activeConnections.filter(function(c) { return c.port !== port; });
         updateCompatState();
+        renderConnections();
+      }
+
+      /**
+       * Render connection badges in the status container.
+       * Shows "MCP Ready" / "CLI Ready" badges for each live connection.
+       * Falls back to original connecting/error state when no connections.
+       */
+      function renderConnections() {
+        var container = document.getElementById('status-container');
+        if (!container) return;
+        var live = activeConnections.filter(function(c) { return c.ws.readyState === 1; });
+        if (live.length === 0) {
+          container.innerHTML =
+            '<div class="status-indicator loading" id="status-dot"></div>' +
+            '<div class="status-text"><span class="label">Bridge</span><span class="state" id="status-state">connecting</span></div>';
+          return;
+        }
+        var badgesHtml = live.map(function(c) {
+          var type = c.serverType || 'unknown';
+          var label = type === 'mcp' ? 'MCP' : (type === 'cli' ? 'CLI' : '?');
+          return '<span class="conn-badge ' + type + '"><span class="conn-dot"></span>' + label + ' Ready</span>';
+        }).join('');
+        container.innerHTML =
+          '<div class="status-indicator active"></div>' +
+          '<div class="conn-badges">' + badgesHtml + '</div>';
       }
 
       /**
@@ -588,9 +657,10 @@
               clearTimeout(timeout);
               foundAny = true;
 
-              // Add to active connections
-              activeConnections.push({ port: port, ws: testWs });
+              // Add to active connections (serverType populated on SERVER_INFO)
+              activeConnections.push({ port: port, ws: testWs, serverType: 'unknown' });
               updateCompatState();
+              renderConnections();
 
               console.log('[MCP Bridge] WebSocket connected to port ' + port + ' (' + activeConnections.length + ' server(s) total)');
 
@@ -666,8 +736,9 @@
 
           testWs.onopen = function() {
             clearTimeout(timeout);
-            activeConnections.push({ port: port, ws: testWs });
+            activeConnections.push({ port: port, ws: testWs, serverType: 'unknown' });
             updateCompatState();
+            renderConnections();
             console.log('[MCP Bridge] Reconnected to port ' + port + ' (' + activeConnections.length + ' server(s) total)');
             attachWsHandlers(testWs, port);
             initializeConnection(testWs, port);
@@ -690,6 +761,21 @@
         activeWs.onmessage = function(event) {
           try {
             var message = JSON.parse(event.data);
+
+            // SERVER_INFO: server identifies itself (mcp | cli). Update badge.
+            if (message.type === 'SERVER_INFO') {
+              var conn = null;
+              for (var i = 0; i < activeConnections.length; i++) {
+                if (activeConnections[i].port === port) { conn = activeConnections[i]; break; }
+              }
+              if (conn) {
+                conn.serverType = message.serverType || 'unknown';
+                renderConnections();
+                console.log('[MCP Bridge] WS:' + port + ': server type = ' + conn.serverType + ' v' + (message.version || '?'));
+              }
+              return;
+            }
+
             if (!message.id || !message.method) {
               console.log('[MCP Bridge] WS:' + port + ': Ignoring malformed message');
               return;

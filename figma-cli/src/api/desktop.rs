@@ -324,7 +324,21 @@ async fn handle_plugin_message(msg: Value, state: &Arc<Mutex<ServerState>>) {
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
             eprintln!("[WS] File connected: {name}");
-            state.lock().await.file_info = Some(data.clone());
+            let tx = {
+                let mut s = state.lock().await;
+                s.file_info = Some(data.clone());
+                s.plugin_tx.clone()
+            };
+            // Send SERVER_INFO so plugin can distinguish CLI vs MCP connections.
+            if let Some(tx) = tx {
+                let srv_info = json!({
+                    "type": "SERVER_INFO",
+                    "serverType": "cli",
+                    "version": env!("CARGO_PKG_VERSION")
+                })
+                .to_string();
+                let _ = tx.send(srv_info).await;
+            }
         }
         return;
     }
