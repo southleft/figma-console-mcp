@@ -1,0 +1,274 @@
+name: Release figma-cli
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "figma-cli/src/**"
+      - "figma-cli/Cargo.toml"
+      - "figma-cli/Cargo.lock"
+
+permissions:
+  contents: write
+
+jobs:
+  # ── 1. Determine version bump ───────────────────────────────────────
+  version:
+    name: Determine version
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      skip: ${{ steps.bump.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          CURRENT=$(grep '^version' figma-cli/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          echo "Current version: $CURRENT"
+
+          # Check if tag already exists
+          if git tag --list | grep -q "figma-cli-v${CURRENT}$"; then
+            echo "Tag figma-cli-v${CURRENT} already exists, checking commits since last tag..."
+          fi
+
+          # Collect commit messages since last figma-cli release tag
+          LAST_TAG=$(git tag --list 'figma-cli-v*' --sort=-version:refname | head -1)
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --oneline -- figma-cli/ | head -20)
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline -- figma-cli/)
+          fi
+
+          echo "Commits since last release:"
+          echo "$COMMITS"
+
+          # Determine bump type from conventional commits
+          if echo "$COMMITS" | grep -qiE '^[a-f0-9]+ (feat|feature)(\(.+\))?!:|BREAKING CHANGE'; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -qiE '^[a-f0-9]+ feat(\(.+\))?:'; then
+            BUMP="minor"
+          elif echo "$COMMITS" | grep -qiE '^[a-f0-9]+ (fix|perf|refactor|chore)(\(.+\))?:'; then
+            BUMP="patch"
+          else
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No conventional commits requiring release found"
+            exit 0
+          fi
+
+          # Parse and bump semver
+          MAJOR=$(echo $CURRENT | cut -d. -f1)
+          MINOR=$(echo $CURRENT | cut -d. -f2)
+          PATCH=$(echo $CURRENT | cut -d. -f3)
+
+          case $BUMP in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "Bumping $BUMP: $CURRENT → $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=figma-cli-v${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+  # ── 2. Build release binaries ────────────────────────────────────────
+  build:
+    name: Build ${{ matrix.target }}
+    needs: version
+    if: needs.version.outputs.skip != 'true'
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: figma-cli
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            binary: figma-cli
+            archive: figma-cli-macos-x86_64.tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            binary: figma-cli
+            archive: figma-cli-macos-aarch64.tar.gz
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: figma-cli
+            archive: figma-cli-linux-x86_64.tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: figma-cli
+            archive: figma-cli-linux-aarch64.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross tools (Linux aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            figma-cli/target
+          key: release-${{ matrix.target }}-${{ hashFiles('figma-cli/Cargo.lock') }}
+
+      - name: Bump version in Cargo.toml
+        run: |
+          sed -i.bak 's/^version = ".*"/version = "${{ needs.version.outputs.new_version }}"/' Cargo.toml
+          rm -f Cargo.toml.bak
+
+      - name: Build release
+        run: cargo build --locked --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+      - name: Package archive
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ matrix.archive }} ${{ matrix.binary }}
+          cd ../../..
+          echo "SHA256_${{ matrix.target }}=$(shasum -a 256 ${{ matrix.archive }} | cut -d' ' -f1)" >> $GITHUB_ENV
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: figma-cli/${{ matrix.archive }}
+
+  # ── 3. Create GitHub release & update Homebrew ──────────────────────
+  release:
+    name: Publish release
+    needs: [version, build]
+    if: needs.version.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Compute checksums
+        id: sha
+        run: |
+          for f in dist/*.tar.gz; do
+            name=$(basename $f .tar.gz)
+            sha=$(shasum -a 256 $f | cut -d' ' -f1)
+            echo "${name}=${sha}" >> $GITHUB_OUTPUT
+            echo "$name: $sha"
+          done
+
+      - name: Bump Cargo.toml version
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ needs.version.outputs.new_version }}"/' figma-cli/Cargo.toml
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add figma-cli/Cargo.toml
+          git commit -m "chore(figma-cli): bump version to ${{ needs.version.outputs.new_version }} [skip ci]"
+          git push
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git tag --list 'figma-cli-v*' --sort=-version:refname | head -1)
+          if [ -z "$LAST_TAG" ]; then
+            LOG=$(git log --oneline -- figma-cli/ | head -20)
+          else
+            LOG=$(git log ${LAST_TAG}..HEAD --oneline -- figma-cli/)
+          fi
+          echo "log<<EOF" >> $GITHUB_OUTPUT
+          echo "$LOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: figma-cli ${{ needs.version.outputs.new_version }}
+          body: |
+            ## figma-cli ${{ needs.version.outputs.new_version }}
+
+            CLI analog of figma-console-mcp — all Figma REST API operations as shell commands.
+
+            ### Install via Homebrew
+            ```bash
+            brew tap southleft/figma-cli
+            brew install figma-cli
+            ```
+
+            ### Direct download
+            | Platform | Archive |
+            |----------|---------|
+            | macOS Apple Silicon | `figma-cli-macos-aarch64.tar.gz` |
+            | macOS Intel | `figma-cli-macos-x86_64.tar.gz` |
+            | Linux x86_64 | `figma-cli-linux-x86_64.tar.gz` |
+            | Linux aarch64 | `figma-cli-linux-aarch64.tar.gz` |
+
+            ### Changelog
+            ${{ steps.changelog.outputs.log }}
+          files: dist/*.tar.gz
+
+      - name: Update Homebrew formula
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          NEW_VERSION: ${{ needs.version.outputs.new_version }}
+        run: |
+          # Clone the Homebrew tap repo
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/southleft/homebrew-figma-cli.git tap
+
+          # Read SHA256 for both macOS architectures
+          SHA_ARM=$(shasum -a 256 dist/figma-cli-macos-aarch64.tar.gz | cut -d' ' -f1)
+          SHA_X86=$(shasum -a 256 dist/figma-cli-macos-x86_64.tar.gz | cut -d' ' -f1)
+
+          cat > tap/Formula/figma-cli.rb << EOF
+          class FigmaCli < Formula
+            desc "CLI analog of figma-console-mcp — Figma REST API as shell commands"
+            homepage "https://github.com/southleft/figma-console-mcp"
+            version "${NEW_VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/southleft/figma-console-mcp/releases/download/figma-cli-v${NEW_VERSION}/figma-cli-macos-aarch64.tar.gz"
+                sha256 "${SHA_ARM}"
+              else
+                url "https://github.com/southleft/figma-console-mcp/releases/download/figma-cli-v${NEW_VERSION}/figma-cli-macos-x86_64.tar.gz"
+                sha256 "${SHA_X86}"
+              end
+            end
+
+            def install
+              bin.install "figma-cli"
+            end
+
+            test do
+              assert_match "figma-cli", shell_output("#{bin}/figma-cli --version")
+            end
+          end
+          EOF
+
+          cd tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/figma-cli.rb
+          git commit -m "figma-cli ${NEW_VERSION}"
+          git push
