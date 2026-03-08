@@ -68,6 +68,7 @@
       "group": "Guides",
       "pages": [
         "use-cases",
+        "figma-mcp-vs-figma-console-mcp",
         "mcp-apps",
         "troubleshooting"
       ]
