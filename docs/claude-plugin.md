@@ -11,7 +11,7 @@ The `figma-cli` plugin provides Claude Code with a skill that teaches it how to 
 claude plugin install figma-console-mcp
 
 # Or install from local directory (development)
-claude plugin install ./path/to/figma-console-mcp --plugin-dir .claude/plugins/figma-cli
+claude plugin install ./path/to/figma-console-mcp --plugin-dir claude-plugin
 ```
 
 Once installed, Claude automatically loads the `figma-cli` skill whenever you ask it to:
@@ -26,25 +26,30 @@ Once installed, Claude automatically loads the `figma-cli` skill whenever you as
 ## Plugin Structure
 
 ```
-.claude/plugins/figma-cli/
-├── plugin.json                          ← plugin manifest
-└── skills/
-    └── figma-cli/
-        ├── SKILL.md                     ← skill loaded when triggered
-        └── references/
-            └── command-reference.md     ← full flag reference (loaded on demand)
+claude-plugin/
+├── .claude-plugin/
+│   └── plugin.json                      ← manifest (MUST be here)
+├── skills/
+│   └── figma-cli/
+│       ├── SKILL.md                     ← skill (auto-discovered)
+│       └── references/
+│           └── command-reference.md     ← full flag reference (loaded on demand)
+└── README.md
 ```
 
-### `plugin.json`
+### `.claude-plugin/plugin.json`
+
+The manifest lives in `.claude-plugin/` — not at the plugin root. Skills are auto-discovered from the `skills/` directory; no explicit registration needed.
 
 ```json
 {
   "name": "figma-cli",
   "version": "0.1.0",
   "description": "Rust CLI analog of figma-console-mcp.",
-  "skills": [
-    { "name": "figma-cli", "path": "skills/figma-cli" }
-  ]
+  "author": { "name": "southleft" },
+  "license": "MIT",
+  "repository": "https://github.com/southleft/figma-console-mcp",
+  "keywords": ["figma", "cli", "rust", "automation"]
 }
 ```
 
@@ -129,7 +134,7 @@ To list this plugin in the official marketplace:
 
 1. Ensure `plugin.json` has complete metadata (`name`, `version`, `description`, `author`, `license`, `repository`)
 2. All skills have clear `description` fields with specific trigger phrases
-3. Test with `claude --plugin-dir .claude/plugins/figma-cli`
+3. Test with `claude --plugin-dir claude-plugin`
 4. Submit at: https://github.com/anthropics/claude-code-plugins (link TBD — marketplace is in beta)
 
 ### Verification checklist

@@ -2,13 +2,12 @@
   "name": "figma-cli",
   "version": "0.1.0",
   "description": "Rust CLI analog of figma-console-mcp. Use the figma-cli binary for scripting, CI/CD, and token-efficient Figma API access from the shell.",
-  "author": "southleft",
-  "license": "MIT",
+  "author": {
+    "name": "southleft",
+    "url": "https://github.com/southleft"
+  },
+  "homepage": "https://github.com/southleft/figma-console-mcp",
   "repository": "https://github.com/southleft/figma-console-mcp",
-  "skills": [
-    {
-      "name": "figma-cli",
-      "path": "skills/figma-cli"
-    }
-  ]
+  "license": "MIT",
+  "keywords": ["figma", "cli", "design-system", "rust", "automation"]
 }
