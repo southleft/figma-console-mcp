@@ -89,7 +89,7 @@ See [docs/benchmark.md](./benchmark.md) for full measurements. Summary:
 |--|-----------------|------------------------|
 | **Input tokens/call** | ~200 (skill + bash) | ~520–1020 (tool schema) |
 | **Scriptable** | ✓ pipe, redirect, loop | ✗ |
-| **Desktop Bridge ops** | stubs only | full support |
+| **Desktop Bridge ops** | full (serve daemon) | full support |
 | **Verbosity control** | ✗ raw REST | ✓ summary/standard/full |
 
 The plugin pays off in sessions with **3+ repeated operations** on the same file — the skill (~480 tokens) is loaded once and amortized.

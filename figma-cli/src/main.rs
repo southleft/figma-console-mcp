@@ -35,11 +35,11 @@ async fn run() -> Result<()> {
     match cli.command {
         // Commands that do not require an API token
         Command::Desktop { cmd } => {
-            commands::desktop::run(cmd).await?;
+            commands::desktop::run(cmd, &output, quiet).await?;
         }
 
         Command::Execute { cmd } => {
-            commands::execute::run(cmd).await?;
+            commands::execute::run(cmd, &output, quiet).await?;
         }
 
         Command::Init { cmd } => {

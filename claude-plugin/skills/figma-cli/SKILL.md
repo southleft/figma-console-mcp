@@ -89,12 +89,38 @@ figma-cli design-system audit
 ```
 
 ### Desktop Bridge (requires Figma plugin)
+
+The CLI implements the same WebSocket server protocol as figma-console-mcp.
+Start the daemon first, then use any desktop/execute/nodes mutation command.
+
 ```bash
-figma-cli desktop status
-figma-cli desktop logs [--count 100] [--level all|log|warn|error]
-figma-cli desktop screenshot [--node-id "1:234"]
-figma-cli desktop navigate --url https://www.figma.com/...
-figma-cli execute run --code "figma.currentPage.name"
+# Step 1: start the daemon (keep running in a separate terminal)
+figma-cli desktop serve
+# → Listens on ws://localhost:9223, writes /tmp/figma-cli-9223.json
+
+# Step 2: open Figma → Desktop Bridge plugin → it auto-connects on 9223
+
+# Step 3: run commands (each connects via Unix socket to the daemon)
+figma-cli desktop status          # check plugin connection
+figma-cli desktop selection       # get canvas selection
+figma-cli desktop files           # list open files/pages
+figma-cli desktop screenshot [--output out.png] [--scale 2]
+figma-cli execute run --code "figma.root.name"
+figma-cli execute run --code "figma.currentPage.selection.length"
+
+# Node mutations (all use Desktop Bridge)
+figma-cli nodes resize --node-id "1:234" --width 200 --height 100
+figma-cli nodes move --node-id "1:234" --x 50 --y 100
+figma-cli nodes rename --node-id "1:234" --new-name "Button/Primary"
+figma-cli nodes delete --node-id "1:234"
+figma-cli nodes clone --node-id "1:234"
+figma-cli nodes set-text --node-id "1:234" --text "Hello"
+figma-cli nodes set-fills --node-id "1:234" \
+  --fills-json '[{"type":"SOLID","color":{"r":1,"g":0,"b":0,"a":1}}]'
+figma-cli nodes create-child --parent-id "0:1" --node-type FRAME --name "Card"
+
+# REST-based node query (no daemon needed)
+figma-cli nodes get --file $FIGMA_FILE_URL --ids "1:234,1:235"
 ```
 
 ## Common Patterns
@@ -124,7 +150,7 @@ figma-cli variables setup-tokens \
 | Aspect | figma-cli | figma-console MCP |
 |--------|-----------|-------------------|
 | Token overhead | Low (~300-800 tokens/call) | Higher (~1500-4000 tokens/call) |
-| Desktop Bridge support | Partial (stubs) | Full |
+| Desktop Bridge support | Full (serve daemon) | Full |
 | Scriptable | Yes | No |
 | Batch via shell | Yes | No |
 | Response inspection | Easy (pipe/redirect) | In-context only |

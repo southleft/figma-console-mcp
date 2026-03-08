@@ -1,19 +1,18 @@
-/// Execute JavaScript in a plugin context via the Desktop Bridge.
+/// Execute JavaScript in the plugin context via the Desktop Bridge.
 ///
-/// This command maps to `figma_execute` in the MCP server and requires the
-/// Desktop Bridge plugin to be connected. It is provided here as a stub that
-/// explains what is needed.
+/// Maps to `figma_execute` in the MCP server. Requires `figma-cli desktop serve`
+/// to be running with the Figma Desktop Bridge plugin connected.
 use anyhow::Result;
 use clap::Subcommand;
+use serde_json::json;
 
-use crate::output::print_desktop_stub;
+use crate::api::desktop::send_to_server;
+use crate::output::{print_output, OutputFormat};
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum ExecuteCommand {
     /// Execute JavaScript in the plugin context (figma_execute)
     Run {
-        #[arg(long, env = "FIGMA_WS_PORT", default_value = "9000")]
-        port: u16,
         /// JavaScript expression or block to evaluate in the plugin context
         #[arg(long)]
         code: String,
@@ -23,10 +22,16 @@ pub enum ExecuteCommand {
     },
 }
 
-pub async fn run(cmd: ExecuteCommand) -> Result<()> {
+pub async fn run(cmd: ExecuteCommand, format: &OutputFormat, quiet: bool) -> Result<()> {
     match cmd {
-        ExecuteCommand::Run { port, code: _, timeout_ms: _ } => {
-            print_desktop_stub(port);
+        ExecuteCommand::Run { code, timeout_ms } => {
+            let result = send_to_server(
+                "EXECUTE_CODE",
+                json!({"code": code, "timeout": timeout_ms}),
+                (timeout_ms / 1000) + 5, // seconds, with buffer
+            )
+            .await?;
+            print_output(&result, format, quiet);
         }
     }
     Ok(())
@@ -36,6 +41,6 @@ pub async fn run(cmd: ExecuteCommand) -> Result<()> {
 mod tests {
     #[test]
     fn test_execute_module_compiles() {
-        // Compilation check — command is a stub
+        // Compilation check
     }
 }

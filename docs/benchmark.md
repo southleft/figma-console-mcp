@@ -106,7 +106,7 @@ CLI and MCP both return `[]` for components not published to the Figma component
 | Local styles/components | ✗ (REST only) | ✓ via Desktop Bridge |
 | Scriptable / pipeable | ✓ | ✗ |
 | Setup | `cargo build` + `init` | zero (MCP protocol) |
-| Desktop Bridge ops | stubs only | full |
+| Desktop Bridge ops | full (serve daemon) | full |
 
 **CLI wins** for repeated read-only operations in automation contexts (60–80% input token savings).
 **MCP wins** for interactive sessions, verbosity-controlled reads, and any Desktop Bridge operations.
