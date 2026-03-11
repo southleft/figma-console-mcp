@@ -478,6 +478,16 @@ Create `.vscode/mcp.json` in your project:
 
 OpenAI Codex uses a graphical interface for MCP server configuration instead of JSON files. This makes setup straightforward — just fill in the fields.
 
+<iframe
+  width="100%"
+  height="400"
+  src="https://www.youtube.com/embed/qY37qaowO5I"
+  title="Setting up Figma Console MCP with OpenAI Codex"
+  frameBorder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowFullScreen
+></iframe>
+
 ### Prerequisites
 
 - [OpenAI Codex desktop app](https://openai.com/codex/get-started/) installed
