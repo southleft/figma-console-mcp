@@ -1,11 +1,11 @@
 ---
 title: "Setup Guide"
-description: "Complete setup instructions for connecting Figma Console MCP to Claude Desktop, GitHub Copilot, Cursor, Windsurf, and other AI clients."
+description: "Complete setup instructions for connecting Figma Console MCP to Claude Desktop, OpenAI Codex, GitHub Copilot, Cursor, Windsurf, and other AI clients."
 ---
 
 # Figma Console MCP - Setup Guide
 
-Complete setup instructions for connecting Figma Console MCP to various AI clients including Claude Desktop, GitHub Copilot (VS Code), Cursor, Windsurf, and more.
+Complete setup instructions for connecting Figma Console MCP to various AI clients including Claude Desktop, OpenAI Codex, GitHub Copilot (VS Code), Cursor, Windsurf, and more.
 
 ---
 
@@ -17,6 +17,7 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 |--------------|--------------|------|
 | **Create, modify, and develop with AI** | [NPX Setup](#-npx-setup-recommended) (Recommended) | ~10 min |
 | **Full capabilities with manual update control** | [Local Git Setup](#-local-git-setup-alternative) | ~15 min |
+| **Set up with OpenAI Codex** (GUI config) | [Codex Setup](#-openai-codex) | ~5 min |
 | **Just explore my design data** (read-only) | [Remote SSE](#-remote-sse-read-only-exploration) | ~2 min |
 
 ### ⚠️ Important: Capability Differences
@@ -107,6 +108,8 @@ Before starting, verify you have:
 > 💡 Your token starts with `figd_` — if it doesn't, something went wrong.
 
 ### Step 2: Configure Your MCP Client (~3 min)
+
+> 💡 **Using OpenAI Codex?** Skip to the dedicated [Codex setup section](#-openai-codex) — it uses a graphical interface instead of JSON config files.
 
 #### Claude Code (CLI)
 
@@ -468,6 +471,78 @@ Create `.vscode/mcp.json` in your project:
 2. Run **"MCP: List Servers"**
 3. Click on **"figma-console"** to start it
 4. VS Code may prompt you to **trust the server** — click Allow
+
+---
+
+## 🧠 OpenAI Codex
+
+OpenAI Codex uses a graphical interface for MCP server configuration instead of JSON files. This makes setup straightforward — just fill in the fields.
+
+### Prerequisites
+
+- OpenAI Codex desktop app installed
+- Node.js 18+ installed
+- Figma Desktop installed
+- Figma Personal Access Token ([get one](#step-1-get-your-figma-token-2-min))
+
+### Step 1: Add the MCP Server (~2 min)
+
+1. Open Codex and go to **Settings** (gear icon in the sidebar)
+2. Click **Settings** again in the submenu
+3. Select **MCP servers** from the left sidebar
+4. Click **"Add MCP Server"** (or create a new server)
+5. Fill in the fields:
+
+| Field | Value |
+|-------|-------|
+| **Server name** | `Figma Console MCP` (or any name you prefer) |
+| **Command to launch** | `npx` |
+| **Arguments** | Add two arguments: `-y` and `figma-console-mcp@latest` |
+| **Environment variables** | `FIGMA_ACCESS_TOKEN` = `figd_YOUR_TOKEN_HERE` |
+| **Environment variables** | `ENABLE_MCP_APPS` = `true` |
+
+6. Click **Save**
+
+Here's what the completed configuration looks like:
+
+<Frame>
+  <img src="/images/codex-mcp-setup.jpg" alt="OpenAI Codex MCP server configuration showing Command to launch: npx, Arguments: -y and figma-console-mcp@latest, and environment variables for FIGMA_ACCESS_TOKEN and ENABLE_MCP_APPS" />
+</Frame>
+
+> 💡 **Tip:** The Codex UI adds arguments one at a time. Click **"+ Add argument"** after entering `-y` to add the second argument `figma-console-mcp@latest`.
+
+### Step 2: Connect to Figma Desktop
+
+Same as [NPX Step 3](#step-3-connect-to-figma-desktop-2-min) above — install the Desktop Bridge Plugin in Figma.
+
+### Step 3: Test It
+
+Start a new thread in Codex and try:
+
+```
+Check Figma status
+```
+
+If the Desktop Bridge plugin isn't running yet, the server will connect but report that Figma Desktop isn't linked. Run the plugin in your Figma file (Plugins → Development → Figma Desktop Bridge) and ask Codex to check again.
+
+### Equivalent JSON Config
+
+For reference, the Codex GUI configuration above is equivalent to this JSON (used by other MCP clients):
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
+      }
+    }
+  }
+}
+```
 
 ---
 
