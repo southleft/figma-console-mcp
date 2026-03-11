@@ -480,7 +480,7 @@ OpenAI Codex uses a graphical interface for MCP server configuration instead of 
 
 ### Prerequisites
 
-- OpenAI Codex desktop app installed
+- [OpenAI Codex desktop app](https://openai.com/codex/get-started/) installed
 - Node.js 18+ installed
 - Figma Desktop installed
 - Figma Personal Access Token ([get one](#step-1-get-your-figma-token-2-min))
@@ -520,29 +520,14 @@ Same as [NPX Step 3](#step-3-connect-to-figma-desktop-2-min) above — install t
 Start a new thread in Codex and try:
 
 ```
-Check Figma status
+Use the Figma Console connector to check Figma status
 ```
 
 If the Desktop Bridge plugin isn't running yet, the server will connect but report that Figma Desktop isn't linked. Run the plugin in your Figma file (Plugins → Development → Figma Desktop Bridge) and ask Codex to check again.
 
 ### Equivalent JSON Config
 
-For reference, the Codex GUI configuration above is equivalent to this JSON (used by other MCP clients):
-
-```json
-{
-  "mcpServers": {
-    "figma-console": {
-      "command": "npx",
-      "args": ["-y", "figma-console-mcp@latest"],
-      "env": {
-        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
-        "ENABLE_MCP_APPS": "true"
-      }
-    }
-  }
-}
-```
+For reference, the Codex GUI fields map directly to the [NPX JSON configuration](#step-2-configure-your-mcp-client-3-min) used by other MCP clients like Claude Desktop, Cursor, and Windsurf.
 
 ---
 
