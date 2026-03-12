@@ -5,7 +5,7 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.11.3] - 2026-03-12
+## [1.11.4] - 2026-03-12
 
 ### Added
 - **SERVER_HELLO protocol** — WebSocket server sends identity message (port, PID, version, uptime) on new connections for debugging and logging
@@ -279,7 +279,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
-[1.11.3]: https://github.com/southleft/figma-console-mcp/compare/v1.11.2...v1.11.3
+[1.11.4]: https://github.com/southleft/figma-console-mcp/compare/v1.11.2...v1.11.4
 [1.11.2]: https://github.com/southleft/figma-console-mcp/compare/v1.11.1...v1.11.2
 [1.11.1]: https://github.com/southleft/figma-console-mcp/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/southleft/figma-console-mcp/compare/v1.10.0...v1.11.0

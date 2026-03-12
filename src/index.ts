@@ -35,7 +35,7 @@ const logger = createChildLogger({ component: "mcp-server" });
 export class FigmaConsoleMCPv3 extends McpAgent {
 	server = new McpServer({
 		name: "Figma Console MCP",
-		version: "1.11.3",
+		version: "1.11.4",
 	});
 
 	private browserManager: BrowserManager | null = null;
@@ -1098,7 +1098,7 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.11.3",
+				version: "1.11.4",
 			});
 
 			// Register REST API tools with the authenticated Figma API
@@ -1784,7 +1784,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.11.3",
+					version: "1.11.4",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
