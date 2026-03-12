@@ -552,22 +552,21 @@
        * independent WebSocket connection so every Claude instance has Figma access.
        * Falls back to retry with backoff if no servers found at all.
        */
+      // Maximum scan attempts on initial load (prevents infinite error loops).
+      // After connecting, disconnect-triggered retries have their own limit.
+      var initialScanAttempts = 0;
+      var MAX_INITIAL_SCANS = 3;
+
       function wsScanAndConnect() {
         if (isScanning) return;
         isScanning = true;
 
         var portsToTry = [];
         for (var p = WS_PORT_RANGE_START; p <= WS_PORT_RANGE_END; p++) {
-          // Skip ports we're already connected to
-          if (!isPortConnected(p)) {
-            portsToTry.push(p);
-          }
+          if (!isPortConnected(p)) portsToTry.push(p);
         }
 
-        if (portsToTry.length === 0) {
-          isScanning = false;
-          return;
-        }
+        if (portsToTry.length === 0) { isScanning = false; return; }
 
         console.log('[MCP Bridge] Scanning ports ' + WS_PORT_RANGE_START + '-' + WS_PORT_RANGE_END + ' for MCP servers...');
 
@@ -579,65 +578,44 @@
             var testWs = new WebSocket('ws://localhost:' + port);
 
             var timeout = setTimeout(function() {
-              if (testWs.readyState !== 1) {
-                testWs.close();
-              }
+              if (testWs.readyState !== 1) testWs.close();
             }, 3000);
 
             testWs.onopen = function() {
               clearTimeout(timeout);
               foundAny = true;
-
-              // Add to active connections
               activeConnections.push({ port: port, ws: testWs });
               updateCompatState();
-
               console.log('[MCP Bridge] WebSocket connected to port ' + port + ' (' + activeConnections.length + ' server(s) total)');
-
-              // Attach handlers for this connection
               attachWsHandlers(testWs, port);
-
-              // Send file identity and variables to this server
               initializeConnection(testWs, port);
-
               pending--;
               if (pending <= 0) {
                 isScanning = false;
-                if (foundAny) {
-                  wsReconnectDelay = 500;
-                  wsReconnectAttempts = 0;
-                }
+                wsReconnectDelay = 500;
+                wsReconnectAttempts = 0;
               }
             };
 
             testWs.onerror = function() {
               clearTimeout(timeout);
-              pending--;
-              if (pending <= 0) {
-                isScanning = false;
-                if (!foundAny && activeConnections.length === 0) {
-                  // No servers found at all — retry with backoff
-                  wsReconnectAttempts++;
-                  if (wsReconnectAttempts <= wsMaxReconnectAttempts) {
-                    console.log('[MCP Bridge] No MCP server found, retrying in ' + wsReconnectDelay + 'ms (attempt ' + wsReconnectAttempts + '/' + wsMaxReconnectAttempts + ')');
-                    setTimeout(wsScanAndConnect, wsReconnectDelay);
-                    wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
-                  } else {
-                    console.log('[MCP Bridge] Max reconnect attempts reached (' + wsMaxReconnectAttempts + '). Restart the plugin to retry.');
-                  }
-                }
-              }
             };
 
             testWs.onclose = function() {
               clearTimeout(timeout);
               pending--;
-              if (pending <= 0 && !foundAny && activeConnections.length === 0) {
+              if (pending <= 0) {
                 isScanning = false;
-                wsReconnectAttempts++;
-                if (wsReconnectAttempts <= wsMaxReconnectAttempts) {
-                  setTimeout(wsScanAndConnect, wsReconnectDelay);
-                  wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
+                // Retry with backoff if no servers found, up to MAX_INITIAL_SCANS
+                if (!foundAny && activeConnections.length === 0) {
+                  initialScanAttempts++;
+                  if (initialScanAttempts < MAX_INITIAL_SCANS) {
+                    var delay = 3000 * initialScanAttempts; // 3s, 6s
+                    console.log('[MCP Bridge] No servers found, retry ' + initialScanAttempts + '/' + MAX_INITIAL_SCANS + ' in ' + (delay/1000) + 's');
+                    setTimeout(wsScanAndConnect, delay);
+                  } else {
+                    console.log('[MCP Bridge] No MCP servers found after ' + MAX_INITIAL_SCANS + ' scans. Restart plugin to retry.');
+                  }
                 }
               }
             };
@@ -656,12 +634,7 @@
         try {
           var testWs = new WebSocket('ws://localhost:' + port);
           var timeout = setTimeout(function() {
-            if (testWs.readyState !== 1) {
-              testWs.close();
-              // Port gone — do a full rescan to find new servers
-              console.log('[MCP Bridge] Port ' + port + ' unavailable, rescanning...');
-              wsScanAndConnect();
-            }
+            if (testWs.readyState !== 1) testWs.close();
           }, 2000);
 
           testWs.onopen = function() {
@@ -675,11 +648,9 @@
 
           testWs.onerror = function() {
             clearTimeout(timeout);
-            console.log('[MCP Bridge] Port ' + port + ' unavailable, rescanning...');
-            wsScanAndConnect();
           };
         } catch (e) {
-          wsScanAndConnect();
+          // Port gone — no further scanning to avoid console spam
         }
       }
 
@@ -690,6 +661,15 @@
         activeWs.onmessage = function(event) {
           try {
             var message = JSON.parse(event.data);
+
+            // Handle server identity messages
+            if (message.type === 'SERVER_HELLO' && message.data) {
+              console.log('[MCP Bridge] Connected to server on port ' + message.data.port + ' (PID: ' + message.data.pid + ', v' + message.data.serverVersion + ')');
+              var conn = activeConnections.find(function(c) { return c.ws === activeWs; });
+              if (conn) conn.serverInfo = message.data;
+              return;
+            }
+
             if (!message.id || !message.method) {
               console.log('[MCP Bridge] WS:' + port + ': Ignoring malformed message');
               return;
@@ -719,12 +699,10 @@
         };
 
         activeWs.onclose = function(event) {
-          // Remove this connection from active list
           removeConnection(port);
           console.log('[MCP Bridge] WebSocket disconnected from port ' + port + ' (' + activeConnections.length + ' server(s) remaining)');
 
           // If replaced by same file reconnecting (e.g., plugin reloaded), stop
-          // reconnecting — the new connection is authoritative for this file.
           var wasReplaced = (event.code === 1000 && (
             event.reason === 'Replaced by new connection' ||
             event.reason === 'Replaced by same file reconnection'
@@ -734,11 +712,11 @@
             return;
           }
 
-          // Try to reconnect to this specific port
+          // Retry the specific port with limited attempts (no full rescan)
           wsReconnectAttempts++;
-          if (wsReconnectAttempts <= wsMaxReconnectAttempts) {
-            setTimeout(function() { wsReconnectPort(port); }, wsReconnectDelay);
-            wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
+          if (wsReconnectAttempts <= 5) {
+            var delay = Math.min(1000 * wsReconnectAttempts, 5000);
+            setTimeout(function() { wsReconnectPort(port); }, delay);
           }
         };
 
@@ -796,7 +774,9 @@
         }
       };
 
-      // Start WebSocket connection via port scanning
+      // Single scan on load — no periodic rescanning to avoid console spam.
+      // If no server found, retries up to MAX_INITIAL_SCANS times then stops.
+      // On disconnect, retries the specific port up to 5 times then stops.
       wsScanAndConnect();
     })();
 

@@ -1820,4 +1820,30 @@ describe('Multi-client WebSocket', () => {
       expect(event.fileName).toBe('My File');
     }, 10000);
   });
+
+  describe('SERVER_HELLO', () => {
+    test('sends SERVER_HELLO with identity on new connection', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const helloPromise = new Promise<any>((resolve, reject) => {
+        const ws = new WebSocket(`ws://localhost:${TEST_PORT}`);
+        clients.push(ws);
+        ws.on('error', reject);
+        ws.on('message', (data: Buffer) => {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === 'SERVER_HELLO') {
+            resolve(msg.data);
+          }
+        });
+      });
+
+      const hello = await helloPromise;
+      expect(hello.port).toBe(TEST_PORT);
+      expect(hello.pid).toBe(process.pid);
+      expect(typeof hello.serverVersion).toBe('string');
+      expect(hello.serverVersion).toMatch(/^\d+\.\d+\.\d+/);
+      expect(typeof hello.startedAt).toBe('number');
+    });
+  });
 });

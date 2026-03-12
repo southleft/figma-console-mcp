@@ -15,8 +15,20 @@
 
 import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { createChildLogger } from './logger.js';
 import type { ConsoleLogEntry } from './types/index.js';
+
+// Read version from package.json
+// Uses __dirname in CJS/Jest context, falls back to process.cwd() in ESM runtime
+let SERVER_VERSION = '0.0.0';
+try {
+  const base = typeof __dirname !== 'undefined' ? join(__dirname, '..', '..') : process.cwd();
+  SERVER_VERSION = JSON.parse(readFileSync(join(base, 'package.json'), 'utf-8')).version;
+} catch {
+  // Non-critical — version will show as 0.0.0
+}
 
 const logger = createChildLogger({ component: 'websocket-server' });
 
@@ -89,12 +101,14 @@ export class FigmaWebSocketServer extends EventEmitter {
   private requestIdCounter = 0;
   private options: WebSocketServerOptions;
   private _isStarted = false;
+  private _startedAt = Date.now();
   private consoleBufferSize = 1000;
   private documentChangeBufferSize = 200;
 
   constructor(options: WebSocketServerOptions) {
     super();
     this.options = options;
+    this._startedAt = Date.now();
   }
 
   /**
@@ -154,6 +168,21 @@ export class FigmaWebSocketServer extends EventEmitter {
             }
           }, 30000);
           this._pendingClients.set(ws, pendingTimeout);
+
+          // Send server identity to the client for debugging and logging
+          try {
+            ws.send(JSON.stringify({
+              type: 'SERVER_HELLO',
+              data: {
+                port: (this.wss!.address() as any)?.port,
+                pid: process.pid,
+                serverVersion: SERVER_VERSION,
+                startedAt: this._startedAt,
+              },
+            }));
+          } catch {
+            // Non-critical — client will still work without SERVER_HELLO
+          }
 
           logger.info(
             { totalClients: this.clients.size, pendingClients: this._pendingClients.size },
