@@ -5,6 +5,16 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.3] - 2026-03-12
+
+### Added
+- **SERVER_HELLO protocol** — WebSocket server sends identity message (port, PID, version, uptime) on new connections for debugging and logging
+- **SERVER_HELLO test** — Test coverage for the new protocol message
+
+### Fixed
+- **Infinite WebSocket port scanning console spam** — Replaced unbounded retry loop with 3 initial scans (3s, 6s backoff) then stop. Disconnect reconnect capped at 5 attempts per port. Eliminates `ERR_CONNECTION_REFUSED` noise in Figma plugin console.
+- **Manifest HTTP port entries** — Added explicit `http://localhost:9223`–`9232` entries to `allowedDomains` and `devAllowedDomains`. Figma's domain matching requires explicit ports for HTTP requests; bare `http://localhost` doesn't cover ported requests.
+
 ## [1.11.2] - 2026-02-25
 
 ### Fixed
@@ -269,6 +279,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.11.3]: https://github.com/southleft/figma-console-mcp/compare/v1.11.2...v1.11.3
+[1.11.2]: https://github.com/southleft/figma-console-mcp/compare/v1.11.1...v1.11.2
+[1.11.1]: https://github.com/southleft/figma-console-mcp/compare/v1.11.0...v1.11.1
+[1.11.0]: https://github.com/southleft/figma-console-mcp/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/southleft/figma-console-mcp/compare/v1.9.1...v1.10.0
 [1.9.1]: https://github.com/southleft/figma-console-mcp/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/southleft/figma-console-mcp/compare/v1.8.0...v1.9.0
