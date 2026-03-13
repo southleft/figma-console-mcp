@@ -19,7 +19,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
-import { realpathSync, existsSync } from "fs";
+import { realpathSync, existsSync, readFileSync } from "fs";
 import { LocalBrowserManager } from "./browser/local.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
@@ -4144,6 +4144,65 @@ After instantiating components, use figma_take_screenshot to verify the result l
 											error instanceof Error ? error.message : String(error),
 									},
 								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool: Set Image Fill on nodes
+		this.server.tool(
+			"figma_set_image_fill",
+			"Set an image fill on one or more Figma nodes. The imageData parameter accepts EITHER a base64-encoded " +
+			"image string (JPEG/PNG) OR an absolute file path starting with / (e.g. /tmp/photo.jpg). " +
+			"When a file path is provided, the server reads the image from disk — this is preferred for large " +
+			"images since it avoids parameter truncation. The image is decoded in the browser bridge and passed " +
+			"as raw bytes to the Figma plugin. Requires Desktop Bridge plugin.",
+			{
+				nodeIds: z.array(z.string()).describe("Array of node IDs to apply the image fill to"),
+				imageData: z.string().describe("Base64-encoded image data OR an absolute file path (starting with /) to a JPEG/PNG file on disk"),
+				scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("How the image fills the node (default: FILL)"),
+			},
+			async ({ nodeIds, imageData, scaleMode }) => {
+				try {
+					// If imageData looks like a file path, read from disk (avoids truncation)
+					let resolvedImageData = imageData;
+					if (imageData.startsWith('/') && existsSync(imageData)) {
+						const imageBuffer = readFileSync(imageData);
+						resolvedImageData = imageBuffer.toString('base64');
+						logger.info({ imagePath: imageData, bytes: imageBuffer.length }, 'Read image from disk');
+					}
+					const connector = await this.getDesktopConnector();
+					const result = await connector.setImageFill(nodeIds, resolvedImageData, scaleMode || "FILL");
+
+					if (!result.success) {
+						throw new Error(result.error || "Failed to set image fill");
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									success: true,
+									message: `Image fill applied to ${result.updatedCount || 0} node(s)`,
+									imageHash: result.imageHash,
+									nodes: result.nodes,
+								}),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to set image fill");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									error: error instanceof Error ? error.message : String(error),
+								}),
 							},
 						],
 						isError: true,

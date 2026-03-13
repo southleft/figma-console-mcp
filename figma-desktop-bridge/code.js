@@ -1492,6 +1492,64 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // SET_IMAGE_FILL - Set an image fill on one or more nodes
+  // Receives raw image bytes (as Array) from ui.html which decodes base64
+  // ============================================================================
+  else if (msg.type === 'SET_IMAGE_FILL') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting image fill, bytes:', msg.imageBytes.length);
+
+      // Convert the plain array back to Uint8Array
+      var bytes = new Uint8Array(msg.imageBytes);
+
+      // Create the image in Figma
+      var image = figma.createImage(bytes);
+      var imageHash = image.hash;
+
+      var fill = {
+        type: 'IMAGE',
+        scaleMode: msg.scaleMode || 'FILL',
+        imageHash: imageHash
+      };
+
+      // Resolve target nodes
+      var nodeIds = msg.nodeIds || (msg.nodeId ? [msg.nodeId] : []);
+      var updatedCount = 0;
+      var updatedNodes = [];
+
+      for (var i = 0; i < nodeIds.length; i++) {
+        var node = await figma.getNodeByIdAsync(nodeIds[i]);
+        if (node && 'fills' in node) {
+          node.fills = [fill];
+          updatedCount++;
+          updatedNodes.push({ id: node.id, name: node.name });
+        }
+      }
+
+      console.log('🌉 [Desktop Bridge] Image fill applied to', updatedCount, 'node(s), hash:', imageHash);
+
+      figma.ui.postMessage({
+        type: 'SET_IMAGE_FILL_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        imageHash: imageHash,
+        updatedCount: updatedCount,
+        nodes: updatedNodes
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set image fill error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_IMAGE_FILL_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
   // SET_NODE_STROKES - Set strokes on a node
   // ============================================================================
   else if (msg.type === 'SET_NODE_STROKES') {

@@ -1508,4 +1508,25 @@ export class FigmaDesktopConnector implements IFigmaConnector {
       throw error;
     }
   }
+
+  /**
+   * Set image fill on one or more nodes (decodes base64 in browser bridge, sends bytes to plugin)
+   */
+  async setImageFill(nodeIds: string[], imageData: string, scaleMode = 'FILL'): Promise<any> {
+    logger.info({ nodeIds, scaleMode, dataLength: imageData.length }, 'Setting image fill via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setImageFill(${JSON.stringify(nodeIds)}, ${JSON.stringify(imageData)}, ${JSON.stringify(scaleMode)})`
+      );
+
+      logger.info({ success: result.success, imageHash: result.imageHash }, 'Image fill set');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeIds }, 'Set image fill failed');
+      throw error;
+    }
+  }
 }

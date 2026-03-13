@@ -514,6 +514,24 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
+    // Set image fill on nodes — decodes base64 in browser context (atob available here)
+    // then sends raw bytes to plugin where figma.createImage() is called
+    window.setImageFill = (nodeIds, imageData, scaleMode) => {
+      // Decode base64 to Uint8Array in browser context where atob() is available
+      var binaryStr = atob(imageData);
+      var bytes = new Uint8Array(binaryStr.length);
+      for (var i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      // Send as plain Array (postMessage can't always transfer typed arrays cleanly)
+      return window.sendPluginCommand('SET_IMAGE_FILL', {
+        nodeIds: Array.isArray(nodeIds) ? nodeIds : [nodeIds],
+        imageBytes: Array.from(bytes),
+        scaleMode: scaleMode || 'FILL'
+      }, 60000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
     // Set component instance properties (TEXT, BOOLEAN, INSTANCE_SWAP, VARIANT)
     // This is the correct way to update component instances vs direct text node editing
     window.setInstanceProperties = (nodeId, properties) => {
@@ -577,6 +595,7 @@
         'SET_TEXT_CONTENT': function(params) { return window.setTextContent(params.nodeId, params.text, params); },
         'CREATE_CHILD_NODE': function(params) { return window.createChildNode(params.parentId, params.nodeType, params.properties); },
         'CAPTURE_SCREENSHOT': function(params) { return window.captureScreenshot(params.nodeId, params); },
+        'SET_IMAGE_FILL': function(params) { return window.setImageFill(params.nodeIds || params.nodeId, params.imageData, params.scaleMode); },
         'SET_INSTANCE_PROPERTIES': function(params) { return window.setInstanceProperties(params.nodeId, params.properties); },
         'GET_VARIABLES_DATA': function() {
           // Return the cached variables data directly
@@ -1158,6 +1177,9 @@
         // NEW: Screenshot and instance properties (visual validation loop fix)
         case 'CAPTURE_SCREENSHOT_RESULT':
           handleResult('CAPTURE_SCREENSHOT', 'image');
+          break;
+        case 'SET_IMAGE_FILL_RESULT':
+          handleResult('SET_IMAGE_FILL', 'imageHash');
           break;
         case 'SET_INSTANCE_PROPERTIES_RESULT':
           handleResult('SET_INSTANCE_PROPERTIES', 'instance');

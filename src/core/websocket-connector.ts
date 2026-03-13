@@ -271,6 +271,14 @@ export class WebSocketConnector implements IFigmaConnector {
   }
 
   // ============================================================================
+  // Image fill
+  // ============================================================================
+
+  async setImageFill(nodeIds: string[], imageData: string, scaleMode = 'FILL'): Promise<any> {
+    return this.wsServer.sendCommand('SET_IMAGE_FILL', { nodeIds, imageData, scaleMode }, 60000);
+  }
+
+  // ============================================================================
   // Cache management (no-op for WebSocket — no frame cache)
   // ============================================================================
 
