@@ -10,8 +10,17 @@
  * which port to connect to. Each instance writes its own file with PID for
  * stale-file detection.
  *
+ * Zombie process detection:
+ *   Active servers refresh their port file every 30s (heartbeat).
+ *   On startup, cleanupStalePortFiles() detects zombies via:
+ *     1. Dead PID — process no longer exists (existing behavior)
+ *     2. Stale heartbeat — lastSeen older than 5 minutes (process frozen/hung)
+ *     3. Age ceiling — startedAt older than 4 hours with no heartbeat (pre-v1.12 compat)
+ *   Zombie processes are terminated with SIGTERM to free their ports.
+ *
  * Data flow:
  *   Server binds port → writes /tmp/figma-console-mcp-{port}.json
+ *   Server heartbeat → refreshes lastSeen every 30s
  *   Plugin scans ports 9223-9232 → connects to first responding server
  *   External tools read port files for discovery
  */
@@ -35,11 +44,22 @@ const PORT_FILE_PREFIX = 'figma-console-mcp-';
 /** Directory for port advertisement files */
 const PORT_FILE_DIR = tmpdir();
 
+/** Maximum age before a port file without heartbeat is considered stale (4 hours) */
+export const MAX_PORT_FILE_AGE_MS = 4 * 60 * 60 * 1000;
+
+/** Maximum time since last heartbeat before a process is considered stale (5 minutes) */
+export const HEARTBEAT_STALE_MS = 5 * 60 * 1000;
+
+/** Interval between heartbeat refreshes (30 seconds) */
+export const HEARTBEAT_INTERVAL_MS = 30 * 1000;
+
 export interface PortFileData {
   port: number;
   pid: number;
   host: string;
   startedAt: string;
+  /** Updated by heartbeat every 30s. Missing in port files from pre-v1.12 instances. */
+  lastSeen?: string;
 }
 
 /**
@@ -68,14 +88,16 @@ export function getPortFilePath(port: number): string {
 
 /**
  * Write a port advertisement file so clients can discover this server instance.
- * Includes PID for stale-file detection.
+ * Includes PID for stale-file detection and lastSeen for heartbeat tracking.
  */
 export function advertisePort(port: number, host: string = 'localhost'): void {
+  const now = new Date().toISOString();
   const data: PortFileData = {
     port,
     pid: process.pid,
     host,
-    startedAt: new Date().toISOString(),
+    startedAt: now,
+    lastSeen: now,
   };
 
   const filePath = getPortFilePath(port);
@@ -84,6 +106,26 @@ export function advertisePort(port: number, host: string = 'localhost'): void {
     logger.info({ port, filePath }, 'Port advertised');
   } catch (error) {
     logger.warn({ port, filePath, error }, 'Failed to write port advertisement file');
+  }
+}
+
+/**
+ * Refresh the lastSeen timestamp in a port advertisement file.
+ * Called periodically as a heartbeat to prove this server is still active.
+ * Non-fatal — heartbeat failures are silently ignored.
+ */
+export function refreshPortAdvertisement(port: number): void {
+  const filePath = getPortFilePath(port);
+  try {
+    if (!existsSync(filePath)) return;
+    const raw = readFileSync(filePath, 'utf-8');
+    const data: PortFileData = JSON.parse(raw);
+    // Only refresh our own port file
+    if (data.pid !== process.pid) return;
+    data.lastSeen = new Date().toISOString();
+    writeFileSync(filePath, JSON.stringify(data, null, 2));
+  } catch {
+    // Best-effort — heartbeat failures are non-fatal
   }
 }
 
@@ -112,6 +154,45 @@ function isProcessAlive(pid: number): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Determine if a port file represents a zombie/stale MCP instance.
+ *
+ * Detection layers:
+ *   1. If lastSeen exists (v1.12+): stale if older than HEARTBEAT_STALE_MS (5 min)
+ *   2. If lastSeen is missing (pre-v1.12): stale if startedAt older than MAX_PORT_FILE_AGE_MS (4h)
+ *
+ * Assumes the owning process IS alive (PID check should happen before calling this).
+ */
+export function isStaleInstance(data: PortFileData): boolean {
+  const now = Date.now();
+
+  // If heartbeat exists, use it — active servers refresh every 30s
+  if (data.lastSeen) {
+    const lastSeenAge = now - new Date(data.lastSeen).getTime();
+    return lastSeenAge > HEARTBEAT_STALE_MS;
+  }
+
+  // No heartbeat (pre-v1.12 instance) — fall back to startup age
+  const startedAge = now - new Date(data.startedAt).getTime();
+  return startedAge > MAX_PORT_FILE_AGE_MS;
+}
+
+/**
+ * Attempt to terminate a process by PID.
+ * Uses SIGTERM for graceful shutdown. On Windows, this calls TerminateProcess
+ * which is immediate and cannot be caught.
+ *
+ * @returns true if the signal was sent successfully, false if the process was already gone
+ */
+function terminateProcess(pid: number): boolean {
+  try {
+    process.kill(pid, 'SIGTERM');
+    return true;
+  } catch {
+    return false; // Process may have already exited
   }
 }
 
@@ -159,8 +240,13 @@ export function discoverActiveInstances(preferredPort: number = DEFAULT_WS_PORT)
 }
 
 /**
- * Clean up all stale port files (dead PIDs).
- * Useful for maintenance and debugging.
+ * Clean up stale port files and terminate zombie MCP processes.
+ *
+ * Runs at startup before port binding. Detects stale instances via:
+ *   1. Dead PID — process no longer exists → delete file
+ *   2. Zombie process — alive but stale (no heartbeat or expired heartbeat)
+ *      → send SIGTERM to free the port, then delete file
+ *   3. Corrupt file — invalid JSON → delete file
  */
 export function cleanupStalePortFiles(): number {
   let cleaned = 0;
@@ -173,10 +259,21 @@ export function cleanupStalePortFiles(): number {
         try {
           const raw = readFileSync(filePath, 'utf-8');
           const data: PortFileData = JSON.parse(raw);
+
           if (!isProcessAlive(data.pid)) {
+            // Dead PID — just clean up the file
             unlinkSync(filePath);
             cleaned++;
-            logger.debug({ port: data.port, pid: data.pid }, 'Cleaned up stale port file');
+            logger.debug({ port: data.port, pid: data.pid }, 'Cleaned up stale port file (dead process)');
+          } else if (data.pid !== process.pid && isStaleInstance(data)) {
+            // Live PID but stale — zombie process, terminate it to free the port
+            logger.info(
+              { port: data.port, pid: data.pid, startedAt: data.startedAt, lastSeen: data.lastSeen },
+              'Detected zombie MCP process — sending SIGTERM to free port',
+            );
+            terminateProcess(data.pid);
+            try { unlinkSync(filePath); } catch { /* best-effort */ }
+            cleaned++;
           }
         } catch {
           // Corrupt file — remove it
