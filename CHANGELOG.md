@@ -5,6 +5,14 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.6] - 2026-03-12
+
+### Added
+- **`--print-path` CLI flag** — Run `npx figma-console-mcp --print-path` to print the Desktop Bridge plugin manifest directory and exit. Useful for scripting and automation when you need to locate the plugin files without starting the server. Resolves #22.
+
+### Fixed
+- **Port exhaustion from zombie MCP processes** — Claude Desktop's known double-spawn bug and orphaned process issue could cause zombie MCP server instances to accumulate across WebSocket ports 9223-9232, eventually exhausting all available ports. Added three-layer zombie detection: heartbeat refresh (30s `lastSeen` updates), stale heartbeat detection (>5 min without refresh), and age ceiling (>4h for pre-v1.12 instances without heartbeat support). Zombie processes are terminated with SIGTERM to free their ports. Backward compatible with port files from older versions. Resolves #20.
+
 ## [1.11.5] - 2026-03-12
 
 ### Fixed

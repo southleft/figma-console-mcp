@@ -192,7 +192,7 @@ Get all 57+ tools including design creation, variable management, and component 
 
 ### Quick Start: Remote SSE (Read-Only)
 
-If you just want to explore or evaluate the tool, use Remote SSE. It's read-only ((22 tools)) but requires zero setup.
+If you just want to explore or evaluate the tool, use Remote SSE. It's read-only (((22 tools))) but requires zero setup.
 
 <Steps>
   <Step title="Open Claude Desktop Settings">
