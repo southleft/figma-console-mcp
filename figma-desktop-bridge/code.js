@@ -781,12 +781,13 @@ figma.ui.onmessage = async (msg) => {
           componentPropertyDefinitions: (node.type === 'COMPONENT_SET' || (node.type === 'COMPONENT' && !isVariant))
             ? node.componentPropertyDefinitions
             : undefined,
-          // Get children info (lightweight)
-          children: node.children ? node.children.map(child => ({
-            id: child.id,
-            name: child.name,
-            type: child.type
-          })) : undefined
+          // Get children info (lightweight) — skip unresolvable slot sublayers
+          children: node.children ? node.children.reduce((acc, child) => {
+            try {
+              acc.push({ id: child.id, name: child.name, type: child.type });
+            } catch (e) { /* slot sublayer or table cell — skip */ }
+            return acc;
+          }, []) : undefined
         }
       };
 
@@ -856,40 +857,42 @@ figma.ui.onmessage = async (msg) => {
         var variantAxes = {};
         var variants = [];
 
-        // Parse variant properties from children names
+        // Parse variant properties from children names — skip unresolvable slot sublayers
         if (node.children) {
           node.children.forEach(function(child) {
-            if (child.type === 'COMPONENT') {
-              // Parse variant name (e.g., "Size=md, State=default")
-              var variantProps = {};
-              var parts = child.name.split(',').map(function(p) { return p.trim(); });
-              parts.forEach(function(part) {
-                var kv = part.split('=');
-                if (kv.length === 2) {
-                  var key = kv[0].trim();
-                  var value = kv[1].trim();
-                  variantProps[key] = value;
+            try {
+              if (child.type === 'COMPONENT') {
+                // Parse variant name (e.g., "Size=md, State=default")
+                var variantProps = {};
+                var parts = child.name.split(',').map(function(p) { return p.trim(); });
+                parts.forEach(function(part) {
+                  var kv = part.split('=');
+                  if (kv.length === 2) {
+                    var key = kv[0].trim();
+                    var value = kv[1].trim();
+                    variantProps[key] = value;
 
-                  // Track all values for each axis
-                  if (!variantAxes[key]) {
-                    variantAxes[key] = [];
+                    // Track all values for each axis
+                    if (!variantAxes[key]) {
+                      variantAxes[key] = [];
+                    }
+                    if (variantAxes[key].indexOf(value) === -1) {
+                      variantAxes[key].push(value);
+                    }
                   }
-                  if (variantAxes[key].indexOf(value) === -1) {
-                    variantAxes[key].push(value);
-                  }
-                }
-              });
+                });
 
-              variants.push({
-                key: child.key,
-                nodeId: child.id,
-                name: child.name,
-                description: child.description || null,
-                variantProperties: variantProps,
-                width: child.width,
-                height: child.height
-              });
-            }
+                variants.push({
+                  key: child.key,
+                  nodeId: child.id,
+                  name: child.name,
+                  description: child.description || null,
+                  variantProperties: variantProps,
+                  width: child.width,
+                  height: child.height
+                });
+              }
+            } catch (e) { /* slot sublayer — skip */ }
           });
         }
 
@@ -937,10 +940,10 @@ figma.ui.onmessage = async (msg) => {
           }
         }
 
-        // Recurse into children
+        // Recurse into children — skip unresolvable slot sublayers
         if (node.children) {
           node.children.forEach(function(child) {
-            findComponents(child);
+            try { findComponents(child); } catch (e) { /* slot sublayer — skip */ }
           });
         }
       }
@@ -2236,14 +2239,20 @@ figma.loadAllPagesAsync().then(function() {
     var selection = figma.currentPage.selection;
     var selectedNodes = [];
     for (var i = 0; i < Math.min(selection.length, 50); i++) {
-      var node = selection[i];
-      selectedNodes.push({
-        id: node.id,
-        name: node.name,
-        type: node.type,
-        width: node.width,
-        height: node.height
-      });
+      try {
+        var node = selection[i];
+        selectedNodes.push({
+          id: node.id,
+          name: node.name,
+          type: node.type,
+          width: node.width,
+          height: node.height
+        });
+      } catch (e) {
+        // Slot sublayers and table cells may not be fully resolvable —
+        // accessing .name throws "does not exist" for these node types.
+        // Skip silently rather than crashing the plugin.
+      }
     }
     figma.ui.postMessage({
       type: 'SELECTION_CHANGE',
