@@ -16,8 +16,8 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | I want to... | Setup Method | Time |
 |--------------|--------------|------|
 | **Create, modify, and develop with AI** | [NPX Setup](#-npx-setup-recommended) (Recommended) | ~10 min |
+| **Design from Claude.ai, v0, Replit, or Lovable** | [Cloud Mode](#-cloud-mode-web-ai-clients) | ~5 min |
 | **Full capabilities with manual update control** | [Local Git Setup](#-local-git-setup-alternative) | ~15 min |
-| **Use AI from web clients** (Claude.ai, v0, Replit, Lovable) | [Cloud Mode](#-cloud-mode-web-ai-clients) | ~5 min |
 | **Set up with OpenAI Codex** (GUI config) | [Codex Setup](#-openai-codex) | ~5 min |
 | **Just explore my design data** (read-only) | [Remote Mode](#-remote-mode-read-only-exploration) | ~2 min |
 
@@ -342,15 +342,74 @@ Then restart Claude Desktop.
 
 ---
 
+## ☁️ Cloud Mode (Web AI Clients)
+
+**Best for:** Claude.ai, v0, Replit, Lovable, and any MCP-capable web platform that needs to create and modify Figma designs.
+
+**What you get:** 44 tools — full write access (create frames, components, variables, edit designs) plus REST API reads. This is Remote Mode upgraded with the Cloud Write Relay.
+
+**What you don't get vs Local:** Real-time selection tracking, document change monitoring, and console log streaming (these require a local WebSocket connection).
+
+### Prerequisites
+
+- [ ] **Figma Desktop** with the Desktop Bridge plugin installed and running in your file
+- [ ] A web AI client connected to the remote MCP endpoint (`/mcp` with your Figma PAT as Bearer token)
+
+> No Node.js required. The relay runs entirely in Cloudflare Workers.
+
+### How to Connect (~2 min)
+
+1. **Tell your AI to connect to your Figma plugin** using natural language. For example:
+   - "Connect to my Figma plugin"
+   - "Pair with my design file"
+   - "I want to create designs in Figma"
+
+2. **Your AI generates a 6-character pairing code** (expires in 5 minutes)
+
+3. **In Figma Desktop:**
+   - Open the Desktop Bridge plugin (Plugins → Development → Figma Desktop Bridge)
+   - Toggle **"Cloud Mode"** in the plugin UI
+   - Enter the pairing code
+   - Click **Connect**
+
+4. **Done.** Your AI now has full write access to the open Figma file through the cloud relay.
+
+### What You Can Do (44 Tools)
+
+- ✅ Create frames, shapes, and components
+- ✅ Edit existing designs (resize, reposition, restyle)
+- ✅ Create and manage variables on any Figma plan (via Plugin API)
+- ✅ Instantiate components and set instance properties
+- ✅ Clone, delete, and rename nodes
+- ✅ Set fills, strokes, and text content
+- ✅ Set image fills on nodes
+- ✅ Read design data, take screenshots, extract design systems
+
+### What's Local-Only (Not Available in Cloud Mode)
+
+- ❌ Real-time selection tracking
+- ❌ Document change monitoring
+- ❌ Console log streaming
+- ❌ MCP Apps (Token Browser, Design System Dashboard)
+
+### Tips
+
+- The pairing code expires after **5 minutes** — generate a new one if it times out
+- If the connection drops between AI turns, ask your AI to reconnect and enter a fresh code
+- The Desktop Bridge plugin must stay running in your Figma file for the relay to work
+- Variables work on **any Figma plan** (Free, Pro, Organization) because the relay uses the Plugin API, not the Enterprise REST API
+
+---
+
 ## 📡 Remote Mode (Read-Only Exploration)
 
-**Best for:** Quickly evaluating the tool, read-only design data extraction, or connecting AI code generators to your design system.
+**Best for:** Quickly evaluating the tool or read-only design data extraction without any plugin setup.
 
-**What you get:** 22 read-only tools for viewing design data, taking screenshots, reading console logs, design-code parity checks, and full design system extraction via `figma_get_design_system_kit`.
+**What you get:** 15 read-only tools for viewing design data, taking screenshots, reading console logs, and design system extraction.
 
-> ⚠️ **Limitation:** Remote mode **cannot create or modify designs**. It's read-only. For write access from web AI clients, see [Cloud Mode](#-cloud-mode-web-ai-clients). For full capabilities, use [NPX Setup](#-npx-setup-recommended).
+> **Want write access?** See [Cloud Mode](#-cloud-mode-web-ai-clients) above — same remote endpoint, plus Desktop Bridge pairing for full design creation.
 
-Two remote endpoints are available — both provide the same 22 read-only tools:
+Two remote endpoints are available:
 
 | Endpoint | Transport | Auth | Best For |
 |----------|-----------|------|----------|
@@ -414,71 +473,10 @@ The `/mcp` endpoint accepts your Figma Personal Access Token as a Bearer token �
 - ❌ Edit existing designs
 - ❌ Create or modify variables
 - ❌ Instantiate components
-- ❌ Use Desktop Bridge plugin
 
 ### Upgrading to Write Access
 
-Want to create and modify designs from a web AI client? See [Cloud Mode](#-cloud-mode-web-ai-clients) — no Node.js required.
-
-Ready for full capabilities including real-time monitoring? Follow the [NPX Setup](#-npx-setup-recommended) guide above.
-
----
-
-## ☁️ Cloud Mode (Web AI Clients)
-
-**Best for:** Claude.ai, v0, Replit, Lovable, and any MCP-capable web platform that needs to create and modify Figma designs.
-
-**What you get:** 43 tools — full write access (create frames, components, variables, edit designs) plus REST API reads. This is Remote Mode upgraded with the Cloud Write Relay.
-
-**What you don't get vs Local:** Real-time selection tracking, document change monitoring, and console log streaming (these require a local WebSocket connection).
-
-### Prerequisites
-
-- [ ] **Figma Desktop** with the Desktop Bridge plugin installed and running in your file
-- [ ] A web AI client connected to the remote MCP endpoint (`/mcp` with your Figma PAT as Bearer token)
-
-> No Node.js required. The relay runs entirely in Cloudflare Workers.
-
-### How to Connect (~2 min)
-
-1. **Tell your AI to connect to your Figma plugin** using natural language. For example:
-   - "Connect to my Figma plugin"
-   - "Pair with my design file"
-   - "I want to create designs in Figma"
-
-2. **Your AI generates a 6-character pairing code** (expires in 5 minutes)
-
-3. **In Figma Desktop:**
-   - Open the Desktop Bridge plugin (Plugins → Development → Figma Desktop Bridge)
-   - Toggle **"Cloud Mode"** in the plugin UI
-   - Enter the pairing code
-   - Click **Connect**
-
-4. **Done.** Your AI now has full write access to the open Figma file through the cloud relay.
-
-### What You Can Do (43 Tools)
-
-- ✅ Create frames, shapes, and components
-- ✅ Edit existing designs (resize, reposition, restyle)
-- ✅ Create and manage variables on any Figma plan (via Plugin API)
-- ✅ Instantiate components and set instance properties
-- ✅ Clone, delete, and rename nodes
-- ✅ Set fills, strokes, and text content
-- ✅ Read design data, take screenshots, extract design systems
-
-### What's Local-Only (Not Available in Cloud Mode)
-
-- ❌ Real-time selection tracking
-- ❌ Document change monitoring
-- ❌ Console log streaming
-- ❌ MCP Apps (Token Browser, Design System Dashboard)
-
-### Tips
-
-- The pairing code expires after **5 minutes** — generate a new one if it times out
-- If the connection drops between AI turns, ask your AI to reconnect and enter a fresh code
-- The Desktop Bridge plugin must stay running in your Figma file for the relay to work
-- Variables work on **any Figma plan** (Free, Pro, Organization) because the relay uses the Plugin API, not the Enterprise REST API
+Want to create and modify designs? See [Cloud Mode](#-cloud-mode-web-ai-clients) above — pair the Desktop Bridge plugin and get full write access from the same `/mcp` endpoint.
 
 ---
 
