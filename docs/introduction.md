@@ -173,7 +173,7 @@ Figma Console MCP makes this real. Your design system becomes:
 
 ### Recommended: NPX Setup (Full Capabilities)
 
-Get all 57+ tools including design creation, variable management, and component instantiation.
+Get all 58+ tools including design creation, variable management, and component instantiation.
 
 <Steps>
   <Step title="Get a Figma Token">
@@ -192,7 +192,7 @@ Get all 57+ tools including design creation, variable management, and component 
 
 ### Quick Start: Remote SSE (Read-Only)
 
-If you just want to explore or evaluate the tool, use Remote SSE. It's read-only ((((43 tools)))) but requires zero setup.
+If you just want to explore or evaluate the tool, use Remote SSE. It's read-only (((((44 tools))))) but requires zero setup.
 
 <Steps>
   <Step title="Open Claude Desktop Settings">
@@ -204,7 +204,7 @@ If you just want to explore or evaluate the tool, use Remote SSE. It's read-only
 </Steps>
 
 <Warning>
-**Remote mode cannot create or modify designs.** It only has 43 read-only tools (~34% of full capabilities). For design creation, use NPX Setup.
+**Remote mode cannot create or modify designs.** It only has 44 read-only tools (~34% of full capabilities). For design creation, use NPX Setup.
 </Warning>
 
 <Card title="Full Setup Guide" icon="book-open" href="/setup">
@@ -269,7 +269,7 @@ Figma Console MCP offers two ways to connect with **very different capabilities*
 
 | Feature | Local Mode (NPX/Git) | Remote Mode (SSE) |
 |---------|----------------------|-------------------|
-| **Total tools** | **57+** | **22** (read-only) |
+| **Total tools** | **58+** | **22** (read-only) |
 | **Setup** | ~10 minutes | ~2 minutes |
 | **Create designs** | ✅ Full capability | ❌ Not available |
 | **Edit designs** | ✅ Full capability | ❌ Not available |
@@ -322,7 +322,7 @@ Figma Console MCP offers two ways to connect with **very different capabilities*
     Real-world examples and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 57+ tools
+    Complete reference for 58+ tools
   </Card>
 </Columns>
 

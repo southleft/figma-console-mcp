@@ -5,6 +5,11 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.1] - 2026-03-13
+
+### Added
+- **`figma_set_image_fill` tool** — Set image fills on one or more Figma nodes. Accepts base64-encoded JPEG/PNG or file paths (local mode). Supports FILL, FIT, CROP, and TILE scale modes. Works in both local and cloud relay modes. (Thanks [@Gururagavendra](https://github.com/Gururagavendra) — [#31](https://github.com/southleft/figma-console-mcp/pull/31))
+
 ## [1.12.0] - 2026-03-13
 
 ### Added
