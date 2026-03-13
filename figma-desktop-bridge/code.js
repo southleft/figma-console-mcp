@@ -7,7 +7,7 @@
 console.log('🌉 [Desktop Bridge] Plugin loaded and ready');
 
 // Show minimal UI - compact status indicator
-figma.showUI(__html__, { width: 120, height: 36, visible: true, themeColors: true });
+figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
 
 // ============================================================================
 // CONSOLE CAPTURE — Intercept console.* in the QuickJS sandbox and forward
@@ -1996,6 +1996,21 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // RESIZE_UI - Dynamically resize the plugin window (e.g., Cloud Mode toggle)
+  // ============================================================================
+  else if (msg.type === 'RESIZE_UI') {
+    figma.ui.resize(msg.width || 120, msg.height || 36);
+  }
+
+  // ============================================================================
+  // STORE_CLOUD_CONFIG - Persist cloud pairing config in clientStorage
+  // ============================================================================
+  else if (msg.type === 'STORE_CLOUD_CONFIG') {
+    figma.clientStorage.setAsync('cloudConfig', { code: msg.code, timestamp: Date.now() })
+      .catch(function() { /* non-critical */ });
+  }
+
+  // ============================================================================
   // RELOAD_UI - Reload the plugin UI iframe (re-establishes WebSocket connection)
   // Uses figma.showUI(__html__) to reload without restarting code.js
   // ============================================================================
@@ -2009,7 +2024,7 @@ figma.ui.onmessage = async (msg) => {
       });
       // Short delay to let the response message be sent before reload
       setTimeout(function() {
-        figma.showUI(__html__, { width: 120, height: 36, visible: true, themeColors: true });
+        figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
       }, 100);
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);

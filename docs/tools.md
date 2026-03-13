@@ -7,7 +7,7 @@ description: "Complete API reference for all 57+ MCP tools, including parameters
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **57+ tools** with full read/write capabilities. Remote Mode (SSE) provides **22 read-only tools** (including design-code parity and design system kit tools). Tools marked "Local" in the table below are not available in Remote Mode.
+> **Note:** Local Mode (NPX/Git) provides **57+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **22 read-only tools** by default, or **43 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -29,42 +29,43 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_get_file_data` | File structure with verbosity control | All |
 | | `figma_get_file_for_plugin` | File data optimized for plugins | All |
 | | `figma_get_design_system_kit` | **Full design system in one call** (tokens, components, styles, visual specs) | All |
-| | `figma_get_design_system_summary` | Overview of design system | Local |
-| | `figma_get_token_values` | Get variable values by mode | Local |
-| **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local |
-| | `figma_arrange_component_set` | Organize variants with labels | Local |
-| | `figma_set_description` | Add component descriptions | Local |
-| **🧩 Components** | `figma_search_components` | Find components by name | Local |
-| | `figma_get_component_details` | Get component details | Local |
-| | `figma_instantiate_component` | Create component instance | Local |
-| | `figma_add_component_property` | Add component property | Local |
-| | `figma_edit_component_property` | Edit component property | Local |
-| | `figma_delete_component_property` | Remove component property | Local |
-| **🔧 Variables** | `figma_create_variable_collection` | Create collections with modes | Local |
-| | `figma_create_variable` | Create new variables | Local |
-| | `figma_update_variable` | Update variable values | Local |
-| | `figma_rename_variable` | Rename variables | Local |
-| | `figma_delete_variable` | Delete variables | Local |
-| | `figma_delete_variable_collection` | Delete collections | Local |
-| | `figma_add_mode` | Add modes to collections | Local |
-| | `figma_rename_mode` | Rename modes | Local |
-| | `figma_batch_create_variables` | Create up to 100 variables at once | Local |
-| | `figma_batch_update_variables` | Update up to 100 variables at once | Local |
-| | `figma_setup_design_tokens` | Create collection + modes + variables atomically | Local |
+| | `figma_get_design_system_summary` | Overview of design system | Local / Cloud |
+| | `figma_get_token_values` | Get variable values by mode | Local / Cloud |
+| **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local / Cloud |
+| | `figma_arrange_component_set` | Organize variants with labels | Local / Cloud |
+| | `figma_set_description` | Add component descriptions | Local / Cloud |
+| **🧩 Components** | `figma_search_components` | Find components by name | Local / Cloud |
+| | `figma_get_component_details` | Get component details | Local / Cloud |
+| | `figma_instantiate_component` | Create component instance | Local / Cloud |
+| | `figma_add_component_property` | Add component property | Local / Cloud |
+| | `figma_edit_component_property` | Edit component property | Local / Cloud |
+| | `figma_delete_component_property` | Remove component property | Local / Cloud |
+| **🔧 Variables** | `figma_create_variable_collection` | Create collections with modes | Local / Cloud |
+| | `figma_create_variable` | Create new variables | Local / Cloud |
+| | `figma_update_variable` | Update variable values | Local / Cloud |
+| | `figma_rename_variable` | Rename variables | Local / Cloud |
+| | `figma_delete_variable` | Delete variables | Local / Cloud |
+| | `figma_delete_variable_collection` | Delete collections | Local / Cloud |
+| | `figma_add_mode` | Add modes to collections | Local / Cloud |
+| | `figma_rename_mode` | Rename modes | Local / Cloud |
+| | `figma_batch_create_variables` | Create up to 100 variables at once | Local / Cloud |
+| | `figma_batch_update_variables` | Update up to 100 variables at once | Local / Cloud |
+| | `figma_setup_design_tokens` | Create collection + modes + variables atomically | Local / Cloud |
 | **🔍 Design-Code Parity** | `figma_check_design_parity` | Compare Figma specs vs code implementation | All |
 | | `figma_generate_component_doc` | Generate component documentation from Figma + code | All |
 | **💬 Comments** | `figma_get_comments` | Get comments on a Figma file | All |
 | | `figma_post_comment` | Post a comment, optionally pinned to a node | All |
 | | `figma_delete_comment` | Delete a comment by ID | All |
-| **📐 Node Manipulation** | `figma_resize_node` | Resize a node | Local |
-| | `figma_move_node` | Move a node | Local |
-| | `figma_clone_node` | Clone a node | Local |
-| | `figma_delete_node` | Delete a node | Local |
-| | `figma_rename_node` | Rename a node | Local |
-| | `figma_set_text` | Set text content | Local |
-| | `figma_set_fills` | Set fill colors | Local |
-| | `figma_set_strokes` | Set stroke colors | Local |
-| | `figma_create_child` | Create child node | Local |
+| **📐 Node Manipulation** | `figma_resize_node` | Resize a node | Local / Cloud |
+| | `figma_move_node` | Move a node | Local / Cloud |
+| | `figma_clone_node` | Clone a node | Local / Cloud |
+| | `figma_delete_node` | Delete a node | Local / Cloud |
+| | `figma_rename_node` | Rename a node | Local / Cloud |
+| | `figma_set_text` | Set text content | Local / Cloud |
+| | `figma_set_fills` | Set fill colors | Local / Cloud |
+| | `figma_set_strokes` | Set stroke colors | Local / Cloud |
+| | `figma_create_child` | Create child node | Local / Cloud |
+| **☁️ Cloud Relay** | `figma_pair_plugin` | Generate pairing code for Desktop Bridge | Cloud |
 
 ---
 
@@ -570,9 +571,9 @@ figma_get_file_for_plugin({
 
 ---
 
-## ✏️ Design Creation Tools (Local Mode Only)
+## ✏️ Design Creation Tools
 
-> **⚠️ Requires Desktop Bridge Plugin**: These tools only work in Local Mode with the Desktop Bridge plugin running in Figma.
+> **⚠️ Requires Desktop Bridge Plugin**: These tools require the Desktop Bridge plugin running in Figma. In Local Mode, the plugin connects via WebSocket. In Cloud Mode, pair first using `figma_pair_plugin` to connect through the cloud relay.
 
 ### `figma_execute`
 
@@ -664,9 +665,9 @@ frame.paddingRight = 16;
 
 ---
 
-## 🔧 Variable Management Tools (Local Mode Only)
+## 🔧 Variable Management Tools
 
-> **⚠️ Requires Desktop Bridge Plugin**: These tools only work in Local Mode with the Desktop Bridge plugin running in Figma.
+> **⚠️ Requires Desktop Bridge Plugin**: These tools require the Desktop Bridge plugin running in Figma. In Local Mode, the plugin connects via WebSocket. In Cloud Mode, pair first using `figma_pair_plugin` to connect through the cloud relay.
 
 ### `figma_create_variable_collection`
 
@@ -1052,9 +1053,9 @@ figma_setup_design_tokens({
 
 ---
 
-## 🧩 Component Tools (Local Mode Only)
+## 🧩 Component Tools
 
-> **⚠️ Requires Desktop Bridge Plugin**: These tools only work in Local Mode with the Desktop Bridge plugin running in Figma.
+> **⚠️ Requires Desktop Bridge Plugin**: These tools require the Desktop Bridge plugin running in Figma. In Local Mode, the plugin connects via WebSocket. In Cloud Mode, pair first using `figma_pair_plugin` to connect through the cloud relay.
 
 ### `figma_search_components`
 
@@ -1215,7 +1216,7 @@ figma_set_description({
 
 ---
 
-## 🔧 Node Manipulation Tools (Local Mode Only)
+## 🔧 Node Manipulation Tools
 
 ### `figma_resize_node`
 
@@ -1350,7 +1351,7 @@ figma_create_child({
 
 ---
 
-## 🏷️ Component Property Tools (Local Mode Only)
+## 🏷️ Component Property Tools
 
 ### `figma_add_component_property`
 
@@ -1512,7 +1513,7 @@ figma_get_design_system_kit({
 
 ---
 
-## 📊 Design System Summary Tools (Local Mode Only)
+## 📊 Design System Summary Tools
 
 ### `figma_get_design_system_summary`
 
@@ -1604,11 +1605,16 @@ figma_get_token_values({
 
 ### Prerequisites Checklist
 
-Before using write tools, ensure:
-1. ✅ Running in **Local Mode** (not Remote SSE)
-2. ✅ Connected to Figma Desktop via **Desktop Bridge Plugin**
-3. ✅ **Desktop Bridge plugin** is running in your Figma file
-4. ✅ `figma_get_status` returns `setup.valid: true`
+Before using write tools, ensure one of the following:
+
+**Local Mode:**
+1. ✅ Running in **Local Mode** (NPX/Git)
+2. ✅ **Desktop Bridge plugin** is running in your Figma file
+3. ✅ `figma_get_status` returns `setup.valid: true`
+
+**Cloud Mode:**
+1. ✅ **Desktop Bridge plugin** is running in your Figma file with Cloud Mode enabled
+2. ✅ Paired via `figma_pair_plugin` (or natural language: "connect to my Figma plugin")
 
 ---
 
@@ -1855,6 +1861,37 @@ figma_delete_comment({
 **Returns:**
 - `success`: Boolean indicating deletion success
 - `deleted_comment_id`: The ID that was deleted
+
+---
+
+## ☁️ Cloud Relay
+
+### `figma_pair_plugin`
+
+Generate a pairing code to connect the Figma Desktop Bridge plugin to the cloud relay. This enables write operations from web-based AI clients.
+
+**Mode:** Cloud only (available on `/mcp` endpoint)
+
+**Parameters:** None
+
+**Returns:**
+- `code` — 6-character alphanumeric pairing code (uppercase, no ambiguous characters)
+- `expiresIn` — Expiry time (5 minutes)
+- Instructions for the user
+
+**Natural language triggers:**
+- "Connect to my Figma plugin"
+- "Pair with my design file"
+- "Set up the cloud connection"
+- "Link Figma to this chat"
+
+**How it works:**
+1. Generates a unique 6-character code stored in KV with 5-minute TTL
+2. User enters code in the Desktop Bridge plugin's Cloud Mode section
+3. Plugin connects via WebSocket to the cloud relay Durable Object
+4. All subsequent write tool calls route through the relay to the plugin
+
+**Important:** The pairing code expires after 5 minutes. If it expires before the plugin connects, generate a new one.
 
 ---
 

@@ -31,6 +31,10 @@
 				}
 			],
 			"tag": "v3"
+		},
+		{
+			"new_sqlite_classes": ["PluginRelayDO"],
+			"tag": "v4"
 		}
 	],
 	"durable_objects": {
@@ -38,6 +42,10 @@
 			{
 				"class_name": "FigmaConsoleMCPv3",
 				"name": "MCP_OBJECT"
+			},
+			{
+				"class_name": "PluginRelayDO",
+				"name": "PLUGIN_RELAY"
 			}
 		]
 	},

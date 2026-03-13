@@ -23,6 +23,12 @@ import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { registerDesignCodeTools } from "./core/design-code-tools.js";
 import { registerCommentTools } from "./core/comment-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
+import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
+import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
+import { registerWriteTools } from "./core/write-tools.js";
+
+// Re-export PluginRelayDO so Cloudflare Workers can bind it as a Durable Object
+export { PluginRelayDO } from "./core/cloud-websocket-relay.js";
 // Note: MCP Apps (Token Browser, Dashboard) are only available in local mode
 // They require Node.js file system APIs for serving HTML that don't work in Cloudflare Workers
 
@@ -880,6 +886,74 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			},
 		);
 
+		// ================================================================
+		// Cloud Write Relay — Pairing Tool
+		// ================================================================
+		this.server.tool(
+			"figma_pair_plugin",
+			"Pair the Figma Desktop Bridge plugin to this cloud session for write access. Returns a 6-character code the user enters in the plugin's Cloud Mode section.",
+			{},
+			async () => {
+				try {
+					const env = this.env as Env;
+					const code = generatePairingCode();
+
+					// Create a unique DO ID for this relay session
+					const relayDoId = env.PLUGIN_RELAY.newUniqueId().toString();
+
+					// Store pairing code → relay DO ID in KV (5-min TTL, one-time use)
+					await env.OAUTH_TOKENS.put(`pairing:${code}`, relayDoId, {
+						expirationTtl: 300,
+					});
+
+					// Store relay DO ID in this MCP DO's storage for session persistence
+					await this.ctx.storage.put('relayDoId', relayDoId);
+
+					return {
+						content: [{
+							type: "text" as const,
+							text: JSON.stringify({
+								pairingCode: code,
+								expiresIn: "5 minutes",
+								instructions: [
+									"1. Open the Desktop Bridge plugin in Figma Desktop",
+									"2. Click the 'Cloud Mode' toggle in the plugin UI",
+									`3. Enter pairing code: ${code}`,
+									"4. Click 'Connect' — the plugin will connect to the cloud relay",
+									"5. Once paired, write tools (variables, components, nodes) work through the cloud"
+								],
+							}, null, 2),
+						}],
+					};
+				} catch (error) {
+					const errorMessage = error instanceof Error ? error.message : String(error);
+					return {
+						content: [{ type: "text" as const, text: JSON.stringify({ error: errorMessage }) }],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// ================================================================
+		// Cloud Desktop Connector factory
+		// ================================================================
+		const getCloudDesktopConnector = async (): Promise<any> => {
+			const env = this.env as Env;
+			const relayDoId = await this.ctx.storage.get<string>('relayDoId');
+			if (!relayDoId) {
+				throw new Error('No cloud relay session. Call figma_pair_plugin first to pair the Desktop Bridge plugin.');
+			}
+			const doId = env.PLUGIN_RELAY.idFromString(relayDoId);
+			const stub = env.PLUGIN_RELAY.get(doId);
+			const connector = new CloudWebSocketConnector(stub);
+			await connector.initialize();
+			return connector;
+		};
+
+		// Register all write/manipulation tools via shared function
+		registerWriteTools(this.server, getCloudDesktopConnector);
+
 		// Register Figma API tools (Tools 8-14)
 		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
 		registerFigmaAPITools(
@@ -890,7 +964,8 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			() => this.browserManager || null,
 			() => this.ensureInitialized(),
 			undefined, // variablesCache
-			{ isRemoteMode: true }
+			{ isRemoteMode: true },
+			getCloudDesktopConnector,
 		);
 
 		// Register Design-Code Parity & Documentation tools
@@ -899,7 +974,8 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
-			{ isRemoteMode: true }
+			{ isRemoteMode: true },
+			getCloudDesktopConnector,
 		);
 
 		// Register Comment tools
@@ -932,11 +1008,53 @@ export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url);
 
+		// Use canonical origin for OAuth redirect URIs so they match the Figma OAuth app config
+		// regardless of whether the request comes via workers.dev or custom domain
+		const oauthOrigin = env.CANONICAL_ORIGIN || url.origin;
+
 		// Redirect /docs to subdomain
 		if (url.pathname === "/docs" || url.pathname.startsWith("/docs/")) {
 			const newPath = url.pathname.replace(/^\/docs\/?/, "/");
 			const redirectUrl = `https://docs.figma-console-mcp.southleft.com${newPath}${url.search}`;
 			return Response.redirect(redirectUrl, 301);
+		}
+
+		// ================================================================
+		// Cloud Write Relay — Plugin WebSocket pairing endpoint
+		// ================================================================
+		if (url.pathname === "/ws/pair") {
+			const code = url.searchParams.get("code");
+			if (!code) {
+				return new Response(JSON.stringify({ error: "Missing pairing code" }), {
+					status: 400,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+
+			// Look up pairing code in KV
+			const pairingKey = `pairing:${code.toUpperCase()}`;
+			const relayDoId = await env.OAUTH_TOKENS.get(pairingKey);
+
+			if (!relayDoId) {
+				return new Response(JSON.stringify({ error: "Invalid or expired pairing code" }), {
+					status: 404,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+
+			// Delete used code (one-time use)
+			await env.OAUTH_TOKENS.delete(pairingKey);
+
+			// Forward WebSocket upgrade to the relay DO
+			const doId = env.PLUGIN_RELAY.idFromString(relayDoId);
+			const stub = env.PLUGIN_RELAY.get(doId);
+
+			// Rewrite URL to the relay DO's /ws/connect path
+			const relayUrl = new URL(request.url);
+			relayUrl.pathname = "/ws/connect";
+			const relayRequest = new Request(relayUrl.toString(), request);
+
+			return stub.fetch(relayRequest);
 		}
 
 		// SSE endpoint for remote MCP clients
@@ -1101,6 +1219,71 @@ export default {
 				version: "1.11.6",
 			});
 
+			// ================================================================
+			// Cloud Write Relay — Pairing Tool (stateless /mcp path)
+			// Uses KV keyed by bearer token instead of DO storage
+			// ================================================================
+			statelessServer.tool(
+				"figma_pair_plugin",
+				"Pair the Figma Desktop Bridge plugin to this cloud session for write access. Returns a 6-character code the user enters in the plugin's Cloud Mode section.",
+				{},
+				async () => {
+					try {
+						const code = generatePairingCode();
+						const relayDoId = env.PLUGIN_RELAY.newUniqueId().toString();
+
+						// Store pairing code → relay DO ID in KV (5-min TTL, one-time use)
+						await env.OAUTH_TOKENS.put(`pairing:${code}`, relayDoId, {
+							expirationTtl: 300,
+						});
+
+						// Store relay DO ID keyed by bearer token for session persistence
+						await env.OAUTH_TOKENS.put(`relay:${bearerToken}`, relayDoId, {
+							expirationTtl: 86400, // 24h — matches typical session length
+						});
+
+						return {
+							content: [{
+								type: "text" as const,
+								text: JSON.stringify({
+									pairingCode: code,
+									expiresIn: "5 minutes",
+									instructions: [
+										"1. Open the MCP Bridge plugin in Figma Desktop",
+										"2. Click the '▶ Cloud Mode' toggle in the plugin UI",
+										`3. Enter pairing code: ${code}`,
+										"4. Click 'Connect' — the plugin will connect to the cloud relay",
+										"5. Once paired, write tools (variables, components, nodes) work through the cloud"
+									],
+								}, null, 2),
+							}],
+						};
+					} catch (error) {
+						const errorMessage = error instanceof Error ? error.message : String(error);
+						return {
+							content: [{ type: "text" as const, text: JSON.stringify({ error: errorMessage }) }],
+							isError: true,
+						};
+					}
+				},
+			);
+
+			// Cloud Desktop Connector factory (stateless /mcp path)
+			const getCloudDesktopConnector = async (): Promise<any> => {
+				const relayDoId = await env.OAUTH_TOKENS.get(`relay:${bearerToken}`);
+				if (!relayDoId) {
+					throw new Error('No cloud relay session. Call figma_pair_plugin first to pair the Desktop Bridge plugin.');
+				}
+				const doId = env.PLUGIN_RELAY.idFromString(relayDoId);
+				const stub = env.PLUGIN_RELAY.get(doId);
+				const connector = new CloudWebSocketConnector(stub);
+				await connector.initialize();
+				return connector;
+			};
+
+			// Register all write/manipulation tools via shared function
+			registerWriteTools(statelessServer, getCloudDesktopConnector);
+
 			// Register REST API tools with the authenticated Figma API
 			registerFigmaAPITools(
 				statelessServer,
@@ -1111,6 +1294,7 @@ export default {
 				undefined,  // No ensureInitialized
 				new Map(),  // Fresh variables cache per request
 				{ isRemoteMode: true },
+				getCloudDesktopConnector,
 			);
 
 			registerDesignCodeTools(
@@ -1119,6 +1303,7 @@ export default {
 				() => null,
 				new Map(), // Fresh variables cache per request
 				{ isRemoteMode: true },
+				getCloudDesktopConnector,
 			);
 
 			registerCommentTools(
@@ -1249,7 +1434,7 @@ export default {
 			// Redirect to Figma OAuth
 			const figmaAuthUrl = new URL("https://www.figma.com/oauth");
 			figmaAuthUrl.searchParams.set("client_id", env.FIGMA_OAUTH_CLIENT_ID);
-			figmaAuthUrl.searchParams.set("redirect_uri", `${url.origin}/oauth/callback`);
+			figmaAuthUrl.searchParams.set("redirect_uri", `${oauthOrigin}/oauth/callback`);
 			figmaAuthUrl.searchParams.set("scope", "file_content:read,library_content:read,file_variables:read");
 			figmaAuthUrl.searchParams.set("state", stateToken);
 			figmaAuthUrl.searchParams.set("response_type", "code");
@@ -1480,7 +1665,7 @@ export default {
 				expirationTtl: 600 // 10 minutes
 			});
 
-			const redirectUri = `${url.origin}/oauth/callback`;
+			const redirectUri = `${oauthOrigin}/oauth/callback`;
 
 			const figmaAuthUrl = new URL("https://www.figma.com/oauth");
 			figmaAuthUrl.searchParams.set("client_id", env.FIGMA_OAUTH_CLIENT_ID);
@@ -1546,7 +1731,7 @@ export default {
 				const credentials = btoa(`${env.FIGMA_OAUTH_CLIENT_ID}:${env.FIGMA_OAUTH_CLIENT_SECRET}`);
 
 				const tokenParams = new URLSearchParams({
-					redirect_uri: `${url.origin}/oauth/callback`,
+					redirect_uri: `${oauthOrigin}/oauth/callback`,
 					code,
 					grant_type: "authorization_code"
 				});

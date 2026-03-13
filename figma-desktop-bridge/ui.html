@@ -79,6 +79,98 @@
       margin-left: 4px;
     }
 
+    /* Cloud Mode toggle */
+    .cloud-section {
+      display: none;
+      width: 100%;
+    }
+
+    .cloud-section.visible {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .cloud-toggle {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      font-size: 10px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      user-select: none;
+      margin-top: 2px;
+    }
+
+    .cloud-toggle:hover {
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+    }
+
+    .cloud-toggle .chevron {
+      display: inline-block;
+      font-size: 8px;
+      transition: transform 0.15s ease;
+    }
+
+    .cloud-toggle.expanded .chevron {
+      transform: rotate(90deg);
+    }
+
+    .cloud-input-row input {
+      width: 100%;
+      background: var(--figma-color-bg, #2c2c2c);
+      border: 1px solid var(--figma-color-border, #4a4a4a);
+      border-radius: 3px;
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+      font-family: monospace;
+      font-size: 12px;
+      padding: 4px 6px;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      text-align: center;
+      box-sizing: border-box;
+    }
+
+    .cloud-input-row input::placeholder {
+      text-transform: none;
+      letter-spacing: normal;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 10px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.3));
+    }
+
+    .cloud-input-row button {
+      width: 100%;
+      background: var(--figma-color-bg-brand, #0d99ff);
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 5px 8px;
+      cursor: pointer;
+    }
+
+    .cloud-input-row button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .cloud-status {
+      font-size: 9px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      text-align: center;
+    }
+
+    .cloud-status.connected {
+      color: #18a957;
+    }
+
+    .cloud-status.error {
+      color: #f24822;
+    }
+
     /* Light theme support */
     @media (prefers-color-scheme: light) {
       body {
@@ -99,11 +191,27 @@
   </style>
 </head>
 <body>
-  <div class="bridge-status" id="status-container">
-    <div class="status-indicator loading" id="status-dot"></div>
-    <div class="status-text">
-      <span class="label">MCP</span>
-      <span class="state" id="status-state">connecting</span>
+  <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+    <div class="bridge-status" id="status-container">
+      <div class="status-indicator loading" id="status-dot"></div>
+      <div class="status-text">
+        <span class="label">MCP</span>
+        <span class="state" id="status-state">connecting</span>
+      </div>
+    </div>
+
+    <div class="cloud-toggle" id="cloud-toggle" onclick="toggleCloudSection()">
+      <span class="chevron">▶</span> Cloud Mode
+    </div>
+
+    <div class="cloud-section" id="cloud-section">
+      <div class="cloud-input-row">
+        <input type="text" id="cloud-code" maxlength="6" placeholder="Pairing code" autocomplete="off" />
+      </div>
+      <div class="cloud-input-row">
+        <button id="cloud-btn" onclick="cloudConnect()">Connect</button>
+      </div>
+      <div class="cloud-status" id="cloud-status"></div>
     </div>
   </div>
 
@@ -774,11 +882,134 @@
         }
       };
 
+      // Expose functions for Cloud Mode to add connections to the same pool
+      window.__wsAddCloudConnection = function(cloudWs, label, onDisconnect) {
+        activeConnections.push({ port: label, ws: cloudWs });
+        updateCompatState();
+        attachWsHandlers(cloudWs, label);
+        // Chain cloud disconnect callback after attachWsHandlers' onclose
+        if (onDisconnect) {
+          var origOnClose = cloudWs.onclose;
+          cloudWs.onclose = function(event) {
+            if (origOnClose) origOnClose.call(cloudWs, event);
+            onDisconnect();
+          };
+        }
+        initializeConnection(cloudWs, label);
+      };
+
+      window.__wsGetActiveConnections = function() { return activeConnections; };
+
       // Single scan on load — no periodic rescanning to avoid console spam.
       // If no server found, retries up to MAX_INITIAL_SCANS times then stops.
       // On disconnect, retries the specific port up to 5 times then stops.
       wsScanAndConnect();
     })();
+
+    // ============================================================================
+    // CLOUD MODE — Connect to remote relay via pairing code
+    // ============================================================================
+    var cloudWs = null;
+    var CLOUD_RELAY_HOST = 'wss://figma-console-mcp.southleft.com';
+
+    function toggleCloudSection() {
+      var section = document.getElementById('cloud-section');
+      var toggle = document.getElementById('cloud-toggle');
+      var isExpanding = !section.classList.contains('visible');
+      section.classList.toggle('visible');
+      toggle.classList.toggle('expanded');
+
+      // Resize plugin window to fit content
+      var height = isExpanding ? 130 : 50;
+      parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 140, height: height } }, '*');
+    }
+
+    function resetCloudUI() {
+      var statusEl = document.getElementById('cloud-status');
+      var btn = document.getElementById('cloud-btn');
+      if (statusEl) {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = 'cloud-status';
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Connect';
+        btn.onclick = cloudConnect;
+      }
+      cloudWs = null;
+    }
+
+    function cloudConnect() {
+      var codeInput = document.getElementById('cloud-code');
+      var btn = document.getElementById('cloud-btn');
+      var statusEl = document.getElementById('cloud-status');
+      var code = (codeInput.value || '').trim().toUpperCase();
+
+      if (!code || code.length < 4) {
+        statusEl.textContent = 'Enter pairing code';
+        statusEl.className = 'cloud-status error';
+        return;
+      }
+
+      btn.disabled = true;
+      statusEl.textContent = 'Connecting...';
+      statusEl.className = 'cloud-status';
+
+      // Close existing cloud connection if any
+      if (cloudWs && cloudWs.readyState <= 1) {
+        cloudWs.close();
+      }
+
+      try {
+        cloudWs = new WebSocket(CLOUD_RELAY_HOST + '/ws/pair?code=' + code);
+
+        cloudWs.onopen = function() {
+          statusEl.textContent = 'Connected to cloud relay';
+          statusEl.className = 'cloud-status connected';
+          btn.disabled = false;
+          btn.textContent = 'Disconnect';
+          btn.onclick = cloudDisconnect;
+
+          // Add to the shared connection pool (uses same handlers as localhost).
+          // Pass resetCloudUI as disconnect callback — attachWsHandlers overwrites
+          // onclose, so this callback ensures cloud UI resets on server-initiated close.
+          if (window.__wsAddCloudConnection) {
+            window.__wsAddCloudConnection(cloudWs, 'cloud', resetCloudUI);
+          }
+
+          // Persist cloud config via code.js clientStorage
+          parent.postMessage({ pluginMessage: {
+            type: 'STORE_CLOUD_CONFIG',
+            code: code
+          }}, '*');
+        };
+
+        cloudWs.onerror = function() {
+          statusEl.textContent = 'Connection failed — check code';
+          statusEl.className = 'cloud-status error';
+          btn.disabled = false;
+        };
+
+        // Note: onclose here handles pre-connection close (e.g., bad code).
+        // After onopen, attachWsHandlers overwrites this — resetCloudUI callback
+        // handles post-connection close instead.
+        cloudWs.onclose = function(event) {
+          resetCloudUI();
+        };
+      } catch (e) {
+        statusEl.textContent = 'Failed: ' + e.message;
+        statusEl.className = 'cloud-status error';
+        btn.disabled = false;
+      }
+    }
+
+    function cloudDisconnect() {
+      if (cloudWs) {
+        cloudWs.close();
+      }
+      // Reset UI immediately — don't rely on onclose (may be overwritten)
+      resetCloudUI();
+    }
 
     // ============================================================================
     // MESSAGE HANDLER - Process responses from plugin worker

@@ -32,9 +32,11 @@
       "ws://localhost:9229",
       "ws://localhost:9230",
       "ws://localhost:9231",
-      "ws://localhost:9232"
+      "ws://localhost:9232",
+      "wss://figma-console-mcp.southleft.com",
+      "https://figma-console-mcp.southleft.com"
     ],
-    "reasoning": "Connects to local MCP server via WebSocket. Supports port range 9223-9232 for multi-instance operation (e.g., multiple Claude Desktop tabs or CLI tools).",
+    "reasoning": "Connects to local MCP server via WebSocket (port range 9223-9232 for multi-instance), and optionally to the cloud relay for remote write access.",
     "devAllowedDomains": [
       "http://localhost",
       "http://localhost:9223",
@@ -57,7 +59,9 @@
       "ws://localhost:9229",
       "ws://localhost:9230",
       "ws://localhost:9231",
-      "ws://localhost:9232"
+      "ws://localhost:9232",
+      "wss://figma-console-mcp.southleft.com",
+      "https://figma-console-mcp.southleft.com"
     ]
   }
 }
