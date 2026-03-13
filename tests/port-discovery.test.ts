@@ -1,7 +1,7 @@
 /**
  * Tests for the port discovery module.
  * Covers: port range generation, port file lifecycle, PID validation,
- * stale file cleanup, and multi-instance discovery.
+ * stale file cleanup, zombie detection, heartbeat, and multi-instance discovery.
  */
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
@@ -11,6 +11,9 @@ import { WebSocketServer as WSServer } from 'ws';
 import {
   DEFAULT_WS_PORT,
   PORT_RANGE_SIZE,
+  MAX_PORT_FILE_AGE_MS,
+  HEARTBEAT_STALE_MS,
+  HEARTBEAT_INTERVAL_MS,
   getPortRange,
   getPortFilePath,
   advertisePort,
@@ -18,6 +21,9 @@ import {
   readPortFile,
   discoverActiveInstances,
   cleanupStalePortFiles,
+  refreshPortAdvertisement,
+  isStaleInstance,
+  PortFileData,
 } from '../src/core/port-discovery.js';
 import { FigmaWebSocketServer } from '../src/core/websocket-server.js';
 
@@ -83,6 +89,18 @@ describe('Port Discovery Module', () => {
       expect(data!.pid).toBe(process.pid);
       expect(data!.host).toBe('localhost');
       expect(data!.startedAt).toBeTruthy();
+    });
+
+    it('should include lastSeen field in port file', () => {
+      advertisePort(TEST_PORT_BASE, 'localhost');
+
+      const data = readPortFile(TEST_PORT_BASE);
+      expect(data).not.toBeNull();
+      expect(data!.lastSeen).toBeTruthy();
+      // lastSeen should be close to startedAt on initial write
+      const started = new Date(data!.startedAt).getTime();
+      const lastSeen = new Date(data!.lastSeen!).getTime();
+      expect(Math.abs(lastSeen - started)).toBeLessThan(1000);
     });
 
     it('should return null for non-existent port file', () => {
@@ -186,7 +204,7 @@ describe('Port Discovery Module', () => {
       expect(existsSync(filePath)).toBe(false);
     });
 
-    it('should not remove files with live PIDs', () => {
+    it('should not remove files with live PIDs and fresh heartbeat', () => {
       advertisePort(TEST_PORT_BASE, 'localhost');
 
       const cleaned = cleanupStalePortFiles();
@@ -201,6 +219,146 @@ describe('Port Discovery Module', () => {
       const cleaned = cleanupStalePortFiles();
       expect(cleaned).toBeGreaterThanOrEqual(1);
       expect(existsSync(filePath)).toBe(false);
+    });
+
+    it('should not terminate our own process even if stale', () => {
+      // Write a port file for our own PID with old lastSeen
+      const filePath = getPortFilePath(TEST_PORT_BASE);
+      writeFileSync(filePath, JSON.stringify({
+        port: TEST_PORT_BASE,
+        pid: process.pid,
+        host: 'localhost',
+        startedAt: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(),
+        lastSeen: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      }));
+
+      // Should not clean up our own PID
+      const cleaned = cleanupStalePortFiles();
+      // The file should still exist — we never terminate ourselves
+      expect(existsSync(filePath)).toBe(true);
+    });
+  });
+
+  describe('isStaleInstance', () => {
+    it('should detect stale instance with expired heartbeat', () => {
+      const data: PortFileData = {
+        port: TEST_PORT_BASE,
+        pid: process.pid,
+        host: 'localhost',
+        startedAt: new Date().toISOString(),
+        lastSeen: new Date(Date.now() - HEARTBEAT_STALE_MS - 1000).toISOString(),
+      };
+      expect(isStaleInstance(data)).toBe(true);
+    });
+
+    it('should not flag instance with fresh heartbeat', () => {
+      const data: PortFileData = {
+        port: TEST_PORT_BASE,
+        pid: process.pid,
+        host: 'localhost',
+        startedAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+      };
+      expect(isStaleInstance(data)).toBe(false);
+    });
+
+    it('should detect stale pre-v1.12 instance (no lastSeen) by age', () => {
+      const data: PortFileData = {
+        port: TEST_PORT_BASE,
+        pid: process.pid,
+        host: 'localhost',
+        startedAt: new Date(Date.now() - MAX_PORT_FILE_AGE_MS - 1000).toISOString(),
+      };
+      expect(isStaleInstance(data)).toBe(true);
+    });
+
+    it('should not flag recent pre-v1.12 instance (no lastSeen)', () => {
+      const data: PortFileData = {
+        port: TEST_PORT_BASE,
+        pid: process.pid,
+        host: 'localhost',
+        startedAt: new Date().toISOString(),
+      };
+      expect(isStaleInstance(data)).toBe(false);
+    });
+
+    it('should handle heartbeat just within threshold', () => {
+      const data: PortFileData = {
+        port: TEST_PORT_BASE,
+        pid: process.pid,
+        host: 'localhost',
+        startedAt: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(), // 10 hours old
+        lastSeen: new Date(Date.now() - HEARTBEAT_STALE_MS + 30000).toISOString(), // 30s within threshold
+      };
+      expect(isStaleInstance(data)).toBe(false);
+    });
+  });
+
+  describe('refreshPortAdvertisement', () => {
+    it('should update lastSeen in the port file', () => {
+      advertisePort(TEST_PORT_BASE, 'localhost');
+      const before = readPortFile(TEST_PORT_BASE);
+      const beforeLastSeen = before!.lastSeen;
+
+      // Small delay to ensure timestamp differs
+      const now = new Date(Date.now() + 1000);
+      jest.spyOn(global, 'Date').mockImplementationOnce(() => now as any);
+
+      refreshPortAdvertisement(TEST_PORT_BASE);
+
+      jest.restoreAllMocks();
+
+      const after = readPortFile(TEST_PORT_BASE);
+      expect(after).not.toBeNull();
+      expect(after!.lastSeen).toBeTruthy();
+      // The port and PID should not change
+      expect(after!.port).toBe(TEST_PORT_BASE);
+      expect(after!.pid).toBe(process.pid);
+      expect(after!.startedAt).toBe(before!.startedAt);
+    });
+
+    it('should not refresh port file owned by another PID', () => {
+      // Write a port file owned by a different PID
+      const filePath = getPortFilePath(TEST_PORT_BASE);
+      const originalLastSeen = new Date(Date.now() - 60000).toISOString();
+      writeFileSync(filePath, JSON.stringify({
+        port: TEST_PORT_BASE,
+        pid: process.pid + 1000, // Different PID
+        host: 'localhost',
+        startedAt: new Date().toISOString(),
+        lastSeen: originalLastSeen,
+      }));
+
+      refreshPortAdvertisement(TEST_PORT_BASE);
+
+      // lastSeen should not have changed
+      const raw = readFileSync(filePath, 'utf-8');
+      const data = JSON.parse(raw);
+      expect(data.lastSeen).toBe(originalLastSeen);
+    });
+
+    it('should handle missing port file gracefully', () => {
+      // Should not throw
+      expect(() => refreshPortAdvertisement(TEST_PORT_BASE + 99)).not.toThrow();
+    });
+  });
+
+  describe('Constants', () => {
+    it('should have sensible heartbeat timing', () => {
+      // Heartbeat interval should be well under the stale threshold
+      expect(HEARTBEAT_INTERVAL_MS).toBeLessThan(HEARTBEAT_STALE_MS);
+      // At least 5 missed heartbeats before declaring stale
+      expect(HEARTBEAT_STALE_MS / HEARTBEAT_INTERVAL_MS).toBeGreaterThanOrEqual(5);
+    });
+
+    it('should have age ceiling well above heartbeat threshold', () => {
+      expect(MAX_PORT_FILE_AGE_MS).toBeGreaterThan(HEARTBEAT_STALE_MS);
+    });
+
+    it('should export expected constant values', () => {
+      expect(HEARTBEAT_INTERVAL_MS).toBe(30_000);
+      expect(HEARTBEAT_STALE_MS).toBe(5 * 60 * 1000);
+      expect(MAX_PORT_FILE_AGE_MS).toBe(4 * 60 * 60 * 1000);
     });
   });
 });

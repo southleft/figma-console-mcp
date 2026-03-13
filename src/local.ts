@@ -46,6 +46,8 @@ import {
 	registerPortCleanup,
 	discoverActiveInstances,
 	cleanupStalePortFiles,
+	refreshPortAdvertisement,
+	HEARTBEAT_INTERVAL_MS,
 } from "./core/port-discovery.js";
 import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import { registerDesignSystemDashboardApp } from "./apps/design-system-dashboard/server.js";
@@ -68,6 +70,8 @@ class LocalFigmaConsoleMCP {
 	private wsActualPort: number | null = null;
 	/** The preferred port requested (from env var or default) */
 	private wsPreferredPort: number = DEFAULT_WS_PORT;
+	/** Heartbeat timer that refreshes port file to prove this server is active */
+	private wsHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	private config = getConfig();
 
 	// In-memory cache for variables data to avoid MCP token limits
@@ -5466,6 +5470,12 @@ return {
 					advertisePort(boundPort, wsHost);
 					registerPortCleanup(boundPort);
 
+					// Start heartbeat — periodically refresh the port file to prove this server is active.
+					// Other instances use this to detect zombie processes on startup.
+					const heartbeatPort = boundPort;
+					this.wsHeartbeatTimer = setInterval(() => refreshPortAdvertisement(heartbeatPort), HEARTBEAT_INTERVAL_MS);
+					this.wsHeartbeatTimer.unref(); // Don't prevent process exit
+
 					break;
 				} catch (wsError) {
 					const errorMsg = wsError instanceof Error ? wsError.message : String(wsError);
@@ -5568,6 +5578,12 @@ return {
 		logger.info("Shutting down MCP server...");
 
 		try {
+			// Stop heartbeat timer
+			if (this.wsHeartbeatTimer) {
+				clearInterval(this.wsHeartbeatTimer);
+				this.wsHeartbeatTimer = null;
+			}
+
 			// Clean up port advertisement before stopping the server
 			if (this.wsActualPort) {
 				unadvertisePort(this.wsActualPort);
