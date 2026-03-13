@@ -5,6 +5,26 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-03-13
+
+### Added
+- **Cloud Write Relay** — Web-based AI clients (Claude.ai, v0, Replit, Lovable) can now create and modify Figma designs through a cloud relay. Pair the Desktop Bridge plugin via a 6-character code and get full write access (43 tools) without installing Node.js locally.
+  - `figma_pair_plugin` tool generates pairing codes (5-minute TTL) on the `/mcp` endpoint
+  - `PluginRelayDO` Cloudflare Durable Object bridges commands via hibernation-aware WebSocket
+  - `CloudWebSocketConnector` implements `IFigmaConnector` for cloud-to-plugin routing
+  - `registerWriteTools()` shared function provides 27 write tools to both local and cloud paths
+  - Desktop Bridge plugin gains Cloud Mode toggle with pairing code input and connect/disconnect
+- **`CANONICAL_ORIGIN` environment variable** — Ensures OAuth redirect URIs use your custom domain instead of the default `workers.dev` URL. Optional with safe fallback to `url.origin`.
+
+### Changed
+- **Remote mode expanded from 22 to 43 tools** — When paired via Cloud Relay, remote mode gains all 27 write tools (design creation, variable management, node manipulation) plus the pairing tool. Read-only mode (without pairing) remains available with 15 REST API tools.
+- **Desktop Bridge plugin renamed back to "Figma Desktop Bridge"** — Reverted from "MCP Bridge" to avoid confusion for existing local mode users.
+- **Documentation restructured for three-tier model** — README, setup guide, mode comparison, tools reference, use cases, architecture, and Desktop Bridge docs updated to reflect Remote (read-only) / Cloud+Relay / Local setup options.
+
+### Fixed
+- **Cloud relay connection dropping between AI turns** — Durable Object now uses `ctx.getWebSockets('plugin')` and DO storage instead of in-memory class properties, surviving hibernation cycles.
+- **Disconnect button not working in Desktop Bridge Cloud Mode** — `attachWsHandlers()` was overwriting the cloud-specific `onclose` handler. Fixed with chained disconnect callback and immediate UI reset.
+
 ## [1.11.6] - 2026-03-12
 
 ### Added

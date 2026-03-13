@@ -41,7 +41,7 @@ const logger = createChildLogger({ component: "mcp-server" });
 export class FigmaConsoleMCPv3 extends McpAgent {
 	server = new McpServer({
 		name: "Figma Console MCP",
-		version: "1.11.6",
+		version: "1.12.0",
 	});
 
 	private browserManager: BrowserManager | null = null;
@@ -1216,7 +1216,7 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.11.6",
+				version: "1.12.0",
 			});
 
 			// ================================================================
@@ -1969,7 +1969,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.11.6",
+					version: "1.12.0",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
