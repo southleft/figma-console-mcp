@@ -169,7 +169,8 @@ Figma Console MCP makes this real. Your design system becomes:
 | I want to... | Setup | Time |
 |--------------|-------|------|
 | **Create and modify designs with AI** | NPX Setup (Recommended) | ~10 min |
-| **Just explore my design data** (read-only) | Remote SSE | ~2 min |
+| **Design from Claude.ai, v0, Replit, or Lovable** | Cloud Mode | ~5 min |
+| **Just explore my design data** (read-only) | Remote Mode | ~2 min |
 
 ### Recommended: NPX Setup (Full Capabilities)
 
@@ -190,9 +191,25 @@ Get all 58+ tools including design creation, variable management, and component 
   </Step>
 </Steps>
 
-### Quick Start: Remote SSE (Read-Only)
+### Cloud Mode (Web AI Clients)
 
-If you just want to explore or evaluate the tool, use Remote SSE. It's read-only (((((44 tools))))) but requires zero setup.
+Using Claude.ai, v0, Replit, or Lovable? Get full write access (44 tools) without installing Node.js.
+
+<Steps>
+  <Step title="Run the Desktop Bridge Plugin">
+    Open the plugin in Figma Desktop (Plugins → Development → Figma Desktop Bridge)
+  </Step>
+  <Step title="Tell Your AI to Connect">
+    Say "Connect to my Figma plugin" — your AI generates a 6-character pairing code
+  </Step>
+  <Step title="Enter the Code in the Plugin">
+    Toggle Cloud Mode in the plugin, enter the code, and click Connect
+  </Step>
+</Steps>
+
+### Remote Mode (Read-Only)
+
+If you just want to explore or evaluate the tool, use Remote Mode. It's read-only (15 tools) but requires zero setup.
 
 <Steps>
   <Step title="Open Claude Desktop Settings">
@@ -204,7 +221,7 @@ If you just want to explore or evaluate the tool, use Remote SSE. It's read-only
 </Steps>
 
 <Warning>
-**Remote mode cannot create or modify designs.** It only has 44 read-only tools (~34% of full capabilities). For design creation, use NPX Setup.
+**Remote mode without pairing is read-only** (15 tools). For write access from web AI clients, use Cloud Mode above. For full capabilities with real-time monitoring, use NPX Setup.
 </Warning>
 
 <Card title="Full Setup Guide" icon="book-open" href="/setup">
@@ -251,7 +268,7 @@ Watch console logs for 60 seconds while I test my plugin
 Show me only error logs from the last 5 minutes
 ```
 
-### Design Creation (Local Mode)
+### Design Creation (Local & Cloud Mode)
 
 ```
 Create a notification toast with icon, title, and dismiss button
@@ -263,22 +280,23 @@ Build a user profile card using the Avatar and Button components
 
 ---
 
-## Remote vs Local Mode
+## Three Ways to Connect
 
-Figma Console MCP offers two ways to connect with **very different capabilities**:
+Figma Console MCP offers three connection tiers with different capabilities:
 
-| Feature | Local Mode (NPX/Git) | Remote Mode (SSE) |
-|---------|----------------------|-------------------|
-| **Total tools** | **58+** | **22** (read-only) |
-| **Setup** | ~10 minutes | ~2 minutes |
-| **Create designs** | ✅ Full capability | ❌ Not available |
-| **Edit designs** | ✅ Full capability | ❌ Not available |
-| **Manage variables** | ✅ Full capability | ❌ Not available |
-| **Read design data** | ✅ | ✅ |
-| **Variables API** | Works with any plan | Enterprise required |
-| **Authentication** | Manual token (one-time) | Automatic OAuth |
+| Feature | Local (NPX/Git) | Cloud Mode | Remote (Read-Only) |
+|---------|-----------------|------------|-------------------|
+| **Total tools** | **58+** | **44** | **15** |
+| **Setup** | ~10 minutes | ~5 minutes | ~2 minutes |
+| **Create designs** | ✅ | ✅ | ❌ |
+| **Edit designs** | ✅ | ✅ | ❌ |
+| **Manage variables** | ✅ | ✅ | ❌ |
+| **Read design data** | ✅ | ✅ | ✅ |
+| **Real-time monitoring** | ✅ | ❌ | ❌ |
+| **Variables on any plan** | ✅ | ✅ | Enterprise only |
+| **Requires Node.js** | Yes | No | No |
 
-**Start with NPX Setup** if you want AI to actually design in Figma. Remote mode is useful for quick exploration but is **read-only** with only ~34% of the tools.
+**Start with NPX Setup** for the complete experience. **Use Cloud Mode** to design from any web AI client without local installs. **Use Remote** for quick read-only exploration.
 
 <Card title="Compare Modes in Detail" icon="code-compare" href="/mode-comparison">
   Understand the technical differences and choose the right setup.
@@ -302,7 +320,11 @@ Figma Console MCP offers two ways to connect with **very different capabilities*
   </Accordion>
 
   <Accordion title="What AI assistants work with this?">
-    Any MCP-compatible client: Claude Desktop, Claude Code, GitHub Copilot (VS Code 1.102+), Cursor, Windsurf, Zed, and others. If your AI tool supports MCP servers, it works with Figma Console MCP.
+    Any MCP-compatible client: Claude Desktop, Claude Code, GitHub Copilot (VS Code 1.102+), Cursor, Windsurf, Zed, and others. Web-based clients like Claude.ai, v0, Replit, and Lovable work via Cloud Mode. If your AI tool supports MCP servers, it works with Figma Console MCP.
+  </Accordion>
+
+  <Accordion title="Do I need Node.js installed?">
+    Only for Local Mode (NPX/Git). Cloud Mode runs entirely in Cloudflare Workers — you just need Figma Desktop with the Desktop Bridge plugin. Remote read-only mode needs nothing at all.
   </Accordion>
 
   <Accordion title="Is this free?">
