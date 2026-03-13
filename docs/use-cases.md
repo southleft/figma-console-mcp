@@ -258,9 +258,9 @@ Then run your plugin in Figma Desktop, and say:
 
 ---
 
-## ✏️ Design Creation (Local Mode)
+## ✏️ Design Creation (Local Mode & Cloud Mode)
 
-These scenarios require Local Mode with the Desktop Bridge plugin installed. They enable AI-assisted design creation directly in Figma.
+These scenarios require the Desktop Bridge plugin. In Local Mode, the plugin connects via WebSocket. In Cloud Mode, say "connect to my Figma plugin" first to pair via the cloud relay — then all the same prompts work from web-based AI clients like Claude.ai, v0, Replit, and Lovable.
 
 ### Scenario 11: Create Component Variants with Variables
 
@@ -410,9 +410,9 @@ Use markdown formatting."
 
 ---
 
-### Scenario 17: Variable Mode Management
+### Scenario 17: Variable Mode Management (Local Mode & Cloud Mode)
 
-**Your situation:** You need to add a dark mode to your design system variables.
+**Your situation:** You need to add a dark mode to your design system variables. This works in both Local Mode and Cloud Mode (after pairing).
 
 **What to say:**
 
@@ -478,6 +478,95 @@ Each should have 3 sizes (24px, 32px, 40px) and use the same variable bindings a
 4. Continue iterating until you're satisfied
 
 This workflow leverages the screenshot feedback loop for precise design control.
+
+---
+
+## ☁️ Cloud Mode Workflows
+
+These scenarios are for web-based AI clients (Claude.ai, v0, Replit, Lovable) that connect to Figma through the cloud relay. No local installation required — just the Desktop Bridge plugin running in Figma.
+
+### Scenario: Connect Cloud AI to Figma (First Time)
+
+**Your situation:** You're using Claude.ai (or v0, Replit, Lovable) and want to create or modify designs in Figma.
+
+**What to say:**
+
+```
+"Connect to my Figma plugin so we can start designing"
+```
+
+or
+
+```
+"Pair with my Figma file"
+```
+
+**What happens:**
+1. AI generates a 6-character pairing code (valid for 5 minutes)
+2. You enter the code in the Desktop Bridge plugin's Cloud Mode section
+3. The plugin connects to the cloud relay — you're paired
+4. All write tools (43 total) are now available through the cloud
+
+**Follow-up prompts:**
+- "Create a card component with an image, title, and description"
+- "Update my primary color variable to #006699"
+- "Show me what components are in this file"
+
+---
+
+### Scenario: Design System Extraction for AI Code Generators (Cloud)
+
+**Your situation:** You're using v0, Replit, or Lovable and want your actual design tokens — not REST API snapshots that require an Enterprise plan.
+
+**What to say:**
+
+```
+"Connect to my Figma file and extract my design system variables"
+```
+
+**What happens:**
+1. AI generates a pairing code, you enter it in the plugin
+2. Plugin API extracts ALL variables on any Figma plan (Pro, Org, or Enterprise)
+3. AI receives full token data: colors, spacing, typography, with all mode values (Light/Dark/etc.)
+4. You can now generate code using your real design system
+
+**Why this matters:** The Figma REST API requires an Enterprise plan to access variables. Cloud Relay bypasses this limitation because the Desktop Bridge plugin uses the Plugin API, which works on all plans.
+
+---
+
+### Scenario: Update Design Tokens from Web Chat
+
+**Your situation:** You're in a meeting, using Claude.ai on a laptop, and want to update a brand color across your design system.
+
+**What to say:**
+
+```
+"Connect to Figma and change the primary brand color to #006699 across all modes"
+```
+
+**What happens:**
+1. AI generates pairing code, you enter it in the Desktop Bridge plugin
+2. AI reads your current variables to find the primary color
+3. Updates the value across Light, Dark, and any other modes
+4. Confirms the changes with the new values
+
+---
+
+### Scenario: Create Components from Web AI Client
+
+**Your situation:** You're using Claude.ai to prototype a new component and want it created directly in Figma.
+
+**What to say:**
+
+```
+"Connect to my Figma and create a notification toast with an icon, title text, and a dismiss button"
+```
+
+**What happens:**
+1. AI generates pairing code, you enter it in the plugin
+2. AI uses the plugin API to create a frame with auto-layout
+3. Adds child elements (icon placeholder, title text, dismiss button)
+4. Takes a screenshot to verify the result and show you what was created
 
 ---
 
@@ -604,6 +693,8 @@ This workflow leverages the screenshot feedback loop for precise design control.
 2. **Use filters:** "Show me only error logs from the last minute"
 3. **Be specific about formats:** "Export as Tailwind v4 syntax"
 4. **Request enrichment explicitly:** "Get variables with CSS exports and usage information"
+5. **Cloud Mode — connect first:** Start by saying "pair with my Figma plugin" or "connect to Figma" before asking for design changes
+6. **Use natural language:** You don't need to know tool names. Say "create a blue square" not "call figma_execute"
 
 ---
 

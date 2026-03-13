@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
-> **🆕 v1.11.2 — Design System Kit for AI Code Generators:** Connect your Figma design system to Lovable, v0, and Replit via the remote MCP endpoint. `figma_get_design_system_kit` extracts tokens, component specs, and resolved styles in one call — so AI-generated code builds with your brand. [See changelog →](CHANGELOG.md)
+> **🆕 Cloud Write Relay — Web AI Clients Can Now Design in Figma:** Claude.ai, v0, Replit, and Lovable can now create and modify Figma designs through a cloud relay. No Node.js required — just pair your Desktop Bridge plugin with a 6-character code and get 43 tools including full write access. [See changelog →](CHANGELOG.md)
 
 ## What is this?
 
@@ -20,7 +20,8 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 - **✏️ Design creation** - Create UI components, frames, and layouts directly in Figma
 - **🔧 Variable management** - Create, update, rename, and delete design tokens
 - **⚡ Real-time monitoring** - Watch logs as plugins execute
-- **🔄 Three ways to install** - Remote SSE (OAuth, zero-setup), NPX (npm package), or Local Git (source code)
+- **☁️ Cloud Write Relay** - Web AI clients (Claude.ai, v0, Replit) can design in Figma via cloud pairing
+- **🔄 Four ways to connect** - Remote SSE, Cloud Mode, NPX, or Local Git
 
 ---
 
@@ -33,21 +34,24 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | I want to... | Setup Method | Time |
 |--------------|--------------|------|
 | **Create and modify designs with AI** | [NPX Setup](#-npx-setup-recommended) (Recommended) | ~10 min |
+| **Design from the web** (Claude.ai, v0, Replit, Lovable) | [Cloud Mode](#-cloud-mode-web-ai-clients) | ~5 min |
 | **Contribute to the project** | [Local Git Setup](#for-contributors-local-git-mode) | ~15 min |
 | **Just explore my design data** (read-only) | [Remote SSE](#-remote-sse-read-only-exploration) | ~2 min |
 
 ### ⚠️ Important: Capability Differences
 
-| Capability | NPX / Local Git | Remote SSE |
-|------------|-----------------|------------|
-| Read design data | ✅ | ✅ |
-| **Create components & frames** | ✅ | ❌ |
-| **Edit existing designs** | ✅ | ❌ |
-| **Manage design tokens/variables** | ✅ | ❌ |
-| Desktop Bridge plugin | ✅ | ❌ |
-| **Total tools available** | **56+** | **16** |
+| Capability | NPX / Local Git | Cloud Mode | Remote SSE |
+|------------|-----------------|------------|------------|
+| Read design data | ✅ | ✅ | ✅ |
+| **Create components & frames** | ✅ | ✅ | ❌ |
+| **Edit existing designs** | ✅ | ✅ | ❌ |
+| **Manage design tokens/variables** | ✅ | ✅ | ❌ |
+| Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
+| Desktop Bridge plugin | ✅ | ✅ | ❌ |
+| Requires Node.js | Yes | **No** | No |
+| **Total tools available** | **57+** | **43** | **22** |
 
-> **Bottom line:** Remote SSE is **read-only** with ~34% of the tools. If you want AI to actually design in Figma, use NPX Setup.
+> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 57+ tools with real-time monitoring.
 
 ---
 
@@ -227,7 +231,53 @@ claude mcp add figma-console -s user -- npx -y mcp-remote@latest https://figma-c
 
 #### Upgrading to Full Capabilities
 
-Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide above.
+Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide above, or try [Cloud Mode](#-cloud-mode-web-ai-clients) if you don't want to install Node.js.
+
+**📖 [Complete Setup Guide](docs/setup.md)**
+
+---
+
+### ☁️ Cloud Mode (Web AI Clients)
+
+**Best for:** Using Claude.ai, v0, Replit, or Lovable to create and modify Figma designs — no Node.js required.
+
+**What you get:** 43 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
+
+#### Prerequisites
+
+- [ ] **Figma Desktop** with the Desktop Bridge plugin installed (see [Desktop Bridge setup](#step-3-connect-to-figma-desktop))
+- [ ] **A web AI client** connected to the remote MCP endpoint (see [Remote SSE setup](#-remote-sse-read-only-exploration))
+
+#### How to Connect
+
+1. **Set up Remote SSE** if you haven't already — follow the [Remote SSE](#-remote-sse-read-only-exploration) steps above
+2. **Open the Desktop Bridge plugin** in Figma Desktop (Plugins → Development → Figma Desktop Bridge)
+3. **Tell your AI assistant:**
+   ```
+   Connect to my Figma plugin
+   ```
+4. **The AI gives you a 6-character pairing code** (expires in 5 minutes)
+5. **In the plugin:** Toggle "Cloud Mode" → enter the code → click Connect
+6. **You're paired!** Full write access is now available
+
+#### What You Can Do
+
+Once paired, use natural language to design:
+```
+Create a card component with a header image, title, description, and action button
+Set up a color token collection with Light and Dark modes
+Add a "High Contrast" mode to my existing token collection
+```
+
+#### How It Works
+
+Your AI client sends write commands through the cloud MCP server, which relays them via WebSocket to the Desktop Bridge plugin running in your Figma Desktop. The plugin executes the commands using the Figma Plugin API and returns results back through the same path.
+
+```
+AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugin → Figma
+```
+
+> **Variables on any plan:** Cloud Mode uses the Plugin API (not the Enterprise REST API), so variable management works on Free, Pro, and Organization plans.
 
 **📖 [Complete Setup Guide](docs/setup.md)**
 
@@ -235,22 +285,24 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 ## 📊 Installation Method Comparison
 
-| Feature | NPX (Recommended) | Local Git | Remote SSE |
-|---------|-------------------|-----------|------------|
-| **Setup time** | ~10 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **56+** | **56+** | **22** (read-only) |
-| **Design creation** | ✅ | ✅ | ❌ |
-| **Variable management** | ✅ | ✅ | ❌ |
-| **Component instantiation** | ✅ | ✅ | ❌ |
-| **Desktop Bridge plugin** | ✅ | ✅ | ❌ |
-| **Variables (no Enterprise)** | ✅ | ✅ | ❌ |
-| **Console logs** | ✅ (zero latency) | ✅ (zero latency) | ✅ |
-| **Read design data** | ✅ | ✅ | ✅ |
-| **Authentication** | PAT (manual) | PAT (manual) | OAuth (automatic) |
-| **Automatic updates** | ✅ (`@latest`) | Manual (`git pull`) | ✅ |
-| **Source code access** | ❌ | ✅ | ❌ |
+| Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
+|---------|-------------------|------------|-----------|------------|
+| **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
+| **Total tools** | **57+** | **43** | **57+** | **22** (read-only) |
+| **Design creation** | ✅ | ✅ | ✅ | ❌ |
+| **Variable management** | ✅ | ✅ | ✅ | ❌ |
+| **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
+| **Real-time monitoring** | ✅ | ❌ | ✅ | ❌ |
+| **Desktop Bridge plugin** | ✅ | ✅ | ✅ | ❌ |
+| **Variables (no Enterprise)** | ✅ | ✅ | ✅ | ❌ |
+| **Console logs** | ✅ (zero latency) | ❌ | ✅ (zero latency) | ✅ |
+| **Read design data** | ✅ | ✅ | ✅ | ✅ |
+| **Requires Node.js** | Yes | **No** | Yes | No |
+| **Authentication** | PAT (manual) | OAuth (automatic) | PAT (manual) | OAuth (automatic) |
+| **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
+| **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only with ~34% of the tools. Use NPX for full capabilities.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 57+ tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -260,7 +312,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 After setup, try these prompts:
 
-**Basic test (both modes):**
+**Basic test (all modes):**
 ```
 Navigate to https://www.figma.com and check status
 ```
@@ -269,6 +321,12 @@ Navigate to https://www.figma.com and check status
 ```
 Get design variables from [your Figma file URL]
 ```
+
+**Cloud Mode test:**
+```
+Connect to my Figma plugin
+```
+→ Follow the pairing flow, then try: "Create a simple blue rectangle"
 
 **Plugin test (Local Mode only):**
 ```
@@ -320,7 +378,10 @@ When you first use design system tools:
 - `figma_get_file_data` - Full file structure
 - `figma_get_file_for_plugin` - Optimized file data
 
-### ✏️ Design Creation (Local Mode + Desktop Bridge)
+### ☁️ Cloud Relay
+- `figma_pair_plugin` - Generate a pairing code to connect a Desktop Bridge plugin via the cloud relay
+
+### ✏️ Design Creation (Local Mode + Cloud Mode)
 - `figma_execute` - **Power tool**: Run any Figma Plugin API code to create designs
   - Create frames, shapes, text, components
   - Apply auto-layout, styles, effects
@@ -341,7 +402,7 @@ When you first use design system tools:
 - `figma_check_design_parity` - Compare Figma component specs against code implementation, producing a scored diff report with actionable fix items
 - `figma_generate_component_doc` - Generate platform-agnostic markdown documentation by merging Figma design data with code-side info
 
-### 🔧 Variable Management (Local Mode + Desktop Bridge)
+### 🔧 Variable Management (Local Mode + Cloud Mode)
 - `figma_create_variable_collection` - Create new variable collections with modes
 - `figma_create_variable` - Create COLOR, FLOAT, STRING, or BOOLEAN variables
 - `figma_update_variable` - Update variable values in specific modes
@@ -360,6 +421,13 @@ When you first use design system tools:
 
 ## 📖 Example Prompts
 
+### Cloud Mode (Web AI Clients)
+```
+Connect to my Figma plugin so we can start designing
+Pair with my Figma file and create a login form with email, password, and submit button
+Set up a brand color token collection with Light and Dark modes
+```
+
 ### Plugin Debugging
 ```
 Navigate to my Figma plugin and show me any console errors
@@ -375,7 +443,7 @@ Get the Button component with a visual reference image
 Get the Badge component in reconstruction format for programmatic creation
 ```
 
-### Design Creation (Local Mode)
+### Design Creation (Local Mode + Cloud Mode)
 ```
 Create a success notification card with a checkmark icon and message
 Design a button component with hover and disabled states
@@ -385,7 +453,7 @@ Arrange these button variants into a component set
 Organize my icon variants as a proper component set with the purple border
 ```
 
-### Variable Management (Local Mode)
+### Variable Management (Local Mode + Cloud Mode)
 ```
 Create a new color collection called "Brand Colors" with Light and Dark modes
 Add a primary color variable with value #3B82F6 for Light and #60A5FA for Dark
@@ -412,7 +480,7 @@ Navigate to this file and capture what's on screen
 
 ## 🎨 AI-Assisted Design Creation
 
-> **⚠️ Local Mode Only:** This feature requires the Desktop Bridge plugin and only works with Local Mode installation (NPX or Local Git). Remote Mode is read-only and cannot create or modify designs.
+> **Requires Desktop Bridge:** This feature works with Local Mode (NPX or Local Git) and [Cloud Mode](#-cloud-mode-web-ai-clients). Remote SSE without Cloud Mode pairing is read-only and cannot create or modify designs.
 
 One of the most powerful capabilities of this MCP server is the ability to **design complete UI components and pages directly in Figma through natural language conversation** with any MCP-compatible AI assistant like Claude Desktop or Claude Code.
 
@@ -527,7 +595,9 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - `FIGMA_WS_PORT` — Override the preferred WebSocket port (default: 9223). The server will fall back through a 10-port range starting from this value if the preferred port is occupied.
 - `FIGMA_WS_HOST` — Override the WebSocket server bind address (default: `localhost`). Set to `0.0.0.0` when running inside Docker so the host machine can reach the MCP server.
 
-**Plugin Limitation:** Only works in Local Mode (NPX or Local Git). Remote SSE mode cannot access it.
+**Cloud Mode:** The plugin also supports a **Cloud Mode** toggle for pairing with web AI clients (Claude.ai, v0, Replit, Lovable). Toggle "Cloud Mode" in the plugin UI, enter the 6-character pairing code from your AI assistant, and click Connect. See [Cloud Mode](#-cloud-mode-web-ai-clients) for details.
+
+**Plugin Limitation:** In Local Mode, works with NPX or Local Git. In Cloud Mode, pairs with the remote MCP endpoint. Remote SSE without Cloud Mode pairing is read-only.
 
 ---
 
@@ -653,9 +723,10 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.11.2 (Stable) - Production-ready with Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 57+ tools, Comments API, and MCP Apps
+**Current Status:** v1.12.0 (Stable) - Production-ready with Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 57+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
+- [x] **v1.12.0** - Cloud Write Relay: web AI clients (Claude.ai, v0, Replit, Lovable) can create and modify Figma designs via cloud relay pairing — no Node.js required
 - [x] **v1.11.2** - Screenshot fix: `figma_take_screenshot` works without explicit `nodeId` in WebSocket mode
 - [x] **v1.11.1** - Doc generator fixes: clean markdown tables, Storybook links, property metadata filtering
 - [x] **v1.11.0** - Complete CDP removal, improved multi-file active tracking with focus detection
