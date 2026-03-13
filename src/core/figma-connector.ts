@@ -63,6 +63,9 @@ export interface IFigmaConnector {
   captureScreenshot(nodeId: string, options?: any): Promise<any>;
   setInstanceProperties(nodeId: string, properties: any): Promise<any>;
 
+  // Image fill
+  setImageFill(nodeIds: string[], imageData: string, scaleMode?: string): Promise<any>;
+
   // Cache management
   clearFrameCache(): void;
 }
