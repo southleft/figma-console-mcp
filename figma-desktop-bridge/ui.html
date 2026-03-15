@@ -541,6 +541,17 @@
       }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
+    // Lint design for accessibility and quality issues
+    window.lintDesign = (nodeId, rules, maxDepth, maxFindings) => {
+      var params = {};
+      if (nodeId) params.nodeId = nodeId;
+      if (rules) params.rules = rules;
+      if (maxDepth !== undefined) params.maxDepth = maxDepth;
+      if (maxFindings !== undefined) params.maxFindings = maxFindings;
+      return window.sendPluginCommand('LINT_DESIGN', params, 120000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
     // ============================================================================
     // WEBSOCKET BRIDGE CLIENT - Fallback transport when CDP is unavailable
     // ============================================================================
@@ -597,6 +608,7 @@
         'CAPTURE_SCREENSHOT': function(params) { return window.captureScreenshot(params.nodeId, params); },
         'SET_IMAGE_FILL': function(params) { return window.setImageFill(params.nodeIds || params.nodeId, params.imageData, params.scaleMode); },
         'SET_INSTANCE_PROPERTIES': function(params) { return window.setInstanceProperties(params.nodeId, params.properties); },
+        'LINT_DESIGN': function(params) { return window.lintDesign(params.nodeId, params.rules, params.maxDepth, params.maxFindings); },
         'GET_VARIABLES_DATA': function() {
           // Return the cached variables data directly
           if (window.__figmaVariablesReady && window.__figmaVariablesData) {
@@ -1183,6 +1195,9 @@
           break;
         case 'SET_INSTANCE_PROPERTIES_RESULT':
           handleResult('SET_INSTANCE_PROPERTIES', 'instance');
+          break;
+        case 'LINT_DESIGN_RESULT':
+          handleResult('LINT_DESIGN', 'data');
           break;
 
         // File info

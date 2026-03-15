@@ -1529,4 +1529,25 @@ export class FigmaDesktopConnector implements IFigmaConnector {
       throw error;
     }
   }
+
+  /**
+   * Lint design for accessibility and quality issues via plugin UI
+   */
+  async lintDesign(nodeId?: string, rules?: string[], maxDepth?: number, maxFindings?: number): Promise<any> {
+    logger.info({ nodeId, rules }, 'Linting design via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.lintDesign(${JSON.stringify(nodeId || null)}, ${JSON.stringify(rules || null)}, ${JSON.stringify(maxDepth)}, ${JSON.stringify(maxFindings)})`
+      );
+
+      logger.info({ success: result.success }, 'Design lint complete');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Design lint failed');
+      throw error;
+    }
+  }
 }

@@ -66,6 +66,9 @@ export interface IFigmaConnector {
   // Image fill
   setImageFill(nodeIds: string[], imageData: string, scaleMode?: string): Promise<any>;
 
+  // Design lint
+  lintDesign(nodeId?: string, rules?: string[], maxDepth?: number, maxFindings?: number): Promise<any>;
+
   // Cache management
   clearFrameCache(): void;
 }

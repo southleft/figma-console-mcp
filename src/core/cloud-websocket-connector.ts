@@ -277,6 +277,19 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 	}
 
 	// ============================================================================
+	// Design lint
+	// ============================================================================
+
+	async lintDesign(nodeId?: string, rules?: string[], maxDepth?: number, maxFindings?: number): Promise<any> {
+		const params: any = {};
+		if (nodeId) params.nodeId = nodeId;
+		if (rules) params.rules = rules;
+		if (maxDepth !== undefined) params.maxDepth = maxDepth;
+		if (maxFindings !== undefined) params.maxFindings = maxFindings;
+		return this.sendCommand('LINT_DESIGN', params, 120000);
+	}
+
+	// ============================================================================
 	// Cache management (no-op for cloud relay)
 	// ============================================================================
 

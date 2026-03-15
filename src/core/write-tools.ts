@@ -2579,4 +2579,58 @@ return {
 			}
 		},
 	);
+
+	// Tool: Lint Design for accessibility and quality issues
+	server.tool(
+		"figma_lint_design",
+		"Run accessibility (WCAG) and design quality checks on the current page or a specific node tree. " +
+		"Checks color contrast ratios, text sizing, touch targets, hardcoded values, detached components, " +
+		"naming conventions, and layout quality. Returns categorized findings with severity levels. " +
+		"Use natural language like 'check my design for accessibility issues' or 'lint this page'. " +
+		"Requires Desktop Bridge plugin.",
+		{
+			nodeId: z.string().optional().describe("Node ID to lint (defaults to current page)"),
+			rules: z.array(z.string()).optional().describe("Rule filter: ['all'] (default), ['wcag'], ['design-system'], ['layout'], or specific rule IDs like ['wcag-contrast', 'detached-component']"),
+			maxDepth: z.number().optional().describe("Maximum tree depth to traverse (default: 10)"),
+			maxFindings: z.number().optional().describe("Maximum findings before stopping (default: 100)"),
+		},
+		async ({ nodeId, rules, maxDepth, maxFindings }) => {
+			try {
+				const connector = await getDesktopConnector();
+				const result = await connector.lintDesign(
+					nodeId,
+					rules || ['all'],
+					maxDepth || 10,
+					maxFindings || 100,
+				);
+
+				if (!result.success) {
+					throw new Error(result.error || "Lint failed");
+				}
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify(result.data || result, null, 2),
+						},
+					],
+				};
+			} catch (error) {
+				logger.error({ error }, "Failed to lint design");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the Desktop Bridge plugin is running in your Figma file.",
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
 }

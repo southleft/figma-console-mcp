@@ -2196,6 +2196,523 @@ figma.ui.onmessage = async (msg) => {
       });
     }
   }
+
+  // ============================================================================
+  // LINT_DESIGN - Accessibility and design quality checks on node tree
+  // ============================================================================
+  else if (msg.type === 'LINT_DESIGN') {
+    try {
+      console.log('🌉 [Desktop Bridge] Running design lint...');
+
+      // ---- Helper functions ----
+
+      // sRGB linearization
+      function lintLinearize(c) {
+        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      }
+
+      // Relative luminance (r, g, b in 0-1 range)
+      function lintLuminance(r, g, b) {
+        return 0.2126 * lintLinearize(r) + 0.7152 * lintLinearize(g) + 0.0722 * lintLinearize(b);
+      }
+
+      // Contrast ratio between two colors (each r, g, b in 0-1)
+      function lintContrastRatio(r1, g1, b1, r2, g2, b2) {
+        var l1 = lintLuminance(r1, g1, b1);
+        var l2 = lintLuminance(r2, g2, b2);
+        var lighter = Math.max(l1, l2);
+        var darker = Math.min(l1, l2);
+        return (lighter + 0.05) / (darker + 0.05);
+      }
+
+      // Convert 0-1 RGB to hex string
+      function lintRgbToHex(r, g, b) {
+        var rr = Math.round(r * 255).toString(16);
+        var gg = Math.round(g * 255).toString(16);
+        var bb = Math.round(b * 255).toString(16);
+        if (rr.length === 1) rr = '0' + rr;
+        if (gg.length === 1) gg = '0' + gg;
+        if (bb.length === 1) bb = '0' + bb;
+        return '#' + rr.toUpperCase() + gg.toUpperCase() + bb.toUpperCase();
+      }
+
+      // Walk up ancestors to find nearest solid fill background color
+      function lintGetEffectiveBg(node) {
+        var current = node.parent;
+        while (current) {
+          try {
+            if (current.fills && current.fills.length > 0) {
+              for (var fi = 0; fi < current.fills.length; fi++) {
+                var fill = current.fills[fi];
+                if (fill.type === 'SOLID' && fill.visible !== false) {
+                  return { r: fill.color.r, g: fill.color.g, b: fill.color.b };
+                }
+              }
+            }
+          } catch (e) {
+            // Slot sublayer — skip
+          }
+          current = current.parent;
+        }
+        // Default to white if no bg found
+        return { r: 1, g: 1, b: 1 };
+      }
+
+      // Check if text qualifies as "large" per WCAG
+      function lintIsLargeText(fontSize, fontWeight) {
+        if (fontSize >= 18) return true;
+        if (fontSize >= 14 && fontWeight && (fontWeight === 'Bold' || fontWeight === 'Black' || fontWeight === 'ExtraBold' || fontWeight === 'SemiBold' || (typeof fontWeight === 'number' && fontWeight >= 700))) return true;
+        return false;
+      }
+
+      // ---- Rule configuration ----
+      var allRuleIds = [
+        'wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height',
+        'hardcoded-color', 'no-text-style', 'default-name', 'detached-component',
+        'no-autolayout', 'empty-container'
+      ];
+
+      var ruleGroups = {
+        'all': allRuleIds,
+        'wcag': ['wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height'],
+        'design-system': ['hardcoded-color', 'no-text-style', 'default-name', 'detached-component'],
+        'layout': ['no-autolayout', 'empty-container']
+      };
+
+      var severityMap = {
+        'wcag-contrast': 'critical',
+        'wcag-target-size': 'critical',
+        'wcag-text-size': 'warning',
+        'wcag-line-height': 'warning',
+        'hardcoded-color': 'warning',
+        'no-text-style': 'warning',
+        'default-name': 'warning',
+        'detached-component': 'warning',
+        'no-autolayout': 'warning',
+        'empty-container': 'info'
+      };
+
+      var ruleDescriptions = {
+        'wcag-contrast': 'Text does not meet WCAG AA contrast ratio (4.5:1 normal, 3:1 large)',
+        'wcag-text-size': 'Text size is below 12px minimum',
+        'wcag-target-size': 'Interactive element is smaller than 24x24px minimum target size',
+        'wcag-line-height': 'Line height is less than 1.5x the font size',
+        'hardcoded-color': 'Fill color is not bound to a variable or style',
+        'no-text-style': 'Text node is not using a text style',
+        'default-name': 'Node has a default Figma name (e.g., "Frame 1")',
+        'detached-component': 'Frame uses component naming convention but is not a component or instance',
+        'no-autolayout': 'Frame with multiple children does not use auto-layout',
+        'empty-container': 'Frame has no children'
+      };
+
+      var defaultNameRegex = /^(Frame|Rectangle|Ellipse|Line|Text|Group|Component|Instance|Vector|Polygon|Star|Section)(\s+\d+)?$/;
+      var interactiveNameRegex = /button|link|input|checkbox|radio|switch|toggle|tab|menu-item/i;
+
+      // ---- Resolve active rules ----
+      var requestedRules = msg.rules || ['all'];
+      var activeRuleSet = {};
+      for (var ri = 0; ri < requestedRules.length; ri++) {
+        var ruleOrGroup = requestedRules[ri];
+        if (ruleGroups[ruleOrGroup]) {
+          var groupRules = ruleGroups[ruleOrGroup];
+          for (var gi = 0; gi < groupRules.length; gi++) {
+            activeRuleSet[groupRules[gi]] = true;
+          }
+        } else if (severityMap[ruleOrGroup]) {
+          activeRuleSet[ruleOrGroup] = true;
+        }
+      }
+
+      var maxDepth = typeof msg.maxDepth === 'number' ? msg.maxDepth : 10;
+      var maxFindings = typeof msg.maxFindings === 'number' ? msg.maxFindings : 100;
+
+      // ---- Resolve root node ----
+      var rootNode;
+      if (msg.nodeId) {
+        rootNode = await figma.getNodeByIdAsync(msg.nodeId);
+        if (!rootNode) {
+          throw new Error('Node not found: ' + msg.nodeId);
+        }
+      } else {
+        rootNode = figma.currentPage;
+      }
+
+      // ---- Collect context (styles and variables for design-system rules) ----
+      var paintStyleIds = {};
+      var textStyleIds = {};
+      var variableIds = {};
+
+      if (activeRuleSet['hardcoded-color'] || activeRuleSet['no-text-style']) {
+        try {
+          var paintStyles = await figma.getLocalPaintStylesAsync();
+          for (var pi = 0; pi < paintStyles.length; pi++) {
+            paintStyleIds[paintStyles[pi].id] = true;
+          }
+        } catch (e) { /* ignore */ }
+
+        try {
+          var textStyles = await figma.getLocalTextStylesAsync();
+          for (var ti = 0; ti < textStyles.length; ti++) {
+            textStyleIds[textStyles[ti].id] = true;
+          }
+        } catch (e) { /* ignore */ }
+
+        try {
+          var localVars = await figma.variables.getLocalVariablesAsync();
+          for (var vi = 0; vi < localVars.length; vi++) {
+            variableIds[localVars[vi].id] = true;
+          }
+        } catch (e) { /* ignore */ }
+      }
+
+      // ---- Findings storage ----
+      var findings = {};
+      for (var ai = 0; ai < allRuleIds.length; ai++) {
+        if (activeRuleSet[allRuleIds[ai]]) {
+          findings[allRuleIds[ai]] = [];
+        }
+      }
+      var totalFindings = 0;
+      var nodesScanned = 0;
+      var truncated = false;
+
+      // ---- Tree walk ----
+      function walkNode(node, depth) {
+        if (depth > maxDepth) return;
+        if (truncated) return;
+
+        nodesScanned++;
+
+        var nodeType, nodeName, nodeId;
+        try {
+          nodeType = node.type;
+          nodeName = node.name;
+          nodeId = node.id;
+        } catch (e) {
+          return; // Slot sublayer — skip entirely
+        }
+
+        // Skip pages for most checks but still recurse into their children
+        var isPage = nodeType === 'PAGE';
+        var isSection = nodeType === 'SECTION';
+
+        // ---- WCAG checks ----
+
+        // wcag-contrast: TEXT nodes
+        if (activeRuleSet['wcag-contrast'] && nodeType === 'TEXT' && !truncated) {
+          try {
+            var fills = node.fills;
+            if (fills && fills.length > 0) {
+              for (var fci = 0; fci < fills.length; fci++) {
+                if (fills[fci].type === 'SOLID' && fills[fci].visible !== false) {
+                  var fg = fills[fci].color;
+                  var bg = lintGetEffectiveBg(node);
+                  var ratio = lintContrastRatio(fg.r, fg.g, fg.b, bg.r, bg.g, bg.b);
+                  var fontSize = 16;
+                  var fontWeight = null;
+                  try { fontSize = node.fontSize; } catch (e) { /* mixed */ }
+                  try { fontWeight = node.fontWeight; } catch (e) { /* mixed */ }
+                  if (typeof fontSize !== 'number') fontSize = 16;
+                  var isLarge = lintIsLargeText(fontSize, fontWeight);
+                  var required = isLarge ? 3.0 : 4.5;
+                  if (ratio < required) {
+                    if (totalFindings < maxFindings) {
+                      findings['wcag-contrast'].push({
+                        id: nodeId,
+                        name: nodeName,
+                        ratio: ratio.toFixed(1) + ':1',
+                        required: required.toFixed(1) + ':1',
+                        fg: lintRgbToHex(fg.r, fg.g, fg.b),
+                        bg: lintRgbToHex(bg.r, bg.g, bg.b)
+                      });
+                      totalFindings++;
+                    } else {
+                      truncated = true;
+                    }
+                  }
+                  break; // Only check the first visible solid fill
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // wcag-text-size: TEXT nodes with fontSize < 12
+        if (activeRuleSet['wcag-text-size'] && nodeType === 'TEXT' && !truncated) {
+          try {
+            var ts = node.fontSize;
+            if (typeof ts === 'number' && ts < 12) {
+              if (totalFindings < maxFindings) {
+                findings['wcag-text-size'].push({
+                  id: nodeId,
+                  name: nodeName,
+                  fontSize: ts
+                });
+                totalFindings++;
+              } else {
+                truncated = true;
+              }
+            }
+          } catch (e) { /* slot sublayer or mixed */ }
+        }
+
+        // wcag-target-size: Interactive elements < 24x24
+        if (activeRuleSet['wcag-target-size'] && !isPage && !isSection && !truncated) {
+          try {
+            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && interactiveNameRegex.test(nodeName)) {
+              var tw = node.width;
+              var th = node.height;
+              if ((typeof tw === 'number' && tw < 24) || (typeof th === 'number' && th < 24)) {
+                if (totalFindings < maxFindings) {
+                  findings['wcag-target-size'].push({
+                    id: nodeId,
+                    name: nodeName,
+                    width: tw,
+                    height: th
+                  });
+                  totalFindings++;
+                } else {
+                  truncated = true;
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // wcag-line-height: TEXT nodes where lineHeight < 1.5 * fontSize
+        if (activeRuleSet['wcag-line-height'] && nodeType === 'TEXT' && !truncated) {
+          try {
+            var lh = node.lineHeight;
+            var fs = node.fontSize;
+            if (lh && typeof fs === 'number' && typeof lh === 'object' && lh.unit === 'PIXELS' && typeof lh.value === 'number') {
+              if (lh.value < 1.5 * fs) {
+                if (totalFindings < maxFindings) {
+                  findings['wcag-line-height'].push({
+                    id: nodeId,
+                    name: nodeName,
+                    lineHeight: lh.value,
+                    fontSize: fs,
+                    recommended: (1.5 * fs).toFixed(1)
+                  });
+                  totalFindings++;
+                } else {
+                  truncated = true;
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer or mixed */ }
+        }
+
+        // ---- Design System checks ----
+
+        // hardcoded-color: Solid fills without variable binding or style
+        if (activeRuleSet['hardcoded-color'] && !isPage && !isSection && !truncated) {
+          try {
+            var hcFills = node.fills;
+            if (hcFills && hcFills.length > 0) {
+              var hasFillStyle = false;
+              try {
+                hasFillStyle = node.fillStyleId && node.fillStyleId !== '';
+              } catch (e) { /* mixed fill styles */ }
+
+              if (!hasFillStyle) {
+                for (var hci = 0; hci < hcFills.length; hci++) {
+                  var hcFill = hcFills[hci];
+                  if (hcFill.type === 'SOLID' && hcFill.visible !== false) {
+                    var hasBoundVar = false;
+                    try {
+                      if (hcFill.boundVariables && hcFill.boundVariables.color) {
+                        hasBoundVar = true;
+                      }
+                    } catch (e) { /* no bound vars */ }
+
+                    if (!hasBoundVar) {
+                      if (totalFindings < maxFindings) {
+                        findings['hardcoded-color'].push({
+                          id: nodeId,
+                          name: nodeName,
+                          color: lintRgbToHex(hcFill.color.r, hcFill.color.g, hcFill.color.b)
+                        });
+                        totalFindings++;
+                      } else {
+                        truncated = true;
+                      }
+                      break; // One finding per node
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // no-text-style: TEXT nodes without textStyleId
+        if (activeRuleSet['no-text-style'] && nodeType === 'TEXT' && !truncated) {
+          try {
+            var hasTextStyle = node.textStyleId && node.textStyleId !== '';
+            if (!hasTextStyle) {
+              if (totalFindings < maxFindings) {
+                findings['no-text-style'].push({
+                  id: nodeId,
+                  name: nodeName
+                });
+                totalFindings++;
+              } else {
+                truncated = true;
+              }
+            }
+          } catch (e) { /* slot sublayer or mixed */ }
+        }
+
+        // default-name: Nodes with default Figma names
+        if (activeRuleSet['default-name'] && !isPage && !truncated) {
+          try {
+            if (defaultNameRegex.test(nodeName)) {
+              if (totalFindings < maxFindings) {
+                findings['default-name'].push({
+                  id: nodeId,
+                  name: nodeName,
+                  type: nodeType
+                });
+                totalFindings++;
+              } else {
+                truncated = true;
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // detached-component: Frames with "/" in name but not component/instance
+        if (activeRuleSet['detached-component'] && nodeType === 'FRAME' && !truncated) {
+          try {
+            if (nodeName.indexOf('/') !== -1) {
+              if (totalFindings < maxFindings) {
+                findings['detached-component'].push({
+                  id: nodeId,
+                  name: nodeName
+                });
+                totalFindings++;
+              } else {
+                truncated = true;
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // ---- Layout checks ----
+
+        // no-autolayout: Frames with 2+ children and no auto-layout
+        if (activeRuleSet['no-autolayout'] && !isPage && !isSection && !truncated) {
+          try {
+            if (nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'COMPONENT_SET') {
+              var childCount = 0;
+              try { childCount = node.children ? node.children.length : 0; } catch (e) { /* skip */ }
+              if (childCount >= 2) {
+                var layoutMode = 'NONE';
+                try { layoutMode = node.layoutMode; } catch (e) { /* skip */ }
+                if (!layoutMode || layoutMode === 'NONE') {
+                  if (totalFindings < maxFindings) {
+                    findings['no-autolayout'].push({
+                      id: nodeId,
+                      name: nodeName,
+                      childCount: childCount
+                    });
+                    totalFindings++;
+                  } else {
+                    truncated = true;
+                  }
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // empty-container: Frames with zero children
+        if (activeRuleSet['empty-container'] && !isPage && !isSection && !truncated) {
+          try {
+            if (nodeType === 'FRAME') {
+              var ec = 0;
+              try { ec = node.children ? node.children.length : 0; } catch (e) { /* skip */ }
+              if (ec === 0) {
+                if (totalFindings < maxFindings) {
+                  findings['empty-container'].push({
+                    id: nodeId,
+                    name: nodeName
+                  });
+                  totalFindings++;
+                } else {
+                  truncated = true;
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // ---- Recurse into children ----
+        try {
+          if (node.children) {
+            for (var ci = 0; ci < node.children.length; ci++) {
+              if (truncated) break;
+              walkNode(node.children[ci], depth + 1);
+            }
+          }
+        } catch (e) { /* no children or slot sublayer */ }
+      }
+
+      // ---- Execute walk ----
+      walkNode(rootNode, 0);
+
+      // ---- Build response ----
+      var categories = [];
+      var summaryObj = { critical: 0, warning: 0, info: 0, total: 0 };
+
+      for (var rk = 0; rk < allRuleIds.length; rk++) {
+        var ruleId = allRuleIds[rk];
+        if (!findings[ruleId] || findings[ruleId].length === 0) continue;
+        var sev = severityMap[ruleId];
+        categories.push({
+          rule: ruleId,
+          severity: sev,
+          count: findings[ruleId].length,
+          description: ruleDescriptions[ruleId],
+          nodes: findings[ruleId]
+        });
+        summaryObj[sev] = (summaryObj[sev] || 0) + findings[ruleId].length;
+        summaryObj.total += findings[ruleId].length;
+      }
+
+      var responseData = {
+        rootNodeId: rootNode.id,
+        rootNodeName: rootNode.name,
+        nodesScanned: nodesScanned,
+        categories: categories,
+        summary: summaryObj
+      };
+
+      if (truncated) {
+        responseData.warning = 'Showing first ' + maxFindings + ' findings...';
+      }
+
+      console.log('🌉 [Desktop Bridge] Lint complete: ' + summaryObj.total + ' findings across ' + nodesScanned + ' nodes');
+
+      figma.ui.postMessage({
+        type: 'LINT_DESIGN_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: responseData
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Lint design error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'LINT_DESIGN_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
 };
 
 // ============================================================================
