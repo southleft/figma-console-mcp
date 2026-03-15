@@ -2923,7 +2923,7 @@ export default {
 			<div class="grid-cell showcase-cell rule-left">
 				<div class="showcase-label">What AI Can Access</div>
 				<div class="showcase-stat">
-					<span class="number">56+</span>
+					<span class="number">59+</span>
 					<span class="label">MCP tools for Figma</span>
 				</div>
 				<div class="capability-list">
@@ -2938,6 +2938,14 @@ export default {
 					<div class="capability-item">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 						<span>Programmatic design creation</span>
+					</div>
+					<div class="capability-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+						<span>WCAG accessibility linting</span>
+					</div>
+					<div class="capability-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
+						<span>Cloud relay for web AI clients</span>
 					</div>
 					<div class="capability-item">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
@@ -3020,7 +3028,11 @@ export default {
 					</div>
 					<div class="prompt-item">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"Why is my plugin throwing this error?"</span>
+						<span>"Check my design for accessibility issues"</span>
+					</div>
+					<div class="prompt-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+						<span>"Connect to my Figma plugin and create a card component"</span>
 					</div>
 				</div>
 			</div>
@@ -3105,7 +3117,7 @@ export default {
 			<div class="grid-cell getting-started-cell">
 				<div class="getting-started-content">
 					<h3>Ready to get started?</h3>
-					<p>Setup varies based on your needs: remote mode for quick API access, or local mode for full plugin debugging. Our docs will guide you through the right path.</p>
+					<p>Three ways to connect: local mode for full capabilities, cloud mode for web AI clients like Claude.ai and v0, or remote mode for quick read-only access. Our docs will guide you through the right path.</p>
 				</div>
 				<div class="getting-started-actions">
 					<a href="https://docs.figma-console-mcp.southleft.com/setup" class="btn btn-primary">
