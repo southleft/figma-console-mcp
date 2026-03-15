@@ -2242,10 +2242,12 @@ figma.ui.onmessage = async (msg) => {
         while (current) {
           try {
             if (current.fills && current.fills.length > 0) {
-              for (var fi = 0; fi < current.fills.length; fi++) {
+              // Iterate reverse (last = topmost visible fill in Figma's stack)
+              for (var fi = current.fills.length - 1; fi >= 0; fi--) {
                 var fill = current.fills[fi];
                 if (fill.type === 'SOLID' && fill.visible !== false) {
-                  return { r: fill.color.r, g: fill.color.g, b: fill.color.b };
+                  var opacity = (fill.opacity !== undefined) ? fill.opacity : 1;
+                  return { r: fill.color.r, g: fill.color.g, b: fill.color.b, opacity: opacity };
                 }
               }
             }
@@ -2255,13 +2257,13 @@ figma.ui.onmessage = async (msg) => {
           current = current.parent;
         }
         // Default to white if no bg found
-        return { r: 1, g: 1, b: 1 };
+        return { r: 1, g: 1, b: 1, opacity: 1 };
       }
 
-      // Check if text qualifies as "large" per WCAG
+      // Check if text qualifies as "large" per WCAG (18pt=24px regular, 14pt≈18.66px bold 700+)
       function lintIsLargeText(fontSize, fontWeight) {
-        if (fontSize >= 18) return true;
-        if (fontSize >= 14 && fontWeight && (fontWeight === 'Bold' || fontWeight === 'Black' || fontWeight === 'ExtraBold' || fontWeight === 'SemiBold' || (typeof fontWeight === 'number' && fontWeight >= 700))) return true;
+        if (fontSize >= 24) return true;
+        if (fontSize >= 18.66 && fontWeight && (fontWeight === 'Bold' || fontWeight === 'Black' || fontWeight === 'ExtraBold')) return true;
         return false;
       }
 
@@ -2415,16 +2417,20 @@ figma.ui.onmessage = async (msg) => {
                   if (typeof fontSize !== 'number') fontSize = 16;
                   var isLarge = lintIsLargeText(fontSize, fontWeight);
                   var required = isLarge ? 3.0 : 4.5;
+                  var fgOpacity = (fills[fci].opacity !== undefined) ? fills[fci].opacity : 1;
+                  var approximate = fgOpacity < 1 || bg.opacity < 1;
                   if (ratio < required) {
                     if (totalFindings < maxFindings) {
-                      findings['wcag-contrast'].push({
+                      var finding = {
                         id: nodeId,
                         name: nodeName,
                         ratio: ratio.toFixed(1) + ':1',
                         required: required.toFixed(1) + ':1',
                         fg: lintRgbToHex(fg.r, fg.g, fg.b),
                         bg: lintRgbToHex(bg.r, bg.g, bg.b)
-                      });
+                      };
+                      if (approximate) finding.approximate = true;
+                      findings['wcag-contrast'].push(finding);
                       totalFindings++;
                     } else {
                       truncated = true;
@@ -2484,13 +2490,20 @@ figma.ui.onmessage = async (msg) => {
           try {
             var lh = node.lineHeight;
             var fs = node.fontSize;
-            if (lh && typeof fs === 'number' && typeof lh === 'object' && lh.unit === 'PIXELS' && typeof lh.value === 'number') {
-              if (lh.value < 1.5 * fs) {
+            var effectiveLh = null;
+            if (lh && typeof fs === 'number' && typeof lh === 'object' && typeof lh.value === 'number') {
+              if (lh.unit === 'PIXELS') {
+                effectiveLh = lh.value;
+              } else if (lh.unit === 'PERCENT') {
+                effectiveLh = fs * (lh.value / 100);
+              }
+            }
+            if (effectiveLh !== null && effectiveLh < 1.5 * fs) {
                 if (totalFindings < maxFindings) {
                   findings['wcag-line-height'].push({
                     id: nodeId,
                     name: nodeName,
-                    lineHeight: lh.value,
+                    lineHeight: effectiveLh,
                     fontSize: fs,
                     recommended: (1.5 * fs).toFixed(1)
                   });

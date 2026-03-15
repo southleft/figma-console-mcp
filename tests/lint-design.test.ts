@@ -291,31 +291,32 @@ describe('figma_lint_design', () => {
 	// Large text classification (WCAG)
 	// ========================================================================
 
-	describe('large text classification', () => {
+	describe('large text classification (WCAG px thresholds)', () => {
+		// WCAG: 18pt = 24px regular, 14pt ≈ 18.66px bold (700+)
 		function isLargeText(fontSize: number, fontWeight: number): boolean {
-			if (fontSize >= 18) return true;
-			if (fontSize >= 14 && fontWeight >= 700) return true;
+			if (fontSize >= 24) return true;
+			if (fontSize >= 18.66 && fontWeight >= 700) return true;
 			return false;
 		}
 
-		it('should classify 18px+ as large', () => {
-			expect(isLargeText(18, 400)).toBe(true);
+		it('should classify 24px+ as large', () => {
 			expect(isLargeText(24, 400)).toBe(true);
+			expect(isLargeText(32, 400)).toBe(true);
 		});
 
-		it('should classify 14px+ bold as large', () => {
-			expect(isLargeText(14, 700)).toBe(true);
-			expect(isLargeText(16, 700)).toBe(true);
+		it('should classify 18.66px+ bold as large', () => {
+			expect(isLargeText(19, 700)).toBe(true);
+			expect(isLargeText(20, 700)).toBe(true);
 		});
 
-		it('should NOT classify normal weight 14px as large', () => {
-			expect(isLargeText(14, 400)).toBe(false);
-			expect(isLargeText(16, 400)).toBe(false);
+		it('should NOT classify 18px regular as large (18pt != 18px)', () => {
+			expect(isLargeText(18, 400)).toBe(false);
+			expect(isLargeText(20, 400)).toBe(false);
 		});
 
-		it('should NOT classify small text as large', () => {
-			expect(isLargeText(12, 400)).toBe(false);
-			expect(isLargeText(10, 700)).toBe(false);
+		it('should NOT classify small bold text as large', () => {
+			expect(isLargeText(14, 700)).toBe(false);
+			expect(isLargeText(16, 700)).toBe(false);
 		});
 	});
 

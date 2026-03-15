@@ -1540,7 +1540,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
 
     try {
       const result = await frame.evaluate(
-        `window.lintDesign(${JSON.stringify(nodeId || null)}, ${JSON.stringify(rules || null)}, ${JSON.stringify(maxDepth)}, ${JSON.stringify(maxFindings)})`
+        `window.lintDesign(${JSON.stringify(nodeId || null)}, ${JSON.stringify(rules || null)}, ${JSON.stringify(maxDepth ?? null)}, ${JSON.stringify(maxFindings ?? null)})`
       );
 
       logger.info({ success: result.success }, 'Design lint complete');
