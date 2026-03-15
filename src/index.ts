@@ -2948,8 +2948,8 @@ export default {
 						<span>Cloud relay for web AI clients</span>
 					</div>
 					<div class="capability-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-						<span>Real-time plugin debugging</span>
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+						<span>Visual debugging and screenshots</span>
 					</div>
 				</div>
 			</div>
@@ -2997,8 +2997,8 @@ export default {
 				<div class="capability-icon">
 					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
 				</div>
-				<h3>Plugin Debugging</h3>
-				<p>Capture real-time console logs from Figma plugins. Let AI analyze errors and suggest fixes without context switching.</p>
+				<h3>Visual Debugging</h3>
+				<p>Capture screenshots, inspect node properties, and track selection changes. Let AI analyze your designs and suggest improvements.</p>
 			</div>
 		</div>
 
@@ -3056,7 +3056,7 @@ export default {
 					</li>
 					<li>
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Debug Figma plugins without leaving your workflow</span>
+						<span>Lint designs for accessibility and quality issues</span>
 					</li>
 				</ul>
 			</div>
