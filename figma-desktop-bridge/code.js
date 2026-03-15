@@ -2499,18 +2499,17 @@ figma.ui.onmessage = async (msg) => {
               }
             }
             if (effectiveLh !== null && effectiveLh < 1.5 * fs) {
-                if (totalFindings < maxFindings) {
-                  findings['wcag-line-height'].push({
-                    id: nodeId,
-                    name: nodeName,
-                    lineHeight: effectiveLh,
-                    fontSize: fs,
-                    recommended: (1.5 * fs).toFixed(1)
-                  });
-                  totalFindings++;
-                } else {
-                  truncated = true;
-                }
+              if (totalFindings < maxFindings) {
+                findings['wcag-line-height'].push({
+                  id: nodeId,
+                  name: nodeName,
+                  lineHeight: effectiveLh,
+                  fontSize: fs,
+                  recommended: (1.5 * fs).toFixed(1)
+                });
+                totalFindings++;
+              } else {
+                truncated = true;
               }
             }
           } catch (e) { /* slot sublayer or mixed */ }
