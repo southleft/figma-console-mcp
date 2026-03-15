@@ -78,7 +78,7 @@ flowchart TB
 **Transport:**
 - **WebSocket** — via Desktop Bridge Plugin on ports 9223–9232. No debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running (multi-instance support since v1.10.0).
-- All 58+ tools work through the WebSocket transport.
+- All 59+ tools work through the WebSocket transport.
 
 **Capabilities:**
 - Everything in Remote Mode, plus:
@@ -98,7 +98,7 @@ flowchart TB
 The main server implements the Model Context Protocol with stdio transport for local mode.
 
 **Key Responsibilities:**
-- Tool registration (58+ tools in Local Mode, 22 in Remote Mode)
+- Tool registration (59+ tools in Local Mode, 22 in Remote Mode)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication via WebSocket
@@ -192,7 +192,7 @@ Multiple MCP server processes can run simultaneously (e.g., Claude Desktop Chat 
 
 The MCP server checks if a WebSocket client is connected (instant, under 1ms). If connected, commands route through WebSocket. If no client is connected, setup instructions are returned.
 
-All 58+ tools work through the WebSocket transport.
+All 59+ tools work through the WebSocket transport.
 
 ---
 

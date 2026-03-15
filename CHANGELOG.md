@@ -5,6 +5,18 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-03-14
+
+### Added
+- **`figma_lint_design` tool** — Run WCAG accessibility and design quality checks directly against Figma's node tree. 10 rules across 3 categories:
+  - **WCAG Accessibility**: Color contrast (AA 4.5:1 / AAA 7:1 / large text 3:1), text minimum size (12px), interactive touch target minimum (24x24px), line height (1.5x font size with PIXELS and PERCENT support)
+  - **Design System Hygiene**: Hardcoded colors (fills not bound to variables/styles), missing text styles, default/generic names, detached components (frames with component naming but no component reference)
+  - **Layout Quality**: Missing auto-layout on multi-child frames, empty containers
+  - Supports rule group filtering (`wcag`, `design-system`, `layout`) and individual rule IDs
+  - Configurable tree depth and max findings limits
+  - Opacity-aware contrast checking with `approximate` flag for semi-transparent fills
+  - Works in both local and cloud relay modes
+
 ## [1.12.2] - 2026-03-13
 
 ### Fixed
