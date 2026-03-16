@@ -65,6 +65,8 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_set_fills` | Set fill colors | Local / Cloud |
 | | `figma_set_strokes` | Set stroke colors | Local / Cloud |
 | | `figma_create_child` | Create child node | Local / Cloud |
+| **🖼️ Image** | `figma_set_image_fill` | Set image fill on nodes | Local / Cloud |
+| **🔍 Design Lint** | `figma_lint_design` | WCAG accessibility and design quality checks | Local / Cloud |
 | **☁️ Cloud Relay** | `figma_pair_plugin` | Generate pairing code for Desktop Bridge | Cloud |
 
 ---
@@ -1861,6 +1863,156 @@ figma_delete_comment({
 **Returns:**
 - `success`: Boolean indicating deletion success
 - `deleted_comment_id`: The ID that was deleted
+
+---
+
+## 🖼️ Image Tools
+
+### `figma_set_image_fill`
+
+Set an image fill on one or more Figma nodes. Accepts base64-encoded image data or (in Local Mode) an absolute file path.
+
+**Mode:** Local / Cloud
+
+**When to Use:**
+- Applying photos, illustrations, or textures to frames and shapes
+- Setting hero images, avatars, or background images
+- Replacing placeholder images with real assets
+
+**Usage:**
+```javascript
+// Base64 image data
+figma_set_image_fill({
+  nodeIds: ["123:456", "789:012"],
+  imageData: "iVBORw0KGgo...",  // base64-encoded PNG or JPEG
+  scaleMode: "FILL"
+})
+
+// File path (Local Mode only)
+figma_set_image_fill({
+  nodeIds: ["123:456"],
+  imageData: "/tmp/hero-image.jpg",
+  scaleMode: "FIT"
+})
+```
+
+**Parameters:**
+- `nodeIds` (required): Array of node IDs to apply the image fill to
+- `imageData` (required): Base64-encoded image data (JPEG/PNG), or an absolute file path starting with `/` (Local Mode only)
+- `scaleMode` (optional): How the image fills the node — `"FILL"` (default), `"FIT"`, `"CROP"`, or `"TILE"`
+
+**Returns:**
+- `imageHash`: Figma's internal hash for the created image
+- `updatedCount`: Number of nodes successfully updated
+- `nodes`: Array of updated node IDs and names
+
+---
+
+## 🔍 Design Lint Tool
+
+### `figma_lint_design`
+
+Run accessibility (WCAG) and design quality checks on the current page or a specific node tree. Returns categorized findings with severity levels.
+
+**Mode:** Local / Cloud
+
+**When to Use:**
+- Checking designs for WCAG accessibility compliance
+- Finding hardcoded colors that should use design tokens
+- Detecting detached components in your file
+- Auditing naming conventions and layout quality
+- Pre-handoff quality checks
+
+**Usage:**
+```javascript
+// Lint the current page for all issues
+figma_lint_design()
+
+// Only WCAG accessibility checks
+figma_lint_design({
+  rules: ["wcag"]
+})
+
+// Only design system hygiene
+figma_lint_design({
+  rules: ["design-system"]
+})
+
+// Specific rules only
+figma_lint_design({
+  rules: ["wcag-contrast", "detached-component"],
+  maxFindings: 50
+})
+
+// Lint a specific node tree
+figma_lint_design({
+  nodeId: "123:456",
+  maxDepth: 5
+})
+```
+
+**Parameters:**
+- `nodeId` (optional): Node ID to lint (defaults to current page)
+- `rules` (optional): Rule filter — `["all"]` (default), `["wcag"]`, `["design-system"]`, `["layout"]`, or specific rule IDs
+- `maxDepth` (optional): Maximum tree depth to traverse (default: 10)
+- `maxFindings` (optional): Maximum findings before stopping (default: 100)
+
+**Rule Groups:**
+
+| Group | Rules | What It Checks |
+|-------|-------|---------------|
+| `wcag` | `wcag-contrast`, `wcag-text-size`, `wcag-target-size`, `wcag-line-height` | WCAG accessibility compliance |
+| `design-system` | `hardcoded-color`, `no-text-style`, `default-name`, `detached-component` | Design system hygiene |
+| `layout` | `no-autolayout`, `empty-container` | Layout quality |
+
+**Individual Rules:**
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `wcag-contrast` | critical | Text foreground/background contrast ratio below WCAG AA (4.5:1 normal, 3:1 large text) |
+| `wcag-text-size` | warning | Text nodes with font size below 12px |
+| `wcag-target-size` | critical | Interactive elements (buttons, inputs, etc.) smaller than 24x24px |
+| `wcag-line-height` | warning | Line height below 1.5x the font size (supports pixel and percent values) |
+| `hardcoded-color` | warning | Solid fills not bound to a variable or paint style |
+| `no-text-style` | warning | Text nodes without an applied text style |
+| `default-name` | warning | Nodes with generic Figma names (Frame 1, Rectangle 3, etc.) |
+| `detached-component` | warning | Frames with component naming convention (contains "/") but not actually a component or instance |
+| `no-autolayout` | warning | Frames with 2+ children that don't use auto-layout |
+| `empty-container` | info | Frames with zero children |
+
+**Returns:**
+```json
+{
+  "rootNodeId": "0:1",
+  "rootNodeName": "My Page",
+  "nodesScanned": 142,
+  "categories": [
+    {
+      "rule": "wcag-contrast",
+      "severity": "critical",
+      "count": 3,
+      "description": "Text does not meet WCAG AA contrast ratio",
+      "nodes": [
+        { "id": "1:2", "name": "Label", "ratio": "2.3:1", "required": "4.5:1", "fg": "#AAAAAA", "bg": "#FFFFFF" }
+      ]
+    }
+  ],
+  "summary": {
+    "critical": 3,
+    "warning": 8,
+    "info": 1,
+    "total": 12
+  }
+}
+```
+
+**Natural language triggers:**
+- "Check my design for accessibility issues"
+- "Lint this page"
+- "Find hardcoded colors"
+- "Are there any detached components?"
+- "Run a WCAG contrast check"
+- "Audit the design quality"
 
 ---
 
