@@ -352,23 +352,49 @@ Then restart Claude Desktop.
 
 ### Prerequisites
 
+- [ ] **Figma Personal Access Token** — [Create one here](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) (starts with `figd_`)
 - [ ] **Figma Desktop** with the Desktop Bridge plugin installed and running in your file
-- [ ] A web AI client connected to the remote MCP endpoint (`/mcp` with your Figma PAT as Bearer token)
+- [ ] A web AI client that supports MCP (Claude.ai, Lovable, v0, Replit, etc.)
 
 > No Node.js required. The relay runs entirely in Cloudflare Workers.
 
-### How to Connect (~2 min)
+### Step 1: Add the MCP Connector to Your Platform (~1 min)
 
-1. **Tell your AI to connect to your Figma plugin** using natural language. For example:
+Add the Figma Console MCP endpoint to your AI platform's MCP settings:
+
+**Endpoint URL:** `https://figma-console-mcp.southleft.com/mcp`
+
+**Authentication:** Your Figma Personal Access Token as a Bearer token
+
+How to add this depends on your platform:
+
+| Platform | Where to Add |
+|----------|-------------|
+| **Claude.ai** | Settings → Connectors → Add Custom Connector → Name: `Figma Console` / URL: `https://figma-console-mcp.southleft.com/mcp` |
+| **Lovable** | Project Settings → Integrations → Add MCP Server → paste the URL and add your Figma PAT as Bearer token |
+| **v0** | Settings → MCP Servers → Add Server → Streamable HTTP → paste URL and token |
+| **Replit** | Tools → MCP → Add Server → paste URL, set Authorization header to `Bearer figd_YOUR_TOKEN` |
+| **Other clients** | Look for "Add MCP Server", "Custom Tool", or "Integrations" in your platform's settings. Provide the URL above and your Figma PAT as the Bearer token. |
+
+### Step 2: Run the Desktop Bridge Plugin in Figma (~30 sec)
+
+1. Open **Figma Desktop** and navigate to your design file
+2. Run the plugin: **Plugins → Development → Figma Desktop Bridge**
+3. You should see the small "MCP ready" indicator
+
+> **First time?** You'll need to import the plugin first: Plugins → Development → Import plugin from manifest → select `figma-desktop-bridge/manifest.json`. Run `npx figma-console-mcp@latest --print-path` to find the directory.
+
+### Step 3: Pair via Cloud Mode (~30 sec)
+
+1. **Tell your AI to connect to your Figma plugin** using natural language:
    - "Connect to my Figma plugin"
    - "Pair with my design file"
    - "I want to create designs in Figma"
 
 2. **Your AI generates a 6-character pairing code** (expires in 5 minutes)
 
-3. **In Figma Desktop:**
-   - Open the Desktop Bridge plugin (Plugins → Development → Figma Desktop Bridge)
-   - Toggle **"Cloud Mode"** in the plugin UI
+3. **In the Desktop Bridge plugin:**
+   - Toggle **"Cloud Mode"** (the small chevron below the status bar)
    - Enter the pairing code
    - Click **Connect**
 

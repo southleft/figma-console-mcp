@@ -245,20 +245,30 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 #### Prerequisites
 
+- [ ] **Figma Personal Access Token** — [Create one here](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) (starts with `figd_`)
 - [ ] **Figma Desktop** with the Desktop Bridge plugin installed (see [Desktop Bridge setup](#step-3-connect-to-figma-desktop))
-- [ ] **A web AI client** connected to the remote MCP endpoint (see [Remote SSE setup](#-remote-sse-read-only-exploration))
+- [ ] **A web AI client** that supports MCP (Claude.ai, Lovable, v0, Replit, etc.)
 
-#### How to Connect
+#### Step 1: Add the MCP Connector
 
-1. **Set up Remote SSE** if you haven't already — follow the [Remote SSE](#-remote-sse-read-only-exploration) steps above
-2. **Open the Desktop Bridge plugin** in Figma Desktop (Plugins → Development → Figma Desktop Bridge)
-3. **Tell your AI assistant:**
+Add this endpoint to your AI platform's MCP settings:
+
+**URL:** `https://figma-console-mcp.southleft.com/mcp`
+**Auth:** Your Figma PAT as Bearer token
+
+In **Claude.ai**: Settings → Connectors → Add Custom Connector → paste the URL above.
+In **Lovable/v0/Replit**: Look for "Add MCP Server" or "Integrations" in settings → paste the URL and add your token.
+
+#### Step 2: Pair the Plugin
+
+1. **Open the Desktop Bridge plugin** in Figma Desktop (Plugins → Development → Figma Desktop Bridge)
+2. **Tell your AI assistant:**
    ```
    Connect to my Figma plugin
    ```
-4. **The AI gives you a 6-character pairing code** (expires in 5 minutes)
-5. **In the plugin:** Toggle "Cloud Mode" → enter the code → click Connect
-6. **You're paired!** Full write access is now available
+3. **The AI gives you a 6-character pairing code** (expires in 5 minutes)
+4. **In the plugin:** Toggle "Cloud Mode" → enter the code → click Connect
+5. **You're paired!** Full write access is now available
 
 #### What You Can Do
 
