@@ -1365,7 +1365,7 @@ export default {
 			const metadata = {
 				resource: url.origin,
 				authorization_servers: [`${url.origin}/`],
-				scopes_supported: ["file_content:read", "library_content:read", "file_variables:read", "file_comments:write"],
+				scopes_supported: ["file_content:read", "file_metadata:read", "file_versions:read", "file_comments:read", "file_comments:write", "file_variables:read", "library_content:read", "library_assets:read"],
 				bearer_methods_supported: ["header"],
 				resource_signing_alg_values_supported: ["RS256"]
 			};
@@ -1385,7 +1385,7 @@ export default {
 				authorization_endpoint: `${url.origin}/authorize`,
 				token_endpoint: `${url.origin}/token`,
 				registration_endpoint: `${url.origin}/oauth/register`,
-				scopes_supported: ["file_content:read", "library_content:read", "file_variables:read", "file_comments:write"],
+				scopes_supported: ["file_content:read", "file_metadata:read", "file_versions:read", "file_comments:read", "file_comments:write", "file_variables:read", "library_content:read", "library_assets:read"],
 				response_types_supported: ["code"],
 				grant_types_supported: ["authorization_code", "refresh_token"],
 				token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
@@ -1458,7 +1458,7 @@ export default {
 			const figmaAuthUrl = new URL("https://www.figma.com/oauth");
 			figmaAuthUrl.searchParams.set("client_id", env.FIGMA_OAUTH_CLIENT_ID);
 			figmaAuthUrl.searchParams.set("redirect_uri", `${oauthOrigin}/oauth/callback`);
-			figmaAuthUrl.searchParams.set("scope", "file_content:read,library_content:read,file_variables:read,file_comments:write");
+			figmaAuthUrl.searchParams.set("scope", "file_content:read,file_metadata:read,file_versions:read,file_comments:read,file_comments:write,file_variables:read,library_content:read,library_assets:read");
 			figmaAuthUrl.searchParams.set("state", stateToken);
 			figmaAuthUrl.searchParams.set("response_type", "code");
 
@@ -1511,7 +1511,7 @@ export default {
 						token_type: "Bearer",
 						expires_in: Math.max(0, Math.floor((tokenData.expiresAt - Date.now()) / 1000)),
 						refresh_token: tokenData.refreshToken,
-						scope: "file_content:read library_content:read file_variables:read file_comments:write"
+						scope: "file_content:read file_metadata:read file_versions:read file_comments:read file_comments:write file_variables:read library_content:read library_assets:read"
 					}), {
 						headers: {
 							"Content-Type": "application/json",
@@ -1602,7 +1602,7 @@ export default {
 					token_type: "Bearer",
 					expires_in: tokenData.expires_in,
 					refresh_token: tokenData.refresh_token || refreshToken,
-					scope: "file_content:read library_content:read file_variables:read file_comments:write"
+					scope: "file_content:read file_metadata:read file_versions:read file_comments:read file_comments:write file_variables:read library_content:read library_assets:read"
 				}), {
 					headers: {
 						"Content-Type": "application/json",
@@ -1693,7 +1693,7 @@ export default {
 			const figmaAuthUrl = new URL("https://www.figma.com/oauth");
 			figmaAuthUrl.searchParams.set("client_id", env.FIGMA_OAUTH_CLIENT_ID);
 			figmaAuthUrl.searchParams.set("redirect_uri", redirectUri);
-			figmaAuthUrl.searchParams.set("scope", "file_content:read,library_content:read,file_variables:read,file_comments:write");
+			figmaAuthUrl.searchParams.set("scope", "file_content:read,file_metadata:read,file_versions:read,file_comments:read,file_comments:write,file_variables:read,library_content:read,library_assets:read");
 			figmaAuthUrl.searchParams.set("state", stateToken);
 			figmaAuthUrl.searchParams.set("response_type", "code");
 
