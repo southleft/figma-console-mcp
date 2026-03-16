@@ -1281,6 +1281,29 @@ export default {
 				return connector;
 			};
 
+			// Build a getCurrentUrl that resolves from the relay DO's file info
+			const getCloudFileUrl = (): string | null => {
+				// This is synchronous — we cache the file URL after first relay status check
+				return cloudFileUrlCache;
+			};
+			let cloudFileUrlCache: string | null = null;
+
+			// Pre-fetch file info from relay if paired
+			try {
+				const relayDoId = await env.OAUTH_TOKENS.get(`relay:${bearerToken}`);
+				if (relayDoId) {
+					const doId = env.PLUGIN_RELAY.idFromString(relayDoId);
+					const stub = env.PLUGIN_RELAY.get(doId);
+					const statusRes = await stub.fetch('https://relay/relay/status');
+					const status = await statusRes.json() as { connected?: boolean; fileInfo?: { fileKey?: string | null } };
+					if (status.connected && status.fileInfo?.fileKey) {
+						cloudFileUrlCache = `https://www.figma.com/design/${status.fileInfo.fileKey}`;
+					}
+				}
+			} catch {
+				// No relay session or not paired — cloudFileUrlCache stays null
+			}
+
 			// Register all write/manipulation tools via shared function
 			registerWriteTools(statelessServer, getCloudDesktopConnector);
 
@@ -1288,7 +1311,7 @@ export default {
 			registerFigmaAPITools(
 				statelessServer,
 				async () => statelessApi,
-				() => null, // No browser URL in stateless mode
+				getCloudFileUrl,
 				() => null, // No console monitor
 				() => null, // No browser manager
 				undefined,  // No ensureInitialized
@@ -1300,7 +1323,7 @@ export default {
 			registerDesignCodeTools(
 				statelessServer,
 				async () => statelessApi,
-				() => null,
+				getCloudFileUrl,
 				new Map(), // Fresh variables cache per request
 				{ isRemoteMode: true },
 				getCloudDesktopConnector,
@@ -1309,13 +1332,13 @@ export default {
 			registerCommentTools(
 				statelessServer,
 				async () => statelessApi,
-				() => null,
+				getCloudFileUrl,
 			);
 
 			registerDesignSystemTools(
 				statelessServer,
 				async () => statelessApi,
-				() => null,
+				getCloudFileUrl,
 				new Map(), // Fresh variables cache per request
 				{ isRemoteMode: true },
 			);
