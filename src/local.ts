@@ -3218,7 +3218,11 @@ return {
 		// Tool 2: Search Components (~3000 tokens response max, paginated)
 		this.server.tool(
 			"figma_search_components",
-			"Search for components by name, category, or description. Returns paginated results with component keys for instantiation. Automatically loads the design system cache if needed.",
+			`Search for components by name, category, or description. Returns paginated results with component keys for instantiation. Automatically loads the design system cache if needed.
+
+**NEW: Cross-file library search!** Pass a libraryFileKey or libraryFileUrl to search for components in a published shared library (different file). This uses the REST API and requires FIGMA_ACCESS_TOKEN.
+
+Without libraryFileKey/libraryFileUrl, searches the currently open file (local components via Plugin API).`,
 			{
 				query: z
 					.string()
@@ -3229,6 +3233,18 @@ return {
 					.string()
 					.optional()
 					.describe("Filter by category (e.g., 'Button', 'Input', 'Card')"),
+				libraryFileKey: z
+					.string()
+					.optional()
+					.describe(
+						"File key of a published library to search in (for cross-file library access). Overrides local search.",
+					),
+				libraryFileUrl: z
+					.string()
+					.optional()
+					.describe(
+						"URL of a published library file to search in (e.g., https://www.figma.com/design/abc123/...). Alternative to libraryFileKey.",
+					),
 				limit: z
 					.number()
 					.optional()
@@ -3240,8 +3256,151 @@ return {
 					.default(0)
 					.describe("Offset for pagination"),
 			},
-			async ({ query, category, limit, offset }) => {
+			async ({ query, category, libraryFileKey, libraryFileUrl, limit, offset }) => {
 				try {
+					// Determine if this is a library search or local search
+					let resolvedLibraryKey = libraryFileKey;
+					if (!resolvedLibraryKey && libraryFileUrl) {
+						const { extractFileKey } = await import(
+							"./core/figma-api.js"
+						);
+						resolvedLibraryKey = extractFileKey(libraryFileUrl) ?? undefined;
+					}
+
+					// LIBRARY SEARCH PATH: Use REST API for cross-file access
+					if (resolvedLibraryKey) {
+						const api = await this.getFigmaAPI();
+						const [componentsResponse, componentSetsResponse] =
+							await Promise.all([
+								api.getComponents(resolvedLibraryKey).catch((err: Error) => {
+									logger.warn(
+										{ error: err },
+										"Failed to fetch components from library",
+									);
+									return { meta: { components: [] } };
+								}),
+								api
+									.getComponentSets(resolvedLibraryKey)
+									.catch((err: Error) => {
+										logger.warn(
+											{ error: err },
+											"Failed to fetch component sets from library",
+										);
+										return { meta: { component_sets: [] } };
+									}),
+							]);
+
+						const rawComponents =
+							componentsResponse?.meta?.components || [];
+						const rawComponentSets =
+							componentSetsResponse?.meta?.component_sets || [];
+
+						// Build combined results — component sets + standalone components
+						const componentSetNodeIds = new Set(
+							rawComponentSets.map((cs: any) => cs.node_id),
+						);
+
+						let results: any[] = [];
+
+						// Add component sets with their variant info
+						// NOTE: REST API returns containingComponentSet as an object { name, nodeId }
+						// not a boolean. Match via containingComponentSet.nodeId or component_set_id.
+						for (const cs of rawComponentSets) {
+							const variants = rawComponents.filter((c: any) => {
+								const ccs = c.containing_frame?.containingComponentSet;
+								// Match via containingComponentSet object (preferred)
+								if (ccs && typeof ccs === "object" && ccs.nodeId === cs.node_id) return true;
+								// Fallback: match via containing_frame.nodeId (some API versions)
+								if (ccs && c.containing_frame?.nodeId === cs.node_id) return true;
+								// Fallback: match via component_set_id field
+								if (c.component_set_id === cs.node_id) return true;
+								return false;
+							});
+							results.push({
+								name: cs.name,
+								key: cs.key,
+								nodeId: cs.node_id,
+								description: cs.description || undefined,
+								type: "COMPONENT_SET",
+								variantCount: variants.length,
+								variants: variants.slice(0, 5).map((v: any) => ({
+									name: v.name,
+									key: v.key,
+								})),
+								source: "library",
+							});
+						}
+
+						// Add standalone components (not part of a set)
+						for (const c of rawComponents) {
+							const ccs = c.containing_frame?.containingComponentSet;
+							const isVariant = ccs || c.component_set_id;
+							if (!isVariant) {
+								results.push({
+									name: c.name,
+									key: c.key,
+									nodeId: c.node_id,
+									description: c.description || undefined,
+									type: "COMPONENT",
+									source: "library",
+								});
+							}
+						}
+
+						// Apply search filter
+						if (query) {
+							const queryLower = query.toLowerCase();
+							results = results.filter(
+								(item) =>
+									item.name.toLowerCase().includes(queryLower) ||
+									item.description?.toLowerCase().includes(queryLower),
+							);
+						}
+
+						if (category) {
+							const catLower = category.toLowerCase();
+							results = results.filter(
+								(item) =>
+									item.name.toLowerCase().includes(catLower) ||
+									item.description?.toLowerCase().includes(catLower),
+							);
+						}
+
+						// Sort and paginate
+						results.sort((a: any, b: any) => a.name.localeCompare(b.name));
+						const effectiveLimit = Math.min(limit || 10, 25);
+						const effectiveOffset = offset || 0;
+						const total = results.length;
+						const paginatedResults = results.slice(
+							effectiveOffset,
+							effectiveOffset + effectiveLimit,
+						);
+
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										success: true,
+										source: "library",
+										libraryFileKey: resolvedLibraryKey,
+										query: query || "(all)",
+										category: category || "(all)",
+										results: paginatedResults,
+										pagination: {
+											offset: effectiveOffset,
+											limit: effectiveLimit,
+											total,
+											hasMore: effectiveOffset + effectiveLimit < total,
+										},
+										hint: "Use figma_instantiate_component with the componentKey to place library components in your current file.",
+									}),
+								},
+							],
+						};
+					}
+
+					// LOCAL SEARCH PATH: Use cached design system manifest (existing behavior)
 					const { searchComponents } = await import(
 						"./core/design-system-manifest.js"
 					);
@@ -3257,6 +3416,7 @@ return {
 										{
 											error:
 												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
+											hint: "If you're trying to search a published library from another file, pass the libraryFileKey or libraryFileUrl parameter.",
 										},
 									),
 								},
@@ -3279,6 +3439,7 @@ return {
 								text: JSON.stringify(
 									{
 										success: true,
+										source: "local",
 										query: query || "(all)",
 										category: category || "(all)",
 										results: results.results,
@@ -3290,7 +3451,7 @@ return {
 										},
 										hint: results.hasMore
 											? `Use offset=${(offset || 0) + effectiveLimit} to get more results.`
-											: "Use figma_get_component_details with a component key for full details.",
+											: "Use figma_get_component_details with a component key for full details. To search a published library, pass libraryFileKey.",
 									},
 								),
 							},
@@ -3575,10 +3736,10 @@ return {
 		// Tool 5: Instantiate Component
 		this.server.tool(
 			"figma_instantiate_component",
-			`Create an instance of a component from the design system.
+			`Create an instance of a component from the design system — works with BOTH local and published library components.
 
-**CRITICAL: Always pass BOTH componentKey AND nodeId together!**
-Search results return both identifiers. Pass both so the tool can automatically fall back to nodeId if the component isn't published to a library. Most local/unpublished components require nodeId.
+**For local components:** Pass BOTH componentKey AND nodeId together. Most local/unpublished components require nodeId.
+**For library components:** Pass just the componentKey from figma_get_library_components or figma_search_components (with libraryFileKey). The component will be imported from the published library automatically.
 
 **IMPORTANT: Always re-search before instantiating!**
 NodeIds are session-specific and may be stale from previous conversations. ALWAYS search for components at the start of each design session to get current, valid identifiers.
@@ -3679,6 +3840,315 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										hint: "Make sure the component key is correct and the Desktop Bridge plugin is running",
 									},
 								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// ============================================================================
+		// Tool 6: Get Library Components (Cross-file published library access)
+		// ============================================================================
+		this.server.tool(
+			"figma_get_library_components",
+			`Discover published components from a shared/team library file.
+
+**USE THIS when you need to use components from a published design system library** (a different file than the one currently open). This bridges the gap between library discovery and instantiation.
+
+**WORKFLOW:**
+1. Call this tool with the library file's URL or file key
+2. Browse the returned components (with keys, names, variants)
+3. Use figma_instantiate_component with the componentKey to place them in the current file
+
+**NOTE:** Requires FIGMA_ACCESS_TOKEN to be set (uses the Figma REST API to read the library file).`,
+			{
+				libraryFileUrl: z
+					.string()
+					.optional()
+					.describe(
+						"The URL of the library file (e.g., https://www.figma.com/design/abc123/My-Design-System). Either this or libraryFileKey is required.",
+					),
+				libraryFileKey: z
+					.string()
+					.optional()
+					.describe(
+						"The file key of the library file (e.g., 'abc123'). Either this or libraryFileUrl is required.",
+					),
+				query: z
+					.string()
+					.optional()
+					.describe(
+						"Search query to filter components by name (e.g., 'Button', 'Card'). Leave empty to get all components.",
+					),
+				limit: z
+					.number()
+					.optional()
+					.default(25)
+					.describe("Maximum results to return (default: 25, max: 100)"),
+				offset: z
+					.number()
+					.optional()
+					.default(0)
+					.describe("Offset for pagination"),
+				includeVariants: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Include individual variant components (default: false, only returns component sets)",
+					),
+			},
+			async ({
+				libraryFileUrl,
+				libraryFileKey,
+				query,
+				limit,
+				offset,
+				includeVariants,
+			}) => {
+				try {
+					// Resolve file key from URL or direct key
+					let fileKey = libraryFileKey;
+					if (!fileKey && libraryFileUrl) {
+						const { extractFileKey } = await import(
+							"./core/figma-api.js"
+						);
+						fileKey = extractFileKey(libraryFileUrl) ?? undefined;
+						if (!fileKey) {
+							return {
+								content: [
+									{
+										type: "text",
+										text: JSON.stringify({
+											error:
+												"Could not extract file key from URL. Please provide a valid Figma file URL or use libraryFileKey directly.",
+											example:
+												"https://www.figma.com/design/abc123/My-Design-System",
+										}),
+									},
+								],
+								isError: true,
+							};
+						}
+					}
+
+					if (!fileKey) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										error:
+											"Either libraryFileUrl or libraryFileKey is required.",
+										hint: "Provide the URL of your design system file, e.g., https://www.figma.com/design/abc123/My-Design-System",
+									}),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					// Use REST API to get published components from the library file
+					const api = await this.getFigmaAPI();
+
+					// Fetch both components and component sets in parallel
+					const [componentsResponse, componentSetsResponse] =
+						await Promise.all([
+							api.getComponents(fileKey).catch((err: Error) => {
+								logger.warn(
+									{ error: err },
+									"Failed to fetch components from library",
+								);
+								return { meta: { components: [] } };
+							}),
+							api.getComponentSets(fileKey).catch((err: Error) => {
+								logger.warn(
+									{ error: err },
+									"Failed to fetch component sets from library",
+								);
+								return { meta: { component_sets: [] } };
+							}),
+						]);
+
+					const rawComponents =
+						componentsResponse?.meta?.components || [];
+					const rawComponentSets =
+						componentSetsResponse?.meta?.component_sets || [];
+
+					// Helper: check if a component belongs to a given component set
+					// REST API returns containingComponentSet as an object { name, nodeId }
+					const isVariantOf = (c: any, csNodeId: string): boolean => {
+						const ccs = c.containing_frame?.containingComponentSet;
+						if (ccs && typeof ccs === "object" && ccs.nodeId === csNodeId) return true;
+						if (ccs && c.containing_frame?.nodeId === csNodeId) return true;
+						if (c.component_set_id === csNodeId) return true;
+						return false;
+					};
+					const isVariant = (c: any): boolean => {
+						return !!(c.containing_frame?.containingComponentSet || c.component_set_id);
+					};
+					const getParentSetName = (c: any): string | undefined => {
+						const ccs = c.containing_frame?.containingComponentSet;
+						if (ccs && typeof ccs === "object" && ccs.name) return ccs.name;
+						return c.containing_frame?.name || c.component_set_name || undefined;
+					};
+
+					// Process component sets (groups of variants)
+					const componentSets = rawComponentSets.map((cs: any) => {
+						const variants = rawComponents.filter((c: any) => isVariantOf(c, cs.node_id));
+
+						return {
+							name: cs.name,
+							key: cs.key,
+							nodeId: cs.node_id,
+							description: cs.description || undefined,
+							type: "COMPONENT_SET" as const,
+							variantCount: variants.length,
+							variants: variants.map((v: any) => ({
+								name: v.name,
+								key: v.key,
+								nodeId: v.node_id,
+							})),
+						};
+					});
+
+					// Process standalone components (not part of a set)
+					const standaloneComponents = rawComponents
+						.filter((c: any) => !isVariant(c))
+						.map((c: any) => ({
+							name: c.name,
+							key: c.key,
+							nodeId: c.node_id,
+							description: c.description || undefined,
+							type: "COMPONENT" as const,
+						}));
+
+					// Combine results
+					let allResults: any[] = [
+						...componentSets,
+						...standaloneComponents,
+					];
+
+					// Include individual variants if requested
+					if (includeVariants) {
+						const variantComponents = rawComponents
+							.filter((c: any) => isVariant(c))
+							.map((c: any) => ({
+								name: c.name,
+								key: c.key,
+								nodeId: c.node_id,
+								description: c.description || undefined,
+								type: "VARIANT" as const,
+								parentSetName: getParentSetName(c),
+							}));
+						allResults = [...allResults, ...variantComponents];
+					}
+
+					// Apply search filter
+					if (query) {
+						const queryLower = query.toLowerCase();
+						allResults = allResults.filter(
+							(item) =>
+								item.name
+									.toLowerCase()
+									.includes(queryLower) ||
+								item.description
+									?.toLowerCase()
+									.includes(queryLower),
+						);
+					}
+
+					// Sort by name for consistent results
+					allResults.sort((a, b) => a.name.localeCompare(b.name));
+
+					// Apply pagination
+					const effectiveLimit = Math.min(limit || 25, 100);
+					const effectiveOffset = offset || 0;
+					const total = allResults.length;
+					const paginatedResults = allResults.slice(
+						effectiveOffset,
+						effectiveOffset + effectiveLimit,
+					);
+					const hasMore =
+						effectiveOffset + effectiveLimit < total;
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									success: true,
+									libraryFileKey: fileKey,
+									query: query || "(all)",
+									summary: {
+										totalComponentSets:
+											componentSets.length,
+										totalStandaloneComponents:
+											standaloneComponents.length,
+										totalComponents: rawComponents.length,
+									},
+									results: paginatedResults,
+									pagination: {
+										offset: effectiveOffset,
+										limit: effectiveLimit,
+										total,
+										hasMore,
+									},
+									usage: {
+										instantiate: `To use a component: call figma_instantiate_component with the componentKey from results above.`,
+										example: paginatedResults[0]
+											? `figma_instantiate_component({ componentKey: "${paginatedResults[0].key}" })`
+											: undefined,
+										note: "Components will be imported from the published library into the current file automatically.",
+									},
+								}),
+							},
+						],
+					};
+				} catch (error) {
+					const errorMessage =
+						error instanceof Error ? error.message : String(error);
+					logger.error(
+						{ error },
+						"Failed to get library components",
+					);
+
+					// Provide helpful guidance based on error type
+					let hint =
+						"Make sure FIGMA_ACCESS_TOKEN is set and the library file key is correct.";
+					if (errorMessage.includes("FIGMA_ACCESS_TOKEN")) {
+						hint =
+							"Set FIGMA_ACCESS_TOKEN environment variable with your Figma personal access token. Get one at: https://www.figma.com/developers/api#access-tokens";
+					} else if (
+						errorMessage.includes("403") ||
+						errorMessage.includes("Forbidden")
+					) {
+						hint =
+							"Access denied. Make sure your Figma token has access to this file and the file's library is published.";
+					} else if (
+						errorMessage.includes("404") ||
+						errorMessage.includes("Not found")
+					) {
+						hint =
+							"File not found. Check the file URL/key and make sure the file exists and you have access to it.";
+					} else if (
+						errorMessage.includes("429") ||
+						errorMessage.includes("Rate")
+					) {
+						hint =
+							"Rate limited by Figma API. Wait a moment and try again, or reduce the number of requests.";
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									error: errorMessage,
+									hint,
+								}),
 							},
 						],
 						isError: true,

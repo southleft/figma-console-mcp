@@ -37,7 +37,7 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | Requires Node.js | Yes | No | No |
 | **Total tools available** | **59+** | **43** | **22** |
 
-> **Bottom line:** Remote mode is **read-only** with 22 tools. Cloud Mode adds **write access** (45 tools) without Node.js. Local (NPX/Git) has **everything** (59+ tools) including real-time monitoring.
+> **Bottom line:** Remote mode is **read-only** with 22 tools. Cloud Mode adds **write access** ((43 tools)) without Node.js. Local (NPX/Git) has **everything** (59+ tools) including real-time monitoring.
 
 ---
 

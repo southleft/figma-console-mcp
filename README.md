@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
-> **🆕 Cloud Write Relay — Web AI Clients Can Now Design in Figma:** Claude.ai, v0, Replit, and Lovable can now create and modify Figma designs through a cloud relay. No Node.js required — just pair your Desktop Bridge plugin with a 6-character code and get 43 tools including full write access. [See changelog →](CHANGELOG.md)
+> **🆕 Cross-File Library Components — Use Published Design Systems Across Files:** AI assistants can now discover and instantiate components from published shared libraries into your working file. Search your design system by URL, browse components with full variant detail, and place them — no manual copy-paste needed. [See changelog →](CHANGELOG.md)
 
 ## What is this?
 
@@ -51,7 +51,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Requires Node.js | Yes | **No** | No |
 | **Total tools available** | **59+** | **43** | **22** |
 
-> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 59+ tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 60+ tools with real-time monitoring.
 
 ---
 
@@ -59,7 +59,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 59+ tools including design creation, variable management, and component instantiation.
+**What you get:** All 60+ tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -152,7 +152,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 59+ tools as NPX, plus full source code access.
+**What you get:** Same 60+ tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -312,7 +312,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 59+ tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 60+ tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -597,7 +597,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 59+ tools work through the WebSocket transport
+- All 60+ tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -733,7 +733,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.12.0 (Stable) - Production-ready with Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 59+ tools, Comments API, and MCP Apps
+**Current Status:** v1.12.0 (Stable) - Production-ready with Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 60+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
 - [x] **v1.12.0** - Cloud Write Relay: web AI clients (Claude.ai, v0, Replit, Lovable) can create and modify Figma designs via cloud relay pairing — no Node.js required

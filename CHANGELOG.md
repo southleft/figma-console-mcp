@@ -5,6 +5,19 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-03-18
+
+### Added
+- **`figma_get_library_components` tool** — Discover published components from shared/team library files via the Figma REST API. Enables cross-file design system workflows: search a library file by URL or file key, get component keys with full variant detail, then instantiate them in your working file with `figma_instantiate_component`. Supports search filtering, pagination, and variant inclusion.
+- **Cross-file library search in `figma_search_components`** — New `libraryFileKey` and `libraryFileUrl` parameters let you search for components in a published library from another file. When omitted, existing local search behavior is preserved.
+
+### Changed
+- **`figma_instantiate_component` description** — Updated to clarify support for both local and published library components. For library components, pass just the `componentKey` from library search results.
+
+### Fixed
+- **Variant-to-component-set matching** — Fixed variant grouping in REST API responses. The Figma REST API returns `containingComponentSet` as an object `{ name, nodeId }`, not a boolean. Added triple-fallback matching (object nodeId, containing_frame nodeId, component_set_id) to correctly associate variants with their parent component sets across all API response formats.
+
+
 ## [1.13.0] - 2026-03-14
 
 ### Added
@@ -334,6 +347,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.14.0]: https://github.com/southleft/figma-console-mcp/compare/v1.13.1...v1.14.0
 [1.11.5]: https://github.com/southleft/figma-console-mcp/compare/v1.11.4...v1.11.5
 [1.11.4]: https://github.com/southleft/figma-console-mcp/compare/v1.11.2...v1.11.4
 [1.11.2]: https://github.com/southleft/figma-console-mcp/compare/v1.11.1...v1.11.2

@@ -7,7 +7,7 @@ description: "Complete API reference for all 57+ MCP tools, including parameters
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **59+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **45 read-only tools** by default, or **((45 tools))** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **59+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **43 read-only tools** by default, or **(((43 tools)))** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -34,9 +34,10 @@ This guide provides detailed documentation for each tool, including when to use 
 | **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local / Cloud |
 | | `figma_arrange_component_set` | Organize variants with labels | Local / Cloud |
 | | `figma_set_description` | Add component descriptions | Local / Cloud |
-| **🧩 Components** | `figma_search_components` | Find components by name | Local / Cloud |
+| **🧩 Components** | `figma_search_components` | Find components by name (local + library) | Local / Cloud |
+| | `figma_get_library_components` | Discover components from published libraries | Local |
 | | `figma_get_component_details` | Get component details | Local / Cloud |
-| | `figma_instantiate_component` | Create component instance | Local / Cloud |
+| | `figma_instantiate_component` | Create component instance (local + library) | Local / Cloud |
 | | `figma_add_component_property` | Add component property | Local / Cloud |
 | | `figma_edit_component_property` | Edit component property | Local / Cloud |
 | | `figma_delete_component_property` | Remove component property | Local / Cloud |
@@ -1061,27 +1062,91 @@ figma_setup_design_tokens({
 
 ### `figma_search_components`
 
-Search for components in the current file by name or description.
+Search for components by name or description. Supports both local file search and cross-file published library search.
 
 **When to Use:**
 - Finding existing components to instantiate
 - Discovering available UI building blocks
+- Searching a published design system library from another file
 - Checking if a component already exists before creating
 
 **Usage:**
 ```javascript
+// Search local file (existing behavior)
 figma_search_components({
-  query: "Button",           // Search term
-  includeDescription: true   // Include description in results
+  query: "Button"
+})
+
+// Search a published library by file key
+figma_search_components({
+  query: "Button",
+  libraryFileKey: "abc123XYZ"
+})
+
+// Search a published library by URL
+figma_search_components({
+  query: "Card",
+  libraryFileUrl: "https://www.figma.com/design/abc123/My-Design-System"
 })
 ```
 
 **Parameters:**
-- `query` (required): Search term to match against component names
-- `includeDescription` (optional): Include component descriptions (default: true)
+- `query` (optional): Search term to match against component names or descriptions
+- `category` (optional): Filter by category
+- `libraryFileKey` (optional): File key of a published library for cross-file search
+- `libraryFileUrl` (optional): URL of a published library file (alternative to libraryFileKey)
+- `limit` (optional): Max results (default: 10, max: 25)
+- `offset` (optional): Pagination offset
 
 **Returns:**
-- Array of matching components with ID, name, key, and description
+- Array of matching components with keys, names, variant info, and `source` ("local" or "library")
+
+**Note:** Library search requires `FIGMA_ACCESS_TOKEN` environment variable.
+
+---
+
+### `figma_get_library_components`
+
+Discover published components from a shared/team library file. This is the primary tool for cross-file design system workflows.
+
+**When to Use:**
+- Browsing all components in a published design system
+- Getting component keys for instantiation from another file
+- Auditing a library's component inventory with variant detail
+
+**Usage:**
+```javascript
+// By file key
+figma_get_library_components({
+  libraryFileKey: "abc123XYZ",
+  query: "Button"
+})
+
+// By URL with full variant detail
+figma_get_library_components({
+  libraryFileUrl: "https://www.figma.com/design/abc123/My-Design-System",
+  includeVariants: true,
+  limit: 50
+})
+```
+
+**Parameters:**
+- `libraryFileUrl` (optional): URL of the library file
+- `libraryFileKey` (optional): File key of the library file
+- `query` (optional): Filter by component name or description
+- `limit` (optional): Max results (default: 25, max: 100)
+- `offset` (optional): Pagination offset
+- `includeVariants` (optional): Include individual variant components (default: false)
+
+**Returns:**
+- Component sets with variant counts and keys, standalone components, summary stats, and instantiation examples
+
+**Workflow:**
+1. Call `figma_get_library_components` with your design system file
+2. Find the component you want and note its `key`
+3. Call `figma_instantiate_component` with that `componentKey` — the component is imported from the published library automatically
+
+**Note:** Requires `FIGMA_ACCESS_TOKEN` environment variable. Local mode only.
 
 ---
 
