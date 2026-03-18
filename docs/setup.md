@@ -185,13 +185,23 @@ Find your client's MCP config file and add:
 
 The Desktop Bridge Plugin connects via WebSocket — no special Figma launch flags needed, and it persists across Figma restarts.
 
+> **Important for NPX users:** The plugin files are bundled inside the npm package, which lives in a hidden cache directory on your machine — **not** in a folder you can browse to manually. You need to run a command to find the path first (see step 2 below).
+
 1. **Open Figma Desktop** (normal launch, no special flags)
-2. Go to **Plugins** → **Development** → **Import plugin from manifest...**
-3. Navigate to the `figma-desktop-bridge/manifest.json` file in the figma-console-mcp directory
-   - **NPX users:** Run `npx figma-console-mcp@latest --print-path` to find the directory
-4. Click **"Open"** — the plugin appears in your Development plugins list
-5. **Run the plugin** in your Figma file (Plugins → Development → Figma Desktop Bridge)
-6. The plugin auto-connects via WebSocket (scans ports 9223–9232) — you'll see a "Connected" indicator
+2. **Find the plugin files on your machine.** Open a terminal and run:
+   ```bash
+   npx figma-console-mcp@latest --print-path
+   ```
+   This prints the full path to the `manifest.json` file, for example:
+   ```
+   /Users/yourname/.npm/_npx/abc123/node_modules/figma-console-mcp/figma-desktop-bridge/manifest.json
+   ```
+   **Copy this path** — you'll need it in the next step.
+3. In Figma, go to **Plugins** → **Development** → **Import plugin from manifest...**
+4. **Paste or navigate to the path** from step 2 and select `manifest.json`
+5. Click **"Open"** — the plugin appears in your Development plugins list
+6. **Run the plugin** in your Figma file (Plugins → Development → Figma Desktop Bridge)
+7. The plugin auto-connects via WebSocket (scans ports 9223–9232) — you'll see a "Connected" indicator
 
 > **One-time setup.** Once imported, the plugin stays in your Development plugins list. Just run it whenever you want to use the MCP. No need to restart Figma with special flags.
 
@@ -382,7 +392,7 @@ How to add this depends on your platform:
 2. Run the plugin: **Plugins → Development → Figma Desktop Bridge**
 3. You should see the small "MCP ready" indicator
 
-> **First time?** You'll need to import the plugin first: Plugins → Development → Import plugin from manifest → select `figma-desktop-bridge/manifest.json`. Run `npx figma-console-mcp@latest --print-path` to find the directory.
+> **First time?** You'll need to import the plugin first. Run `npx figma-console-mcp@latest --print-path` in a terminal to get the full path to `manifest.json`, then in Figma go to Plugins → Development → Import plugin from manifest and navigate to that path.
 
 ### Step 3: Pair via Cloud Mode (~30 sec)
 
@@ -645,7 +655,7 @@ For reference, the Codex GUI fields map directly to the [NPX JSON configuration]
 | NPX using old version | Cached package | Use `figma-console-mcp@latest` explicitly |
 | Cloud pairing code expired | Code is older than 5 minutes | Ask your AI to generate a new pairing code |
 | Cloud connection drops between turns | Relay session ended | Re-pair by asking your AI to reconnect, then enter the new code in the plugin |
-| Cloud Mode toggle not showing | Outdated Desktop Bridge plugin | Re-import the latest `figma-desktop-bridge/manifest.json` in Figma |
+| Cloud Mode toggle not showing | Outdated Desktop Bridge plugin | Run `npx figma-console-mcp@latest --print-path` to find the manifest, then re-import it in Figma |
 
 ### Node.js Version Issues
 
