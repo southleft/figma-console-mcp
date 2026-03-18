@@ -109,10 +109,14 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
     console.log('🌉 [Desktop Bridge] UI iframe now has variables data accessible via window.__figmaVariablesData');
 
     // Load and send persisted library config to UI
-    const libraryConfig = await figma.clientStorage.getAsync('libraryConfig');
+    const [libraryConfig, libraryOpen] = await Promise.all([
+      figma.clientStorage.getAsync('libraryConfig'),
+      figma.clientStorage.getAsync('libraryOpen'),
+    ]);
     figma.ui.postMessage({
       type: 'LIBRARY_CONFIG',
-      libraries: libraryConfig || []
+      libraries: libraryConfig || [],
+      open: libraryOpen || false,
     });
 
   } catch (error) {
@@ -2084,6 +2088,10 @@ figma.ui.onmessage = async (msg) => {
   else if (msg.type === 'STORE_LIBRARY_CONFIG') {
     figma.clientStorage.setAsync('libraryConfig', msg.libraries || [])
       .catch(function() { /* non-critical */ });
+    if (typeof msg.open === 'boolean') {
+      figma.clientStorage.setAsync('libraryOpen', msg.open)
+        .catch(function() { /* non-critical */ });
+    }
   }
 
   // ============================================================================

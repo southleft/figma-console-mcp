@@ -209,14 +209,14 @@
       transform: rotate(90deg);
     }
 
-    .lib-input-row {
-      display: flex;
-      gap: 4px;
+    .lib-hint {
+      font-size: 9px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.4));
+      line-height: 1.4;
     }
 
-    .lib-input-row input {
-      flex: 1;
-      min-width: 0;
+    .lib-input {
+      width: 100%;
       background: var(--figma-color-bg, #2c2c2c);
       border: 1px solid var(--figma-color-border, #4a4a4a);
       border-radius: 3px;
@@ -227,23 +227,24 @@
       box-sizing: border-box;
     }
 
-    .lib-input-row input::placeholder {
+    .lib-input::placeholder {
       color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.3));
     }
 
-    .lib-input-row button {
-      flex-shrink: 0;
+    .lib-add-btn {
+      width: 100%;
       background: var(--figma-color-bg-brand, #0d99ff);
       color: #fff;
       border: none;
       border-radius: 3px;
       font-size: 10px;
       font-weight: 500;
-      padding: 4px 8px;
+      padding: 5px 0;
       cursor: pointer;
+      box-sizing: border-box;
     }
 
-    .lib-input-row button:disabled {
+    .lib-add-btn:disabled {
       opacity: 0.5;
       cursor: default;
     }
@@ -343,14 +344,13 @@
     </div>
 
     <div class="lib-toggle" id="lib-toggle" onclick="toggleLibrarySection()">
-      <span class="chevron">▶</span> Libraries
+      <span class="chevron">▶</span> Team Libraries
     </div>
 
     <div class="lib-section" id="lib-section">
-      <div class="lib-input-row">
-        <input type="text" id="lib-input" placeholder="Figma URL or file key" autocomplete="off" />
-        <button onclick="addLibrary()">Add</button>
-      </div>
+      <div class="lib-hint">Paste a Figma file URL or key so Claude can discover components from your team libraries.</div>
+      <input type="text" id="lib-input" class="lib-input" placeholder="figma.com/design/… or file key" autocomplete="off" />
+      <button class="lib-add-btn" onclick="addLibrary()">Add library</button>
       <div class="lib-list" id="lib-list"></div>
     </div>
   </div>
@@ -1154,15 +1154,20 @@
       section.classList.toggle('visible');
       toggle.classList.toggle('expanded');
       if (section.classList.contains('visible')) renderLibraryList();
+      parent.postMessage({ pluginMessage: { type: 'STORE_LIBRARY_CONFIG', libraries: libraryConfig, open: section.classList.contains('visible') } }, '*');
       updatePluginSize();
     }
 
     function updatePluginSize() {
-      // Measure the actual rendered height of the container and resize to fit
+      // Measure the actual rendered height of the container and resize to fit.
+      // Widen to 200px when Team Libraries is expanded so the input is readable.
       setTimeout(function() {
         var container = document.querySelector('body > div');
         var h = container ? Math.max(50, container.scrollHeight + 14) : 50;
-        parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 140, height: h } }, '*');
+        var libOpen = document.getElementById('lib-section') &&
+                      document.getElementById('lib-section').classList.contains('visible');
+        var w = libOpen ? 200 : 140;
+        parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: w, height: h } }, '*');
       }, 10);
     }
 
@@ -1297,11 +1302,16 @@
       switch (msg.type) {
         case 'LIBRARY_CONFIG':
           libraryConfig = msg.libraries || [];
-          // If library section is open, re-render
-          if (document.getElementById('lib-section') &&
-              document.getElementById('lib-section').classList.contains('visible')) {
-            renderLibraryList();
+          if (msg.open) {
+            var s = document.getElementById('lib-section');
+            var t = document.getElementById('lib-toggle');
+            if (s && !s.classList.contains('visible')) {
+              s.classList.add('visible');
+              t.classList.add('expanded');
+            }
           }
+          renderLibraryList();
+          updatePluginSize();
           break;
 
         case 'VARIABLES_DATA':
@@ -1465,6 +1475,9 @@
           break;
       }
     };
+
+    // Resize window on load to reveal the Libraries toggle
+    document.addEventListener('DOMContentLoaded', function() { updatePluginSize(); });
   </script>
 </body>
 </html>
