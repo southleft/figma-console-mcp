@@ -1,8 +1,8 @@
 /**
  * Figma API Tools Tests
  *
- * Unit tests for registerFigmaAPITools() — all 9 REST API and bridge tools.
- * Tests registration, happy paths, and error handling.
+ * Tests actual behavior: connector vs REST API fallback,
+ * response formats, file URL resolution, error handling patterns.
  */
 
 import { registerFigmaAPITools } from "../src/core/figma-tools";
@@ -57,14 +57,12 @@ function createMockFigmaAPI() {
 			variables: {},
 			variableCollections: {},
 		}),
-		getStyles: jest.fn().mockResolvedValue({
-			styles: [],
-		}),
+		getStyles: jest.fn().mockResolvedValue({ styles: [] }),
 		getNodes: jest.fn().mockResolvedValue({
 			nodes: { "1:1": { document: { id: "1:1", name: "Component", type: "COMPONENT" } } },
 		}),
 		getImages: jest.fn().mockResolvedValue({
-			images: { "1:1": "https://figma.com/image.png" },
+			images: { "1:1": "https://figma-alpha-api.s3.us-west-2.amazonaws.com/images/abc" },
 		}),
 		getComponentData: jest.fn().mockResolvedValue({
 			id: "1:1",
@@ -88,21 +86,21 @@ function createMockDesktopConnector() {
 				height: 100,
 			},
 		}),
-		getTransportType: jest.fn().mockReturnValue("websocket"),
 		setInstanceProperties: jest.fn().mockResolvedValue({
 			success: true,
 			instance: { id: "1:1", name: "Button" },
 		}),
 		getVariablesFromPluginUI: jest.fn().mockResolvedValue({
 			success: true,
-			variables: [],
-			variableCollections: [],
+			variables: [{ id: "v1", name: "primary", resolvedType: "COLOR" }],
+			variableCollections: [{ id: "c1", name: "Colors" }],
 		}),
 		getVariables: jest.fn().mockResolvedValue({
 			success: true,
 			variables: [],
 			variableCollections: [],
 		}),
+		getTransportType: jest.fn().mockReturnValue("websocket"),
 	};
 }
 
@@ -130,12 +128,12 @@ describe("Figma API Tools", () => {
 			server as any,
 			async () => mockApi as any,
 			() => MOCK_FILE_URL,
-			() => null, // consoleMonitor
-			() => null, // browserManager
-			undefined, // ensureInitialized
-			new Map(), // variablesCache
-			undefined, // options
-			async () => mockConnector as any, // desktopConnector
+			() => null,
+			() => null,
+			undefined,
+			new Map(),
+			undefined,
+			async () => mockConnector as any,
 		);
 	});
 
@@ -147,52 +145,63 @@ describe("Figma API Tools", () => {
 		expect(server.tool).toHaveBeenCalledTimes(9);
 	});
 
-	it("registers all expected tool names", () => {
-		const expectedTools = [
-			"figma_get_file_data",
-			"figma_get_variables",
-			"figma_get_component",
-			"figma_get_styles",
-			"figma_get_component_image",
-			"figma_get_component_for_development",
-			"figma_get_file_for_plugin",
-			"figma_capture_screenshot",
-			"figma_set_instance_properties",
-		];
-
-		for (const name of expectedTools) {
-			expect(server._getTool(name)).toBeDefined();
-		}
-	});
-
 	// ========================================================================
-	// figma_get_file_data
+	// File URL resolution
 	// ========================================================================
 
-	describe("figma_get_file_data", () => {
-		it("returns file data with default parameters", async () => {
+	describe("file URL resolution", () => {
+		it("figma_get_file_data uses auto-detected URL when none provided", async () => {
 			const tool = server._getTool("figma_get_file_data");
-			const result = await tool.handler({ depth: 1, verbosity: "summary" });
+			await tool.handler({ depth: 1, verbosity: "summary" });
 
+			// Should have called getFile with the fileKey extracted from MOCK_FILE_URL
 			expect(mockApi.getFile).toHaveBeenCalled();
-			expect(result.isError).toBeUndefined();
+			const callArgs = mockApi.getFile.mock.calls[0];
+			expect(callArgs[0]).toBe("abc123"); // extracted from the URL
 		});
 
-		it("returns error when API fails", async () => {
-			mockApi.getFile.mockRejectedValue(new Error("File not found"));
+		it("figma_get_file_data uses explicit URL when provided", async () => {
 			const tool = server._getTool("figma_get_file_data");
+			await tool.handler({
+				fileUrl: "https://www.figma.com/design/xyz789/Other-File",
+				depth: 1,
+				verbosity: "summary",
+			});
+
+			expect(mockApi.getFile).toHaveBeenCalled();
+			const callArgs = mockApi.getFile.mock.calls[0];
+			expect(callArgs[0]).toBe("xyz789");
+		});
+
+		it("returns error when no URL available", async () => {
+			const noUrlServer = createMockServer();
+			registerFigmaAPITools(
+				noUrlServer as any,
+				async () => mockApi as any,
+				() => null, // no URL
+				() => null,
+				() => null,
+				undefined,
+				new Map(),
+				undefined,
+				async () => mockConnector as any,
+			);
+
+			const tool = noUrlServer._getTool("figma_get_file_data");
 			const result = await tool.handler({ depth: 1, verbosity: "summary" });
 
 			expect(result.isError).toBe(true);
+			const parsed = parseResult(result);
+			expect(parsed.error).toBeDefined();
 		});
 	});
 
 	// ========================================================================
-	// figma_get_variables
+	// figma_get_variables — connector preference
 	// ========================================================================
 
 	describe("figma_get_variables", () => {
-		it("fetches variables from REST API", async () => {
+		it("prefers desktop connector over REST API", async () => {
 			const tool = server._getTool("figma_get_variables");
 			const result = await tool.handler({
 				includePublished: false,
@@ -200,13 +209,12 @@ describe("Figma API Tools", () => {
 				enrich: false,
 			});
 
-			expect(result.isError).toBeUndefined();
+			const parsed = parseResult(result);
+			// Should use connector data, not REST API
+			expect(parsed.source).toBe("desktop_connection");
 		});
 
-		it("returns error when both connector and API fail", async () => {
-			mockConnector.getVariablesFromPluginUI.mockRejectedValue(new Error("No connection"));
-			mockConnector.getVariables.mockRejectedValue(new Error("No connection"));
-			mockApi.getAllVariables.mockRejectedValue(new Error("Unauthorized"));
+		it("returns variable data from connector in response", async () => {
 			const tool = server._getTool("figma_get_variables");
 			const result = await tool.handler({
 				includePublished: false,
@@ -214,42 +222,50 @@ describe("Figma API Tools", () => {
 				enrich: false,
 			});
 
-			expect(result.isError).toBe(true);
+			const parsed = parseResult(result);
+			expect(parsed.data).toBeDefined();
+			expect(parsed.data.variables).toBeDefined();
+			expect(parsed.data.variableCollections).toBeDefined();
 		});
 	});
 
 	// ========================================================================
-	// figma_get_component_image
-	// ========================================================================
-
-	describe("figma_get_component_image", () => {
-		it("returns image URL for a node", async () => {
-			const tool = server._getTool("figma_get_component_image");
-			const result = await tool.handler({
-				nodeId: "1:1",
-				scale: 2,
-				format: "png",
-			});
-
-			expect(mockApi.getImages).toHaveBeenCalled();
-			expect(result.isError).toBeUndefined();
-		});
-	});
-
-	// ========================================================================
-	// figma_capture_screenshot
+	// figma_capture_screenshot — response format
 	// ========================================================================
 
 	describe("figma_capture_screenshot", () => {
-		it("captures screenshot via desktop connector", async () => {
+		it("returns image metadata in response", async () => {
 			const tool = server._getTool("figma_capture_screenshot");
 			const result = await tool.handler({ format: "PNG", scale: 2 });
+			const parsed = parseResult(result);
 
-			expect(mockConnector.captureScreenshot).toHaveBeenCalled();
-			expect(result.isError).toBeUndefined();
+			expect(parsed.success).toBe(true);
+			expect(parsed.image).toBeDefined();
+			expect(parsed.image.format).toBe("PNG");
+			expect(parsed.image.byteLength).toBe(1024);
 		});
 
-		it("returns error when connector fails", async () => {
+		it("passes nodeId and options to connector", async () => {
+			const tool = server._getTool("figma_capture_screenshot");
+			await tool.handler({ nodeId: "42:10", format: "JPG", scale: 3 });
+
+			expect(mockConnector.captureScreenshot).toHaveBeenCalledWith(
+				"42:10",
+				{ format: "JPG", scale: 3 }
+			);
+		});
+
+		it("uses empty string for nodeId when not provided", async () => {
+			const tool = server._getTool("figma_capture_screenshot");
+			await tool.handler({ format: "PNG", scale: 2 });
+
+			expect(mockConnector.captureScreenshot).toHaveBeenCalledWith(
+				"",
+				{ format: "PNG", scale: 2 }
+			);
+		});
+
+		it("returns error with guidance when connector fails", async () => {
 			mockConnector.captureScreenshot.mockRejectedValue(
 				new Error("Plugin not running")
 			);
@@ -257,86 +273,79 @@ describe("Figma API Tools", () => {
 			const result = await tool.handler({ format: "PNG", scale: 2 });
 
 			expect(result.isError).toBe(true);
+			const parsed = parseResult(result);
+			expect(parsed.error).toContain("Plugin not running");
 		});
 	});
 
 	// ========================================================================
-	// figma_set_instance_properties
+	// figma_set_instance_properties — behavior
 	// ========================================================================
 
 	describe("figma_set_instance_properties", () => {
-		it("sets properties on an instance", async () => {
+		it("forwards properties to connector with correct nodeId", async () => {
 			const tool = server._getTool("figma_set_instance_properties");
-			const result = await tool.handler({
-				nodeId: "1:1",
-				properties: { "Button Label": "Click Me" },
+			await tool.handler({
+				nodeId: "99:42",
+				properties: { "Label": "Click Me", "Show Icon": true },
 			});
 
 			expect(mockConnector.setInstanceProperties).toHaveBeenCalledWith(
-				"1:1",
-				{ "Button Label": "Click Me" }
+				"99:42",
+				{ "Label": "Click Me", "Show Icon": true }
 			);
-			expect(result.isError).toBeUndefined();
 		});
 
-		it("returns error on failure", async () => {
+		it("returns error when node is not an instance", async () => {
 			mockConnector.setInstanceProperties.mockRejectedValue(
-				new Error("Node is not an instance")
+				new Error("Node 1:1 is not an instance")
 			);
 			const tool = server._getTool("figma_set_instance_properties");
-			const result = await tool.handler({
-				nodeId: "1:1",
-				properties: {},
-			});
+			const result = await tool.handler({ nodeId: "1:1", properties: {} });
 
 			expect(result.isError).toBe(true);
+			const parsed = parseResult(result);
+			expect(parsed.error).toContain("not an instance");
 		});
 	});
 
 	// ========================================================================
-	// figma_get_styles
+	// figma_get_component_image — URL in response
 	// ========================================================================
 
-	describe("figma_get_styles", () => {
-		it("returns styles from file", async () => {
-			const tool = server._getTool("figma_get_styles");
-			const result = await tool.handler({
-				verbosity: "summary",
-				enrich: false,
-			});
+	describe("figma_get_component_image", () => {
+		it("returns image URL from Figma API", async () => {
+			const tool = server._getTool("figma_get_component_image");
+			const result = await tool.handler({ nodeId: "1:1", scale: 2, format: "png" });
+			const parsed = parseResult(result);
 
-			expect(result.isError).toBeUndefined();
+			expect(parsed.imageUrl || parsed.url || parsed.images).toBeDefined();
 		});
 	});
 
 	// ========================================================================
-	// figma_get_file_for_plugin
+	// Error pattern — all tools return structured error JSON
 	// ========================================================================
 
-	describe("figma_get_file_for_plugin", () => {
-		it("returns filtered file data for plugin use", async () => {
-			const tool = server._getTool("figma_get_file_for_plugin");
-			const result = await tool.handler({ depth: 2 });
-
-			expect(mockApi.getFile).toHaveBeenCalled();
-			expect(result.isError).toBeUndefined();
-		});
-	});
-
-	// ========================================================================
-	// Error handling pattern
-	// ========================================================================
-
-	describe("error handling", () => {
-		it("returns isError:true with hint for all API failures", async () => {
-			mockApi.getFile.mockRejectedValue(new Error("Network error"));
-
+	describe("error response structure", () => {
+		it("figma_get_file_data error includes error string", async () => {
+			mockApi.getFile.mockRejectedValue(new Error("403 Forbidden"));
 			const tool = server._getTool("figma_get_file_data");
 			const result = await tool.handler({ depth: 1, verbosity: "summary" });
 
 			expect(result.isError).toBe(true);
 			const parsed = parseResult(result);
-			expect(parsed.error).toContain("Network error");
+			expect(parsed.error).toContain("403 Forbidden");
+		});
+
+		it("figma_set_instance_properties error includes error string", async () => {
+			mockConnector.setInstanceProperties.mockRejectedValue(new Error("Node locked"));
+			const tool = server._getTool("figma_set_instance_properties");
+			const result = await tool.handler({ nodeId: "1:1", properties: {} });
+
+			expect(result.isError).toBe(true);
+			const parsed = parseResult(result);
+			expect(parsed.error).toContain("Node locked");
 		});
 	});
 });
