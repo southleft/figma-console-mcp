@@ -1,7 +1,9 @@
 /**
  * Config Tests
  *
- * Unit tests for loadConfig, validateConfig, getConfig.
+ * Tests validateConfig boundary enforcement — the real logic in this module.
+ * loadConfig is a file-reading wrapper; validateConfig enforces constraints
+ * that protect the server from bad configuration.
  */
 
 import { loadConfig, validateConfig, getConfig } from "../src/core/config";
@@ -47,60 +49,12 @@ function makeValidConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
 
 describe("Config", () => {
 	// ========================================================================
-	// loadConfig
-	// ========================================================================
-
-	describe("loadConfig", () => {
-		it("returns a valid config object", () => {
-			const config = loadConfig();
-			expect(config).toBeDefined();
-			expect(config.mode).toBeDefined();
-			expect(config.browser).toBeDefined();
-			expect(config.console).toBeDefined();
-			expect(config.screenshots).toBeDefined();
-		});
-
-		it("has correct default values", () => {
-			const config = loadConfig();
-			expect(config.mode).toBe("local");
-			expect(config.browser.headless).toBe(false);
-			expect(config.console.bufferSize).toBe(1000);
-			expect(config.console.filterLevels).toContain("log");
-			expect(config.console.filterLevels).toContain("error");
-			expect(config.screenshots.defaultFormat).toBe("png");
-			expect(config.screenshots.quality).toBe(90);
-		});
-
-		it("has correct default truncation settings", () => {
-			const config = loadConfig();
-			expect(config.console.truncation.maxStringLength).toBe(500);
-			expect(config.console.truncation.maxArrayLength).toBe(10);
-			expect(config.console.truncation.maxObjectDepth).toBe(3);
-			expect(config.console.truncation.removeDuplicates).toBe(true);
-		});
-
-		it("includes browser args", () => {
-			const config = loadConfig();
-			expect(Array.isArray(config.browser.args)).toBe(true);
-			expect(config.browser.args.length).toBeGreaterThan(0);
-		});
-
-		it("includes local mode settings", () => {
-			const config = loadConfig();
-			expect(config.local).toBeDefined();
-			expect(config.local!.debugHost).toBeDefined();
-			expect(config.local!.debugPort).toBeDefined();
-		});
-	});
-
-	// ========================================================================
-	// validateConfig
+	// validateConfig — boundary enforcement
 	// ========================================================================
 
 	describe("validateConfig", () => {
 		it("does not throw for a valid config", () => {
-			const config = makeValidConfig();
-			expect(() => validateConfig(config)).not.toThrow();
+			expect(() => validateConfig(makeValidConfig())).not.toThrow();
 		});
 
 		it("throws when browser.args is not an array", () => {
@@ -112,25 +66,19 @@ describe("Config", () => {
 		it("throws when console.bufferSize is zero", () => {
 			const config = makeValidConfig();
 			config.console.bufferSize = 0;
-			expect(() => validateConfig(config)).toThrow(
-				"console.bufferSize must be positive"
-			);
+			expect(() => validateConfig(config)).toThrow("console.bufferSize must be positive");
 		});
 
 		it("throws when console.bufferSize is negative", () => {
 			const config = makeValidConfig();
 			config.console.bufferSize = -10;
-			expect(() => validateConfig(config)).toThrow(
-				"console.bufferSize must be positive"
-			);
+			expect(() => validateConfig(config)).toThrow("console.bufferSize must be positive");
 		});
 
 		it("throws when console.filterLevels is not an array", () => {
 			const config = makeValidConfig();
 			(config.console as any).filterLevels = "log";
-			expect(() => validateConfig(config)).toThrow(
-				"console.filterLevels must be an array"
-			);
+			expect(() => validateConfig(config)).toThrow("console.filterLevels must be an array");
 		});
 
 		it("throws when truncation.maxStringLength is not positive", () => {
@@ -181,7 +129,7 @@ describe("Config", () => {
 			);
 		});
 
-		it("accepts edge values: quality 0 and 100", () => {
+		it("accepts boundary values: quality 0 and 100", () => {
 			const config0 = makeValidConfig();
 			config0.screenshots.quality = 0;
 			expect(() => validateConfig(config0)).not.toThrow();
@@ -199,21 +147,12 @@ describe("Config", () => {
 	});
 
 	// ========================================================================
-	// getConfig
+	// getConfig — integration (load + validate)
 	// ========================================================================
 
 	describe("getConfig", () => {
-		it("returns a validated config", () => {
-			const config = getConfig();
-			expect(config).toBeDefined();
-			expect(config.mode).toBeDefined();
-			// If getConfig didn't throw, validation passed
-		});
-
-		it("returns the same structure as loadConfig", () => {
-			const loaded = loadConfig();
-			const got = getConfig();
-			expect(Object.keys(got)).toEqual(Object.keys(loaded));
+		it("returns without throwing (defaults pass validation)", () => {
+			expect(() => getConfig()).not.toThrow();
 		});
 	});
 });

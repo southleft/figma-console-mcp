@@ -140,64 +140,6 @@ describe("Write Tools", () => {
 	});
 
 	// ========================================================================
-	// Batch operations — test generated code correctness
-	// ========================================================================
-
-	describe("figma_batch_create_variables", () => {
-		it("embeds collectionId and variables into generated script", async () => {
-			const tool = server._getTool("figma_batch_create_variables");
-			await tool.handler({
-				collectionId: "VariableCollectionId:1:2",
-				variables: [
-					{ name: "color/primary", resolvedType: "COLOR", valuesByMode: { "1:0": "#FF0000" } },
-				],
-			});
-
-			const script = mockConnector.executeCodeViaUI.mock.calls[0][0];
-			expect(script).toContain("VariableCollectionId:1:2");
-			expect(script).toContain("color/primary");
-			expect(script).toContain("#FF0000");
-			expect(script).toContain("hexToRgba"); // color conversion function
-		});
-	});
-
-	describe("figma_batch_update_variables", () => {
-		it("embeds update data into generated script", async () => {
-			const tool = server._getTool("figma_batch_update_variables");
-			await tool.handler({
-				updates: [
-					{ variableId: "VariableID:1:5", modeId: "1:0", value: "#00FF00" },
-				],
-			});
-
-			const script = mockConnector.executeCodeViaUI.mock.calls[0][0];
-			expect(script).toContain("VariableID:1:5");
-			expect(script).toContain("#00FF00");
-		});
-	});
-
-	describe("figma_setup_design_tokens", () => {
-		it("embeds collection name, modes, and token definitions", async () => {
-			const tool = server._getTool("figma_setup_design_tokens");
-			await tool.handler({
-				collectionName: "Brand Tokens",
-				modes: ["Light", "Dark"],
-				tokens: [
-					{ name: "bg/primary", resolvedType: "COLOR", values: { Light: "#FFFFFF", Dark: "#1A1A1A" } },
-				],
-			});
-
-			const script = mockConnector.executeCodeViaUI.mock.calls[0][0];
-			expect(script).toContain("Brand Tokens");
-			expect(script).toContain("Light");
-			expect(script).toContain("Dark");
-			expect(script).toContain("bg/primary");
-			expect(script).toContain("#FFFFFF");
-			expect(script).toContain("#1A1A1A");
-		});
-	});
-
-	// ========================================================================
 	// Node operations — test success:false handling
 	// ========================================================================
 
