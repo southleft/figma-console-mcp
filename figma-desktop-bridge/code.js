@@ -2820,11 +2820,17 @@ figma.ui.onmessage = async (msg) => {
       var created = [];
       var failed = [];
 
+      // Load font once for all stickies (they all share the same default font)
+      var stickyFontLoaded = false;
+
       for (var si = 0; si < msg.stickies.length; si++) {
         try {
           var spec = msg.stickies[si];
           var sticky = figma.createSticky();
-          await figma.loadFontAsync(sticky.text.fontName);
+          if (!stickyFontLoaded) {
+            await figma.loadFontAsync(sticky.text.fontName);
+            stickyFontLoaded = true;
+          }
           sticky.text.characters = spec.text || '';
 
           if (typeof spec.x === 'number') sticky.x = spec.x;
@@ -2846,7 +2852,7 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({
         type: 'CREATE_STICKIES_RESULT',
         requestId: msg.requestId,
-        success: true,
+        success: failed.length === 0,
         data: { created: created.length, failed: failed.length, results: created, errors: failed }
       });
 
@@ -3018,8 +3024,12 @@ figma.ui.onmessage = async (msg) => {
 
       var codeBlock = figma.createCodeBlock();
 
-      // Code blocks require Source Code Pro font
-      await figma.loadFontAsync({ family: 'Source Code Pro', style: 'Medium' });
+      // Code blocks require Source Code Pro font, fall back to Inter if unavailable
+      try {
+        await figma.loadFontAsync({ family: 'Source Code Pro', style: 'Medium' });
+      } catch (e) {
+        await figma.loadFontAsync({ family: 'Inter', style: 'Medium' });
+      }
 
       if (msg.code) {
         codeBlock.code = msg.code;

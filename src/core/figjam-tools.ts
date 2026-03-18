@@ -1,8 +1,20 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
 
 const logger = createChildLogger({ component: "figjam-tools" });
+
+/** Maximum items for batch operations to prevent DoS / plugin timeouts */
+const MAX_BATCH_SIZE = 200;
+/** Maximum table dimensions */
+const MAX_TABLE_ROWS = 100;
+const MAX_TABLE_COLUMNS = 50;
+/** Maximum text length per field */
+const MAX_TEXT_LENGTH = 5000;
+/** Maximum code block length */
+const MAX_CODE_LENGTH = 50000;
+/** Maximum node IDs for arrangement */
+const MAX_ARRANGE_NODES = 500;
 
 /**
  * Register FigJam-specific tools.
@@ -12,7 +24,7 @@ const logger = createChildLogger({ component: "figjam-tools" });
 export function registerFigJamTools(
 	server: McpServer,
 	getDesktopConnector: () => Promise<any>,
-) {
+): void {
 	// ============================================================================
 	// STICKY NOTE TOOLS
 	// ============================================================================
@@ -23,11 +35,16 @@ export function registerFigJamTools(
 
 **Colors:** YELLOW, BLUE, GREEN, PINK, ORANGE, PURPLE, RED, LIGHT_GRAY, GRAY (default: YELLOW)`,
 		{
-			text: z.string().describe("Text content for the sticky note"),
+			text: z
+				.string()
+				.max(MAX_TEXT_LENGTH)
+				.describe("Text content for the sticky note"),
 			color: z
 				.string()
 				.optional()
-				.describe("Sticky color: YELLOW, BLUE, GREEN, PINK, ORANGE, PURPLE, RED, LIGHT_GRAY, GRAY"),
+				.describe(
+					"Sticky color: YELLOW, BLUE, GREEN, PINK, ORANGE, PURPLE, RED, LIGHT_GRAY, GRAY",
+				),
 			x: z.number().optional().describe("X position on canvas"),
 			y: z.number().optional().describe("Y position on canvas"),
 		},
@@ -41,13 +58,15 @@ export function registerFigJamTools(
 			} catch (error) {
 				logger.error({ error }, "figjam_create_sticky failed");
 				return {
-					content: [{
-						type: "text" as const,
-						text: JSON.stringify({
-							error: error instanceof Error ? error.message : String(error),
-							hint: "This tool only works in FigJam files. Make sure the Desktop Bridge plugin is running in a FigJam board.",
-						}),
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in FigJam files. Make sure the Desktop Bridge plugin is running in a FigJam board.",
+							}),
+						},
+					],
 					isError: true,
 				};
 			}
@@ -56,20 +75,23 @@ export function registerFigJamTools(
 
 	server.tool(
 		"figjam_create_stickies",
-		`Batch create multiple sticky notes on a FigJam board. Use this to populate boards from structured data (meeting notes, brainstorm ideas, etc.).
+		`Batch create multiple sticky notes on a FigJam board (max ${MAX_BATCH_SIZE}). Use this to populate boards from structured data (meeting notes, brainstorm ideas, etc.).
 
 **Colors:** YELLOW, BLUE, GREEN, PINK, ORANGE, PURPLE, RED, LIGHT_GRAY, GRAY`,
 		{
 			stickies: z
 				.array(
 					z.object({
-						text: z.string().describe("Text content"),
+						text: z.string().max(MAX_TEXT_LENGTH).describe("Text content"),
 						color: z.string().optional().describe("Sticky color"),
 						x: z.number().optional().describe("X position"),
 						y: z.number().optional().describe("Y position"),
 					}),
 				)
-				.describe("Array of sticky note specifications"),
+				.max(MAX_BATCH_SIZE)
+				.describe(
+					`Array of sticky note specifications (max ${MAX_BATCH_SIZE})`,
+				),
 		},
 		async ({ stickies }) => {
 			try {
@@ -81,13 +103,15 @@ export function registerFigJamTools(
 			} catch (error) {
 				logger.error({ error }, "figjam_create_stickies failed");
 				return {
-					content: [{
-						type: "text" as const,
-						text: JSON.stringify({
-							error: error instanceof Error ? error.message : String(error),
-							hint: "This tool only works in FigJam files.",
-						}),
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in FigJam files.",
+							}),
+						},
+					],
 					isError: true,
 				};
 			}
@@ -106,25 +130,35 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 		{
 			startNodeId: z.string().describe("Node ID of the start element"),
 			endNodeId: z.string().describe("Node ID of the end element"),
-			label: z.string().optional().describe("Optional text label on the connector"),
+			label: z
+				.string()
+				.max(MAX_TEXT_LENGTH)
+				.optional()
+				.describe("Optional text label on the connector"),
 		},
 		async ({ startNodeId, endNodeId, label }) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.createConnector({ startNodeId, endNodeId, label });
+				const result = await connector.createConnector({
+					startNodeId,
+					endNodeId,
+					label,
+				});
 				return {
 					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figjam_create_connector failed");
 				return {
-					content: [{
-						type: "text" as const,
-						text: JSON.stringify({
-							error: error instanceof Error ? error.message : String(error),
-							hint: "This tool only works in FigJam files. Both start and end nodes must exist.",
-						}),
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in FigJam files. Both start and end nodes must exist.",
+							}),
+						},
+					],
 					isError: true,
 				};
 			}
@@ -141,31 +175,44 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 
 **Shape types:** ROUNDED_RECTANGLE (default), DIAMOND, ELLIPSE, TRIANGLE_UP, TRIANGLE_DOWN, PARALLELOGRAM_RIGHT, PARALLELOGRAM_LEFT, ENG_DATABASE, ENG_QUEUE, ENG_FILE, ENG_FOLDER`,
 		{
-			text: z.string().optional().describe("Text label for the shape"),
+			text: z
+				.string()
+				.max(MAX_TEXT_LENGTH)
+				.optional()
+				.describe("Text label for the shape"),
 			shapeType: z
 				.string()
 				.optional()
-				.describe("Shape type: ROUNDED_RECTANGLE, DIAMOND, ELLIPSE, TRIANGLE_UP, etc."),
+				.describe(
+					"Shape type: ROUNDED_RECTANGLE, DIAMOND, ELLIPSE, TRIANGLE_UP, etc.",
+				),
 			x: z.number().optional().describe("X position on canvas"),
 			y: z.number().optional().describe("Y position on canvas"),
 		},
 		async ({ text, shapeType, x, y }) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.createShapeWithText({ text, shapeType, x, y });
+				const result = await connector.createShapeWithText({
+					text,
+					shapeType,
+					x,
+					y,
+				});
 				return {
 					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figjam_create_shape_with_text failed");
 				return {
-					content: [{
-						type: "text" as const,
-						text: JSON.stringify({
-							error: error instanceof Error ? error.message : String(error),
-							hint: "This tool only works in FigJam files.",
-						}),
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in FigJam files.",
+							}),
+						},
+					],
 					isError: true,
 				};
 			}
@@ -182,10 +229,18 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 
 **Data format:** 2D array of strings, e.g. [["Header1", "Header2"], ["Row1Col1", "Row1Col2"]]`,
 		{
-			rows: z.number().describe("Number of rows"),
-			columns: z.number().describe("Number of columns"),
+			rows: z
+				.number()
+				.min(1)
+				.max(MAX_TABLE_ROWS)
+				.describe(`Number of rows (1-${MAX_TABLE_ROWS})`),
+			columns: z
+				.number()
+				.min(1)
+				.max(MAX_TABLE_COLUMNS)
+				.describe(`Number of columns (1-${MAX_TABLE_COLUMNS})`),
 			data: z
-				.array(z.array(z.string()))
+				.array(z.array(z.string().max(MAX_TEXT_LENGTH)))
 				.optional()
 				.describe("2D array of cell text content (row-major order)"),
 			x: z.number().optional().describe("X position on canvas"),
@@ -194,20 +249,28 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 		async ({ rows, columns, data, x, y }) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.createTable({ rows, columns, data, x, y });
+				const result = await connector.createTable({
+					rows,
+					columns,
+					data,
+					x,
+					y,
+				});
 				return {
 					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figjam_create_table failed");
 				return {
-					content: [{
-						type: "text" as const,
-						text: JSON.stringify({
-							error: error instanceof Error ? error.message : String(error),
-							hint: "This tool only works in FigJam files.",
-						}),
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in FigJam files.",
+							}),
+						},
+					],
 					isError: true,
 				};
 			}
@@ -222,31 +285,40 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 		"figjam_create_code_block",
 		`Create a code block on a FigJam board. Use for sharing code snippets, config examples, or technical documentation in collaborative boards.`,
 		{
-			code: z.string().describe("The code content"),
+			code: z.string().max(MAX_CODE_LENGTH).describe("The code content"),
 			language: z
 				.string()
 				.optional()
-				.describe("Programming language (e.g., 'JAVASCRIPT', 'PYTHON', 'TYPESCRIPT', 'JSON', 'HTML', 'CSS')"),
+				.describe(
+					"Programming language (e.g., 'JAVASCRIPT', 'PYTHON', 'TYPESCRIPT', 'JSON', 'HTML', 'CSS')",
+				),
 			x: z.number().optional().describe("X position on canvas"),
 			y: z.number().optional().describe("Y position on canvas"),
 		},
 		async ({ code, language, x, y }) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.createCodeBlock({ code, language, x, y });
+				const result = await connector.createCodeBlock({
+					code,
+					language,
+					x,
+					y,
+				});
 				return {
 					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figjam_create_code_block failed");
 				return {
-					content: [{
-						type: "text" as const,
-						text: JSON.stringify({
-							error: error instanceof Error ? error.message : String(error),
-							hint: "This tool only works in FigJam files.",
-						}),
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in FigJam files.",
+							}),
+						},
+					],
 					isError: true,
 				};
 			}
@@ -261,30 +333,47 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 		"figjam_auto_arrange",
 		`Arrange nodes on a FigJam board in a grid, horizontal row, or vertical column layout. Use after batch-creating elements to organize them neatly.`,
 		{
-			nodeIds: z.array(z.string()).describe("Array of node IDs to arrange"),
+			nodeIds: z
+				.array(z.string())
+				.max(MAX_ARRANGE_NODES)
+				.describe(`Array of node IDs to arrange (max ${MAX_ARRANGE_NODES})`),
 			layout: z
 				.enum(["grid", "horizontal", "vertical"])
 				.optional()
 				.default("grid")
 				.describe("Layout type: grid, horizontal, or vertical"),
-			spacing: z.number().optional().default(40).describe("Spacing between nodes in pixels"),
-			columns: z.number().optional().describe("Number of columns for grid layout (defaults to sqrt of node count)"),
+			spacing: z
+				.number()
+				.optional()
+				.default(40)
+				.describe("Spacing between nodes in pixels"),
+			columns: z
+				.number()
+				.optional()
+				.describe(
+					"Number of columns for grid layout (defaults to sqrt of node count)",
+				),
 		},
 		async ({ nodeIds, layout, spacing, columns }) => {
 			try {
 				const connector = await getDesktopConnector();
 
-				// Build arrangement code to execute in plugin context
+				// Compute grid columns safely on the server side — no string interpolation
 				const gridCols = columns || Math.ceil(Math.sqrt(nodeIds.length));
-				const nodeIdsJson = JSON.stringify(nodeIds);
+
+				// Pass all parameters as a JSON object to avoid code injection.
+				// The plugin code reads from the params object, not interpolated strings.
+				const paramsJson = JSON.stringify({
+					nodeIds,
+					layout,
+					spacing,
+					gridCols,
+				});
 
 				const code = `
-					const nodeIds = ${nodeIdsJson};
-					const layout = '${layout}';
-					const spacing = ${spacing};
-					const gridCols = ${gridCols};
+					const params = JSON.parse('${paramsJson.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}');
 					const nodes = [];
-					for (const id of nodeIds) {
+					for (const id of params.nodeIds) {
 						const node = await figma.getNodeByIdAsync(id);
 						if (node) nodes.push(node);
 					}
@@ -297,30 +386,28 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 
 					for (let i = 0; i < nodes.length; i++) {
 						const node = nodes[i];
-						if (layout === 'horizontal') {
+						if (params.layout === 'horizontal') {
 							node.x = x;
 							node.y = y;
-							x += node.width + spacing;
-						} else if (layout === 'vertical') {
+							x += node.width + params.spacing;
+						} else if (params.layout === 'vertical') {
 							node.x = x;
 							node.y = y;
-							y += node.height + spacing;
+							y += node.height + params.spacing;
 						} else {
-							// grid
-							const col = i % gridCols;
-							const row = Math.floor(i / gridCols);
+							const col = i % params.gridCols;
 							if (col === 0 && i > 0) {
-								y += maxRowHeight + spacing;
+								y += maxRowHeight + params.spacing;
 								maxRowHeight = 0;
 								x = startX;
 							}
 							node.x = x;
 							node.y = y;
 							maxRowHeight = Math.max(maxRowHeight, node.height);
-							x += node.width + spacing;
+							x += node.width + params.spacing;
 						}
 					}
-					return { arranged: nodes.length, layout: layout };
+					return { arranged: nodes.length, layout: params.layout };
 				`;
 
 				const result = await connector.executeCodeViaUI(code, 10000);
@@ -330,13 +417,15 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 			} catch (error) {
 				logger.error({ error }, "figjam_auto_arrange failed");
 				return {
-					content: [{
-						type: "text" as const,
-						text: JSON.stringify({
-							error: error instanceof Error ? error.message : String(error),
-							hint: "Make sure all node IDs are valid and the Desktop Bridge plugin is running.",
-						}),
-					}],
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure all node IDs are valid and the Desktop Bridge plugin is running.",
+							}),
+						},
+					],
 					isError: true,
 				};
 			}

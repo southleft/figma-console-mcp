@@ -69,6 +69,14 @@ export interface IFigmaConnector {
   // Design lint
   lintDesign(nodeId?: string, rules?: string[], maxDepth?: number, maxFindings?: number): Promise<any>;
 
+  // FigJam operations
+  createSticky(params: { text: string; color?: string; x?: number; y?: number }): Promise<any>;
+  createStickies(params: { stickies: Array<{ text: string; color?: string; x?: number; y?: number }> }): Promise<any>;
+  createConnector(params: { startNodeId: string; endNodeId: string; label?: string }): Promise<any>;
+  createShapeWithText(params: { text?: string; shapeType?: string; x?: number; y?: number }): Promise<any>;
+  createTable(params: { rows: number; columns: number; data?: string[][]; x?: number; y?: number }): Promise<any>;
+  createCodeBlock(params: { code: string; language?: string; x?: number; y?: number }): Promise<any>;
+
   // Cache management
   clearFrameCache(): void;
 }
