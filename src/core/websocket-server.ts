@@ -51,6 +51,7 @@ export interface ConnectedFileInfo {
   fileKey: string | null;
   currentPage?: string;
   currentPageId?: string;
+  editorType?: 'figma' | 'figjam' | 'dev';
   connectedAt: number;
 }
 
@@ -386,6 +387,7 @@ export class FigmaWebSocketServer extends EventEmitter {
         fileKey,
         currentPage: data.currentPage,
         currentPageId: data.currentPageId || null,
+        editorType: data.editorType || 'figma',
         connectedAt: Date.now(),
       },
       selection: existing?.selection || null,
@@ -712,6 +714,16 @@ export class FigmaWebSocketServer extends EventEmitter {
    */
   getActiveFileKey(): string | null {
     return this._activeFileKey;
+  }
+
+  /**
+   * Get the editor type of the currently active file.
+   * Returns 'figma' if no file is connected or editorType wasn't reported.
+   */
+  getEditorType(): 'figma' | 'figjam' | 'dev' {
+    if (!this._activeFileKey) return 'figma';
+    const client = this.clients.get(this._activeFileKey);
+    return client?.fileInfo?.editorType || 'figma';
   }
 
   // ============================================================================

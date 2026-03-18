@@ -619,6 +619,25 @@
         'GET_FILE_INFO': function() {
           return window.sendPluginCommand('GET_FILE_INFO', {});
         },
+        // FigJam tools — forward directly to plugin code.js
+        'CREATE_STICKY': function(params) {
+          return window.sendPluginCommand('CREATE_STICKY', params);
+        },
+        'CREATE_STICKIES': function(params) {
+          return window.sendPluginCommand('CREATE_STICKIES', params, 30000);
+        },
+        'CREATE_CONNECTOR': function(params) {
+          return window.sendPluginCommand('CREATE_CONNECTOR', params);
+        },
+        'CREATE_SHAPE_WITH_TEXT': function(params) {
+          return window.sendPluginCommand('CREATE_SHAPE_WITH_TEXT', params);
+        },
+        'CREATE_TABLE': function(params) {
+          return window.sendPluginCommand('CREATE_TABLE', params, 30000);
+        },
+        'CREATE_CODE_BLOCK': function(params) {
+          return window.sendPluginCommand('CREATE_CODE_BLOCK', params);
+        },
         'CLEAR_CONSOLE': function() {
           // Console buffer is maintained server-side; this is a no-op ack
           return Promise.resolve({ cleared: true });
@@ -1198,6 +1217,26 @@
           break;
         case 'LINT_DESIGN_RESULT':
           handleResult('LINT_DESIGN', 'data');
+          break;
+
+        // FigJam tools
+        case 'CREATE_STICKY_RESULT':
+          handleResult('CREATE_STICKY', 'data');
+          break;
+        case 'CREATE_STICKIES_RESULT':
+          handleResult('CREATE_STICKIES', 'data');
+          break;
+        case 'CREATE_CONNECTOR_RESULT':
+          handleResult('CREATE_CONNECTOR', 'data');
+          break;
+        case 'CREATE_SHAPE_WITH_TEXT_RESULT':
+          handleResult('CREATE_SHAPE_WITH_TEXT', 'data');
+          break;
+        case 'CREATE_TABLE_RESULT':
+          handleResult('CREATE_TABLE', 'data');
+          break;
+        case 'CREATE_CODE_BLOCK_RESULT':
+          handleResult('CREATE_CODE_BLOCK', 'data');
           break;
 
         // File info

@@ -26,6 +26,7 @@ import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
 import { registerWriteTools } from "./core/write-tools.js";
+import { registerFigJamTools } from "./core/figjam-tools.js";
 
 // Re-export PluginRelayDO so Cloudflare Workers can bind it as a Durable Object
 export { PluginRelayDO } from "./core/cloud-websocket-relay.js";
@@ -954,6 +955,9 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Register all write/manipulation tools via shared function
 		registerWriteTools(this.server, getCloudDesktopConnector);
 
+		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)
+		registerFigJamTools(this.server, getCloudDesktopConnector);
+
 		// Register Figma API tools (Tools 8-14)
 		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
 		registerFigmaAPITools(
@@ -1306,6 +1310,9 @@ export default {
 
 			// Register all write/manipulation tools via shared function
 			registerWriteTools(statelessServer, getCloudDesktopConnector);
+
+			// Register FigJam-specific tools
+			registerFigJamTools(statelessServer, getCloudDesktopConnector);
 
 			// Register REST API tools with the authenticated Figma API
 			registerFigmaAPITools(

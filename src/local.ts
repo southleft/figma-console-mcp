@@ -51,6 +51,7 @@ import {
 } from "./core/port-discovery.js";
 import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import { registerDesignSystemDashboardApp } from "./apps/design-system-dashboard/server.js";
+import { registerFigJamTools } from "./core/figjam-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -1253,6 +1254,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											currentFileName ||
 											"(unable to retrieve - Desktop Bridge may need to be opened)",
 										currentFileKey: currentFileKey || undefined,
+										editorType: this.wsServer?.getEditorType() || "figma",
 										monitoredPageUrl: currentUrl,
 										monitorWorkerCount: monitorStatus?.workerCount ?? 0,
 										transport: {
@@ -1293,6 +1295,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 														fileName: f.fileName,
 														fileKey: f.fileKey,
 														currentPage: f.currentPage,
+														editorType: f.editorType || 'figma',
 														isActive: f.isActive,
 														connectedAt: new Date(f.connectedAt).toISOString(),
 													}));
@@ -5184,6 +5187,12 @@ return {
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
 			this.variablesCache,
+		);
+
+		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)
+		registerFigJamTools(
+			this.server,
+			() => this.getDesktopConnector(),
 		);
 
 		// MCP Apps - gated behind ENABLE_MCP_APPS env var
