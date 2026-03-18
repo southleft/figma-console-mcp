@@ -312,6 +312,14 @@ export class FigmaAPI {
     return this.request(`/files/${fileKey}/component_sets`);
   }
 
+  /**
+   * GET /v1/components/:component_key
+   * Get metadata for a single published component, including its source file_key.
+   */
+  async getComponent(componentKey: string): Promise<any> {
+    return this.request(`/components/${componentKey}`);
+  }
+
 	/**
 	 * GET /v1/images/:file_key
 	 * Renders images for specified nodes

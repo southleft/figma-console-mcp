@@ -108,6 +108,13 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
     console.log('🌉 [Desktop Bridge] Variables data sent to UI successfully');
     console.log('🌉 [Desktop Bridge] UI iframe now has variables data accessible via window.__figmaVariablesData');
 
+    // Load and send persisted library config to UI
+    const libraryConfig = await figma.clientStorage.getAsync('libraryConfig');
+    figma.ui.postMessage({
+      type: 'LIBRARY_CONFIG',
+      libraries: libraryConfig || []
+    });
+
   } catch (error) {
     console.error('🌉 [Desktop Bridge] Error fetching variables:', error);
     figma.ui.postMessage({
@@ -2068,6 +2075,14 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   else if (msg.type === 'STORE_CLOUD_CONFIG') {
     figma.clientStorage.setAsync('cloudConfig', { code: msg.code, timestamp: Date.now() })
+      .catch(function() { /* non-critical */ });
+  }
+
+  // ============================================================================
+  // STORE_LIBRARY_CONFIG - Persist team library file keys in clientStorage
+  // ============================================================================
+  else if (msg.type === 'STORE_LIBRARY_CONFIG') {
+    figma.clientStorage.setAsync('libraryConfig', msg.libraries || [])
       .catch(function() { /* non-critical */ });
   }
 

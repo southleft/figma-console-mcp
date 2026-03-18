@@ -34,6 +34,7 @@ import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { registerDesignCodeTools } from "./core/design-code-tools.js";
 import { registerCommentTools } from "./core/comment-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
+import { registerLibraryTools } from "./core/library-tools.js";
 import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
 import { FigmaWebSocketServer } from "./core/websocket-server.js";
@@ -5185,6 +5186,7 @@ return {
 			() => this.getCurrentFileUrl(),
 			this.variablesCache,
 		);
+		registerLibraryTools(this.server, () => this.getFigmaAPI(), () => this.getDesktopConnector());
 
 		// MCP Apps - gated behind ENABLE_MCP_APPS env var
 		if (process.env.ENABLE_MCP_APPS === "true") {

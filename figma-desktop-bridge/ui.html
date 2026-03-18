@@ -171,6 +171,134 @@
       color: #f24822;
     }
 
+    /* Libraries section */
+    .lib-section {
+      display: none;
+      width: 100%;
+    }
+
+    .lib-section.visible {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-top: 6px;
+    }
+
+    .lib-toggle {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      font-size: 10px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      user-select: none;
+      margin-top: 2px;
+    }
+
+    .lib-toggle:hover {
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+    }
+
+    .lib-toggle .chevron {
+      display: inline-block;
+      font-size: 8px;
+      transition: transform 0.15s ease;
+    }
+
+    .lib-toggle.expanded .chevron {
+      transform: rotate(90deg);
+    }
+
+    .lib-input-row {
+      display: flex;
+      gap: 4px;
+    }
+
+    .lib-input-row input {
+      flex: 1;
+      min-width: 0;
+      background: var(--figma-color-bg, #2c2c2c);
+      border: 1px solid var(--figma-color-border, #4a4a4a);
+      border-radius: 3px;
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 10px;
+      padding: 4px 6px;
+      box-sizing: border-box;
+    }
+
+    .lib-input-row input::placeholder {
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.3));
+    }
+
+    .lib-input-row button {
+      flex-shrink: 0;
+      background: var(--figma-color-bg-brand, #0d99ff);
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+
+    .lib-input-row button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .lib-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    .lib-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+      background: var(--figma-color-bg, #2c2c2c);
+      border: 1px solid var(--figma-color-border, #4a4a4a);
+      border-radius: 3px;
+      padding: 3px 6px;
+    }
+
+    .lib-item-label {
+      font-size: 9px;
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.8));
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .lib-item-remove {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.4));
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1;
+      padding: 0 2px;
+    }
+
+    .lib-item-remove:hover {
+      color: #f24822;
+    }
+
+    .lib-empty {
+      font-size: 9px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.3));
+      text-align: center;
+      padding: 4px 0;
+    }
+
     /* Light theme support */
     @media (prefers-color-scheme: light) {
       body {
@@ -212,6 +340,18 @@
         <button id="cloud-btn" onclick="cloudConnect()">Connect</button>
       </div>
       <div class="cloud-status" id="cloud-status"></div>
+    </div>
+
+    <div class="lib-toggle" id="lib-toggle" onclick="toggleLibrarySection()">
+      <span class="chevron">▶</span> Libraries
+    </div>
+
+    <div class="lib-section" id="lib-section">
+      <div class="lib-input-row">
+        <input type="text" id="lib-input" placeholder="Figma URL or file key" autocomplete="off" />
+        <button onclick="addLibrary()">Add</button>
+      </div>
+      <div class="lib-list" id="lib-list"></div>
     </div>
   </div>
 
@@ -938,6 +1078,95 @@
     })();
 
     // ============================================================================
+    // LIBRARIES — Store team library file keys for MCP auto-discovery
+    // ============================================================================
+    var libraryConfig = []; // [{fileKey, label}]
+
+    /**
+     * Extract a Figma file key from a URL or return the string as-is if it
+     * looks like a bare key (alphanumeric, 22+ chars).
+     */
+    function parseLibraryInput(raw) {
+      raw = (raw || '').trim();
+      if (!raw) return null;
+      // Try parsing as a URL
+      try {
+        var u = new URL(raw.startsWith('http') ? raw : 'https://' + raw);
+        var m = u.pathname.match(/\/(design|file|board)\/([a-zA-Z0-9_-]{10,})/);
+        if (m) return { fileKey: m[2], label: raw };
+      } catch (e) { /* not a URL */ }
+      // Treat as a bare file key (at least 10 alphanumeric chars)
+      if (/^[a-zA-Z0-9_-]{10,}$/.test(raw)) return { fileKey: raw, label: raw };
+      return null;
+    }
+
+    function renderLibraryList() {
+      var list = document.getElementById('lib-list');
+      if (!list) return;
+      if (libraryConfig.length === 0) {
+        list.innerHTML = '<div class="lib-empty">No libraries configured</div>';
+        return;
+      }
+      list.innerHTML = libraryConfig.map(function(lib, idx) {
+        var displayLabel = lib.label.length > 28 ? '...' + lib.label.slice(-25) : lib.label;
+        return '<div class="lib-item">' +
+          '<span class="lib-item-label" title="' + lib.fileKey + '">' + displayLabel + '</span>' +
+          '<button class="lib-item-remove" onclick="removeLibrary(' + idx + ')" title="Remove">×</button>' +
+          '</div>';
+      }).join('');
+    }
+
+    function saveLibraryConfig() {
+      parent.postMessage({ pluginMessage: { type: 'STORE_LIBRARY_CONFIG', libraries: libraryConfig } }, '*');
+      updatePluginSize();
+    }
+
+    function addLibrary() {
+      var input = document.getElementById('lib-input');
+      var raw = (input.value || '').trim();
+      if (!raw) return;
+      var parsed = parseLibraryInput(raw);
+      if (!parsed) {
+        input.style.borderColor = '#f24822';
+        setTimeout(function() { input.style.borderColor = ''; }, 1500);
+        return;
+      }
+      // Deduplicate by fileKey
+      if (libraryConfig.some(function(l) { return l.fileKey === parsed.fileKey; })) {
+        input.value = '';
+        return;
+      }
+      libraryConfig.push(parsed);
+      input.value = '';
+      renderLibraryList();
+      saveLibraryConfig();
+    }
+
+    function removeLibrary(idx) {
+      libraryConfig.splice(idx, 1);
+      renderLibraryList();
+      saveLibraryConfig();
+    }
+
+    function toggleLibrarySection() {
+      var section = document.getElementById('lib-section');
+      var toggle = document.getElementById('lib-toggle');
+      section.classList.toggle('visible');
+      toggle.classList.toggle('expanded');
+      if (section.classList.contains('visible')) renderLibraryList();
+      updatePluginSize();
+    }
+
+    function updatePluginSize() {
+      // Measure the actual rendered height of the container and resize to fit
+      setTimeout(function() {
+        var container = document.querySelector('body > div');
+        var h = container ? Math.max(50, container.scrollHeight + 14) : 50;
+        parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 140, height: h } }, '*');
+      }, 10);
+    }
+
+    // ============================================================================
     // CLOUD MODE — Connect to remote relay via pairing code
     // ============================================================================
     var cloudWs = null;
@@ -946,13 +1175,9 @@
     function toggleCloudSection() {
       var section = document.getElementById('cloud-section');
       var toggle = document.getElementById('cloud-toggle');
-      var isExpanding = !section.classList.contains('visible');
       section.classList.toggle('visible');
       toggle.classList.toggle('expanded');
-
-      // Resize plugin window to fit content
-      var height = isExpanding ? 130 : 50;
-      parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 140, height: height } }, '*');
+      updatePluginSize();
     }
 
     function resetCloudUI() {
@@ -1070,6 +1295,15 @@
 
       // Handle message types
       switch (msg.type) {
+        case 'LIBRARY_CONFIG':
+          libraryConfig = msg.libraries || [];
+          // If library section is open, re-render
+          if (document.getElementById('lib-section') &&
+              document.getElementById('lib-section').classList.contains('visible')) {
+            renderLibraryList();
+          }
+          break;
+
         case 'VARIABLES_DATA':
           window.__figmaVariablesData = msg.data;
           window.__figmaVariablesReady = true;
