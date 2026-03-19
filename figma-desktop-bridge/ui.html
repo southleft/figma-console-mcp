@@ -12,7 +12,7 @@
       height: 100%;
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       padding: 6px 8px;
       user-select: none;
     }
@@ -34,6 +34,26 @@
       background: #f5a623;
       animation: pulse 1.5s ease-in-out infinite;
     }
+    .scan-btn {
+      background: none;
+      border: 1px solid var(--figma-color-border, #4a4a4a);
+      border-radius: 4px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      font-size: 10px;
+      cursor: pointer;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .scan-btn:hover {
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+      border-color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+    }
+    .scan-btn.hidden { display: none; }
     @keyframes pulse {
       0%, 100% { opacity: 0.4; }
       50% { opacity: 1; }
@@ -45,9 +65,12 @@
   </style>
 </head>
 <body>
-  <div class="bridge-status">
-    <div class="status-indicator" id="dot"></div>
-    <div id="msg">MCP loading…</div>
+  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+    <div class="bridge-status">
+      <div class="status-indicator" id="dot"></div>
+      <div id="msg">MCP loading…</div>
+    </div>
+    <button class="scan-btn" id="scan-btn" onclick="toggleScan()" title="Stop scanning">&#x25A0;</button>
   </div>
 
   <script>
@@ -75,12 +98,42 @@
 
     var dot = document.getElementById('dot');
     var msg = document.getElementById('msg');
+    var stopped = false;
+    var activeSockets = []; // track in-flight WebSocket connections
 
     function setStatus(text) { msg.textContent = text; }
     function setError(text) {
       dot.style.background = '#f24822';
       dot.style.animation = 'none';
       msg.textContent = text;
+    }
+
+    function enterStoppedState(label) {
+      stopped = true;
+      attempts = MAX_ATTEMPTS;
+      activeSockets.forEach(function(ws) {
+        try { ws.close(); } catch(e) {}
+      });
+      activeSockets = [];
+      setError(label || 'Stopped');
+      var btn = document.getElementById('scan-btn');
+      btn.innerHTML = '&#x25B6;';
+      btn.title = 'Rescan for MCP server';
+    }
+
+    function toggleScan() {
+      if (!stopped) {
+        enterStoppedState('Stopped');
+      } else {
+        // Rescan
+        stopped = false;
+        attempts = 0;
+        dot.style.background = '#f5a623';
+        dot.style.animation = 'pulse 1.5s ease-in-out infinite';
+        btn.innerHTML = '&#x25A0;';
+        btn.title = 'Stop scanning';
+        boot();
+      }
     }
 
     // Minimum server version that supports GET_PLUGIN_UI bootloader protocol
@@ -104,6 +157,7 @@
      */
     function findServer() {
       setStatus('MCP scanning…');
+      activeSockets = [];
 
       return new Promise(function(resolve) {
         var found = false;
@@ -114,6 +168,7 @@
         PORTS.forEach(function(port) {
           try {
             var ws = new WebSocket('ws://localhost:' + port);
+            activeSockets.push(ws);
             var timeout = setTimeout(function() {
               if (ws.readyState !== 1) ws.close();
             }, 3000);
@@ -215,7 +270,9 @@
     var MAX_ATTEMPTS = 5;
 
     function boot() {
+      if (stopped) return;
       findServer().then(function(result) {
+        if (stopped) return;
         if (result && result.legacy) {
           // Old server found — can't use bootloader protocol.
           // Tell code.js to fall back to the cached full UI.
@@ -224,7 +281,13 @@
             pluginMessage: { type: 'BOOT_FALLBACK', port: result.port }
           }, '*');
         } else if (result && result.ws) {
+          if (result.ws.readyState !== 1) {
+            // Socket was closed between find and use (e.g., user clicked stop)
+            setError('Connection lost');
+            return;
+          }
           setStatus('MCP found (port ' + result.port + ')');
+          document.getElementById('scan-btn').className = 'scan-btn hidden';
 
           // Fetch fresh UI HTML from server via WebSocket
           requestFullUI(result.ws).then(function(html) {
@@ -236,12 +299,12 @@
           });
         } else {
           attempts++;
-          if (attempts < MAX_ATTEMPTS) {
+          if (!stopped && attempts < MAX_ATTEMPTS) {
             var delay = 2000 * attempts;
             setStatus('Retry ' + attempts + '/' + MAX_ATTEMPTS + '…');
             setTimeout(boot, delay);
-          } else {
-            setError('No MCP server found');
+          } else if (!stopped) {
+            enterStoppedState('No MCP server found');
           }
         }
       });

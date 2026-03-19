@@ -17,7 +17,7 @@
       height: 100%;
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       padding: 6px 8px;
       user-select: none;
     }
@@ -77,6 +77,31 @@
     .status-text .state {
       color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
       margin-left: 4px;
+    }
+
+    .scan-btn {
+      background: none;
+      border: 1px solid var(--figma-color-border, #4a4a4a);
+      border-radius: 4px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      font-size: 10px;
+      cursor: pointer;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .scan-btn:hover {
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+      border-color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+    }
+
+    .scan-btn.hidden {
+      display: none;
     }
 
     /* Cloud Mode toggle */
@@ -191,13 +216,16 @@
   </style>
 </head>
 <body>
-  <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
-    <div class="bridge-status" id="status-container">
-      <div class="status-indicator loading" id="status-dot"></div>
-      <div class="status-text">
-        <span class="label">MCP</span>
-        <span class="state" id="status-state">connecting</span>
+  <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
+    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+      <div class="bridge-status" id="status-container">
+        <div class="status-indicator loading" id="status-dot"></div>
+        <div class="status-text">
+          <span class="label">MCP</span>
+          <span class="state" id="status-state">connecting</span>
+        </div>
       </div>
+      <button class="scan-btn" id="scan-btn" onclick="toggleScan()" title="Stop scanning">&#x25A0;</button>
     </div>
 
     <div class="cloud-toggle" id="cloud-toggle" onclick="toggleCloudSection()">
@@ -227,13 +255,45 @@
 
     let requestIdCounter = 0;
 
+    var scanStopped = false;
+
     // UI update helper
     function updateStatus(state, isActive, isError) {
       const dot = document.getElementById('status-dot');
       const stateText = document.getElementById('status-state');
+      const scanBtn = document.getElementById('scan-btn');
 
       dot.className = 'status-indicator ' + (isError ? 'error' : (isActive ? 'active' : 'loading'));
       stateText.textContent = state;
+
+      // Hide button when connected, show otherwise
+      if (scanBtn) {
+        if (isActive) {
+          scanBtn.className = 'scan-btn hidden';
+        } else {
+          scanBtn.className = 'scan-btn';
+        }
+      }
+    }
+
+    // Toggle between stop and rescan
+    function toggleScan() {
+      var btn = document.getElementById('scan-btn');
+      if (!scanStopped) {
+        // Stop
+        scanStopped = true;
+        if (window.__wsStopScanning) window.__wsStopScanning();
+        updateStatus('stopped', false, true);
+        btn.innerHTML = '&#x25B6;';
+        btn.title = 'Rescan for MCP server';
+      } else {
+        // Rescan
+        scanStopped = false;
+        if (window.__wsRescan) window.__wsRescan();
+        updateStatus('scanning', false, false);
+        btn.innerHTML = '&#x25A0;';
+        btn.title = 'Stop scanning';
+      }
     }
 
     // ============================================================================
@@ -563,6 +623,7 @@
       // Multi-connection state: plugin connects to ALL active MCP servers
       // so that every Claude tab/CLI instance gets Figma access.
       var activeConnections = []; // Array of { port, ws }
+      var pendingSockets = []; // In-flight scan sockets not yet established
       var wsReconnectDelay = 500;
       var wsMaxReconnectDelay = 5000;
       var wsReconnectAttempts = 0;
@@ -711,10 +772,12 @@
 
         var foundAny = false;
         var pending = portsToTry.length;
+        pendingSockets = [];
 
         portsToTry.forEach(function(port) {
           try {
             var testWs = new WebSocket('ws://localhost:' + port);
+            pendingSockets.push(testWs);
 
             var timeout = setTimeout(function() {
               if (testWs.readyState !== 1) testWs.close();
@@ -723,6 +786,8 @@
             testWs.onopen = function() {
               clearTimeout(timeout);
               foundAny = true;
+              // Remove from pending since it's now an active connection
+              pendingSockets = pendingSockets.filter(function(s) { return s !== testWs; });
               activeConnections.push({ port: port, ws: testWs });
               updateCompatState();
               console.log('[MCP Bridge] WebSocket connected to port ' + port + ' (' + activeConnections.length + ' server(s) total)');
@@ -731,6 +796,7 @@
               pending--;
               if (pending <= 0) {
                 isScanning = false;
+                pendingSockets = [];
                 wsReconnectDelay = 500;
                 wsReconnectAttempts = 0;
               }
@@ -745,6 +811,7 @@
               pending--;
               if (pending <= 0) {
                 isScanning = false;
+                pendingSockets = [];
                 // Retry with backoff if no servers found, up to MAX_INITIAL_SCANS
                 if (!foundAny && activeConnections.length === 0) {
                   initialScanAttempts++;
@@ -931,6 +998,36 @@
 
       window.__wsGetActiveConnections = function() { return activeConnections; };
 
+      // Expose stop function — cancels scanning, closes all connections
+      window.__wsStopScanning = function() {
+        isScanning = false;
+        initialScanAttempts = MAX_INITIAL_SCANS; // prevent further retries
+        wsReconnectAttempts = wsMaxReconnectAttempts; // prevent reconnects
+        // Close in-flight scan sockets
+        pendingSockets.forEach(function(ws) {
+          try { ws.close(); } catch(e) {}
+        });
+        pendingSockets = [];
+        // Close established connections
+        activeConnections.forEach(function(conn) {
+          try { conn.ws.close(); } catch(e) {}
+        });
+        activeConnections = [];
+        updateCompatState();
+        console.log('[MCP Bridge] Scanning stopped by user');
+      };
+
+      // Expose rescan function — resets counters and scans again
+      window.__wsRescan = function() {
+        scanStopped = false; // ensure UI state is consistent if called directly
+        isScanning = false;
+        initialScanAttempts = 0;
+        wsReconnectAttempts = 0;
+        wsReconnectDelay = 500;
+        console.log('[MCP Bridge] Rescan triggered by user');
+        wsScanAndConnect();
+      };
+
       // Single scan on load — no periodic rescanning to avoid console spam.
       // If no server found, retries up to MAX_INITIAL_SCANS times then stops.
       // On disconnect, retries the specific port up to 5 times then stops.
@@ -952,7 +1049,7 @@
 
       // Resize plugin window to fit content
       var height = isExpanding ? 130 : 50;
-      parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 140, height: height } }, '*');
+      parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 240, height: height } }, '*');
     }
 
     function resetCloudUI() {
