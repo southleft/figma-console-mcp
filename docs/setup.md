@@ -35,9 +35,9 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | Real-time selection/change tracking | ✅ | ❌ | ❌ |
 | Console log streaming | ✅ | ❌ | ❌ |
 | Requires Node.js | Yes | No | No |
-| **Total tools available** | **59+** | **43** | **22** |
+| **Total tools available** | **63+** | **43** | **22** |
 
-> **Bottom line:** Remote mode is **read-only** with 22 tools. Cloud Mode adds **write access** ((43 tools)) without Node.js. Local (NPX/Git) has **everything** (59+ tools) including real-time monitoring.
+> **Bottom line:** Remote mode is **read-only** with 22 tools. Cloud Mode adds **write access** ((52 tools)) without Node.js. Local (NPX/Git) has **everything** (63+ tools) including real-time monitoring.
 
 ---
 
@@ -91,7 +91,7 @@ New to MCP servers, JSON configs, and terminal commands? These designer-friendly
 
 **Best for:** Anyone who wants full AI-assisted design and development capabilities with automatic updates.
 
-**What you get:** All 59+ tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
+**What you get:** All 63+ tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
 
 ### Prerequisites Checklist
 
@@ -241,7 +241,7 @@ Create a simple frame with a blue background
 
 **Best for:** Users who want more control over when updates happen, or developers who want to contribute to the project.
 
-**What you get:** Same 59+ tools as NPX. Updates are manual — you pull and rebuild when you're ready.
+**What you get:** Same 63+ tools as NPX. Updates are manual — you pull and rebuild when you're ready.
 
 ### Prerequisites
 
@@ -433,7 +433,7 @@ How to add this depends on your platform:
 
 **Best for:** Quickly evaluating the tool or read-only design data extraction without any plugin setup.
 
-**What you get:** 15 read-only tools for viewing design data, taking screenshots, reading console logs, and design system extraction.
+**What you get:** 9 read-only tools for viewing design data, taking screenshots, reading console logs, and design system extraction.
 
 > **Want write access?** See [Cloud Mode](#-cloud-mode-web-ai-clients) above — same remote endpoint, plus Desktop Bridge pairing for full design creation.
 

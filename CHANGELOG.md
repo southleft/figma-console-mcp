@@ -5,6 +5,25 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-03-18
+
+### Added
+- **Plugin bootloader architecture** — The Desktop Bridge plugin now uses a thin bootloader (~120 lines) that dynamically loads the full UI from the MCP server via WebSocket on every launch. Users import the manifest once and never need to re-import when the server updates. Figma's aggressive plugin caching is no longer an issue.
+- **Stable plugin directory** — Plugin files are automatically copied to `~/.figma-console-mcp/plugin/` on server startup, providing a permanent import path that survives npx cache changes.
+- **Orphaned process cleanup** — The server now detects and terminates stale MCP server processes on startup via `lsof`, freeing up ports in the 9223-9232 range that were held by zombie processes from closed Claude Desktop tabs.
+- **Plugin version tracking** — `PLUGIN_VERSION` constant in `code.js` is sent in `FILE_INFO` WebSocket messages, enabling server-side version compatibility detection.
+- **HTTP endpoint on WebSocket port** — The WebSocket server now also serves HTTP on the same port: `/plugin/ui` delivers the full plugin UI to the bootloader, `/health` provides server status for discovery.
+- **Post-execution housekeeping audit** — `figma_execute` automatically runs a lightweight audit after code that creates pages, components, or frames. Detects duplicate page names, empty pages from failed attempts, and floating nodes not placed in Sections. Warnings are included in the tool response with `CLEANUP REQUIRED` instructions so AI assistants fix issues immediately.
+
+### Changed
+- **`figma_execute` tool description** — Added mandatory housekeeping rules: screenshot before/after creating, place inside Sections, clean up partial artifacts on failure, never create duplicate pages, remove orphaned layers.
+- **`figma_create_child` tool description** — Updated to enforce Section/Frame placement and cleanup on failure.
+- **Setup documentation** — Replaced re-import instructions with one-time bootloader setup. Updated stable plugin path, troubleshooting for new plugin states, architecture docs for bootloader and HTTP endpoint.
+
+### Fixed
+- **WebSocket server port conflict handling** — Fixed error handler for HTTP+WS shared server to properly catch `EADDRINUSE` from both the HTTP server and WSS (which re-emits HTTP errors). Prevents unhandled exceptions during port fallback.
+
+
 ## [1.14.0] - 2026-03-18
 
 ### Added
@@ -347,6 +366,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.15.0]: https://github.com/southleft/figma-console-mcp/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/southleft/figma-console-mcp/compare/v1.13.1...v1.14.0
 [1.11.5]: https://github.com/southleft/figma-console-mcp/compare/v1.11.4...v1.11.5
 [1.11.4]: https://github.com/southleft/figma-console-mcp/compare/v1.11.2...v1.11.4
