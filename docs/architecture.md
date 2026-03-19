@@ -76,9 +76,17 @@ flowchart TB
 ```
 
 **Transport:**
-- **WebSocket** — via Desktop Bridge Plugin on ports 9223–9232. No debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
-- The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running (multi-instance support since v1.10.0).
-- All 59+ tools work through the WebSocket transport.
+- **WebSocket + HTTP** — via Desktop Bridge Plugin on ports 9223–9232. No debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
+- The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running. Orphaned processes are automatically detected and terminated on startup.
+- The same port serves both WebSocket (plugin communication) and HTTP (bootloader UI delivery at `/plugin/ui` and health checks at `/health`).
+- All 60+ tools work through the WebSocket transport.
+
+**Bootloader Architecture (v1.14.0+):**
+- The Desktop Bridge plugin uses a thin bootloader (`ui.html`, ~120 lines) that Figma caches permanently.
+- On each plugin open, the bootloader scans ports 9223–9232 via WebSocket, finds the MCP server, and requests the full UI HTML via a `GET_PLUGIN_UI` WebSocket message.
+- The server responds with the complete plugin UI (~50KB), which the bootloader passes to `code.js` to load via `figma.showUI()`.
+- This means the plugin UI is always up-to-date with the running server — no re-importing needed after the initial setup.
+- Plugin files are also copied to `~/.figma-console-mcp/plugin/` for a stable import path.
 
 **Capabilities:**
 - Everything in Remote Mode, plus:

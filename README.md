@@ -122,11 +122,10 @@ If you're not sure where to put the JSON configuration above, here's where each 
 **Desktop Bridge Plugin:**
 1. Open Figma Desktop normally (no special flags needed)
 2. Go to **Plugins → Development → Import plugin from manifest...**
-3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
-   - **NPX users:** Run `npx figma-console-mcp@latest --print-path` to find the directory
-4. Run the plugin in your Figma file — it auto-connects via WebSocket (scans ports 9223–9232)
+3. Select `~/.figma-console-mcp/plugin/manifest.json` (stable path, auto-created by the MCP server)
+4. Run the plugin in your Figma file — the bootloader finds the MCP server and loads the latest UI automatically
 
-> One-time setup. The plugin persists in your Development plugins list across sessions.
+> One-time setup. The plugin uses a bootloader that dynamically loads fresh code from the MCP server — no need to re-import when the server updates.
 
 #### Step 4: Restart Your MCP Client
 
@@ -637,11 +636,11 @@ When two processes tried to start the MCP server (e.g., Claude Desktop's Chat ta
 
 ### Do I Need to Do Anything?
 
-**If you're running a single instance:** Nothing changes. You'll still use port 9223 as before.
-
-**If you want multi-instance:** Re-import the Desktop Bridge plugin in Figma (Plugins → Development → Import plugin from manifest). This updates the plugin to scan all ports and connect to every active server.
-
-> **Note:** The server-side update happens automatically when you update the npm package. Only the plugin needs a one-time re-import to enable multi-connection support.
+**Nothing.** Multi-instance support is fully automatic:
+- Each MCP server claims the next available port in the range
+- The bootloader plugin scans all ports and connects to every active server
+- Orphaned processes from closed tabs are automatically cleaned up on startup
+- No re-importing, no manual port management
 
 ---
 

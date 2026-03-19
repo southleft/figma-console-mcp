@@ -185,37 +185,29 @@ Find your client's MCP config file and add:
 
 The Desktop Bridge Plugin connects via WebSocket — no special Figma launch flags needed, and it persists across Figma restarts.
 
-> **Important for NPX users:** The plugin files are bundled inside the npm package, which lives in a hidden cache directory on your machine — **not** in a folder you can browse to manually. You need to run a command to find the path first (see step 2 below).
+> **Stable import path:** The MCP server automatically copies plugin files to `~/.figma-console-mcp/plugin/` on startup. Import from this path — it never changes between npm updates.
 
 1. **Open Figma Desktop** (normal launch, no special flags)
-2. **Find the plugin files on your machine.** Open a terminal and run:
-   ```bash
-   npx figma-console-mcp@latest --print-path
-   ```
-   This prints the full path to the `manifest.json` file, for example:
-   ```
-   /Users/yourname/.npm/_npx/abc123/node_modules/figma-console-mcp/figma-desktop-bridge/manifest.json
-   ```
-   **Copy this path** — you'll need it in the next step.
-3. In Figma, go to **Plugins** → **Development** → **Import plugin from manifest...**
-4. **Paste or navigate to the path** from step 2 and select `manifest.json`
-5. Click **"Open"** — the plugin appears in your Development plugins list
-6. **Run the plugin** in your Figma file (Plugins → Development → Figma Desktop Bridge)
-7. The plugin auto-connects via WebSocket (scans ports 9223–9232) — you'll see a "Connected" indicator
+2. In Figma, go to **Plugins** → **Development** → **Import plugin from manifest...**
+3. Navigate to `~/.figma-console-mcp/plugin/manifest.json` and select it
+4. Click **"Open"** — the plugin appears in your Development plugins list
+5. **Run the plugin** in your Figma file (Plugins → Development → Figma Desktop Bridge)
+6. The plugin bootloader scans ports 9223–9232, loads the latest UI from the MCP server, and connects automatically
 
-> **One-time setup.** Once imported, the plugin stays in your Development plugins list. Just run it whenever you want to use the MCP. No need to restart Figma with special flags.
+> **One-time setup.** The plugin uses a bootloader architecture — Figma caches a thin loader that dynamically fetches the full plugin UI from the MCP server each time it opens. When the MCP server updates, the plugin automatically gets the new code without re-importing.
+
+> **Alternative path:** If `~/.figma-console-mcp/plugin/` doesn't exist yet (first run), you can find the path by running `npx figma-console-mcp@latest --print-path` or checking the `pluginPath` field in `figma_get_status`.
 
 **📖 [Desktop Bridge Plugin Documentation](https://github.com/southleft/figma-console-mcp/tree/main/figma-desktop-bridge)**
 
 #### Multi-Instance / Port Conflicts
 
-If you're running multiple MCP clients (e.g., Claude Desktop Chat + Code tabs, or Claude + Cursor simultaneously), the server automatically handles port conflicts:
+Multiple MCP clients (e.g., Claude Desktop Chat + Code tabs, Claude + Cursor) are handled automatically:
 
-1. **Update** to `figma-console-mcp@latest` and restart your MCP client(s)
-2. **Re-import the Desktop Bridge plugin** in Figma (Plugins → Development → Import plugin from manifest). This is the critical step — the updated plugin scans ports 9223–9232 instead of only 9223
-3. **Run the plugin** in your Figma file — it will find whichever port each server landed on
-
-Step 2 is a one-time update. After re-importing, the plugin automatically connects to all active server instances across the full port range.
+- Each MCP server claims the next available port in the range 9223–9232
+- The plugin connects to **all** active servers simultaneously
+- Orphaned server processes from closed tabs are automatically detected and terminated on startup
+- No manual port management or re-importing needed
 
 ### Step 4: Restart Your MCP Client (~1 min)
 
@@ -649,13 +641,14 @@ For reference, the Codex GUI fields map directly to the [NPX JSON configuration]
 | "FIGMA_ACCESS_TOKEN not configured" | Missing or wrong token | Check token in config, must start with `figd_` |
 | "Command not found: node" | Node.js not installed | Install Node.js 18+ from nodejs.org |
 | Tools not appearing in MCP client | Config not loaded | Restart your MCP client completely |
-| "Port 9223 already in use" | Another MCP instance running | As of v1.10.0, the server automatically falls back to ports 9224–9232. If the plugin can't connect, re-import the Desktop Bridge manifest. |
+| "Port 9223 already in use" | Another MCP instance or orphaned process | Server auto-falls back to 9224–9232. Orphaned processes are auto-cleaned on startup (v1.14.0+). |
 | WebSocket unreachable from Docker host | Server bound to localhost | Set `FIGMA_WS_HOST=0.0.0.0` and expose port with `-p 9223:9223` |
-| Plugin shows "Disconnected" | MCP server not running | Start/restart your MCP client so the server starts |
+| Plugin shows "MCP scanning" | MCP server not running yet | Start/restart your MCP client so the server starts. The bootloader retries automatically. |
+| Plugin shows "No MCP server found" | All retries exhausted | Ensure an MCP client is running. Check for stale processes: `lsof -i :9223-9232 \| grep LISTEN` |
 | NPX using old version | Cached package | Use `figma-console-mcp@latest` explicitly |
 | Cloud pairing code expired | Code is older than 5 minutes | Ask your AI to generate a new pairing code |
 | Cloud connection drops between turns | Relay session ended | Re-pair by asking your AI to reconnect, then enter the new code in the plugin |
-| Cloud Mode toggle not showing | Outdated Desktop Bridge plugin | Run `npx figma-console-mcp@latest --print-path` to find the manifest, then re-import it in Figma |
+| Cloud Mode toggle not showing | Pre-bootloader plugin version | Re-import manifest from `~/.figma-console-mcp/plugin/manifest.json` (one-time update to bootloader) |
 
 ### Node.js Version Issues
 

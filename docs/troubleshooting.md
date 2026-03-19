@@ -52,10 +52,10 @@ Restart Claude Code (`/mcp` to reconnect) — mcp-remote will open a browser for
 >
 > 1. Open Figma Desktop normally (no special flags needed)
 > 2. Go to **Plugins → Development → Import plugin from manifest...**
-> 3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
+> 3. Select `~/.figma-console-mcp/plugin/manifest.json` (stable path created automatically by the MCP server)
 > 4. Run the plugin in your Figma file — it auto-connects via WebSocket
 >
-> ✅ **One-time import.** The plugin stays in your Development plugins list. Just run it each session.
+> ✅ **One-time import.** The plugin uses a bootloader architecture that dynamically loads the latest UI from the MCP server each time it opens. You never need to re-import the manifest when the MCP server updates — the bootloader handles it automatically.
 
 ### How to Verify Setup is Working
 
@@ -90,19 +90,24 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 **Fix:** Go to Figma → Plugins → Development → Import plugin from manifest... → select `figma-desktop-bridge/manifest.json`.
 
 #### Port 9223 Already in Use
-**Cause:** Another MCP server instance is running on port 9223 (common with Claude Desktop's dual-tab architecture).
-**Fix (v1.10.0+):** The server now automatically falls back to the next available port in the range 9223–9232. No action needed on the server side. If the plugin can't connect to the fallback port, re-import the Desktop Bridge manifest in Figma (see below).
+**Cause:** Another MCP server instance or orphaned process is running on port 9223.
+**Fix:** As of v1.14.0, the server automatically cleans up orphaned MCP processes on startup and falls back to the next available port in the range 9223–9232. The bootloader plugin scans all ports automatically — no manual intervention needed.
 
-#### Plugin Not Connecting After Port Fallback
-**Cause:** The Desktop Bridge plugin was imported before v1.10.0 and only scans port 9223. The server fell back to a different port.
-**Fix:** Re-import the Desktop Bridge plugin manifest in Figma:
-1. Go to **Plugins → Development → Import plugin from manifest...**
-2. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp package directory
-3. Run the plugin — it will now scan ports 9223–9232 and connect to all active servers
+#### Plugin Shows "MCP scanning" or "Retry"
+**Cause:** The MCP server is not running yet, or all ports 9223–9232 are occupied.
+**Fix:** Start your MCP client (Claude Code, Cursor, etc.) so the MCP server process starts. If you have many stale processes holding ports, restart Claude Desktop to clear them — the next MCP server startup will clean up any remaining orphans automatically.
 
-> **NPX users:** The manifest is inside the npm cache. Run `figma_get_status` — the AI will show you the exact path via the `pluginPath` field in the status output.
+#### Plugin Shows "No MCP server found"
+**Cause:** The bootloader scanned all ports and found no live MCP server.
+**Fix:** Make sure an MCP client is running with figma-console-mcp configured. Check `figma_get_status` from your AI client.
 
-> **Why re-import?** Figma caches plugin files at the application level. Restarting the plugin does NOT reload code from disk. Re-importing the manifest is a one-time step that forces Figma to load the updated multi-port scanning code.
+#### Orphaned MCP Processes Filling Port Range
+**Cause:** Claude Desktop can leave orphaned MCP server processes running after tabs close (known Claude Desktop issue).
+**Fix:** As of v1.14.0, the server automatically detects and terminates orphaned figma-console-mcp processes on startup. If you need to manually clean up, run: `lsof -i :9223-9232 | grep LISTEN` to see what's holding ports.
+
+> **How the bootloader works:** The Desktop Bridge plugin uses a thin bootloader that dynamically loads the full plugin UI from the MCP server each time it opens. Figma caches the bootloader (which never needs updating), and the actual UI code is always fetched fresh from the running server. This eliminates the need to re-import the manifest when the MCP server updates.
+
+> **Stable plugin path:** The MCP server automatically copies plugin files to `~/.figma-console-mcp/plugin/` on startup. Import from this path instead of the volatile npx cache path.
 
 #### Running in Docker
 **Cause:** The WebSocket server binds to `localhost` by default, which is unreachable from the Docker host.
