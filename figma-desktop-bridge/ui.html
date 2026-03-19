@@ -3,7 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 11px;
@@ -16,6 +21,7 @@
       padding: 6px 8px;
       user-select: none;
     }
+
     .bridge-status {
       display: flex;
       align-items: center;
@@ -26,234 +32,1205 @@
       border-radius: 4px;
       white-space: nowrap;
     }
+
     .status-indicator {
       width: 8px;
       height: 8px;
       border-radius: 50%;
       flex-shrink: 0;
+    }
+
+    .status-indicator.loading {
       background: #f5a623;
       animation: pulse 1.5s ease-in-out infinite;
     }
+
+    .status-indicator.active {
+      background: #18a957;
+      box-shadow: 0 0 6px rgba(24, 169, 87, 0.6);
+      animation: glow 2s ease-in-out infinite;
+    }
+
+    .status-indicator.error {
+      background: #f24822;
+    }
+
     @keyframes pulse {
       0%, 100% { opacity: 0.4; }
       50% { opacity: 1; }
     }
+
+    @keyframes glow {
+      0%, 100% { box-shadow: 0 0 4px rgba(24, 169, 87, 0.4); }
+      50% { box-shadow: 0 0 8px rgba(24, 169, 87, 0.8); }
+    }
+
+    .status-text {
+      font-weight: 500;
+      letter-spacing: 0.2px;
+    }
+
+    .status-text .label {
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.7));
+    }
+
+    .status-text .state {
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+      margin-left: 4px;
+    }
+
+    /* Cloud Mode toggle */
+    .cloud-section {
+      display: none;
+      width: 100%;
+    }
+
+    .cloud-section.visible {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .cloud-toggle {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      font-size: 10px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      user-select: none;
+      margin-top: 2px;
+    }
+
+    .cloud-toggle:hover {
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+    }
+
+    .cloud-toggle .chevron {
+      display: inline-block;
+      font-size: 8px;
+      transition: transform 0.15s ease;
+    }
+
+    .cloud-toggle.expanded .chevron {
+      transform: rotate(90deg);
+    }
+
+    .cloud-input-row input {
+      width: 100%;
+      background: var(--figma-color-bg, #2c2c2c);
+      border: 1px solid var(--figma-color-border, #4a4a4a);
+      border-radius: 3px;
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+      font-family: monospace;
+      font-size: 12px;
+      padding: 4px 6px;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      text-align: center;
+      box-sizing: border-box;
+    }
+
+    .cloud-input-row input::placeholder {
+      text-transform: none;
+      letter-spacing: normal;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 10px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.3));
+    }
+
+    .cloud-input-row button {
+      width: 100%;
+      background: var(--figma-color-bg-brand, #0d99ff);
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 5px 8px;
+      cursor: pointer;
+    }
+
+    .cloud-input-row button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .cloud-status {
+      font-size: 9px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      text-align: center;
+    }
+
+    .cloud-status.connected {
+      color: #18a957;
+    }
+
+    .cloud-status.error {
+      color: #f24822;
+    }
+
+    /* Light theme support */
     @media (prefers-color-scheme: light) {
-      body { background: #f5f5f5; color: #333; }
-      .bridge-status { background: #fff; border-color: #e5e5e5; }
+      body {
+        background: #f5f5f5;
+        color: #333;
+      }
+      .bridge-status {
+        background: #fff;
+        border-color: #e5e5e5;
+      }
+      .status-text .label {
+        color: #666;
+      }
+      .status-text .state {
+        color: #333;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="bridge-status">
-    <div class="status-indicator" id="dot"></div>
-    <div id="msg">MCP loading…</div>
+  <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+    <div class="bridge-status" id="status-container">
+      <div class="status-indicator loading" id="status-dot"></div>
+      <div class="status-text">
+        <span class="label">MCP</span>
+        <span class="state" id="status-state">connecting</span>
+      </div>
+    </div>
+
+    <div class="cloud-toggle" id="cloud-toggle" onclick="toggleCloudSection()">
+      <span class="chevron">▶</span> Cloud Mode
+    </div>
+
+    <div class="cloud-section" id="cloud-section">
+      <div class="cloud-input-row">
+        <input type="text" id="cloud-code" maxlength="6" placeholder="Pairing code" autocomplete="off" />
+      </div>
+      <div class="cloud-input-row">
+        <button id="cloud-btn" onclick="cloudConnect()">Connect</button>
+      </div>
+      <div class="cloud-status" id="cloud-status"></div>
+    </div>
   </div>
 
   <script>
-    // =========================================================================
-    // FIGMA CONSOLE MCP — BOOTLOADER (v3)
-    //
-    // This is a thin, permanent loader. Figma caches plugin files aggressively,
-    // so this file is designed to NEVER need updating.
-    //
-    // Boot sequence:
-    // 1. Scan ports 9223-9232 via WebSocket to find the MCP server.
-    // 2. Request the full UI HTML from the server via WebSocket message.
-    // 3. Send the HTML to code.js via postMessage.
-    // 4. code.js calls figma.showUI(freshHtml) — replacing this bootloader
-    //    with the always-up-to-date full plugin UI.
-    //
-    // No redirects, no cross-origin, no CSP issues. The HTML is passed as a
-    // string through the standard figma.showUI() API.
-    //
-    // Users import this manifest ONCE. All future updates are served dynamically.
-    // =========================================================================
+    // ============================================================================
+    // GLOBAL STATE - Data storage for Puppeteer/MCP access
+    // ============================================================================
+    window.__figmaVariablesData = null;
+    window.__figmaVariablesReady = false;
+    window.__figmaComponentData = null;
+    window.__figmaComponentRequests = new Map();
+    window.__figmaPendingRequests = new Map();
 
-    var PORTS = [];
-    for (var p = 9223; p <= 9232; p++) PORTS.push(p);
+    let requestIdCounter = 0;
 
-    var dot = document.getElementById('dot');
-    var msg = document.getElementById('msg');
+    // UI update helper
+    function updateStatus(state, isActive, isError) {
+      const dot = document.getElementById('status-dot');
+      const stateText = document.getElementById('status-state');
 
-    function setStatus(text) { msg.textContent = text; }
-    function setError(text) {
-      dot.style.background = '#f24822';
-      dot.style.animation = 'none';
-      msg.textContent = text;
+      dot.className = 'status-indicator ' + (isError ? 'error' : (isActive ? 'active' : 'loading'));
+      stateText.textContent = state;
     }
 
-    // Minimum server version that supports GET_PLUGIN_UI bootloader protocol
-    var MIN_SERVER_VERSION = '1.14.0';
+    // ============================================================================
+    // COMMAND INFRASTRUCTURE - Generic plugin command sender
+    // ============================================================================
+    window.sendPluginCommand = (type, params, timeoutMs) => {
+      timeoutMs = timeoutMs || 15000;
+      return new Promise((resolve, reject) => {
+        const requestId = type.toLowerCase() + '_' + (++requestIdCounter) + '_' + Date.now();
 
-    function versionAtLeast(version, minimum) {
-      if (!version || !minimum) return false;
-      var v = version.split('.').map(Number);
-      var m = minimum.split('.').map(Number);
-      for (var i = 0; i < 3; i++) {
-        if ((v[i] || 0) > (m[i] || 0)) return true;
-        if ((v[i] || 0) < (m[i] || 0)) return false;
+        const timeoutId = setTimeout(() => {
+          if (window.__figmaPendingRequests.has(requestId)) {
+            window.__figmaPendingRequests.delete(requestId);
+            reject(new Error(type + ' request timed out after ' + timeoutMs + 'ms'));
+          }
+        }, timeoutMs);
+
+        window.__figmaPendingRequests.set(requestId, { resolve: resolve, reject: reject, type: type, timeoutId: timeoutId });
+
+        var message = { type: type, requestId: requestId };
+        for (var key in params) {
+          if (params.hasOwnProperty(key)) {
+            message[key] = params[key];
+          }
+        }
+
+        parent.postMessage({ pluginMessage: message }, '*');
+        console.log('[MCP Bridge] Sent:', type);
+      });
+    };
+
+    // ============================================================================
+    // VARIABLE OPERATIONS
+    // ============================================================================
+
+    window.executeCode = (code, timeout) => {
+      return window.sendPluginCommand('EXECUTE_CODE', { code: code, timeout: timeout || 5000 }, (timeout || 5000) + 2000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.updateVariable = (variableId, modeId, value) => {
+      return window.sendPluginCommand('UPDATE_VARIABLE', { variableId: variableId, modeId: modeId, value: value })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.createVariable = (name, collectionId, resolvedType, options) => {
+      var params = { name: name, collectionId: collectionId, resolvedType: resolvedType };
+      if (options) {
+        if (options.valuesByMode) params.valuesByMode = options.valuesByMode;
+        if (options.description) params.description = options.description;
+        if (options.scopes) params.scopes = options.scopes;
       }
-      return true; // equal
-    }
+      return window.sendPluginCommand('CREATE_VARIABLE', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
 
-    /**
-     * Scan all ports for a live MCP server that supports the bootloader protocol.
-     * Connects via WebSocket, waits for SERVER_HELLO, checks version supports
-     * GET_PLUGIN_UI. Skips old servers that don't support the protocol.
-     */
-    function findServer() {
-      setStatus('MCP scanning…');
+    window.createVariableCollection = (name, options) => {
+      var params = { name: name };
+      if (options) {
+        if (options.initialModeName) params.initialModeName = options.initialModeName;
+        if (options.additionalModes) params.additionalModes = options.additionalModes;
+      }
+      return window.sendPluginCommand('CREATE_VARIABLE_COLLECTION', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
 
-      return new Promise(function(resolve) {
-        var found = false;
-        var pending = PORTS.length;
-        // Collect all candidates, pick the best one when all scans complete
-        var candidates = [];
+    window.deleteVariable = (variableId) => {
+      return window.sendPluginCommand('DELETE_VARIABLE', { variableId: variableId })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
 
-        PORTS.forEach(function(port) {
+    window.deleteVariableCollection = (collectionId) => {
+      return window.sendPluginCommand('DELETE_VARIABLE_COLLECTION', { collectionId: collectionId })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.renameVariable = (variableId, newName) => {
+      return window.sendPluginCommand('RENAME_VARIABLE', { variableId: variableId, newName: newName })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.setVariableDescription = (variableId, description) => {
+      return window.sendPluginCommand('SET_VARIABLE_DESCRIPTION', { variableId: variableId, description: description })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.addMode = (collectionId, modeName) => {
+      return window.sendPluginCommand('ADD_MODE', { collectionId: collectionId, modeName: modeName })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.renameMode = (collectionId, modeId, newName) => {
+      return window.sendPluginCommand('RENAME_MODE', { collectionId: collectionId, modeId: modeId, newName: newName })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.refreshVariables = () => {
+      return window.sendPluginCommand('REFRESH_VARIABLES', {}, 300000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // ============================================================================
+    // COMPONENT OPERATIONS
+    // ============================================================================
+
+    window.getLocalComponents = () => {
+      return window.sendPluginCommand('GET_LOCAL_COMPONENTS', {}, 300000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.instantiateComponent = (componentKey, options) => {
+      var params = { componentKey: componentKey };
+      if (options) {
+        if (options.nodeId) params.nodeId = options.nodeId;
+        if (options.position) params.position = options.position;
+        if (options.size) params.size = options.size;
+        if (options.overrides) params.overrides = options.overrides;
+        if (options.variant) params.variant = options.variant;
+        if (options.parentId) params.parentId = options.parentId;
+      }
+      return window.sendPluginCommand('INSTANTIATE_COMPONENT', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.requestComponentData = (nodeId) => {
+      return new Promise((resolve, reject) => {
+        const requestId = 'component_' + (++requestIdCounter) + '_' + Date.now();
+        window.__figmaComponentRequests.set(requestId, { resolve: resolve, reject: reject });
+        parent.postMessage({ pluginMessage: { type: 'GET_COMPONENT', requestId: requestId, nodeId: nodeId } }, '*');
+        setTimeout(() => {
+          if (window.__figmaComponentRequests.has(requestId)) {
+            window.__figmaComponentRequests.delete(requestId);
+            reject(new Error('Component request timed out'));
+          }
+        }, 10000);
+      });
+    };
+
+    // ============================================================================
+    // NEW: COMPONENT PROPERTY MANAGEMENT
+    // ============================================================================
+
+    // Set component/node description
+    window.setNodeDescription = (nodeId, description, descriptionMarkdown) => {
+      return window.sendPluginCommand('SET_NODE_DESCRIPTION', {
+        nodeId: nodeId,
+        description: description,
+        descriptionMarkdown: descriptionMarkdown
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Add a component property (BOOLEAN, TEXT, INSTANCE_SWAP, VARIANT)
+    // Note: We use 'propertyType' instead of 'type' to avoid collision with message type field
+    window.addComponentProperty = (nodeId, propertyName, type, defaultValue, options) => {
+      var params = { nodeId: nodeId, propertyName: propertyName, propertyType: type, defaultValue: defaultValue };
+      if (options) {
+        if (options.preferredValues) params.preferredValues = options.preferredValues;
+      }
+      return window.sendPluginCommand('ADD_COMPONENT_PROPERTY', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Edit an existing component property
+    window.editComponentProperty = (nodeId, propertyName, newValue) => {
+      return window.sendPluginCommand('EDIT_COMPONENT_PROPERTY', {
+        nodeId: nodeId,
+        propertyName: propertyName,
+        newValue: newValue
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Delete a component property
+    window.deleteComponentProperty = (nodeId, propertyName) => {
+      return window.sendPluginCommand('DELETE_COMPONENT_PROPERTY', {
+        nodeId: nodeId,
+        propertyName: propertyName
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // ============================================================================
+    // NEW: NODE MANIPULATION
+    // ============================================================================
+
+    // Resize any node
+    window.resizeNode = (nodeId, width, height, withConstraints) => {
+      return window.sendPluginCommand('RESIZE_NODE', {
+        nodeId: nodeId,
+        width: width,
+        height: height,
+        withConstraints: withConstraints !== false
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Move/position a node
+    window.moveNode = (nodeId, x, y) => {
+      return window.sendPluginCommand('MOVE_NODE', { nodeId: nodeId, x: x, y: y })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set node fills (colors)
+    window.setNodeFills = (nodeId, fills) => {
+      return window.sendPluginCommand('SET_NODE_FILLS', { nodeId: nodeId, fills: fills })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set node strokes
+    window.setNodeStrokes = (nodeId, strokes, strokeWeight) => {
+      var params = { nodeId: nodeId, strokes: strokes };
+      if (strokeWeight !== undefined) params.strokeWeight = strokeWeight;
+      return window.sendPluginCommand('SET_NODE_STROKES', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set node opacity
+    window.setNodeOpacity = (nodeId, opacity) => {
+      return window.sendPluginCommand('SET_NODE_OPACITY', { nodeId: nodeId, opacity: opacity })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set node corner radius
+    window.setNodeCornerRadius = (nodeId, radius) => {
+      return window.sendPluginCommand('SET_NODE_CORNER_RADIUS', { nodeId: nodeId, radius: radius })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Clone a node
+    window.cloneNode = (nodeId) => {
+      return window.sendPluginCommand('CLONE_NODE', { nodeId: nodeId })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Delete a node
+    window.deleteNode = (nodeId) => {
+      return window.sendPluginCommand('DELETE_NODE', { nodeId: nodeId })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Rename a node
+    window.renameNode = (nodeId, newName) => {
+      return window.sendPluginCommand('RENAME_NODE', { nodeId: nodeId, newName: newName })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set text content (for text nodes)
+    window.setTextContent = (nodeId, text, options) => {
+      var params = { nodeId: nodeId, text: text };
+      if (options) {
+        if (options.fontSize) params.fontSize = options.fontSize;
+        if (options.fontWeight) params.fontWeight = options.fontWeight;
+        if (options.fontFamily) params.fontFamily = options.fontFamily;
+      }
+      return window.sendPluginCommand('SET_TEXT_CONTENT', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Create a new node as child
+    window.createChildNode = (parentId, nodeType, properties) => {
+      return window.sendPluginCommand('CREATE_CHILD_NODE', {
+        parentId: parentId,
+        nodeType: nodeType,
+        properties: properties || {}
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // ============================================================================
+    // NEW: SCREENSHOT & INSTANCE PROPERTIES (Fix for visual validation loop)
+    // ============================================================================
+
+    // Capture screenshot using plugin's exportAsync (reads current plugin state, not cloud)
+    // This solves the race condition where REST API screenshots show stale state
+    window.captureScreenshot = (nodeId, options) => {
+      var params = { nodeId: nodeId };
+      if (options) {
+        if (options.format) params.format = options.format;  // PNG, JPG, SVG
+        if (options.scale) params.scale = options.scale;      // 1, 2, 4, etc.
+      }
+      return window.sendPluginCommand('CAPTURE_SCREENSHOT', params, 30000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set image fill on nodes — decodes base64 in browser context (atob available here)
+    // then sends raw bytes to plugin where figma.createImage() is called
+    window.setImageFill = (nodeIds, imageData, scaleMode) => {
+      // Decode base64 to Uint8Array in browser context where atob() is available
+      var binaryStr = atob(imageData);
+      var bytes = new Uint8Array(binaryStr.length);
+      for (var i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      // Send as plain Array (postMessage can't always transfer typed arrays cleanly)
+      return window.sendPluginCommand('SET_IMAGE_FILL', {
+        nodeIds: Array.isArray(nodeIds) ? nodeIds : [nodeIds],
+        imageBytes: Array.from(bytes),
+        scaleMode: scaleMode || 'FILL'
+      }, 60000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set component instance properties (TEXT, BOOLEAN, INSTANCE_SWAP, VARIANT)
+    // This is the correct way to update component instances vs direct text node editing
+    window.setInstanceProperties = (nodeId, properties) => {
+      return window.sendPluginCommand('SET_INSTANCE_PROPERTIES', {
+        nodeId: nodeId,
+        properties: properties
+      }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Lint design for accessibility and quality issues
+    window.lintDesign = (nodeId, rules, maxDepth, maxFindings) => {
+      var params = {};
+      if (nodeId) params.nodeId = nodeId;
+      if (rules) params.rules = rules;
+      if (maxDepth !== undefined) params.maxDepth = maxDepth;
+      if (maxFindings !== undefined) params.maxFindings = maxFindings;
+      return window.sendPluginCommand('LINT_DESIGN', params, 120000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // ============================================================================
+    // WEBSOCKET BRIDGE CLIENT - Fallback transport when CDP is unavailable
+    // ============================================================================
+    (function() {
+      // Port range for multi-instance support (matches server's port-discovery.ts)
+      var WS_PORT_RANGE_START = 9223;
+      var WS_PORT_RANGE_END = 9232;
+
+      // Multi-connection state: plugin connects to ALL active MCP servers
+      // so that every Claude tab/CLI instance gets Figma access.
+      var activeConnections = []; // Array of { port, ws }
+      var wsReconnectDelay = 500;
+      var wsMaxReconnectDelay = 5000;
+      var wsReconnectAttempts = 0;
+      var wsMaxReconnectAttempts = 50;
+      var isScanning = false;
+
+      // Backward-compat: ws and wsConnected reflect "at least one connection"
+      var ws = null;
+      var wsPort = null;
+      var wsConnected = false;
+
+      // Method-to-function mapping
+      var methodMap = {
+        'EXECUTE_CODE': function(params) { return window.executeCode(params.code, params.timeout); },
+        'UPDATE_VARIABLE': function(params) { return window.updateVariable(params.variableId, params.modeId, params.value); },
+        'CREATE_VARIABLE': function(params) { return window.createVariable(params.name, params.collectionId, params.resolvedType, params); },
+        'DELETE_VARIABLE': function(params) { return window.deleteVariable(params.variableId); },
+        'DELETE_VARIABLE_COLLECTION': function(params) { return window.deleteVariableCollection(params.collectionId); },
+        'RENAME_VARIABLE': function(params) { return window.renameVariable(params.variableId, params.newName); },
+        'SET_VARIABLE_DESCRIPTION': function(params) { return window.setVariableDescription(params.variableId, params.description); },
+        'ADD_MODE': function(params) { return window.addMode(params.collectionId, params.modeName); },
+        'RENAME_MODE': function(params) { return window.renameMode(params.collectionId, params.modeId, params.newName); },
+        'REFRESH_VARIABLES': function() { return window.refreshVariables(); },
+        'CREATE_VARIABLE_COLLECTION': function(params) { return window.createVariableCollection(params.name, params); },
+        'GET_LOCAL_COMPONENTS': function() { return window.getLocalComponents(); },
+        'INSTANTIATE_COMPONENT': function(params) { return window.instantiateComponent(params.componentKey, params); },
+        'GET_COMPONENT': function(params) { return window.requestComponentData(params.nodeId); },
+        'SET_NODE_DESCRIPTION': function(params) { return window.setNodeDescription(params.nodeId, params.description, params.descriptionMarkdown); },
+        'ADD_COMPONENT_PROPERTY': function(params) { return window.addComponentProperty(params.nodeId, params.propertyName, params.propertyType, params.defaultValue, params); },
+        'EDIT_COMPONENT_PROPERTY': function(params) { return window.editComponentProperty(params.nodeId, params.propertyName, params.newValue); },
+        'DELETE_COMPONENT_PROPERTY': function(params) { return window.deleteComponentProperty(params.nodeId, params.propertyName); },
+        'RESIZE_NODE': function(params) { return window.resizeNode(params.nodeId, params.width, params.height, params.withConstraints); },
+        'MOVE_NODE': function(params) { return window.moveNode(params.nodeId, params.x, params.y); },
+        'SET_NODE_FILLS': function(params) { return window.setNodeFills(params.nodeId, params.fills); },
+        'SET_NODE_STROKES': function(params) { return window.setNodeStrokes(params.nodeId, params.strokes, params.strokeWeight); },
+        'SET_NODE_OPACITY': function(params) { return window.setNodeOpacity(params.nodeId, params.opacity); },
+        'SET_NODE_CORNER_RADIUS': function(params) { return window.setNodeCornerRadius(params.nodeId, params.radius); },
+        'CLONE_NODE': function(params) { return window.cloneNode(params.nodeId); },
+        'DELETE_NODE': function(params) { return window.deleteNode(params.nodeId); },
+        'RENAME_NODE': function(params) { return window.renameNode(params.nodeId, params.newName); },
+        'SET_TEXT_CONTENT': function(params) { return window.setTextContent(params.nodeId, params.text, params); },
+        'CREATE_CHILD_NODE': function(params) { return window.createChildNode(params.parentId, params.nodeType, params.properties); },
+        'CAPTURE_SCREENSHOT': function(params) { return window.captureScreenshot(params.nodeId, params); },
+        'SET_IMAGE_FILL': function(params) { return window.setImageFill(params.nodeIds || params.nodeId, params.imageData, params.scaleMode); },
+        'SET_INSTANCE_PROPERTIES': function(params) { return window.setInstanceProperties(params.nodeId, params.properties); },
+        'LINT_DESIGN': function(params) { return window.lintDesign(params.nodeId, params.rules, params.maxDepth, params.maxFindings); },
+        'GET_VARIABLES_DATA': function() {
+          // Return the cached variables data directly
+          if (window.__figmaVariablesReady && window.__figmaVariablesData) {
+            return Promise.resolve(window.__figmaVariablesData);
+          }
+          return Promise.reject(new Error('Variables data not ready. Make sure the Desktop Bridge plugin has loaded.'));
+        },
+        'GET_FILE_INFO': function() {
+          return window.sendPluginCommand('GET_FILE_INFO', {});
+        },
+        'CLEAR_CONSOLE': function() {
+          // Console buffer is maintained server-side; this is a no-op ack
+          return Promise.resolve({ cleared: true });
+        },
+        'RELOAD_UI': function() {
+          return window.sendPluginCommand('RELOAD_UI', {});
+        }
+      };
+
+      /**
+       * Check if we already have a connection to a specific port.
+       */
+      function isPortConnected(port) {
+        for (var i = 0; i < activeConnections.length; i++) {
+          if (activeConnections[i].port === port && activeConnections[i].ws.readyState === 1) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      /**
+       * Remove a connection from the active list and update compat state.
+       */
+      function removeConnection(port) {
+        activeConnections = activeConnections.filter(function(c) { return c.port !== port; });
+        updateCompatState();
+      }
+
+      /**
+       * Update backward-compat variables (ws, wsPort, wsConnected).
+       */
+      function updateCompatState() {
+        var live = activeConnections.filter(function(c) { return c.ws.readyState === 1; });
+        wsConnected = live.length > 0;
+        if (live.length > 0) {
+          ws = live[0].ws;
+          wsPort = live[0].port;
+        } else {
+          ws = null;
+          wsPort = null;
+        }
+      }
+
+      /**
+       * Initialize a new connection to a server: send FILE_INFO, variables, attach handlers.
+       */
+      function initializeConnection(connWs, port) {
+        // Forward cached variables if available
+        if (window.__figmaVariablesReady && window.__figmaVariablesData) {
+          connWs.send(JSON.stringify({
+            type: 'VARIABLES_DATA',
+            data: window.__figmaVariablesData
+          }));
+        }
+
+        // Proactively report file identity to this server
+        window.sendPluginCommand('GET_FILE_INFO', {})
+          .then(function(info) {
+            if (connWs.readyState === 1 && info && info.success !== false) {
+              connWs.send(JSON.stringify({ type: 'FILE_INFO', data: info.fileInfo || info }));
+            }
+          })
+          .catch(function() { /* non-critical */ });
+      }
+
+      /**
+       * Scan the port range and connect to ALL active MCP servers.
+       * Each server (e.g., Chat tab on 9223, Code tab on 9224) gets its own
+       * independent WebSocket connection so every Claude instance has Figma access.
+       * Falls back to retry with backoff if no servers found at all.
+       */
+      // Maximum scan attempts on initial load (prevents infinite error loops).
+      // After connecting, disconnect-triggered retries have their own limit.
+      var initialScanAttempts = 0;
+      var MAX_INITIAL_SCANS = 3;
+
+      function wsScanAndConnect() {
+        if (isScanning) return;
+        isScanning = true;
+
+        var portsToTry = [];
+        for (var p = WS_PORT_RANGE_START; p <= WS_PORT_RANGE_END; p++) {
+          if (!isPortConnected(p)) portsToTry.push(p);
+        }
+
+        if (portsToTry.length === 0) { isScanning = false; return; }
+
+        console.log('[MCP Bridge] Scanning ports ' + WS_PORT_RANGE_START + '-' + WS_PORT_RANGE_END + ' for MCP servers...');
+
+        var foundAny = false;
+        var pending = portsToTry.length;
+
+        portsToTry.forEach(function(port) {
           try {
-            var ws = new WebSocket('ws://localhost:' + port);
-            var gotHello = false;
+            var testWs = new WebSocket('ws://localhost:' + port);
 
-            // Connection timeout — close if we can't even connect in 3s
-            var connectTimeout = setTimeout(function() {
-              if (!gotHello) { try { ws.close(); } catch(e) {} }
+            var timeout = setTimeout(function() {
+              if (testWs.readyState !== 1) testWs.close();
             }, 3000);
 
-            ws.onopen = function() {
-              clearTimeout(connectTimeout);
-              // Connected — now wait for SERVER_HELLO, but not forever.
-              // If the server doesn't send it within 2s, it's not our server.
-              var helloTimeout = setTimeout(function() {
-                if (!gotHello) { try { ws.close(); } catch(e) {} }
-              }, 2000);
-
-              ws.onmessage = function(event) {
-                try {
-                  var data = JSON.parse(event.data);
-                  if (data.type === 'SERVER_HELLO' && data.data) {
-                    gotHello = true;
-                    clearTimeout(helloTimeout);
-                    var ver = data.data.serverVersion || '0.0.0';
-                    if (versionAtLeast(ver, MIN_SERVER_VERSION) && !found) {
-                      found = true;
-                      candidates.forEach(function(c) { try { c.ws.close(); } catch(e) {} });
-                      resolve({ port: port, ws: ws, serverInfo: data.data });
-                    } else {
-                      candidates.push({ port: port, ws: ws, version: ver });
-                      ws.close();
-                    }
-                  }
-                } catch (e) { /* ignore parse errors */ }
-              };
+            testWs.onopen = function() {
+              clearTimeout(timeout);
+              foundAny = true;
+              activeConnections.push({ port: port, ws: testWs });
+              updateCompatState();
+              console.log('[MCP Bridge] WebSocket connected to port ' + port + ' (' + activeConnections.length + ' server(s) total)');
+              attachWsHandlers(testWs, port);
+              initializeConnection(testWs, port);
+              pending--;
+              if (pending <= 0) {
+                isScanning = false;
+                wsReconnectDelay = 500;
+                wsReconnectAttempts = 0;
+              }
             };
 
-            ws.onerror = function() { clearTimeout(connectTimeout); };
+            testWs.onerror = function() {
+              clearTimeout(timeout);
+            };
 
-            ws.onclose = function() {
+            testWs.onclose = function() {
               clearTimeout(timeout);
               pending--;
-              if (pending <= 0 && !found) {
-                // No server with bootloader support found.
-                // If there are old servers, resolve with the best candidate
-                // so the bootloader can fall back to legacy behavior.
-                if (candidates.length > 0) {
-                  resolve({ port: candidates[0].port, ws: null, serverInfo: null, legacy: true });
-                } else {
-                  resolve(null);
+              if (pending <= 0) {
+                isScanning = false;
+                // Retry with backoff if no servers found, up to MAX_INITIAL_SCANS
+                if (!foundAny && activeConnections.length === 0) {
+                  initialScanAttempts++;
+                  if (initialScanAttempts < MAX_INITIAL_SCANS) {
+                    var delay = 3000 * initialScanAttempts; // 3s, 6s
+                    console.log('[MCP Bridge] No servers found, retry ' + initialScanAttempts + '/' + MAX_INITIAL_SCANS + ' in ' + (delay/1000) + 's');
+                    setTimeout(wsScanAndConnect, delay);
+                  } else {
+                    console.log('[MCP Bridge] No MCP servers found after ' + MAX_INITIAL_SCANS + ' scans. Restart plugin to retry.');
+                  }
                 }
               }
             };
           } catch (e) {
             pending--;
-            if (pending <= 0 && !found) resolve(null);
           }
         });
-      });
-    }
+      }
 
-    /**
-     * Request the full UI HTML from the server via WebSocket.
-     * The server responds with a GET_PLUGIN_UI_RESULT message containing the HTML.
-     */
-    function requestFullUI(ws) {
-      return new Promise(function(resolve, reject) {
-        var timeout = setTimeout(function() {
-          reject(new Error('Timeout fetching UI'));
-        }, 10000);
+      /**
+       * Reconnect a specific port that disconnected.
+       * Tries the same port first (server may have just restarted),
+       * then does a full rescan to pick up any new servers.
+       */
+      function wsReconnectPort(port) {
+        try {
+          var testWs = new WebSocket('ws://localhost:' + port);
+          var timeout = setTimeout(function() {
+            if (testWs.readyState !== 1) testWs.close();
+          }, 2000);
 
-        var origHandler = ws.onmessage;
-        ws.onmessage = function(event) {
+          testWs.onopen = function() {
+            clearTimeout(timeout);
+            activeConnections.push({ port: port, ws: testWs });
+            updateCompatState();
+            console.log('[MCP Bridge] Reconnected to port ' + port + ' (' + activeConnections.length + ' server(s) total)');
+            attachWsHandlers(testWs, port);
+            initializeConnection(testWs, port);
+          };
+
+          testWs.onerror = function() {
+            clearTimeout(timeout);
+          };
+        } catch (e) {
+          // Port gone — no further scanning to avoid console spam
+        }
+      }
+
+      /**
+       * Attach message/close/error handlers to an established WebSocket connection.
+       */
+      function attachWsHandlers(activeWs, port) {
+        activeWs.onmessage = function(event) {
           try {
-            var data = JSON.parse(event.data);
-            if (data.type === 'PLUGIN_UI_CONTENT' && data.html) {
-              clearTimeout(timeout);
-              ws.close();
-              resolve(data.html);
+            var message = JSON.parse(event.data);
+
+            // Handle server identity messages
+            if (message.type === 'SERVER_HELLO' && message.data) {
+              console.log('[MCP Bridge] Connected to server on port ' + message.data.port + ' (PID: ' + message.data.pid + ', v' + message.data.serverVersion + ')');
+              var conn = activeConnections.find(function(c) { return c.ws === activeWs; });
+              if (conn) conn.serverInfo = message.data;
+              return;
             }
-          } catch (e) { /* ignore */ }
-          // Pass through other messages to original handler
-          if (origHandler) origHandler.call(ws, event);
+
+            if (!message.id || !message.method) {
+              console.log('[MCP Bridge] WS:' + port + ': Ignoring malformed message');
+              return;
+            }
+
+            var handler = methodMap[message.method];
+            if (!handler) {
+              activeWs.send(JSON.stringify({ id: message.id, error: 'Unknown method: ' + message.method }));
+              return;
+            }
+
+            // Call the handler (returns a Promise) and send back the result
+            Promise.resolve(handler(message.params || {}))
+              .then(function(result) {
+                if (activeWs.readyState === 1) {
+                  activeWs.send(JSON.stringify({ id: message.id, result: result }));
+                }
+              })
+              .catch(function(err) {
+                if (activeWs.readyState === 1) {
+                  activeWs.send(JSON.stringify({ id: message.id, error: err.message || String(err) }));
+                }
+              });
+          } catch (e) {
+            console.error('[MCP Bridge] WS:' + port + ': Failed to process message:', e);
+          }
         };
 
-        // Request the full UI HTML
-        ws.send(JSON.stringify({ type: 'GET_PLUGIN_UI' }));
-      });
-    }
+        activeWs.onclose = function(event) {
+          removeConnection(port);
+          console.log('[MCP Bridge] WebSocket disconnected from port ' + port + ' (' + activeConnections.length + ' server(s) remaining)');
 
-    /**
-     * Send the fresh HTML to code.js, which will call figma.showUI(html).
-     */
-    function loadFreshUI(html) {
-      parent.postMessage({
-        pluginMessage: {
-          type: 'BOOT_LOAD_UI',
-          html: html
-        }
-      }, '*');
-    }
-
-    /**
-     * Main boot sequence.
-     */
-    var attempts = 0;
-    var MAX_ATTEMPTS = 5;
-
-    function boot() {
-      findServer().then(function(result) {
-        if (result && result.legacy) {
-          // Old server found — can't use bootloader protocol.
-          // Tell code.js to fall back to the cached full UI.
-          setStatus('MCP v' + (result.serverInfo ? result.serverInfo.serverVersion : 'old'));
-          parent.postMessage({
-            pluginMessage: { type: 'BOOT_FALLBACK', port: result.port }
-          }, '*');
-        } else if (result && result.ws) {
-          setStatus('MCP found (port ' + result.port + ')');
-
-          // Fetch fresh UI HTML from server via WebSocket
-          requestFullUI(result.ws).then(function(html) {
-            setStatus('Loading UI…');
-            loadFreshUI(html);
-          }).catch(function(err) {
-            setError('UI load error');
-            try { result.ws.close(); } catch(e) {}
-          });
-        } else {
-          attempts++;
-          if (attempts < MAX_ATTEMPTS) {
-            var delay = 2000 * attempts;
-            setStatus('Retry ' + attempts + '/' + MAX_ATTEMPTS + '…');
-            setTimeout(boot, delay);
-          } else {
-            setError('No MCP server found');
+          // If replaced by same file reconnecting (e.g., plugin reloaded), stop
+          var wasReplaced = (event.code === 1000 && (
+            event.reason === 'Replaced by new connection' ||
+            event.reason === 'Replaced by same file reconnection'
+          ));
+          if (wasReplaced) {
+            console.log('[MCP Bridge] WebSocket:' + port + ': replaced by newer connection, stopping reconnect');
+            return;
           }
+
+          // Retry the specific port with limited attempts (no full rescan)
+          wsReconnectAttempts++;
+          if (wsReconnectAttempts <= 5) {
+            var delay = Math.min(1000 * wsReconnectAttempts, 5000);
+            setTimeout(function() { wsReconnectPort(port); }, delay);
+          }
+        };
+
+        activeWs.onerror = function() {
+          // onclose will fire after this, triggering reconnect
+        };
+      }
+
+      /**
+       * Broadcast a message to ALL active WebSocket connections.
+       * Events like variable changes, selections, document changes need to
+       * reach every MCP server instance so they all have current state.
+       */
+      function broadcastToAll(message) {
+        var json = JSON.stringify(message);
+        activeConnections.forEach(function(conn) {
+          if (conn.ws.readyState === 1) {
+            try { conn.ws.send(json); } catch(e) { /* ignore send errors */ }
+          }
+        });
+      }
+
+      // Forward VARIABLES_DATA to all connected MCP servers
+      window.__wsForwardVariables = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'VARIABLES_DATA', data: data });
         }
-      });
+      };
+
+      // Forward DOCUMENT_CHANGE events to all servers for cache invalidation
+      window.__wsForwardDocumentChange = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'DOCUMENT_CHANGE', data: data });
+        }
+      };
+
+      // Forward CONSOLE_CAPTURE events to all servers for console monitoring
+      window.__wsForwardConsoleCapture = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'CONSOLE_CAPTURE', data: data });
+        }
+      };
+
+      // Forward SELECTION_CHANGE events to all servers for selection tracking
+      window.__wsForwardSelectionChange = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'SELECTION_CHANGE', data: data });
+        }
+      };
+
+      // Forward PAGE_CHANGE events to all servers for page tracking
+      window.__wsForwardPageChange = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'PAGE_CHANGE', data: data });
+        }
+      };
+
+      // Expose functions for Cloud Mode to add connections to the same pool
+      window.__wsAddCloudConnection = function(cloudWs, label, onDisconnect) {
+        activeConnections.push({ port: label, ws: cloudWs });
+        updateCompatState();
+        attachWsHandlers(cloudWs, label);
+        // Chain cloud disconnect callback after attachWsHandlers' onclose
+        if (onDisconnect) {
+          var origOnClose = cloudWs.onclose;
+          cloudWs.onclose = function(event) {
+            if (origOnClose) origOnClose.call(cloudWs, event);
+            onDisconnect();
+          };
+        }
+        initializeConnection(cloudWs, label);
+      };
+
+      window.__wsGetActiveConnections = function() { return activeConnections; };
+
+      // Single scan on load — no periodic rescanning to avoid console spam.
+      // If no server found, retries up to MAX_INITIAL_SCANS times then stops.
+      // On disconnect, retries the specific port up to 5 times then stops.
+      wsScanAndConnect();
+    })();
+
+    // ============================================================================
+    // CLOUD MODE — Connect to remote relay via pairing code
+    // ============================================================================
+    var cloudWs = null;
+    var CLOUD_RELAY_HOST = 'wss://figma-console-mcp.southleft.com';
+
+    function toggleCloudSection() {
+      var section = document.getElementById('cloud-section');
+      var toggle = document.getElementById('cloud-toggle');
+      var isExpanding = !section.classList.contains('visible');
+      section.classList.toggle('visible');
+      toggle.classList.toggle('expanded');
+
+      // Resize plugin window to fit content
+      var height = isExpanding ? 130 : 50;
+      parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 140, height: height } }, '*');
     }
 
-    boot();
+    function resetCloudUI() {
+      var statusEl = document.getElementById('cloud-status');
+      var btn = document.getElementById('cloud-btn');
+      if (statusEl) {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = 'cloud-status';
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Connect';
+        btn.onclick = cloudConnect;
+      }
+      cloudWs = null;
+    }
+
+    function cloudConnect() {
+      var codeInput = document.getElementById('cloud-code');
+      var btn = document.getElementById('cloud-btn');
+      var statusEl = document.getElementById('cloud-status');
+      var code = (codeInput.value || '').trim().toUpperCase();
+
+      if (!code || code.length < 4) {
+        statusEl.textContent = 'Enter pairing code';
+        statusEl.className = 'cloud-status error';
+        return;
+      }
+
+      btn.disabled = true;
+      statusEl.textContent = 'Connecting...';
+      statusEl.className = 'cloud-status';
+
+      // Close existing cloud connection if any
+      if (cloudWs && cloudWs.readyState <= 1) {
+        cloudWs.close();
+      }
+
+      try {
+        cloudWs = new WebSocket(CLOUD_RELAY_HOST + '/ws/pair?code=' + code);
+
+        cloudWs.onopen = function() {
+          statusEl.textContent = 'Connected to cloud relay';
+          statusEl.className = 'cloud-status connected';
+          btn.disabled = false;
+          btn.textContent = 'Disconnect';
+          btn.onclick = cloudDisconnect;
+
+          // Add to the shared connection pool (uses same handlers as localhost).
+          // Pass resetCloudUI as disconnect callback — attachWsHandlers overwrites
+          // onclose, so this callback ensures cloud UI resets on server-initiated close.
+          if (window.__wsAddCloudConnection) {
+            window.__wsAddCloudConnection(cloudWs, 'cloud', resetCloudUI);
+          }
+
+          // Persist cloud config via code.js clientStorage
+          parent.postMessage({ pluginMessage: {
+            type: 'STORE_CLOUD_CONFIG',
+            code: code
+          }}, '*');
+        };
+
+        cloudWs.onerror = function() {
+          statusEl.textContent = 'Connection failed — check code';
+          statusEl.className = 'cloud-status error';
+          btn.disabled = false;
+        };
+
+        // Note: onclose here handles pre-connection close (e.g., bad code).
+        // After onopen, attachWsHandlers overwrites this — resetCloudUI callback
+        // handles post-connection close instead.
+        cloudWs.onclose = function(event) {
+          resetCloudUI();
+        };
+      } catch (e) {
+        statusEl.textContent = 'Failed: ' + e.message;
+        statusEl.className = 'cloud-status error';
+        btn.disabled = false;
+      }
+    }
+
+    function cloudDisconnect() {
+      if (cloudWs) {
+        cloudWs.close();
+      }
+      // Reset UI immediately — don't rely on onclose (may be overwritten)
+      resetCloudUI();
+    }
+
+    // ============================================================================
+    // MESSAGE HANDLER - Process responses from plugin worker
+    // ============================================================================
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      // Generic result handler
+      const handleResult = (resultType, dataKey) => {
+        const request = window.__figmaPendingRequests.get(msg.requestId);
+        if (request) {
+          if (request.timeoutId) clearTimeout(request.timeoutId);
+          if (msg.success) {
+            var result = { success: true };
+            if (dataKey && msg[dataKey] !== undefined) result[dataKey] = msg[dataKey];
+            if (msg.data !== undefined) result.data = msg.data;
+            if (msg.oldName !== undefined) result.oldName = msg.oldName;
+            if (msg.instance !== undefined) result.instance = msg.instance;
+            request.resolve(result);
+          } else {
+            request.resolve({ success: false, error: msg.error || 'Unknown error' });
+          }
+          window.__figmaPendingRequests.delete(msg.requestId);
+        }
+      };
+
+      // Handle message types
+      switch (msg.type) {
+        case 'VARIABLES_DATA':
+          window.__figmaVariablesData = msg.data;
+          window.__figmaVariablesReady = true;
+          updateStatus('ready', true, false);
+          console.log('[MCP Bridge] Active - ' + (msg.data.variables?.length || 0) + ' vars');
+          // Forward to WebSocket client if connected
+          if (window.__wsForwardVariables) window.__wsForwardVariables(msg.data);
+          break;
+
+        case 'COMPONENT_DATA':
+          window.__figmaComponentData = msg.data;
+          var req = window.__figmaComponentRequests.get(msg.requestId);
+          if (req) { req.resolve(msg.data); window.__figmaComponentRequests.delete(msg.requestId); }
+          break;
+
+        case 'COMPONENT_ERROR':
+          var req2 = window.__figmaComponentRequests.get(msg.requestId);
+          if (req2) { req2.reject(new Error(msg.error)); window.__figmaComponentRequests.delete(msg.requestId); }
+          break;
+
+        case 'ERROR':
+          window.__figmaVariablesReady = false;
+          updateStatus('error', false, true);
+          console.error('[MCP Bridge] Error:', msg.error);
+          break;
+
+        // Variable operations
+        case 'EXECUTE_CODE_RESULT':
+          handleResult('EXECUTE_CODE', 'result');
+          break;
+        case 'UPDATE_VARIABLE_RESULT':
+          handleResult('UPDATE_VARIABLE', 'variable');
+          break;
+        case 'CREATE_VARIABLE_RESULT':
+          handleResult('CREATE_VARIABLE', 'variable');
+          break;
+        case 'CREATE_VARIABLE_COLLECTION_RESULT':
+          handleResult('CREATE_VARIABLE_COLLECTION', 'collection');
+          break;
+        case 'DELETE_VARIABLE_RESULT':
+          handleResult('DELETE_VARIABLE', 'deleted');
+          break;
+        case 'DELETE_VARIABLE_COLLECTION_RESULT':
+          handleResult('DELETE_VARIABLE_COLLECTION', 'deleted');
+          break;
+        case 'REFRESH_VARIABLES_RESULT':
+          handleResult('REFRESH_VARIABLES', null);
+          break;
+        case 'RENAME_VARIABLE_RESULT':
+          handleResult('RENAME_VARIABLE', 'variable');
+          break;
+        case 'SET_VARIABLE_DESCRIPTION_RESULT':
+          handleResult('SET_VARIABLE_DESCRIPTION', 'variable');
+          break;
+        case 'ADD_MODE_RESULT':
+          handleResult('ADD_MODE', 'collection');
+          break;
+        case 'RENAME_MODE_RESULT':
+          handleResult('RENAME_MODE', 'collection');
+          break;
+        case 'GET_LOCAL_COMPONENTS_RESULT':
+          handleResult('GET_LOCAL_COMPONENTS', null);
+          break;
+        case 'INSTANTIATE_COMPONENT_RESULT':
+          handleResult('INSTANTIATE_COMPONENT', 'instance');
+          break;
+
+        // NEW: Component property operations
+        case 'SET_NODE_DESCRIPTION_RESULT':
+          handleResult('SET_NODE_DESCRIPTION', 'node');
+          break;
+        case 'ADD_COMPONENT_PROPERTY_RESULT':
+          handleResult('ADD_COMPONENT_PROPERTY', 'propertyName');
+          break;
+        case 'EDIT_COMPONENT_PROPERTY_RESULT':
+          handleResult('EDIT_COMPONENT_PROPERTY', 'propertyName');
+          break;
+        case 'DELETE_COMPONENT_PROPERTY_RESULT':
+          handleResult('DELETE_COMPONENT_PROPERTY', null);
+          break;
+
+        // NEW: Node manipulation operations
+        case 'RESIZE_NODE_RESULT':
+          handleResult('RESIZE_NODE', 'node');
+          break;
+        case 'MOVE_NODE_RESULT':
+          handleResult('MOVE_NODE', 'node');
+          break;
+        case 'SET_NODE_FILLS_RESULT':
+          handleResult('SET_NODE_FILLS', 'node');
+          break;
+        case 'SET_NODE_STROKES_RESULT':
+          handleResult('SET_NODE_STROKES', 'node');
+          break;
+        case 'SET_NODE_OPACITY_RESULT':
+          handleResult('SET_NODE_OPACITY', 'node');
+          break;
+        case 'SET_NODE_CORNER_RADIUS_RESULT':
+          handleResult('SET_NODE_CORNER_RADIUS', 'node');
+          break;
+        case 'CLONE_NODE_RESULT':
+          handleResult('CLONE_NODE', 'node');
+          break;
+        case 'DELETE_NODE_RESULT':
+          handleResult('DELETE_NODE', 'deleted');
+          break;
+        case 'RENAME_NODE_RESULT':
+          handleResult('RENAME_NODE', 'node');
+          break;
+        case 'SET_TEXT_CONTENT_RESULT':
+          handleResult('SET_TEXT_CONTENT', 'node');
+          break;
+        case 'CREATE_CHILD_NODE_RESULT':
+          handleResult('CREATE_CHILD_NODE', 'node');
+          break;
+
+        // NEW: Screenshot and instance properties (visual validation loop fix)
+        case 'CAPTURE_SCREENSHOT_RESULT':
+          handleResult('CAPTURE_SCREENSHOT', 'image');
+          break;
+        case 'SET_IMAGE_FILL_RESULT':
+          handleResult('SET_IMAGE_FILL', 'imageHash');
+          break;
+        case 'SET_INSTANCE_PROPERTIES_RESULT':
+          handleResult('SET_INSTANCE_PROPERTIES', 'instance');
+          break;
+        case 'LINT_DESIGN_RESULT':
+          handleResult('LINT_DESIGN', 'data');
+          break;
+
+        // File info
+        case 'GET_FILE_INFO_RESULT':
+          handleResult('GET_FILE_INFO', 'fileInfo');
+          break;
+
+        // Plugin UI reload
+        case 'RELOAD_UI_RESULT':
+          handleResult('RELOAD_UI', null);
+          break;
+
+        // Document change events (for cache invalidation via WebSocket)
+        case 'DOCUMENT_CHANGE':
+          if (window.__wsForwardDocumentChange) window.__wsForwardDocumentChange(msg.data);
+          break;
+
+        // Console capture events (for console monitoring via WebSocket)
+        case 'CONSOLE_CAPTURE':
+          if (window.__wsForwardConsoleCapture) window.__wsForwardConsoleCapture(msg);
+          break;
+
+        // Selection change events (for selection tracking via WebSocket)
+        case 'SELECTION_CHANGE':
+          if (window.__wsForwardSelectionChange) window.__wsForwardSelectionChange(msg.data);
+          break;
+
+        // Page change events (for page tracking via WebSocket)
+        case 'PAGE_CHANGE':
+          if (window.__wsForwardPageChange) window.__wsForwardPageChange(msg.data);
+          break;
+      }
+    };
   </script>
 </body>
 </html>
