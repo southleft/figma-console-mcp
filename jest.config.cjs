@@ -19,6 +19,8 @@ module.exports = {
   },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    // resolve-package-root uses import.meta.url (ESM-only); mock with __dirname for CJS/Jest
+    '/resolve-package-root\\.js$': '<rootDir>/tests/__mocks__/resolve-package-root.js',
     '^(\\.{1,2}/.*)\\.js$': '$1',
     '^cloudflare:workers$': '<rootDir>/tests/__mocks__/cloudflare-workers.js',
   },
