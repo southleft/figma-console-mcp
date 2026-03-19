@@ -470,7 +470,7 @@ All setup methods are completely free:
 ### Cloud Mode Common Issues
 - **Pairing code expired** → Ask your AI to generate a new pairing code (codes expire after 5 minutes)
 - **Connection drops between AI turns** → Re-pair by asking your AI to reconnect and entering a fresh code in the plugin
-- **"Cloud Mode" toggle not visible** → Re-import the latest Desktop Bridge plugin manifest in Figma
+- **"Cloud Mode" toggle not visible** → Re-import the manifest from `~/.figma-console-mcp/plugin/manifest.json` (one-time update to the bootloader version)
 - **Plugin shows "Disconnected" in Cloud Mode** → Check your internet connection; the relay requires both the plugin and the cloud server to be online
 - **Write operations not working** → Verify the Desktop Bridge plugin is running in the file you want to modify
 

@@ -384,7 +384,7 @@ How to add this depends on your platform:
 2. Run the plugin: **Plugins → Development → Figma Desktop Bridge**
 3. You should see the small "MCP ready" indicator
 
-> **First time?** You'll need to import the plugin first. Run `npx figma-console-mcp@latest --print-path` in a terminal to get the full path to `manifest.json`, then in Figma go to Plugins → Development → Import plugin from manifest and navigate to that path.
+> **First time?** Import the plugin once: In Figma go to Plugins → Development → Import plugin from manifest → select `~/.figma-console-mcp/plugin/manifest.json`. This is a one-time step — the bootloader handles all future updates automatically.
 
 ### Step 3: Pair via Cloud Mode (~30 sec)
 
