@@ -289,6 +289,84 @@ export function cleanupStalePortFiles(): number {
 }
 
 /**
+ * Deep scan for orphaned MCP server processes that hold ports but have no port files.
+ * These are processes left behind by Claude Desktop when tabs close without proper cleanup.
+ *
+ * Uses lsof (macOS/Linux) to find PIDs listening on each port in the range,
+ * then verifies they're figma-console-mcp before terminating.
+ *
+ * Call AFTER cleanupStalePortFiles() — that handles the port-file-based cleanup first,
+ * then this catches any remaining ghosts.
+ */
+export function cleanupOrphanedProcesses(preferredPort: number = DEFAULT_WS_PORT): number {
+  // Only supported on macOS/Linux (lsof)
+  if (process.platform === 'win32') return 0;
+
+  let cleaned = 0;
+  const myPid = process.pid;
+  const ports = getPortRange(preferredPort);
+
+  // Collect PIDs that have valid port files (known-good servers)
+  const knownPids = new Set<number>();
+  for (const port of ports) {
+    const data = readPortFile(port);
+    if (data) knownPids.add(data.pid);
+  }
+  knownPids.add(myPid); // Never kill ourselves
+
+  for (const port of ports) {
+    try {
+      // Find PIDs listening on this port via lsof
+      const { execSync } = require('child_process');
+      const output = execSync(`lsof -i :${port} -sTCP:LISTEN -t 2>/dev/null`, {
+        encoding: 'utf-8',
+        timeout: 3000,
+      }).trim();
+
+      if (!output) continue;
+
+      const pids = output.split('\n').map(Number).filter(Boolean);
+
+      for (const pid of pids) {
+        if (knownPids.has(pid)) continue; // Skip known-good servers
+
+        // Verify this is actually a figma-console-mcp process before killing
+        try {
+          const cmdline = execSync(`ps -p ${pid} -o command= 2>/dev/null`, {
+            encoding: 'utf-8',
+            timeout: 2000,
+          }).trim();
+
+          if (cmdline.includes('figma-console-mcp') || cmdline.includes('figma_console_mcp') || cmdline.includes('local.js')) {
+            logger.info(
+              { port, pid, command: cmdline.substring(0, 120) },
+              'Terminating orphaned MCP server (no port file, holding port)',
+            );
+            terminateProcess(pid);
+            cleaned++;
+          }
+        } catch {
+          // Can't read process info — skip to be safe
+        }
+      }
+    } catch {
+      // lsof failed for this port — skip
+    }
+  }
+
+  if (cleaned > 0) {
+    // Give terminated processes a moment to release their ports
+    try {
+      const { execSync } = require('child_process');
+      execSync('sleep 0.5', { timeout: 2000 });
+    } catch { /* non-critical */ }
+    logger.info({ cleaned }, `Cleaned up ${cleaned} orphaned MCP server process(es)`);
+  }
+
+  return cleaned;
+}
+
+/**
  * Register process exit handlers to clean up port advertisement file.
  * Should be called once after the port is successfully bound.
  */

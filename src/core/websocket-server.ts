@@ -15,7 +15,9 @@
 
 import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
-import { readFileSync } from 'fs';
+import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http';
+import type { Server as HttpServer } from 'http';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { createChildLogger } from './logger.js';
 import type { ConsoleLogEntry } from './types/index.js';
@@ -28,6 +30,33 @@ try {
   SERVER_VERSION = JSON.parse(readFileSync(join(base, 'package.json'), 'utf-8')).version;
 } catch {
   // Non-critical — version will show as 0.0.0
+}
+
+/**
+ * Load the full plugin UI HTML content that gets served to the bootloader.
+ * Falls back to a minimal error page if the file isn't found.
+ */
+function loadPluginUIContent(): string {
+  const candidates = [
+    // ESM runtime: dist/core/ → ../../figma-desktop-bridge/
+    typeof __dirname !== 'undefined'
+      ? join(__dirname, '..', '..', 'figma-desktop-bridge', 'ui-full.html')
+      : join(process.cwd(), 'figma-desktop-bridge', 'ui-full.html'),
+    // Direct from project root
+    join(process.cwd(), 'figma-desktop-bridge', 'ui-full.html'),
+  ];
+
+  for (const path of candidates) {
+    try {
+      if (existsSync(path)) {
+        return readFileSync(path, 'utf-8');
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return '<html><body><p>Plugin UI not found. Please reinstall figma-console-mcp.</p></body></html>';
 }
 
 const logger = createChildLogger({ component: 'websocket-server' });
@@ -91,6 +120,7 @@ export interface ClientConnection {
 
 export class FigmaWebSocketServer extends EventEmitter {
   private wss: WSServer | null = null;
+  private httpServer: HttpServer | null = null;
   /** Named clients indexed by fileKey — each represents a connected Figma file */
   private clients: Map<string, ClientConnection> = new Map();
   /** Clients awaiting FILE_INFO identification, mapped to their pending timeout */
@@ -104,6 +134,8 @@ export class FigmaWebSocketServer extends EventEmitter {
   private _startedAt = Date.now();
   private consoleBufferSize = 1000;
   private documentChangeBufferSize = 200;
+  /** Cached plugin UI HTML content — loaded once and served to bootloader requests */
+  private _pluginUIContent: string | null = null;
 
   constructor(options: WebSocketServerOptions) {
     super();
@@ -112,16 +144,76 @@ export class FigmaWebSocketServer extends EventEmitter {
   }
 
   /**
-   * Start the WebSocket server
+   * Handle HTTP requests on the same port as WebSocket.
+   * Serves plugin UI content for the bootloader and health checks.
+   */
+  private handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
+    // CORS headers for Figma plugin iframe (sandboxed, origin: null)
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const url = req.url || '/';
+
+    // Plugin UI endpoint — bootloader redirects here
+    if (url === '/plugin/ui' || url === '/plugin/ui/') {
+      if (!this._pluginUIContent) {
+        this._pluginUIContent = loadPluginUIContent();
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      });
+      res.end(this._pluginUIContent);
+      return;
+    }
+
+    // Health/version endpoint
+    if (url === '/health' || url === '/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        version: SERVER_VERSION,
+        clients: this.clients.size,
+        uptime: Math.floor((Date.now() - this._startedAt) / 1000),
+      }));
+      return;
+    }
+
+    // 404 for anything else
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
+  }
+
+  /**
+   * Start the HTTP + WebSocket server.
+   * HTTP serves the plugin UI content; WebSocket handles plugin communication.
    */
   async start(): Promise<void> {
     if (this._isStarted) return;
 
     return new Promise((resolve, reject) => {
+      let rejected = false;
+      const rejectOnce = (error: any) => {
+        if (!rejected) {
+          rejected = true;
+          reject(error);
+        }
+      };
+
       try {
+        // Create HTTP server first — handles plugin UI requests
+        this.httpServer = createHttpServer((req, res) => this.handleHttpRequest(req, res));
+
+        // Attach WebSocket server to the HTTP server (shares the same port)
         this.wss = new WSServer({
-          port: this.options.port,
-          host: this.options.host || 'localhost',
+          server: this.httpServer,
           maxPayload: 100 * 1024 * 1024, // 100MB — screenshots and large component data can be big
           verifyClient: (info, callback) => {
             // Mitigate Cross-Site WebSocket Hijacking (CSWSH):
@@ -141,21 +233,30 @@ export class FigmaWebSocketServer extends EventEmitter {
           },
         });
 
-        this.wss.on('listening', () => {
+        // Error handler for startup failures (EADDRINUSE, etc.)
+        // Must be on BOTH httpServer and wss — the WSS re-emits HTTP server errors
+        // and throws if no listener is attached.
+        const onStartupError = (error: any) => {
+          if (!this._isStarted) {
+            try { if (this.wss) { this.wss.close(); this.wss = null; } } catch { /* ignore */ }
+            try { if (this.httpServer) { this.httpServer.close(); this.httpServer = null; } } catch { /* ignore */ }
+            rejectOnce(error);
+          } else {
+            logger.error({ error }, 'HTTP/WebSocket server error');
+          }
+        };
+
+        this.httpServer.on('error', onStartupError);
+        this.wss.on('error', onStartupError);
+
+        // Start listening on the HTTP server (which also handles WS upgrades)
+        this.httpServer.listen(this.options.port, this.options.host || 'localhost', () => {
           this._isStarted = true;
           logger.info(
             { port: this.options.port, host: this.options.host || 'localhost' },
-            'WebSocket bridge server started'
+            'WebSocket bridge server started (with HTTP plugin UI endpoint)'
           );
           resolve();
-        });
-
-        this.wss.on('error', (error: any) => {
-          if (!this._isStarted) {
-            reject(error);
-          } else {
-            logger.error({ error }, 'WebSocket server error');
-          }
         });
 
         this.wss.on('connection', (ws: WebSocket) => {
@@ -217,7 +318,7 @@ export class FigmaWebSocketServer extends EventEmitter {
           });
         });
       } catch (error) {
-        reject(error);
+        rejectOnce(error);
       }
     });
   }
@@ -246,6 +347,22 @@ export class FigmaWebSocketServer extends EventEmitter {
         pending.reject(new Error(message.error));
       } else {
         pending.resolve(message.result);
+      }
+      return;
+    }
+
+    // Bootloader request: send the full plugin UI HTML
+    if (message.type === 'GET_PLUGIN_UI') {
+      if (!this._pluginUIContent) {
+        this._pluginUIContent = loadPluginUIContent();
+      }
+      try {
+        ws.send(JSON.stringify({
+          type: 'PLUGIN_UI_CONTENT',
+          html: this._pluginUIContent,
+        }));
+      } catch {
+        // Non-critical — bootloader will show error
       }
       return;
     }
@@ -548,9 +665,16 @@ export class FigmaWebSocketServer extends EventEmitter {
    * Returns the actual port — critical when using port 0 for OS-assigned ports.
    */
   address(): import('net').AddressInfo | null {
+    // Use the HTTP server's address (which is the actual listening socket)
+    if (this.httpServer) {
+      const addr = this.httpServer.address();
+      if (typeof addr === 'string' || !addr) return null;
+      return addr as import('net').AddressInfo;
+    }
+    // Fallback for backward compat
     if (!this.wss) return null;
     const addr = this.wss.address();
-    if (typeof addr === 'string') return null; // Unix socket path, not applicable
+    if (typeof addr === 'string') return null;
     return addr as import('net').AddressInfo;
   }
 
@@ -771,16 +895,22 @@ export class FigmaWebSocketServer extends EventEmitter {
     this.clients.clear();
     this._activeFileKey = null;
 
+    // Close WS server first (handles WebSocket connections)
     if (this.wss) {
-      return new Promise((resolve) => {
-        this.wss!.close(() => {
-          this._isStarted = false;
-          logger.info('WebSocket bridge server stopped');
-          resolve();
-        });
+      await new Promise<void>((resolve) => {
+        this.wss!.close(() => resolve());
       });
     }
 
+    // Then close HTTP server (releases the port)
+    if (this.httpServer) {
+      await new Promise<void>((resolve) => {
+        this.httpServer!.close(() => resolve());
+      });
+      this.httpServer = null;
+    }
+
     this._isStarted = false;
+    logger.info('WebSocket bridge server stopped');
   }
 }

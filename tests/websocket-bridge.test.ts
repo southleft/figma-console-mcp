@@ -528,6 +528,12 @@ describe('FigmaWebSocketServer edge cases', () => {
     const cmd2 = server.sendCommand('UPDATE_VARIABLE', { variableId: '1' }, 30000);
     const cmd3 = server.sendCommand('CREATE_VARIABLE', { name: 'x' }, 30000);
 
+    // Attach catch handlers BEFORE stop() to prevent unhandled rejection warnings
+    // (stop() rejects synchronously but then awaits HTTP server close)
+    const p1 = cmd1.catch(() => {});
+    const p2 = cmd2.catch(() => {});
+    const p3 = cmd3.catch(() => {});
+
     // Stop server — should reject all pending immediately
     await server.stop();
 

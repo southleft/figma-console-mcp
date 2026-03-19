@@ -18,8 +18,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { fileURLToPath } from "url";
-import { dirname, resolve } from "path";
-import { realpathSync, existsSync, readFileSync } from "fs";
+import { dirname, resolve, join } from "path";
+import { realpathSync, existsSync, readFileSync, mkdirSync, copyFileSync, writeFileSync } from "fs";
+import { homedir } from "os";
 import { LocalBrowserManager } from "./browser/local.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
@@ -46,6 +47,7 @@ import {
 	registerPortCleanup,
 	discoverActiveInstances,
 	cleanupStalePortFiles,
+	cleanupOrphanedProcesses,
 	refreshPortAdvertisement,
 	HEARTBEAT_INTERVAL_MS,
 } from "./core/port-discovery.js";
@@ -53,6 +55,39 @@ import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import { registerDesignSystemDashboardApp } from "./apps/design-system-dashboard/server.js";
 
 const logger = createChildLogger({ component: "local-server" });
+
+/**
+ * Copy plugin files to a stable directory (~/.figma-console-mcp/plugin/).
+ * This gives users a permanent, predictable path to import from instead of
+ * the volatile npx cache path that changes between updates.
+ *
+ * Returns the stable manifest path, or null if copy failed.
+ */
+function setupStablePluginDir(sourcePluginDir: string): string | null {
+	try {
+		const stableDir = join(homedir(), ".figma-console-mcp", "plugin");
+		mkdirSync(stableDir, { recursive: true });
+
+		const filesToCopy = ["manifest.json", "code.js", "ui.html", "ui-full.html"];
+		for (const file of filesToCopy) {
+			const src = join(sourcePluginDir, file);
+			const dest = join(stableDir, file);
+			if (existsSync(src)) {
+				copyFileSync(src, dest);
+			}
+		}
+
+		// Write a version marker so we can detect stale copies
+		const pkg = JSON.parse(readFileSync(join(sourcePluginDir, "..", "package.json"), "utf-8"));
+		writeFileSync(join(stableDir, ".version"), pkg.version, "utf-8");
+
+		logger.info({ stableDir }, "Plugin files copied to stable directory");
+		return join(stableDir, "manifest.json");
+	} catch (error) {
+		logger.warn({ error }, "Could not set up stable plugin directory (non-critical)");
+		return null;
+	}
+}
 
 /**
  * Local MCP Server
@@ -281,11 +316,18 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		}
 	}
 
+	/** Stable plugin directory path (set during startup) */
+	private stablePluginPath: string | null = null;
+
 	/**
 	 * Resolve the path to the Desktop Bridge plugin manifest.
-	 * Works for both NPX installs (buried in npm cache) and local git clones.
+	 * Prefers the stable directory (~/.figma-console-mcp/plugin/) over the npx cache path.
 	 */
 	private getPluginPath(): string | null {
+		// Prefer stable path — consistent across npx updates
+		if (this.stablePluginPath && existsSync(this.stablePluginPath)) {
+			return this.stablePluginPath;
+		}
 		try {
 			const thisFile = fileURLToPath(import.meta.url);
 			// From dist/local.js → go up to package root, then into figma-desktop-bridge
@@ -6018,14 +6060,31 @@ return {
 				"Starting Figma Console MCP (Local Mode)",
 			);
 
+			// Copy plugin files to stable directory (~/.figma-console-mcp/plugin/)
+			// so users have a permanent import path that survives npx cache changes.
+			try {
+				const thisFile = fileURLToPath(import.meta.url);
+				const packageRoot = dirname(dirname(thisFile));
+				const sourcePluginDir = resolve(packageRoot, "figma-desktop-bridge");
+				if (existsSync(sourcePluginDir)) {
+					this.stablePluginPath = setupStablePluginDir(sourcePluginDir);
+				}
+			} catch {
+				// Non-critical — stable dir is a convenience feature
+			}
+
 			// Start WebSocket bridge server with port range fallback.
 			// If the preferred port is taken (e.g., Claude Desktop Chat tab already bound it),
 			// try subsequent ports in the range (9223-9232) so multiple instances can coexist.
 			const wsHost = process.env.FIGMA_WS_HOST || 'localhost';
 			this.wsPreferredPort = parseInt(process.env.FIGMA_WS_PORT || String(DEFAULT_WS_PORT), 10);
 
-			// Clean up any stale port files from crashed instances before trying to bind
+			// Clean up stale/orphaned MCP server instances before trying to bind.
+			// Phase 1: Remove stale port files and terminate zombie processes that have port files
 			cleanupStalePortFiles();
+			// Phase 2: Deep scan for orphaned processes holding ports WITHOUT port files
+			// (e.g., old instances from before port file tracking, or files already cleaned up)
+			cleanupOrphanedProcesses(this.wsPreferredPort);
 
 			const portsToTry = getPortRange(this.wsPreferredPort);
 			let boundPort: number | null = null;
