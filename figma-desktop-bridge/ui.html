@@ -114,36 +114,42 @@
         PORTS.forEach(function(port) {
           try {
             var ws = new WebSocket('ws://localhost:' + port);
-            var timeout = setTimeout(function() {
-              if (ws.readyState !== 1) ws.close();
+            var gotHello = false;
+
+            // Connection timeout — close if we can't even connect in 3s
+            var connectTimeout = setTimeout(function() {
+              if (!gotHello) { try { ws.close(); } catch(e) {} }
             }, 3000);
 
             ws.onopen = function() {
-              clearTimeout(timeout);
-              // Wait for SERVER_HELLO before deciding
-            };
+              clearTimeout(connectTimeout);
+              // Connected — now wait for SERVER_HELLO, but not forever.
+              // If the server doesn't send it within 2s, it's not our server.
+              var helloTimeout = setTimeout(function() {
+                if (!gotHello) { try { ws.close(); } catch(e) {} }
+              }, 2000);
 
-            ws.onmessage = function(event) {
-              try {
-                var data = JSON.parse(event.data);
-                if (data.type === 'SERVER_HELLO' && data.data) {
-                  var ver = data.data.serverVersion || '0.0.0';
-                  if (versionAtLeast(ver, MIN_SERVER_VERSION) && !found) {
-                    // This server supports the bootloader protocol
-                    found = true;
-                    // Close all other candidate connections
-                    candidates.forEach(function(c) { try { c.ws.close(); } catch(e) {} });
-                    resolve({ port: port, ws: ws, serverInfo: data.data });
-                  } else {
-                    // Old server — close and continue scanning
-                    candidates.push({ port: port, ws: ws, version: ver });
-                    ws.close();
+              ws.onmessage = function(event) {
+                try {
+                  var data = JSON.parse(event.data);
+                  if (data.type === 'SERVER_HELLO' && data.data) {
+                    gotHello = true;
+                    clearTimeout(helloTimeout);
+                    var ver = data.data.serverVersion || '0.0.0';
+                    if (versionAtLeast(ver, MIN_SERVER_VERSION) && !found) {
+                      found = true;
+                      candidates.forEach(function(c) { try { c.ws.close(); } catch(e) {} });
+                      resolve({ port: port, ws: ws, serverInfo: data.data });
+                    } else {
+                      candidates.push({ port: port, ws: ws, version: ver });
+                      ws.close();
+                    }
                   }
-                }
-              } catch (e) { /* ignore parse errors */ }
+                } catch (e) { /* ignore parse errors */ }
+              };
             };
 
-            ws.onerror = function() { clearTimeout(timeout); };
+            ws.onerror = function() { clearTimeout(connectTimeout); };
 
             ws.onclose = function() {
               clearTimeout(timeout);
