@@ -43,8 +43,13 @@ If `FIGMA_ACCESS_TOKEN` is not set:
 
 1. Go to Figma > Settings > Personal access tokens (or https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens)
 2. Create a token with description "Figma Console MCP"
-3. Copy it (starts with `figd_`)
-4. Add to shell profile (use the shell detected in Phase 1):
+3. Set these scopes:
+   - `file_content:read` — **required** (file data, nodes, components, styles, images)
+   - `file_comments:read` — recommended (reading comments)
+   - `file_comments:write` — recommended (posting comments)
+   - `file_variables:read` — optional (REST API variables, Enterprise only; Desktop Bridge reads variables on any plan)
+4. Copy the token (starts with `figd_`)
+5. Add to shell profile (use the shell detected in Phase 1):
    - **zsh:** `echo 'export FIGMA_ACCESS_TOKEN=figd_XXXXX' >> ~/.zshrc && source ~/.zshrc`
    - **bash:** `echo 'export FIGMA_ACCESS_TOKEN=figd_XXXXX' >> ~/.bashrc && source ~/.bashrc`
    - **fish:** `set -Ux FIGMA_ACCESS_TOKEN figd_XXXXX`
