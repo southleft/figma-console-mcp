@@ -26,7 +26,15 @@ export function registerWriteTools(
 
 **VALIDATION:** After creating/modifying visuals: screenshot with figma_capture_screenshot, check alignment/spacing/proportions, iterate up to 3x.
 
-**PLACEMENT:** Always create components inside a Section or Frame, never on blank canvas. Use parent.insertChild(0, bg) for z-ordering backgrounds behind content.`,
+**PLACEMENT:** Always create components inside a Section or Frame, never on blank canvas. Use parent.insertChild(0, bg) for z-ordering backgrounds behind content.
+
+**HOUSEKEEPING (MANDATORY):**
+Before creating: screenshot the target page to see existing content and find clear space.
+When creating: place inside a named Section, positioned BELOW or AWAY from existing content. Never overlap.
+After creating: screenshot to verify clean placement and no overlaps.
+On failure/retry: DELETE any partial artifacts (empty frames, orphaned layers, blank pages) before retrying. Use node.remove() to clean up.
+Pages: NEVER create a new page if one with that name already exists — use the existing one. If you created a blank page during a failed attempt, delete it.
+Layers: If your code creates helper frames, placeholder nodes, or intermediate layers that aren't part of the final result, remove them.`,
 		{
 			code: z
 				.string()
@@ -1971,7 +1979,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Tool: Create Child Node
 	server.tool(
 		"figma_create_child",
-		"Create a new child node inside a parent container. Useful for adding shapes, text, or frames to existing structures.",
+		"Create a new child node inside a parent container. Always place inside an existing Section or Frame — never on a bare page. If no suitable parent exists, create a Section first. Clean up any empty or orphaned nodes if the operation fails.",
 		{
 			parentId: z.string().describe("The parent node ID"),
 			nodeType: z
