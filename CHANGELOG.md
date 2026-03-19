@@ -5,10 +5,17 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.4] - 2026-03-19
+
+### Fixed
+- **Reverted bootloader UI swap** — The v1.15.0 bootloader used `figma.showUI(dynamicHtml)` to load fresh UI from the server, but Figma's Content Security Policy blocks inline scripts in dynamically loaded HTML on some environments. Reverted `ui.html` to the full plugin UI loaded via `__html__` (which gets proper CSP nonce treatment). The stable plugin directory, orphan process cleanup, HTTP endpoint, and housekeeping audit remain intact. The dynamic update approach will be revisited using external script loading.
+- **Bootloader scanning hang** (v1.15.2) — Fixed timeout that caused infinite "MCP scanning" when a non-MCP server held a port in the 9223-9232 range.
+- **`--print-path` starting full server** (v1.15.3) — Fixed the CLI flag to print the stable directory path and exit instead of accidentally launching the MCP server.
+
 ## [1.15.0] - 2026-03-18
 
 ### Added
-- **Plugin bootloader architecture** — The Desktop Bridge plugin now uses a thin bootloader (~120 lines) that dynamically loads the full UI from the MCP server via WebSocket on every launch. Users import the manifest once and never need to re-import when the server updates. Figma's aggressive plugin caching is no longer an issue.
+- **Plugin bootloader architecture (experimental, reverted in v1.15.4)** — Attempted dynamic UI loading from MCP server via `figma.showUI()`. Worked on some environments but CSP blocked inline script execution on others. The server-side infrastructure (HTTP endpoint, `GET_PLUGIN_UI` WebSocket handler) remains for future use.
 - **Stable plugin directory** — Plugin files are automatically copied to `~/.figma-console-mcp/plugin/` on server startup, providing a permanent import path that survives npx cache changes.
 - **Orphaned process cleanup** — The server now detects and terminates stale MCP server processes on startup via `lsof`, freeing up ports in the 9223-9232 range that were held by zombie processes from closed Claude Desktop tabs.
 - **Plugin version tracking** — `PLUGIN_VERSION` constant in `code.js` is sent in `FILE_INFO` WebSocket messages, enabling server-side version compatibility detection.
