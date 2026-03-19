@@ -78,8 +78,12 @@ function setupStablePluginDir(sourcePluginDir: string): string | null {
 		}
 
 		// Write a version marker so we can detect stale copies
-		const pkg = JSON.parse(readFileSync(join(sourcePluginDir, "..", "package.json"), "utf-8"));
-		writeFileSync(join(stableDir, ".version"), pkg.version, "utf-8");
+		try {
+			const pkg = JSON.parse(readFileSync(join(sourcePluginDir, "..", "package.json"), "utf-8"));
+			writeFileSync(join(stableDir, ".version"), pkg.version, "utf-8");
+		} catch {
+			// Non-critical — version marker is for diagnostics only
+		}
 
 		logger.info({ stableDir }, "Plugin files copied to stable directory");
 		return join(stableDir, "manifest.json");
@@ -6341,31 +6345,39 @@ const entryFile = process.argv[1] ? realpathSync(resolve(process.argv[1])) : "";
 
 if (currentFile === entryFile) {
 	// Handle --print-path: print the Desktop Bridge manifest path and exit.
-	// Copies plugin files to the stable directory and prints that path so users
-	// import the bootloader version (which auto-updates on every launch).
+	// MUST always print a path and exit — never fall through to main().
 	if (process.argv.includes("--print-path")) {
-		const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-		const sourceDir = resolve(packageRoot, "figma-desktop-bridge");
+		try {
+			const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+			const sourceDir = resolve(packageRoot, "figma-desktop-bridge");
 
-		// Ensure stable directory exists with latest files
-		const stablePath = setupStablePluginDir(sourceDir);
-		if (stablePath && existsSync(stablePath)) {
-			console.log(stablePath);
-			console.error(
-				"\nImport this manifest in Figma once — the bootloader will\n" +
-				"automatically load the latest UI from the MCP server.\n" +
-				"You won't need to re-import when the server updates."
-			);
-			process.exit(0);
-		}
+			// Try to set up stable directory with bootloader files
+			const stablePath = setupStablePluginDir(sourceDir);
+			if (stablePath && existsSync(stablePath)) {
+				console.log(stablePath);
+				console.error(
+					"\nImport this manifest in Figma once — the bootloader will\n" +
+					"automatically load the latest UI from the MCP server.\n" +
+					"You won't need to re-import when the server updates."
+				);
+				process.exit(0);
+			}
 
-		// Fallback to npm package path if stable dir setup failed
-		const manifestPath = resolve(sourceDir, "manifest.json");
-		if (existsSync(manifestPath)) {
-			console.log(manifestPath);
+			// Fallback to npm package path
+			const manifestPath = resolve(sourceDir, "manifest.json");
+			if (existsSync(manifestPath)) {
+				console.log(manifestPath);
+				process.exit(0);
+			}
+
+			// Last resort: print the stable dir path even if it doesn't exist yet
+			// (the server will create it on first startup)
+			const stableDir = join(homedir(), ".figma-console-mcp", "plugin", "manifest.json");
+			console.log(stableDir);
+			console.error("\nNote: This path will be populated when the MCP server starts.");
 			process.exit(0);
-		} else {
-			console.error("figma-desktop-bridge/manifest.json not found at:", manifestPath);
+		} catch (error) {
+			console.error("Error resolving plugin path:", error);
 			process.exit(1);
 		}
 	}
