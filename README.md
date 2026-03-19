@@ -127,6 +127,8 @@ If you're not sure where to put the JSON configuration above, here's where each 
 
 > One-time setup. The plugin uses a bootloader that dynamically loads fresh code from the MCP server — no need to re-import when the server updates.
 
+> **Upgrading from v1.14 or earlier?** Your existing plugin still works, but to get the bootloader benefits (no more re-importing), do one final re-import from `~/.figma-console-mcp/plugin/manifest.json`. The path is created automatically when the MCP server starts. Run `npx figma-console-mcp@latest --print-path` to see it. After this one-time upgrade, you're done forever.
+
 #### Step 4: Restart Your MCP Client
 
 Restart your MCP client to load the new configuration.

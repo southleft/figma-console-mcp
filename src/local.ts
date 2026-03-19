@@ -6340,10 +6340,27 @@ const currentFile = fileURLToPath(import.meta.url);
 const entryFile = process.argv[1] ? realpathSync(resolve(process.argv[1])) : "";
 
 if (currentFile === entryFile) {
-	// Handle --print-path: print the Desktop Bridge manifest path and exit
+	// Handle --print-path: print the Desktop Bridge manifest path and exit.
+	// Copies plugin files to the stable directory and prints that path so users
+	// import the bootloader version (which auto-updates on every launch).
 	if (process.argv.includes("--print-path")) {
 		const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-		const manifestPath = resolve(packageRoot, "figma-desktop-bridge", "manifest.json");
+		const sourceDir = resolve(packageRoot, "figma-desktop-bridge");
+
+		// Ensure stable directory exists with latest files
+		const stablePath = setupStablePluginDir(sourceDir);
+		if (stablePath && existsSync(stablePath)) {
+			console.log(stablePath);
+			console.error(
+				"\nImport this manifest in Figma once — the bootloader will\n" +
+				"automatically load the latest UI from the MCP server.\n" +
+				"You won't need to re-import when the server updates."
+			);
+			process.exit(0);
+		}
+
+		// Fallback to npm package path if stable dir setup failed
+		const manifestPath = resolve(sourceDir, "manifest.json");
 		if (existsSync(manifestPath)) {
 			console.log(manifestPath);
 			process.exit(0);
