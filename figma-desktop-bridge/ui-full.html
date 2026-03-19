@@ -86,8 +86,11 @@
       color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
       font-size: 10px;
       cursor: pointer;
-      padding: 3px 6px;
-      line-height: 1;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       flex-shrink: 0;
       transition: color 0.15s, border-color 0.15s;
     }
@@ -620,6 +623,7 @@
       // Multi-connection state: plugin connects to ALL active MCP servers
       // so that every Claude tab/CLI instance gets Figma access.
       var activeConnections = []; // Array of { port, ws }
+      var pendingSockets = []; // In-flight scan sockets not yet established
       var wsReconnectDelay = 500;
       var wsMaxReconnectDelay = 5000;
       var wsReconnectAttempts = 0;
@@ -768,10 +772,12 @@
 
         var foundAny = false;
         var pending = portsToTry.length;
+        pendingSockets = [];
 
         portsToTry.forEach(function(port) {
           try {
             var testWs = new WebSocket('ws://localhost:' + port);
+            pendingSockets.push(testWs);
 
             var timeout = setTimeout(function() {
               if (testWs.readyState !== 1) testWs.close();
@@ -993,6 +999,12 @@
         isScanning = false;
         initialScanAttempts = MAX_INITIAL_SCANS; // prevent further retries
         wsReconnectAttempts = wsMaxReconnectAttempts; // prevent reconnects
+        // Close in-flight scan sockets
+        pendingSockets.forEach(function(ws) {
+          try { ws.close(); } catch(e) {}
+        });
+        pendingSockets = [];
+        // Close established connections
         activeConnections.forEach(function(conn) {
           try { conn.ws.close(); } catch(e) {}
         });

@@ -41,8 +41,11 @@
       color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
       font-size: 10px;
       cursor: pointer;
-      padding: 3px 6px;
-      line-height: 1;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       flex-shrink: 0;
       transition: color 0.15s, border-color 0.15s;
     }
@@ -96,6 +99,7 @@
     var dot = document.getElementById('dot');
     var msg = document.getElementById('msg');
     var stopped = false;
+    var activeSockets = []; // track in-flight WebSocket connections
 
     function setStatus(text) { msg.textContent = text; }
     function setError(text) {
@@ -107,11 +111,15 @@
     function toggleScan() {
       var btn = document.getElementById('scan-btn');
       if (!stopped) {
-        // Stop scanning
+        // Stop scanning -- close all in-flight sockets
         stopped = true;
         attempts = MAX_ATTEMPTS;
+        activeSockets.forEach(function(ws) {
+          try { ws.close(); } catch(e) {}
+        });
+        activeSockets = [];
         setError('Stopped');
-        btn.innerHTML = '&#x25B6;'; // play/retry triangle
+        btn.innerHTML = '&#x25B6;';
         btn.title = 'Rescan for MCP server';
       } else {
         // Rescan
@@ -119,7 +127,7 @@
         attempts = 0;
         dot.style.background = '#f5a623';
         dot.style.animation = 'pulse 1.5s ease-in-out infinite';
-        btn.innerHTML = '&#x25A0;'; // stop square
+        btn.innerHTML = '&#x25A0;';
         btn.title = 'Stop scanning';
         boot();
       }
@@ -146,6 +154,7 @@
      */
     function findServer() {
       setStatus('MCP scanning…');
+      activeSockets = [];
 
       return new Promise(function(resolve) {
         var found = false;
@@ -156,6 +165,7 @@
         PORTS.forEach(function(port) {
           try {
             var ws = new WebSocket('ws://localhost:' + port);
+            activeSockets.push(ws);
             var timeout = setTimeout(function() {
               if (ws.readyState !== 1) ws.close();
             }, 3000);
@@ -257,7 +267,9 @@
     var MAX_ATTEMPTS = 5;
 
     function boot() {
+      if (stopped) return;
       findServer().then(function(result) {
+        if (stopped) return;
         if (result && result.legacy) {
           // Old server found — can't use bootloader protocol.
           // Tell code.js to fall back to the cached full UI.
