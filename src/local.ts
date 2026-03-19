@@ -1841,25 +1841,77 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 							Math.min(timeout, 30000),
 						);
 
+						// Post-execution audit: detect common housekeeping issues
+						// Runs automatically when the code creates pages, components, or frames
+						const createsContent = /createPage|createComponent|createFrame|createSection|createRectangle|createEllipse/.test(code);
+						let housekeepingWarnings: string[] = [];
+
+						if (createsContent && result.success) {
+							try {
+								const auditResult = await connector.executeCodeViaUI(`
+									var warnings = [];
+									var pages = figma.root.children;
+									// Check for duplicate page names
+									var pageNames = {};
+									for (var i = 0; i < pages.length; i++) {
+										var name = pages[i].name;
+										if (pageNames[name]) pageNames[name]++;
+										else pageNames[name] = 1;
+									}
+									for (var name in pageNames) {
+										if (pageNames[name] > 1) warnings.push('DUPLICATE_PAGE: ' + pageNames[name] + ' pages named "' + name + '" — delete the empty duplicate');
+									}
+									// Check for empty pages (likely from failed attempts)
+									for (var i = 0; i < pages.length; i++) {
+										if (pages[i].children.length === 0 && pages[i].name !== '---') {
+											warnings.push('EMPTY_PAGE: "' + pages[i].name + '" has no content — delete if unintended');
+										}
+									}
+									// Check for nodes placed directly on page (not in section/frame)
+									var currentPage = figma.currentPage;
+									var floatingNodes = 0;
+									for (var i = 0; i < currentPage.children.length; i++) {
+										var child = currentPage.children[i];
+										if (child.type === 'COMPONENT' || child.type === 'FRAME' || child.type === 'RECTANGLE') {
+											if (currentPage.children.length > 1 && child.type !== 'SECTION') floatingNodes++;
+										}
+									}
+									if (floatingNodes > 3) warnings.push('FLOATING_NODES: ' + floatingNodes + ' nodes placed directly on the page canvas — consider grouping inside a Section');
+									return warnings;
+								`, 5000);
+
+								if (auditResult.success && Array.isArray(auditResult.result) && auditResult.result.length > 0) {
+									housekeepingWarnings = auditResult.result;
+								}
+							} catch {
+								// Audit is best-effort — don't fail the main operation
+							}
+						}
+
+						const response: any = {
+							success: result.success,
+							result: result.result,
+							error: result.error,
+							resultAnalysis: result.resultAnalysis,
+							fileContext: result.fileContext,
+							timestamp: Date.now(),
+							...(attempt > 0
+								? { reconnected: true, attempts: attempt + 1 }
+								: {}),
+						};
+
+						if (housekeepingWarnings.length > 0) {
+							response.housekeeping = {
+								warnings: housekeepingWarnings,
+								ai_instruction: "CLEANUP REQUIRED: The warnings above indicate housekeeping issues from your recent operation. Fix these NOW before proceeding — delete empty/duplicate pages, remove orphaned nodes, and move floating content into Sections.",
+							};
+						}
+
 						return {
 							content: [
 								{
 									type: "text",
-									text: JSON.stringify(
-										{
-											success: result.success,
-											result: result.result,
-											error: result.error,
-											// Include resultAnalysis for silent failure detection
-											resultAnalysis: result.resultAnalysis,
-											// Include file context so users know which file was queried
-											fileContext: result.fileContext,
-											timestamp: Date.now(),
-											...(attempt > 0
-												? { reconnected: true, attempts: attempt + 1 }
-												: {}),
-										},
-									),
+									text: JSON.stringify(response),
 								},
 							],
 						};
