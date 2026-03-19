@@ -106,10 +106,21 @@ Before starting, verify you have:
 1. Go to [Manage personal access tokens](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) in Figma Help
 2. Follow the steps to **create a new personal access token**
 3. Enter description: `Figma Console MCP`
-4. Click **"Generate token"**
-5. **Copy the token immediately** — you won't see it again!
+4. **Set the following scopes** (see [Figma's scope reference](https://developers.figma.com/docs/rest-api/scopes/)):
+
+   | Scope | Required? | What it enables |
+   |-------|-----------|-----------------|
+   | `file_content:read` | **Yes** | Reading file data, nodes, components, styles, and rendering images |
+   | `file_comments:read` | Recommended | Reading comments on files |
+   | `file_comments:write` | Recommended | Posting and deleting comments |
+   | `file_variables:read` | Optional | Reading variables via REST API (Enterprise plans only; the Desktop Bridge plugin reads variables on any plan) |
+
+5. Click **"Generate token"**
+6. **Copy the token immediately** — you won't see it again!
 
 > 💡 Your token starts with `figd_` — if it doesn't, something went wrong.
+>
+> **Why so few scopes?** Design creation and variable management go through the Desktop Bridge plugin (WebSocket), not the REST API. The token is only used for REST API reads, so you only need read scopes for the data you want to access.
 
 ### Step 2: Configure Your MCP Client (~3 min)
 
@@ -639,6 +650,9 @@ For reference, the Codex GUI fields map directly to the [NPX JSON configuration]
 |---------|--------------|-----|
 | "Failed to connect to Figma Desktop" | No transport available | Install Desktop Bridge Plugin and run it in your Figma file |
 | "FIGMA_ACCESS_TOKEN not configured" | Missing or wrong token | Check token in config, must start with `figd_` |
+| "Figma API error (403)" on file data | Token missing required scope | Ensure your token has the `file_content:read` scope enabled |
+| "Figma API error (403)" on variables | Enterprise scope required or missing | `file_variables:read` requires an Enterprise plan; use the Desktop Bridge plugin instead for variable access on any plan |
+| "Figma API error (403)" on comments | Token missing comment scopes | Enable `file_comments:read` (and `file_comments:write` for posting) on your token |
 | "Command not found: node" | Node.js not installed | Install Node.js 18+ from nodejs.org |
 | Tools not appearing in MCP client | Config not loaded | Restart your MCP client completely |
 | "Port 9223 already in use" | Another MCP instance or orphaned process | Server auto-falls back to 9224–9232. Orphaned processes are auto-cleaned on startup (v1.14.0+). |

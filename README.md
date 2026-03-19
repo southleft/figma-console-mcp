@@ -72,7 +72,18 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 1. Go to [Manage personal access tokens](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) in Figma Help
 2. Follow the steps to **create a new personal access token**
 3. Enter description: `Figma Console MCP`
-4. **Copy the token** — you won't see it again! (starts with `figd_`)
+4. **Set the following scopes** (see [Figma's scope reference](https://developers.figma.com/docs/rest-api/scopes/)):
+
+   | Scope | Required? | What it enables |
+   |-------|-----------|-----------------|
+   | `file_content:read` | **Yes** | Reading file data, nodes, components, styles, and rendering images |
+   | `file_comments:read` | Recommended | Reading comments on files |
+   | `file_comments:write` | Recommended | Posting and deleting comments |
+   | `file_variables:read` | Optional | Reading variables via REST API (Enterprise plans only; the Desktop Bridge plugin reads variables on any plan) |
+
+5. **Copy the token** — you won't see it again! (starts with `figd_`)
+
+> **Note:** Write operations (creating frames, components, editing designs, managing variables) go through the Desktop Bridge plugin, not the REST API, so they don't require additional token scopes.
 
 #### Step 2: Configure Your MCP Client
 
