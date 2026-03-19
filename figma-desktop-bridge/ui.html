@@ -108,19 +108,22 @@
       msg.textContent = text;
     }
 
-    function toggleScan() {
+    function enterStoppedState(label) {
+      stopped = true;
+      attempts = MAX_ATTEMPTS;
+      activeSockets.forEach(function(ws) {
+        try { ws.close(); } catch(e) {}
+      });
+      activeSockets = [];
+      setError(label || 'Stopped');
       var btn = document.getElementById('scan-btn');
+      btn.innerHTML = '&#x25B6;';
+      btn.title = 'Rescan for MCP server';
+    }
+
+    function toggleScan() {
       if (!stopped) {
-        // Stop scanning -- close all in-flight sockets
-        stopped = true;
-        attempts = MAX_ATTEMPTS;
-        activeSockets.forEach(function(ws) {
-          try { ws.close(); } catch(e) {}
-        });
-        activeSockets = [];
-        setError('Stopped');
-        btn.innerHTML = '&#x25B6;';
-        btn.title = 'Rescan for MCP server';
+        enterStoppedState('Stopped');
       } else {
         // Rescan
         stopped = false;
@@ -278,6 +281,11 @@
             pluginMessage: { type: 'BOOT_FALLBACK', port: result.port }
           }, '*');
         } else if (result && result.ws) {
+          if (result.ws.readyState !== 1) {
+            // Socket was closed between find and use (e.g., user clicked stop)
+            setError('Connection lost');
+            return;
+          }
           setStatus('MCP found (port ' + result.port + ')');
           document.getElementById('scan-btn').className = 'scan-btn hidden';
 
@@ -296,12 +304,7 @@
             setStatus('Retry ' + attempts + '/' + MAX_ATTEMPTS + '…');
             setTimeout(boot, delay);
           } else if (!stopped) {
-            setError('No MCP server found');
-            // Switch to rescan mode
-            var btn = document.getElementById('scan-btn');
-            stopped = true;
-            btn.innerHTML = '&#x25B6;';
-            btn.title = 'Rescan for MCP server';
+            enterStoppedState('No MCP server found');
           }
         }
       });

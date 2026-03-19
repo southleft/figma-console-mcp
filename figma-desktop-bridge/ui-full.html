@@ -786,6 +786,8 @@
             testWs.onopen = function() {
               clearTimeout(timeout);
               foundAny = true;
+              // Remove from pending since it's now an active connection
+              pendingSockets = pendingSockets.filter(function(s) { return s !== testWs; });
               activeConnections.push({ port: port, ws: testWs });
               updateCompatState();
               console.log('[MCP Bridge] WebSocket connected to port ' + port + ' (' + activeConnections.length + ' server(s) total)');
@@ -794,6 +796,7 @@
               pending--;
               if (pending <= 0) {
                 isScanning = false;
+                pendingSockets = [];
                 wsReconnectDelay = 500;
                 wsReconnectAttempts = 0;
               }
@@ -808,6 +811,7 @@
               pending--;
               if (pending <= 0) {
                 isScanning = false;
+                pendingSockets = [];
                 // Retry with backoff if no servers found, up to MAX_INITIAL_SCANS
                 if (!foundAny && activeConnections.length === 0) {
                   initialScanAttempts++;
@@ -1015,6 +1019,7 @@
 
       // Expose rescan function — resets counters and scans again
       window.__wsRescan = function() {
+        scanStopped = false; // ensure UI state is consistent if called directly
         isScanning = false;
         initialScanAttempts = 0;
         wsReconnectAttempts = 0;
