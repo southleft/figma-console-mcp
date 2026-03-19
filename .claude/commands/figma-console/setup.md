@@ -24,10 +24,13 @@ uname -s                                                          # Platform
 echo $SHELL                                                       # Shell (zsh, bash, fish)
 node --version                                                    # Node.js
 ls /Applications/Figma.app 2>/dev/null                            # Figma Desktop (macOS)
-echo "${FIGMA_ACCESS_TOKEN:+set (${#FIGMA_ACCESS_TOKEN} chars)}"  # Token
+echo "${FIGMA_ACCESS_TOKEN:+set (${#FIGMA_ACCESS_TOKEN} chars)}"  # Token in current env
+grep 'FIGMA_ACCESS_TOKEN' ~/.zshrc ~/.bashrc ~/.config/fish/config.fish 2>/dev/null  # Token in shell profile
 ls ~/.figma-console-mcp/plugin/manifest.json 2>/dev/null          # Plugin path
 ls src/local.ts 2>/dev/null                                       # Local clone?
 ```
+
+**Token detection logic:** The token may be persisted in the shell profile but not loaded in the current (non-interactive) session. Check BOTH the env var AND the shell profile. If the env var is empty but the profile has it, extract the value with `grep` and use it directly — do NOT ask the user to set it up again.
 
 Map results:
 - **Platform:** `Darwin` = macOS, `MINGW*`/`MSYS*` = Windows. If `Linux`, inform user that Figma Desktop is not available on Linux — they can use Remote Mode (read-only) but not the full local setup.
@@ -39,7 +42,9 @@ Present a summary of what's ready and what needs action before continuing.
 
 ## Phase 2: Token Setup
 
-If `FIGMA_ACCESS_TOKEN` is not set:
+If `FIGMA_ACCESS_TOKEN` is not in the current env BUT is found in the shell profile, extract the value and use it — skip straight to Phase 3. Only prompt the user to create a token if it's missing from BOTH the env AND the shell profile.
+
+If `FIGMA_ACCESS_TOKEN` is not set anywhere:
 
 1. Go to Figma > Settings > Personal access tokens (or https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens)
 2. Create a token with description "Figma Console MCP"
@@ -60,7 +65,9 @@ If `FIGMA_ACCESS_TOKEN` is not set:
 
 After setting the token, verify it's available: `echo $FIGMA_ACCESS_TOKEN`
 
-## Phase 3: Configure MCP Server
+## Phase 3: Configure & Connect MCP Server
+
+### 3a. Check existing configs
 
 Check all common config locations in parallel — don't ask the user which client they use, just check:
 
@@ -72,8 +79,14 @@ Check all common config locations in parallel — don't ask the user which clien
 
 Report which configs exist and whether `figma-console` is already registered.
 
-**If not configured**, the recommended config is:
+### 3b. Register the MCP server
 
+**If not configured**, register it. For **Claude Code**, use the CLI command directly (extract the token value from the shell profile if not in env):
+```bash
+claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=<token_value> -e ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
+```
+
+For other clients, the recommended config block is:
 ```json
 {
   "mcpServers": {
@@ -93,11 +106,6 @@ Report which configs exist and whether `figma-console` is already registered.
 
 `${FIGMA_ACCESS_TOKEN}` is a literal string for MCP hosts that support env passthrough (Claude Code, Cursor). Claude Desktop does not — for that client, the actual token value must go in the JSON.
 
-For **Claude Code**, the fastest method is the CLI command — but only run this after confirming the token is set:
-```bash
-claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=${FIGMA_ACCESS_TOKEN} -e ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
-```
-
 **Local clone:** If Phase 1 detected `src/local.ts`, offer the local build instead:
 ```json
 {
@@ -111,7 +119,15 @@ claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=${FIGMA_ACCESS_TOKEN}
 ```
 Remind them to run `npm run build:local` first.
 
-**After configuring, tell the user to restart their MCP client now.** This starts the MCP server for the first time and creates the plugin directory at `~/.figma-console-mcp/plugin/`.
+### 3c. Verify the server is connected
+
+Registration alone is not enough — the MCP server must be **running in the current session**. After registering:
+
+1. Check if `figma-console` tools are available in the current session (look for tools prefixed with `figma_console` or `figma-console` in the available tools list).
+2. If tools are NOT available, **tell the user they must restart Claude Code** for the server to connect. Be explicit: "The MCP server is registered but not yet connected. Please restart Claude Code and re-run this skill to verify."
+3. If tools ARE available, confirm the server is live and move to Phase 4.
+
+**This is a hard gate** — do not proceed to Phase 4/5 until the MCP server is confirmed running, or the user has been clearly told to restart.
 
 ## Phase 4: Desktop Bridge Plugin
 
