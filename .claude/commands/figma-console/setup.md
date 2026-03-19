@@ -48,6 +48,9 @@ If `FIGMA_ACCESS_TOKEN` is not set:
    - `file_comments:read` — recommended (reading comments)
    - `file_comments:write` — recommended (posting comments)
    - `file_variables:read` — optional (REST API variables, Enterprise only; Desktop Bridge reads variables on any plan)
+
+   Write operations (creating frames, components, editing designs, managing variables) go through the Desktop Bridge plugin, not the REST API — no write scopes needed on the token.
+
 4. Copy the token (starts with `figd_`)
 5. Add to shell profile (use the shell detected in Phase 1):
    - **zsh:** `echo 'export FIGMA_ACCESS_TOKEN=figd_XXXXX' >> ~/.zshrc && source ~/.zshrc`
