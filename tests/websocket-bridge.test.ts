@@ -1851,5 +1851,27 @@ describe('Multi-client WebSocket', () => {
       expect(hello.serverVersion).toMatch(/^\d+\.\d+\.\d+/);
       expect(typeof hello.startedAt).toBe('number');
     });
+
+    test('serverVersion is not 0.0.0 (package.json resolved correctly in ESM)', async () => {
+      // Regression: process.cwd() fallback resolved to the user's project dir instead
+      // of the package root, so package.json wasn't found and serverVersion defaulted
+      // to "0.0.0". The plugin bootloader requires >= 1.14.0, causing it to reject the
+      // server and loop on "MCP scanning…".
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const helloPromise = new Promise<any>((resolve, reject) => {
+        const ws = new WebSocket(`ws://localhost:${TEST_PORT}`);
+        clients.push(ws);
+        ws.on('error', reject);
+        ws.on('message', (data: Buffer) => {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === 'SERVER_HELLO') resolve(msg.data);
+        });
+      });
+
+      const hello = await helloPromise;
+      expect(hello.serverVersion).not.toBe('0.0.0');
+    });
   });
 });

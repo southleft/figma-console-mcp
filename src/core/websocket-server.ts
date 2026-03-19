@@ -22,12 +22,31 @@ import { join } from 'path';
 import { createChildLogger } from './logger.js';
 import type { ConsoleLogEntry } from './types/index.js';
 
+// In CJS __dirname points to dist/core/. In ESM (npx) it is undefined, so we walk up
+// from process.argv[1] until we find our package.json rather than falling back to process.cwd().
+function resolvePackageRoot(): string {
+  if (typeof __dirname !== 'undefined') {
+    return join(__dirname, '..', '..');
+  }
+  let dir = join(process.argv[1] ?? '', '..');
+  for (let i = 0; i < 10; i++) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8'));
+      if (pkg.name === 'figma-console-mcp') return dir;
+    } catch { /* keep walking */ }
+    dir = join(dir, '..');
+  }
+  return process.cwd();
+}
+
+const packageRoot = resolvePackageRoot();
+
 // Read version from package.json
-// Uses __dirname in CJS/Jest context, falls back to process.cwd() in ESM runtime
 let SERVER_VERSION = '0.0.0';
 try {
-  const base = typeof __dirname !== 'undefined' ? join(__dirname, '..', '..') : process.cwd();
-  SERVER_VERSION = JSON.parse(readFileSync(join(base, 'package.json'), 'utf-8')).version;
+  SERVER_VERSION = JSON.parse(
+    readFileSync(join(packageRoot, 'package.json'), 'utf-8')
+  ).version;
 } catch {
   // Non-critical — version will show as 0.0.0
 }
@@ -38,11 +57,7 @@ try {
  */
 function loadPluginUIContent(): string {
   const candidates = [
-    // ESM runtime: dist/core/ → ../../figma-desktop-bridge/
-    typeof __dirname !== 'undefined'
-      ? join(__dirname, '..', '..', 'figma-desktop-bridge', 'ui-full.html')
-      : join(process.cwd(), 'figma-desktop-bridge', 'ui-full.html'),
-    // Direct from project root
+    join(packageRoot, 'figma-desktop-bridge', 'ui-full.html'),
     join(process.cwd(), 'figma-desktop-bridge', 'ui-full.html'),
   ];
 
