@@ -11,7 +11,7 @@ var PLUGIN_VERSION = '1.14.0';
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
 // Show minimal UI - compact status indicator
-figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
+figma.showUI(__html__, { width: 240, height: 50, visible: true, themeColors: true });
 
 // ============================================================================
 // CONSOLE CAPTURE — Intercept console.* in the QuickJS sandbox and forward
@@ -201,7 +201,7 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   if (msg.type === 'BOOT_LOAD_UI' && msg.html) {
     console.log('🌉 [Desktop Bridge] Bootloader delivered fresh UI (' + msg.html.length + ' bytes), loading...');
-    figma.showUI(msg.html, { width: 140, height: 50, visible: true, themeColors: true });
+    figma.showUI(msg.html, { width: 240, height: 50, visible: true, themeColors: true });
 
     // Re-send variables data to the fresh UI — the original send went to the
     // bootloader which discarded it. The fresh UI needs it to show "ready" status.
@@ -242,7 +242,7 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   if (msg.type === 'BOOT_FALLBACK') {
     console.log('🌉 [Desktop Bridge] Old server detected on port ' + msg.port + ', using cached UI');
-    figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
+    figma.showUI(__html__, { width: 240, height: 50, visible: true, themeColors: true });
     return;
   }
 
@@ -2118,7 +2118,7 @@ figma.ui.onmessage = async (msg) => {
   // RESIZE_UI - Dynamically resize the plugin window (e.g., Cloud Mode toggle)
   // ============================================================================
   else if (msg.type === 'RESIZE_UI') {
-    figma.ui.resize(msg.width || 120, msg.height || 36);
+    figma.ui.resize(msg.width || 240, msg.height || 36);
   }
 
   // ============================================================================
@@ -2143,7 +2143,7 @@ figma.ui.onmessage = async (msg) => {
       });
       // Short delay to let the response message be sent before reload
       setTimeout(function() {
-        figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
+        figma.showUI(__html__, { width: 240, height: 50, visible: true, themeColors: true });
       }, 100);
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);

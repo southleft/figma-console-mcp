@@ -12,7 +12,7 @@
       height: 100%;
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       padding: 6px 8px;
       user-select: none;
     }
@@ -34,6 +34,23 @@
       background: #f5a623;
       animation: pulse 1.5s ease-in-out infinite;
     }
+    .scan-btn {
+      background: none;
+      border: 1px solid var(--figma-color-border, #4a4a4a);
+      border-radius: 4px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      font-size: 10px;
+      cursor: pointer;
+      padding: 3px 6px;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .scan-btn:hover {
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
+      border-color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+    }
+    .scan-btn.hidden { display: none; }
     @keyframes pulse {
       0%, 100% { opacity: 0.4; }
       50% { opacity: 1; }
@@ -45,9 +62,12 @@
   </style>
 </head>
 <body>
-  <div class="bridge-status">
-    <div class="status-indicator" id="dot"></div>
-    <div id="msg">MCP loading…</div>
+  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+    <div class="bridge-status">
+      <div class="status-indicator" id="dot"></div>
+      <div id="msg">MCP loading…</div>
+    </div>
+    <button class="scan-btn" id="scan-btn" onclick="toggleScan()" title="Stop scanning">&#x25A0;</button>
   </div>
 
   <script>
@@ -75,12 +95,34 @@
 
     var dot = document.getElementById('dot');
     var msg = document.getElementById('msg');
+    var stopped = false;
 
     function setStatus(text) { msg.textContent = text; }
     function setError(text) {
       dot.style.background = '#f24822';
       dot.style.animation = 'none';
       msg.textContent = text;
+    }
+
+    function toggleScan() {
+      var btn = document.getElementById('scan-btn');
+      if (!stopped) {
+        // Stop scanning
+        stopped = true;
+        attempts = MAX_ATTEMPTS;
+        setError('Stopped');
+        btn.innerHTML = '&#x25B6;'; // play/retry triangle
+        btn.title = 'Rescan for MCP server';
+      } else {
+        // Rescan
+        stopped = false;
+        attempts = 0;
+        dot.style.background = '#f5a623';
+        dot.style.animation = 'pulse 1.5s ease-in-out infinite';
+        btn.innerHTML = '&#x25A0;'; // stop square
+        btn.title = 'Stop scanning';
+        boot();
+      }
     }
 
     // Minimum server version that supports GET_PLUGIN_UI bootloader protocol
@@ -225,6 +267,7 @@
           }, '*');
         } else if (result && result.ws) {
           setStatus('MCP found (port ' + result.port + ')');
+          document.getElementById('scan-btn').className = 'scan-btn hidden';
 
           // Fetch fresh UI HTML from server via WebSocket
           requestFullUI(result.ws).then(function(html) {
@@ -236,12 +279,17 @@
           });
         } else {
           attempts++;
-          if (attempts < MAX_ATTEMPTS) {
+          if (!stopped && attempts < MAX_ATTEMPTS) {
             var delay = 2000 * attempts;
             setStatus('Retry ' + attempts + '/' + MAX_ATTEMPTS + '…');
             setTimeout(boot, delay);
-          } else {
+          } else if (!stopped) {
             setError('No MCP server found');
+            // Switch to rescan mode
+            var btn = document.getElementById('scan-btn');
+            stopped = true;
+            btn.innerHTML = '&#x25B6;';
+            btn.title = 'Rescan for MCP server';
           }
         }
       });
