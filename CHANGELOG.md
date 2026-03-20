@@ -5,6 +5,18 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.5] - 2026-03-19
+
+### Fixed
+- **Library component import hangs** — `importComponentByKeyAsync` in the Desktop Bridge plugin could hang indefinitely when Figma couldn't resolve a library component. Added 15-second timeout via `Promise.race` for fast failure with a clear error message.
+- **Component set keys rejected** — `figma_instantiate_component` only tried `importComponentByKeyAsync` which fails for COMPONENT_SET keys. Added `importComponentSetByKeyAsync` fallback that imports the set and uses `defaultVariant`.
+- **REST API errors silently swallowed** — `figma_get_library_components` caught REST API errors (expired tokens, 403, wrong scope) and returned 0 results with no error message. API errors are now surfaced in the response with diagnostic hints.
+- **Stale reconnect message** — Updated `figma_get_status` fallback port message to say "restart the plugin" instead of the outdated "re-import the manifest" instruction.
+
+### Changed
+- **Improved tool descriptions** — `figma_instantiate_component` and `figma_get_library_components` now include guidance on using variant keys (not component set keys), font pre-loading for cross-library components, and multi-file navigation tips for precise component discovery.
+
+
 ## [1.15.4] - 2026-03-19
 
 ### Fixed
@@ -373,6 +385,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.15.5]: https://github.com/southleft/figma-console-mcp/compare/v1.15.4...v1.15.5
 [1.15.0]: https://github.com/southleft/figma-console-mcp/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/southleft/figma-console-mcp/compare/v1.13.1...v1.14.0
 [1.11.5]: https://github.com/southleft/figma-console-mcp/compare/v1.11.4...v1.11.5
