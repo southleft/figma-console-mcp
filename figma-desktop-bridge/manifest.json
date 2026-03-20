@@ -1,5 +1,5 @@
 {
-  "name": "Figma Desktop Bridge - DEV",
+  "name": "Figma Desktop Bridge",
   "id": "figma-desktop-bridge-mcp",
   "api": "1.0.0",
   "main": "code.js",
