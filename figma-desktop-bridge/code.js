@@ -18,7 +18,7 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
 // to ui.html via postMessage so the WebSocket bridge can relay them to the MCP
 // server. This enables console monitoring without CDP.
 // ============================================================================
-(function () {
+(function() {
   var levels = ['log', 'info', 'warn', 'error', 'debug'];
   var originals = {};
   for (var i = 0; i < levels.length; i++) {
@@ -37,8 +37,8 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
   }
 
   for (var i = 0; i < levels.length; i++) {
-    (function (level) {
-      console[level] = function () {
+    (function(level) {
+      console[level] = function() {
         // Call the original so output still appears in Figma DevTools
         originals[level].apply(console, arguments);
 
@@ -59,7 +59,7 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
           level: level,
           message: messageParts.join(' '),
           args: args,
-          timestamp: Date.now(),
+          timestamp: Date.now()
         });
       };
     })(levels[i]);
@@ -76,14 +76,7 @@ console.log('🌉 [Desktop Bridge] Editor type:', __editorType);
     console.log('🌉 [Desktop Bridge] FigJam mode — skipping variables fetch');
     figma.ui.postMessage({
       type: 'VARIABLES_DATA',
-      data: {
-        success: true,
-        timestamp: Date.now(),
-        fileKey: figma.fileKey || null,
-        variables: [],
-        variableCollections: [],
-        editorType: 'figjam',
-      },
+      data: { success: true, timestamp: Date.now(), fileKey: figma.fileKey || null, variables: [], variableCollections: [], editorType: 'figjam' }
     });
     return;
   }
@@ -94,16 +87,14 @@ console.log('🌉 [Desktop Bridge] Editor type:', __editorType);
     const variables = await figma.variables.getLocalVariablesAsync();
     const collections = await figma.variables.getLocalVariableCollectionsAsync();
 
-    console.log(
-      `🌉 [Desktop Bridge] Found ${variables.length} variables in ${collections.length} collections`
-    );
+    console.log(`🌉 [Desktop Bridge] Found ${variables.length} variables in ${collections.length} collections`);
 
     // Format the data
     const variablesData = {
       success: true,
       timestamp: Date.now(),
       fileKey: figma.fileKey || null,
-      variables: variables.map((v) => ({
+      variables: variables.map(v => ({
         id: v.id,
         name: v.name,
         key: v.key,
@@ -112,33 +103,32 @@ console.log('🌉 [Desktop Bridge] Editor type:', __editorType);
         variableCollectionId: v.variableCollectionId,
         scopes: v.scopes,
         description: v.description,
-        hiddenFromPublishing: v.hiddenFromPublishing,
+        hiddenFromPublishing: v.hiddenFromPublishing
       })),
-      variableCollections: collections.map((c) => ({
+      variableCollections: collections.map(c => ({
         id: c.id,
         name: c.name,
         key: c.key,
         modes: c.modes,
         defaultModeId: c.defaultModeId,
-        variableIds: c.variableIds,
-      })),
+        variableIds: c.variableIds
+      }))
     };
 
     // Send to UI via postMessage
     figma.ui.postMessage({
       type: 'VARIABLES_DATA',
-      data: variablesData,
+      data: variablesData
     });
 
     console.log('🌉 [Desktop Bridge] Variables data sent to UI successfully');
-    console.log(
-      '🌉 [Desktop Bridge] UI iframe now has variables data accessible via window.__figmaVariablesData'
-    );
+    console.log('🌉 [Desktop Bridge] UI iframe now has variables data accessible via window.__figmaVariablesData');
+
   } catch (error) {
     console.error('🌉 [Desktop Bridge] Error fetching variables:', error);
     figma.ui.postMessage({
       type: 'ERROR',
-      error: error.message || String(error),
+      error: error.message || String(error)
     });
   }
 })();
@@ -154,7 +144,7 @@ function serializeVariable(v) {
     variableCollectionId: v.variableCollectionId,
     scopes: v.scopes,
     description: v.description,
-    hiddenFromPublishing: v.hiddenFromPublishing,
+    hiddenFromPublishing: v.hiddenFromPublishing
   };
 }
 
@@ -166,7 +156,7 @@ function serializeCollection(c) {
     key: c.key,
     modes: c.modes,
     defaultModeId: c.defaultModeId,
-    variableIds: c.variableIds,
+    variableIds: c.variableIds
   };
 }
 
@@ -177,16 +167,11 @@ function hexToFigmaRGB(hex) {
 
   // Validate hex characters BEFORE parsing (prevents NaN values)
   if (!/^[0-9A-Fa-f]+$/.test(hex)) {
-    throw new Error(
-      'Invalid hex color: "' + hex + '" contains non-hex characters. Use only 0-9 and A-F.'
-    );
+    throw new Error('Invalid hex color: "' + hex + '" contains non-hex characters. Use only 0-9 and A-F.');
   }
 
   // Parse hex values
-  var r,
-    g,
-    b,
-    a = 1;
+  var r, g, b, a = 1;
 
   if (hex.length === 3) {
     // #RGB format
@@ -211,11 +196,7 @@ function hexToFigmaRGB(hex) {
     b = parseInt(hex.substring(4, 6), 16) / 255;
     a = parseInt(hex.substring(6, 8), 16) / 255;
   } else {
-    throw new Error(
-      'Invalid hex color format: "' +
-        hex +
-        '". Expected 3, 4, 6, or 8 hex characters (e.g., #RGB, #RGBA, #RRGGBB, #RRGGBBAA).'
-    );
+    throw new Error('Invalid hex color format: "' + hex + '". Expected 3, 4, 6, or 8 hex characters (e.g., #RGB, #RGBA, #RRGGBB, #RRGGBBAA).');
   }
 
   return { r: r, g: g, b: b, a: a };
@@ -223,6 +204,7 @@ function hexToFigmaRGB(hex) {
 
 // Listen for requests from UI (e.g., component data requests, write operations)
 figma.ui.onmessage = async (msg) => {
+
   // ============================================================================
   // BOOT_LOAD_UI - Bootloader fetched fresh UI HTML from the MCP server.
   // Replace the bootloader with the full, always-up-to-date plugin UI.
@@ -289,14 +271,14 @@ figma.ui.onmessage = async (msg) => {
 
       // Wrap user code in an async IIFE that returns a Promise
       // This allows async/await in user code while using eval
-      var wrappedCode = '(async function() {\n' + msg.code + '\n})()';
+      var wrappedCode = "(async function() {\n" + msg.code + "\n})()";
 
       console.log('🌉 [Desktop Bridge] Wrapped code for eval');
 
       // Execute with timeout
       var timeoutMs = msg.timeout || 5000;
-      var timeoutPromise = new Promise(function (_, reject) {
-        setTimeout(function () {
+      var timeoutPromise = new Promise(function(_, reject) {
+        setTimeout(function() {
           reject(new Error('Execution timed out after ' + timeoutMs + 'ms'));
         }, timeoutMs);
       });
@@ -307,19 +289,21 @@ figma.ui.onmessage = async (msg) => {
         codePromise = eval(wrappedCode);
       } catch (syntaxError) {
         // Log the actual syntax error message
-        var syntaxErrorMsg =
-          syntaxError && syntaxError.message ? syntaxError.message : String(syntaxError);
+        var syntaxErrorMsg = syntaxError && syntaxError.message ? syntaxError.message : String(syntaxError);
         console.error('🌉 [Desktop Bridge] Syntax error in code:', syntaxErrorMsg);
         figma.ui.postMessage({
           type: 'EXECUTE_CODE_RESULT',
           requestId: msg.requestId,
           success: false,
-          error: 'Syntax error: ' + syntaxErrorMsg,
+          error: 'Syntax error: ' + syntaxErrorMsg
         });
         return;
       }
 
-      var result = await Promise.race([codePromise, timeoutPromise]);
+      var result = await Promise.race([
+        codePromise,
+        timeoutPromise
+      ]);
 
       console.log('🌉 [Desktop Bridge] Code executed successfully, result type:', typeof result);
 
@@ -329,39 +313,29 @@ figma.ui.onmessage = async (msg) => {
         isNull: result === null,
         isUndefined: result === undefined,
         isEmpty: false,
-        warning: null,
+        warning: null
       };
 
       // Check for empty results that might indicate a failed search/operation
       if (Array.isArray(result)) {
         resultAnalysis.isEmpty = result.length === 0;
         if (resultAnalysis.isEmpty) {
-          resultAnalysis.warning =
-            'Code returned an empty array. If you were searching for nodes, none were found.';
+          resultAnalysis.warning = 'Code returned an empty array. If you were searching for nodes, none were found.';
         }
       } else if (result !== null && typeof result === 'object') {
         var keys = Object.keys(result);
         resultAnalysis.isEmpty = keys.length === 0;
         if (resultAnalysis.isEmpty) {
-          resultAnalysis.warning =
-            'Code returned an empty object. The operation may not have found what it was looking for.';
+          resultAnalysis.warning = 'Code returned an empty object. The operation may not have found what it was looking for.';
         }
         // Check for common "found nothing" patterns
-        if (
-          result.length === 0 ||
-          result.count === 0 ||
-          result.foundCount === 0 ||
-          (result.nodes && result.nodes.length === 0)
-        ) {
-          resultAnalysis.warning =
-            'Code returned a result indicating nothing was found (count/length is 0).';
+        if (result.length === 0 || result.count === 0 || result.foundCount === 0 || (result.nodes && result.nodes.length === 0)) {
+          resultAnalysis.warning = 'Code returned a result indicating nothing was found (count/length is 0).';
         }
       } else if (result === null) {
-        resultAnalysis.warning =
-          'Code returned null. The requested node or resource may not exist.';
+        resultAnalysis.warning = 'Code returned null. The requested node or resource may not exist.';
       } else if (result === undefined) {
-        resultAnalysis.warning =
-          'Code returned undefined. Make sure your code has a return statement.';
+        resultAnalysis.warning = 'Code returned undefined. Make sure your code has a return statement.';
       }
 
       if (resultAnalysis.warning) {
@@ -377,9 +351,10 @@ figma.ui.onmessage = async (msg) => {
         // Include file context so users know which file this executed against
         fileContext: {
           fileName: figma.root.name,
-          fileKey: figma.fileKey || null,
-        },
+          fileKey: figma.fileKey || null
+        }
       });
+
     } catch (error) {
       // Extract error message explicitly - don't rely on console.error serialization
       var errorName = error && error.name ? error.name : 'Error';
@@ -396,7 +371,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'EXECUTE_CODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorName + ': ' + errorMsg,
+        error: errorName + ': ' + errorMsg
       });
     }
   }
@@ -421,7 +396,7 @@ figma.ui.onmessage = async (msg) => {
         // Convert to VARIABLE_ALIAS format
         value = {
           type: 'VARIABLE_ALIAS',
-          id: value,
+          id: value
         };
         console.log('🌉 [Desktop Bridge] Converting to variable alias:', value.id);
       } else if (variable.resolvedType === 'COLOR' && typeof value === 'string') {
@@ -438,15 +413,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'UPDATE_VARIABLE_RESULT',
         requestId: msg.requestId,
         success: true,
-        variable: serializeVariable(variable),
+        variable: serializeVariable(variable)
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Update variable error:', error);
       figma.ui.postMessage({
         type: 'UPDATE_VARIABLE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -495,15 +471,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'CREATE_VARIABLE_RESULT',
         requestId: msg.requestId,
         success: true,
-        variable: serializeVariable(variable),
+        variable: serializeVariable(variable)
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Create variable error:', error);
       figma.ui.postMessage({
         type: 'CREATE_VARIABLE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -536,15 +513,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'CREATE_VARIABLE_COLLECTION_RESULT',
         requestId: msg.requestId,
         success: true,
-        collection: serializeCollection(collection),
+        collection: serializeCollection(collection)
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Create collection error:', error);
       figma.ui.postMessage({
         type: 'CREATE_VARIABLE_COLLECTION_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -563,7 +541,7 @@ figma.ui.onmessage = async (msg) => {
 
       var deletedInfo = {
         id: variable.id,
-        name: variable.name,
+        name: variable.name
       };
 
       variable.remove();
@@ -574,15 +552,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'DELETE_VARIABLE_RESULT',
         requestId: msg.requestId,
         success: true,
-        deleted: deletedInfo,
+        deleted: deletedInfo
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Delete variable error:', error);
       figma.ui.postMessage({
         type: 'DELETE_VARIABLE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -602,7 +581,7 @@ figma.ui.onmessage = async (msg) => {
       var deletedInfo = {
         id: collection.id,
         name: collection.name,
-        variableCount: collection.variableIds.length,
+        variableCount: collection.variableIds.length
       };
 
       collection.remove();
@@ -613,15 +592,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'DELETE_VARIABLE_COLLECTION_RESULT',
         requestId: msg.requestId,
         success: true,
-        deleted: deletedInfo,
+        deleted: deletedInfo
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Delete collection error:', error);
       figma.ui.postMessage({
         type: 'DELETE_VARIABLE_COLLECTION_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -641,9 +621,7 @@ figma.ui.onmessage = async (msg) => {
       var oldName = variable.name;
       variable.name = msg.newName;
 
-      console.log(
-        '🌉 [Desktop Bridge] Variable renamed from "' + oldName + '" to "' + msg.newName + '"'
-      );
+      console.log('🌉 [Desktop Bridge] Variable renamed from "' + oldName + '" to "' + msg.newName + '"');
 
       var serializedVar = serializeVariable(variable);
       serializedVar.oldName = oldName;
@@ -652,15 +630,16 @@ figma.ui.onmessage = async (msg) => {
         requestId: msg.requestId,
         success: true,
         variable: serializedVar,
-        oldName: oldName,
+        oldName: oldName
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Rename variable error:', error);
       figma.ui.postMessage({
         type: 'RENAME_VARIABLE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -685,8 +664,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_VARIABLE_DESCRIPTION_RESULT',
         requestId: msg.requestId,
         success: true,
-        variable: serializeVariable(variable),
+        variable: serializeVariable(variable)
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Set variable description error:', errorMsg);
@@ -694,7 +674,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_VARIABLE_DESCRIPTION_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -723,16 +703,17 @@ figma.ui.onmessage = async (msg) => {
         collection: serializeCollection(collection),
         newMode: {
           modeId: newModeId,
-          name: msg.modeName,
-        },
+          name: msg.modeName
+        }
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Add mode error:', error);
       figma.ui.postMessage({
         type: 'ADD_MODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -742,12 +723,7 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   else if (msg.type === 'RENAME_MODE') {
     try {
-      console.log(
-        '🌉 [Desktop Bridge] Renaming mode:',
-        msg.modeId,
-        'in collection:',
-        msg.collectionId
-      );
+      console.log('🌉 [Desktop Bridge] Renaming mode:', msg.modeId, 'in collection:', msg.collectionId);
 
       var collection = await figma.variables.getVariableCollectionByIdAsync(msg.collectionId);
       if (!collection) {
@@ -755,9 +731,7 @@ figma.ui.onmessage = async (msg) => {
       }
 
       // Find the current mode name
-      var currentMode = collection.modes.find(function (m) {
-        return m.modeId === msg.modeId;
-      });
+      var currentMode = collection.modes.find(function(m) { return m.modeId === msg.modeId; });
       if (!currentMode) {
         throw new Error('Mode not found: ' + msg.modeId);
       }
@@ -765,9 +739,7 @@ figma.ui.onmessage = async (msg) => {
       var oldName = currentMode.name;
       collection.renameMode(msg.modeId, msg.newName);
 
-      console.log(
-        '🌉 [Desktop Bridge] Mode renamed from "' + oldName + '" to "' + msg.newName + '"'
-      );
+      console.log('🌉 [Desktop Bridge] Mode renamed from "' + oldName + '" to "' + msg.newName + '"');
 
       var serializedCol = serializeCollection(collection);
       serializedCol.oldName = oldName;
@@ -776,15 +748,16 @@ figma.ui.onmessage = async (msg) => {
         requestId: msg.requestId,
         success: true,
         collection: serializedCol,
-        oldName: oldName,
+        oldName: oldName
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Rename mode error:', error);
       figma.ui.postMessage({
         type: 'RENAME_MODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -804,13 +777,13 @@ figma.ui.onmessage = async (msg) => {
         timestamp: Date.now(),
         fileKey: figma.fileKey || null,
         variables: variables.map(serializeVariable),
-        variableCollections: collections.map(serializeCollection),
+        variableCollections: collections.map(serializeCollection)
       };
 
       // Update the UI's cached data
       figma.ui.postMessage({
         type: 'VARIABLES_DATA',
-        data: variablesData,
+        data: variablesData
       });
 
       // Also send as a response to the request
@@ -818,23 +791,18 @@ figma.ui.onmessage = async (msg) => {
         type: 'REFRESH_VARIABLES_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: variablesData,
+        data: variablesData
       });
 
-      console.log(
-        '🌉 [Desktop Bridge] Variables refreshed:',
-        variables.length,
-        'variables in',
-        collections.length,
-        'collections'
-      );
+      console.log('🌉 [Desktop Bridge] Variables refreshed:', variables.length, 'variables in', collections.length, 'collections');
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Refresh variables error:', error);
       figma.ui.postMessage({
         type: 'REFRESH_VARIABLES_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -858,8 +826,7 @@ figma.ui.onmessage = async (msg) => {
 
       // Detect if this is a variant (COMPONENT inside a COMPONENT_SET)
       // Note: Can't use optional chaining (?.) - Figma plugin sandbox doesn't support it
-      const isVariant =
-        node.type === 'COMPONENT' && node.parent && node.parent.type === 'COMPONENT_SET';
+      const isVariant = node.type === 'COMPONENT' && node.parent && node.parent.type === 'COMPONENT_SET';
 
       // Extract component data including description fields and annotations
       const componentData = {
@@ -880,40 +847,34 @@ figma.ui.onmessage = async (msg) => {
           // Flag to indicate if this is a variant
           isVariant: isVariant,
           // For component sets and non-variant components only (variants cannot access this)
-          componentPropertyDefinitions:
-            node.type === 'COMPONENT_SET' || (node.type === 'COMPONENT' && !isVariant)
-              ? node.componentPropertyDefinitions
-              : undefined,
-          // Get children info (lightweight) — skip unresolvable slot sublayers
-          children: node.children
-            ? node.children.reduce((acc, child) => {
-                try {
-                  acc.push({ id: child.id, name: child.name, type: child.type });
-                } catch (e) {
-                  /* slot sublayer or table cell — skip */
-                }
-                return acc;
-              }, [])
+          componentPropertyDefinitions: (node.type === 'COMPONENT_SET' || (node.type === 'COMPONENT' && !isVariant))
+            ? node.componentPropertyDefinitions
             : undefined,
-        },
+          // Get children info (lightweight) — skip unresolvable slot sublayers
+          children: node.children ? node.children.reduce((acc, child) => {
+            try {
+              acc.push({ id: child.id, name: child.name, type: child.type });
+            } catch (e) { /* slot sublayer or table cell — skip */ }
+            return acc;
+          }, []) : undefined
+        }
       };
 
-      console.log(
-        `🌉 [Desktop Bridge] Component data ready. Has description: ${!!componentData.component.description}, annotations: ${componentData.component.annotations.length}`
-      );
+      console.log(`🌉 [Desktop Bridge] Component data ready. Has description: ${!!componentData.component.description}, annotations: ${componentData.component.annotations.length}`);
 
       // Send to UI
       figma.ui.postMessage({
         type: 'COMPONENT_DATA',
         requestId: msg.requestId, // Echo back the request ID
-        data: componentData,
+        data: componentData
       });
+
     } catch (error) {
       console.error(`🌉 [Desktop Bridge] Error fetching component:`, error);
       figma.ui.postMessage({
         type: 'COMPONENT_ERROR',
         requestId: msg.requestId,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -938,7 +899,7 @@ figma.ui.onmessage = async (msg) => {
           type: node.type,
           description: node.description || null,
           width: node.width,
-          height: node.height,
+          height: node.height
         };
 
         // Get property definitions for non-variant components
@@ -951,7 +912,7 @@ figma.ui.onmessage = async (msg) => {
               data.properties.push({
                 name: propName,
                 type: propDef.type,
-                defaultValue: propDef.defaultValue,
+                defaultValue: propDef.defaultValue
               });
             }
           }
@@ -967,15 +928,13 @@ figma.ui.onmessage = async (msg) => {
 
         // Parse variant properties from children names — skip unresolvable slot sublayers
         if (node.children) {
-          node.children.forEach(function (child) {
+          node.children.forEach(function(child) {
             try {
               if (child.type === 'COMPONENT') {
                 // Parse variant name (e.g., "Size=md, State=default")
                 var variantProps = {};
-                var parts = child.name.split(',').map(function (p) {
-                  return p.trim();
-                });
-                parts.forEach(function (part) {
+                var parts = child.name.split(',').map(function(p) { return p.trim(); });
+                parts.forEach(function(part) {
                   var kv = part.split('=');
                   if (kv.length === 2) {
                     var key = kv[0].trim();
@@ -999,12 +958,10 @@ figma.ui.onmessage = async (msg) => {
                   description: child.description || null,
                   variantProperties: variantProps,
                   width: child.width,
-                  height: child.height,
+                  height: child.height
                 });
               }
-            } catch (e) {
-              /* slot sublayer — skip */
-            }
+            } catch (e) { /* slot sublayer — skip */ }
           });
         }
 
@@ -1014,7 +971,7 @@ figma.ui.onmessage = async (msg) => {
           if (variantAxes.hasOwnProperty(axisName)) {
             axes.push({
               name: axisName,
-              values: variantAxes[axisName],
+              values: variantAxes[axisName]
             });
           }
         }
@@ -1028,16 +985,14 @@ figma.ui.onmessage = async (msg) => {
           variantAxes: axes,
           variants: variants,
           defaultVariant: variants.length > 0 ? variants[0] : null,
-          properties: node.componentPropertyDefinitions
-            ? Object.keys(node.componentPropertyDefinitions).map(function (propName) {
-                var propDef = node.componentPropertyDefinitions[propName];
-                return {
-                  name: propName,
-                  type: propDef.type,
-                  defaultValue: propDef.defaultValue,
-                };
-              })
-            : [],
+          properties: node.componentPropertyDefinitions ? Object.keys(node.componentPropertyDefinitions).map(function(propName) {
+            var propDef = node.componentPropertyDefinitions[propName];
+            return {
+              name: propName,
+              type: propDef.type,
+              defaultValue: propDef.defaultValue
+            };
+          }) : []
         };
       }
 
@@ -1056,12 +1011,8 @@ figma.ui.onmessage = async (msg) => {
 
         // Recurse into children — skip unresolvable slot sublayers
         if (node.children) {
-          node.children.forEach(function (child) {
-            try {
-              findComponents(child);
-            } catch (e) {
-              /* slot sublayer — skip */
-            }
+          node.children.forEach(function(child) {
+            try { findComponents(child); } catch (e) { /* slot sublayer — skip */ }
           });
         }
       }
@@ -1073,16 +1024,10 @@ figma.ui.onmessage = async (msg) => {
       // Process pages in batches with event loop yields to prevent UI freeze
       // This is critical for large design systems that could otherwise crash
       var pages = figma.root.children;
-      var PAGE_BATCH_SIZE = 3; // Process 3 pages at a time
+      var PAGE_BATCH_SIZE = 3;  // Process 3 pages at a time
       var totalPages = pages.length;
 
-      console.log(
-        '🌉 [Desktop Bridge] Processing ' +
-          totalPages +
-          ' pages in batches of ' +
-          PAGE_BATCH_SIZE +
-          '...'
-      );
+      console.log('🌉 [Desktop Bridge] Processing ' + totalPages + ' pages in batches of ' + PAGE_BATCH_SIZE + '...');
 
       for (var pageIndex = 0; pageIndex < totalPages; pageIndex += PAGE_BATCH_SIZE) {
         var batchEnd = Math.min(pageIndex + PAGE_BATCH_SIZE, totalPages);
@@ -1092,40 +1037,22 @@ figma.ui.onmessage = async (msg) => {
         }
 
         // Process this batch of pages
-        batchPages.forEach(function (page) {
+        batchPages.forEach(function(page) {
           findComponents(page);
         });
 
         // Log progress for large files
         if (totalPages > PAGE_BATCH_SIZE) {
-          console.log(
-            '🌉 [Desktop Bridge] Processed pages ' +
-              (pageIndex + 1) +
-              '-' +
-              batchEnd +
-              ' of ' +
-              totalPages +
-              ' (found ' +
-              components.length +
-              ' components so far)'
-          );
+          console.log('🌉 [Desktop Bridge] Processed pages ' + (pageIndex + 1) + '-' + batchEnd + ' of ' + totalPages + ' (found ' + components.length + ' components so far)');
         }
 
         // Yield to event loop between batches to prevent UI freeze and allow cancellation
         if (batchEnd < totalPages) {
-          await new Promise(function (resolve) {
-            setTimeout(resolve, 0);
-          });
+          await new Promise(function(resolve) { setTimeout(resolve, 0); });
         }
       }
 
-      console.log(
-        '🌉 [Desktop Bridge] Found ' +
-          components.length +
-          ' components and ' +
-          componentSets.length +
-          ' component sets'
-      );
+      console.log('🌉 [Desktop Bridge] Found ' + components.length + ' components and ' + componentSets.length + ' component sets');
 
       figma.ui.postMessage({
         type: 'GET_LOCAL_COMPONENTS_RESULT',
@@ -1139,9 +1066,10 @@ figma.ui.onmessage = async (msg) => {
           // Include file metadata for context verification
           fileName: figma.root.name,
           fileKey: figma.fileKey || null,
-          timestamp: Date.now(),
-        },
+          timestamp: Date.now()
+        }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Get local components error:', errorMsg);
@@ -1149,7 +1077,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'GET_LOCAL_COMPONENTS_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1269,32 +1197,16 @@ figma.ui.onmessage = async (msg) => {
         var errorParts = ['Component not found.'];
 
         if (msg.componentKey && !msg.nodeId) {
-          errorParts.push(
-            'Component key "' +
-              msg.componentKey +
-              '" not found. Note: componentKey only works for components from published libraries. For local/unpublished components, you must provide nodeId instead.'
-          );
+          errorParts.push('Component key "' + msg.componentKey + '" not found. Note: componentKey only works for components from published libraries. For local/unpublished components, you must provide nodeId instead.');
         } else if (msg.componentKey && msg.nodeId) {
-          errorParts.push(
-            'Neither componentKey "' +
-              msg.componentKey +
-              '" nor nodeId "' +
-              msg.nodeId +
-              '" resolved to a valid component. The identifiers may be stale from a previous session.'
-          );
+          errorParts.push('Neither componentKey "' + msg.componentKey + '" nor nodeId "' + msg.nodeId + '" resolved to a valid component. The identifiers may be stale from a previous session.');
         } else if (msg.nodeId) {
-          errorParts.push(
-            'NodeId "' +
-              msg.nodeId +
-              '" does not exist in this file. NodeIds are session-specific and become stale when Figma restarts or the file is closed.'
-          );
+          errorParts.push('NodeId "' + msg.nodeId + '" does not exist in this file. NodeIds are session-specific and become stale when Figma restarts or the file is closed.');
         } else {
           errorParts.push('No componentKey or nodeId was provided.');
         }
 
-        errorParts.push(
-          'SOLUTION: Call figma_search_components to get fresh identifiers, then pass BOTH componentKey AND nodeId together for reliable instantiation.'
-        );
+        errorParts.push('SOLUTION: Call figma_search_components to get fresh identifiers, then pass BOTH componentKey AND nodeId together for reliable instantiation.');
 
         throw new Error(errorParts.join(' '));
       }
@@ -1320,10 +1232,7 @@ figma.ui.onmessage = async (msg) => {
             try {
               instance.setProperties({ [propName]: msg.overrides[propName] });
             } catch (propError) {
-              console.warn(
-                '🌉 [Desktop Bridge] Could not set property ' + propName + ':',
-                propError.message
-              );
+              console.warn('🌉 [Desktop Bridge] Could not set property ' + propName + ':', propError.message);
             }
           }
         }
@@ -1358,9 +1267,10 @@ figma.ui.onmessage = async (msg) => {
           x: instance.x,
           y: instance.y,
           width: instance.width,
-          height: instance.height,
-        },
+          height: instance.height
+        }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Instantiate component error:', errorMsg);
@@ -1368,7 +1278,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'INSTANTIATE_COMPONENT_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1402,8 +1312,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_DESCRIPTION_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: node.id, name: node.name, description: node.description },
+        node: { id: node.id, name: node.name, description: node.description }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Set description error:', errorMsg);
@@ -1411,7 +1322,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_DESCRIPTION_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1421,12 +1332,7 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   else if (msg.type === 'ADD_COMPONENT_PROPERTY') {
     try {
-      console.log(
-        '🌉 [Desktop Bridge] Adding component property:',
-        msg.propertyName,
-        'type:',
-        msg.propertyType
-      );
+      console.log('🌉 [Desktop Bridge] Adding component property:', msg.propertyName, 'type:', msg.propertyType);
 
       var node = await figma.getNodeByIdAsync(msg.nodeId);
       if (!node) {
@@ -1439,9 +1345,7 @@ figma.ui.onmessage = async (msg) => {
 
       // Check if it's a variant (can't add properties to variants)
       if (node.type === 'COMPONENT' && node.parent && node.parent.type === 'COMPONENT_SET') {
-        throw new Error(
-          'Cannot add properties to variant components. Add to the parent COMPONENT_SET instead.'
-        );
+        throw new Error('Cannot add properties to variant components. Add to the parent COMPONENT_SET instead.');
       }
 
       // Build options if preferredValues provided
@@ -1451,12 +1355,7 @@ figma.ui.onmessage = async (msg) => {
       }
 
       // Use msg.propertyType (not msg.type which is the message type 'ADD_COMPONENT_PROPERTY')
-      var propertyNameWithId = node.addComponentProperty(
-        msg.propertyName,
-        msg.propertyType,
-        msg.defaultValue,
-        options
-      );
+      var propertyNameWithId = node.addComponentProperty(msg.propertyName, msg.propertyType, msg.defaultValue, options);
 
       console.log('🌉 [Desktop Bridge] Property added:', propertyNameWithId);
 
@@ -1464,8 +1363,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'ADD_COMPONENT_PROPERTY_RESULT',
         requestId: msg.requestId,
         success: true,
-        propertyName: propertyNameWithId,
+        propertyName: propertyNameWithId
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Add component property error:', errorMsg);
@@ -1473,7 +1373,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'ADD_COMPONENT_PROPERTY_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1502,8 +1402,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'EDIT_COMPONENT_PROPERTY_RESULT',
         requestId: msg.requestId,
         success: true,
-        propertyName: propertyNameWithId,
+        propertyName: propertyNameWithId
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Edit component property error:', errorMsg);
@@ -1511,7 +1412,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'EDIT_COMPONENT_PROPERTY_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1539,8 +1440,9 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({
         type: 'DELETE_COMPONENT_PROPERTY_RESULT',
         requestId: msg.requestId,
-        success: true,
+        success: true
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Delete component property error:', errorMsg);
@@ -1548,7 +1450,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'DELETE_COMPONENT_PROPERTY_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1581,8 +1483,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'RESIZE_NODE_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: node.id, name: node.name, width: node.width, height: node.height },
+        node: { id: node.id, name: node.name, width: node.width, height: node.height }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Resize node error:', errorMsg);
@@ -1590,7 +1493,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'RESIZE_NODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1620,8 +1523,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'MOVE_NODE_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: node.id, name: node.name, x: node.x, y: node.y },
+        node: { id: node.id, name: node.name, x: node.x, y: node.y }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Move node error:', errorMsg);
@@ -1629,7 +1533,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'MOVE_NODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1651,14 +1555,14 @@ figma.ui.onmessage = async (msg) => {
       }
 
       // Process fills - convert hex colors if needed
-      var processedFills = msg.fills.map(function (fill) {
+      var processedFills = msg.fills.map(function(fill) {
         if (fill.type === 'SOLID' && typeof fill.color === 'string') {
           // Convert hex to RGB
           var rgb = hexToFigmaRGB(fill.color);
           return {
             type: 'SOLID',
             color: { r: rgb.r, g: rgb.g, b: rgb.b },
-            opacity: rgb.a !== undefined ? rgb.a : fill.opacity !== undefined ? fill.opacity : 1,
+            opacity: rgb.a !== undefined ? rgb.a : (fill.opacity !== undefined ? fill.opacity : 1)
           };
         }
         return fill;
@@ -1672,8 +1576,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_FILLS_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: node.id, name: node.name },
+        node: { id: node.id, name: node.name }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Set fills error:', errorMsg);
@@ -1681,7 +1586,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_FILLS_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1704,7 +1609,7 @@ figma.ui.onmessage = async (msg) => {
       var fill = {
         type: 'IMAGE',
         scaleMode: msg.scaleMode || 'FILL',
-        imageHash: imageHash,
+        imageHash: imageHash
       };
 
       // Resolve target nodes
@@ -1721,12 +1626,7 @@ figma.ui.onmessage = async (msg) => {
         }
       }
 
-      console.log(
-        '🌉 [Desktop Bridge] Image fill applied to',
-        updatedCount,
-        'node(s), hash:',
-        imageHash
-      );
+      console.log('🌉 [Desktop Bridge] Image fill applied to', updatedCount, 'node(s), hash:', imageHash);
 
       figma.ui.postMessage({
         type: 'SET_IMAGE_FILL_RESULT',
@@ -1734,8 +1634,9 @@ figma.ui.onmessage = async (msg) => {
         success: true,
         imageHash: imageHash,
         updatedCount: updatedCount,
-        nodes: updatedNodes,
+        nodes: updatedNodes
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Set image fill error:', errorMsg);
@@ -1743,7 +1644,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_IMAGE_FILL_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1765,14 +1666,13 @@ figma.ui.onmessage = async (msg) => {
       }
 
       // Process strokes - convert hex colors if needed
-      var processedStrokes = msg.strokes.map(function (stroke) {
+      var processedStrokes = msg.strokes.map(function(stroke) {
         if (stroke.type === 'SOLID' && typeof stroke.color === 'string') {
           var rgb = hexToFigmaRGB(stroke.color);
           return {
             type: 'SOLID',
             color: { r: rgb.r, g: rgb.g, b: rgb.b },
-            opacity:
-              rgb.a !== undefined ? rgb.a : stroke.opacity !== undefined ? stroke.opacity : 1,
+            opacity: rgb.a !== undefined ? rgb.a : (stroke.opacity !== undefined ? stroke.opacity : 1)
           };
         }
         return stroke;
@@ -1790,8 +1690,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_STROKES_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: node.id, name: node.name },
+        node: { id: node.id, name: node.name }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Set strokes error:', errorMsg);
@@ -1799,7 +1700,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_STROKES_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1828,8 +1729,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_OPACITY_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: node.id, name: node.name, opacity: node.opacity },
+        node: { id: node.id, name: node.name, opacity: node.opacity }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Set opacity error:', errorMsg);
@@ -1837,7 +1739,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_OPACITY_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1866,8 +1768,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_CORNER_RADIUS_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: node.id, name: node.name, cornerRadius: node.cornerRadius },
+        node: { id: node.id, name: node.name, cornerRadius: node.cornerRadius }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Set corner radius error:', errorMsg);
@@ -1875,7 +1778,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_NODE_CORNER_RADIUS_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1904,8 +1807,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'CLONE_NODE_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: clonedNode.id, name: clonedNode.name, x: clonedNode.x, y: clonedNode.y },
+        node: { id: clonedNode.id, name: clonedNode.name, x: clonedNode.x, y: clonedNode.y }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Clone node error:', errorMsg);
@@ -1913,7 +1817,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'CLONE_NODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1940,8 +1844,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'DELETE_NODE_RESULT',
         requestId: msg.requestId,
         success: true,
-        deleted: deletedInfo,
+        deleted: deletedInfo
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Delete node error:', errorMsg);
@@ -1949,7 +1854,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'DELETE_NODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -1969,16 +1874,15 @@ figma.ui.onmessage = async (msg) => {
       var oldName = node.name;
       node.name = msg.newName;
 
-      console.log(
-        '🌉 [Desktop Bridge] Node renamed from "' + oldName + '" to "' + msg.newName + '"'
-      );
+      console.log('🌉 [Desktop Bridge] Node renamed from "' + oldName + '" to "' + msg.newName + '"');
 
       figma.ui.postMessage({
         type: 'RENAME_NODE_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: node.id, name: node.name, oldName: oldName },
+        node: { id: node.id, name: node.name, oldName: oldName }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Rename node error:', errorMsg);
@@ -1986,7 +1890,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'RENAME_NODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -2023,8 +1927,9 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_TEXT_CONTENT_RESULT',
         requestId: msg.requestId,
         success: true,
-        node: { id: node.id, name: node.name, characters: node.characters },
+        node: { id: node.id, name: node.name, characters: node.characters }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Set text content error:', errorMsg);
@@ -2032,7 +1937,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_TEXT_CONTENT_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -2101,13 +2006,13 @@ figma.ui.onmessage = async (msg) => {
 
       // Apply fills if specified
       if (props.fills) {
-        var processedFills = props.fills.map(function (fill) {
+        var processedFills = props.fills.map(function(fill) {
           if (fill.type === 'SOLID' && typeof fill.color === 'string') {
             var rgb = hexToFigmaRGB(fill.color);
             return {
               type: 'SOLID',
               color: { r: rgb.r, g: rgb.g, b: rgb.b },
-              opacity: rgb.a !== undefined ? rgb.a : 1,
+              opacity: rgb.a !== undefined ? rgb.a : 1
             };
           }
           return fill;
@@ -2131,9 +2036,10 @@ figma.ui.onmessage = async (msg) => {
           x: newNode.x,
           y: newNode.y,
           width: newNode.width,
-          height: newNode.height,
-        },
+          height: newNode.height
+        }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Create child node error:', errorMsg);
@@ -2141,7 +2047,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'CREATE_CHILD_NODE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -2170,7 +2076,7 @@ figma.ui.onmessage = async (msg) => {
 
       var exportSettings = {
         format: format,
-        constraint: { type: 'SCALE', value: scale },
+        constraint: { type: 'SCALE', value: scale }
       };
 
       // Export the node
@@ -2199,11 +2105,12 @@ figma.ui.onmessage = async (msg) => {
           node: {
             id: node.id,
             name: node.name,
-            type: node.type,
+            type: node.type
           },
-          bounds: bounds,
-        },
+          bounds: bounds
+        }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Screenshot capture error:', errorMsg);
@@ -2211,7 +2118,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'CAPTURE_SCREENSHOT_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -2234,8 +2141,8 @@ figma.ui.onmessage = async (msg) => {
           currentPageId: figma.currentPage.id,
           selectionCount: selection ? selection.length : 0,
           pluginVersion: PLUGIN_VERSION,
-          editorType: __editorType,
-        },
+          editorType: __editorType
+        }
       });
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
@@ -2243,7 +2150,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'GET_FILE_INFO_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -2259,11 +2166,8 @@ figma.ui.onmessage = async (msg) => {
   // STORE_CLOUD_CONFIG - Persist cloud pairing config in clientStorage
   // ============================================================================
   else if (msg.type === 'STORE_CLOUD_CONFIG') {
-    figma.clientStorage
-      .setAsync('cloudConfig', { code: msg.code, timestamp: Date.now() })
-      .catch(function () {
-        /* non-critical */
-      });
+    figma.clientStorage.setAsync('cloudConfig', { code: msg.code, timestamp: Date.now() })
+      .catch(function() { /* non-critical */ });
   }
 
   // ============================================================================
@@ -2276,10 +2180,10 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({
         type: 'RELOAD_UI_RESULT',
         requestId: msg.requestId,
-        success: true,
+        success: true
       });
       // Short delay to let the response message be sent before reload
-      setTimeout(function () {
+      setTimeout(function() {
         figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
       }, 100);
     } catch (error) {
@@ -2288,7 +2192,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'RELOAD_UI_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -2315,10 +2219,7 @@ figma.ui.onmessage = async (msg) => {
 
       // Get current properties for reference
       var currentProps = node.componentProperties;
-      console.log(
-        '🌉 [Desktop Bridge] Current properties:',
-        JSON.stringify(Object.keys(currentProps))
-      );
+      console.log('🌉 [Desktop Bridge] Current properties:', JSON.stringify(Object.keys(currentProps)));
 
       // Build the properties object
       // Note: TEXT, BOOLEAN, INSTANCE_SWAP properties use the format "PropertyName#nodeId"
@@ -2340,33 +2241,20 @@ figma.ui.onmessage = async (msg) => {
             // Check if this is the base property name with a node ID suffix
             if (existingProp.startsWith(propName + '#')) {
               propsToSet[existingProp] = newValue;
-              console.log(
-                '🌉 [Desktop Bridge] Found suffixed property:',
-                existingProp,
-                '=',
-                newValue
-              );
+              console.log('🌉 [Desktop Bridge] Found suffixed property:', existingProp, '=', newValue);
               foundMatch = true;
               break;
             }
           }
 
           if (!foundMatch) {
-            console.warn(
-              '🌉 [Desktop Bridge] Property not found:',
-              propName,
-              '- Available:',
-              Object.keys(currentProps).join(', ')
-            );
+            console.warn('🌉 [Desktop Bridge] Property not found:', propName, '- Available:', Object.keys(currentProps).join(', '));
           }
         }
       }
 
       if (Object.keys(propsToSet).length === 0) {
-        throw new Error(
-          'No valid properties to set. Available properties: ' +
-            Object.keys(currentProps).join(', ')
-        );
+        throw new Error('No valid properties to set. Available properties: ' + Object.keys(currentProps).join(', '));
       }
 
       // Apply the properties
@@ -2386,15 +2274,16 @@ figma.ui.onmessage = async (msg) => {
           name: node.name,
           componentId: mainComponent ? mainComponent.id : null,
           propertiesSet: Object.keys(propsToSet),
-          currentProperties: Object.keys(updatedProps).reduce(function (acc, key) {
+          currentProperties: Object.keys(updatedProps).reduce(function(acc, key) {
             acc[key] = {
               type: updatedProps[key].type,
-              value: updatedProps[key].value,
+              value: updatedProps[key].value
             };
             return acc;
-          }, {}),
-        },
+          }, {})
+        }
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Set instance properties error:', errorMsg);
@@ -2402,7 +2291,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'SET_INSTANCE_PROPERTIES_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -2456,7 +2345,7 @@ figma.ui.onmessage = async (msg) => {
               for (var fi = current.fills.length - 1; fi >= 0; fi--) {
                 var fill = current.fills[fi];
                 if (fill.type === 'SOLID' && fill.visible !== false) {
-                  var opacity = fill.opacity !== undefined ? fill.opacity : 1;
+                  var opacity = (fill.opacity !== undefined) ? fill.opacity : 1;
                   return { r: fill.color.r, g: fill.color.g, b: fill.color.b, opacity: opacity };
                 }
               }
@@ -2473,34 +2362,22 @@ figma.ui.onmessage = async (msg) => {
       // Check if text qualifies as "large" per WCAG (18pt=24px regular, 14pt≈18.66px bold 700+)
       function lintIsLargeText(fontSize, fontWeight) {
         if (fontSize >= 24) return true;
-        if (
-          fontSize >= 18.66 &&
-          fontWeight &&
-          (fontWeight === 'Bold' || fontWeight === 'Black' || fontWeight === 'ExtraBold')
-        )
-          return true;
+        if (fontSize >= 18.66 && fontWeight && (fontWeight === 'Bold' || fontWeight === 'Black' || fontWeight === 'ExtraBold')) return true;
         return false;
       }
 
       // ---- Rule configuration ----
       var allRuleIds = [
-        'wcag-contrast',
-        'wcag-text-size',
-        'wcag-target-size',
-        'wcag-line-height',
-        'hardcoded-color',
-        'no-text-style',
-        'default-name',
-        'detached-component',
-        'no-autolayout',
-        'empty-container',
+        'wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height',
+        'hardcoded-color', 'no-text-style', 'default-name', 'detached-component',
+        'no-autolayout', 'empty-container'
       ];
 
       var ruleGroups = {
-        all: allRuleIds,
-        wcag: ['wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height'],
+        'all': allRuleIds,
+        'wcag': ['wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height'],
         'design-system': ['hardcoded-color', 'no-text-style', 'default-name', 'detached-component'],
-        layout: ['no-autolayout', 'empty-container'],
+        'layout': ['no-autolayout', 'empty-container']
       };
 
       var severityMap = {
@@ -2513,7 +2390,7 @@ figma.ui.onmessage = async (msg) => {
         'default-name': 'warning',
         'detached-component': 'warning',
         'no-autolayout': 'warning',
-        'empty-container': 'info',
+        'empty-container': 'info'
       };
 
       var ruleDescriptions = {
@@ -2524,14 +2401,12 @@ figma.ui.onmessage = async (msg) => {
         'hardcoded-color': 'Fill color is not bound to a variable or style',
         'no-text-style': 'Text node is not using a text style',
         'default-name': 'Node has a default Figma name (e.g., "Frame 1")',
-        'detached-component':
-          'Frame uses component naming convention but is not a component or instance',
+        'detached-component': 'Frame uses component naming convention but is not a component or instance',
         'no-autolayout': 'Frame with multiple children does not use auto-layout',
-        'empty-container': 'Frame has no children',
+        'empty-container': 'Frame has no children'
       };
 
-      var defaultNameRegex =
-        /^(Frame|Rectangle|Ellipse|Line|Text|Group|Component|Instance|Vector|Polygon|Star|Section)(\s+\d+)?$/;
+      var defaultNameRegex = /^(Frame|Rectangle|Ellipse|Line|Text|Group|Component|Instance|Vector|Polygon|Star|Section)(\s+\d+)?$/;
       var interactiveNameRegex = /button|link|input|checkbox|radio|switch|toggle|tab|menu-item/i;
 
       // ---- Resolve active rules ----
@@ -2574,27 +2449,21 @@ figma.ui.onmessage = async (msg) => {
           for (var pi = 0; pi < paintStyles.length; pi++) {
             paintStyleIds[paintStyles[pi].id] = true;
           }
-        } catch (e) {
-          /* ignore */
-        }
+        } catch (e) { /* ignore */ }
 
         try {
           var textStyles = await figma.getLocalTextStylesAsync();
           for (var ti = 0; ti < textStyles.length; ti++) {
             textStyleIds[textStyles[ti].id] = true;
           }
-        } catch (e) {
-          /* ignore */
-        }
+        } catch (e) { /* ignore */ }
 
         try {
           var localVars = await figma.variables.getLocalVariablesAsync();
           for (var vi = 0; vi < localVars.length; vi++) {
             variableIds[localVars[vi].id] = true;
           }
-        } catch (e) {
-          /* ignore */
-        }
+        } catch (e) { /* ignore */ }
       }
 
       // ---- Findings storage ----
@@ -2642,20 +2511,12 @@ figma.ui.onmessage = async (msg) => {
                   var ratio = lintContrastRatio(fg.r, fg.g, fg.b, bg.r, bg.g, bg.b);
                   var fontSize = 16;
                   var fontWeight = null;
-                  try {
-                    fontSize = node.fontSize;
-                  } catch (e) {
-                    /* mixed */
-                  }
-                  try {
-                    fontWeight = node.fontWeight;
-                  } catch (e) {
-                    /* mixed */
-                  }
+                  try { fontSize = node.fontSize; } catch (e) { /* mixed */ }
+                  try { fontWeight = node.fontWeight; } catch (e) { /* mixed */ }
                   if (typeof fontSize !== 'number') fontSize = 16;
                   var isLarge = lintIsLargeText(fontSize, fontWeight);
                   var required = isLarge ? 3.0 : 4.5;
-                  var fgOpacity = fills[fci].opacity !== undefined ? fills[fci].opacity : 1;
+                  var fgOpacity = (fills[fci].opacity !== undefined) ? fills[fci].opacity : 1;
                   var approximate = fgOpacity < 1 || bg.opacity < 1;
                   if (ratio < required) {
                     if (totalFindings < maxFindings) {
@@ -2665,7 +2526,7 @@ figma.ui.onmessage = async (msg) => {
                         ratio: ratio.toFixed(1) + ':1',
                         required: required.toFixed(1) + ':1',
                         fg: lintRgbToHex(fg.r, fg.g, fg.b),
-                        bg: lintRgbToHex(bg.r, bg.g, bg.b),
+                        bg: lintRgbToHex(bg.r, bg.g, bg.b)
                       };
                       if (approximate) finding.approximate = true;
                       findings['wcag-contrast'].push(finding);
@@ -2678,9 +2539,7 @@ figma.ui.onmessage = async (msg) => {
                 }
               }
             }
-          } catch (e) {
-            /* slot sublayer */
-          }
+          } catch (e) { /* slot sublayer */ }
         }
 
         // wcag-text-size: TEXT nodes with fontSize < 12
@@ -2692,28 +2551,20 @@ figma.ui.onmessage = async (msg) => {
                 findings['wcag-text-size'].push({
                   id: nodeId,
                   name: nodeName,
-                  fontSize: ts,
+                  fontSize: ts
                 });
                 totalFindings++;
               } else {
                 truncated = true;
               }
             }
-          } catch (e) {
-            /* slot sublayer or mixed */
-          }
+          } catch (e) { /* slot sublayer or mixed */ }
         }
 
         // wcag-target-size: Interactive elements < 24x24
         if (activeRuleSet['wcag-target-size'] && !isPage && !isSection && !truncated) {
           try {
-            if (
-              (nodeType === 'FRAME' ||
-                nodeType === 'COMPONENT' ||
-                nodeType === 'INSTANCE' ||
-                nodeType === 'COMPONENT_SET') &&
-              interactiveNameRegex.test(nodeName)
-            ) {
+            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && interactiveNameRegex.test(nodeName)) {
               var tw = node.width;
               var th = node.height;
               if ((typeof tw === 'number' && tw < 24) || (typeof th === 'number' && th < 24)) {
@@ -2722,7 +2573,7 @@ figma.ui.onmessage = async (msg) => {
                     id: nodeId,
                     name: nodeName,
                     width: tw,
-                    height: th,
+                    height: th
                   });
                   totalFindings++;
                 } else {
@@ -2730,9 +2581,7 @@ figma.ui.onmessage = async (msg) => {
                 }
               }
             }
-          } catch (e) {
-            /* slot sublayer */
-          }
+          } catch (e) { /* slot sublayer */ }
         }
 
         // wcag-line-height: TEXT nodes where lineHeight < 1.5 * fontSize
@@ -2741,12 +2590,7 @@ figma.ui.onmessage = async (msg) => {
             var lh = node.lineHeight;
             var fs = node.fontSize;
             var effectiveLh = null;
-            if (
-              lh &&
-              typeof fs === 'number' &&
-              typeof lh === 'object' &&
-              typeof lh.value === 'number'
-            ) {
+            if (lh && typeof fs === 'number' && typeof lh === 'object' && typeof lh.value === 'number') {
               if (lh.unit === 'PIXELS') {
                 effectiveLh = lh.value;
               } else if (lh.unit === 'PERCENT') {
@@ -2760,16 +2604,14 @@ figma.ui.onmessage = async (msg) => {
                   name: nodeName,
                   lineHeight: effectiveLh,
                   fontSize: fs,
-                  recommended: (1.5 * fs).toFixed(1),
+                  recommended: (1.5 * fs).toFixed(1)
                 });
                 totalFindings++;
               } else {
                 truncated = true;
               }
             }
-          } catch (e) {
-            /* slot sublayer or mixed */
-          }
+          } catch (e) { /* slot sublayer or mixed */ }
         }
 
         // ---- Design System checks ----
@@ -2782,9 +2624,7 @@ figma.ui.onmessage = async (msg) => {
               var hasFillStyle = false;
               try {
                 hasFillStyle = node.fillStyleId && node.fillStyleId !== '';
-              } catch (e) {
-                /* mixed fill styles */
-              }
+              } catch (e) { /* mixed fill styles */ }
 
               if (!hasFillStyle) {
                 for (var hci = 0; hci < hcFills.length; hci++) {
@@ -2795,16 +2635,14 @@ figma.ui.onmessage = async (msg) => {
                       if (hcFill.boundVariables && hcFill.boundVariables.color) {
                         hasBoundVar = true;
                       }
-                    } catch (e) {
-                      /* no bound vars */
-                    }
+                    } catch (e) { /* no bound vars */ }
 
                     if (!hasBoundVar) {
                       if (totalFindings < maxFindings) {
                         findings['hardcoded-color'].push({
                           id: nodeId,
                           name: nodeName,
-                          color: lintRgbToHex(hcFill.color.r, hcFill.color.g, hcFill.color.b),
+                          color: lintRgbToHex(hcFill.color.r, hcFill.color.g, hcFill.color.b)
                         });
                         totalFindings++;
                       } else {
@@ -2816,9 +2654,7 @@ figma.ui.onmessage = async (msg) => {
                 }
               }
             }
-          } catch (e) {
-            /* slot sublayer */
-          }
+          } catch (e) { /* slot sublayer */ }
         }
 
         // no-text-style: TEXT nodes without textStyleId
@@ -2829,16 +2665,14 @@ figma.ui.onmessage = async (msg) => {
               if (totalFindings < maxFindings) {
                 findings['no-text-style'].push({
                   id: nodeId,
-                  name: nodeName,
+                  name: nodeName
                 });
                 totalFindings++;
               } else {
                 truncated = true;
               }
             }
-          } catch (e) {
-            /* slot sublayer or mixed */
-          }
+          } catch (e) { /* slot sublayer or mixed */ }
         }
 
         // default-name: Nodes with default Figma names
@@ -2849,16 +2683,14 @@ figma.ui.onmessage = async (msg) => {
                 findings['default-name'].push({
                   id: nodeId,
                   name: nodeName,
-                  type: nodeType,
+                  type: nodeType
                 });
                 totalFindings++;
               } else {
                 truncated = true;
               }
             }
-          } catch (e) {
-            /* slot sublayer */
-          }
+          } catch (e) { /* slot sublayer */ }
         }
 
         // detached-component: Frames with "/" in name but not component/instance
@@ -2868,16 +2700,14 @@ figma.ui.onmessage = async (msg) => {
               if (totalFindings < maxFindings) {
                 findings['detached-component'].push({
                   id: nodeId,
-                  name: nodeName,
+                  name: nodeName
                 });
                 totalFindings++;
               } else {
                 truncated = true;
               }
             }
-          } catch (e) {
-            /* slot sublayer */
-          }
+          } catch (e) { /* slot sublayer */ }
         }
 
         // ---- Layout checks ----
@@ -2887,24 +2717,16 @@ figma.ui.onmessage = async (msg) => {
           try {
             if (nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'COMPONENT_SET') {
               var childCount = 0;
-              try {
-                childCount = node.children ? node.children.length : 0;
-              } catch (e) {
-                /* skip */
-              }
+              try { childCount = node.children ? node.children.length : 0; } catch (e) { /* skip */ }
               if (childCount >= 2) {
                 var layoutMode = 'NONE';
-                try {
-                  layoutMode = node.layoutMode;
-                } catch (e) {
-                  /* skip */
-                }
+                try { layoutMode = node.layoutMode; } catch (e) { /* skip */ }
                 if (!layoutMode || layoutMode === 'NONE') {
                   if (totalFindings < maxFindings) {
                     findings['no-autolayout'].push({
                       id: nodeId,
                       name: nodeName,
-                      childCount: childCount,
+                      childCount: childCount
                     });
                     totalFindings++;
                   } else {
@@ -2913,9 +2735,7 @@ figma.ui.onmessage = async (msg) => {
                 }
               }
             }
-          } catch (e) {
-            /* slot sublayer */
-          }
+          } catch (e) { /* slot sublayer */ }
         }
 
         // empty-container: Frames with zero children
@@ -2923,16 +2743,12 @@ figma.ui.onmessage = async (msg) => {
           try {
             if (nodeType === 'FRAME') {
               var ec = 0;
-              try {
-                ec = node.children ? node.children.length : 0;
-              } catch (e) {
-                /* skip */
-              }
+              try { ec = node.children ? node.children.length : 0; } catch (e) { /* skip */ }
               if (ec === 0) {
                 if (totalFindings < maxFindings) {
                   findings['empty-container'].push({
                     id: nodeId,
-                    name: nodeName,
+                    name: nodeName
                   });
                   totalFindings++;
                 } else {
@@ -2940,9 +2756,7 @@ figma.ui.onmessage = async (msg) => {
                 }
               }
             }
-          } catch (e) {
-            /* slot sublayer */
-          }
+          } catch (e) { /* slot sublayer */ }
         }
 
         // ---- Recurse into children ----
@@ -2953,9 +2767,7 @@ figma.ui.onmessage = async (msg) => {
               walkNode(node.children[ci], depth + 1);
             }
           }
-        } catch (e) {
-          /* no children or slot sublayer */
-        }
+        } catch (e) { /* no children or slot sublayer */ }
       }
 
       // ---- Execute walk ----
@@ -2974,7 +2786,7 @@ figma.ui.onmessage = async (msg) => {
           severity: sev,
           count: findings[ruleId].length,
           description: ruleDescriptions[ruleId],
-          nodes: findings[ruleId],
+          nodes: findings[ruleId]
         });
         summaryObj[sev] = (summaryObj[sev] || 0) + findings[ruleId].length;
         summaryObj.total += findings[ruleId].length;
@@ -2985,27 +2797,22 @@ figma.ui.onmessage = async (msg) => {
         rootNodeName: rootNode.name,
         nodesScanned: nodesScanned,
         categories: categories,
-        summary: summaryObj,
+        summary: summaryObj
       };
 
       if (truncated) {
         responseData.warning = 'Showing first ' + maxFindings + ' findings...';
       }
 
-      console.log(
-        '🌉 [Desktop Bridge] Lint complete: ' +
-          summaryObj.total +
-          ' findings across ' +
-          nodesScanned +
-          ' nodes'
-      );
+      console.log('🌉 [Desktop Bridge] Lint complete: ' + summaryObj.total + ' findings across ' + nodesScanned + ' nodes');
 
       figma.ui.postMessage({
         type: 'LINT_DESIGN_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: responseData,
+        data: responseData
       });
+
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Lint design error:', errorMsg);
@@ -3013,7 +2820,7 @@ figma.ui.onmessage = async (msg) => {
         type: 'LINT_DESIGN_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: errorMsg,
+        error: errorMsg
       });
     }
   }
@@ -3039,18 +2846,16 @@ figma.ui.onmessage = async (msg) => {
 
       // Set sticky color if provided
       if (msg.color) {
-        // FigJam sticky colors are set via authorVisible property isn't the right API
-        // The correct way is to set fills with a predefined color
         var stickyColors = {
-          YELLOW: { r: 1, g: 0.85, b: 0.4 },
-          BLUE: { r: 0.53, g: 0.78, b: 1 },
-          GREEN: { r: 0.55, g: 0.87, b: 0.53 },
-          PINK: { r: 1, g: 0.6, b: 0.78 },
-          ORANGE: { r: 1, g: 0.71, b: 0.42 },
-          PURPLE: { r: 0.78, g: 0.65, b: 1 },
-          RED: { r: 1, g: 0.55, b: 0.55 },
-          LIGHT_GRAY: { r: 0.9, g: 0.9, b: 0.9 },
-          GRAY: { r: 0.7, g: 0.7, b: 0.7 },
+          'YELLOW': { r: 1, g: 0.85, b: 0.4 },
+          'BLUE': { r: 0.53, g: 0.78, b: 1 },
+          'GREEN': { r: 0.55, g: 0.87, b: 0.53 },
+          'PINK': { r: 1, g: 0.6, b: 0.78 },
+          'ORANGE': { r: 1, g: 0.71, b: 0.42 },
+          'PURPLE': { r: 0.78, g: 0.65, b: 1 },
+          'RED': { r: 1, g: 0.55, b: 0.55 },
+          'LIGHT_GRAY': { r: 0.9, g: 0.9, b: 0.9 },
+          'GRAY': { r: 0.7, g: 0.7, b: 0.7 }
         };
         var stickyColor = stickyColors[msg.color.toUpperCase()];
         if (stickyColor) {
@@ -3062,15 +2867,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'CREATE_STICKY_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: { id: sticky.id, type: sticky.type, name: sticky.name, x: sticky.x, y: sticky.y },
+        data: { id: sticky.id, type: sticky.type, name: sticky.name, x: sticky.x, y: sticky.y }
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Create sticky error:', error);
       figma.ui.postMessage({
         type: 'CREATE_STICKY_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -3084,15 +2890,15 @@ figma.ui.onmessage = async (msg) => {
       console.log('🌉 [Desktop Bridge] Batch creating sticky notes:', msg.stickies.length);
 
       var stickyColors = {
-        YELLOW: { r: 1, g: 0.85, b: 0.4 },
-        BLUE: { r: 0.53, g: 0.78, b: 1 },
-        GREEN: { r: 0.55, g: 0.87, b: 0.53 },
-        PINK: { r: 1, g: 0.6, b: 0.78 },
-        ORANGE: { r: 1, g: 0.71, b: 0.42 },
-        PURPLE: { r: 0.78, g: 0.65, b: 1 },
-        RED: { r: 1, g: 0.55, b: 0.55 },
-        LIGHT_GRAY: { r: 0.9, g: 0.9, b: 0.9 },
-        GRAY: { r: 0.7, g: 0.7, b: 0.7 },
+        'YELLOW': { r: 1, g: 0.85, b: 0.4 },
+        'BLUE': { r: 0.53, g: 0.78, b: 1 },
+        'GREEN': { r: 0.55, g: 0.87, b: 0.53 },
+        'PINK': { r: 1, g: 0.6, b: 0.78 },
+        'ORANGE': { r: 1, g: 0.71, b: 0.42 },
+        'PURPLE': { r: 0.78, g: 0.65, b: 1 },
+        'RED': { r: 1, g: 0.55, b: 0.55 },
+        'LIGHT_GRAY': { r: 0.9, g: 0.9, b: 0.9 },
+        'GRAY': { r: 0.7, g: 0.7, b: 0.7 }
       };
 
       var created = [];
@@ -3121,13 +2927,7 @@ figma.ui.onmessage = async (msg) => {
             }
           }
 
-          created.push({
-            id: sticky.id,
-            type: sticky.type,
-            name: sticky.name,
-            x: sticky.x,
-            y: sticky.y,
-          });
+          created.push({ id: sticky.id, type: sticky.type, name: sticky.name, x: sticky.x, y: sticky.y });
         } catch (e) {
           failed.push({ index: si, error: e.message || String(e) });
         }
@@ -3137,15 +2937,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'CREATE_STICKIES_RESULT',
         requestId: msg.requestId,
         success: failed.length === 0,
-        data: { created: created.length, failed: failed.length, results: created, errors: failed },
+        data: { created: created.length, failed: failed.length, results: created, errors: failed }
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Batch create stickies error:', error);
       figma.ui.postMessage({
         type: 'CREATE_STICKIES_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -3169,11 +2970,11 @@ figma.ui.onmessage = async (msg) => {
 
       connector.connectorStart = {
         endpointNodeId: msg.startNodeId,
-        magnet: 'AUTO',
+        magnet: 'AUTO'
       };
       connector.connectorEnd = {
         endpointNodeId: msg.endNodeId,
-        magnet: 'AUTO',
+        magnet: 'AUTO'
       };
 
       // Set label text if provided
@@ -3192,15 +2993,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'CREATE_CONNECTOR_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: { id: connector.id, type: connector.type, name: connector.name },
+        data: { id: connector.id, type: connector.type, name: connector.name }
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Create connector error:', error);
       figma.ui.postMessage({
         type: 'CREATE_CONNECTOR_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -3238,15 +3040,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'CREATE_SHAPE_WITH_TEXT_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: { id: shape.id, type: shape.type, name: shape.name, x: shape.x, y: shape.y },
+        data: { id: shape.id, type: shape.type, name: shape.name, x: shape.x, y: shape.y }
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Create shape with text error:', error);
       figma.ui.postMessage({
         type: 'CREATE_SHAPE_WITH_TEXT_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -3281,21 +3084,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'CREATE_TABLE_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: {
-          id: table.id,
-          type: table.type,
-          name: table.name,
-          rows: msg.rows,
-          columns: msg.columns,
-        },
+        data: { id: table.id, type: table.type, name: table.name, rows: msg.rows, columns: msg.columns }
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Create table error:', error);
       figma.ui.postMessage({
         type: 'CREATE_TABLE_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -3331,21 +3129,16 @@ figma.ui.onmessage = async (msg) => {
         type: 'CREATE_CODE_BLOCK_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: {
-          id: codeBlock.id,
-          type: codeBlock.type,
-          name: codeBlock.name,
-          x: codeBlock.x,
-          y: codeBlock.y,
-        },
+        data: { id: codeBlock.id, type: codeBlock.type, name: codeBlock.name, x: codeBlock.x, y: codeBlock.y }
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Create code block error:', error);
       figma.ui.postMessage({
         type: 'CREATE_CODE_BLOCK_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -3362,24 +3155,11 @@ figma.ui.onmessage = async (msg) => {
       var filterTypes = msg.nodeTypes || null;
 
       // FigJam node types we care about
-      var figjamTypes = [
-        'STICKY',
-        'SHAPE_WITH_TEXT',
-        'CONNECTOR',
-        'TABLE',
-        'CODE_BLOCK',
-        'SECTION',
-        'FRAME',
-        'TEXT',
-      ];
+      var figjamTypes = ['STICKY', 'SHAPE_WITH_TEXT', 'CONNECTOR', 'TABLE', 'CODE_BLOCK', 'SECTION', 'FRAME', 'TEXT'];
 
       var allNodes = figma.currentPage.children;
       var results = [];
       var truncated = false;
-
-      // TODO: This is where you decide how to traverse and serialize each node type.
-      // The key design choice: how deep to go, and what properties matter for each type.
-      // Consider: stickies have text + color, connectors have endpoints, tables have cell data.
 
       for (var ni = 0; ni < allNodes.length && results.length < maxNodes; ni++) {
         var node = allNodes[ni];
@@ -3396,7 +3176,7 @@ figma.ui.onmessage = async (msg) => {
           x: node.x,
           y: node.y,
           width: node.width,
-          height: node.height,
+          height: node.height
         };
 
         // Extract text content based on node type
@@ -3454,16 +3234,17 @@ figma.ui.onmessage = async (msg) => {
           nodes: results,
           totalFound: results.length,
           truncated: truncated,
-          page: figma.currentPage.name,
-        },
+          page: figma.currentPage.name
+        }
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Get board contents error:', error);
       figma.ui.postMessage({
         type: 'GET_BOARD_CONTENTS_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -3476,9 +3257,7 @@ figma.ui.onmessage = async (msg) => {
       }
       console.log('🌉 [Desktop Bridge] Reading connection graph');
 
-      var connectors = figma.currentPage.findAll(function (n) {
-        return n.type === 'CONNECTOR';
-      });
+      var connectors = figma.currentPage.findAll(function(n) { return n.type === 'CONNECTOR'; });
       var edges = [];
       var nodeMap = {};
 
@@ -3492,7 +3271,7 @@ figma.ui.onmessage = async (msg) => {
           connectorId: conn.id,
           startNodeId: startId,
           endNodeId: endId,
-          label: label,
+          label: label
         });
 
         // Build a lookup of connected nodes with their names/types
@@ -3503,7 +3282,7 @@ figma.ui.onmessage = async (msg) => {
               id: startId,
               type: startNode.type,
               name: startNode.name,
-              text: startNode.text ? startNode.text.characters : startNode.characters || '',
+              text: startNode.text ? startNode.text.characters : (startNode.characters || '')
             };
           }
         }
@@ -3514,7 +3293,7 @@ figma.ui.onmessage = async (msg) => {
               id: endId,
               type: endNode.type,
               name: endNode.name,
-              text: endNode.text ? endNode.text.characters : endNode.characters || '',
+              text: endNode.text ? endNode.text.characters : (endNode.characters || '')
             };
           }
         }
@@ -3528,16 +3307,17 @@ figma.ui.onmessage = async (msg) => {
           edges: edges,
           connectedNodes: nodeMap,
           totalConnectors: connectors.length,
-          totalConnectedNodes: Object.keys(nodeMap).length,
-        },
+          totalConnectedNodes: Object.keys(nodeMap).length
+        }
       });
+
     } catch (error) {
       console.error('🌉 [Desktop Bridge] Get connections error:', error);
       figma.ui.postMessage({
         type: 'GET_CONNECTIONS_RESULT',
         requestId: msg.requestId,
         success: false,
-        error: error.message || String(error),
+        error: error.message || String(error)
       });
     }
   }
@@ -3548,95 +3328,84 @@ figma.ui.onmessage = async (msg) => {
 // Fires when variables, styles, or nodes change (by any means — user edits, API, etc.)
 // Requires figma.loadAllPagesAsync() in dynamic-page mode before registering.
 // ============================================================================
-figma
-  .loadAllPagesAsync()
-  .then(function () {
-    figma.on('documentchange', function (event) {
-      var hasStyleChanges = false;
-      var hasNodeChanges = false;
-      var changedNodeIds = [];
+figma.loadAllPagesAsync().then(function() {
+  figma.on('documentchange', function(event) {
+    var hasStyleChanges = false;
+    var hasNodeChanges = false;
+    var changedNodeIds = [];
 
-      for (var i = 0; i < event.documentChanges.length; i++) {
-        var change = event.documentChanges[i];
-        if (
-          change.type === 'STYLE_CREATE' ||
-          change.type === 'STYLE_DELETE' ||
-          change.type === 'STYLE_PROPERTY_CHANGE'
-        ) {
-          hasStyleChanges = true;
-        } else if (
-          change.type === 'CREATE' ||
-          change.type === 'DELETE' ||
-          change.type === 'PROPERTY_CHANGE'
-        ) {
-          hasNodeChanges = true;
-          if (change.id && changedNodeIds.length < 50) {
-            changedNodeIds.push(change.id);
-          }
+    for (var i = 0; i < event.documentChanges.length; i++) {
+      var change = event.documentChanges[i];
+      if (change.type === 'STYLE_CREATE' || change.type === 'STYLE_DELETE' || change.type === 'STYLE_PROPERTY_CHANGE') {
+        hasStyleChanges = true;
+      } else if (change.type === 'CREATE' || change.type === 'DELETE' || change.type === 'PROPERTY_CHANGE') {
+        hasNodeChanges = true;
+        if (change.id && changedNodeIds.length < 50) {
+          changedNodeIds.push(change.id);
         }
       }
+    }
 
-      if (hasStyleChanges || hasNodeChanges) {
-        figma.ui.postMessage({
-          type: 'DOCUMENT_CHANGE',
-          data: {
-            hasStyleChanges: hasStyleChanges,
-            hasNodeChanges: hasNodeChanges,
-            changedNodeIds: changedNodeIds,
-            changeCount: event.documentChanges.length,
-            timestamp: Date.now(),
-          },
-        });
-      }
-    });
-    // Selection change listener — tracks what the user has selected in Figma
-    figma.on('selectionchange', function () {
-      var selection = figma.currentPage.selection;
-      var selectedNodes = [];
-      for (var i = 0; i < Math.min(selection.length, 50); i++) {
-        try {
-          var node = selection[i];
-          selectedNodes.push({
-            id: node.id,
-            name: node.name,
-            type: node.type,
-            width: node.width,
-            height: node.height,
-          });
-        } catch (e) {
-          // Slot sublayers and table cells may not be fully resolvable —
-          // accessing .name throws "does not exist" for these node types.
-          // Skip silently rather than crashing the plugin.
+    if (hasStyleChanges || hasNodeChanges) {
+      figma.ui.postMessage({
+        type: 'DOCUMENT_CHANGE',
+        data: {
+          hasStyleChanges: hasStyleChanges,
+          hasNodeChanges: hasNodeChanges,
+          changedNodeIds: changedNodeIds,
+          changeCount: event.documentChanges.length,
+          timestamp: Date.now()
         }
-      }
-      figma.ui.postMessage({
-        type: 'SELECTION_CHANGE',
-        data: {
-          nodes: selectedNodes,
-          count: selection.length,
-          page: figma.currentPage.name,
-          timestamp: Date.now(),
-        },
       });
-    });
-
-    // Page change listener — tracks which page the user is viewing
-    figma.on('currentpagechange', function () {
-      figma.ui.postMessage({
-        type: 'PAGE_CHANGE',
-        data: {
-          pageId: figma.currentPage.id,
-          pageName: figma.currentPage.name,
-          timestamp: Date.now(),
-        },
-      });
-    });
-
-    console.log('🌉 [Desktop Bridge] Document change, selection, and page listeners registered');
-  })
-  .catch(function (err) {
-    console.warn('🌉 [Desktop Bridge] Could not register event listeners:', err);
+    }
   });
+  // Selection change listener — tracks what the user has selected in Figma
+  figma.on('selectionchange', function() {
+    var selection = figma.currentPage.selection;
+    var selectedNodes = [];
+    for (var i = 0; i < Math.min(selection.length, 50); i++) {
+      try {
+        var node = selection[i];
+        selectedNodes.push({
+          id: node.id,
+          name: node.name,
+          type: node.type,
+          width: node.width,
+          height: node.height
+        });
+      } catch (e) {
+        // Slot sublayers and table cells may not be fully resolvable —
+        // accessing .name throws "does not exist" for these node types.
+        // Skip silently rather than crashing the plugin.
+      }
+    }
+    figma.ui.postMessage({
+      type: 'SELECTION_CHANGE',
+      data: {
+        nodes: selectedNodes,
+        count: selection.length,
+        page: figma.currentPage.name,
+        timestamp: Date.now()
+      }
+    });
+  });
+
+  // Page change listener — tracks which page the user is viewing
+  figma.on('currentpagechange', function() {
+    figma.ui.postMessage({
+      type: 'PAGE_CHANGE',
+      data: {
+        pageId: figma.currentPage.id,
+        pageName: figma.currentPage.name,
+        timestamp: Date.now()
+      }
+    });
+  });
+
+  console.log('🌉 [Desktop Bridge] Document change, selection, and page listeners registered');
+}).catch(function(err) {
+  console.warn('🌉 [Desktop Bridge] Could not register event listeners:', err);
+});
 
 console.log('🌉 [Desktop Bridge] Ready to handle component requests');
 console.log('🌉 [Desktop Bridge] Plugin will stay open until manually closed');
