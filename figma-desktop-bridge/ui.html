@@ -638,6 +638,12 @@
         'CREATE_CODE_BLOCK': function(params) {
           return window.sendPluginCommand('CREATE_CODE_BLOCK', params);
         },
+        'GET_BOARD_CONTENTS': function(params) {
+          return window.sendPluginCommand('GET_BOARD_CONTENTS', params, 30000);
+        },
+        'GET_CONNECTIONS': function(params) {
+          return window.sendPluginCommand('GET_CONNECTIONS', params || {}, 15000);
+        },
         'CLEAR_CONSOLE': function() {
           // Console buffer is maintained server-side; this is a no-op ack
           return Promise.resolve({ cleared: true });
@@ -1237,6 +1243,12 @@
           break;
         case 'CREATE_CODE_BLOCK_RESULT':
           handleResult('CREATE_CODE_BLOCK', 'data');
+          break;
+        case 'GET_BOARD_CONTENTS_RESULT':
+          handleResult('GET_BOARD_CONTENTS', 'data');
+          break;
+        case 'GET_CONNECTIONS_RESULT':
+          handleResult('GET_CONNECTIONS', 'data');
           break;
 
         // File info

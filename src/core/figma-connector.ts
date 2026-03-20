@@ -76,6 +76,8 @@ export interface IFigmaConnector {
   createShapeWithText(params: { text?: string; shapeType?: string; x?: number; y?: number }): Promise<any>;
   createTable(params: { rows: number; columns: number; data?: string[][]; x?: number; y?: number }): Promise<any>;
   createCodeBlock(params: { code: string; language?: string; x?: number; y?: number }): Promise<any>;
+  getBoardContents(params: { nodeTypes?: string[]; maxNodes?: number }): Promise<any>;
+  getConnections(): Promise<any>;
 
   // Cache management
   clearFrameCache(): void;

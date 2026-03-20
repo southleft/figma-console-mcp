@@ -15,6 +15,8 @@ const MAX_TEXT_LENGTH = 5000;
 const MAX_CODE_LENGTH = 50000;
 /** Maximum node IDs for arrangement */
 const MAX_ARRANGE_NODES = 500;
+/** Maximum nodes to return from board content reads */
+const MAX_READ_NODES = 1000;
 
 /**
  * Register FigJam-specific tools.
@@ -423,6 +425,93 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 							text: JSON.stringify({
 								error: error instanceof Error ? error.message : String(error),
 								hint: "Make sure all node IDs are valid and the Desktop Bridge plugin is running.",
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	// ============================================================================
+	// READ TOOLS — Query existing FigJam board content
+	// ============================================================================
+
+	server.tool(
+		"figjam_get_board_contents",
+		`Read all content from a FigJam board. Returns stickies, shapes, connectors, tables, code blocks, and sections with their text content and positions.
+
+Use this to understand what's on a board before modifying it, or to extract structured data from collaborative sessions.
+
+**Filters:** Pass nodeTypes to limit results (e.g., ["STICKY"] for only stickies). Omit for everything.`,
+		{
+			nodeTypes: z
+				.array(z.string())
+				.optional()
+				.describe(
+					"Filter by node types: STICKY, SHAPE_WITH_TEXT, CONNECTOR, TABLE, CODE_BLOCK, SECTION, FRAME, TEXT. Omit for all.",
+				),
+			maxNodes: z
+				.number()
+				.min(1)
+				.max(MAX_READ_NODES)
+				.optional()
+				.default(500)
+				.describe(
+					`Maximum nodes to return (1-${MAX_READ_NODES}, default: 500)`,
+				),
+		},
+		async ({ nodeTypes, maxNodes }) => {
+			try {
+				const connector = await getDesktopConnector();
+				const result = await connector.getBoardContents({
+					nodeTypes,
+					maxNodes,
+				});
+				return {
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
+				};
+			} catch (error) {
+				logger.error({ error }, "figjam_get_board_contents failed");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in FigJam files. Make sure the Desktop Bridge plugin is running in a FigJam board.",
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
+		"figjam_get_connections",
+		`Read the connection graph from a FigJam board. Returns all connectors with their start/end node references and labels.
+
+Use this to understand relationships, flowcharts, and diagrams. Returns edges as {startNodeId, endNodeId, label} plus a summary of connected nodes.`,
+		{},
+		async () => {
+			try {
+				const connector = await getDesktopConnector();
+				const result = await connector.getConnections();
+				return {
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
+				};
+			} catch (error) {
+				logger.error({ error }, "figjam_get_connections failed");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in FigJam files. Make sure the Desktop Bridge plugin is running in a FigJam board.",
 							}),
 						},
 					],

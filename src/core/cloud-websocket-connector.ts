@@ -317,6 +317,14 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 		return this.sendCommand('CREATE_CODE_BLOCK', params);
 	}
 
+	async getBoardContents(params: { nodeTypes?: string[]; maxNodes?: number }): Promise<any> {
+		return this.sendCommand('GET_BOARD_CONTENTS', params, 30000);
+	}
+
+	async getConnections(): Promise<any> {
+		return this.sendCommand('GET_CONNECTIONS', {}, 15000);
+	}
+
 	// ============================================================================
 	// Cache management (no-op for cloud relay)
 	// ============================================================================

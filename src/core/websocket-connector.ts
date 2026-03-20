@@ -319,6 +319,14 @@ export class WebSocketConnector implements IFigmaConnector {
     return this.wsServer.sendCommand('CREATE_CODE_BLOCK', params);
   }
 
+  async getBoardContents(params: { nodeTypes?: string[]; maxNodes?: number }): Promise<any> {
+    return this.wsServer.sendCommand('GET_BOARD_CONTENTS', params, 30000);
+  }
+
+  async getConnections(): Promise<any> {
+    return this.wsServer.sendCommand('GET_CONNECTIONS', {}, 15000);
+  }
+
   // ============================================================================
   // Cache management (no-op for WebSocket — no frame cache)
   // ============================================================================

@@ -65,6 +65,32 @@ function createMockConnector(overrides: Record<string, jest.Mock> = {}) {
 			success: true,
 			result: { arranged: 3, layout: "grid" },
 		}),
+		getBoardContents: jest.fn().mockResolvedValue({
+			success: true,
+			data: {
+				nodes: [
+					{ id: "1:10", type: "STICKY", name: "Note", text: "Hello", x: 0, y: 0 },
+					{ id: "1:11", type: "SHAPE_WITH_TEXT", name: "Step 1", text: "Start", x: 300, y: 0 },
+				],
+				totalFound: 2,
+				truncated: false,
+				page: "Page 1",
+			},
+		}),
+		getConnections: jest.fn().mockResolvedValue({
+			success: true,
+			data: {
+				edges: [
+					{ connectorId: "1:20", startNodeId: "1:10", endNodeId: "1:11", label: "leads to" },
+				],
+				connectedNodes: {
+					"1:10": { id: "1:10", type: "STICKY", name: "Note", text: "Hello" },
+					"1:11": { id: "1:11", type: "SHAPE_WITH_TEXT", name: "Step 1", text: "Start" },
+				},
+				totalConnectors: 1,
+				totalConnectedNodes: 2,
+			},
+		}),
 		...overrides,
 	};
 }
@@ -88,8 +114,8 @@ describe("FigJam Tools", () => {
 	// Registration
 	// ========================================================================
 
-	it("registers all 7 FigJam tools", () => {
-		expect(server.tool).toHaveBeenCalledTimes(7);
+	it("registers all 9 FigJam tools", () => {
+		expect(server.tool).toHaveBeenCalledTimes(9);
 		const names = server.tool.mock.calls.map((c: any[]) => c[0]);
 		expect(names).toContain("figjam_create_sticky");
 		expect(names).toContain("figjam_create_stickies");
@@ -98,6 +124,8 @@ describe("FigJam Tools", () => {
 		expect(names).toContain("figjam_create_table");
 		expect(names).toContain("figjam_create_code_block");
 		expect(names).toContain("figjam_auto_arrange");
+		expect(names).toContain("figjam_get_board_contents");
+		expect(names).toContain("figjam_get_connections");
 	});
 
 	// ========================================================================
@@ -326,6 +354,84 @@ describe("FigJam Tools", () => {
 			});
 
 			expect(result.isError).toBe(true);
+		});
+	});
+
+	// ========================================================================
+	// figjam_get_board_contents
+	// ========================================================================
+
+	describe("figjam_get_board_contents", () => {
+		it("reads all board contents", async () => {
+			const tool = server._getTool("figjam_get_board_contents");
+			const result = await tool.handler({ maxNodes: 500 });
+
+			expect(mockConnector.getBoardContents).toHaveBeenCalledWith({
+				nodeTypes: undefined,
+				maxNodes: 500,
+			});
+			expect(result.isError).toBeUndefined();
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.success).toBe(true);
+			expect(parsed.data.nodes).toHaveLength(2);
+			expect(parsed.data.nodes[0].type).toBe("STICKY");
+		});
+
+		it("passes nodeTypes filter to connector", async () => {
+			const tool = server._getTool("figjam_get_board_contents");
+			await tool.handler({ nodeTypes: ["STICKY"], maxNodes: 100 });
+
+			expect(mockConnector.getBoardContents).toHaveBeenCalledWith({
+				nodeTypes: ["STICKY"],
+				maxNodes: 100,
+			});
+		});
+
+		it("returns error when not in FigJam", async () => {
+			mockConnector.getBoardContents.mockRejectedValue(
+				new Error("GET_BOARD_CONTENTS is only available in FigJam files")
+			);
+
+			const tool = server._getTool("figjam_get_board_contents");
+			const result = await tool.handler({ maxNodes: 500 });
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("only available in FigJam");
+		});
+	});
+
+	// ========================================================================
+	// figjam_get_connections
+	// ========================================================================
+
+	describe("figjam_get_connections", () => {
+		it("reads the connection graph", async () => {
+			const tool = server._getTool("figjam_get_connections");
+			const result = await tool.handler({});
+
+			expect(mockConnector.getConnections).toHaveBeenCalled();
+			expect(result.isError).toBeUndefined();
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.success).toBe(true);
+			expect(parsed.data.edges).toHaveLength(1);
+			expect(parsed.data.edges[0].startNodeId).toBe("1:10");
+			expect(parsed.data.edges[0].endNodeId).toBe("1:11");
+			expect(parsed.data.edges[0].label).toBe("leads to");
+			expect(parsed.data.totalConnectedNodes).toBe(2);
+		});
+
+		it("returns error when not in FigJam", async () => {
+			mockConnector.getConnections.mockRejectedValue(
+				new Error("GET_CONNECTIONS is only available in FigJam files")
+			);
+
+			const tool = server._getTool("figjam_get_connections");
+			const result = await tool.handler({});
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("only available in FigJam");
 		});
 	});
 });
