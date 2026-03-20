@@ -1082,10 +1082,38 @@ figma.ui.onmessage = async (msg) => {
 
       // Try published library first (by key), then fall back to local component (by nodeId)
       if (msg.componentKey) {
+        // Try importComponentByKeyAsync first (for COMPONENT nodes)
         try {
-          component = await figma.importComponentByKeyAsync(msg.componentKey);
+          var importResult = await Promise.race([
+            figma.importComponentByKeyAsync(msg.componentKey),
+            new Promise(function(_, reject) {
+              setTimeout(function() { reject(new Error('Import timed out after 15s — component may not be published to a team library')); }, 15000);
+            })
+          ]);
+          component = importResult;
         } catch (importError) {
-          console.log('🌉 [Desktop Bridge] Not a published component, trying local...');
+          var importErrMsg = importError && importError.message ? importError.message : String(importError);
+          console.log('🌉 [Desktop Bridge] importComponentByKeyAsync failed: ' + importErrMsg);
+        }
+
+        // If that failed, try importComponentSetByKeyAsync (for COMPONENT_SET nodes)
+        if (!component) {
+          try {
+            var setResult = await Promise.race([
+              figma.importComponentSetByKeyAsync(msg.componentKey),
+              new Promise(function(_, reject) {
+                setTimeout(function() { reject(new Error('ComponentSet import timed out after 15s')); }, 15000);
+              })
+            ]);
+            // Got the component set — use its default variant (first child)
+            if (setResult && setResult.type === 'COMPONENT_SET') {
+              console.log('🌉 [Desktop Bridge] Imported component set "' + setResult.name + '" with ' + setResult.children.length + ' variants');
+              component = setResult.defaultVariant || setResult.children[0];
+            }
+          } catch (setError) {
+            var setErrMsg = setError && setError.message ? setError.message : String(setError);
+            console.log('🌉 [Desktop Bridge] importComponentSetByKeyAsync also failed: ' + setErrMsg + ', trying local...');
+          }
         }
       }
 

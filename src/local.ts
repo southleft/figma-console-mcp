@@ -1363,7 +1363,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												: this.wsStartupError?.code === "EADDRINUSE"
 													? `❌ All WebSocket ports ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use`
 													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
-													? `❌ WebSocket server running on port ${this.wsActualPort} (fallback) but no plugin connected. Re-import the Desktop Bridge plugin in Figma to enable multi-port scanning.`
+													? `❌ WebSocket server running on port ${this.wsActualPort} (fallback) but no plugin connected. Restart the Desktop Bridge plugin in Figma to reconnect.`
 													: "❌ No connection to Figma Desktop",
 											setupInstructions: !setupValid
 												? this.wsStartupError?.code === "EADDRINUSE"
@@ -1379,7 +1379,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												? this.wsStartupError?.code === "EADDRINUSE"
 													? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use — most likely multiple Claude Desktop tabs or terminal sessions are running the Figma Console MCP server. Ask the user to close some sessions and restart.`
 													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
-														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected — most likely because the plugin has old code that only scans port ${this.wsPreferredPort}. TELL THE USER: Re-import the Desktop Bridge plugin in Figma (Plugins → Development → Import plugin from manifest) to update it with multi-port scanning support. This is a one-time step.${this.getPluginPath() ? ' The manifest file is at: ' + this.getPluginPath() : ''}`
+														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected. TELL THE USER: Close and reopen the Desktop Bridge plugin in Figma to reconnect. The plugin's bootloader will automatically scan all ports in the range.`
 														: `No connection to Figma Desktop. Open the Desktop Bridge plugin in Figma to connect.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`
 												: activeTransport === "websocket"
 													? `Connected via WebSocket Bridge to "${currentFileName || "unknown file"}" on port ${this.wsActualPort}. All design tools and console monitoring tools are available. Console logs are captured from the plugin sandbox (code.js). IMPORTANT: Always verify the file name before destructive operations when multiple files have the plugin open.`
@@ -3847,6 +3847,11 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 **For local components:** Pass BOTH componentKey AND nodeId together. Most local/unpublished components require nodeId.
 **For library components:** Pass just the componentKey from figma_get_library_components or figma_search_components (with libraryFileKey). The component will be imported from the published library automatically.
 
+**CRITICAL: Use VARIANT keys, not COMPONENT_SET keys!**
+When importing from a published library, use the key of a specific variant (type: "COMPONENT"), NOT the parent component set key (type: "COMPONENT_SET"). Component set keys will fail with importComponentByKeyAsync. In figma_get_library_components results, look inside the "variants" array for individual variant keys.
+
+**Font loading:** Library components may use fonts not loaded in the current file. If instantiation fails with a font error, load the required fonts first via figma_execute before retrying (e.g., \`await figma.loadFontAsync({ family: "Geist", style: "Regular" })\`).
+
 **IMPORTANT: Always re-search before instantiating!**
 NodeIds are session-specific and may be stale from previous conversations. ALWAYS search for components at the start of each design session to get current, valid identifiers.
 
@@ -3965,8 +3970,12 @@ After instantiating components, use figma_take_screenshot to verify the result l
 
 **WORKFLOW:**
 1. Call this tool with the library file's URL or file key
-2. Browse the returned components (with keys, names, variants)
-3. Use figma_instantiate_component with the componentKey to place them in the current file
+2. Browse the returned components — results include COMPONENT_SET (with variants array) and standalone COMPONENT types
+3. Use figma_instantiate_component with a VARIANT key (from the variants array inside a COMPONENT_SET result, NOT the component set key itself)
+
+**SEARCH NOTE:** The query filter matches both component names AND descriptions. If you get unexpected results (e.g., "Accordion" when searching "Button"), verify the result name matches what you need — it may have matched on a description mention.
+
+**MULTI-FILE TIP:** If you need to find a specific component and REST API search returns too many results, you can switch to the library file via figma_navigate, use figma_execute to find the exact component and its variant key, then switch back.
 
 **NOTE:** Requires FIGMA_ACCESS_TOKEN to be set (uses the Figma REST API to read the library file).`,
 			{
@@ -4060,20 +4069,26 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					const api = await this.getFigmaAPI();
 
 					// Fetch both components and component sets in parallel
+					// Surface errors instead of swallowing them — token/scope issues need to be visible
+					const apiErrors: string[] = [];
 					const [componentsResponse, componentSetsResponse] =
 						await Promise.all([
 							api.getComponents(fileKey).catch((err: Error) => {
+								const msg = err.message || String(err);
 								logger.warn(
 									{ error: err },
 									"Failed to fetch components from library",
 								);
+								apiErrors.push(`Components API: ${msg}`);
 								return { meta: { components: [] } };
 							}),
 							api.getComponentSets(fileKey).catch((err: Error) => {
+								const msg = err.message || String(err);
 								logger.warn(
 									{ error: err },
 									"Failed to fetch component sets from library",
 								);
+								apiErrors.push(`Component Sets API: ${msg}`);
 								return { meta: { component_sets: [] } };
 							}),
 						]);
@@ -4185,9 +4200,13 @@ After instantiating components, use figma_take_screenshot to verify the result l
 							{
 								type: "text",
 								text: JSON.stringify({
-									success: true,
+									success: apiErrors.length === 0,
 									libraryFileKey: fileKey,
 									query: query || "(all)",
+									...(apiErrors.length > 0 && {
+										apiErrors,
+										hint: "REST API errors occurred. Check that FIGMA_ACCESS_TOKEN is valid and has file_content:read scope. If the token is correct, the library components may not be published to a team library.",
+									}),
 									summary: {
 										totalComponentSets:
 											componentSets.length,
@@ -4203,11 +4222,16 @@ After instantiating components, use figma_take_screenshot to verify the result l
 										hasMore,
 									},
 									usage: {
-										instantiate: `To use a component: call figma_instantiate_component with the componentKey from results above.`,
-										example: paginatedResults[0]
-											? `figma_instantiate_component({ componentKey: "${paginatedResults[0].key}" })`
-											: undefined,
-										note: "Components will be imported from the published library into the current file automatically.",
+										instantiate: `To use a component: call figma_instantiate_component with a VARIANT key (not the component set key). For COMPONENT_SET results, pick a variant from the "variants" array.`,
+										example: (() => {
+											const first = paginatedResults[0];
+											if (!first) return undefined;
+											if (first.type === "COMPONENT_SET" && first.variants?.length > 0) {
+												return `figma_instantiate_component({ componentKey: "${first.variants[0].key}" }) — using first variant of "${first.name}"`;
+											}
+											return `figma_instantiate_component({ componentKey: "${first.key}" })`;
+										})(),
+										note: "IMPORTANT: Use variant keys (type COMPONENT), not component set keys (type COMPONENT_SET). Component set keys will fail. Also pre-load any custom fonts the component uses via figma_execute before instantiating.",
 									},
 								}),
 							},
