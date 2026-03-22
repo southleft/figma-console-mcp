@@ -25,7 +25,7 @@ This article sets the record straight.
   <Card title="Figma Console MCP" icon="terminal">
     **Made by Southleft** — A full design system API. Reads, writes, creates, debugs, and manages your entire Figma file programmatically. Think of it as a two-way door: code and design flow both directions.
 
-    78+ tools. Plugin API + REST API. Open source (MIT).
+    84+ tools. Plugin API + REST API. Open source (MIT).
   </Card>
 </Columns>
 
@@ -136,7 +136,7 @@ Figma Console MCP has **11 dedicated tools** for variable and token management. 
 |---|:---:|:---:|
 | Structured design context for code generation | Yes | Yes |
 | Framework-specific code output (React, Vue, etc.) | Yes (built-in) | Via AI interpretation |
-| Code Connect integration | Yes (52 tools) | No |
+| Code Connect integration | Yes (76 tools) | No |
 | Design system rules generation | Yes | No |
 | Design-code parity analysis | No | Yes |
 | AI-complete component documentation | No | Yes |
@@ -273,7 +273,7 @@ We're not here to compete with Figma. We're here to extend what's possible. The 
 
 <Columns cols={2}>
   <Card title="Set Up Figma Console MCP" icon="rocket" href="/setup">
-    Full 78+ tool access in ~10 minutes. Create, read, and manage your design system with AI.
+    Full 84+ tool access in ~10 minutes. Create, read, and manage your design system with AI.
   </Card>
   <Card title="Set Up Figma MCP (Official)" icon="figma" href="https://developers.figma.com/docs/figma-mcp-server/">
     Figma's official documentation for their MCP server setup and usage.

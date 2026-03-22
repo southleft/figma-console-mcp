@@ -5,6 +5,12 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.3] - 2026-03-22
+
+### Fixed
+- **Tool count accuracy** — Release script now correctly counts FigJam tools (`figjam_*`) and Slides tools in addition to `figma_*` tools. Previous releases reported 78+ tools; actual count is 84+ (75 figma + 9 figjam). Cloud mode updated from 52 to 76 tools.
+
+
 ## [1.17.2] - 2026-03-22
 
 ### Changed
@@ -466,6 +472,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.17.3]: https://github.com/southleft/figma-console-mcp/compare/v1.17.2...v1.17.3
 [1.17.2]: https://github.com/southleft/figma-console-mcp/compare/v1.17.1...v1.17.2
 [1.17.1]: https://github.com/southleft/figma-console-mcp/compare/v1.17.0...v1.17.1
 [1.15.5]: https://github.com/southleft/figma-console-mcp/compare/v1.15.4...v1.15.5

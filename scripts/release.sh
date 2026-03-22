@@ -78,8 +78,9 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ── Auto-detect tool counts from source code ────────────
 auto_count_local() {
-  # All unique figma_* tool names across all source files (local mode has everything)
-  grep -roh '"figma_[a-z_]*"' "$ROOT/src/" \
+  # All unique figma_* and figjam_* tool names in local mode sources (core + local.ts)
+  grep -roh '"fig\(ma\|jam\)_[a-z_]*"' \
+    "$ROOT/src/core/" "$ROOT/src/local.ts" \
     2>/dev/null | sort -u | wc -l | tr -d ' '
 }
 
@@ -91,13 +92,15 @@ auto_count_remote() {
 }
 
 auto_count_cloud() {
-  # Cloud mode: write-tools + figma-tools + design-system-tools + comment-tools + design-code-tools + index.ts cloud-specific
-  grep -roh '"figma_[a-z_]*"' \
+  # Cloud mode: write-tools + figma-tools + design-system-tools + comment-tools + design-code-tools + figjam-tools + slides-tools + index.ts cloud-specific
+  grep -roh '"fig\(ma\|jam\)_[a-z_]*"' \
     "$ROOT/src/core/write-tools.ts" \
     "$ROOT/src/core/figma-tools.ts" \
     "$ROOT/src/core/design-system-tools.ts" \
     "$ROOT/src/core/comment-tools.ts" \
     "$ROOT/src/core/design-code-tools.ts" \
+    "$ROOT/src/core/figjam-tools.ts" \
+    "$ROOT/src/core/slides-tools.ts" \
     "$ROOT/src/index.ts" \
     2>/dev/null | sort -u | wc -l | tr -d ' '
 }
