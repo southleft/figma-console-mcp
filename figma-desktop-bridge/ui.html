@@ -644,6 +644,52 @@
         'GET_CONNECTIONS': function(params) {
           return window.sendPluginCommand('GET_CONNECTIONS', params || {}, 15000);
         },
+        // Slides tools — forward directly to plugin code.js
+        'LIST_SLIDES': function(params) {
+          return window.sendPluginCommand('LIST_SLIDES', params || {}, 10000);
+        },
+        'GET_SLIDE_CONTENT': function(params) {
+          return window.sendPluginCommand('GET_SLIDE_CONTENT', params, 10000);
+        },
+        'CREATE_SLIDE': function(params) {
+          return window.sendPluginCommand('CREATE_SLIDE', params || {}, 10000);
+        },
+        'DELETE_SLIDE': function(params) {
+          return window.sendPluginCommand('DELETE_SLIDE', params, 5000);
+        },
+        'DUPLICATE_SLIDE': function(params) {
+          return window.sendPluginCommand('DUPLICATE_SLIDE', params, 5000);
+        },
+        'GET_SLIDE_GRID': function(params) {
+          return window.sendPluginCommand('GET_SLIDE_GRID', params || {}, 10000);
+        },
+        'REORDER_SLIDES': function(params) {
+          return window.sendPluginCommand('REORDER_SLIDES', params, 15000);
+        },
+        'SET_SLIDE_TRANSITION': function(params) {
+          return window.sendPluginCommand('SET_SLIDE_TRANSITION', params, 5000);
+        },
+        'GET_SLIDE_TRANSITION': function(params) {
+          return window.sendPluginCommand('GET_SLIDE_TRANSITION', params, 5000);
+        },
+        'SET_SLIDES_VIEW_MODE': function(params) {
+          return window.sendPluginCommand('SET_SLIDES_VIEW_MODE', params, 5000);
+        },
+        'GET_FOCUSED_SLIDE': function(params) {
+          return window.sendPluginCommand('GET_FOCUSED_SLIDE', params || {}, 5000);
+        },
+        'FOCUS_SLIDE': function(params) {
+          return window.sendPluginCommand('FOCUS_SLIDE', params, 5000);
+        },
+        'SKIP_SLIDE': function(params) {
+          return window.sendPluginCommand('SKIP_SLIDE', params, 5000);
+        },
+        'ADD_TEXT_TO_SLIDE': function(params) {
+          return window.sendPluginCommand('ADD_TEXT_TO_SLIDE', params, 10000);
+        },
+        'ADD_SHAPE_TO_SLIDE': function(params) {
+          return window.sendPluginCommand('ADD_SHAPE_TO_SLIDE', params, 5000);
+        },
         'CLEAR_CONSOLE': function() {
           // Console buffer is maintained server-side; this is a no-op ack
           return Promise.resolve({ cleared: true });
@@ -1249,6 +1295,53 @@
           break;
         case 'GET_CONNECTIONS_RESULT':
           handleResult('GET_CONNECTIONS', 'data');
+          break;
+
+        // Slides tools
+        case 'LIST_SLIDES_RESULT':
+          handleResult('LIST_SLIDES', 'data');
+          break;
+        case 'GET_SLIDE_CONTENT_RESULT':
+          handleResult('GET_SLIDE_CONTENT', 'data');
+          break;
+        case 'CREATE_SLIDE_RESULT':
+          handleResult('CREATE_SLIDE', 'data');
+          break;
+        case 'DELETE_SLIDE_RESULT':
+          handleResult('DELETE_SLIDE', 'data');
+          break;
+        case 'DUPLICATE_SLIDE_RESULT':
+          handleResult('DUPLICATE_SLIDE', 'data');
+          break;
+        case 'GET_SLIDE_GRID_RESULT':
+          handleResult('GET_SLIDE_GRID', 'data');
+          break;
+        case 'REORDER_SLIDES_RESULT':
+          handleResult('REORDER_SLIDES', 'data');
+          break;
+        case 'SET_SLIDE_TRANSITION_RESULT':
+          handleResult('SET_SLIDE_TRANSITION', 'data');
+          break;
+        case 'GET_SLIDE_TRANSITION_RESULT':
+          handleResult('GET_SLIDE_TRANSITION', 'data');
+          break;
+        case 'SET_SLIDES_VIEW_MODE_RESULT':
+          handleResult('SET_SLIDES_VIEW_MODE', 'data');
+          break;
+        case 'GET_FOCUSED_SLIDE_RESULT':
+          handleResult('GET_FOCUSED_SLIDE', 'data');
+          break;
+        case 'FOCUS_SLIDE_RESULT':
+          handleResult('FOCUS_SLIDE', 'data');
+          break;
+        case 'SKIP_SLIDE_RESULT':
+          handleResult('SKIP_SLIDE', 'data');
+          break;
+        case 'ADD_TEXT_TO_SLIDE_RESULT':
+          handleResult('ADD_TEXT_TO_SLIDE', 'data');
+          break;
+        case 'ADD_SHAPE_TO_SLIDE_RESULT':
+          handleResult('ADD_SHAPE_TO_SLIDE', 'data');
           break;
 
         // File info

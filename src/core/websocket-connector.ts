@@ -328,6 +328,70 @@ export class WebSocketConnector implements IFigmaConnector {
   }
 
   // ============================================================================
+  // Slides operations
+  // ============================================================================
+
+  async listSlides(): Promise<any> {
+    return this.wsServer.sendCommand('LIST_SLIDES', {}, 10000);
+  }
+
+  async getSlideContent(params: { slideId: string }): Promise<any> {
+    return this.wsServer.sendCommand('GET_SLIDE_CONTENT', params, 10000);
+  }
+
+  async createSlide(params: { row?: number; col?: number }): Promise<any> {
+    return this.wsServer.sendCommand('CREATE_SLIDE', params, 10000);
+  }
+
+  async deleteSlide(params: { slideId: string }): Promise<any> {
+    return this.wsServer.sendCommand('DELETE_SLIDE', params, 5000);
+  }
+
+  async duplicateSlide(params: { slideId: string }): Promise<any> {
+    return this.wsServer.sendCommand('DUPLICATE_SLIDE', params, 5000);
+  }
+
+  async getSlideGrid(): Promise<any> {
+    return this.wsServer.sendCommand('GET_SLIDE_GRID', {}, 10000);
+  }
+
+  async reorderSlides(params: { grid: string[][] }): Promise<any> {
+    return this.wsServer.sendCommand('REORDER_SLIDES', params, 15000);
+  }
+
+  async setSlideTransition(params: { slideId: string; style: string; duration: number; curve: string }): Promise<any> {
+    return this.wsServer.sendCommand('SET_SLIDE_TRANSITION', params, 5000);
+  }
+
+  async getSlideTransition(params: { slideId: string }): Promise<any> {
+    return this.wsServer.sendCommand('GET_SLIDE_TRANSITION', params, 5000);
+  }
+
+  async setSlidesViewMode(params: { mode: string }): Promise<any> {
+    return this.wsServer.sendCommand('SET_SLIDES_VIEW_MODE', params, 5000);
+  }
+
+  async getFocusedSlide(): Promise<any> {
+    return this.wsServer.sendCommand('GET_FOCUSED_SLIDE', {}, 5000);
+  }
+
+  async focusSlide(params: { slideId: string }): Promise<any> {
+    return this.wsServer.sendCommand('FOCUS_SLIDE', params, 5000);
+  }
+
+  async skipSlide(params: { slideId: string; skip: boolean }): Promise<any> {
+    return this.wsServer.sendCommand('SKIP_SLIDE', params, 5000);
+  }
+
+  async addTextToSlide(params: { slideId: string; text: string; x?: number; y?: number; fontSize?: number }): Promise<any> {
+    return this.wsServer.sendCommand('ADD_TEXT_TO_SLIDE', params, 10000);
+  }
+
+  async addShapeToSlide(params: { slideId: string; shapeType: string; x: number; y: number; width: number; height: number; fillColor?: string }): Promise<any> {
+    return this.wsServer.sendCommand('ADD_SHAPE_TO_SLIDE', params, 5000);
+  }
+
+  // ============================================================================
   // Cache management (no-op for WebSocket — no frame cache)
   // ============================================================================
 

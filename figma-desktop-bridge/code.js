@@ -66,7 +66,7 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
   }
 })();
 
-// Detect editor type (figma | figjam | dev)
+// Detect editor type (figma | figjam | slides | dev)
 var __editorType = figma.editorType || 'figma';
 console.log('🌉 [Desktop Bridge] Editor type:', __editorType);
 
@@ -85,11 +85,11 @@ var __stickyColors = {
 
 // Immediately fetch and send variables data to UI (skip in FigJam — no variables API)
 (async () => {
-  if (__editorType === 'figjam') {
-    console.log('🌉 [Desktop Bridge] FigJam mode — skipping variables fetch');
+  if (__editorType === 'figjam' || __editorType === 'slides') {
+    console.log('🌉 [Desktop Bridge] ' + __editorType + ' mode — skipping variables fetch');
     figma.ui.postMessage({
       type: 'VARIABLES_DATA',
-      data: { success: true, timestamp: Date.now(), fileKey: figma.fileKey || null, variables: [], variableCollections: [], editorType: 'figjam' }
+      data: { success: true, timestamp: Date.now(), fileKey: figma.fileKey || null, variables: [], variableCollections: [], editorType: __editorType }
     });
     return;
   }
@@ -3305,6 +3305,564 @@ figma.ui.onmessage = async (msg) => {
       console.error('🌉 [Desktop Bridge] Get connections error:', error);
       figma.ui.postMessage({
         type: 'GET_CONNECTIONS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+  // ==========================================================================
+  // SLIDES TOOLS — Figma Slides command handlers
+  // ==========================================================================
+
+  // LIST_SLIDES - List all slides in the presentation
+  else if (msg.type === 'LIST_SLIDES') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('LIST_SLIDES is only available in Slides files');
+      }
+      console.log('🌉 [Desktop Bridge] Listing slides');
+
+      var grid = figma.getSlideGrid();
+      var slides = [];
+      for (var rowIdx = 0; rowIdx < grid.length; rowIdx++) {
+        var row = grid[rowIdx];
+        var rowChildren = row.children;
+        for (var colIdx = 0; colIdx < rowChildren.length; colIdx++) {
+          var slide = rowChildren[colIdx];
+          slides.push({
+            id: slide.id,
+            name: slide.name,
+            row: rowIdx,
+            col: colIdx,
+            isSkippedSlide: slide.isSkippedSlide,
+            childCount: slide.children ? slide.children.length : 0
+          });
+        }
+      }
+
+      figma.ui.postMessage({
+        type: 'LIST_SLIDES_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { slides: slides, totalSlides: slides.length, totalRows: grid.length }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] List slides error:', error);
+      figma.ui.postMessage({
+        type: 'LIST_SLIDES_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_SLIDE_CONTENT - Get node tree of a slide
+  else if (msg.type === 'GET_SLIDE_CONTENT') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('GET_SLIDE_CONTENT is only available in Slides files');
+      }
+      var slideNode = await figma.getNodeByIdAsync(msg.slideId);
+      if (!slideNode || slideNode.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Getting slide content:', slideNode.name);
+
+      function serializeNode(n) {
+        var result = { id: n.id, type: n.type, name: n.name, x: n.x, y: n.y, width: n.width, height: n.height };
+        if (n.type === 'TEXT') {
+          result.characters = n.characters;
+          result.fontSize = n.fontSize;
+        }
+        if (n.children && n.children.length > 0) {
+          result.children = [];
+          for (var i = 0; i < n.children.length; i++) {
+            result.children.push(serializeNode(n.children[i]));
+          }
+        }
+        return result;
+      }
+
+      figma.ui.postMessage({
+        type: 'GET_SLIDE_CONTENT_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: serializeNode(slideNode)
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get slide content error:', error);
+      figma.ui.postMessage({
+        type: 'GET_SLIDE_CONTENT_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // CREATE_SLIDE - Create a new slide
+  else if (msg.type === 'CREATE_SLIDE') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('CREATE_SLIDE is only available in Slides files');
+      }
+      console.log('🌉 [Desktop Bridge] Creating slide');
+
+      var newSlide;
+      if (typeof msg.row === 'number' && typeof msg.col === 'number') {
+        newSlide = figma.createSlide({ row: msg.row, col: msg.col });
+      } else {
+        newSlide = figma.createSlide();
+      }
+
+      figma.ui.postMessage({
+        type: 'CREATE_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: newSlide.id, name: newSlide.name }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Create slide error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // DELETE_SLIDE - Delete a slide
+  else if (msg.type === 'DELETE_SLIDE') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('DELETE_SLIDE is only available in Slides files');
+      }
+      var delSlide = await figma.getNodeByIdAsync(msg.slideId);
+      if (!delSlide || delSlide.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Deleting slide:', delSlide.name);
+
+      var delName = delSlide.name;
+      delSlide.remove();
+
+      figma.ui.postMessage({
+        type: 'DELETE_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { deleted: msg.slideId, name: delName }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Delete slide error:', error);
+      figma.ui.postMessage({
+        type: 'DELETE_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // DUPLICATE_SLIDE - Clone a slide
+  else if (msg.type === 'DUPLICATE_SLIDE') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('DUPLICATE_SLIDE is only available in Slides files');
+      }
+      var srcSlide = await figma.getNodeByIdAsync(msg.slideId);
+      if (!srcSlide || srcSlide.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Duplicating slide:', srcSlide.name);
+
+      var clone = srcSlide.clone();
+
+      figma.ui.postMessage({
+        type: 'DUPLICATE_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { originalId: msg.slideId, newId: clone.id, name: clone.name }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Duplicate slide error:', error);
+      figma.ui.postMessage({
+        type: 'DUPLICATE_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_SLIDE_GRID - Get 2D grid layout
+  else if (msg.type === 'GET_SLIDE_GRID') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('GET_SLIDE_GRID is only available in Slides files');
+      }
+      console.log('🌉 [Desktop Bridge] Getting slide grid');
+
+      var slideGrid = figma.getSlideGrid();
+      var gridData = [];
+      for (var ri = 0; ri < slideGrid.length; ri++) {
+        var gridRow = slideGrid[ri];
+        var rowSlides = [];
+        var gridRowChildren = gridRow.children;
+        for (var ci = 0; ci < gridRowChildren.length; ci++) {
+          var gs = gridRowChildren[ci];
+          rowSlides.push({ id: gs.id, name: gs.name, col: ci, isSkippedSlide: gs.isSkippedSlide });
+        }
+        gridData.push({ rowIndex: ri, rowId: gridRow.id, slides: rowSlides });
+      }
+
+      figma.ui.postMessage({
+        type: 'GET_SLIDE_GRID_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { grid: gridData, totalRows: gridData.length }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get slide grid error:', error);
+      figma.ui.postMessage({
+        type: 'GET_SLIDE_GRID_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // REORDER_SLIDES - Reorder slides via 2D grid of slide IDs
+  else if (msg.type === 'REORDER_SLIDES') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('REORDER_SLIDES is only available in Slides files');
+      }
+      console.log('🌉 [Desktop Bridge] Reordering slides');
+
+      var newGrid = msg.grid; // 2D array of slide IDs
+      var rows = [];
+      for (var rri = 0; rri < newGrid.length; rri++) {
+        var rowIds = newGrid[rri];
+        var rowNode = figma.createSlideRow();
+        for (var cci = 0; cci < rowIds.length; cci++) {
+          var slideToMove = await figma.getNodeByIdAsync(rowIds[cci]);
+          if (slideToMove && slideToMove.type === 'SLIDE') {
+            rowNode.appendChild(slideToMove);
+          }
+        }
+        rows.push(rowNode);
+      }
+      // NOTE: figma.setSlideGrid() is deprecated; figma.setCanvasGrid() is the replacement.
+      // Using setSlideGrid() for broader compatibility until setCanvasGrid() is widely available.
+      figma.setSlideGrid(rows);
+
+      figma.ui.postMessage({
+        type: 'REORDER_SLIDES_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { success: true, rows: rows.length }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Reorder slides error:', error);
+      figma.ui.postMessage({
+        type: 'REORDER_SLIDES_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // SET_SLIDE_TRANSITION - Set transition on a slide
+  else if (msg.type === 'SET_SLIDE_TRANSITION') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('SET_SLIDE_TRANSITION is only available in Slides files');
+      }
+      var transSlide = await figma.getNodeByIdAsync(msg.slideId);
+      if (!transSlide || transSlide.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Setting slide transition:', transSlide.name);
+
+      var transConfig = {
+        style: msg.style,
+        duration: msg.duration,
+        curve: msg.curve,
+        timing: { type: 'ON_CLICK' }
+      };
+      if (msg.timing) {
+        transConfig.timing = msg.timing;
+      }
+      transSlide.setSlideTransition(transConfig);
+
+      figma.ui.postMessage({
+        type: 'SET_SLIDE_TRANSITION_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: transSlide.id, transition: transSlide.getSlideTransition() }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Set slide transition error:', error);
+      figma.ui.postMessage({
+        type: 'SET_SLIDE_TRANSITION_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_SLIDE_TRANSITION - Read transition from a slide
+  else if (msg.type === 'GET_SLIDE_TRANSITION') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('GET_SLIDE_TRANSITION is only available in Slides files');
+      }
+      var readTransSlide = await figma.getNodeByIdAsync(msg.slideId);
+      if (!readTransSlide || readTransSlide.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Getting slide transition:', readTransSlide.name);
+
+      figma.ui.postMessage({
+        type: 'GET_SLIDE_TRANSITION_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: readTransSlide.id, transition: readTransSlide.getSlideTransition() }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get slide transition error:', error);
+      figma.ui.postMessage({
+        type: 'GET_SLIDE_TRANSITION_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // SET_SLIDES_VIEW_MODE - Toggle between grid and single-slide view
+  else if (msg.type === 'SET_SLIDES_VIEW_MODE') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('SET_SLIDES_VIEW_MODE is only available in Slides files');
+      }
+      console.log('🌉 [Desktop Bridge] Setting slides view mode:', msg.mode);
+
+      figma.viewport.slidesMode = msg.mode;
+
+      figma.ui.postMessage({
+        type: 'SET_SLIDES_VIEW_MODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { mode: figma.viewport.slidesMode }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Set slides view mode error:', error);
+      figma.ui.postMessage({
+        type: 'SET_SLIDES_VIEW_MODE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_FOCUSED_SLIDE - Get currently focused slide
+  else if (msg.type === 'GET_FOCUSED_SLIDE') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('GET_FOCUSED_SLIDE is only available in Slides files');
+      }
+      console.log('🌉 [Desktop Bridge] Getting focused slide');
+
+      var focused = figma.currentPage.focusedSlide;
+      var focusData = focused ? { id: focused.id, name: focused.name } : { focused: null };
+
+      figma.ui.postMessage({
+        type: 'GET_FOCUSED_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: focusData
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get focused slide error:', error);
+      figma.ui.postMessage({
+        type: 'GET_FOCUSED_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // FOCUS_SLIDE - Navigate to a specific slide
+  else if (msg.type === 'FOCUS_SLIDE') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('FOCUS_SLIDE is only available in Slides files');
+      }
+      var focusTarget = await figma.getNodeByIdAsync(msg.slideId);
+      if (!focusTarget || focusTarget.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Focusing slide:', focusTarget.name);
+
+      figma.viewport.slidesMode = 'single-slide';
+      figma.currentPage.focusedSlide = focusTarget;
+
+      figma.ui.postMessage({
+        type: 'FOCUS_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { focused: focusTarget.id, name: focusTarget.name }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Focus slide error:', error);
+      figma.ui.postMessage({
+        type: 'FOCUS_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // SKIP_SLIDE - Toggle skip on a slide
+  else if (msg.type === 'SKIP_SLIDE') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('SKIP_SLIDE is only available in Slides files');
+      }
+      var skipSlide = await figma.getNodeByIdAsync(msg.slideId);
+      if (!skipSlide || skipSlide.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Toggling slide skip:', skipSlide.name, '→', msg.skip);
+
+      skipSlide.isSkippedSlide = !!msg.skip;
+
+      figma.ui.postMessage({
+        type: 'SKIP_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: skipSlide.id, isSkippedSlide: skipSlide.isSkippedSlide }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Skip slide error:', error);
+      figma.ui.postMessage({
+        type: 'SKIP_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // ADD_TEXT_TO_SLIDE - Add a text node to a slide
+  else if (msg.type === 'ADD_TEXT_TO_SLIDE') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('ADD_TEXT_TO_SLIDE is only available in Slides files');
+      }
+      var textSlide = await figma.getNodeByIdAsync(msg.slideId);
+      if (!textSlide || textSlide.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Adding text to slide:', textSlide.name);
+
+      var textNode = figma.createText();
+      await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+      textNode.characters = msg.text || '';
+      textNode.fontSize = msg.fontSize || 24;
+      textNode.x = typeof msg.x === 'number' ? msg.x : 100;
+      textNode.y = typeof msg.y === 'number' ? msg.y : 100;
+      textSlide.appendChild(textNode);
+
+      figma.ui.postMessage({
+        type: 'ADD_TEXT_TO_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: textNode.id, text: textNode.characters }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Add text to slide error:', error);
+      figma.ui.postMessage({
+        type: 'ADD_TEXT_TO_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // ADD_SHAPE_TO_SLIDE - Add a shape to a slide
+  else if (msg.type === 'ADD_SHAPE_TO_SLIDE') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('ADD_SHAPE_TO_SLIDE is only available in Slides files');
+      }
+      var shapeSlide = await figma.getNodeByIdAsync(msg.slideId);
+      if (!shapeSlide || shapeSlide.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Adding shape to slide:', shapeSlide.name);
+
+      var shape;
+      if (msg.shapeType === 'ELLIPSE') {
+        shape = figma.createEllipse();
+      } else {
+        shape = figma.createRectangle();
+      }
+      shape.x = typeof msg.x === 'number' ? msg.x : 100;
+      shape.y = typeof msg.y === 'number' ? msg.y : 100;
+      shape.resize(typeof msg.width === 'number' ? msg.width : 200, typeof msg.height === 'number' ? msg.height : 200);
+
+      if (msg.color && typeof msg.color === 'string') {
+        var hex = msg.color.replace('#', '');
+        if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+          shape.fills = [{
+            type: 'SOLID',
+            color: {
+              r: parseInt(hex.substring(0, 2), 16) / 255,
+              g: parseInt(hex.substring(2, 4), 16) / 255,
+              b: parseInt(hex.substring(4, 6), 16) / 255
+            }
+          }];
+        }
+      }
+      shapeSlide.appendChild(shape);
+
+      figma.ui.postMessage({
+        type: 'ADD_SHAPE_TO_SLIDE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: shape.id, type: shape.type }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Add shape to slide error:', error);
+      figma.ui.postMessage({
+        type: 'ADD_SHAPE_TO_SLIDE_RESULT',
         requestId: msg.requestId,
         success: false,
         error: error.message || String(error)

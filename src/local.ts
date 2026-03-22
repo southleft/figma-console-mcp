@@ -54,6 +54,7 @@ import {
 import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import { registerDesignSystemDashboardApp } from "./apps/design-system-dashboard/server.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
+import { registerSlidesTools } from "./core/slides-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -5791,6 +5792,12 @@ return {
 
 		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)
 		registerFigJamTools(
+			this.server,
+			() => this.getDesktopConnector(),
+		);
+
+		// Register Figma Slides tools (slide management, transitions, content)
+		registerSlidesTools(
 			this.server,
 			() => this.getDesktopConnector(),
 		);
