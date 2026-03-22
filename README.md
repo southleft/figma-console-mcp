@@ -758,7 +758,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.16.0 (Stable) - Production-ready with FigJam support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 72+ tools, Comments API, and MCP Apps
+**Current Status:** v1.16.0 (Stable) - Production-ready with FigJam support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 63+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
 - [x] **v1.16.0** - FigJam Support: 9 new tools for creating and reading FigJam boards — stickies, flowcharts, tables, code blocks, and connection graphs. Community-contributed by klgral and lukemoderwell.
