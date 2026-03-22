@@ -5,6 +5,35 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] - 2026-03-22
+
+### Added
+- **FigJam board support** — 9 new MCP tools enable AI assistants to create and read FigJam collaborative boards. Opens the MCP server to an entirely new Figma product surface.
+  - **`figjam_create_sticky`** — Create a sticky note with 9 color options (YELLOW, BLUE, GREEN, PINK, ORANGE, PURPLE, RED, LIGHT_GRAY, GRAY)
+  - **`figjam_create_stickies`** — Batch create up to 200 sticky notes in one call. Ideal for populating boards from meeting notes, brainstorm ideas, or structured data.
+  - **`figjam_create_connector`** — Connect two nodes with a labeled connector line. Build flowcharts, relationship maps, and process diagrams.
+  - **`figjam_create_shape_with_text`** — Create labeled shapes (ROUNDED_RECTANGLE, DIAMOND, ELLIPSE, TRIANGLE_UP/DOWN, PARALLELOGRAM, ENG_DATABASE, ENG_QUEUE, ENG_FILE, ENG_FOLDER) for flowchart nodes and visual organization.
+  - **`figjam_create_table`** — Create tables with cell data (up to 100 rows x 50 columns). Populate with 2D string arrays for comparison matrices and structured data display.
+  - **`figjam_create_code_block`** — Create code blocks with language syntax highlighting (JAVASCRIPT, PYTHON, TYPESCRIPT, JSON, HTML, CSS, etc.).
+  - **`figjam_auto_arrange`** — Arrange nodes in grid, horizontal, or vertical layouts with configurable spacing and column count.
+  - **`figjam_get_board_contents`** — Read all content from a FigJam board with type-specific serialization (sticky text/colors, shape types, connector endpoints, table cell data, code content). Supports filtering by node type and pagination.
+  - **`figjam_get_connections`** — Read the connection graph from a FigJam board. Returns all connectors as edges with start/end node references and labels, plus a lookup map of connected nodes.
+- **Editor type detection** — Plugin reports `figma.editorType` (figma, figjam, dev) via WebSocket FILE_INFO. `figma_get_status` now exposes `editorType` so AI agents know which tools are available.
+- **FigJam documentation page** — Dedicated guide covering all 9 tools, use cases, and example prompts.
+
+### Changed
+- **Variables bootstrap skipped in FigJam** — The plugin no longer attempts to fetch variables when running in a FigJam board (FigJam has no variables API), preventing unnecessary errors.
+- **Enum-validated schemas** — Sticky colors, shape types, and board content node type filters now use `z.enum()` instead of `z.string()` for stricter validation and better LLM tool discovery. Gemini-compatible (no `z.any()`).
+- **Shared color map in plugin** — Extracted duplicated sticky color map to a single module-level constant in `code.js` for DRY compliance.
+
+### Security
+- **Code injection prevention** — `figjam_auto_arrange` uses `JSON.stringify()` for proper JS string escaping instead of manual single-quote replacement, handling all control characters including Unicode line/paragraph separators.
+- **Input bounds** — All FigJam tools enforce maximum sizes: 200 batch stickies, 100x50 table, 5000 char text, 50000 char code, 500 arrange nodes, 1000 read nodes.
+
+### Contributors
+- **klgral (G Klas)** — Original FigJam write tools implementation (PR #33)
+- **lukemoderwell (Luke Moderwell)** — FigJam read tools, documentation, and E2E testing (PR #47)
+
 ## [1.15.5] - 2026-03-19
 
 ### Fixed

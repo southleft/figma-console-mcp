@@ -67,6 +67,7 @@
     {
       "group": "Guides",
       "pages": [
+        "figjam",
         "use-cases",
         "figma-mcp-vs-figma-console-mcp",
         "mcp-apps",

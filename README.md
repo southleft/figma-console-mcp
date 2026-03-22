@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
-> **🆕 Import Once, Update Never — Plugin Bootloader Architecture:** The Desktop Bridge plugin now dynamically loads its UI from the MCP server on every launch. Import the manifest once from `~/.figma-console-mcp/plugin/manifest.json` and you're done forever — server updates, new tools, and bug fixes are delivered automatically. Plus: orphaned process cleanup, cross-file library components, and built-in housekeeping. [See changelog →](CHANGELOG.md)
+> **🆕 FigJam Support — AI Meets Collaborative Whiteboarding:** 9 new tools let AI assistants create and read FigJam boards — sticky notes, flowcharts, tables, code blocks, and more. Build affinity maps from meeting notes, generate user flow diagrams, or summarize brainstorming sessions. [See what's possible →](docs/figjam.md)
 
 ## What is this?
 
@@ -20,6 +20,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 - **✏️ Design creation** - Create UI components, frames, and layouts directly in Figma
 - **🔧 Variable management** - Create, update, rename, and delete design tokens
 - **⚡ Real-time monitoring** - Watch logs as plugins execute
+- **📌 FigJam boards** - Create stickies, flowcharts, tables, and code blocks on collaborative boards
 - **☁️ Cloud Write Relay** - Web AI clients (Claude.ai, v0, Replit) can design in Figma via cloud pairing
 - **🔄 Four ways to connect** - Remote SSE, Cloud Mode, NPX, or Local Git
 
@@ -46,6 +47,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | **Create components & frames** | ✅ | ✅ | ❌ |
 | **Edit existing designs** | ✅ | ✅ | ❌ |
 | **Manage design tokens/variables** | ✅ | ✅ | ❌ |
+| **FigJam boards (stickies, flowcharts)** | ✅ | ✅ | ❌ |
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
@@ -303,6 +305,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
+| **FigJam boards** | ✅ | ✅ | ✅ | ❌ |
 | **Real-time monitoring** | ✅ | ❌ | ✅ | ❌ |
 | **Desktop Bridge plugin** | ✅ | ✅ | ✅ | ❌ |
 | **Variables (no Enterprise)** | ✅ | ✅ | ✅ | ❌ |
@@ -426,6 +429,17 @@ When you first use design system tools:
 - `figma_batch_update_variables` - Update up to 100 variable values in one call
 - `figma_setup_design_tokens` - Create complete token system (collection + modes + variables) atomically
 
+### 📌 FigJam Board Tools (Local Mode + Cloud Mode)
+- `figjam_create_sticky` - Create a sticky note with color options
+- `figjam_create_stickies` - Batch create up to 200 stickies
+- `figjam_create_connector` - Connect nodes with labeled connector lines
+- `figjam_create_shape_with_text` - Create flowchart shapes (diamond, ellipse, etc.)
+- `figjam_create_table` - Create tables with cell data
+- `figjam_create_code_block` - Add code snippets with syntax highlighting
+- `figjam_auto_arrange` - Arrange nodes in grid, horizontal, or vertical layouts
+- `figjam_get_board_contents` - Read all content from a FigJam board
+- `figjam_get_connections` - Read the connection graph (flowcharts, relationships)
+
 **📖 [Detailed Tool Documentation](docs/TOOLS.md)**
 
 ---
@@ -477,6 +491,15 @@ Add a "High Contrast" mode to the existing collection
 Compare the Button component in Figma against our React implementation
 Check design parity for the Card component before sign-off
 Generate component documentation for the Dialog from our design system
+```
+
+### FigJam Boards
+```
+Create a retrospective board with "Went Well", "To Improve", and "Action Items" columns
+Build a user flow diagram for the checkout process with decision points
+Read this brainstorming board and summarize the key themes
+Generate an affinity map from these meeting notes
+Create a comparison table of our three platform options
 ```
 
 ### Visual Debugging
@@ -716,11 +739,12 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🤝 vs. Figma Official MCP
 
-**Figma Console MCP (This Project)** - Debugging & data extraction
+**Figma Console MCP (This Project)** - Debugging, data extraction, and design creation
 - ✅ Real-time console logs from Figma plugins
 - ✅ Screenshot capture and visual debugging
 - ✅ Error stack traces and runtime monitoring
 - ✅ Raw design data extraction (JSON)
+- ✅ FigJam board creation and reading (stickies, flowcharts, tables)
 - ✅ Works remotely or locally
 
 **Figma Official Dev Mode MCP** - Code generation
@@ -734,9 +758,10 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.12.0 (Stable) - Production-ready with Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 63+ tools, Comments API, and MCP Apps
+**Current Status:** v1.16.0 (Stable) - Production-ready with FigJam support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 72+ tools, Comments API, and MCP Apps
 
 **Recent Releases:**
+- [x] **v1.16.0** - FigJam Support: 9 new tools for creating and reading FigJam boards — stickies, flowcharts, tables, code blocks, and connection graphs. Community-contributed by klgral and lukemoderwell.
 - [x] **v1.12.0** - Cloud Write Relay: web AI clients (Claude.ai, v0, Replit, Lovable) can create and modify Figma designs via cloud relay pairing — no Node.js required
 - [x] **v1.11.2** - Screenshot fix: `figma_take_screenshot` works without explicit `nodeId` in WebSocket mode
 - [x] **v1.11.1** - Doc generator fixes: clean markdown tables, Storybook links, property metadata filtering
