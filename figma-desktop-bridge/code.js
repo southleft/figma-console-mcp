@@ -3663,13 +3663,13 @@ figma.ui.onmessage = async (msg) => {
       }
       console.log('🌉 [Desktop Bridge] Setting slides view mode:', msg.mode);
 
-      figma.viewport.slidesMode = msg.mode;
+      figma.viewport.slidesView = msg.mode;
 
       figma.ui.postMessage({
         type: 'SET_SLIDES_VIEW_MODE_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: { mode: figma.viewport.slidesMode }
+        data: { mode: figma.viewport.slidesView }
       });
 
     } catch (error) {
@@ -3724,7 +3724,7 @@ figma.ui.onmessage = async (msg) => {
       }
       console.log('🌉 [Desktop Bridge] Focusing slide:', focusTarget.name);
 
-      figma.viewport.slidesMode = 'single-slide';
+      figma.viewport.slidesView = 'single-slide';
       figma.currentPage.focusedSlide = focusTarget;
 
       figma.ui.postMessage({
