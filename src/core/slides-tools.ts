@@ -43,14 +43,16 @@ const TRANSITION_STYLES = [
 ] as const;
 
 /** Valid easing curves */
+/** Valid easing curves (Figma Slides uses a different set from the general Plugin API) */
 const EASING_CURVES = [
 	"LINEAR",
 	"EASE_IN",
 	"EASE_OUT",
 	"EASE_IN_AND_OUT",
-	"EASE_IN_BACK",
-	"EASE_OUT_BACK",
-	"EASE_IN_AND_OUT_BACK",
+	"GENTLE",
+	"QUICK",
+	"BOUNCY",
+	"SLOW",
 ] as const;
 
 /** Valid shape types for slides */

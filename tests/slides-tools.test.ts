@@ -369,14 +369,14 @@ describe("Slides Tools", () => {
 				slideId: "1:1",
 				style: "SMART_ANIMATE",
 				duration: 1.5,
-				curve: "EASE_IN_BACK",
+				curve: "BOUNCY",
 			});
 
 			expect(mockConnector.setSlideTransition).toHaveBeenCalledWith({
 				slideId: "1:1",
 				style: "SMART_ANIMATE",
 				duration: 1.5,
-				curve: "EASE_IN_BACK",
+				curve: "BOUNCY",
 			});
 			expect(result.isError).toBeUndefined();
 		});
