@@ -1498,17 +1498,26 @@ export function registerFigmaAPITools(
 				// FETCH LOGIC: No cache or cache invalid/refresh requested
 				// =====================================================================
 
-				// Check if REST API token is available (determines priority)
+				// Check if REST API token is available
 				const hasToken = !!process.env.FIGMA_ACCESS_TOKEN;
 				let restApiSucceeded = false;
 
-				// PRIORITY LOGIC:
-				// 1. If token exists → Try REST API FIRST (enterprise users)
-				// 2. If no token OR REST API fails → Try Desktop Bridge as fallback
-				logger.info({ hasToken }, "Authentication method detection");
+				// Detect Desktop Bridge availability early (needed for priority decision)
+				if (ensureInitialized && !getDesktopConnector && !parseFromConsole) {
+					logger.info("Calling ensureInitialized to initialize browser manager (legacy path)");
+					await ensureInitialized();
+				}
+				const browserManager = getBrowserManager?.();
+				const hasDesktopConnection = !!getDesktopConnector || !!browserManager;
 
-				// Try REST API first if token is available
-				if (hasToken && !parseFromConsole) {
+				// PRIORITY LOGIC:
+				// 1. If Desktop Bridge connected → Try Desktop Bridge FIRST (instant, all plans, full Plugin API data)
+				// 2. If no Desktop Bridge OR it fails → Try REST API as fallback (Enterprise users)
+				// 3. If both fail → Console snippet fallback (manual user step)
+				logger.info({ hasToken, hasDesktopConnection }, "Authentication method detection");
+
+				// Try REST API only when Desktop Bridge is NOT available
+				if (hasToken && !parseFromConsole && !hasDesktopConnection) {
 					try {
 						logger.info({ fileKey, includePublished, verbosity, enrich }, "Fetching variables via REST API (priority: token detected)");
 						const api = await getFigmaAPI();
@@ -1826,27 +1835,9 @@ export function registerFigmaAPITools(
 					}
 				}
 
-				// FALLBACK: Try Desktop connection (when no token available OR as secondary fallback)
-				// Only call ensureInitialized for legacy path — skip when transport-agnostic connector exists
-				if (ensureInitialized && !getDesktopConnector && !parseFromConsole && (!hasToken || !restApiSucceeded)) {
-					logger.info("Calling ensureInitialized to initialize browser manager (legacy path)");
-					await ensureInitialized();
-				}
-
-				const browserManager = getBrowserManager?.();
-				const hasDesktopConnection = !!getDesktopConnector || !!browserManager;
-				logger.info({ hasBrowserManager: !!browserManager, hasDesktopConnector: !!getDesktopConnector, parseFromConsole, hasToken, restApiSucceeded }, "Desktop connection check");
-
-				// Debug: Log why Desktop connection might be skipped
-				if (!hasDesktopConnection) {
-					logger.error("Desktop connection skipped: neither connector nor browserManager available");
-				} else if (parseFromConsole) {
-					logger.info("Desktop connection skipped: parseFromConsole is true");
-				} else if (restApiSucceeded) {
-					logger.info("Desktop connection skipped: REST API already succeeded");
-				}
-
-				if (hasDesktopConnection && !parseFromConsole && (!hasToken || !restApiSucceeded)) {
+				// PRIMARY: Try Desktop Bridge (instant, all plans, full Plugin API data including aliases)
+				// Also used as fallback when REST API fails (403, timeout, rate limit)
+				if (hasDesktopConnection && !parseFromConsole && !restApiSucceeded) {
 					try {
 						logger.info({ fileKey }, "Attempting to get variables via Desktop connection");
 
@@ -2115,11 +2106,96 @@ export function registerFigmaAPITools(
 							// Ignore logging errors
 						}
 
-						// Continue to try other methods
+						// Continue to try REST API fallback
 					}
 				}
 
-				// FALLBACK: Parse from console logs if requested
+				// SECONDARY FALLBACK: Try REST API if Desktop Bridge failed/unavailable and token exists
+				if (hasToken && !parseFromConsole && !restApiSucceeded) {
+					try {
+						logger.info({ fileKey }, "Attempting REST API fallback for variables");
+						const api = await getFigmaAPI();
+
+						const { local, published, localError } = await withTimeout(
+							api.getAllVariables(fileKey),
+							30000,
+							'Figma Variables API'
+						);
+
+						if (!localError && local) {
+							let localFormatted = formatVariables(local);
+							let publishedFormatted = includePublished ? formatVariables(published) : null;
+
+							// Apply filters
+							if (format === 'filtered') {
+								const filteredLocal = applyFilters(
+									{ variables: localFormatted.variables, variableCollections: localFormatted.collections },
+									{ collection, namePattern, mode },
+									verbosity || "standard"
+								);
+								localFormatted = { summary: localFormatted.summary, collections: filteredLocal.variableCollections, variables: filteredLocal.variables };
+							}
+
+							// Apply verbosity
+							if (verbosity && verbosity !== 'full') {
+								const verbosityFiltered = applyFilters(
+									{ variables: localFormatted.variables, variableCollections: localFormatted.collections },
+									{},
+									verbosity
+								);
+								localFormatted = { ...localFormatted, collections: verbosityFiltered.variableCollections, variables: verbosityFiltered.variables };
+							}
+
+							// Cache
+							const dataForCache = {
+								fileKey,
+								local: { summary: localFormatted.summary, collections: localFormatted.collections, variables: localFormatted.variables },
+								...(includePublished && publishedFormatted && { published: { summary: publishedFormatted.summary, collections: publishedFormatted.collections, variables: publishedFormatted.variables } }),
+								verbosity: verbosity || "standard",
+								enriched: enrich || false,
+								timestamp: Date.now(),
+								source: "rest_api",
+							};
+							if (variablesCache) {
+								variablesCache.set(fileKey, { data: dataForCache, timestamp: Date.now() });
+							}
+
+							// Apply alias resolution
+							if (resolveAliases && localFormatted.variables?.length > 0) {
+								const allVariablesMap = new Map<string, any>();
+								const collectionsMap = new Map<string, any>();
+								for (const v of localFormatted.variables || []) allVariablesMap.set(v.id, v);
+								for (const c of localFormatted.collections || []) collectionsMap.set(c.id, c);
+								localFormatted.variables = resolveVariableAliases(localFormatted.variables, allVariablesMap, collectionsMap);
+							}
+
+							restApiSucceeded = true;
+							logger.info({ fileKey }, "REST API fallback succeeded");
+
+							const responseData = {
+								fileKey,
+								local: { summary: localFormatted.summary, collections: localFormatted.collections, variables: localFormatted.variables },
+								verbosity: verbosity || "standard",
+								enriched: enrich || false,
+							};
+
+							return adaptiveResponse(responseData, {
+								toolName: "figma_get_variables",
+								suggestedActions: [
+									"Use verbosity='inventory' or 'summary' for large variable sets",
+									"Apply filters: collection, namePattern, or mode parameters",
+								],
+							});
+						} else {
+							logger.warn({ error: localError, fileKey }, "REST API fallback also failed (likely non-Enterprise plan)");
+						}
+					} catch (restFallbackError) {
+						const msg = restFallbackError instanceof Error ? restFallbackError.message : String(restFallbackError);
+						logger.warn({ error: msg, fileKey }, "REST API fallback failed");
+					}
+				}
+
+				// LAST RESORT: Parse from console logs if requested
 				if (parseFromConsole) {
 					const consoleMonitor = getConsoleMonitor?.();
 					if (!consoleMonitor) {
