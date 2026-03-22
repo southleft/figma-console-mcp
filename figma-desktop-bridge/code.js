@@ -3327,9 +3327,9 @@ figma.ui.onmessage = async (msg) => {
       var slides = [];
       for (var rowIdx = 0; rowIdx < grid.length; rowIdx++) {
         var row = grid[rowIdx];
-        var rowChildren = row.children;
-        for (var colIdx = 0; colIdx < rowChildren.length; colIdx++) {
-          var slide = rowChildren[colIdx];
+        // SlideGrid rows are array-like (iterable with numeric indices), not objects with .children
+        for (var colIdx = 0; colIdx < row.length; colIdx++) {
+          var slide = row[colIdx];
           slides.push({
             id: slide.id,
             name: slide.name,
@@ -3515,12 +3515,12 @@ figma.ui.onmessage = async (msg) => {
       for (var ri = 0; ri < slideGrid.length; ri++) {
         var gridRow = slideGrid[ri];
         var rowSlides = [];
-        var gridRowChildren = gridRow.children;
-        for (var ci = 0; ci < gridRowChildren.length; ci++) {
-          var gs = gridRowChildren[ci];
+        // SlideGrid rows are array-like (iterable with numeric indices)
+        for (var ci = 0; ci < gridRow.length; ci++) {
+          var gs = gridRow[ci];
           rowSlides.push({ id: gs.id, name: gs.name, col: ci, isSkippedSlide: gs.isSkippedSlide });
         }
-        gridData.push({ rowIndex: ri, rowId: gridRow.id, slides: rowSlides });
+        gridData.push({ rowIndex: ri, slides: rowSlides });
       }
 
       figma.ui.postMessage({
