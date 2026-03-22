@@ -2960,7 +2960,7 @@ export default {
 			<div class="grid-cell showcase-cell rule-left">
 				<div class="showcase-label">What AI Can Access</div>
 				<div class="showcase-stat">
-					<span class="number">59+</span>
+					<span class="number">78+</span>
 					<span class="label">MCP tools for Figma</span>
 				</div>
 				<div class="capability-list">
@@ -2987,6 +2987,10 @@ export default {
 					<div class="capability-item">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
 						<span>Visual debugging and screenshots</span>
+					</div>
+					<div class="capability-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="4" rx="1"/><rect x="2" y="9" width="9" height="4" rx="1"/><rect x="13" y="9" width="9" height="4" rx="1"/><rect x="2" y="15" width="20" height="4" rx="1"/></svg>
+						<span>FigJam boards and Slides presentations</span>
 					</div>
 				</div>
 			</div>
@@ -3070,6 +3074,14 @@ export default {
 					<div class="prompt-item">
 						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 						<span>"Connect to my Figma plugin and create a card component"</span>
+					</div>
+					<div class="prompt-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+						<span>"Create a retrospective board with colored stickies on FigJam"</span>
+					</div>
+					<div class="prompt-item">
+						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+						<span>"List my slides and set a dissolve transition on each one"</span>
 					</div>
 				</div>
 			</div>
