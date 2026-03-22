@@ -5,6 +5,12 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.2] - 2026-03-22
+
+### Changed
+- **Desktop Bridge priority for variable fetching** — When the Desktop Bridge plugin is connected, `figma_get_variables` now tries it FIRST instead of the REST API. Eliminates the 2-5 second 403 timeout penalty on non-Enterprise plans. REST API is preserved as a fallback for cloud mode or if the Desktop Bridge fails.
+
+
 ## [1.17.1] - 2026-03-22
 
 ### Added
@@ -460,6 +466,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.17.2]: https://github.com/southleft/figma-console-mcp/compare/v1.17.1...v1.17.2
 [1.17.1]: https://github.com/southleft/figma-console-mcp/compare/v1.17.0...v1.17.1
 [1.15.5]: https://github.com/southleft/figma-console-mcp/compare/v1.15.4...v1.15.5
 [1.15.0]: https://github.com/southleft/figma-console-mcp/compare/v1.14.0...v1.15.0
