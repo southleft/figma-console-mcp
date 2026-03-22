@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.15.0 — Import Once, Update Never:** The Desktop Bridge plugin now auto-loads the latest UI from the MCP server on every launch. No more re-importing manifests when the server updates. Plus: orphaned process cleanup, cross-file library components, and automatic housekeeping audits for cleaner AI-generated designs.
+**New in v1.17.0 — AI Across All Figma Products:** Figma Console MCP now supports **FigJam boards** and **Figma Slides** alongside Figma Design files. Create stickies, flowcharts, and tables on whiteboards. Manage entire presentations — slides, transitions, and content. 24 new tools, 78+ total. [FigJam Guide →](/figjam) | [Slides Guide →](/slides)
 </Note>
 
 # Your Design System as an API
@@ -18,7 +18,7 @@ Figma Console MCP bridges the gap between design and development—giving AI ass
     Variables, styles, and components as structured data
   </Card>
   <Card title="Create" icon="wand-magic-sparkles">
-    Components and designs via natural language
+    Design files, FigJam boards, and Slides presentations
   </Card>
   <Card title="Debug" icon="bug">
     Real-time console logs from your plugins
@@ -144,6 +144,30 @@ Real component data. Real token values. Real code that uses your actual design s
     - `figma_capture_screenshot` — Node-specific renders
     - `figma_get_component_image` — Export as PNG/SVG
   </Accordion>
+
+  <Accordion title="FigJam Boards" icon="note-sticky">
+    Create and read FigJam collaborative whiteboards. Build affinity maps, flowcharts, retrospective boards, and more.
+
+    - `figjam_create_sticky` / `figjam_create_stickies` — Single or batch sticky notes with 9 colors
+    - `figjam_create_connector` — Connect nodes with labeled lines for flowcharts
+    - `figjam_create_shape_with_text` — Diamonds, ellipses, and engineering shapes
+    - `figjam_create_table` — Structured tables with cell data
+    - `figjam_get_board_contents` / `figjam_get_connections` — Read everything on the board
+
+    [Full FigJam Guide →](/figjam)
+  </Accordion>
+
+  <Accordion title="Slides Presentations" icon="presentation-screen">
+    Manage entire Figma Slides presentations. Create, edit, reorder, and navigate slides programmatically.
+
+    - `figma_list_slides` / `figma_get_slide_content` — Read slide data and content trees
+    - `figma_create_slide` / `figma_duplicate_slide` / `figma_delete_slide` — Slide lifecycle
+    - `figma_set_slide_transition` — 22 transition styles with 8 easing curves
+    - `figma_reorder_slides` — Restructure presentation order
+    - `figma_add_text_to_slide` / `figma_add_shape_to_slide` — Add content to slides
+
+    [Full Slides Guide →](/slides)
+  </Accordion>
 </AccordionGroup>
 
 ---
@@ -209,6 +233,12 @@ Real component data. Real token values. Real code that uses your actual design s
 <Columns cols={2}>
   <Card title="Introduction" icon="circle-info" href="/introduction">
     New to MCP? Start here.
+  </Card>
+  <Card title="FigJam Guide" icon="note-sticky" href="/figjam">
+    AI-powered whiteboarding — stickies, flowcharts, tables
+  </Card>
+  <Card title="Slides Guide" icon="presentation-screen" href="/slides">
+    AI-powered presentations — create, transition, navigate
   </Card>
   <Card title="Use Cases" icon="lightbulb" href="/use-cases">
     Real scenarios and workflows
