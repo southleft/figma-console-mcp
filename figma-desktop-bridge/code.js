@@ -70,6 +70,19 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
 var __editorType = figma.editorType || 'figma';
 console.log('🌉 [Desktop Bridge] Editor type:', __editorType);
 
+// Shared sticky color map — used by CREATE_STICKY and CREATE_STICKIES
+var __stickyColors = {
+  'YELLOW': { r: 1, g: 0.85, b: 0.4 },
+  'BLUE': { r: 0.53, g: 0.78, b: 1 },
+  'GREEN': { r: 0.55, g: 0.87, b: 0.53 },
+  'PINK': { r: 1, g: 0.6, b: 0.78 },
+  'ORANGE': { r: 1, g: 0.71, b: 0.42 },
+  'PURPLE': { r: 0.78, g: 0.65, b: 1 },
+  'RED': { r: 1, g: 0.55, b: 0.55 },
+  'LIGHT_GRAY': { r: 0.9, g: 0.9, b: 0.9 },
+  'GRAY': { r: 0.7, g: 0.7, b: 0.7 }
+};
+
 // Immediately fetch and send variables data to UI (skip in FigJam — no variables API)
 (async () => {
   if (__editorType === 'figjam') {
@@ -2846,18 +2859,7 @@ figma.ui.onmessage = async (msg) => {
 
       // Set sticky color if provided
       if (msg.color) {
-        var stickyColors = {
-          'YELLOW': { r: 1, g: 0.85, b: 0.4 },
-          'BLUE': { r: 0.53, g: 0.78, b: 1 },
-          'GREEN': { r: 0.55, g: 0.87, b: 0.53 },
-          'PINK': { r: 1, g: 0.6, b: 0.78 },
-          'ORANGE': { r: 1, g: 0.71, b: 0.42 },
-          'PURPLE': { r: 0.78, g: 0.65, b: 1 },
-          'RED': { r: 1, g: 0.55, b: 0.55 },
-          'LIGHT_GRAY': { r: 0.9, g: 0.9, b: 0.9 },
-          'GRAY': { r: 0.7, g: 0.7, b: 0.7 }
-        };
-        var stickyColor = stickyColors[msg.color.toUpperCase()];
+        var stickyColor = __stickyColors[msg.color.toUpperCase()];
         if (stickyColor) {
           sticky.fills = [{ type: 'SOLID', color: stickyColor }];
         }
@@ -2889,18 +2891,6 @@ figma.ui.onmessage = async (msg) => {
       }
       console.log('🌉 [Desktop Bridge] Batch creating sticky notes:', msg.stickies.length);
 
-      var stickyColors = {
-        'YELLOW': { r: 1, g: 0.85, b: 0.4 },
-        'BLUE': { r: 0.53, g: 0.78, b: 1 },
-        'GREEN': { r: 0.55, g: 0.87, b: 0.53 },
-        'PINK': { r: 1, g: 0.6, b: 0.78 },
-        'ORANGE': { r: 1, g: 0.71, b: 0.42 },
-        'PURPLE': { r: 0.78, g: 0.65, b: 1 },
-        'RED': { r: 1, g: 0.55, b: 0.55 },
-        'LIGHT_GRAY': { r: 0.9, g: 0.9, b: 0.9 },
-        'GRAY': { r: 0.7, g: 0.7, b: 0.7 }
-      };
-
       var created = [];
       var failed = [];
 
@@ -2921,7 +2911,7 @@ figma.ui.onmessage = async (msg) => {
           if (typeof spec.y === 'number') sticky.y = spec.y;
 
           if (spec.color) {
-            var sc = stickyColors[spec.color.toUpperCase()];
+            var sc = __stickyColors[spec.color.toUpperCase()];
             if (sc) {
               sticky.fills = [{ type: 'SOLID', color: sc }];
             }

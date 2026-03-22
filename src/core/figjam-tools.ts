@@ -4,6 +4,46 @@ import { createChildLogger } from "./logger.js";
 
 const logger = createChildLogger({ component: "figjam-tools" });
 
+/** Valid sticky note colors */
+const STICKY_COLORS = [
+	"YELLOW",
+	"BLUE",
+	"GREEN",
+	"PINK",
+	"ORANGE",
+	"PURPLE",
+	"RED",
+	"LIGHT_GRAY",
+	"GRAY",
+] as const;
+
+/** Valid FigJam shape types */
+const SHAPE_TYPES = [
+	"ROUNDED_RECTANGLE",
+	"DIAMOND",
+	"ELLIPSE",
+	"TRIANGLE_UP",
+	"TRIANGLE_DOWN",
+	"PARALLELOGRAM_RIGHT",
+	"PARALLELOGRAM_LEFT",
+	"ENG_DATABASE",
+	"ENG_QUEUE",
+	"ENG_FILE",
+	"ENG_FOLDER",
+] as const;
+
+/** Valid FigJam node types for board content filtering */
+const FIGJAM_NODE_TYPES = [
+	"STICKY",
+	"SHAPE_WITH_TEXT",
+	"CONNECTOR",
+	"TABLE",
+	"CODE_BLOCK",
+	"SECTION",
+	"FRAME",
+	"TEXT",
+] as const;
+
 /** Maximum items for batch operations to prevent DoS / plugin timeouts */
 const MAX_BATCH_SIZE = 200;
 /** Maximum table dimensions */
@@ -42,11 +82,9 @@ export function registerFigJamTools(
 				.max(MAX_TEXT_LENGTH)
 				.describe("Text content for the sticky note"),
 			color: z
-				.string()
+				.enum(STICKY_COLORS)
 				.optional()
-				.describe(
-					"Sticky color: YELLOW, BLUE, GREEN, PINK, ORANGE, PURPLE, RED, LIGHT_GRAY, GRAY",
-				),
+				.describe("Sticky color"),
 			x: z.number().optional().describe("X position on canvas"),
 			y: z.number().optional().describe("Y position on canvas"),
 		},
@@ -85,7 +123,7 @@ export function registerFigJamTools(
 				.array(
 					z.object({
 						text: z.string().max(MAX_TEXT_LENGTH).describe("Text content"),
-						color: z.string().optional().describe("Sticky color"),
+						color: z.enum(STICKY_COLORS).optional().describe("Sticky color"),
 						x: z.number().optional().describe("X position"),
 						y: z.number().optional().describe("Y position"),
 					}),
@@ -183,11 +221,9 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 				.optional()
 				.describe("Text label for the shape"),
 			shapeType: z
-				.string()
+				.enum(SHAPE_TYPES)
 				.optional()
-				.describe(
-					"Shape type: ROUNDED_RECTANGLE, DIAMOND, ELLIPSE, TRIANGLE_UP, etc.",
-				),
+				.describe("Shape type"),
 			x: z.number().optional().describe("X position on canvas"),
 			y: z.number().optional().describe("Y position on canvas"),
 		},
@@ -372,8 +408,11 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 					gridCols,
 				});
 
+				// Use JSON.stringify to produce a properly-escaped double-quoted JS string literal.
+				// This handles all control characters including \u2028/\u2029 that manual
+				// single-quote escaping would miss.
 				const code = `
-					const params = JSON.parse('${paramsJson.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}');
+					const params = JSON.parse(${JSON.stringify(paramsJson)});
 					const nodes = [];
 					for (const id of params.nodeIds) {
 						const node = await figma.getNodeByIdAsync(id);
@@ -447,11 +486,9 @@ Use this to understand what's on a board before modifying it, or to extract stru
 **Filters:** Pass nodeTypes to limit results (e.g., ["STICKY"] for only stickies). Omit for everything.`,
 		{
 			nodeTypes: z
-				.array(z.string())
+				.array(z.enum(FIGJAM_NODE_TYPES))
 				.optional()
-				.describe(
-					"Filter by node types: STICKY, SHAPE_WITH_TEXT, CONNECTOR, TABLE, CODE_BLOCK, SECTION, FRAME, TEXT. Omit for all.",
-				),
+				.describe("Filter by node types. Omit for all."),
 			maxNodes: z
 				.number()
 				.min(1)

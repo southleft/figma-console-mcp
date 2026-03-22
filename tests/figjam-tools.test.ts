@@ -184,6 +184,20 @@ describe("FigJam Tools", () => {
 			expect(mockConnector.createStickies).toHaveBeenCalledWith({ stickies });
 			expect(result.isError).toBeUndefined();
 		});
+
+		it("returns error when connector fails", async () => {
+			mockConnector.createStickies.mockRejectedValue(
+				new Error("CREATE_STICKIES is only available in FigJam files")
+			);
+
+			const tool = server._getTool("figjam_create_stickies");
+			const result = await tool.handler({ stickies: [{ text: "A" }] });
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("only available in FigJam");
+			expect(parsed.hint).toBeDefined();
+		});
 	});
 
 	// ========================================================================
@@ -246,6 +260,19 @@ describe("FigJam Tools", () => {
 			});
 			expect(result.isError).toBeUndefined();
 		});
+
+		it("returns error when connector fails", async () => {
+			mockConnector.createShapeWithText.mockRejectedValue(
+				new Error("CREATE_SHAPE_WITH_TEXT is only available in FigJam files")
+			);
+
+			const tool = server._getTool("figjam_create_shape_with_text");
+			const result = await tool.handler({ text: "Test" });
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("only available in FigJam");
+		});
 	});
 
 	// ========================================================================
@@ -278,6 +305,19 @@ describe("FigJam Tools", () => {
 			});
 			expect(result.isError).toBeUndefined();
 		});
+
+		it("returns error when connector fails", async () => {
+			mockConnector.createTable.mockRejectedValue(
+				new Error("CREATE_TABLE is only available in FigJam files")
+			);
+
+			const tool = server._getTool("figjam_create_table");
+			const result = await tool.handler({ rows: 2, columns: 2 });
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("only available in FigJam");
+		});
 	});
 
 	// ========================================================================
@@ -301,6 +341,19 @@ describe("FigJam Tools", () => {
 				y: 0,
 			});
 			expect(result.isError).toBeUndefined();
+		});
+
+		it("returns error when connector fails", async () => {
+			mockConnector.createCodeBlock.mockRejectedValue(
+				new Error("CREATE_CODE_BLOCK is only available in FigJam files")
+			);
+
+			const tool = server._getTool("figjam_create_code_block");
+			const result = await tool.handler({ code: "test" });
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("only available in FigJam");
 		});
 	});
 
@@ -432,6 +485,53 @@ describe("FigJam Tools", () => {
 			expect(result.isError).toBe(true);
 			const parsed = JSON.parse(result.content[0].text);
 			expect(parsed.error).toContain("only available in FigJam");
+		});
+
+		it("handles empty board with no connectors", async () => {
+			mockConnector.getConnections.mockResolvedValue({
+				success: true,
+				data: { edges: [], connectedNodes: {}, totalConnectors: 0, totalConnectedNodes: 0 },
+			});
+
+			const tool = server._getTool("figjam_get_connections");
+			const result = await tool.handler({});
+
+			expect(result.isError).toBeUndefined();
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.data.edges).toHaveLength(0);
+			expect(parsed.data.totalConnectors).toBe(0);
+		});
+	});
+
+	// ========================================================================
+	// Edge cases & robustness
+	// ========================================================================
+
+	describe("error handling edge cases", () => {
+		it("handles non-Error thrown objects gracefully", async () => {
+			mockConnector.createSticky.mockRejectedValue("raw string error");
+
+			const tool = server._getTool("figjam_create_sticky");
+			const result = await tool.handler({ text: "Hello" });
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toBe("raw string error");
+		});
+
+		it("handles getDesktopConnector failure", async () => {
+			const failServer = createMockServer();
+			registerFigJamTools(
+				failServer as any,
+				async () => { throw new Error("No plugin connected"); }
+			);
+
+			const tool = failServer._getTool("figjam_create_sticky");
+			const result = await tool.handler({ text: "Hello" });
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("No plugin connected");
 		});
 	});
 });
