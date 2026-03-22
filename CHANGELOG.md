@@ -5,6 +5,43 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0] - 2026-03-22
+
+### Added
+- **Figma Slides support** — 15 new MCP tools enable AI assistants to manage entire Figma Slides presentations. Covers the full lifecycle: reading, creating, editing, navigating, and presenting.
+  - **`figma_list_slides`** — List all slides with IDs, names, grid positions, and skip status
+  - **`figma_get_slide_content`** — Get the full content tree of a slide (text, shapes, frames, vectors)
+  - **`figma_get_slide_grid`** — Get the 2D grid layout showing how slides are organized in rows and columns
+  - **`figma_get_slide_transition`** — Read transition settings (style, duration, curve, timing)
+  - **`figma_get_focused_slide`** — Get the currently focused slide in single-slide view
+  - **`figma_create_slide`** — Create a new blank slide with optional grid position
+  - **`figma_delete_slide`** — Delete a slide (undoable via Figma's undo)
+  - **`figma_duplicate_slide`** — Clone an existing slide
+  - **`figma_reorder_slides`** — Reorder slides via new 2D array of slide IDs
+  - **`figma_set_slide_transition`** — Set transition effects with 22 styles (DISSOLVE, SMART_ANIMATE, directional slides/pushes/moves), 8 easing curves (LINEAR, EASE_IN/OUT, GENTLE, QUICK, BOUNCY, SLOW), and configurable duration
+  - **`figma_skip_slide`** — Toggle whether a slide is skipped during presentation mode
+  - **`figma_add_text_to_slide`** — Add text elements with configurable position and font size
+  - **`figma_add_shape_to_slide`** — Add rectangles or ellipses with hex color fills
+  - **`figma_set_slides_view_mode`** — Toggle between grid and single-slide view
+  - **`figma_focus_slide`** — Navigate to and focus a specific slide
+- **Slides documentation page** — Dedicated guide covering all 15 tools, use cases, transitions, and example prompts for designers.
+- **Cloud mode support** — All Slides tools registered in both local and cloud entry points.
+
+### Changed
+- **Editor type detection extended** — Plugin now reports and handles `slides` editor type alongside `figma`, `figjam`, and `dev`. Variables bootstrap skipped in Slides mode (no variables API).
+- **Manifest updated** — Added `"slides"` to `editorType` array in manifest.json.
+
+### Fixed
+- **Slides API corrections** — Four runtime API issues discovered and fixed during live testing:
+  - `node.isSkippedSlide` (not `node.skipped`) for skip status
+  - `figma.viewport.slidesView` (not `slidesMode`) for view mode control
+  - Easing curves: `GENTLE`, `QUICK`, `BOUNCY`, `SLOW` (not `_BACK` variants which are for prototype interactions only)
+  - Grid rows are array-like with numeric indices (not objects with `.children`)
+  - `setSlideGrid()` expects existing SlideNode reference arrays from `getSlideGrid()`, not newly created SlideRow objects
+
+### Contributors
+- **Toni Haidamous (Tonihaydamous)** — Original Slides tool design and product vision (PR #11)
+
 ## [1.16.0] - 2026-03-22
 
 ### Added

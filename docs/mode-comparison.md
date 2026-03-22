@@ -36,14 +36,14 @@ The MCP server has **three execution modes** and **four setup methods**:
 
 | Mode | Tools Available | Write Access | Needs Node.js | Real-time |
 |------|-----------------|--------------|---------------|-----------|
-| **Local Mode** (NPX or Git) | **63+** | Yes | Yes | Yes |
+| **Local Mode** (NPX or Git) | **78+** | Yes | Yes | Yes |
 | **Cloud Mode** (Remote + Relay) | **43** | Yes | No | No |
 | **Remote Mode** (read-only) | **22** | No | No | No |
 
-> **Bottom line:** Remote mode is read-only (52 tools). Cloud Mode adds write access ((52 tools)) without Node.js. Local has everything (63+ tools) including real-time monitoring.
+> **Bottom line:** Remote mode is read-only (52 tools). Cloud Mode adds write access ((52 tools)) without Node.js. Local has everything (78+ tools) including real-time monitoring.
 
 ### Use NPX Setup (Recommended for Most Users)
-- ✅ **All 63+ tools** including design creation and real-time monitoring
+- ✅ **All 78+ tools** including design creation and real-time monitoring
 - ✅ Automatic updates with `@latest`
 - ✅ Desktop Bridge Plugin support (recommended connection — no debug flags needed)
 - ✅ Variables without Enterprise plan
@@ -58,7 +58,7 @@ The MCP server has **three execution modes** and **four setup methods**:
 - ❌ No real-time selection tracking, document changes, or console streaming
 
 ### Use Local Git (For Contributors)
-- ✅ **All 63+ tools** including design creation
+- ✅ **All 78+ tools** including design creation
 - ✅ Full source code access
 - ✅ Modify and test changes
 - ⚠️ Requires `FIGMA_ACCESS_TOKEN` (manual)
@@ -180,7 +180,7 @@ Variables & Components Data
 **Key Points:**
 - Install the Desktop Bridge Plugin once — no debug flags needed
 - Server automatically selects an available port (9223–9232) for multi-instance support
-- All 63+ tools work through WebSocket
+- All 78+ tools work through WebSocket
 - Plugin can access local variables (no Enterprise API needed)
 - Instant console log capture via WebSocket
 - Real-time selection tracking and document change monitoring
@@ -342,7 +342,7 @@ Variables & Components Data
 - ✅ Works offline (for console debugging)
 - ✅ No browser-based OAuth flow
 - ✅ Simpler for single-user setups
-- ✅ Full 63+ tools including real-time monitoring
+- ✅ Full 78+ tools including real-time monitoring
 
 **Limitations:**
 - ❌ **Manual token creation required**
@@ -383,7 +383,7 @@ The Desktop Bridge Plugin is the bridge between Figma and the MCP server. It com
 | Selection tracking | ❌ | ❌ | ✅ Real-time via WebSocket |
 | Document change monitoring | ❌ | ❌ | ✅ Real-time via WebSocket |
 
-**Local Mode Transport:** The server automatically selects an available port in the range 9223–9232, supporting multiple simultaneous MCP instances. All 63+ tools work through the WebSocket transport.
+**Local Mode Transport:** The server automatically selects an available port in the range 9223–9232, supporting multiple simultaneous MCP instances. All 78+ tools work through the WebSocket transport.
 
 **Cloud Mode Transport:** The plugin connects to the Cloudflare relay after pairing. Write operations are relayed from the cloud MCP server through the Durable Object to the plugin. (52 tools) are available.
 
@@ -403,7 +403,7 @@ Remote read-only mode runs in Cloudflare Workers which cannot connect to `localh
 ### Switch from Remote (read-only) → NPX/Local Git if:
 - ❌ You need real-time selection tracking or document change monitoring
 - ❌ You're developing Figma plugins (need console log streaming)
-- ❌ You need the full 63+ tool set
+- ❌ You need the full 78+ tool set
 - ❌ You need offline access
 
 ### Switch from Cloud Mode → NPX/Local Git if:
@@ -485,7 +485,7 @@ All setup methods are completely free:
 ## Summary
 
 **For most users: Start with NPX Setup** ⭐
-- All 63+ tools including design creation and real-time monitoring
+- All 78+ tools including design creation and real-time monitoring
 - Automatic updates with `@latest`
 - Desktop Bridge plugin support
 - Variables without Enterprise plan
@@ -510,7 +510,7 @@ All setup methods are completely free:
 **Key Takeaway:** The three modes offer a clear capability progression:
 - **Remote (read-only):** 22 tools — view data, screenshots, design system extraction
 - **Cloud Mode:** (52 tools) — adds full write access (create, edit, delete) via relay
-- **Local Mode (NPX/Git):** 63+ tools — adds real-time monitoring (selection, changes, console)
+- **Local Mode (NPX/Git):** 78+ tools — adds real-time monitoring (selection, changes, console)
 
 The difference is not just authentication, but **fundamental capabilities**:
 - **Remote:** Cannot create, modify, or delete anything in Figma
