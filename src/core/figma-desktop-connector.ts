@@ -1560,4 +1560,21 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   async createCodeBlock(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
   async getBoardContents(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
   async getConnections(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+
+  // Slides operations — not supported via legacy CDP transport
+  async listSlides(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async getSlideContent(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async createSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async deleteSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async duplicateSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async getSlideGrid(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async reorderSlides(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async setSlideTransition(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async getSlideTransition(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async setSlidesViewMode(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async getFocusedSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async focusSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async skipSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async addTextToSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async addShapeToSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
 }
