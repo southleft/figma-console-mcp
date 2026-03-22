@@ -679,11 +679,15 @@ function resolveVariableAliases(
 
 		const resolvedValuesByMode: Record<string, { value: any; aliasTo?: string }> = {};
 
+		// Use the full cached variable's valuesByMode if the response variable was stripped by verbosity filtering
+		const fullVariable = allVariablesMap.get(variable.id);
+		const valuesByMode = variable.valuesByMode || fullVariable?.valuesByMode;
+
 		for (const mode of modes) {
 			const modeId = getModeId(mode);
 			if (!modeId) continue;
 
-			const rawValue = variable.valuesByMode?.[modeId];
+			const rawValue = valuesByMode?.[modeId];
 			if (rawValue === undefined) continue;
 
 			const { resolved, aliasChain } = resolveValue(rawValue, variable.resolvedType, new Set());

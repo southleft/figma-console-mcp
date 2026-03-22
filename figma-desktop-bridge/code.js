@@ -115,6 +115,7 @@ var __stickyColors = {
         valuesByMode: v.valuesByMode,
         variableCollectionId: v.variableCollectionId,
         scopes: v.scopes,
+        codeSyntax: v.codeSyntax || {},
         description: v.description,
         hiddenFromPublishing: v.hiddenFromPublishing
       })),
@@ -156,6 +157,7 @@ function serializeVariable(v) {
     valuesByMode: v.valuesByMode,
     variableCollectionId: v.variableCollectionId,
     scopes: v.scopes,
+    codeSyntax: v.codeSyntax || {},
     description: v.description,
     hiddenFromPublishing: v.hiddenFromPublishing
   };
@@ -243,7 +245,7 @@ figma.ui.onmessage = async (msg) => {
             variables: variables.map(function(v) { return {
               id: v.id, name: v.name, key: v.key, resolvedType: v.resolvedType,
               valuesByMode: v.valuesByMode, variableCollectionId: v.variableCollectionId,
-              scopes: v.scopes, description: v.description, hiddenFromPublishing: v.hiddenFromPublishing
+              scopes: v.scopes, codeSyntax: v.codeSyntax || {}, description: v.description, hiddenFromPublishing: v.hiddenFromPublishing
             }; }),
             variableCollections: collections.map(function(c) { return {
               id: c.id, name: c.name, key: c.key, modes: c.modes,
