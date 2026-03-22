@@ -3550,27 +3550,37 @@ figma.ui.onmessage = async (msg) => {
       console.log('🌉 [Desktop Bridge] Reordering slides');
 
       var newGrid = msg.grid; // 2D array of slide IDs
-      var rows = [];
+
+      // Build a lookup: slideId → SlideNode from the current grid
+      var currentGrid = figma.getSlideGrid();
+      var slideMap = {};
+      for (var gri = 0; gri < currentGrid.length; gri++) {
+        var grow = currentGrid[gri];
+        for (var gci = 0; gci < grow.length; gci++) {
+          slideMap[grow[gci].id] = grow[gci];
+        }
+      }
+
+      // Build new grid as arrays of SlideNode references
+      var reorderedRows = [];
       for (var rri = 0; rri < newGrid.length; rri++) {
         var rowIds = newGrid[rri];
-        var rowNode = figma.createSlideRow();
+        var rowSlides = [];
         for (var cci = 0; cci < rowIds.length; cci++) {
-          var slideToMove = await figma.getNodeByIdAsync(rowIds[cci]);
-          if (slideToMove && slideToMove.type === 'SLIDE') {
-            rowNode.appendChild(slideToMove);
-          }
+          var slideRef = slideMap[rowIds[cci]];
+          if (!slideRef) throw new Error('Slide not found in current grid: ' + rowIds[cci]);
+          rowSlides.push(slideRef);
         }
-        rows.push(rowNode);
+        reorderedRows.push(rowSlides);
       }
-      // NOTE: figma.setSlideGrid() is deprecated; figma.setCanvasGrid() is the replacement.
-      // Using setSlideGrid() for broader compatibility until setCanvasGrid() is widely available.
-      figma.setSlideGrid(rows);
+
+      figma.setSlideGrid(reorderedRows);
 
       figma.ui.postMessage({
         type: 'REORDER_SLIDES_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: { success: true, rows: rows.length }
+        data: { success: true, rows: reorderedRows.length }
       });
 
     } catch (error) {
