@@ -3,7 +3,7 @@ title: "Figma Slides Support"
 description: "AI agents can now manage entire presentations — create slides, set transitions, reorder decks, and add content. A complete guide to the 15 Slides tools."
 ---
 
-# Figma Slides Support
+# AI-Powered Presentations
 
 Figma Console MCP now extends beyond Design files and FigJam boards into **Figma Slides** — Figma's presentation tool built directly on the design canvas. Teams use it for pitch decks, design reviews, sprint demos, conference talks, and stakeholder presentations.
 

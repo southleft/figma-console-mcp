@@ -3,7 +3,7 @@ title: "FigJam Support"
 description: "AI agents can now create and read FigJam boards — sticky notes, flowcharts, tables, code blocks, and more. A complete guide to the 9 FigJam tools."
 ---
 
-# FigJam Support
+# AI Meets Collaborative Whiteboarding
 
 Figma Console MCP now extends beyond Figma Design files into **FigJam** — Figma's collaborative whiteboarding tool used by millions of teams for brainstorming, planning, diagramming, and retrospectives.
 
