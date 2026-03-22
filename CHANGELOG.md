@@ -5,6 +5,15 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.1] - 2026-03-22
+
+### Added
+- **Variable `codeSyntax` in Desktop Bridge** — Plugin now includes `codeSyntax` (CSS custom property mappings like `{ WEB: 'var(--color-primary)' }`) in all variable extraction paths. Previously only available via Enterprise REST API.
+
+### Fixed
+- **Variable alias resolution with summary/inventory verbosity** — `resolveAliases: true` now correctly returns resolved hex values at all verbosity levels. Previously, summary and inventory verbosity stripped `valuesByMode` before alias resolution ran, causing `resolvedValuesByMode` to always return empty objects.
+
+
 ## [1.17.0] - 2026-03-22
 
 ### Added
@@ -451,6 +460,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.17.1]: https://github.com/southleft/figma-console-mcp/compare/v1.17.0...v1.17.1
 [1.15.5]: https://github.com/southleft/figma-console-mcp/compare/v1.15.4...v1.15.5
 [1.15.0]: https://github.com/southleft/figma-console-mcp/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/southleft/figma-console-mcp/compare/v1.13.1...v1.14.0
