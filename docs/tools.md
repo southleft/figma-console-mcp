@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 57+ MCP tools, including parameters, return values, and usage examples."
+description: "Complete API reference for all 66+ MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **63+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **(((52 tools)))** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **72+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **61 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -68,6 +68,15 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_create_child` | Create child node | Local / Cloud |
 | **🖼️ Image** | `figma_set_image_fill` | Set image fill on nodes | Local / Cloud |
 | **🔍 Design Lint** | `figma_lint_design` | WCAG accessibility and design quality checks | Local / Cloud |
+| **📌 FigJam** | `figjam_create_sticky` | Create a sticky note | Local / Cloud |
+| | `figjam_create_stickies` | Batch create up to 200 stickies | Local / Cloud |
+| | `figjam_create_connector` | Connect two nodes with optional label | Local / Cloud |
+| | `figjam_create_shape_with_text` | Create a labeled shape (diamond, ellipse, etc.) | Local / Cloud |
+| | `figjam_create_table` | Create a table with cell data | Local / Cloud |
+| | `figjam_create_code_block` | Create a code block | Local / Cloud |
+| | `figjam_auto_arrange` | Arrange nodes in grid/row/column layout | Local / Cloud |
+| | `figjam_get_board_contents` | Read all content from a FigJam board | Local / Cloud |
+| | `figjam_get_connections` | Read the connection graph | Local / Cloud |
 | **☁️ Cloud Relay** | `figma_pair_plugin` | Generate pairing code for Desktop Bridge | Cloud |
 
 ---
@@ -2078,6 +2087,139 @@ figma_lint_design({
 - "Are there any detached components?"
 - "Run a WCAG contrast check"
 - "Audit the design quality"
+
+---
+
+## 📌 FigJam Tools
+
+FigJam tools only work when the Desktop Bridge plugin is running in a FigJam board (`editorType === 'figjam'`). They return clear errors when used in Figma Design files.
+
+### `figjam_create_sticky`
+
+Create a sticky note on a FigJam board.
+
+**Mode:** Local / Cloud
+
+**Parameters:**
+| Parameter | Type   | Required | Description |
+|-----------|--------|----------|-------------|
+| `text`    | string | Yes      | Text content (max 5,000 chars) |
+| `color`   | string | No       | YELLOW, BLUE, GREEN, PINK, ORANGE, PURPLE, RED, LIGHT_GRAY, GRAY |
+| `x`       | number | No       | X position on canvas |
+| `y`       | number | No       | Y position on canvas |
+
+### `figjam_create_stickies`
+
+Batch create multiple sticky notes (max 200). Font is loaded once for the entire batch.
+
+**Mode:** Local / Cloud
+
+**Parameters:**
+| Parameter  | Type  | Required | Description |
+|------------|-------|----------|-------------|
+| `stickies` | array | Yes      | Array of `{text, color?, x?, y?}` objects (max 200) |
+
+### `figjam_create_connector`
+
+Connect two nodes with a connector line. Use node IDs from creation results.
+
+**Mode:** Local / Cloud
+
+**Parameters:**
+| Parameter     | Type   | Required | Description |
+|---------------|--------|----------|-------------|
+| `startNodeId` | string | Yes      | Node ID of the start element |
+| `endNodeId`   | string | Yes      | Node ID of the end element |
+| `label`       | string | No       | Text label on the connector |
+
+### `figjam_create_shape_with_text`
+
+Create a labeled shape for flowcharts and diagrams.
+
+**Mode:** Local / Cloud
+
+**Parameters:**
+| Parameter   | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| `text`      | string | No       | Text label |
+| `shapeType` | string | No       | ROUNDED_RECTANGLE (default), DIAMOND, ELLIPSE, TRIANGLE_UP, TRIANGLE_DOWN, PARALLELOGRAM_RIGHT, PARALLELOGRAM_LEFT, ENG_DATABASE, ENG_QUEUE, ENG_FILE, ENG_FOLDER |
+| `x`         | number | No       | X position |
+| `y`         | number | No       | Y position |
+
+### `figjam_create_table`
+
+Create a table with optional cell data.
+
+**Mode:** Local / Cloud
+
+**Parameters:**
+| Parameter | Type     | Required | Description |
+|-----------|----------|----------|-------------|
+| `rows`    | number   | Yes      | Number of rows (1-100) |
+| `columns` | number   | Yes      | Number of columns (1-50) |
+| `data`    | string[][] | No    | 2D array of cell text (row-major order) |
+| `x`       | number   | No       | X position |
+| `y`       | number   | No       | Y position |
+
+### `figjam_create_code_block`
+
+Create a code block for sharing snippets and technical documentation.
+
+**Mode:** Local / Cloud
+
+**Parameters:**
+| Parameter  | Type   | Required | Description |
+|------------|--------|----------|-------------|
+| `code`     | string | Yes      | Code content (max 50,000 chars) |
+| `language` | string | No       | JAVASCRIPT, PYTHON, TYPESCRIPT, JSON, HTML, CSS, etc. |
+| `x`        | number | No       | X position |
+| `y`        | number | No       | Y position |
+
+### `figjam_auto_arrange`
+
+Arrange nodes in a grid, horizontal row, or vertical column layout.
+
+**Mode:** Local / Cloud
+
+**Parameters:**
+| Parameter | Type     | Required | Description |
+|-----------|----------|----------|-------------|
+| `nodeIds` | string[] | Yes      | Array of node IDs to arrange (max 500) |
+| `layout`  | string   | No       | `grid` (default), `horizontal`, or `vertical` |
+| `spacing` | number   | No       | Spacing between nodes in pixels (default: 40) |
+| `columns` | number   | No       | Grid columns (defaults to sqrt of node count) |
+
+### `figjam_get_board_contents`
+
+Read all content from a FigJam board. Returns stickies, shapes, connectors, tables, code blocks, and sections with their text content, positions, and type-specific properties (colors, shape types, cell data, connector endpoints).
+
+**Mode:** Local / Cloud
+
+**Parameters:**
+| Parameter   | Type     | Required | Description |
+|-------------|----------|----------|-------------|
+| `nodeTypes` | string[] | No       | Filter by type: STICKY, SHAPE_WITH_TEXT, CONNECTOR, TABLE, CODE_BLOCK, SECTION, FRAME, TEXT. Omit for all. |
+| `maxNodes`  | number   | No       | Maximum nodes to return (1-1000, default: 500) |
+
+**Returns:**
+- `nodes` — Array of node objects with id, type, name, position, dimensions, and type-specific data
+- `totalFound` — Number of nodes returned
+- `truncated` — Whether results were capped at maxNodes
+- `page` — Current page name
+
+### `figjam_get_connections`
+
+Read the connection graph from a FigJam board. Returns all connectors as edges with their start/end node references and labels, plus a lookup of connected nodes.
+
+**Mode:** Local / Cloud
+
+**Parameters:** None
+
+**Returns:**
+- `edges` — Array of `{connectorId, startNodeId, endNodeId, label}`
+- `connectedNodes` — Map of node ID → `{id, type, name, text}`
+- `totalConnectors` — Number of connectors found
+- `totalConnectedNodes` — Number of unique connected nodes
 
 ---
 

@@ -66,8 +66,33 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
   }
 })();
 
-// Immediately fetch and send variables data to UI
+// Detect editor type (figma | figjam | dev)
+var __editorType = figma.editorType || 'figma';
+console.log('🌉 [Desktop Bridge] Editor type:', __editorType);
+
+// Shared sticky color map — used by CREATE_STICKY and CREATE_STICKIES
+var __stickyColors = {
+  'YELLOW': { r: 1, g: 0.85, b: 0.4 },
+  'BLUE': { r: 0.53, g: 0.78, b: 1 },
+  'GREEN': { r: 0.55, g: 0.87, b: 0.53 },
+  'PINK': { r: 1, g: 0.6, b: 0.78 },
+  'ORANGE': { r: 1, g: 0.71, b: 0.42 },
+  'PURPLE': { r: 0.78, g: 0.65, b: 1 },
+  'RED': { r: 1, g: 0.55, b: 0.55 },
+  'LIGHT_GRAY': { r: 0.9, g: 0.9, b: 0.9 },
+  'GRAY': { r: 0.7, g: 0.7, b: 0.7 }
+};
+
+// Immediately fetch and send variables data to UI (skip in FigJam — no variables API)
 (async () => {
+  if (__editorType === 'figjam') {
+    console.log('🌉 [Desktop Bridge] FigJam mode — skipping variables fetch');
+    figma.ui.postMessage({
+      type: 'VARIABLES_DATA',
+      data: { success: true, timestamp: Date.now(), fileKey: figma.fileKey || null, variables: [], variableCollections: [], editorType: 'figjam' }
+    });
+    return;
+  }
   try {
     console.log('🌉 [Desktop Bridge] Fetching variables...');
 
@@ -2128,7 +2153,8 @@ figma.ui.onmessage = async (msg) => {
           currentPage: figma.currentPage.name,
           currentPageId: figma.currentPage.id,
           selectionCount: selection ? selection.length : 0,
-          pluginVersion: PLUGIN_VERSION
+          pluginVersion: PLUGIN_VERSION,
+          editorType: __editorType
         }
       });
     } catch (error) {
@@ -2808,6 +2834,480 @@ figma.ui.onmessage = async (msg) => {
         requestId: msg.requestId,
         success: false,
         error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // FIGJAM TOOLS — Only functional when editorType === 'figjam'
+  // ============================================================================
+
+  // CREATE_STICKY - Create a sticky note
+  else if (msg.type === 'CREATE_STICKY') {
+    try {
+      if (__editorType !== 'figjam') {
+        throw new Error('CREATE_STICKY is only available in FigJam files');
+      }
+      console.log('🌉 [Desktop Bridge] Creating sticky note');
+
+      var sticky = figma.createSticky();
+      await figma.loadFontAsync(sticky.text.fontName);
+      sticky.text.characters = msg.text || '';
+
+      if (typeof msg.x === 'number') sticky.x = msg.x;
+      if (typeof msg.y === 'number') sticky.y = msg.y;
+
+      // Set sticky color if provided
+      if (msg.color) {
+        var stickyColor = __stickyColors[msg.color.toUpperCase()];
+        if (stickyColor) {
+          sticky.fills = [{ type: 'SOLID', color: stickyColor }];
+        }
+      }
+
+      figma.ui.postMessage({
+        type: 'CREATE_STICKY_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: sticky.id, type: sticky.type, name: sticky.name, x: sticky.x, y: sticky.y }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Create sticky error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_STICKY_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // CREATE_STICKIES - Batch create sticky notes
+  else if (msg.type === 'CREATE_STICKIES') {
+    try {
+      if (__editorType !== 'figjam') {
+        throw new Error('CREATE_STICKIES is only available in FigJam files');
+      }
+      console.log('🌉 [Desktop Bridge] Batch creating sticky notes:', msg.stickies.length);
+
+      var created = [];
+      var failed = [];
+
+      // Load font once for all stickies (they all share the same default font)
+      var stickyFontLoaded = false;
+
+      for (var si = 0; si < msg.stickies.length; si++) {
+        try {
+          var spec = msg.stickies[si];
+          var sticky = figma.createSticky();
+          if (!stickyFontLoaded) {
+            await figma.loadFontAsync(sticky.text.fontName);
+            stickyFontLoaded = true;
+          }
+          sticky.text.characters = spec.text || '';
+
+          if (typeof spec.x === 'number') sticky.x = spec.x;
+          if (typeof spec.y === 'number') sticky.y = spec.y;
+
+          if (spec.color) {
+            var sc = __stickyColors[spec.color.toUpperCase()];
+            if (sc) {
+              sticky.fills = [{ type: 'SOLID', color: sc }];
+            }
+          }
+
+          created.push({ id: sticky.id, type: sticky.type, name: sticky.name, x: sticky.x, y: sticky.y });
+        } catch (e) {
+          failed.push({ index: si, error: e.message || String(e) });
+        }
+      }
+
+      figma.ui.postMessage({
+        type: 'CREATE_STICKIES_RESULT',
+        requestId: msg.requestId,
+        success: failed.length === 0,
+        data: { created: created.length, failed: failed.length, results: created, errors: failed }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Batch create stickies error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_STICKIES_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // CREATE_CONNECTOR - Connect two nodes with a connector
+  else if (msg.type === 'CREATE_CONNECTOR') {
+    try {
+      if (__editorType !== 'figjam') {
+        throw new Error('CREATE_CONNECTOR is only available in FigJam files');
+      }
+      console.log('🌉 [Desktop Bridge] Creating connector');
+
+      var connector = figma.createConnector();
+
+      // Set start and end endpoints
+      var startNode = await figma.getNodeByIdAsync(msg.startNodeId);
+      var endNode = await figma.getNodeByIdAsync(msg.endNodeId);
+
+      if (!startNode) throw new Error('Start node not found: ' + msg.startNodeId);
+      if (!endNode) throw new Error('End node not found: ' + msg.endNodeId);
+
+      connector.connectorStart = {
+        endpointNodeId: msg.startNodeId,
+        magnet: 'AUTO'
+      };
+      connector.connectorEnd = {
+        endpointNodeId: msg.endNodeId,
+        magnet: 'AUTO'
+      };
+
+      // Set label text if provided
+      if (msg.label) {
+        try {
+          await figma.loadFontAsync(connector.text.fontName);
+        } catch (e) {
+          // Connector default font may not be loadable — fall back to Inter
+          await figma.loadFontAsync({ family: 'Inter', style: 'Medium' });
+          connector.text.fontName = { family: 'Inter', style: 'Medium' };
+        }
+        connector.text.characters = msg.label;
+      }
+
+      figma.ui.postMessage({
+        type: 'CREATE_CONNECTOR_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: connector.id, type: connector.type, name: connector.name }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Create connector error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_CONNECTOR_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // CREATE_SHAPE_WITH_TEXT - Create a labeled shape
+  else if (msg.type === 'CREATE_SHAPE_WITH_TEXT') {
+    try {
+      if (__editorType !== 'figjam') {
+        throw new Error('CREATE_SHAPE_WITH_TEXT is only available in FigJam files');
+      }
+      console.log('🌉 [Desktop Bridge] Creating shape with text');
+
+      var shape = figma.createShapeWithText();
+
+      // Set shape type if provided
+      if (msg.shapeType) {
+        shape.shapeType = msg.shapeType;
+      }
+
+      // Set text
+      if (msg.text) {
+        try {
+          await figma.loadFontAsync(shape.text.fontName);
+        } catch (e) {
+          await figma.loadFontAsync({ family: 'Inter', style: 'Medium' });
+          shape.text.fontName = { family: 'Inter', style: 'Medium' };
+        }
+        shape.text.characters = msg.text;
+      }
+
+      if (typeof msg.x === 'number') shape.x = msg.x;
+      if (typeof msg.y === 'number') shape.y = msg.y;
+
+      figma.ui.postMessage({
+        type: 'CREATE_SHAPE_WITH_TEXT_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: shape.id, type: shape.type, name: shape.name, x: shape.x, y: shape.y }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Create shape with text error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_SHAPE_WITH_TEXT_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // CREATE_TABLE - Create a table with data
+  else if (msg.type === 'CREATE_TABLE') {
+    try {
+      if (__editorType !== 'figjam') {
+        throw new Error('CREATE_TABLE is only available in FigJam files');
+      }
+      console.log('🌉 [Desktop Bridge] Creating table:', msg.rows, 'x', msg.columns);
+
+      var table = figma.createTable(msg.rows, msg.columns);
+
+      if (typeof msg.x === 'number') table.x = msg.x;
+      if (typeof msg.y === 'number') table.y = msg.y;
+
+      // Populate cells if data provided
+      if (msg.data && Array.isArray(msg.data)) {
+        for (var row = 0; row < msg.data.length && row < msg.rows; row++) {
+          for (var col = 0; col < msg.data[row].length && col < msg.columns; col++) {
+            var cell = table.cellAt(row, col);
+            if (cell && msg.data[row][col] != null) {
+              await figma.loadFontAsync(cell.text.fontName);
+              cell.text.characters = String(msg.data[row][col]);
+            }
+          }
+        }
+      }
+
+      figma.ui.postMessage({
+        type: 'CREATE_TABLE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: table.id, type: table.type, name: table.name, rows: msg.rows, columns: msg.columns }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Create table error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_TABLE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // CREATE_CODE_BLOCK - Create a code block
+  else if (msg.type === 'CREATE_CODE_BLOCK') {
+    try {
+      if (__editorType !== 'figjam') {
+        throw new Error('CREATE_CODE_BLOCK is only available in FigJam files');
+      }
+      console.log('🌉 [Desktop Bridge] Creating code block');
+
+      var codeBlock = figma.createCodeBlock();
+
+      // Code blocks require Source Code Pro font, fall back to Inter if unavailable
+      try {
+        await figma.loadFontAsync({ family: 'Source Code Pro', style: 'Medium' });
+      } catch (e) {
+        await figma.loadFontAsync({ family: 'Inter', style: 'Medium' });
+      }
+
+      if (msg.code) {
+        codeBlock.code = msg.code;
+      }
+      if (msg.language) {
+        codeBlock.codeLanguage = msg.language;
+      }
+
+      if (typeof msg.x === 'number') codeBlock.x = msg.x;
+      if (typeof msg.y === 'number') codeBlock.y = msg.y;
+
+      figma.ui.postMessage({
+        type: 'CREATE_CODE_BLOCK_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { id: codeBlock.id, type: codeBlock.type, name: codeBlock.name, x: codeBlock.x, y: codeBlock.y }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Create code block error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_CODE_BLOCK_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_BOARD_CONTENTS - Read all FigJam nodes from the current page
+  else if (msg.type === 'GET_BOARD_CONTENTS') {
+    try {
+      if (__editorType !== 'figjam') {
+        throw new Error('GET_BOARD_CONTENTS is only available in FigJam files');
+      }
+      console.log('🌉 [Desktop Bridge] Reading board contents');
+
+      var maxNodes = msg.maxNodes || 500;
+      var filterTypes = msg.nodeTypes || null;
+
+      // FigJam node types we care about
+      var figjamTypes = ['STICKY', 'SHAPE_WITH_TEXT', 'CONNECTOR', 'TABLE', 'CODE_BLOCK', 'SECTION', 'FRAME', 'TEXT'];
+
+      var allNodes = figma.currentPage.children;
+      var results = [];
+      var truncated = false;
+
+      for (var ni = 0; ni < allNodes.length && results.length < maxNodes; ni++) {
+        var node = allNodes[ni];
+
+        // Skip if filtering and this type isn't in the filter list
+        if (filterTypes && filterTypes.indexOf(node.type) === -1) continue;
+        // Skip if not a FigJam-relevant type
+        if (!filterTypes && figjamTypes.indexOf(node.type) === -1) continue;
+
+        var entry = {
+          id: node.id,
+          type: node.type,
+          name: node.name,
+          x: node.x,
+          y: node.y,
+          width: node.width,
+          height: node.height
+        };
+
+        // Extract text content based on node type
+        if (node.type === 'STICKY') {
+          entry.text = node.text ? node.text.characters : '';
+          if (node.fills && node.fills.length > 0 && node.fills[0].color) {
+            entry.color = node.fills[0].color;
+          }
+        } else if (node.type === 'SHAPE_WITH_TEXT') {
+          entry.text = node.text ? node.text.characters : '';
+          entry.shapeType = node.shapeType || 'ROUNDED_RECTANGLE';
+        } else if (node.type === 'CONNECTOR') {
+          entry.connectorStart = node.connectorStart || null;
+          entry.connectorEnd = node.connectorEnd || null;
+          entry.text = node.text ? node.text.characters : '';
+        } else if (node.type === 'CODE_BLOCK') {
+          entry.code = node.code || '';
+          entry.codeLanguage = node.codeLanguage || '';
+        } else if (node.type === 'TABLE') {
+          entry.numRows = node.numRows;
+          entry.numColumns = node.numColumns;
+          // Read first 10 rows of cell data to avoid huge payloads
+          var cellData = [];
+          var maxCellRows = Math.min(node.numRows, 10);
+          for (var row = 0; row < maxCellRows; row++) {
+            var rowData = [];
+            for (var col = 0; col < node.numColumns; col++) {
+              try {
+                var cell = node.cellAt(row, col);
+                rowData.push(cell && cell.text ? cell.text.characters : '');
+              } catch (e) {
+                rowData.push('');
+              }
+            }
+            cellData.push(rowData);
+          }
+          entry.cellData = cellData;
+          if (node.numRows > 10) entry.cellDataTruncated = true;
+        } else if (node.type === 'SECTION') {
+          entry.childCount = node.children ? node.children.length : 0;
+        } else if (node.type === 'TEXT') {
+          entry.text = node.characters || '';
+        }
+
+        results.push(entry);
+      }
+
+      if (results.length >= maxNodes) truncated = true;
+
+      figma.ui.postMessage({
+        type: 'GET_BOARD_CONTENTS_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          nodes: results,
+          totalFound: results.length,
+          truncated: truncated,
+          page: figma.currentPage.name
+        }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get board contents error:', error);
+      figma.ui.postMessage({
+        type: 'GET_BOARD_CONTENTS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_CONNECTIONS - Read the connection graph from the board
+  else if (msg.type === 'GET_CONNECTIONS') {
+    try {
+      if (__editorType !== 'figjam') {
+        throw new Error('GET_CONNECTIONS is only available in FigJam files');
+      }
+      console.log('🌉 [Desktop Bridge] Reading connection graph');
+
+      var connectors = figma.currentPage.findAll(function(n) { return n.type === 'CONNECTOR'; });
+      var edges = [];
+      var nodeMap = {};
+
+      for (var ci = 0; ci < connectors.length; ci++) {
+        var conn = connectors[ci];
+        var startId = conn.connectorStart ? conn.connectorStart.endpointNodeId : null;
+        var endId = conn.connectorEnd ? conn.connectorEnd.endpointNodeId : null;
+        var label = conn.text ? conn.text.characters : '';
+
+        edges.push({
+          connectorId: conn.id,
+          startNodeId: startId,
+          endNodeId: endId,
+          label: label
+        });
+
+        // Build a lookup of connected nodes with their names/types
+        if (startId && !nodeMap[startId]) {
+          var startNode = await figma.getNodeByIdAsync(startId);
+          if (startNode) {
+            nodeMap[startId] = {
+              id: startId,
+              type: startNode.type,
+              name: startNode.name,
+              text: startNode.text ? startNode.text.characters : (startNode.characters || '')
+            };
+          }
+        }
+        if (endId && !nodeMap[endId]) {
+          var endNode = await figma.getNodeByIdAsync(endId);
+          if (endNode) {
+            nodeMap[endId] = {
+              id: endId,
+              type: endNode.type,
+              name: endNode.name,
+              text: endNode.text ? endNode.text.characters : (endNode.characters || '')
+            };
+          }
+        }
+      }
+
+      figma.ui.postMessage({
+        type: 'GET_CONNECTIONS_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          edges: edges,
+          connectedNodes: nodeMap,
+          totalConnectors: connectors.length,
+          totalConnectedNodes: Object.keys(nodeMap).length
+        }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get connections error:', error);
+      figma.ui.postMessage({
+        type: 'GET_CONNECTIONS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
       });
     }
   }

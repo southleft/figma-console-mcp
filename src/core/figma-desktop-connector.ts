@@ -1550,4 +1550,14 @@ export class FigmaDesktopConnector implements IFigmaConnector {
       throw error;
     }
   }
+
+  // FigJam operations — not supported via legacy CDP transport
+  async createSticky(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+  async createStickies(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+  async createConnector(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+  async createShapeWithText(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+  async createTable(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+  async createCodeBlock(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+  async getBoardContents(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+  async getConnections(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
 }
