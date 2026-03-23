@@ -41,6 +41,7 @@ import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
 import { registerLayoutTools } from "./core/layout-tools.js";
 import { escapeHtml, isAllowedRedirectUri, isLoopbackOrTrustedRedirect, mintSseSessionId, readCookie, sseSessionBelongsTo, verifyPkceS256 } from "./core/oauth-security.js";
+import { registerBuzzTools } from "./core/buzz-tools.js";
 
 // Re-export PluginRelayDO so Cloudflare Workers can bind it as a Durable Object
 export { PluginRelayDO } from "./core/cloud-websocket-relay.js";
@@ -911,6 +912,8 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		registerCodeLayerTools(this.server, getCloudDesktopConnector);
 		registerShaderTools(this.server, getCloudDesktopConnector);
 		registerLayoutTools(this.server, getCloudDesktopConnector);
+		// Register Figma Buzz tools (asset workflows, canvas grid, Buzz metadata)
+		registerBuzzTools(this.server, getCloudDesktopConnector);
 
 		// Register Figma API tools (Tools 8-14)
 		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
@@ -1379,6 +1382,8 @@ export default {
 			registerCodeLayerTools(statelessServer, getCloudDesktopConnector);
 			registerShaderTools(statelessServer, getCloudDesktopConnector);
 			registerLayoutTools(statelessServer, getCloudDesktopConnector);
+			// Register Figma Buzz tools
+			registerBuzzTools(statelessServer, getCloudDesktopConnector);
 
 			// Register REST API tools with the authenticated Figma API
 			registerFigmaAPITools(
