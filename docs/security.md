@@ -42,7 +42,11 @@ Figma Console MCP uses **Figma's native authentication**:
     - Generated in Figma account settings
     - Stored locally in your MCP client config
     - Never transmitted except to `api.figma.com`
-    - Scoped permissions based on token configuration
+    - **Required scope:** `file_content:read` (file data, nodes, components, styles, images)
+    - **Recommended scopes:** `file_comments:read` and `file_comments:write` (comment operations)
+    - **Optional scope:** `file_variables:read` (REST API variable access, Enterprise plans only)
+    - Design write operations use the Desktop Bridge plugin (WebSocket), not the REST API, so no write scopes beyond comments are needed
+    - See [Figma's scope reference](https://developers.figma.com/docs/rest-api/scopes/) for full details
   </Accordion>
   <Accordion title="OAuth (Remote Mode)" icon="right-to-bracket">
     - Uses Figma's official OAuth 2.0 flow
