@@ -66,7 +66,7 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
   }
 })();
 
-// Detect editor type (figma | figjam | slides | dev)
+// Detect editor type (figma | figjam | slides | buzz | dev)
 var __editorType = figma.editorType || 'figma';
 console.log('🌉 [Desktop Bridge] Editor type:', __editorType);
 
@@ -83,9 +83,9 @@ var __stickyColors = {
   'GRAY': { r: 0.7, g: 0.7, b: 0.7 }
 };
 
-// Immediately fetch and send variables data to UI (skip in FigJam — no variables API)
+// Immediately fetch and send variables data to UI (skip in FigJam/Slides/Buzz)
 (async () => {
-  if (__editorType === 'figjam' || __editorType === 'slides') {
+  if (__editorType === 'figjam' || __editorType === 'slides' || __editorType === 'buzz') {
     console.log('🌉 [Desktop Bridge] ' + __editorType + ' mode — skipping variables fetch');
     figma.ui.postMessage({
       type: 'VARIABLES_DATA',
