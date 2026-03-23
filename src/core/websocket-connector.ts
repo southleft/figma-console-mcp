@@ -428,6 +428,62 @@ export class WebSocketConnector implements IFigmaConnector {
   }
 
   // ============================================================================
+  // Buzz operations
+  // ============================================================================
+
+  async getCanvasGrid(): Promise<any> {
+    return this.wsServer.sendCommand('GET_CANVAS_GRID', {}, 10000);
+  }
+
+  async createCanvasRow(params: { rowIndex?: number }): Promise<any> {
+    return this.wsServer.sendCommand('CREATE_CANVAS_ROW', params, 10000);
+  }
+
+  async moveNodesToCoord(params: { nodeIds: string[]; rowIndex?: number; columnIndex?: number }): Promise<any> {
+    return this.wsServer.sendCommand('MOVE_NODES_TO_COORD', params, 10000);
+  }
+
+  async getCanvasView(): Promise<any> {
+    return this.wsServer.sendCommand('GET_CANVAS_VIEW', {}, 5000);
+  }
+
+  async setCanvasView(params: { view: string }): Promise<any> {
+    return this.wsServer.sendCommand('SET_CANVAS_VIEW', params, 5000);
+  }
+
+  async getFocusedAsset(): Promise<any> {
+    return this.wsServer.sendCommand('GET_FOCUSED_ASSET', {}, 5000);
+  }
+
+  async focusAsset(params: { nodeId: string }): Promise<any> {
+    return this.wsServer.sendCommand('FOCUS_ASSET', params, 5000);
+  }
+
+  async createBuzzFrame(params: { row?: number; col?: number; name?: string; width?: number; height?: number }): Promise<any> {
+    return this.wsServer.sendCommand('CREATE_BUZZ_FRAME', params, 10000);
+  }
+
+  async getBuzzAssetType(params: { nodeId: string }): Promise<any> {
+    return this.wsServer.sendCommand('GET_BUZZ_ASSET_TYPE', params, 5000);
+  }
+
+  async setBuzzAssetType(params: { nodeId: string; assetType: string }): Promise<any> {
+    return this.wsServer.sendCommand('SET_BUZZ_ASSET_TYPE', params, 5000);
+  }
+
+  async smartResizeBuzzNode(params: { nodeId: string; width: number; height: number }): Promise<any> {
+    return this.wsServer.sendCommand('SMART_RESIZE_BUZZ_NODE', params, 10000);
+  }
+
+  async getBuzzTextContent(params: { nodeId: string }): Promise<any> {
+    return this.wsServer.sendCommand('GET_BUZZ_TEXT_CONTENT', params, 10000);
+  }
+
+  async getBuzzMediaContent(params: { nodeId: string }): Promise<any> {
+    return this.wsServer.sendCommand('GET_BUZZ_MEDIA_CONTENT', params, 10000);
+  }
+
+  // ============================================================================
   // Cache management (no-op for WebSocket — no frame cache)
   // ============================================================================
 
