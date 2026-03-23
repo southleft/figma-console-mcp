@@ -1463,6 +1463,47 @@
           handleResult('ADD_SHAPE_TO_SLIDE', 'data');
           break;
 
+        // Buzz tools
+        case 'GET_CANVAS_GRID_RESULT':
+          handleResult('GET_CANVAS_GRID', 'data');
+          break;
+        case 'CREATE_CANVAS_ROW_RESULT':
+          handleResult('CREATE_CANVAS_ROW', 'data');
+          break;
+        case 'MOVE_NODES_TO_COORD_RESULT':
+          handleResult('MOVE_NODES_TO_COORD', 'data');
+          break;
+        case 'GET_CANVAS_VIEW_RESULT':
+          handleResult('GET_CANVAS_VIEW', 'data');
+          break;
+        case 'SET_CANVAS_VIEW_RESULT':
+          handleResult('SET_CANVAS_VIEW', 'data');
+          break;
+        case 'GET_FOCUSED_ASSET_RESULT':
+          handleResult('GET_FOCUSED_ASSET', 'data');
+          break;
+        case 'FOCUS_ASSET_RESULT':
+          handleResult('FOCUS_ASSET', 'data');
+          break;
+        case 'CREATE_BUZZ_FRAME_RESULT':
+          handleResult('CREATE_BUZZ_FRAME', 'data');
+          break;
+        case 'GET_BUZZ_ASSET_TYPE_RESULT':
+          handleResult('GET_BUZZ_ASSET_TYPE', 'data');
+          break;
+        case 'SET_BUZZ_ASSET_TYPE_RESULT':
+          handleResult('SET_BUZZ_ASSET_TYPE', 'data');
+          break;
+        case 'SMART_RESIZE_BUZZ_NODE_RESULT':
+          handleResult('SMART_RESIZE_BUZZ_NODE', 'data');
+          break;
+        case 'GET_BUZZ_TEXT_CONTENT_RESULT':
+          handleResult('GET_BUZZ_TEXT_CONTENT', 'data');
+          break;
+        case 'GET_BUZZ_MEDIA_CONTENT_RESULT':
+          handleResult('GET_BUZZ_MEDIA_CONTENT', 'data');
+          break;
+
         // File info
         case 'GET_FILE_INFO_RESULT':
           handleResult('GET_FILE_INFO', 'fileInfo');

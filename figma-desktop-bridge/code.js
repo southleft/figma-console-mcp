@@ -4451,17 +4451,16 @@ figma.ui.onmessage = async (msg) => {
       }
       console.log('🌉 [Desktop Bridge] Moving nodes in Buzz canvas grid');
 
-      var movedNodes = [];
+      // Validate nodes exist, but pass IDs (strings) to the Buzz API
       for (var mni = 0; mni < msg.nodeIds.length; mni++) {
         var moveNode = await figma.getNodeByIdAsync(msg.nodeIds[mni]);
         if (!moveNode) {
           throw new Error('Node not found: ' + msg.nodeIds[mni]);
         }
-        movedNodes.push(moveNode);
       }
 
       figma.moveNodesToCoord(
-        movedNodes,
+        msg.nodeIds,
         typeof msg.rowIndex === 'number' ? msg.rowIndex : undefined,
         typeof msg.columnIndex === 'number' ? msg.columnIndex : undefined
       );
@@ -4471,7 +4470,7 @@ figma.ui.onmessage = async (msg) => {
         requestId: msg.requestId,
         success: true,
         data: {
-          moved: movedNodes.map(__serializeBuzzNode),
+          moved: msg.nodeIds,
           rowIndex: typeof msg.rowIndex === 'number' ? msg.rowIndex : null,
           columnIndex: typeof msg.columnIndex === 'number' ? msg.columnIndex : null
         }
