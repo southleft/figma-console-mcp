@@ -2362,20 +2362,20 @@ export default {
 		}
 
 		.capability-list {
-			display: flex;
-			flex-direction: column;
-			gap: 12px;
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 10px;
 		}
 
 		.capability-item {
 			display: flex;
 			align-items: center;
-			gap: 12px;
-			padding: 12px 16px;
+			gap: 10px;
+			padding: 10px 14px;
 			background: var(--color-bg-elevated);
 			border: 1px solid var(--color-border);
 			border-radius: var(--radius-md);
-			font-size: 14px;
+			font-size: 13px;
 			color: var(--color-text-secondary);
 			transition: all var(--transition);
 		}
@@ -2849,6 +2849,9 @@ export default {
 			}
 			.showcase-cell {
 				padding-top: 32px;
+			}
+			.capability-list {
+				grid-template-columns: 1fr;
 			}
 			.capability-card {
 				grid-column: span 12;
