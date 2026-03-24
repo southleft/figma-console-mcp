@@ -5,7 +5,7 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.18.0] - 2026-03-24
 
 ### Added
 - **Design Annotations** — 3 new tools for reading, writing, and managing Figma design annotations via the Desktop Bridge plugin:
@@ -492,6 +492,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.18.0]: https://github.com/southleft/figma-console-mcp/compare/v1.17.4...v1.18.0
 [1.17.4]: https://github.com/southleft/figma-console-mcp/compare/v1.17.3...v1.17.4
 [1.17.3]: https://github.com/southleft/figma-console-mcp/compare/v1.17.2...v1.17.3
 [1.17.2]: https://github.com/southleft/figma-console-mcp/compare/v1.17.1...v1.17.2

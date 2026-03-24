@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
-> **🆕 FigJam + Slides — AI Across All Figma Products:** 24 new tools bring AI to FigJam boards and Figma Slides. Create stickies, flowcharts, and tables on whiteboards. Manage entire presentations — slides, transitions, content, and reordering. [FigJam Guide →](docs/figjam.md) | [Slides Guide →](docs/slides.md)
+> **🆕 Design Annotations — Read & Write Dev Mode Specs:** 3 new tools let AI read, write, and manage design annotations — the designer-authored specs for animation timings, interaction behaviors, and accessibility requirements. Plus annotation enrichment in component docs. [Comparison →](docs/figma-mcp-vs-figma-console-mcp.md)
 
 ## What is this?
 
