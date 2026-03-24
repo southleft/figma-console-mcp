@@ -4,8 +4,6 @@ sidebarTitle: "Figma MCP vs. Console MCP"
 description: "An objective comparison of Figma's official MCP server and Figma Console MCP — shared capabilities, real differences, and when to use which."
 ---
 
-# Figma MCP vs. Figma Console MCP
-
 Both tools can now read and write to Figma. Both use the Plugin API. Both support skills and guided workflows. So what's actually different?
 
 The short answer: **approach** and **audience**. The Figma MCP is a task-driven agent tool optimized for code-to-canvas workflows. Figma Console MCP is a design system ecosystem tool built to keep design and development in sync. They overlap significantly, and they work well together.
