@@ -3416,7 +3416,7 @@ export function registerFigmaAPITools(
 	// Solves race condition where REST API screenshots show stale data after changes
 	server.tool(
 		"figma_capture_screenshot",
-		"Capture a screenshot of a node using the plugin's exportAsync API. IMPORTANT: This tool captures the CURRENT state from the plugin runtime (not cloud state like REST API), making it reliable for validating changes immediately after making them. Use this instead of figma_get_component_image when you need to verify that changes were applied correctly. Requires Desktop Bridge connection (Figma Desktop with plugin running).",
+		"Capture a screenshot of a node using the plugin's exportAsync API. IMPORTANT: This tool captures the CURRENT state from the plugin runtime (not cloud state like REST API), making it reliable for validating changes immediately after making them. Use this instead of figma_get_component_image when you need to verify that changes were applied correctly. Defaults are AI-optimized: PNG at 1x with automatic downscaling so the longest side stays within the 1568px AI vision processing ceiling. PNG is the default because design tool content (flat colors, text, UI components) compresses significantly better as PNG. Use JPG for photographic or gradient-heavy content. Requires Desktop Bridge connection (Figma Desktop with plugin running).",
 		{
 			nodeId: z
 				.string()
@@ -3428,14 +3428,14 @@ export function registerFigmaAPITools(
 				.enum(["PNG", "JPG", "SVG"])
 				.optional()
 				.default("PNG")
-				.describe("Image format (default: PNG)"),
+				.describe("Image format (default: PNG). Use JPG for photographic or gradient-heavy content."),
 			scale: z
 				.number()
 				.min(0.5)
 				.max(4)
 				.optional()
-				.default(2)
-				.describe("Scale factor (default: 2 for 2x resolution)"),
+				.default(1)
+				.describe("Scale factor (default: 1). The plugin automatically caps the effective scale so the exported image does not exceed 1568px on its longest side (the AI vision processing ceiling)."),
 		},
 		async ({ nodeId, format, scale }) => {
 			try {
@@ -3520,6 +3520,7 @@ export function registerFigmaAPITools(
 								metadata: {
 									source: "plugin_export_async",
 									note: "Screenshot captured successfully. The image is included below for visual analysis. This shows the CURRENT plugin runtime state (guaranteed to reflect recent changes).",
+									formatAdvice: result.image.formatAdvice || undefined,
 								},
 							}),
 						},

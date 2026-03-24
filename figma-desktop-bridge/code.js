@@ -2085,9 +2085,107 @@ figma.ui.onmessage = async (msg) => {
         throw new Error('Node type ' + node.type + ' does not support export');
       }
 
-      // Configure export settings
+      // Configure export settings — AI-optimized defaults (PNG 1x)
       var format = msg.format || 'PNG';
-      var scale = msg.scale || 2;
+      var scale = msg.scale || 1;
+
+      // AI vision cap: Claude API resizes images to 1568px on the longest side
+      // before processing, so exporting larger just wastes bandwidth and tokens.
+      var AI_MAX_DIMENSION = 1568;
+      var nodeWidth = 0;
+      var nodeHeight = 0;
+
+      if (node.type === 'PAGE') {
+        // Pages don't have fixed dimensions — calculate from visible children
+        var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (var i = 0; i < node.children.length; i++) {
+          var child = node.children[i];
+          if (child.visible !== false && 'absoluteBoundingBox' in child && child.absoluteBoundingBox) {
+            var bb = child.absoluteBoundingBox;
+            minX = Math.min(minX, bb.x);
+            minY = Math.min(minY, bb.y);
+            maxX = Math.max(maxX, bb.x + bb.width);
+            maxY = Math.max(maxY, bb.y + bb.height);
+          }
+        }
+        if (minX !== Infinity) {
+          nodeWidth = maxX - minX;
+          nodeHeight = maxY - minY;
+        }
+      } else if ('width' in node && 'height' in node) {
+        nodeWidth = node.width;
+        nodeHeight = node.height;
+      }
+
+      // Cap scale so the longest exported side doesn't exceed the AI processing ceiling
+      if (nodeWidth > 0 && nodeHeight > 0) {
+        var longestSide = Math.max(nodeWidth, nodeHeight);
+        var exportedLongest = longestSide * scale;
+        if (exportedLongest > AI_MAX_DIMENSION) {
+          var cappedScale = AI_MAX_DIMENSION / longestSide;
+          console.log('🌉 [Desktop Bridge] Capping scale from', scale, 'to', cappedScale.toFixed(3),
+            '(node ' + Math.round(longestSide) + 'px, cap ' + AI_MAX_DIMENSION + 'px)');
+          scale = cappedScale;
+        }
+      }
+
+      // Analyze node content to recommend optimal format
+      var imageCount = 0;
+      var gradientCount = 0;
+      var textCount = 0;
+      var vectorCount = 0;
+      var maxDepth = 3; // Don't recurse too deep — top-level composition is enough
+
+      function analyzeContent(n, depth) {
+        if (depth > maxDepth) return;
+        if (n.type === 'TEXT') { textCount++; return; }
+        if (n.type === 'VECTOR' || n.type === 'LINE' || n.type === 'STAR' ||
+            n.type === 'POLYGON' || n.type === 'ELLIPSE' || n.type === 'BOOLEAN_OPERATION') {
+          vectorCount++; return;
+        }
+        // Check fills for images and gradients
+        if ('fills' in n && Array.isArray(n.fills)) {
+          for (var f = 0; f < n.fills.length; f++) {
+            var fill = n.fills[f];
+            if (fill.visible === false) continue;
+            if (fill.type === 'IMAGE') imageCount++;
+            if (fill.type === 'GRADIENT_LINEAR' || fill.type === 'GRADIENT_RADIAL' ||
+                fill.type === 'GRADIENT_ANGULAR' || fill.type === 'GRADIENT_DIAMOND') gradientCount++;
+          }
+        }
+        // Recurse into children
+        if ('children' in n) {
+          for (var c = 0; c < n.children.length; c++) {
+            if (n.children[c].visible !== false) {
+              analyzeContent(n.children[c], depth + 1);
+            }
+          }
+        }
+      }
+      analyzeContent(node, 0);
+
+      var totalElements = imageCount + gradientCount + textCount + vectorCount;
+      var photoHeavy = totalElements > 0 && (imageCount + gradientCount) / totalElements > 0.5;
+      var adviceParts = [];
+
+      // Format advice
+      if (photoHeavy) {
+        adviceParts.push('Image/gradient-heavy content — try format: "JPG" for smaller file.');
+      }
+
+      // Scale capping advice
+      if (scale < (msg.scale || 1)) {
+        adviceParts.push('Scale capped from ' + (msg.scale || 1) + 'x to ' +
+          scale.toFixed(2) + 'x (AI vision max: 1568px).');
+      }
+
+      // Scope advice for full-page captures with heavy downscaling
+      if (node.type === 'PAGE' && scale < 0.5) {
+        adviceParts.push('Full-page capture at ' + scale.toFixed(2) +
+          'x — text may be unreadable. Pass a nodeId to target a specific frame or component.');
+      }
+
+      var formatAdvice = adviceParts.join(' ');
 
       var exportSettings = {
         format: format,
@@ -2106,7 +2204,7 @@ figma.ui.onmessage = async (msg) => {
         bounds = node.absoluteBoundingBox;
       }
 
-      console.log('🌉 [Desktop Bridge] Screenshot captured:', bytes.length, 'bytes');
+      console.log('🌉 [Desktop Bridge] Screenshot captured:', bytes.length, 'bytes (' + format + ' @ ' + scale.toFixed(2) + 'x)');
 
       figma.ui.postMessage({
         type: 'CAPTURE_SCREENSHOT_RESULT',
@@ -2122,7 +2220,8 @@ figma.ui.onmessage = async (msg) => {
             name: node.name,
             type: node.type
           },
-          bounds: bounds
+          bounds: bounds,
+          formatAdvice: formatAdvice
         }
       });
 
