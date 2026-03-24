@@ -19,9 +19,9 @@ The short answer: **approach** and **audience**. The Figma MCP is a task-driven 
     16+ tools. Plugin API + REST API. Closed source.
   </Card>
   <Card title="Figma Console MCP" icon="terminal">
-    **Made by Southleft** — A design system management platform. 84+ dedicated tools for reading, writing, managing tokens, analyzing parity, and bridging the gap between designers and developers.
+    **Made by Southleft** — A design system management platform. 87+ dedicated tools for reading, writing, managing tokens, analyzing parity, and bridging the gap between designers and developers.
 
-    84+ tools. Plugin API + REST API. Open source (MIT).
+    87+ tools. Plugin API + REST API. Open source (MIT).
   </Card>
 </Columns>
 
@@ -57,11 +57,11 @@ This is the most fundamental difference and it shapes everything else.
 
 **Figma MCP** provides one powerful generic tool (`use_figma`) that executes arbitrary JavaScript. Skills (markdown instruction files) guide the agent's behavior, teaching it patterns like font loading, color ranges (0-1 not 0-255), and auto-layout ordering. The agent writes Plugin API code on every call.
 
-**Figma Console MCP** provides 84+ purpose-built tools, each with its own schema, validation, error messages, and AI guidance. Instead of writing `figma.createFrame()` code, you call `figma_create_child` with structured parameters. Instead of scripting a variable loop, you call `figma_batch_create_variables` with a JSON array of 100 tokens.
+**Figma Console MCP** provides 87+ purpose-built tools, each with its own schema, validation, error messages, and AI guidance. Instead of writing `figma.createFrame()` code, you call `figma_create_child` with structured parameters. Instead of scripting a variable loop, you call `figma_batch_create_variables` with a JSON array of 100 tokens.
 
 | Aspect | Figma MCP | Console MCP |
 |---|---|---|
-| **Write approach** | 1 generic tool + skills | 84+ specialized tools |
+| **Write approach** | 1 generic tool + skills | 87+ specialized tools |
 | **Variable creation** | Write JS loop via `use_figma` | `figma_batch_create_variables` (100/call) |
 | **Error handling** | Agent must interpret raw JS errors | Tool-specific error messages with suggestions |
 | **Validation** | Skills teach patterns, agent must follow | Schema-validated inputs, type-checked params |
@@ -86,6 +86,8 @@ Figma Console MCP was built for design system teams. These tools have no equival
 | Per-variant color token analysis | No | Yes |
 | Component reconstruction specifications | No | Yes |
 | Design linting | No | Yes |
+| Design annotations (read, write, clear) | No | Yes (3 dedicated tools) |
+| Annotation-enriched component docs | No | Yes |
 
 ### Code-to-Design Bridge (Figma MCP Strengths)
 
@@ -120,15 +122,16 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 | Multi-file connection tracking | No | Yes |
 | Connection health diagnostics | No | Yes |
 
-### FigJam, Slides, and Comments
+### FigJam, Slides, Comments, and Annotations
 
 | Capability | Figma MCP | Console MCP |
 |---|:---:|:---:|
 | Read FigJam boards | Yes | Yes |
 | Create FigJam diagrams (Mermaid) | Yes | No |
 | Structured FigJam tools (stickies, connectors, tables, etc.) | No | Yes (9 dedicated tools) |
-| Figma Slides (create, edit, manage) | No | Yes (12+ tools) |
+| Figma Slides (create, edit, manage) | No | Yes (15 tools) |
 | File comments (read, post, delete) | No | Yes |
+| Design annotations (read, write, clear, categories) | No | Yes (3 dedicated tools) |
 
 ---
 
@@ -161,12 +164,13 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 
 | Metric | Figma MCP | Console MCP |
 |---|:---:|:---:|
-| **Total tools** | 16+ | 84+ |
+| **Total tools** | 16+ | 87+ |
 | **Read tools** | ~10 | ~22 |
 | **Write/create tools** | 1 (`use_figma`) | 35+ dedicated tools |
 | **Variable management** | Via `use_figma` | 11 dedicated tools |
 | **Component management** | Via `use_figma` | 5+ dedicated tools |
 | **Node manipulation** | Via `use_figma` | 11+ dedicated tools |
+| **Annotation tools** | 0 | 3 dedicated tools |
 | **Real-time awareness** | 0 | 2 |
 | **Debugging tools** | 0 | 5 |
 | **FigJam tools** | 2 (read + diagram) | 9 structured tools |
@@ -209,6 +213,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
     - You want design system health scoring and linting
     - You want to audit design-code drift with automated parity checks
     - You need structured FigJam tools or Slides support
+    - You want to read or write design annotations (interaction specs, accessibility notes, animation timings)
     - You want to post review comments directly on components
   </Tab>
   <Tab title="Use Both Together">
@@ -220,7 +225,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
     2. **Design creation**: Use either — Figma MCP for agent-guided design creation, or Console MCP's dedicated tools for systematic component building
     3. **Code generation**: Use Figma MCP's Code Connect and `get_design_context` for framework-specific code output from your designs
     4. **Maintenance**: Use Figma Console MCP's parity analysis to catch drift, then use either tool to fix discrepancies
-    5. **Documentation**: Use Console MCP to generate component documentation, then use Figma MCP's design system rules to keep AI code generation consistent
+    5. **Documentation**: Use Console MCP to generate component documentation (including design annotations for animation timings, interaction specs, and accessibility requirements), then use Figma MCP's design system rules to keep AI code generation consistent
 
     Both servers can be configured in the same MCP client simultaneously.
   </Tab>
@@ -233,7 +238,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 | Question | Figma MCP | Console MCP |
 |---|---|---|
 | *Can it read my designs?* | Yes | Yes |
-| *Can it write to my designs?* | Yes (via `use_figma`) | Yes (84+ tools) |
+| *Can it write to my designs?* | Yes (via `use_figma`) | Yes (87+ tools) |
 | *Can it manage variables?* | Yes (via code execution) | Yes (11 dedicated tools + batch) |
 | *Can it run plugin code?* | Yes | Yes |
 | *Does it know what I selected?* | No | Yes, in real time |
@@ -265,7 +270,7 @@ Both tools are better together. Use the one that fits your workflow, or use both
 
 <Columns cols={2}>
   <Card title="Set Up Figma Console MCP" icon="rocket" href="/setup">
-    Full 84+ tool access in ~10 minutes. Manage your design system with AI.
+    Full 87+ tool access in ~10 minutes. Manage your design system with AI.
   </Card>
   <Card title="Set Up Figma MCP (Official)" icon="figma" href="https://developers.figma.com/docs/figma-mcp-server/">
     Figma's official documentation for their MCP server.

@@ -2059,6 +2059,59 @@ function generateAccessibilitySection(
 	return lines.join("\n");
 }
 
+function generateDesignAnnotationsSection(
+	node: any,
+): string {
+	// Annotations come from the Desktop Bridge plugin (node.annotations)
+	// They are available when the component was fetched via Desktop Bridge
+	const annotations: any[] = node.annotations || [];
+
+	if (annotations.length === 0) {
+		return [
+			"",
+			"## Design Annotations",
+			"",
+			"_No design annotations found on this node. Designers can add annotations in Dev Mode to specify animation timings, easing curves, interaction behaviors, and other implementation details._",
+			"_Use `figma_get_annotations` with `include_children=true` to check child nodes for annotations._",
+			"",
+		].join("\n");
+	}
+
+	const lines = ["", "## Design Annotations", ""];
+	lines.push(`Found **${annotations.length}** annotation(s) on this component:`, "");
+
+	for (let i = 0; i < annotations.length; i++) {
+		const ann = annotations[i];
+		const num = i + 1;
+
+		// Header with category if available
+		const categoryLabel = ann.categoryName ? ` (${ann.categoryName})` : (ann.categoryId ? ` (category: ${ann.categoryId})` : "");
+		lines.push(`### Annotation ${num}${categoryLabel}`);
+		lines.push("");
+
+		// Label content
+		if (ann.labelMarkdown) {
+			// Indent markdown content and render it
+			lines.push(ann.labelMarkdown);
+			lines.push("");
+		} else if (ann.label) {
+			lines.push(ann.label);
+			lines.push("");
+		}
+
+		// Pinned properties
+		if (ann.properties && ann.properties.length > 0) {
+			lines.push("**Pinned Properties:**");
+			for (const prop of ann.properties) {
+				lines.push(`- \`${prop.type}\``);
+			}
+			lines.push("");
+		}
+	}
+
+	return lines.join("\n");
+}
+
 function generateChangelogSection(codeInfo?: CodeDocInfo): string {
 	if (!codeInfo?.changelog || codeInfo.changelog.length === 0) return "";
 
@@ -2624,7 +2677,7 @@ export function registerDesignCodeTools(
 	// -----------------------------------------------------------------------
 	server.tool(
 		"figma_generate_component_doc",
-		"Generate AI-complete component documentation from a Figma component. Produces structured markdown with anatomy, per-variant color tokens, typography, content guidelines (parsed from Figma description), icon mapping, spacing tokens, and design-code parity analysis. Merges Figma design data with optional code-side info (CVA definitions, sub-component APIs, source files). Output works with any docs platform. For richest output, read the component source code first and pass codeInfo.",
+		"Generate AI-complete component documentation from a Figma component. Produces structured markdown with anatomy, per-variant color tokens, typography, content guidelines (parsed from Figma description), design annotations (animation timings, interaction specs, accessibility notes from Dev Mode), icon mapping, spacing tokens, and design-code parity analysis. Merges Figma design data with optional code-side info (CVA definitions, sub-component APIs, source files). Output works with any docs platform. For richest output, read the component source code first and pass codeInfo.",
 		{
 			fileUrl: z
 				.string()
@@ -2643,6 +2696,7 @@ export function registerDesignCodeTools(
 				behavior: z.boolean().optional().default(false),
 				implementation: z.boolean().optional().default(true),
 				accessibility: z.boolean().optional().default(true),
+				designAnnotations: z.boolean().optional().default(true),
 				relatedComponents: z.boolean().optional().default(false),
 				changelog: z.boolean().optional().default(true),
 				parity: z.boolean().optional().default(true),
@@ -2768,18 +2822,26 @@ export function registerDesignCodeTools(
 				// REST API getNodes() often returns empty description for COMPONENT_SET nodes,
 				// so fall back to Desktop Bridge plugin API which has the reliable description.
 				let description = node.descriptionMarkdown || node.description || componentMeta?.description || "";
-				if (!description && getDesktopConnector) {
+				if (getDesktopConnector) {
 					try {
 						const connector = await getDesktopConnector();
 						const bridgeResult = await connector.getComponentFromPluginUI(nodeId);
 						if (bridgeResult.success && bridgeResult.component) {
-							description = bridgeResult.component.descriptionMarkdown || bridgeResult.component.description || "";
-							if (description) {
-								logger.info("Fetched description via Desktop Bridge (REST API returned empty)");
+							// Fetch description from bridge if REST API returned empty
+							if (!description) {
+								description = bridgeResult.component.descriptionMarkdown || bridgeResult.component.description || "";
+								if (description) {
+									logger.info("Fetched description via Desktop Bridge (REST API returned empty)");
+								}
+							}
+							// Always fetch annotations from bridge (REST API never has them)
+							if (bridgeResult.component.annotations && bridgeResult.component.annotations.length > 0) {
+								node.annotations = bridgeResult.component.annotations;
+								logger.info({ count: node.annotations.length }, "Fetched annotations via Desktop Bridge for documentation");
 							}
 						}
 					} catch {
-						logger.warn("Desktop Bridge description fetch failed, proceeding without description");
+						logger.warn("Desktop Bridge fetch failed, proceeding without bridge-sourced data");
 					}
 				}
 				const fileUrl_ = `${url}?node-id=${nodeId.replace(":", "-")}`;
@@ -2871,6 +2933,12 @@ export function registerDesignCodeTools(
 				if (s.accessibility) {
 					parts.push(generateAccessibilitySection(node, parsedDesc, codeInfo));
 					includedSections.push("accessibility");
+				}
+
+				if (s.designAnnotations !== false) {
+					const annotationsSection = generateDesignAnnotationsSection(node);
+					parts.push(annotationsSection);
+					includedSections.push("designAnnotations");
 				}
 
 				if (s.parity && hasCodeInfo && hasFigmaData && codeInfo) {

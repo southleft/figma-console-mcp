@@ -552,6 +552,32 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
+    // Get annotations from a node (and optionally its children)
+    window.getAnnotations = (nodeId, includeChildren, depth) => {
+      return window.sendPluginCommand('GET_ANNOTATIONS', {
+        nodeId: nodeId,
+        includeChildren: includeChildren,
+        depth: depth
+      }, 10000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Set annotations on a node
+    window.setAnnotations = (nodeId, annotations, mode) => {
+      return window.sendPluginCommand('SET_ANNOTATIONS', {
+        nodeId: nodeId,
+        annotations: annotations,
+        mode: mode || 'replace'
+      }, 10000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // Get available annotation categories
+    window.getAnnotationCategories = () => {
+      return window.sendPluginCommand('GET_ANNOTATION_CATEGORIES', {}, 5000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
     // ============================================================================
     // WEBSOCKET BRIDGE CLIENT - Fallback transport when CDP is unavailable
     // ============================================================================
@@ -696,6 +722,16 @@
         },
         'RELOAD_UI': function() {
           return window.sendPluginCommand('RELOAD_UI', {});
+        },
+        // Annotation tools — forward to plugin code.js
+        'GET_ANNOTATIONS': function(params) {
+          return window.sendPluginCommand('GET_ANNOTATIONS', params, 10000);
+        },
+        'SET_ANNOTATIONS': function(params) {
+          return window.sendPluginCommand('SET_ANNOTATIONS', params, 10000);
+        },
+        'GET_ANNOTATION_CATEGORIES': function(params) {
+          return window.sendPluginCommand('GET_ANNOTATION_CATEGORIES', params || {}, 5000);
         }
       };
 
@@ -1352,6 +1388,17 @@
         // Plugin UI reload
         case 'RELOAD_UI_RESULT':
           handleResult('RELOAD_UI', null);
+          break;
+
+        // Annotation tools (data flows via msg.data, no top-level dataKey needed)
+        case 'GET_ANNOTATIONS_RESULT':
+          handleResult('GET_ANNOTATIONS', null);
+          break;
+        case 'SET_ANNOTATIONS_RESULT':
+          handleResult('SET_ANNOTATIONS', null);
+          break;
+        case 'GET_ANNOTATION_CATEGORIES_RESULT':
+          handleResult('GET_ANNOTATION_CATEGORIES', null);
           break;
 
         // Document change events (for cache invalidation via WebSocket)

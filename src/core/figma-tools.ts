@@ -2517,6 +2517,22 @@ export function registerFigmaAPITools(
 								);
 							}
 
+							// Surface annotation summary at top level for easy AI consumption
+							const annotations = formatted.annotations || [];
+							const annotationSummary = annotations.length > 0
+								? {
+									count: annotations.length,
+									labels: annotations
+										.filter((a: any) => a.label || a.labelMarkdown)
+										.map((a: any) => a.label || (a.labelMarkdown ? a.labelMarkdown.substring(0, 100) : null))
+										.filter(Boolean),
+									pinnedProperties: annotations
+										.filter((a: any) => a.properties && a.properties.length > 0)
+										.flatMap((a: any) => a.properties.map((p: any) => p.type)),
+									hint: "Use figma_get_annotations for full annotation details including categories and markdown content",
+								}
+								: { count: 0, hint: "No annotations found. Designers can add annotations in Dev Mode to communicate specs." };
+
 							return {
 								content: [
 									{
@@ -2526,6 +2542,7 @@ export function registerFigmaAPITools(
 												fileKey,
 												nodeId,
 												component: formatted,
+												annotations: annotationSummary,
 												source: "desktop_bridge_plugin",
 												enriched: enrich || false,
 												note: "Retrieved via Desktop Bridge plugin - description fields and annotations are reliable and current"
