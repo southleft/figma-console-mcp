@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 66+ MCP tools, including parameters, return values, and usage examples."
+description: "Complete API reference for all 87+ MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **84+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **61 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **87+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **61 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -57,6 +57,9 @@ This guide provides detailed documentation for each tool, including when to use 
 | **💬 Comments** | `figma_get_comments` | Get comments on a Figma file | All |
 | | `figma_post_comment` | Post a comment, optionally pinned to a node | All |
 | | `figma_delete_comment` | Delete a comment by ID | All |
+| **📝 Annotations** | `figma_get_annotations` | Read annotations from nodes (with optional child traversal) | Local / Cloud |
+| | `figma_set_annotations` | Write or clear annotations (plain text, markdown, pinned properties) | Local / Cloud |
+| | `figma_get_annotation_categories` | List available annotation categories | Local / Cloud |
 | **📐 Node Manipulation** | `figma_resize_node` | Resize a node | Local / Cloud |
 | | `figma_move_node` | Move a node | Local / Cloud |
 | | `figma_clone_node` | Clone a node | Local / Cloud |
@@ -1939,6 +1942,143 @@ figma_delete_comment({
 - `deleted_comment_id`: The ID that was deleted
 
 ---
+
+## 📝 Annotation Tools
+
+Annotation tools require the Desktop Bridge plugin to be running in Figma. Annotations are distinct from comments: they are node-level design specs that can pin specific properties (fills, width, typography, etc.) and support markdown-formatted labels. Designers use them to communicate animation timings, accessibility requirements, interaction specs, and other implementation details.
+
+### `figma_get_annotations`
+
+Read annotations from a Figma node. Annotations are designer-authored specs attached to nodes — they can include notes (plain text or markdown), pinned design properties (fills, width, fontSize, etc.), and category labels.
+
+**Mode:** Local / Cloud
+
+**When to Use:**
+- Discovering designer specs on a component before implementation
+- Reading animation timings, interaction behaviors, or accessibility requirements
+- Getting all annotations across a component tree for documentation
+
+**Usage:**
+```javascript
+// Read annotations from a component
+figma_get_annotations({ nodeId: '695:313' })
+
+// Read annotations from a component and all its children
+figma_get_annotations({ nodeId: '695:313', include_children: true, depth: 3 })
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `nodeId` | string | Yes | Node ID to read annotations from (e.g., '695:313') |
+| `include_children` | boolean | No | Also read annotations from child nodes (default: false) |
+| `depth` | number | No | How many levels deep to traverse when include_children is true (default: 1, max recommended: 5) |
+
+**Returns:**
+- `nodeId`, `nodeName`, `nodeType`: The target node info
+- `annotations`: Array of annotations with `label`, `labelMarkdown`, `properties` (pinned design properties), `categoryId`, `categoryName`
+- `annotationCount`: Number of annotations on this node
+- `children`: (when include_children=true) Array of child nodes with their annotations
+- `childAnnotationCount`: Total annotations across children
+- `availableCategories`: List of annotation categories in the file
+
+### `figma_set_annotations`
+
+Write or clear annotations on a Figma node. Supports plain text labels, rich markdown labels, pinned design properties, and annotation categories. This operation is undoable in Figma (Cmd+Z).
+
+**Mode:** Local / Cloud
+
+**When to Use:**
+- Documenting animation timings and easing curves on components
+- Adding accessibility requirements to design nodes
+- Communicating implementation notes from design reviews
+- Clearing outdated annotations after implementation is complete
+
+**Usage:**
+```javascript
+// Write annotations with markdown and pinned properties
+figma_set_annotations({
+  nodeId: '695:313',
+  annotations: [
+    { label: 'Supports keyboard navigation via Tab and Enter' },
+    {
+      labelMarkdown: '**Animation:** Press uses `ease-out` with `150ms`',
+      properties: [{ type: 'fills' }, { type: 'padding' }],
+      categoryId: '1026:1'
+    }
+  ]
+})
+
+// Append to existing annotations
+figma_set_annotations({
+  nodeId: '695:313',
+  annotations: [{ label: 'Min touch target: 44x44px' }],
+  mode: 'append'
+})
+
+// Clear all annotations
+figma_set_annotations({ nodeId: '695:313', annotations: [] })
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `nodeId` | string | Yes | Node ID to write annotations to (e.g., '695:313') |
+| `annotations` | array | Yes | Array of annotation objects (see below). Pass `[]` to clear all annotations. |
+| `mode` | string | No | `replace` (default) overwrites all existing annotations. `append` adds to existing. |
+
+**Annotation object fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `label` | string | No | Plain text annotation label |
+| `labelMarkdown` | string | No | Rich text with markdown (bold, italic, links, lists, code, headers) |
+| `properties` | array | No | Array of `{ type: string }` for pinned properties (e.g., `fills`, `width`, `fontSize`) |
+| `categoryId` | string | No | Annotation category ID (use `figma_get_annotation_categories` to list) |
+
+**Returns:**
+- `success`: Boolean indicating write success
+- `nodeId`: The target node ID
+- `nodeName`: The node name
+- `annotationCount`: Number of annotations after the operation
+- `mode`: The write mode used
+
+> **Note:** Pinned properties must be valid for the node type. For example, `cornerRadius` works on COMPONENT nodes but not on COMPONENT_SET nodes. Use `figma_get_annotation_categories` to discover valid category IDs.
+
+### `figma_get_annotation_categories`
+
+List available annotation categories in the current Figma file. Categories group annotations by purpose (e.g., interactions, accessibility, development notes).
+
+**Mode:** Local / Cloud
+
+**When to Use:**
+- Discovering available categories before creating annotations
+- Listing category IDs for use with `figma_set_annotations`
+
+**Usage:**
+```javascript
+figma_get_annotation_categories()
+// Returns: { categories: [{ id: '1026:0' }, { id: '1026:1' }, ...] }
+```
+
+**Parameters:** None
+
+**Returns:**
+- `categories`: Array of `{ id, name }` category objects
+
+### Annotations Workflow
+
+| Use Case | Tool |
+|----------|------|
+| Discover designer specs on a component | `figma_get_annotations` |
+| Get all annotations across a component tree | `figma_get_annotations` (with `include_children: true`) |
+| Document animation timings and interaction behaviors | `figma_set_annotations` |
+| Add accessibility requirements to components | `figma_set_annotations` |
+| Clear outdated annotations after implementation | `figma_set_annotations` (with `annotations: []`) |
+| List annotation categories for organizing notes | `figma_get_annotation_categories` |
+| Generate component docs including annotations | `figma_generate_component_doc` |
+
+---
+
 
 ## 🖼️ Image Tools
 

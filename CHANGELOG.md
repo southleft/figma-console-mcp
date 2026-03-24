@@ -5,6 +5,19 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Design Annotations** — 3 new tools for reading, writing, and managing Figma design annotations via the Desktop Bridge plugin:
+  - `figma_get_annotations` — Read annotations from nodes with optional child traversal and depth control. Returns plain text labels, markdown labels, pinned design properties, and annotation categories.
+  - `figma_set_annotations` — Write or clear annotations on nodes. Supports plain text, rich markdown, pinned properties (fills, width, fontSize, etc.), annotation categories, and append mode. Pass an empty array to clear.
+  - `figma_get_annotation_categories` — List available annotation categories in the current file.
+- **Annotation enrichment** — `figma_get_component_for_development` now surfaces an annotation summary in its response. `figma_generate_component_doc` includes a "Design Annotations" section with full markdown rendering of designer-authored specs.
+
+### Fixed
+- **Annotation append mode** — When appending annotations, existing annotations are now correctly preserved. Figma auto-populates both `label` and `labelMarkdown` on read, but rejects writing both when they differ. The append logic now prefers `labelMarkdown` to avoid validation errors.
+
+
 ## [1.17.4] - 2026-03-24
 
 ### Fixed
