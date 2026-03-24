@@ -96,6 +96,11 @@ export interface IFigmaConnector {
   addTextToSlide(params: { slideId: string; text: string; x?: number; y?: number; fontSize?: number }): Promise<any>;
   addShapeToSlide(params: { slideId: string; shapeType: string; x: number; y: number; width: number; height: number; fillColor?: string }): Promise<any>;
 
+  // Annotation operations
+  getAnnotations(nodeId: string, includeChildren?: boolean, depth?: number): Promise<any>;
+  setAnnotations(nodeId: string, annotations: any[], mode?: 'replace' | 'append'): Promise<any>;
+  getAnnotationCategories(): Promise<any>;
+
   // Cache management
   clearFrameCache(): void;
 }

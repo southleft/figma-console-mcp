@@ -34,6 +34,7 @@ import {
 import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { registerDesignCodeTools } from "./core/design-code-tools.js";
 import { registerCommentTools } from "./core/comment-tools.js";
+import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
@@ -1599,6 +1600,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									if ('opacity' in node) info.opacity = node.opacity;
 									if ('cornerRadius' in node) info.cornerRadius = node.cornerRadius;
 									if ('componentProperties' in node) info.componentProperties = node.componentProperties;
+									if ('annotations' in node && node.annotations && node.annotations.length > 0) info.annotations = node.annotations;
 									results.push(info);
 								}
 								return results;`,
@@ -5789,6 +5791,12 @@ return {
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
 			this.variablesCache,
+		);
+
+		// Register Annotation tools (read/write design annotations via Desktop Bridge)
+		registerAnnotationTools(
+			this.server,
+			() => this.getDesktopConnector(),
 		);
 
 		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)

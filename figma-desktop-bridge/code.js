@@ -1343,6 +1343,249 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // GET_ANNOTATIONS - Read annotations from a node (and optionally children)
+  // ============================================================================
+  else if (msg.type === 'GET_ANNOTATIONS') {
+    try {
+      console.log('🌉 [Desktop Bridge] Getting annotations for node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      // Get annotation categories for name resolution
+      var categories = [];
+      try {
+        categories = await figma.annotations.getAnnotationCategoriesAsync();
+      } catch (e) {
+        console.log('🌉 [Desktop Bridge] Could not fetch annotation categories:', e.message);
+      }
+
+      // Build category lookup map
+      var categoryMap = {};
+      for (var ci = 0; ci < categories.length; ci++) {
+        categoryMap[categories[ci].id] = categories[ci].name;
+      }
+
+      // Helper to extract annotations from a single node
+      function extractAnnotations(n) {
+        var anns = n.annotations || [];
+        var result = [];
+        for (var ai = 0; ai < anns.length; ai++) {
+          var ann = anns[ai];
+          var props = [];
+          if (ann.properties) {
+            for (var pi = 0; pi < ann.properties.length; pi++) {
+              props.push({ type: ann.properties[pi].type });
+            }
+          }
+          result.push({
+            label: ann.label || null,
+            labelMarkdown: ann.labelMarkdown || null,
+            properties: props.length > 0 ? props : null,
+            categoryId: ann.categoryId || null,
+            categoryName: ann.categoryId && categoryMap[ann.categoryId] ? categoryMap[ann.categoryId] : null
+          });
+        }
+        return result;
+      }
+
+      // Collect annotations from the node itself
+      var nodeAnnotations = extractAnnotations(node);
+      var childAnnotations = [];
+
+      // Optionally walk children
+      var includeChildren = msg.includeChildren || false;
+      var maxDepth = msg.depth || 1;
+
+      if (includeChildren && 'children' in node && node.children) {
+        function walkChildren(parent, currentDepth) {
+          if (currentDepth > maxDepth) return;
+          for (var i = 0; i < parent.children.length; i++) {
+            var child = parent.children[i];
+            try {
+              var anns = extractAnnotations(child);
+              if (anns.length > 0) {
+                childAnnotations.push({
+                  nodeId: child.id,
+                  nodeName: child.name,
+                  nodeType: child.type,
+                  annotations: anns
+                });
+              }
+              if ('children' in child && child.children) {
+                walkChildren(child, currentDepth + 1);
+              }
+            } catch (e) {
+              // Skip inaccessible children (slot sublayers, etc.)
+            }
+          }
+        }
+        walkChildren(node, 1);
+      }
+
+      var result = {
+        nodeId: node.id,
+        nodeName: node.name,
+        nodeType: node.type,
+        annotations: nodeAnnotations,
+        annotationCount: nodeAnnotations.length,
+        children: includeChildren ? childAnnotations : undefined,
+        childAnnotationCount: includeChildren ? childAnnotations.reduce(function(sum, c) { return sum + c.annotations.length; }, 0) : undefined,
+        availableCategories: categories.map(function(c) { return { id: c.id, name: c.name }; })
+      };
+
+      console.log('🌉 [Desktop Bridge] Annotations retrieved. Node: ' + nodeAnnotations.length + ', Children: ' + (childAnnotations.length || 0));
+
+      figma.ui.postMessage({
+        type: 'GET_ANNOTATIONS_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: result
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Get annotations error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'GET_ANNOTATIONS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // SET_ANNOTATIONS - Write annotations to a node
+  // ============================================================================
+  else if (msg.type === 'SET_ANNOTATIONS') {
+    try {
+      console.log('🌉 [Desktop Bridge] Setting annotations on node:', msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      // Verify node supports annotations
+      if (!('annotations' in node)) {
+        throw new Error('Node type ' + node.type + ' does not support annotations');
+      }
+
+      // Build the annotations array
+      var newAnnotations = [];
+      var inputAnnotations = msg.annotations || [];
+
+      for (var i = 0; i < inputAnnotations.length; i++) {
+        var input = inputAnnotations[i];
+        var ann = {};
+
+        if (input.label) {
+          ann.label = input.label;
+        }
+        if (input.labelMarkdown) {
+          ann.labelMarkdown = input.labelMarkdown;
+        }
+        if (input.properties && input.properties.length > 0) {
+          ann.properties = [];
+          for (var p = 0; p < input.properties.length; p++) {
+            ann.properties.push({ type: input.properties[p].type });
+          }
+        }
+        if (input.categoryId) {
+          ann.categoryId = input.categoryId;
+        }
+
+        newAnnotations.push(ann);
+      }
+
+      // Optionally append to existing annotations instead of replacing
+      if (msg.mode === 'append') {
+        var existing = node.annotations || [];
+        var merged = [];
+        for (var e = 0; e < existing.length; e++) {
+          var ex = existing[e];
+          var copy = {};
+          // Figma auto-populates both label and labelMarkdown on read,
+          // but rejects writing both — prefer labelMarkdown when both exist
+          if (ex.labelMarkdown) {
+            copy.labelMarkdown = ex.labelMarkdown;
+          } else if (ex.label) {
+            copy.label = ex.label;
+          }
+          if (ex.properties) copy.properties = ex.properties;
+          if (ex.categoryId) copy.categoryId = ex.categoryId;
+          merged.push(copy);
+        }
+        for (var n = 0; n < newAnnotations.length; n++) {
+          merged.push(newAnnotations[n]);
+        }
+        newAnnotations = merged;
+      }
+
+      // Set annotations on the node
+      node.annotations = newAnnotations;
+
+      console.log('🌉 [Desktop Bridge] Annotations set successfully. Count: ' + newAnnotations.length);
+
+      figma.ui.postMessage({
+        type: 'SET_ANNOTATIONS_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          nodeId: node.id,
+          nodeName: node.name,
+          annotationCount: newAnnotations.length,
+          mode: msg.mode || 'replace'
+        }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Set annotations error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'SET_ANNOTATIONS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // GET_ANNOTATION_CATEGORIES - List available annotation categories
+  // ============================================================================
+  else if (msg.type === 'GET_ANNOTATION_CATEGORIES') {
+    try {
+      console.log('🌉 [Desktop Bridge] Fetching annotation categories');
+
+      var categories = await figma.annotations.getAnnotationCategoriesAsync();
+      var result = categories.map(function(c) { return { id: c.id, name: c.name }; });
+
+      console.log('🌉 [Desktop Bridge] Found ' + result.length + ' annotation categories');
+
+      figma.ui.postMessage({
+        type: 'GET_ANNOTATION_CATEGORIES_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { categories: result }
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Get annotation categories error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'GET_ANNOTATION_CATEGORIES_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
   // ADD_COMPONENT_PROPERTY - Add property to component
   // ============================================================================
   else if (msg.type === 'ADD_COMPONENT_PROPERTY') {

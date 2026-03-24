@@ -164,6 +164,22 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 		return this.sendCommand('SET_NODE_DESCRIPTION', { nodeId, description, descriptionMarkdown });
 	}
 
+	// ============================================================================
+	// Annotation operations
+	// ============================================================================
+
+	async getAnnotations(nodeId: string, includeChildren?: boolean, depth?: number): Promise<any> {
+		return this.sendCommand('GET_ANNOTATIONS', { nodeId, includeChildren, depth }, 10000);
+	}
+
+	async setAnnotations(nodeId: string, annotations: any[], mode?: 'replace' | 'append'): Promise<any> {
+		return this.sendCommand('SET_ANNOTATIONS', { nodeId, annotations, mode: mode || 'replace' });
+	}
+
+	async getAnnotationCategories(): Promise<any> {
+		return this.sendCommand('GET_ANNOTATION_CATEGORIES', {}, 5000);
+	}
+
 	async addComponentProperty(
 		nodeId: string,
 		propertyName: string,

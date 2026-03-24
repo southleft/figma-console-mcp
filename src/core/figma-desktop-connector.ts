@@ -1143,6 +1143,71 @@ export class FigmaDesktopConnector implements IFigmaConnector {
     }
   }
 
+  // ============================================================================
+  // ANNOTATION OPERATIONS
+  // ============================================================================
+
+  /**
+   * Get annotations from a node (and optionally its children)
+   */
+  async getAnnotations(nodeId: string, includeChildren?: boolean, depth?: number): Promise<any> {
+    logger.info({ nodeId, includeChildren, depth }, 'Getting annotations via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.getAnnotations(${JSON.stringify(nodeId)}, ${JSON.stringify(!!includeChildren)}, ${JSON.stringify(depth || 1)})`
+      );
+
+      logger.info({ success: result?.success, count: result?.data?.annotationCount }, 'Annotations retrieved');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Get annotations failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Set annotations on a node
+   */
+  async setAnnotations(nodeId: string, annotations: any[], mode?: 'replace' | 'append'): Promise<any> {
+    logger.info({ nodeId, count: annotations.length, mode: mode || 'replace' }, 'Setting annotations via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.setAnnotations(${JSON.stringify(nodeId)}, ${JSON.stringify(annotations)}, ${JSON.stringify(mode || 'replace')})`
+      );
+
+      logger.info({ success: result?.success }, 'Annotations set');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Set annotations failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Get available annotation categories
+   */
+  async getAnnotationCategories(): Promise<any> {
+    logger.info('Getting annotation categories via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(`window.getAnnotationCategories()`);
+
+      logger.info({ success: result?.success, count: result?.data?.categories?.length }, 'Annotation categories retrieved');
+      return result;
+    } catch (error) {
+      logger.error({ error }, 'Get annotation categories failed');
+      throw error;
+    }
+  }
+
   /**
    * Add a component property
    */

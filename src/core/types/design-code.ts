@@ -238,6 +238,7 @@ export interface DocSections {
 	behavior?: boolean;
 	implementation?: boolean;
 	accessibility?: boolean;
+	designAnnotations?: boolean;
 	relatedComponents?: boolean;
 	changelog?: boolean;
 	parity?: boolean;
