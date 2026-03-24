@@ -5,6 +5,13 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.4] - 2026-03-24
+
+### Fixed
+- **Port exhaustion auto-recovery** — When all 10 WebSocket ports (9223–9232) are occupied by stale MCP server processes from old sessions, the server now automatically evicts the oldest instance to free a port. Previously, users had to manually kill processes. Safety guards: only triggers after both existing cleanup phases fail, won't evict instances younger than 2 minutes, never evicts its own PID, retries port binding exactly once.
+- **PAT scope documentation** — Setup guide now specifies the three required Figma Personal Access Token scopes: File content (Read), Variables (Read), Comments (Read and write).
+
+
 ## [1.17.3] - 2026-03-22
 
 ### Fixed
@@ -472,6 +479,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.17.4]: https://github.com/southleft/figma-console-mcp/compare/v1.17.3...v1.17.4
 [1.17.3]: https://github.com/southleft/figma-console-mcp/compare/v1.17.2...v1.17.3
 [1.17.2]: https://github.com/southleft/figma-console-mcp/compare/v1.17.1...v1.17.2
 [1.17.1]: https://github.com/southleft/figma-console-mcp/compare/v1.17.0...v1.17.1

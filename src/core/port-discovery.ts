@@ -50,6 +50,9 @@ export const MAX_PORT_FILE_AGE_MS = 4 * 60 * 60 * 1000;
 /** Maximum time since last heartbeat before a process is considered stale (5 minutes) */
 export const HEARTBEAT_STALE_MS = 5 * 60 * 1000;
 
+/** Minimum age before an instance can be evicted as last resort (2 minutes) */
+export const EVICTION_MIN_AGE_MS = 2 * 60 * 1000;
+
 /** Interval between heartbeat refreshes (30 seconds) */
 export const HEARTBEAT_INTERVAL_MS = 30 * 1000;
 
@@ -364,6 +367,100 @@ export function cleanupOrphanedProcesses(preferredPort: number = DEFAULT_WS_PORT
   }
 
   return cleaned;
+}
+
+/**
+ * Last-resort eviction: terminate the oldest MCP server instance to free a port.
+ *
+ * Called ONLY when all ports in the range are exhausted after both cleanup phases
+ * (cleanupStalePortFiles + cleanupOrphanedProcesses) have already run. This handles
+ * the case where old instances are still alive and heartbeating but no longer needed
+ * (e.g., from yesterday's Claude Desktop session that was closed without terminating
+ * the MCP server process).
+ *
+ * Safety guards:
+ *   - Only evicts instances older than EVICTION_MIN_AGE_MS (2 min) to prevent cascade
+ *   - Never evicts our own PID
+ *   - Re-reads port file before kill to avoid TOCTOU race
+ *   - Uses SIGTERM for graceful shutdown
+ *   - Waits briefly for port release before returning
+ *
+ * @returns true if an instance was evicted (caller should retry port binding), false otherwise
+ */
+export function evictOldestInstance(preferredPort: number = DEFAULT_WS_PORT): boolean {
+  const myPid = process.pid;
+  const ports = getPortRange(preferredPort);
+  const candidates: (PortFileData & { filePath: string })[] = [];
+
+  // Collect all valid port file entries that aren't us
+  for (const port of ports) {
+    const filePath = getPortFilePath(port);
+    try {
+      if (!existsSync(filePath)) continue;
+      const raw = readFileSync(filePath, 'utf-8');
+      const data: PortFileData = JSON.parse(raw);
+      if (data.pid === myPid) continue; // Never evict ourselves
+      if (!isProcessAlive(data.pid)) {
+        // Dead process — just clean up the file (port should already be free)
+        try { unlinkSync(filePath); } catch { /* best-effort */ }
+        continue;
+      }
+      candidates.push({ ...data, filePath });
+    } catch {
+      // Corrupt or unreadable — skip
+    }
+  }
+
+  if (candidates.length === 0) {
+    logger.debug('No eviction candidates — ports may be held by non-MCP processes');
+    return false;
+  }
+
+  // Sort by startedAt ascending — oldest first
+  candidates.sort((a, b) =>
+    new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+  );
+
+  const oldest = candidates[0];
+  const ageMs = Date.now() - new Date(oldest.startedAt).getTime();
+
+  // Safety: don't evict instances that started recently (prevents cascade)
+  if (ageMs < EVICTION_MIN_AGE_MS) {
+    logger.info(
+      { port: oldest.port, pid: oldest.pid, ageSeconds: Math.round(ageMs / 1000) },
+      'Oldest instance is too recent to evict — skipping',
+    );
+    return false;
+  }
+
+  // Re-read the port file to avoid TOCTOU race
+  try {
+    const raw = readFileSync(oldest.filePath, 'utf-8');
+    const freshData: PortFileData = JSON.parse(raw);
+    if (freshData.pid !== oldest.pid) {
+      // PID changed between reads — another process took over, skip
+      return false;
+    }
+  } catch {
+    // File disappeared — port may already be free
+    return true;
+  }
+
+  logger.info(
+    { port: oldest.port, pid: oldest.pid, startedAt: oldest.startedAt, ageHours: Math.round(ageMs / 3600000 * 10) / 10 },
+    'Evicting oldest MCP server instance to free port (all ports exhausted)',
+  );
+
+  terminateProcess(oldest.pid);
+  try { unlinkSync(oldest.filePath); } catch { /* best-effort */ }
+
+  // Brief wait for the port to be released by the OS
+  try {
+    const { execSync } = require('child_process');
+    execSync('sleep 0.5', { timeout: 2000 });
+  } catch { /* non-critical */ }
+
+  return true;
 }
 
 /**

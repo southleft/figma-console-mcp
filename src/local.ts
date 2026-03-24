@@ -48,6 +48,7 @@ import {
 	discoverActiveInstances,
 	cleanupStalePortFiles,
 	cleanupOrphanedProcesses,
+	evictOldestInstance,
 	refreshPortAdvertisement,
 	HEARTBEAT_INTERVAL_MS,
 } from "./core/port-discovery.js";
@@ -6243,6 +6244,37 @@ return {
 					);
 					this.wsServer = null;
 					break;
+				}
+			}
+
+			// Phase 3: If all ports exhausted, try evicting the oldest instance and retry ONCE
+			if (!boundPort && evictOldestInstance(this.wsPreferredPort)) {
+				for (const port of portsToTry) {
+					try {
+						this.wsServer = new FigmaWebSocketServer({ port, host: wsHost });
+						await this.wsServer.start();
+						const addr = this.wsServer.address();
+						boundPort = addr?.port ?? port;
+						this.wsActualPort = boundPort;
+						logger.info(
+							{ wsPort: boundPort, eviction: true },
+							"WebSocket bridge server started after evicting stale instance",
+						);
+						advertisePort(boundPort, wsHost);
+						registerPortCleanup(boundPort);
+						const heartbeatPort = boundPort;
+						this.wsHeartbeatTimer = setInterval(() => refreshPortAdvertisement(heartbeatPort), HEARTBEAT_INTERVAL_MS);
+						this.wsHeartbeatTimer.unref();
+						break;
+					} catch (wsError) {
+						const errorCode = wsError instanceof Error ? (wsError as any).code : undefined;
+						if (errorCode === "EADDRINUSE") {
+							this.wsServer = null;
+							continue;
+						}
+						this.wsServer = null;
+						break;
+					}
 				}
 			}
 
