@@ -18,7 +18,7 @@ The short answer: **approach** and **audience**. The Figma MCP is a task-driven 
   <Card title="Figma MCP (Official)" icon="figma">
     **Made by Figma, Inc.** — A design agent platform. Reads designs, generates code, captures web pages, and now writes to the canvas via `use_figma`. Skills guide agent behavior for consistent results.
 
-    16+ tools. Plugin API + REST API. Skills ecosystem. Closed source.
+    16+ tools. Plugin API + REST API. Closed source.
   </Card>
   <Card title="Figma Console MCP" icon="terminal">
     **Made by Southleft** — A design system management platform. 84+ dedicated tools for reading, writing, managing tokens, analyzing parity, and bridging the gap between designers and developers.
@@ -45,8 +45,9 @@ With Figma's March 2026 `use_figma` update, both tools now share a significant s
 | Create and manage variables | Yes (via `use_figma`) | Yes (11 dedicated tools) |
 | Resize, move, clone, delete nodes | Yes (via `use_figma`) | Yes (dedicated tools) |
 | Execute arbitrary Plugin API JavaScript | Yes (`use_figma`) | Yes (`figma_execute`) |
+| Skills (markdown workflow guides) | Yes | Yes |
 
-Both tools achieve write access through the same underlying technology: the Figma Plugin API. The difference is in how that access is surfaced.
+Both tools achieve write access through the same underlying technology: the Figma Plugin API. Both support skills — markdown instruction files that teach agents patterns, gotchas, and workflows before executing tool calls. Skills are a Claude Code feature, not specific to either MCP server. The difference is in how the underlying tool access is surfaced.
 
 ---
 
@@ -101,7 +102,7 @@ These are Figma MCP's genuine differentiators:
 | Capture live web pages into Figma layers | Yes (`generate_figma_design`) | No |
 | Create FigJam diagrams from Mermaid syntax | Yes (`generate_diagram`) | No |
 | Create new blank Figma files | Yes (`create_new_file`) | No |
-| Skills ecosystem (community-authored) | Yes (growing) | No |
+| Figma community skills page | Yes | No |
 
 <Note>
 Code Connect is a significant advantage for teams that want to map Figma components directly to their codebase components. This creates a bridge where the AI knows which code component corresponds to each design component — making code generation more accurate.
@@ -164,7 +165,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 |---|:---:|:---:|
 | **Total tools** | 16+ | 84+ |
 | **Read tools** | ~10 | ~22 |
-| **Write/create tools** | 1 (`use_figma`) + skills | 35+ dedicated tools |
+| **Write/create tools** | 1 (`use_figma`) | 35+ dedicated tools |
 | **Variable management** | Via `use_figma` | 11 dedicated tools |
 | **Component management** | Via `use_figma` | 5+ dedicated tools |
 | **Node manipulation** | Via `use_figma` | 11+ dedicated tools |
@@ -199,7 +200,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
     ### For designers managing design systems:
 
     **Figma MCP** is useful when:
-    - You want an agent to create designs from code references using skills
+    - You want an agent to create designs from code references
     - You want to generate FigJam diagrams from text descriptions
     - You want to capture a live website into your Figma file for reference
 
@@ -218,7 +219,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
     They're complementary, not competitive:
 
     1. **System setup**: Use Figma Console MCP to build your token architecture, create component variants with proper variable bindings, and organize your design system
-    2. **Design creation**: Use either — Figma MCP's skills for agent-guided design creation, or Console MCP's dedicated tools for systematic component building
+    2. **Design creation**: Use either — Figma MCP for agent-guided design creation, or Console MCP's dedicated tools for systematic component building
     3. **Code generation**: Use Figma MCP's Code Connect and `get_design_context` for framework-specific code output from your designs
     4. **Maintenance**: Use Figma Console MCP's parity analysis to catch drift, then use either tool to fix discrepancies
     5. **Documentation**: Use Console MCP to generate component documentation, then use Figma MCP's design system rules to keep AI code generation consistent
@@ -250,7 +251,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 
 ## A Note on the Evolution
 
-When we first published this comparison in early 2025, the Figma MCP was a read-only, design-to-code tool. The landscape has changed significantly since then. Figma's addition of `use_figma` and the skills ecosystem is a meaningful step toward making the Figma canvas programmable by AI agents.
+When we first published this comparison in early 2025, the Figma MCP was a read-only, design-to-code tool. The landscape has changed significantly since then. Figma's addition of `use_figma` is a meaningful step toward making the Figma canvas programmable by AI agents.
 
 Figma Console MCP's role has also evolved. Where we once differentiated primarily on write access, our focus has sharpened on what we do best: design system ecosystem management, design-code parity, and bridging the gap between design and development disciplines.
 
