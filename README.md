@@ -74,7 +74,8 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 1. Go to [Manage personal access tokens](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) in Figma Help
 2. Follow the steps to **create a new personal access token**
 3. Enter description: `Figma Console MCP`
-4. **Copy the token** — you won't see it again! (starts with `figd_`)
+4. Set scopes: **File content** (Read), **Variables** (Read), **Comments** (Read and write)
+5. **Copy the token** — you won't see it again! (starts with `figd_`)
 
 #### Step 2: Configure Your MCP Client
 
@@ -362,7 +363,7 @@ When you first use design system tools:
 ### Local Mode - Personal Access Token (Manual)
 
 1. Visit https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens
-2. Generate token
+2. Generate token with scopes: **File content** (Read), **Variables** (Read), **Comments** (Read and write)
 3. Add to MCP config as `FIGMA_ACCESS_TOKEN` environment variable
 
 ---

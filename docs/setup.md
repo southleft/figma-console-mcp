@@ -106,8 +106,18 @@ Before starting, verify you have:
 1. Go to [Manage personal access tokens](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) in Figma Help
 2. Follow the steps to **create a new personal access token**
 3. Enter description: `Figma Console MCP`
-4. Click **"Generate token"**
-5. **Copy the token immediately** — you won't see it again!
+4. **Set the following scopes:**
+
+| Scope | Access | Why |
+|-------|--------|-----|
+| **File content** | ✅ Read only | Read design data, components, styles, and render images |
+| **Variables** | ✅ Read only | Read design tokens/variables (Enterprise plans only) |
+| **Comments** | ✅ Read and write | Read and post comments on files |
+
+> 💡 **No other scopes are needed.** Leave Webhooks, Dev resources, and Library analytics as "No access".
+
+5. Click **"Generate token"**
+6. **Copy the token immediately** — you won't see it again!
 
 > 💡 Your token starts with `figd_` — if it doesn't, something went wrong.
 
