@@ -37,6 +37,7 @@ LOCAL_TOOLS=""
 REMOTE_TOOLS=""
 CLOUD_TOOLS=""
 DRY_RUN=false
+GH_RELEASE=""  # "auto" (default), "yes" (--release), "no" (--no-release)
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -45,6 +46,8 @@ while [[ $# -gt 0 ]]; do
     --remote-tools) REMOTE_TOOLS="$2";  shift 2 ;;
     --cloud-tools)  CLOUD_TOOLS="$2";   shift 2 ;;
     --dry-run)      DRY_RUN=true;       shift ;;
+    --release)      GH_RELEASE="yes";   shift ;;
+    --no-release)   GH_RELEASE="no";    shift ;;
     -h|--help)
       echo "Usage: ./scripts/release.sh --version X.Y.Z [--local-tools N] [--remote-tools M] [--cloud-tools C] [--dry-run]"
       echo ""
@@ -54,6 +57,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --remote-tools  Override remote mode tool count (auto-detected if omitted)"
       echo "  --cloud-tools   Override cloud mode tool count (auto-detected if omitted)"
       echo "  --dry-run       Show what would change without modifying files"
+      echo "  --release       Create GitHub Release (auto for minor/major, skip for patch)"
+      echo "  --no-release    Skip GitHub Release creation"
       exit 0
       ;;
     *) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
@@ -92,7 +97,7 @@ auto_count_remote() {
 }
 
 auto_count_cloud() {
-  # Cloud mode: write-tools + figma-tools + design-system-tools + comment-tools + design-code-tools + figjam-tools + slides-tools + index.ts cloud-specific
+  # Cloud mode: write-tools + figma-tools + design-system-tools + comment-tools + design-code-tools + figjam-tools + slides-tools + annotation-tools + index.ts cloud-specific
   grep -roh '"fig\(ma\|jam\)_[a-z_]*"' \
     "$ROOT/src/core/write-tools.ts" \
     "$ROOT/src/core/figma-tools.ts" \
@@ -101,6 +106,7 @@ auto_count_cloud() {
     "$ROOT/src/core/design-code-tools.ts" \
     "$ROOT/src/core/figjam-tools.ts" \
     "$ROOT/src/core/slides-tools.ts" \
+    "$ROOT/src/core/annotation-tools.ts" \
     "$ROOT/src/index.ts" \
     2>/dev/null | sort -u | wc -l | tr -d ' '
 }
@@ -352,6 +358,51 @@ ${COMPARISON_LINK}" "$CHANGELOG"
     fi
   fi
   CHANGES+=("CHANGELOG.md: version scaffold")
+fi
+
+# ── Step 9: GitHub Release (optional) ──────────────────
+# Auto-creates for minor/major bumps (x.Y.0 or X.0.0), skips for patches.
+# Override with --release or --no-release.
+PATCH_PART="${VERSION##*.}"
+CREATE_RELEASE=false
+
+if [[ "$GH_RELEASE" == "yes" ]]; then
+  CREATE_RELEASE=true
+elif [[ "$GH_RELEASE" == "no" ]]; then
+  CREATE_RELEASE=false
+elif [[ "$PATCH_PART" == "0" ]]; then
+  # Minor or major release (x.Y.0 or X.0.0) — auto-create
+  CREATE_RELEASE=true
+fi
+
+echo -e "${BOLD}9. GitHub Release${NC}"
+if $CREATE_RELEASE; then
+  if $DRY_RUN; then
+    echo -e "  ${CYAN}WOULD${NC} create GitHub Release v${VERSION} (--latest)"
+  else
+    if command -v gh &>/dev/null; then
+      # Pull release notes from CHANGELOG.md — extract content between this version header and the next
+      RELEASE_NOTES=$(awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" "$ROOT/CHANGELOG.md" | sed '/^$/d')
+      if [[ -z "$RELEASE_NOTES" ]]; then
+        RELEASE_NOTES="See [CHANGELOG](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md) for details."
+      fi
+      RELEASE_NOTES="${RELEASE_NOTES}
+
+**${LOCAL_TOOLS}+ tools.** Full changelog: https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md"
+
+      gh release create "v${VERSION}" \
+        -t "v${VERSION}" \
+        --latest \
+        -n "$RELEASE_NOTES" 2>/dev/null && \
+        echo -e "  ${GREEN}DONE${NC} GitHub Release v${VERSION} created" || \
+        echo -e "  ${YELLOW}SKIP${NC} GitHub Release — already exists or gh not authenticated"
+    else
+      echo -e "  ${YELLOW}SKIP${NC} GitHub Release — gh CLI not installed"
+    fi
+  fi
+  CHANGES+=("GitHub Release: v${VERSION}")
+else
+  echo -e "  ${CYAN}SKIP${NC} Patch release — use --release to create anyway"
 fi
 
 # ── Summary ─────────────────────────────────────────────
