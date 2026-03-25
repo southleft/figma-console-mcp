@@ -3318,7 +3318,7 @@ export function registerFigmaAPITools(
 					compositionDependencies: dependencies.length > 0 ? {
 						count: dependencies.length,
 						components: dependencies,
-						ai_instruction: "IMPORTANT: Each dependency listed here is a sub-component used inside this component. In a design system, each sub-component MUST be its own standalone component (own directory, own file, own stories) before building the parent. Check your codebase for existing implementations. If a sub-component does not exist, build it FIRST. Never inline sub-component logic into the parent component.",
+						ai_instruction: "MANDATORY BEFORE WRITING ANY CODE: (1) Check your target codebase's CLAUDE.md Component Registry or scan src/components/ for existing implementations of these sub-components. (2) If a component exists (Icon, Button, FormLabel, etc.), IMPORT it — never recreate with inline markup. Using raw <svg> when an Icon component exists, or raw <button> when a Button exists, is a critical violation. (3) Each sub-component that does NOT exist must be built FIRST as its own standalone component (own directory, file, CSS module, stories, barrel export) before building the parent. (4) The parent component composes sub-components via imports — it never inlines their logic or styling.",
 					} : undefined,
 					metadata: {
 						purpose: "component_development",
