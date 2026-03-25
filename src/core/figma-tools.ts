@@ -3030,7 +3030,7 @@ export function registerFigmaAPITools(
 	// Tool 13: Get Component for Development (UI Implementation)
 	server.tool(
 		"figma_get_component_for_development",
-		"Get component data optimized for UI implementation, includes rendered image + filtered implementation context (layout, typography, visual properties). Use when user asks to: 'build this component', 'implement this in React/Vue', 'generate code for', or needs both visual reference and technical specs. Automatically includes 2x scale image unless includeImage=false. Best for: UI development, code generation, design-to-code workflows. For just metadata, use figma_get_component; for just image, use figma_get_component_image.",
+		"Get component data optimized for high-fidelity UI implementation. Returns a deep component tree (depth 4) with design tokens (boundVariables), interaction states (reactions), sizing constraints (min/max/layoutSizing), text behavior (autoResize, truncation), and design annotations. Automatically includes 2x rendered image. Use when user asks to: 'build this component', 'implement this in React/Vue', 'generate code for', or needs both visual reference and technical specs for production-quality, accessible, token-aware code. For just metadata/descriptions, use figma_get_component. For just image, use figma_get_component_image. For full annotation details, use figma_get_annotations. To resolve variable IDs to names/values, use figma_get_variables.",
 		{
 			fileUrl: z
 				.string()
@@ -3080,15 +3080,16 @@ export function registerFigmaAPITools(
 
 				logger.info({ fileKey, nodeId, includeImage }, "Fetching component for development");
 
-				// Get node data with depth for children
-				const nodeData = await api.getNodes(fileKey, [nodeId], { depth: 2 });
+				// Get node data with depth 4 for nested component structures
+				// (depth 2 was too shallow for complex components like data tables, nested menus, etc.)
+				const nodeData = await api.getNodes(fileKey, [nodeId], { depth: 4 });
 				const node = nodeData.nodes?.[nodeId]?.document;
 
 				if (!node) {
 					throw new Error(`Component not found: ${nodeId}`);
 				}
 
-				// Filter to visual/layout properties only
+				// Filter to development-relevant properties — visual, layout, tokens, interactions
 				const filterForDevelopment = (n: any): any => {
 					if (!n) return n;
 
@@ -3120,8 +3121,18 @@ export function registerFigmaAPITools(
 					if (n.paddingTop !== undefined) result.paddingTop = n.paddingTop;
 					if (n.paddingBottom !== undefined) result.paddingBottom = n.paddingBottom;
 					if (n.itemSpacing !== undefined) result.itemSpacing = n.itemSpacing;
+					if (n.counterAxisSpacing !== undefined) result.counterAxisSpacing = n.counterAxisSpacing;
 					if (n.itemReverseZIndex) result.itemReverseZIndex = n.itemReverseZIndex;
 					if (n.strokesIncludedInLayout) result.strokesIncludedInLayout = n.strokesIncludedInLayout;
+					if (n.layoutWrap) result.layoutWrap = n.layoutWrap;
+
+					// Sizing constraints (maps to CSS min/max-width/height, width: auto/100%/fixed)
+					if (n.layoutSizingHorizontal) result.layoutSizingHorizontal = n.layoutSizingHorizontal;
+					if (n.layoutSizingVertical) result.layoutSizingVertical = n.layoutSizingVertical;
+					if (n.minWidth !== undefined) result.minWidth = n.minWidth;
+					if (n.maxWidth !== undefined) result.maxWidth = n.maxWidth;
+					if (n.minHeight !== undefined) result.minHeight = n.minHeight;
+					if (n.maxHeight !== undefined) result.maxHeight = n.maxHeight;
 
 					// Visual properties
 					if (n.fills) result.fills = n.fills;
@@ -3139,17 +3150,34 @@ export function registerFigmaAPITools(
 					if (n.isMask) result.isMask = n.isMask;
 					if (n.clipsContent) result.clipsContent = n.clipsContent;
 
+					// Design tokens — variable bindings (maps fills/strokes/spacing/etc. to design tokens)
+					if (n.boundVariables) result.boundVariables = n.boundVariables;
+					if (n.styles) result.styles = n.styles;
+
 					// Typography
 					if (n.characters) result.characters = n.characters;
 					if (n.style) result.style = n.style;
 					if (n.characterStyleOverrides) result.characterStyleOverrides = n.characterStyleOverrides;
 					if (n.styleOverrideTable) result.styleOverrideTable = n.styleOverrideTable;
 
+					// Text behavior (maps to CSS overflow, text-overflow, white-space, text-transform)
+					if (n.textAutoResize) result.textAutoResize = n.textAutoResize;
+					if (n.textTruncation) result.textTruncation = n.textTruncation;
+					if (n.textCase) result.textCase = n.textCase;
+					if (n.textDecoration) result.textDecoration = n.textDecoration;
+
 					// Component properties & variants
 					if (n.componentProperties) result.componentProperties = n.componentProperties;
 					if (n.componentPropertyDefinitions) result.componentPropertyDefinitions = n.componentPropertyDefinitions;
+					if (n.componentPropertyReferences) result.componentPropertyReferences = n.componentPropertyReferences;
 					if (n.variantProperties) result.variantProperties = n.variantProperties;
 					if (n.componentId) result.componentId = n.componentId;
+
+					// Prototype interactions (hover, click, focus states and transitions)
+					if (n.reactions && n.reactions.length > 0) result.reactions = n.reactions;
+					if (n.transitionNodeID) result.transitionNodeID = n.transitionNodeID;
+					if (n.transitionDuration !== undefined) result.transitionDuration = n.transitionDuration;
+					if (n.transitionEasing) result.transitionEasing = n.transitionEasing;
 
 					// State
 					if (n.visible !== undefined) result.visible = n.visible;
@@ -3164,6 +3192,57 @@ export function registerFigmaAPITools(
 				};
 
 				const componentData = filterForDevelopment(node);
+
+				// Fetch annotations and descriptions via Desktop Bridge if available
+				// (REST API never has annotations; Desktop Bridge has reliable descriptions)
+				let annotations: any[] = [];
+				let annotationSummary: any = { count: 0 };
+				if (getDesktopConnector) {
+					try {
+						const connector = await getDesktopConnector();
+						// Fetch annotations with child traversal (depth matches REST traversal)
+						const annotResult = await connector.getAnnotations(nodeId, true, 4);
+						if (annotResult?.success !== false && annotResult?.data) {
+							const data = annotResult.data;
+							annotations = data.annotations || [];
+							const childAnnotations = data.children || [];
+							const allAnnotations = [
+								...annotations,
+								...childAnnotations.flatMap((c: any) => (c.annotations || []).map((a: any) => ({ ...a, nodeId: c.nodeId, nodeName: c.nodeName })))
+							];
+							annotationSummary = allAnnotations.length > 0
+								? {
+									count: allAnnotations.length,
+									labels: allAnnotations
+										.filter((a: any) => a.label || a.labelMarkdown)
+										.map((a: any) => ({
+											text: a.labelMarkdown || a.label,
+											...(a.nodeId ? { onNode: a.nodeName } : {}),
+										})),
+									pinnedProperties: allAnnotations
+										.filter((a: any) => a.properties && a.properties.length > 0)
+										.flatMap((a: any) => a.properties.map((p: any) => p.type)),
+								}
+								: { count: 0 };
+						}
+
+						// Also fetch description from bridge if REST returned empty
+						if (!componentData.description && !componentData.descriptionMarkdown) {
+							const bridgeResult = await connector.getComponentFromPluginUI(nodeId);
+							if (bridgeResult?.success && bridgeResult.component) {
+								if (bridgeResult.component.descriptionMarkdown) {
+									componentData.descriptionMarkdown = bridgeResult.component.descriptionMarkdown;
+								}
+								if (bridgeResult.component.description) {
+									componentData.description = bridgeResult.component.description;
+								}
+							}
+						}
+					} catch {
+						// Desktop Bridge unavailable — continue without annotations
+						logger.debug("Desktop Bridge unavailable for annotations/description enrichment");
+					}
+				}
 
 				// Get image if requested
 				let imageUrl = null;
@@ -3180,25 +3259,59 @@ export function registerFigmaAPITools(
 					}
 				}
 
-				// Build response with component data and image URL
+				// Build the full response
+				const response: any = {
+					fileKey,
+					nodeId,
+					imageUrl,
+					component: componentData,
+					annotations: annotationSummary,
+					metadata: {
+						purpose: "component_development",
+						treeDepth: 4,
+						note: [
+							imageUrl ? "Image URL provided (valid for 30 days)." : null,
+							"Component data optimized for UI implementation with design tokens (boundVariables), interaction states (reactions), sizing constraints, and text behavior.",
+							annotationSummary.count > 0 ? `${annotationSummary.count} design annotation(s) found — check annotations field for implementation specs.` : null,
+							"Use figma_get_annotations for full annotation details. Use figma_get_variables to resolve variable IDs to token names/values.",
+						].filter(Boolean).join(" "),
+					},
+				};
+
+				// Adaptive compression for large responses (depth 4 can produce large payloads)
+				const responseJson = JSON.stringify(response);
+				const responseSizeKB = Math.round(responseJson.length / 1024);
+
+				if (responseSizeKB > 500) {
+					// Emergency: strip children beyond depth 2 and add truncation note
+					logger.warn({ responseSizeKB, nodeId }, "Component response exceeds 500KB, truncating deep children");
+					const truncate = (n: any, currentDepth: number): any => {
+						if (!n) return n;
+						const copy = { ...n };
+						if (copy.children && currentDepth >= 2) {
+							copy.children = copy.children.map((c: any) => ({
+								id: c.id, name: c.name, type: c.type,
+								...(c.componentId ? { componentId: c.componentId } : {}),
+								...(c.variantProperties ? { variantProperties: c.variantProperties } : {}),
+								childCount: c.children?.length,
+							}));
+							copy._truncated = true;
+						} else if (copy.children) {
+							copy.children = copy.children.map((c: any) => truncate(c, currentDepth + 1));
+						}
+						return copy;
+					};
+					response.component = truncate(componentData, 0);
+					response.metadata.truncated = true;
+					response.metadata.originalSizeKB = responseSizeKB;
+					response.metadata.note += " Response was truncated due to size. Use figma_execute for deeper traversal of specific subtrees.";
+				}
+
 				return {
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									fileKey,
-									nodeId,
-									imageUrl,
-									component: componentData,
-									metadata: {
-										purpose: "component_development",
-										note: imageUrl
-											? "Image URL provided above (valid for 30 days). Full component data optimized for UI implementation."
-											: "Full component data optimized for UI implementation.",
-									},
-								}
-							),
+							text: JSON.stringify(response),
 						},
 					],
 				};
