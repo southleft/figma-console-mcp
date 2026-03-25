@@ -3174,7 +3174,21 @@ export function registerFigmaAPITools(
 					if (n.textDecoration) result.textDecoration = n.textDecoration;
 
 					// Component properties & variants
-					if (n.componentProperties) result.componentProperties = n.componentProperties;
+					if (n.componentProperties) {
+						// Cap componentProperties size — icon instances can have 200KB+ of swap variants
+						const cpJson = JSON.stringify(n.componentProperties);
+						if (cpJson.length > 10000) {
+							// Extract just the property names and types, not the full value catalogs
+							const summary: any = {};
+							for (const [key, val] of Object.entries(n.componentProperties as Record<string, any>)) {
+								summary[key] = { type: val.type, value: typeof val.value === 'string' && val.value.length > 200 ? val.value.substring(0, 200) + '...' : val.value };
+							}
+							result.componentProperties = summary;
+							result._componentPropertiesTruncated = true;
+						} else {
+							result.componentProperties = n.componentProperties;
+						}
+					}
 					if (n.componentPropertyDefinitions) result.componentPropertyDefinitions = n.componentPropertyDefinitions;
 					if (n.componentPropertyReferences) result.componentPropertyReferences = n.componentPropertyReferences;
 					if (n.variantProperties) result.variantProperties = n.variantProperties;
