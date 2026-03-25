@@ -3080,9 +3080,9 @@ export function registerFigmaAPITools(
 
 				logger.info({ fileKey, nodeId, includeImage }, "Fetching component for development");
 
-				// Get node data with depth 4 for nested component structures and geometry paths for vector/icon SVG data
+				// Get node data with depth 4 for nested component structures
 				// (depth 2 was too shallow for complex components like data tables, nested menus, etc.)
-				const nodeData = await api.getNodes(fileKey, [nodeId], { depth: 4, geometry: 'paths' });
+				const nodeData = await api.getNodes(fileKey, [nodeId], { depth: 4 });
 				const node = nodeData.nodes?.[nodeId]?.document;
 
 				if (!node) {
@@ -3154,9 +3154,12 @@ export function registerFigmaAPITools(
 					if (n.boundVariables) result.boundVariables = n.boundVariables;
 					if (n.styles) result.styles = n.styles;
 
-					// Vector geometry (SVG path data for icons and custom shapes)
-					if (n.fillGeometry) result.fillGeometry = n.fillGeometry;
-					if (n.strokeGeometry) result.strokeGeometry = n.strokeGeometry;
+					// Vector geometry (SVG path data — only for vector/icon nodes, not regular frames)
+					const isVectorLike = n.type === 'VECTOR' || n.type === 'BOOLEAN_OPERATION' || n.type === 'LINE' || n.type === 'REGULAR_POLYGON' || n.type === 'STAR' || n.type === 'ELLIPSE';
+					if (isVectorLike) {
+						if (n.fillGeometry) result.fillGeometry = n.fillGeometry;
+						if (n.strokeGeometry) result.strokeGeometry = n.strokeGeometry;
+					}
 
 					// Typography
 					if (n.characters) result.characters = n.characters;
