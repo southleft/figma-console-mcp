@@ -435,8 +435,8 @@ export class FigmaAPI {
   /**
    * Helper: Get component metadata with properties
    */
-  async getComponentData(fileKey: string, nodeId: string): Promise<any> {
-    const response = await this.getNodes(fileKey, [nodeId], { depth: 2 });
+  async getComponentData(fileKey: string, nodeId: string, depth = 4): Promise<any> {
+    const response = await this.getNodes(fileKey, [nodeId], { depth });
     return response.nodes?.[nodeId];
   }
 

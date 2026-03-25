@@ -2503,7 +2503,7 @@ export function registerDesignCodeTools(
 				const api = await getFigmaAPI();
 
 				// Fetch component node
-				const nodesResponse = await api.getNodes(fileKey, [nodeId], { depth: 2 });
+				const nodesResponse = await api.getNodes(fileKey, [nodeId], { depth: 4 });
 				const nodeData = nodesResponse?.nodes?.[nodeId];
 				if (!nodeData?.document) {
 					throw new Error(`Node ${nodeId} not found in file ${fileKey}`);
