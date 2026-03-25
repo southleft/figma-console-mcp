@@ -245,6 +245,12 @@ for f in "${ALL_DOC_FILES[@]}"; do
     "[0-9]+\+ tool " \
     "${LOCAL_TOOLS}+ tool " \
     "N+ tool (singular)"
+
+  # '<span class="number">N+</span>' — landing page HTML in src/index.ts
+  replace_in_file "$ROOT/$f" \
+    '"number">[0-9]+\+<' \
+    "\"number\">${LOCAL_TOOLS}+<" \
+    'HTML <span class="number">N+</span>'
 done
 
 # ── 5. Remote tool count (read-only SSE mode) ──────────
