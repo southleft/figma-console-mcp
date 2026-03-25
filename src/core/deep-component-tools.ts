@@ -96,4 +96,64 @@ export function registerDeepComponentTools(
 			}
 		},
 	);
+
+	// -----------------------------------------------------------------------
+	// Tool: figma_analyze_component_set
+	// -----------------------------------------------------------------------
+	server.tool(
+		"figma_analyze_component_set",
+		"Analyze a Figma COMPONENT_SET to extract variant state machine and cross-variant diffs for code generation. Returns: (1) variant axes (size, state) with all values, (2) CSS pseudo-class mappings for interaction states (hover→:hover, focus→:focus-visible, disabled→:disabled, error→[aria-invalid]), (3) visual diff from default state per variant (only changed properties — fill token, stroke token, stroke weight, text color, opacity, effects, visibility), (4) component property definitions mapped to code props (BOOLEAN→boolean, TEXT→string, INSTANCE_SWAP→slot/ReactNode). Use this on the parent COMPONENT_SET node, not individual variants. Requires Desktop Bridge plugin.",
+		{
+			nodeId: z
+				.string()
+				.describe("COMPONENT_SET node ID (the parent of all variants, e.g., '214:274')"),
+		},
+		async ({ nodeId }) => {
+			try {
+				logger.info({ nodeId }, "Analyzing component set");
+
+				const connector = await getDesktopConnector();
+				const result = await connector.analyzeComponentSet(nodeId);
+
+				if (!result || (result.success === false)) {
+					throw new Error(result?.error || "Failed to analyze component set");
+				}
+
+				const data = result.data || result;
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								nodeId,
+								analysis: data,
+								metadata: {
+									purpose: "variant_state_machine",
+									note: "Use cssMapping to implement interaction states as CSS pseudo-classes/attributes. diffFromDefault shows only what changes per variant — apply as style overrides. componentProps maps to your component's TypeScript interface.",
+								},
+							}),
+						},
+					],
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				logger.error({ error }, "Component set analysis failed");
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: "analyze_component_set_failed",
+								message: `Cannot analyze component set. ${message}`,
+								hint: "This tool requires the Desktop Bridge plugin and a COMPONENT_SET node ID (not an individual variant). Use figma_search_components to find component sets.",
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
 }

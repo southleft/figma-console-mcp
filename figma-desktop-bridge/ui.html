@@ -552,6 +552,14 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
+    // Analyze component set (variant state machine + cross-variant diff)
+    window.analyzeComponentSet = (nodeId) => {
+      return window.sendPluginCommand('ANALYZE_COMPONENT_SET', {
+        nodeId: nodeId
+      }, 30000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
     // Deep component extraction (full visual props, tokens, interactions at every level)
     window.deepGetComponent = (nodeId, depth) => {
       return window.sendPluginCommand('DEEP_GET_COMPONENT', {
@@ -731,6 +739,10 @@
         },
         'RELOAD_UI': function() {
           return window.sendPluginCommand('RELOAD_UI', {});
+        },
+        // Component set analysis — variant state machine + cross-variant diff
+        'ANALYZE_COMPONENT_SET': function(params) {
+          return window.analyzeComponentSet(params.nodeId);
         },
         // Deep component extraction — full visual tree with tokens and interactions
         'DEEP_GET_COMPONENT': function(params) {
@@ -1401,6 +1413,11 @@
         // Plugin UI reload
         case 'RELOAD_UI_RESULT':
           handleResult('RELOAD_UI', null);
+          break;
+
+        // Component set analysis
+        case 'ANALYZE_COMPONENT_SET_RESULT':
+          handleResult('ANALYZE_COMPONENT_SET', null);
           break;
 
         // Deep component extraction

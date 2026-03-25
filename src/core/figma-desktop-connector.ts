@@ -1209,6 +1209,27 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   }
 
   /**
+   * Analyze a component set — variant state machine + cross-variant diff
+   */
+  async analyzeComponentSet(nodeId: string): Promise<any> {
+    logger.info({ nodeId }, 'Analyzing component set via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.analyzeComponentSet(${JSON.stringify(nodeId)})`
+      );
+
+      logger.info({ success: result?.success }, 'Component set analysis complete');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Component set analysis failed');
+      throw error;
+    }
+  }
+
+  /**
    * Deep component extraction via plugin UI
    */
   async deepGetComponent(nodeId: string, depth?: number): Promise<any> {

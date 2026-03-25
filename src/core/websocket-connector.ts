@@ -186,6 +186,10 @@ export class WebSocketConnector implements IFigmaConnector {
     return this.wsServer.sendCommand('DEEP_GET_COMPONENT', { nodeId, depth: depth || 10 }, 30000);
   }
 
+  async analyzeComponentSet(nodeId: string): Promise<any> {
+    return this.wsServer.sendCommand('ANALYZE_COMPONENT_SET', { nodeId }, 30000);
+  }
+
   async addComponentProperty(
     nodeId: string,
     propertyName: string,

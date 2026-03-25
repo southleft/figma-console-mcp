@@ -895,6 +895,283 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // ANALYZE_COMPONENT_SET - Variant state machine + cross-variant diff
+  // For COMPONENT_SET nodes: maps variant states to CSS pseudo-classes,
+  // computes visual diffs between default and other variants, and extracts
+  // the component API surface (props, slots, conditional elements).
+  // ============================================================================
+  else if (msg.type === 'ANALYZE_COMPONENT_SET') {
+    try {
+      console.log('🌉 [Desktop Bridge] Analyzing component set: ' + msg.nodeId);
+
+      var node = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!node) throw new Error('Node not found: ' + msg.nodeId);
+      if (node.type !== 'COMPONENT_SET') throw new Error('Node is not a COMPONENT_SET. Type: ' + node.type);
+
+      // Build variable name lookup
+      var varNameMap = {};
+      try {
+        var allVars = await figma.variables.getLocalVariablesAsync();
+        var allColls = await figma.variables.getLocalVariableCollectionsAsync();
+        var collMap = {};
+        for (var ci = 0; ci < allColls.length; ci++) collMap[allColls[ci].id] = allColls[ci].name;
+        for (var vi = 0; vi < allVars.length; vi++) {
+          var v = allVars[vi];
+          varNameMap[v.id] = { name: v.name, collection: collMap[v.variableCollectionId] || null, type: v.resolvedType };
+        }
+      } catch(e) {}
+
+      function resolveVarId(id) {
+        return varNameMap[id] ? varNameMap[id].name : id;
+      }
+
+      function resolveBoundColor(bv) {
+        if (!bv) return null;
+        // Handle array format (fills/strokes)
+        if (Array.isArray(bv)) {
+          return bv.length > 0 && bv[0].id ? resolveVarId(bv[0].id) : null;
+        }
+        // Handle object format
+        if (bv.id) return resolveVarId(bv.id);
+        if (bv.color && bv.color.id) return resolveVarId(bv.color.id);
+        return null;
+      }
+
+      // Extract visual signature from a variant for diffing
+      function extractSignature(variant) {
+        var sig = {};
+
+        // Input field child (the main interactive element)
+        if (variant.children) {
+          for (var i = 0; i < variant.children.length; i++) {
+            var child = variant.children[i];
+            if (child.name === 'Input field' || child.layoutMode) {
+              // This is likely the main interactive frame
+              try {
+                var bv = child.boundVariables || {};
+                sig.fillToken = resolveBoundColor(bv.fills);
+                sig.strokeToken = resolveBoundColor(bv.strokes);
+                sig.strokeWeight = child.strokeWeight;
+
+                // Raw colors as fallback
+                if (!sig.fillToken && child.fills && child.fills.length > 0 && child.fills[0].color) {
+                  var fc = child.fills[0].color;
+                  sig.fillHex = '#' + Math.round(fc.r*255).toString(16).padStart(2,'0') + Math.round(fc.g*255).toString(16).padStart(2,'0') + Math.round(fc.b*255).toString(16).padStart(2,'0');
+                }
+                if (!sig.strokeToken && child.strokes && child.strokes.length > 0 && child.strokes[0].color) {
+                  var sc = child.strokes[0].color;
+                  sig.strokeHex = '#' + Math.round(sc.r*255).toString(16).padStart(2,'0') + Math.round(sc.g*255).toString(16).padStart(2,'0') + Math.round(sc.b*255).toString(16).padStart(2,'0');
+                }
+                sig.effects = child.effects && child.effects.length > 0 ? child.effects : null;
+                sig.opacity = child.opacity < 1 ? child.opacity : null;
+              } catch(e) {}
+
+              // Check text children for color changes
+              if (child.children) {
+                for (var t = 0; t < child.children.length; t++) {
+                  var textChild = child.children[t];
+                  if (textChild.type === 'TEXT') {
+                    try {
+                      var tbv = textChild.boundVariables || {};
+                      sig.textToken = resolveBoundColor(tbv.fills);
+                      if (!sig.textToken && textChild.fills && textChild.fills.length > 0 && textChild.fills[0].color) {
+                        var tc = textChild.fills[0].color;
+                        sig.textHex = '#' + Math.round(tc.r*255).toString(16).padStart(2,'0') + Math.round(tc.g*255).toString(16).padStart(2,'0') + Math.round(tc.b*255).toString(16).padStart(2,'0');
+                      }
+                    } catch(e) {}
+                    break; // First text node is enough
+                  }
+                }
+              }
+              break;
+            }
+          }
+        }
+
+        // Check element visibility changes
+        sig.visibilityChanges = {};
+        if (variant.children) {
+          for (var j = 0; j < variant.children.length; j++) {
+            var ch = variant.children[j];
+            try {
+              if (!ch.visible) sig.visibilityChanges[ch.name] = false;
+            } catch(e) {}
+          }
+        }
+
+        return sig;
+      }
+
+      // Parse variant property definitions
+      var propDefs = node.componentPropertyDefinitions || {};
+      var variantAxes = {};
+      var componentProps = {};
+      var propKeys = Object.keys(propDefs);
+      for (var pk = 0; pk < propKeys.length; pk++) {
+        var propKey = propKeys[pk];
+        var propDef = propDefs[propKey];
+        if (propDef.type === 'VARIANT') {
+          variantAxes[propKey] = propDef.variantOptions || [];
+        } else {
+          componentProps[propKey] = {
+            type: propDef.type,
+            defaultValue: propDef.defaultValue
+          };
+        }
+      }
+
+      // CSS pseudo-class mapping for state variants
+      var stateMapping = {
+        'default': null,
+        'hover': ':hover',
+        'focus': ':focus-visible',
+        'focus-visible': ':focus-visible',
+        'focused': ':focus-visible',
+        'active': ':active',
+        'pressed': ':active',
+        'disabled': ':disabled, [aria-disabled="true"]',
+        'error': '[aria-invalid="true"]',
+        'invalid': '[aria-invalid="true"]',
+        'filled': '.has-value',
+        'selected': '[aria-selected="true"]',
+        'checked': ':checked',
+        'loading': '[aria-busy="true"]',
+        'readonly': '[readonly]',
+        'open': '[aria-expanded="true"]',
+        'closed': '[aria-expanded="false"]'
+      };
+
+      // Analyze variants grouped by axes
+      var variants = node.children || [];
+      var defaultVariant = null;
+      var stateAxis = null;
+      var sizeAxis = null;
+
+      // Detect which axis is "state" and which is "size"
+      var axisKeys = Object.keys(variantAxes);
+      for (var ak = 0; ak < axisKeys.length; ak++) {
+        var axisName = axisKeys[ak].toLowerCase();
+        var axisValues = variantAxes[axisKeys[ak]];
+        if (axisName === 'state' || axisName === 'status' || axisName === 'interaction') {
+          stateAxis = axisKeys[ak];
+        } else if (axisName === 'size' || axisName === 'scale') {
+          sizeAxis = axisKeys[ak];
+        }
+      }
+
+      // Build state machine from variants
+      var stateMachine = { states: {}, defaultState: null, cssMapping: {} };
+      var defaultSig = null;
+
+      // Find the default variant (first size, default state)
+      for (var di = 0; di < variants.length; di++) {
+        var vName = variants[di].name;
+        if (vName.indexOf('state=default') !== -1 && (sizeAxis ? vName.indexOf(sizeAxis + '=') !== -1 : true)) {
+          // Pick the first default state variant
+          if (!defaultVariant || vName.indexOf('large') !== -1) {
+            defaultVariant = variants[di];
+          }
+        }
+      }
+      if (defaultVariant) {
+        defaultSig = extractSignature(defaultVariant);
+      }
+
+      // Process each variant and compute diff from default
+      var variantDiffs = [];
+      for (var vdi = 0; vdi < variants.length; vdi++) {
+        var variant = variants[vdi];
+        var sig = extractSignature(variant);
+
+        // Parse variant name to extract axis values
+        var axisParts = variant.name.split(', ');
+        var axisValues = {};
+        for (var ap = 0; ap < axisParts.length; ap++) {
+          var parts = axisParts[ap].split('=');
+          if (parts.length === 2) axisValues[parts[0].trim()] = parts[1].trim();
+        }
+
+        var stateValue = stateAxis ? (axisValues[stateAxis] || 'default') : 'default';
+        var cssSelector = stateMapping[stateValue.toLowerCase()] || null;
+
+        // Compute diff from default
+        var diff = {};
+        if (defaultSig && variant.id !== (defaultVariant ? defaultVariant.id : null)) {
+          if (sig.fillToken !== defaultSig.fillToken) diff.fillToken = sig.fillToken || sig.fillHex;
+          if (sig.strokeToken !== defaultSig.strokeToken) diff.strokeToken = sig.strokeToken || sig.strokeHex;
+          if (sig.strokeWeight !== defaultSig.strokeWeight) diff.strokeWeight = sig.strokeWeight;
+          if (sig.textToken !== defaultSig.textToken) diff.textToken = sig.textToken || sig.textHex;
+          if (sig.opacity !== defaultSig.opacity) diff.opacity = sig.opacity;
+          if (JSON.stringify(sig.effects) !== JSON.stringify(defaultSig.effects)) diff.effects = sig.effects;
+          // Visibility changes not in default
+          var dvKeys = Object.keys(defaultSig.visibilityChanges);
+          var svKeys = Object.keys(sig.visibilityChanges);
+          for (var sk = 0; sk < svKeys.length; sk++) {
+            if (!defaultSig.visibilityChanges[svKeys[sk]]) {
+              if (!diff.visibilityChanges) diff.visibilityChanges = {};
+              diff.visibilityChanges[svKeys[sk]] = sig.visibilityChanges[svKeys[sk]];
+            }
+          }
+        }
+
+        variantDiffs.push({
+          name: variant.name,
+          id: variant.id,
+          axes: axisValues,
+          state: stateValue,
+          cssSelector: cssSelector,
+          diffFromDefault: Object.keys(diff).length > 0 ? diff : null,
+          signature: sig
+        });
+
+        // Build CSS mapping
+        if (cssSelector) {
+          stateMachine.cssMapping[stateValue] = cssSelector;
+        }
+        if (!stateMachine.states[stateValue]) {
+          stateMachine.states[stateValue] = [];
+        }
+        stateMachine.states[stateValue].push(variant.id);
+      }
+
+      if (defaultVariant) {
+        stateMachine.defaultState = 'default';
+        stateMachine.defaultSignature = defaultSig;
+      }
+
+      var result = {
+        nodeId: node.id,
+        nodeName: node.name,
+        variantCount: variants.length,
+        variantAxes: variantAxes,
+        componentProps: componentProps,
+        stateMachine: stateMachine,
+        variants: variantDiffs,
+        ai_instruction: 'Use cssMapping to implement interaction states. diffFromDefault shows only what changes per state — apply these as CSS pseudo-class or attribute overrides. componentProps maps to React/Vue component props (BOOLEAN → boolean prop, TEXT → string prop, INSTANCE_SWAP → ReactNode/slot prop).'
+      };
+
+      console.log('🌉 [Desktop Bridge] Component set analysis complete. ' + variants.length + ' variants, ' + Object.keys(stateMachine.cssMapping).length + ' CSS mappings');
+
+      figma.ui.postMessage({
+        type: 'ANALYZE_COMPONENT_SET_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: result
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Analyze component set error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'ANALYZE_COMPONENT_SET_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
   // DEEP_GET_COMPONENT - Full recursive component extraction for code generation
   // Extracts visual properties, boundVariables, reactions, instance references,
   // and annotations at every level of the component tree.

@@ -104,6 +104,9 @@ export interface IFigmaConnector {
   // Deep component extraction (full visual tree with tokens, interactions, instance refs)
   deepGetComponent(nodeId: string, depth?: number): Promise<any>;
 
+  // Component set analysis (variant state machine + cross-variant diff)
+  analyzeComponentSet(nodeId: string): Promise<any>;
+
   // Cache management
   clearFrameCache(): void;
 }
