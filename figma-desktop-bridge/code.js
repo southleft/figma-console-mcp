@@ -941,12 +941,37 @@ figma.ui.onmessage = async (msg) => {
       function extractSignature(variant) {
         var sig = {};
 
-        // Input field child (the main interactive element)
+        // Find the main interactive element — prioritize by: has strokes (input fields),
+        // is a FRAME with fills and strokes, or is the largest visible non-text child
+        var mainChild = null;
         if (variant.children) {
+          // First pass: find child with strokes (likely the input/interactive element)
           for (var i = 0; i < variant.children.length; i++) {
             var child = variant.children[i];
-            if (child.name === 'Input field' || child.layoutMode) {
-              // This is likely the main interactive frame
+            try {
+              if (child.visible !== false && child.type !== 'TEXT' && child.strokes && child.strokes.length > 0) {
+                mainChild = child;
+                break;
+              }
+            } catch(e) {}
+          }
+          // Fallback: first visible FRAME child
+          if (!mainChild) {
+            for (var i2 = 0; i2 < variant.children.length; i2++) {
+              var c2 = variant.children[i2];
+              try {
+                if (c2.visible !== false && c2.type === 'FRAME') {
+                  mainChild = c2;
+                  break;
+                }
+              } catch(e) {}
+            }
+          }
+        }
+
+        if (mainChild) {
+              var child = mainChild;
+              // This is the main interactive frame
               try {
                 var bv = child.boundVariables || {};
                 sig.fillToken = resolveBoundColor(bv.fills);
@@ -983,9 +1008,6 @@ figma.ui.onmessage = async (msg) => {
                   }
                 }
               }
-              break;
-            }
-          }
         }
 
         // Check element visibility changes
