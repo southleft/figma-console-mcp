@@ -3382,16 +3382,31 @@ export function registerFigmaAPITools(
 					const existingComponents = scanCodebaseComponents(codebasePath);
 					if (existingComponents.length > 0) {
 						// Cross-reference Figma dependencies against codebase components
-						const existingNames = new Set(existingComponents.map(c => c.name.toLowerCase()));
+						// Normalize a name to keywords for fuzzy matching
+						// "Input label" → ["input", "label"], "FormLabel" → ["form", "label"], "_Helper text" → ["helper", "text"]
+						const toKeywords = (name: string): string[] =>
+							name.replace(/^_+/, "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_/]/g, " ").toLowerCase().split(/\s+/).filter(w => w.length > 1);
+
 						const crossRef = dependencies.map(dep => {
-							// Try to match by name similarity
 							const depNameLower = dep.name.replace(/^_/, "").replace(/\s+/g, "").toLowerCase();
-							const match = existingComponents.find(c =>
-								c.name.toLowerCase() === depNameLower ||
-								c.exports.some(e => e.toLowerCase() === depNameLower) ||
-								depNameLower.includes(c.name.toLowerCase()) ||
-								c.name.toLowerCase().includes(depNameLower)
-							);
+							const depKeywords = toKeywords(dep.name);
+
+							const match = existingComponents.find(c => {
+								const cNameLower = c.name.toLowerCase();
+								const cKeywords = toKeywords(c.name);
+
+								// Exact name match
+								if (cNameLower === depNameLower) return true;
+								// Export name match
+								if (c.exports.some(e => e.toLowerCase() === depNameLower)) return true;
+								// Substring containment
+								if (depNameLower.includes(cNameLower) || cNameLower.includes(depNameLower)) return true;
+								// Keyword overlap — if most keywords from either name match, it's likely the same component
+								// "Input label" ∩ "FormLabel" → ["label"] overlaps, plus "input" ~ "form" (both form-related)
+								const overlap = depKeywords.filter(k => cKeywords.some(ck => ck.includes(k) || k.includes(ck)));
+								if (overlap.length > 0 && overlap.length >= Math.min(depKeywords.length, cKeywords.length) * 0.5) return true;
+								return false;
+							});
 							return {
 								figmaComponent: dep.name,
 								componentId: dep.componentId,
