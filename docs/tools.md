@@ -7,7 +7,7 @@ description: "Complete API reference for all 87+ MCP tools, including parameters
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **87+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **61 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **89+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **61 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -60,6 +60,8 @@ This guide provides detailed documentation for each tool, including when to use 
 | **📝 Annotations** | `figma_get_annotations` | Read annotations from nodes (with optional child traversal) | Local / Cloud |
 | | `figma_set_annotations` | Write or clear annotations (plain text, markdown, pinned properties) | Local / Cloud |
 | | `figma_get_annotation_categories` | List available annotation categories | Local / Cloud |
+| **🔬 Deep Analysis** | `figma_get_component_for_development_deep` | Unlimited-depth component tree with resolved token names and instance refs | Local / Cloud |
+| | `figma_analyze_component_set` | Variant state machine with CSS pseudo-class mappings and cross-variant diffs | Local / Cloud |
 | **📐 Node Manipulation** | `figma_resize_node` | Resize a node | Local / Cloud |
 | | `figma_move_node` | Move a node | Local / Cloud |
 | | `figma_clone_node` | Clone a node | Local / Cloud |
