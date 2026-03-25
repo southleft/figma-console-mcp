@@ -35,6 +35,7 @@ import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { registerDesignCodeTools } from "./core/design-code-tools.js";
 import { registerCommentTools } from "./core/comment-tools.js";
 import { registerAnnotationTools } from "./core/annotation-tools.js";
+import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
@@ -5795,6 +5796,12 @@ return {
 
 		// Register Annotation tools (read/write design annotations via Desktop Bridge)
 		registerAnnotationTools(
+			this.server,
+			() => this.getDesktopConnector(),
+		);
+
+		// Register Deep Component tools (full Plugin API tree extraction for code generation)
+		registerDeepComponentTools(
 			this.server,
 			() => this.getDesktopConnector(),
 		);

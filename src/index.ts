@@ -23,6 +23,7 @@ import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { registerDesignCodeTools } from "./core/design-code-tools.js";
 import { registerCommentTools } from "./core/comment-tools.js";
 import { registerAnnotationTools } from "./core/annotation-tools.js";
+import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
@@ -963,6 +964,9 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Register Annotation tools (read/write design annotations via Desktop Bridge)
 		registerAnnotationTools(this.server, getCloudDesktopConnector);
 
+		// Register Deep Component tools (Plugin API tree extraction for code generation)
+		registerDeepComponentTools(this.server, getCloudDesktopConnector);
+
 		// Register Figma Slides tools (slide management, transitions, content)
 		registerSlidesTools(this.server, getCloudDesktopConnector);
 
@@ -1324,6 +1328,9 @@ export default {
 
 			// Register Annotation tools
 			registerAnnotationTools(statelessServer, getCloudDesktopConnector);
+
+			// Register Deep Component tools
+			registerDeepComponentTools(statelessServer, getCloudDesktopConnector);
 
 			// Register Figma Slides tools
 			registerSlidesTools(statelessServer, getCloudDesktopConnector);
