@@ -5,6 +5,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import * as fs from "fs";
+import * as path from "path";
 import type { FigmaAPI, FigmaUrlInfo } from "./figma-api.js";
 import { extractFileKey, extractFigmaUrlInfo, formatVariables, formatComponentData, withTimeout } from "./figma-api.js";
 import { createChildLogger } from "./logger.js";
@@ -18,6 +20,68 @@ const logger = createChildLogger({ component: "figma-tools" });
 
 // Initialize enrichment service
 const enrichmentService = new EnrichmentService(logger);
+
+/**
+ * Scan a codebase components directory to discover existing components.
+ * Returns a registry of component names, paths, and exports.
+ * Works with any framework — looks for index.ts/tsx/js barrel exports.
+ */
+function scanCodebaseComponents(componentsDir: string): { name: string; path: string; exports: string[] }[] {
+	const registry: { name: string; path: string; exports: string[] }[] = [];
+	try {
+		if (!fs.existsSync(componentsDir)) return registry;
+		const dirs = fs.readdirSync(componentsDir, { withFileTypes: true });
+		for (const dir of dirs) {
+			if (!dir.isDirectory()) continue;
+			const compDir = path.join(componentsDir, dir.name);
+			// Look for barrel export (index.ts, index.tsx, index.js)
+			const barrelFiles = ["index.ts", "index.tsx", "index.js"];
+			let barrelPath = "";
+			for (const bf of barrelFiles) {
+				const candidate = path.join(compDir, bf);
+				if (fs.existsSync(candidate)) { barrelPath = candidate; break; }
+			}
+			if (!barrelPath) {
+				// No barrel — check for a main component file matching the directory name
+				const mainFiles = [`${dir.name}.tsx`, `${dir.name}.ts`, `${dir.name}.jsx`, `${dir.name}.js`];
+				for (const mf of mainFiles) {
+					if (fs.existsSync(path.join(compDir, mf))) {
+						registry.push({ name: dir.name, path: `src/components/${dir.name}`, exports: [dir.name] });
+						break;
+					}
+				}
+				continue;
+			}
+			// Parse exports from barrel file
+			try {
+				const content = fs.readFileSync(barrelPath, "utf-8");
+				const exportNames: string[] = [];
+				// Match: export { Foo, Bar } from ...
+				const namedExports = content.matchAll(/export\s*\{([^}]+)\}/g);
+				for (const match of namedExports) {
+					const names = match[1].split(",").map(n => n.trim().split(/\s+as\s+/).pop()?.trim() || "").filter(Boolean);
+					exportNames.push(...names.filter(n => !n.startsWith("type ")));
+				}
+				// Match: export default ...
+				if (content.includes("export default")) {
+					exportNames.push("default");
+				}
+				// Filter out type-only exports
+				const cleanExports = exportNames.filter(n => !n.startsWith("type") || n[4] !== " ");
+				registry.push({
+					name: dir.name,
+					path: `src/components/${dir.name}`,
+					exports: cleanExports.length > 0 ? cleanExports : [dir.name],
+				});
+			} catch {
+				registry.push({ name: dir.name, path: `src/components/${dir.name}`, exports: [dir.name] });
+			}
+		}
+	} catch (err) {
+		logger.debug({ err, componentsDir }, "Could not scan codebase components directory");
+	}
+	return registry;
+}
 
 // Initialize snippet injector
 const snippetInjector = new SnippetInjector();
@@ -3047,8 +3111,12 @@ export function registerFigmaAPITools(
 				.optional()
 				.default(true)
 				.describe("Include rendered image for visual reference (default: true)"),
+			codebasePath: z
+				.string()
+				.optional()
+				.describe("Path to target codebase components directory (e.g., '/Users/me/project/src/components'). When provided, scans for existing components and includes a registry in the response to prevent recreating components that already exist. Strongly recommended for design-to-code workflows."),
 		},
-		async ({ fileUrl, nodeId, includeImage }) => {
+		async ({ fileUrl, nodeId, includeImage, codebasePath }) => {
 			try {
 				let api;
 				try {
@@ -3308,6 +3376,40 @@ export function registerFigmaAPITools(
 
 				const dependencies = Array.from(compositionDeps.values());
 
+				// Scan codebase for existing components if path provided
+				let codebaseRegistry: any = undefined;
+				if (codebasePath) {
+					const existingComponents = scanCodebaseComponents(codebasePath);
+					if (existingComponents.length > 0) {
+						// Cross-reference Figma dependencies against codebase components
+						const existingNames = new Set(existingComponents.map(c => c.name.toLowerCase()));
+						const crossRef = dependencies.map(dep => {
+							// Try to match by name similarity
+							const depNameLower = dep.name.replace(/^_/, "").replace(/\s+/g, "").toLowerCase();
+							const match = existingComponents.find(c =>
+								c.name.toLowerCase() === depNameLower ||
+								c.exports.some(e => e.toLowerCase() === depNameLower) ||
+								depNameLower.includes(c.name.toLowerCase()) ||
+								c.name.toLowerCase().includes(depNameLower)
+							);
+							return {
+								figmaComponent: dep.name,
+								componentId: dep.componentId,
+								codebaseMatch: match ? { name: match.name, path: match.path, exports: match.exports } : null,
+								action: match ? "IMPORT_EXISTING" : "BUILD_NEW",
+							};
+						});
+
+						codebaseRegistry = {
+							scannedPath: codebasePath,
+							existingComponents: existingComponents.map(c => ({ name: c.name, path: c.path, exports: c.exports })),
+							componentCount: existingComponents.length,
+							crossReference: crossRef.length > 0 ? crossRef : undefined,
+							ai_instruction: `Found ${existingComponents.length} existing components in the target codebase. Components marked IMPORT_EXISTING MUST be imported — never recreate them. Components marked BUILD_NEW need to be created as standalone components (own directory, file, CSS module, stories) before building the parent.`,
+						};
+					}
+				}
+
 				// Build the full response
 				const response: any = {
 					fileKey,
@@ -3315,10 +3417,13 @@ export function registerFigmaAPITools(
 					imageUrl,
 					component: componentData,
 					annotations: annotationSummary,
+					codebaseRegistry: codebaseRegistry || undefined,
 					compositionDependencies: dependencies.length > 0 ? {
 						count: dependencies.length,
 						components: dependencies,
-						ai_instruction: "MANDATORY BEFORE WRITING ANY CODE: (1) Check your target codebase's CLAUDE.md Component Registry or scan src/components/ for existing implementations of these sub-components. (2) If a component exists (Icon, Button, FormLabel, etc.), IMPORT it — never recreate with inline markup. Using raw <svg> when an Icon component exists, or raw <button> when a Button exists, is a critical violation. (3) Each sub-component that does NOT exist must be built FIRST as its own standalone component (own directory, file, CSS module, stories, barrel export) before building the parent. (4) The parent component composes sub-components via imports — it never inlines their logic or styling.",
+						ai_instruction: codebaseRegistry
+							? `MANDATORY: Cross-reference each dependency against codebaseRegistry.crossReference above. Components marked IMPORT_EXISTING must be imported from their listed path. Components marked BUILD_NEW must be created as standalone components (own directory, file, CSS module, stories) before building the parent. Never inline sub-component logic.`
+							: "MANDATORY BEFORE WRITING ANY CODE: Scan the target codebase's component directory for existing implementations. If a matching component exists, IMPORT it — never recreate with inline markup. Each sub-component that does NOT exist must be built FIRST as standalone (own directory, file, CSS module, stories, barrel export) before building the parent.",
 					} : undefined,
 					metadata: {
 						purpose: "component_development",
