@@ -3280,6 +3280,34 @@ export function registerFigmaAPITools(
 					}
 				}
 
+				// Extract composition dependencies — every INSTANCE sub-component used
+				// This tells the AI which sub-components must exist before building this component
+				const compositionDeps = new Map<string, { name: string; componentId: string; count: number; props: string[] }>();
+				const walkForInstances = (n: any) => {
+					if (!n) return;
+					if (n.type === "INSTANCE" && n.componentId) {
+						const existing = compositionDeps.get(n.componentId);
+						if (existing) {
+							existing.count++;
+						} else {
+							compositionDeps.set(n.componentId, {
+								name: n.name,
+								componentId: n.componentId,
+								count: 1,
+								props: n.componentProperties ? Object.keys(n.componentProperties) : [],
+							});
+						}
+					}
+					if (n.children) {
+						for (const child of n.children) {
+							walkForInstances(child);
+						}
+					}
+				};
+				walkForInstances(componentData);
+
+				const dependencies = Array.from(compositionDeps.values());
+
 				// Build the full response
 				const response: any = {
 					fileKey,
@@ -3287,6 +3315,11 @@ export function registerFigmaAPITools(
 					imageUrl,
 					component: componentData,
 					annotations: annotationSummary,
+					compositionDependencies: dependencies.length > 0 ? {
+						count: dependencies.length,
+						components: dependencies,
+						ai_instruction: "IMPORTANT: Each dependency listed here is a sub-component used inside this component. In a design system, each sub-component MUST be its own standalone component (own directory, own file, own stories) before building the parent. Check your codebase for existing implementations. If a sub-component does not exist, build it FIRST. Never inline sub-component logic into the parent component.",
+					} : undefined,
 					metadata: {
 						purpose: "component_development",
 						treeDepth: 4,
@@ -3294,6 +3327,7 @@ export function registerFigmaAPITools(
 							imageUrl ? "Image URL provided (valid for 30 days)." : null,
 							"Component data optimized for UI implementation with design tokens (boundVariables), interaction states (reactions), sizing constraints, and text behavior.",
 							annotationSummary.count > 0 ? `${annotationSummary.count} design annotation(s) found — check annotations field for implementation specs.` : null,
+							dependencies.length > 0 ? `COMPOSITION: ${dependencies.length} sub-component(s) detected (${dependencies.map(d => d.name).join(", ")}). Build these as standalone components first, then compose.` : null,
 							"Use figma_get_annotations for full annotation details. Use figma_get_variables to resolve variable IDs to token names/values.",
 						].filter(Boolean).join(" "),
 					},
