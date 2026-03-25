@@ -895,6 +895,267 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // DEEP_GET_COMPONENT - Full recursive component extraction for code generation
+  // Extracts visual properties, boundVariables, reactions, instance references,
+  // and annotations at every level of the component tree.
+  // ============================================================================
+  else if (msg.type === 'DEEP_GET_COMPONENT') {
+    try {
+      var maxDepth = msg.depth || 10;
+      console.log('🌉 [Desktop Bridge] Deep component fetch: ' + msg.nodeId + ' (depth: ' + maxDepth + ')');
+
+      var rootNode = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!rootNode) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+
+      // Build a variable name lookup map for resolving boundVariables
+      var varNameMap = {};
+      try {
+        var allVars = await figma.variables.getLocalVariablesAsync();
+        var allCollections = await figma.variables.getLocalVariableCollectionsAsync();
+        var collectionMap = {};
+        for (var ci = 0; ci < allCollections.length; ci++) {
+          collectionMap[allCollections[ci].id] = allCollections[ci].name;
+        }
+        for (var vi = 0; vi < allVars.length; vi++) {
+          var v = allVars[vi];
+          varNameMap[v.id] = {
+            name: v.name,
+            resolvedType: v.resolvedType,
+            collection: collectionMap[v.variableCollectionId] || null,
+            scopes: v.scopes || [],
+            codeSyntax: v.codeSyntax || {}
+          };
+        }
+      } catch (e) {
+        console.log('🌉 [Desktop Bridge] Could not build variable map: ' + e.message);
+      }
+
+      // Resolve boundVariables to token names
+      function resolveBoundVars(bv) {
+        if (!bv) return null;
+        var resolved = {};
+        var keys = Object.keys(bv);
+        for (var k = 0; k < keys.length; k++) {
+          var prop = keys[k];
+          var binding = bv[prop];
+          if (Array.isArray(binding)) {
+            resolved[prop] = [];
+            for (var bi = 0; bi < binding.length; bi++) {
+              var b = binding[bi];
+              if (b && b.id) {
+                var info = varNameMap[b.id];
+                resolved[prop].push(info ? { id: b.id, name: info.name, collection: info.collection, resolvedType: info.resolvedType, codeSyntax: info.codeSyntax } : { id: b.id });
+              }
+            }
+          } else if (binding && binding.id) {
+            var info = varNameMap[binding.id];
+            resolved[prop] = info ? { id: binding.id, name: info.name, collection: info.collection, resolvedType: info.resolvedType, codeSyntax: info.codeSyntax } : { id: binding.id };
+          }
+        }
+        return Object.keys(resolved).length > 0 ? resolved : null;
+      }
+
+      // Extract visual properties from a node
+      function extractNodeProps(n) {
+        var props = {};
+
+        // Layout
+        if (n.layoutMode) props.layoutMode = n.layoutMode;
+        if (n.primaryAxisSizingMode) props.primaryAxisSizingMode = n.primaryAxisSizingMode;
+        if (n.counterAxisSizingMode) props.counterAxisSizingMode = n.counterAxisSizingMode;
+        if (n.layoutSizingHorizontal) props.layoutSizingHorizontal = n.layoutSizingHorizontal;
+        if (n.layoutSizingVertical) props.layoutSizingVertical = n.layoutSizingVertical;
+        if (n.primaryAxisAlignItems) props.primaryAxisAlignItems = n.primaryAxisAlignItems;
+        if (n.counterAxisAlignItems) props.counterAxisAlignItems = n.counterAxisAlignItems;
+        if (n.paddingLeft !== undefined && n.paddingLeft !== 0) props.paddingLeft = n.paddingLeft;
+        if (n.paddingRight !== undefined && n.paddingRight !== 0) props.paddingRight = n.paddingRight;
+        if (n.paddingTop !== undefined && n.paddingTop !== 0) props.paddingTop = n.paddingTop;
+        if (n.paddingBottom !== undefined && n.paddingBottom !== 0) props.paddingBottom = n.paddingBottom;
+        if (n.itemSpacing !== undefined && n.itemSpacing !== 0) props.itemSpacing = n.itemSpacing;
+        if (n.counterAxisSpacing !== undefined && n.counterAxisSpacing !== 0) props.counterAxisSpacing = n.counterAxisSpacing;
+        if (n.layoutWrap && n.layoutWrap !== 'NO_WRAP') props.layoutWrap = n.layoutWrap;
+        if (n.minWidth !== undefined) props.minWidth = n.minWidth;
+        if (n.maxWidth !== undefined) props.maxWidth = n.maxWidth;
+        if (n.minHeight !== undefined) props.minHeight = n.minHeight;
+        if (n.maxHeight !== undefined) props.maxHeight = n.maxHeight;
+        if (n.clipsContent) props.clipsContent = true;
+
+        // Visual
+        try {
+          if (n.fills && n.fills !== figma.mixed && n.fills.length > 0) props.fills = n.fills;
+        } catch (e) { /* mixed fills */ }
+        try {
+          if (n.strokes && n.strokes.length > 0) props.strokes = n.strokes;
+        } catch (e) {}
+        if (n.strokeWeight !== undefined && n.strokeWeight !== 0 && n.strokeWeight !== figma.mixed) props.strokeWeight = n.strokeWeight;
+        if (n.cornerRadius !== undefined && n.cornerRadius !== 0 && n.cornerRadius !== figma.mixed) props.cornerRadius = n.cornerRadius;
+        try {
+          if (n.effects && n.effects.length > 0) props.effects = n.effects;
+        } catch (e) {}
+        if (n.opacity !== undefined && n.opacity < 1) props.opacity = n.opacity;
+
+        // Typography
+        if (n.type === 'TEXT') {
+          try { props.characters = n.characters; } catch (e) {}
+          try { if (n.fontSize !== figma.mixed) props.fontSize = n.fontSize; } catch (e) {}
+          try { if (n.fontName !== figma.mixed) props.fontFamily = n.fontName.family; props.fontStyle = n.fontName.style; } catch (e) {}
+          try { if (n.fontWeight !== figma.mixed) props.fontWeight = n.fontWeight; } catch (e) {}
+          try { if (n.lineHeight !== figma.mixed) props.lineHeight = n.lineHeight; } catch (e) {}
+          try { if (n.letterSpacing !== figma.mixed) props.letterSpacing = n.letterSpacing; } catch (e) {}
+          try { if (n.textAlignHorizontal) props.textAlignHorizontal = n.textAlignHorizontal; } catch (e) {}
+          try { if (n.textAlignVertical) props.textAlignVertical = n.textAlignVertical; } catch (e) {}
+          try { if (n.textAutoResize && n.textAutoResize !== 'NONE') props.textAutoResize = n.textAutoResize; } catch (e) {}
+          try { if (n.textTruncation && n.textTruncation !== 'DISABLED') props.textTruncation = n.textTruncation; } catch (e) {}
+          try { if (n.textCase && n.textCase !== 'ORIGINAL') props.textCase = n.textCase; } catch (e) {}
+          try { if (n.textDecoration && n.textDecoration !== 'NONE') props.textDecoration = n.textDecoration; } catch (e) {}
+        }
+
+        // Design tokens (resolved to names)
+        try {
+          var resolved = resolveBoundVars(n.boundVariables);
+          if (resolved) props.boundVariables = resolved;
+        } catch (e) {}
+
+        // Prototype interactions
+        try {
+          if (n.reactions && n.reactions.length > 0) {
+            props.reactions = n.reactions.map(function(r) {
+              var reaction = { trigger: r.trigger };
+              if (r.action) {
+                reaction.action = { type: r.action.type };
+                if (r.action.navigation) reaction.action.navigation = r.action.navigation;
+                if (r.action.transition) reaction.action.transition = r.action.transition;
+                if (r.action.destinationId) reaction.action.destinationId = r.action.destinationId;
+              }
+              return reaction;
+            });
+          }
+        } catch (e) {}
+
+        // Annotations
+        try {
+          if (n.annotations && n.annotations.length > 0) {
+            props.annotations = n.annotations.map(function(a) {
+              var ann = {};
+              if (a.labelMarkdown) ann.labelMarkdown = a.labelMarkdown;
+              else if (a.label) ann.label = a.label;
+              if (a.properties) ann.properties = a.properties;
+              if (a.categoryId) ann.categoryId = a.categoryId;
+              return ann;
+            });
+          }
+        } catch (e) {}
+
+        // Component instance reference
+        if (n.type === 'INSTANCE') {
+          try {
+            if (n.mainComponent) {
+              props.mainComponent = {
+                id: n.mainComponent.id,
+                name: n.mainComponent.name,
+                key: n.mainComponent.key || null,
+                isVariant: n.mainComponent.parent && n.mainComponent.parent.type === 'COMPONENT_SET'
+              };
+              if (props.mainComponent.isVariant && n.mainComponent.parent) {
+                props.mainComponent.componentSetName = n.mainComponent.parent.name;
+                props.mainComponent.componentSetId = n.mainComponent.parent.id;
+              }
+            }
+          } catch (e) {}
+          try {
+            if (n.componentProperties) props.componentProperties = n.componentProperties;
+          } catch (e) {}
+        }
+
+        // Component definitions (for COMPONENT and COMPONENT_SET)
+        if (n.type === 'COMPONENT_SET' || n.type === 'COMPONENT') {
+          try {
+            if (n.componentPropertyDefinitions) props.componentPropertyDefinitions = n.componentPropertyDefinitions;
+          } catch (e) {}
+          if (n.type === 'COMPONENT' && n.variantProperties) {
+            props.variantProperties = n.variantProperties;
+          }
+        }
+
+        // Dimensions
+        try {
+          props.width = Math.round(n.width);
+          props.height = Math.round(n.height);
+        } catch (e) {}
+
+        return props;
+      }
+
+      // Recursive tree walker
+      function walkNode(n, currentDepth) {
+        var nodeData = {
+          id: n.id,
+          name: n.name,
+          type: n.type,
+          visible: n.visible
+        };
+
+        // Skip invisible nodes (unless they're component set variants)
+        if (!n.visible && n.type !== 'COMPONENT') {
+          nodeData._hidden = true;
+          return nodeData;
+        }
+
+        // Extract all properties
+        var props = extractNodeProps(n);
+        var propKeys = Object.keys(props);
+        for (var pk = 0; pk < propKeys.length; pk++) {
+          nodeData[propKeys[pk]] = props[propKeys[pk]];
+        }
+
+        // Recurse into children
+        if (n.children && currentDepth < maxDepth) {
+          nodeData.children = [];
+          for (var i = 0; i < n.children.length; i++) {
+            try {
+              nodeData.children.push(walkNode(n.children[i], currentDepth + 1));
+            } catch (e) {
+              // Skip inaccessible slot sublayers
+            }
+          }
+        } else if (n.children) {
+          // At max depth, include lightweight child summary
+          nodeData.childCount = n.children.length;
+          nodeData._depthLimitReached = true;
+        }
+
+        return nodeData;
+      }
+
+      var result = walkNode(rootNode, 0);
+      result._variableMapSize = Object.keys(varNameMap).length;
+      result._maxDepthUsed = maxDepth;
+
+      var resultJson = JSON.stringify(result);
+      console.log('🌉 [Desktop Bridge] Deep component data: ' + Math.round(resultJson.length / 1024) + 'KB, vars resolved: ' + Object.keys(varNameMap).length);
+
+      figma.ui.postMessage({
+        type: 'DEEP_GET_COMPONENT_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: result
+      });
+
+    } catch (error) {
+      var errorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Deep component error:', errorMsg);
+      figma.ui.postMessage({
+        type: 'DEEP_GET_COMPONENT_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
   // GET_LOCAL_COMPONENTS - Get all local components for design system manifest
   // ============================================================================
   else if (msg.type === 'GET_LOCAL_COMPONENTS') {

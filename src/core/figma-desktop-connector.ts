@@ -1209,6 +1209,27 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   }
 
   /**
+   * Deep component extraction via plugin UI
+   */
+  async deepGetComponent(nodeId: string, depth?: number): Promise<any> {
+    logger.info({ nodeId, depth }, 'Deep component fetch via plugin UI');
+
+    const frame = await this.findPluginUIFrame();
+
+    try {
+      const result = await frame.evaluate(
+        `window.deepGetComponent(${JSON.stringify(nodeId)}, ${JSON.stringify(depth || 10)})`
+      );
+
+      logger.info({ success: result?.success }, 'Deep component data retrieved');
+      return result;
+    } catch (error) {
+      logger.error({ error, nodeId }, 'Deep component fetch failed');
+      throw error;
+    }
+  }
+
+  /**
    * Add a component property
    */
   async addComponentProperty(

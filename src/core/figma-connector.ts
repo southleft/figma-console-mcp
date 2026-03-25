@@ -101,6 +101,9 @@ export interface IFigmaConnector {
   setAnnotations(nodeId: string, annotations: any[], mode?: 'replace' | 'append'): Promise<any>;
   getAnnotationCategories(): Promise<any>;
 
+  // Deep component extraction (full visual tree with tokens, interactions, instance refs)
+  deepGetComponent(nodeId: string, depth?: number): Promise<any>;
+
   // Cache management
   clearFrameCache(): void;
 }

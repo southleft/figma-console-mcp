@@ -180,6 +180,10 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 		return this.sendCommand('GET_ANNOTATION_CATEGORIES', {}, 5000);
 	}
 
+	async deepGetComponent(nodeId: string, depth?: number): Promise<any> {
+		return this.sendCommand('DEEP_GET_COMPONENT', { nodeId, depth: depth || 10 }, 30000);
+	}
+
 	async addComponentProperty(
 		nodeId: string,
 		propertyName: string,

@@ -552,6 +552,15 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
+    // Deep component extraction (full visual props, tokens, interactions at every level)
+    window.deepGetComponent = (nodeId, depth) => {
+      return window.sendPluginCommand('DEEP_GET_COMPONENT', {
+        nodeId: nodeId,
+        depth: depth || 10
+      }, 30000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
     // Get annotations from a node (and optionally its children)
     window.getAnnotations = (nodeId, includeChildren, depth) => {
       return window.sendPluginCommand('GET_ANNOTATIONS', {
@@ -653,6 +662,9 @@
           return window.sendPluginCommand('RELOAD_UI', {});
         },
         // Annotation tools — forward to plugin code.js
+        'DEEP_GET_COMPONENT': function(params) {
+          return window.deepGetComponent(params.nodeId, params.depth);
+        },
         'GET_ANNOTATIONS': function(params) {
           return window.sendPluginCommand('GET_ANNOTATIONS', params, 10000);
         },
@@ -1244,6 +1256,11 @@
         // Plugin UI reload
         case 'RELOAD_UI_RESULT':
           handleResult('RELOAD_UI', null);
+          break;
+
+        // Deep component extraction
+        case 'DEEP_GET_COMPONENT_RESULT':
+          handleResult('DEEP_GET_COMPONENT', null);
           break;
 
         // Annotation tools (data flows via msg.data, no top-level dataKey needed)
