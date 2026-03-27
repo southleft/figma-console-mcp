@@ -71,7 +71,7 @@ function isFigmaPAT(token: string): boolean {
 export class FigmaConsoleMCPv3 extends McpAgent {
 	server = new McpServer({
 		name: "Figma Console MCP",
-		version: "1.19.1",
+		version: "1.19.2",
 	});
 
 	private browserManager: BrowserManager | null = null;
@@ -1321,7 +1321,7 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.19.1",
+				version: "1.19.2",
 			});
 
 			// ================================================================
@@ -2109,7 +2109,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.19.1",
+					version: "1.19.2",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],

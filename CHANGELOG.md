@@ -5,6 +5,21 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.2] - 2026-03-27
+
+### Added
+- **171 new tests** across 8 core modules: config, snippet-injector, write-tools, console-monitor, design-system-manifest, figma-tools, figma-api, and figma-style-extractor. (Thanks to [@klgral](https://github.com/klgral).)
+- **PAT scope documentation** — Token scopes table added to README.md, docs/setup.md, and docs/security.md with troubleshooting entries for common 403 errors. (Thanks to [@arevlo-flow](https://github.com/arevlo-flow).)
+
+### Changed
+- **AI-optimized screenshot defaults** — `figma_capture_screenshot` now defaults to PNG at 1x (was 2x) with automatic scale capping at 1568px (Claude's AI vision processing ceiling). Adds content-aware `formatAdvice` suggesting JPG for image-heavy content. 61–95% payload reduction, fully backwards compatible. (Thanks to [@klgral](https://github.com/klgral).)
+
+### Fixed
+- **Stale variables after writes** — `figma_get_variables` with `refreshCache: true` now fetches live data from the Plugin API instead of reading a stale UI snapshot. All 11 variable write operations now invalidate the cache on success. Fixed hardcoded `cached: true` flag. (Thanks to [@muloka](https://github.com/muloka) for the thorough diagnosis.)
+- **ESM package root resolution** — `serverVersion` reported `"0.0.0"` in ESM runtime (`npx`) because `__dirname` is undefined. Now resolved via `import.meta.url` with a Jest CJS mock. Fixes Desktop Bridge plugin rejecting the server as "legacy." (Thanks to [@nick-inkeep](https://github.com/nick-inkeep). Closes #38, #39.)
+- **Unhandled rejection crash in `withTimeout()`** — `promise.finally()` cleanup branch could cause an unhandled rejection that crashes the Node.js process. (Thanks to [@klgral](https://github.com/klgral).)
+
+
 ## [1.19.1] - 2026-03-27
 
 ### Fixed
@@ -521,6 +536,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.19.2]: https://github.com/southleft/figma-console-mcp/compare/v1.19.1...v1.19.2
 [1.19.1]: https://github.com/southleft/figma-console-mcp/compare/v1.19.0...v1.19.1
 [1.19.0]: https://github.com/southleft/figma-console-mcp/compare/v1.18.0...v1.19.0
 [1.18.0]: https://github.com/southleft/figma-console-mcp/compare/v1.17.4...v1.18.0
