@@ -97,8 +97,11 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
     const timeoutId = setTimeout(() => {
       reject(new Error(`${label} timed out after ${ms}ms`));
     }, ms);
-    // Ensure timeout is cleared if promise resolves first
-    promise.finally(() => clearTimeout(timeoutId));
+    // Ensure timeout is cleared if promise resolves/rejects first.
+    // The .catch() prevents an unhandled rejection when the original
+    // promise rejects — .finally() returns a new promise that inherits
+    // the rejection, and without .catch() it becomes unhandled.
+    promise.finally(() => clearTimeout(timeoutId)).catch(() => {});
   });
   return Promise.race([promise, timeoutPromise]);
 }
