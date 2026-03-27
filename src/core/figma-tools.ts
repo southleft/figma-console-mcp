@@ -1917,7 +1917,11 @@ export function registerFigmaAPITools(
 						}
 						logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Desktop connector ready");
 
-						const desktopResult = await connector.getVariablesFromPluginUI(fileKey);
+						// When refreshCache is requested, bypass the plugin UI's stale snapshot
+						// and fetch live data directly from the Figma Plugin API
+						const desktopResult = refreshCache
+							? await connector.getVariables(fileKey)
+							: await connector.getVariablesFromPluginUI(fileKey);
 
 						if (desktopResult.success && desktopResult.variables) {
 							logger.info(
@@ -2138,7 +2142,7 @@ export function registerFigmaAPITools(
 												format: format || 'full',
 												timestamp: dataForCache.timestamp,
 												data: responseData,
-												cached: true,
+												cached: false,
 											}
 										),
 									},

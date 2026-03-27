@@ -128,6 +128,18 @@ class LocalFigmaConsoleMCP {
 		}
 	> = new Map();
 
+	/**
+	 * Invalidate the variables cache after a write operation.
+	 * Called after any successful variable create/update/delete/batch operation
+	 * to ensure the next figma_get_variables call returns fresh data.
+	 */
+	private invalidateVariablesCache(): void {
+		if (this.variablesCache.size > 0) {
+			this.variablesCache.clear();
+			logger.info('Variables cache invalidated after write operation');
+		}
+	}
+
 	constructor() {
 		this.server = new McpServer(
 			{
@@ -2026,6 +2038,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 						value,
 					);
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2109,6 +2122,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 						},
 					);
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2175,6 +2189,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 						additionalModes,
 					});
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2228,6 +2243,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					const connector = await this.getDesktopConnector();
 					const result = await connector.deleteVariable(variableId);
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2283,6 +2299,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					const connector = await this.getDesktopConnector();
 					const result = await connector.deleteVariableCollection(collectionId);
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2343,6 +2360,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					const connector = await this.getDesktopConnector();
 					const result = await connector.renameVariable(variableId, newName);
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2402,6 +2420,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					const connector = await this.getDesktopConnector();
 					const result = await connector.addMode(collectionId, modeName);
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2470,6 +2489,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 						newName,
 					);
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2621,6 +2641,7 @@ return {
 						};
 					}
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2750,6 +2771,7 @@ return {
 						};
 					}
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
@@ -2920,6 +2942,7 @@ return {
 						};
 					}
 
+					this.invalidateVariablesCache();
 					return {
 						content: [
 							{
