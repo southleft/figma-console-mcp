@@ -123,7 +123,7 @@ If you're not sure where to put the JSON configuration above, here's where each 
 #### Step 3: Connect to Figma Desktop
 
 **Desktop Bridge Plugin:**
-1. Open Figma Desktop normally (no special flags needed)
+1. Open Figma Desktop normally (no special flags needed) and open a file
 2. Go to **Plugins → Development → Import plugin from manifest...**
 3. Select `~/.figma-console-mcp/plugin/manifest.json` (stable path, auto-created by the MCP server)
 4. Run the plugin in your Figma file — the bootloader finds the MCP server and loads the latest UI automatically
