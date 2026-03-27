@@ -20,14 +20,14 @@ import type { Server as HttpServer } from 'http';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { createChildLogger } from './logger.js';
+import { PACKAGE_ROOT } from './resolve-package-root.js';
 import type { ConsoleLogEntry } from './types/index.js';
 
-// Read version from package.json
-// Uses __dirname in CJS/Jest context, falls back to process.cwd() in ESM runtime
+// Read version from package.json using the resolved package root.
+// PACKAGE_ROOT uses import.meta.url in ESM (production) and __dirname in CJS (Jest).
 let SERVER_VERSION = '0.0.0';
 try {
-  const base = typeof __dirname !== 'undefined' ? join(__dirname, '..', '..') : process.cwd();
-  SERVER_VERSION = JSON.parse(readFileSync(join(base, 'package.json'), 'utf-8')).version;
+  SERVER_VERSION = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8')).version;
 } catch {
   // Non-critical — version will show as 0.0.0
 }
@@ -38,11 +38,9 @@ try {
  */
 function loadPluginUIContent(): string {
   const candidates = [
-    // ESM runtime: dist/core/ → ../../figma-desktop-bridge/
-    typeof __dirname !== 'undefined'
-      ? join(__dirname, '..', '..', 'figma-desktop-bridge', 'ui-full.html')
-      : join(process.cwd(), 'figma-desktop-bridge', 'ui-full.html'),
-    // Direct from project root
+    // Primary: relative to package root (works in both CJS and ESM)
+    join(PACKAGE_ROOT, 'figma-desktop-bridge', 'ui-full.html'),
+    // Fallback: relative to cwd (development / monorepo setups)
     join(process.cwd(), 'figma-desktop-bridge', 'ui-full.html'),
   ];
 
