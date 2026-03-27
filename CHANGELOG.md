@@ -5,6 +5,12 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.1] - 2026-03-27
+
+### Fixed
+- **Cloud Mode PAT authentication** — Figma Personal Access Tokens (`figd_*`) were rejected with `invalid_token` when used as Bearer tokens in Cloud Mode. The auth middleware on `/mcp` and `/sse` endpoints only validated tokens stored in the OAuth KV store, but PATs bypass OAuth entirely. Now PATs are detected by prefix and validated directly against Figma's API using the correct `X-Figma-Token` header. Affects Lovable, v0, Replit, and any MCP client using PAT-based Bearer auth with the cloud server. (Thanks to [Leesan Kwok](https://www.linkedin.com/in/leesankwok/) for reporting and diagnosing this issue.)
+
+
 ## [1.19.0] - 2026-03-25
 
 ### Added
@@ -515,6 +521,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.19.1]: https://github.com/southleft/figma-console-mcp/compare/v1.19.0...v1.19.1
 [1.19.0]: https://github.com/southleft/figma-console-mcp/compare/v1.18.0...v1.19.0
 [1.18.0]: https://github.com/southleft/figma-console-mcp/compare/v1.17.4...v1.18.0
 [1.17.4]: https://github.com/southleft/figma-console-mcp/compare/v1.17.3...v1.17.4

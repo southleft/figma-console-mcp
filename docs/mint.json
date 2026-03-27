@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/schema.json",
   "name": "Figma Console MCP",
-  "version": "1.19.0",
+  "version": "1.19.1",
   "theme": "quill",
   "logo": {
     "dark": "/logo/light.svg",

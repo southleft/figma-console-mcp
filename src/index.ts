@@ -39,13 +39,39 @@ export { PluginRelayDO } from "./core/cloud-websocket-relay.js";
 const logger = createChildLogger({ component: "mcp-server" });
 
 /**
+ * Validate a Figma Personal Access Token (PAT) by calling the Figma API.
+ * PATs start with 'figd_' and require the X-Figma-Token header (not Bearer).
+ * Returns the user info if valid, null if invalid/expired.
+ */
+async function validateFigmaPAT(token: string): Promise<{ id: string; handle: string; email: string } | null> {
+	try {
+		const response = await fetch("https://api.figma.com/v1/me", {
+			headers: { "X-Figma-Token": token },
+		});
+		if (!response.ok) return null;
+		const data = await response.json() as { id: string; handle: string; email: string };
+		return data?.id ? data : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Check if a token is a Figma Personal Access Token.
+ * PATs start with 'figd_' — OAuth tokens start with 'figu_'.
+ */
+function isFigmaPAT(token: string): boolean {
+	return token.startsWith("figd_");
+}
+
+/**
  * Figma Console MCP Agent
  * Extends McpAgent to provide Figma-specific debugging tools
  */
 export class FigmaConsoleMCPv3 extends McpAgent {
 	server = new McpServer({
 		name: "Figma Console MCP",
-		version: "1.19.0",
+		version: "1.19.1",
 	});
 
 	private browserManager: BrowserManager | null = null;
@@ -1096,6 +1122,43 @@ export default {
 			}
 
 			const bearerToken = authHeader.substring(7); // Remove "Bearer " prefix
+
+			// PAT support: Figma Personal Access Tokens (figd_*) are passed as Bearer
+			// tokens by MCP clients like Lovable, but they aren't stored in our OAuth KV.
+			// Validate them directly against Figma's API instead.
+			if (isFigmaPAT(bearerToken)) {
+				logger.info({ pathname: url.pathname }, "SSE request with Figma PAT — validating against Figma API");
+				const patUser = await validateFigmaPAT(bearerToken);
+				if (!patUser) {
+					logger.warn({ pathname: url.pathname }, "SSE request with invalid Figma PAT");
+					const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
+					return new Response(JSON.stringify({
+						error: "invalid_token",
+						error_description: "Figma Personal Access Token is invalid or expired"
+					}), {
+						status: 401,
+						headers: {
+							"Content-Type": "application/json",
+							"WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", error="invalid_token"`
+						}
+					});
+				}
+
+				// Store PAT in KV so the Durable Object's getFigmaAPI() can retrieve it
+				const patSessionId = "figma-console-mcp-default-session";
+				const patTokenKey = `oauth_token:${patSessionId}`;
+				await env.OAUTH_TOKENS.put(patTokenKey, JSON.stringify({
+					accessToken: bearerToken,
+					expiresAt: Date.now() + 3600_000, // 1-hour TTL for PAT session
+				}), { expirationTtl: 3600 });
+
+				logger.info({ pathname: url.pathname, user: patUser.handle }, "SSE request authenticated via Figma PAT");
+
+				// Proceed with SSE connection
+				return FigmaConsoleMCPv3.serveSSE("/sse").fetch(request, env, ctx);
+			}
+
+			// OAuth token path: look up in KV store
 			const bearerKey = `bearer_token:${bearerToken}`;
 
 			try {
@@ -1172,17 +1235,19 @@ export default {
 			}
 
 			const bearerToken = authHeader.substring(7);
-			const bearerKey = `bearer_token:${bearerToken}`;
 
-			try {
-				const tokenDataJson = await env.OAUTH_TOKENS.get(bearerKey);
-
-				if (!tokenDataJson) {
-					logger.warn({ pathname: url.pathname }, "MCP request with invalid Bearer token");
+			// PAT support: Figma Personal Access Tokens (figd_*) are passed as Bearer
+			// tokens by MCP clients like Lovable, v0, and Replit. They bypass OAuth
+			// and aren't stored in KV — validate directly against Figma's API.
+			if (isFigmaPAT(bearerToken)) {
+				logger.info({ pathname: url.pathname }, "MCP request with Figma PAT — validating against Figma API");
+				const patUser = await validateFigmaPAT(bearerToken);
+				if (!patUser) {
+					logger.warn({ pathname: url.pathname }, "MCP request with invalid Figma PAT");
 					const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
 					return new Response(JSON.stringify({
 						error: "invalid_token",
-						error_description: "Bearer token is invalid or expired"
+						error_description: "Figma Personal Access Token is invalid or expired. Ensure your PAT (figd_...) is valid and has not been revoked."
 					}), {
 						status: 401,
 						headers: {
@@ -1191,38 +1256,62 @@ export default {
 						}
 					});
 				}
+				logger.info({ pathname: url.pathname, user: patUser.handle }, "MCP request authenticated via Figma PAT");
+			} else {
+				// OAuth token path: look up in KV store
+				const bearerKey = `bearer_token:${bearerToken}`;
 
-				const tokenData = JSON.parse(tokenDataJson) as { sessionId: string; expiresAt: number };
+				try {
+					const tokenDataJson = await env.OAUTH_TOKENS.get(bearerKey);
 
-				if (tokenData.expiresAt < Date.now()) {
-					logger.warn({ pathname: url.pathname, sessionId: tokenData.sessionId }, "MCP request with expired Bearer token");
-					const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
+					if (!tokenDataJson) {
+						logger.warn({ pathname: url.pathname }, "MCP request with invalid Bearer token");
+						const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
+						return new Response(JSON.stringify({
+							error: "invalid_token",
+							error_description: "Bearer token is invalid or expired"
+						}), {
+							status: 401,
+							headers: {
+								"Content-Type": "application/json",
+								"WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", error="invalid_token"`
+							}
+						});
+					}
+
+					const tokenData = JSON.parse(tokenDataJson) as { sessionId: string; expiresAt: number };
+
+					if (tokenData.expiresAt < Date.now()) {
+						logger.warn({ pathname: url.pathname, sessionId: tokenData.sessionId }, "MCP request with expired Bearer token");
+						const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
+						return new Response(JSON.stringify({
+							error: "invalid_token",
+							error_description: "Bearer token has expired"
+						}), {
+							status: 401,
+							headers: {
+								"Content-Type": "application/json",
+								"WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", error="invalid_token"`
+							}
+						});
+					}
+
+					logger.info({ pathname: url.pathname, sessionId: tokenData.sessionId }, "MCP request authenticated successfully");
+				} catch (error) {
+					logger.error({ error, pathname: url.pathname }, "Error validating Bearer token for MCP endpoint");
 					return new Response(JSON.stringify({
-						error: "invalid_token",
-						error_description: "Bearer token has expired"
+						error: "server_error",
+						error_description: "Failed to validate authorization"
 					}), {
-						status: 401,
-						headers: {
-							"Content-Type": "application/json",
-							"WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", error="invalid_token"`
-						}
+						status: 500,
+						headers: { "Content-Type": "application/json" }
 					});
 				}
-
-				logger.info({ pathname: url.pathname, sessionId: tokenData.sessionId }, "MCP request authenticated successfully");
-			} catch (error) {
-				logger.error({ error, pathname: url.pathname }, "Error validating Bearer token for MCP endpoint");
-				return new Response(JSON.stringify({
-					error: "server_error",
-					error_description: "Failed to validate authorization"
-				}), {
-					status: 500,
-					headers: { "Content-Type": "application/json" }
-				});
 			}
 
 			// Token is valid — use stateless transport (no Durable Objects)
 			// The Bearer token IS the Figma access token, so we use it directly
+			// FigmaAPI handles PAT vs OAuth header selection internally
 			const figmaAccessToken = bearerToken;
 			const statelessApi = new FigmaAPI({ accessToken: figmaAccessToken });
 
@@ -1232,7 +1321,7 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.19.0",
+				version: "1.19.1",
 			});
 
 			// ================================================================
@@ -2020,7 +2109,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.19.0",
+					version: "1.19.1",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
