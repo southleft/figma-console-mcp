@@ -1219,7 +1219,6 @@
     function syncAccountSettingsToServers() {
       if (!wsConnected) return;
       var settings = normalizeAccountSettings(window.__accountSettings);
-      if (!settings.accounts.length) return;
       broadcastToAll({
         type: 'ACCOUNT_SETTINGS_SYNC',
         data: { settings: settings }
@@ -1284,16 +1283,10 @@
     }
 
     function saveAccountSettings() {
-      return window.sendPluginCommand('SAVE_ACCOUNT_SETTINGS', {
-        settings: window.__accountSettings
-      }).then(function(result) {
-        if (result && result.settings) {
-          applyAccountSettings(result.settings);
-        }
-        syncAccountSettingsToServers();
-        syncActiveAccountToServers();
-        return result;
-      });
+      // Option B: server is single source of truth — sync directly, no clientStorage
+      syncAccountSettingsToServers();
+      syncActiveAccountToServers();
+      return Promise.resolve({ settings: window.__accountSettings });
     }
 
     function applySelectedAccount() {
@@ -1822,8 +1815,9 @@
     // ============================================================================
     (function() {
       // Port range for multi-instance support (matches server's port-discovery.ts)
+      // Dev safety: lock to one local MCP server to avoid mixed UI/state from old instances.
       var WS_PORT_RANGE_START = 9223;
-      var WS_PORT_RANGE_END = 9232;
+      var WS_PORT_RANGE_END = 9223;
 
       // Multi-connection state: plugin connects to ALL active MCP servers
       // so that every Claude tab/CLI instance gets Figma access.
@@ -2030,7 +2024,6 @@
       }
 
       requestSharedAccountSettings(connWs);
-      syncAccountSettingsToConnection(connWs);
       syncActiveAccountToConnection(connWs);
 
       // Proactively report file identity to this server
@@ -2727,12 +2720,8 @@
     window.sendPluginCommand('GET_FILE_INFO', {}).catch(function() {
       // Non-critical: UI can still populate after the next page/selection event.
     });
-    window.sendPluginCommand('GET_ACCOUNT_SETTINGS', {}).then(function(result) {
-      applyAccountSettings(result && result.settings);
-      syncAccountSettingsToServers();
-      syncActiveAccountToServers();
-      requestSharedAccountSettings();
-    }).catch(function() {});
+    // Option B: load accounts from server, not clientStorage
+    requestSharedAccountSettings();
     requestResizeToContent();
   </script>
 </body>
