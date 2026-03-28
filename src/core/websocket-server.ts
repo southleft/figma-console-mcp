@@ -136,7 +136,7 @@ export class FigmaWebSocketServer extends EventEmitter {
   private documentChangeBufferSize = 200;
   /** Cached plugin UI HTML content — loaded once and served to bootloader requests */
   private _pluginUIContent: string | null = null;
-  private sharedAccountSettingsPath = join(homedir(), '.figma-console-mcp', 'accounts.json');
+  private sharedAccountSettingsPath = join(homedir(), 'Claude Code', 'figma-console-mcp', 'accounts.json');
 
   constructor(options: WebSocketServerOptions) {
     super();
@@ -164,7 +164,7 @@ export class FigmaWebSocketServer extends EventEmitter {
 
   private saveSharedAccountSettings(settings: { accounts: any[]; activeAccountId: string | null }): void {
     try {
-      mkdirSync(join(homedir(), '.figma-console-mcp'), { recursive: true });
+      mkdirSync(join(homedir(), 'Claude Code', 'figma-console-mcp'), { recursive: true });
       writeFileSync(this.sharedAccountSettingsPath, JSON.stringify(settings, null, 2), 'utf-8');
     } catch (error) {
       logger.warn({ error }, 'Failed to save shared account settings');

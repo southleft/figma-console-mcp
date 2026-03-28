@@ -63,15 +63,15 @@ const logger = createChildLogger({ component: "local-server" });
 
 /**
  * Resolve stable plugin directory.
- * Override via FIGMA_CONSOLE_STABLE_PLUGIN_DIR to avoid collisions with
- * other figma-console-mcp instances on the same machine.
+ * Default: ~/Claude Code/figma-console-mcp/plugin/
+ * Override via FIGMA_CONSOLE_STABLE_PLUGIN_DIR if needed.
  */
 function getStablePluginDir(): string {
 	const customStableDir = (process.env.FIGMA_CONSOLE_STABLE_PLUGIN_DIR || "").trim();
 	if (customStableDir) {
 		return resolve(customStableDir);
 	}
-	return join(homedir(), ".figma-console-mcp", "plugin");
+	return join(homedir(), "Claude Code", "figma-console-mcp", "plugin");
 }
 
 /**
@@ -157,7 +157,7 @@ class LocalFigmaConsoleMCP {
 
 	private loadPersistedAccountOverride(): void {
 		try {
-			const sharedSettingsPath = join(homedir(), ".figma-console-mcp", "accounts.json");
+			const sharedSettingsPath = join(homedir(), "Claude Code", "figma-console-mcp", "accounts.json");
 			if (!existsSync(sharedSettingsPath)) return;
 
 			const raw = readFileSync(sharedSettingsPath, "utf-8");
