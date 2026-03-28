@@ -3,129 +3,705 @@
 <head>
   <meta charset="UTF-8">
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
+    /* -- Design Tokens -- */
+    :root {
+      /* Status colours - dark theme defaults, overridden in body.light */
+      --color-connected: #44FF88;
+      --color-connected-glow: rgba(68,255,136,0.5);
+      --color-connected-ring: rgba(68,255,136,0.25);
+      --color-waiting: #FFB700;
+      --color-waiting-glow: rgba(255,183,0,0.5);
+      --color-waiting-ring: rgba(255,183,0,0.25);
+      --color-error: #FF455B;
+      --color-error-glow: rgba(255,69,91,0.5);
+      --color-error-ring: rgba(255,69,91,0.25);
+      --color-idle: #737373;
+      --color-idle-glow: rgba(115,115,115,0.4);
+      --color-idle-ring: rgba(115,115,115,0.2);
+
+      /* Dark theme (default) */
+      --bg: #1e1e1e;
+      --bg-surface: #2a2a2a;
+      --text: #fff;
+      --text-muted: #999;
+      --text-dim: #858585;
+      --text-dim-hover: #aaa;
+      --log-text: #aaa;
+      --log-info: #6cf;
+      --log-success: #6f6;
+      --log-error: #f66;
+      --log-warn: #fc0;
+    }
+    body.light {
+      --color-connected: #16a34a;
+      --color-connected-glow: rgba(22,163,74,0.45);
+      --color-connected-ring: rgba(22,163,74,0.2);
+      --color-waiting: #d97706;
+      --color-waiting-glow: rgba(217,119,6,0.45);
+      --color-waiting-ring: rgba(217,119,6,0.2);
+      --color-error: #ef4444;
+      --color-error-glow: rgba(239,68,68,0.45);
+      --color-error-ring: rgba(239,68,68,0.2);
+      --color-idle: #6b7280;
+      --color-idle-glow: rgba(107,114,128,0.35);
+      --color-idle-ring: rgba(107,114,128,0.15);
+      --bg: #f5f5f5;
+      --bg-surface: #e8e8e8;
+      --text: #1e1e1e;
+      --text-muted: #666;
+      --text-dim: #707070;
+      --text-dim-hover: #555;
+      --log-text: #555;
+      --log-info: #00639e;
+      --log-success: #167016;
+      --log-error: #b81e2c;
+      --log-warn: #7a5c00;
     }
 
+    /* -- Base -- */
+    * { box-sizing: border-box; }
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 11px;
-      background: var(--figma-color-bg, #2c2c2c);
-      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
-      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 12px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    /* -- Status Bar -- */
+    .status {
       display: flex;
       align-items: center;
-      justify-content: center;
-      padding: 6px 8px;
+      gap: 12px;
+      padding: 8px 14px;
+      flex-shrink: 0;
+    }
+    .dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--color-idle);
+      flex-shrink: 0;
+      box-shadow: 0 0 8px var(--color-idle-glow), 0 0 0 3px var(--color-idle-ring);
+      transition: background 0.3s, box-shadow 0.3s;
+      animation: pulse-idle 1.5s ease-in-out infinite;
+    }
+    .dot.waiting {
+      background: var(--color-waiting);
+      box-shadow: 0 0 8px var(--color-waiting-glow), 0 0 0 3px var(--color-waiting-ring);
+      animation: pulse-waiting 1.5s ease-in-out infinite;
+    }
+    .dot.connected {
+      background: var(--color-connected);
+      box-shadow: 0 0 8px var(--color-connected-glow), 0 0 0 3px var(--color-connected-ring);
+      animation: pulse-connected 1.5s ease-in-out infinite;
+    }
+    .dot.error {
+      background: var(--color-error);
+      box-shadow: 0 0 8px var(--color-error-glow), 0 0 0 3px var(--color-error-ring);
+      animation: pulse-error 1.5s ease-in-out infinite;
+      position: relative;
+    }
+    .dot.error::before,
+    .dot.error::after {
+      content: '';
+      position: absolute;
+      background: #000;
+      border-radius: 1px;
+      top: 50%;
+      left: 50%;
+    }
+    .dot.error::before {
+      width: 8px;
+      height: 1.5px;
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+    .dot.error::after {
+      width: 8px;
+      height: 1.5px;
+      transform: translate(-50%, -50%) rotate(-45deg);
+    }
+    .dot.connecting {
+      background: var(--color-waiting);
+      box-shadow: 0 0 8px var(--color-waiting-glow), 0 0 0 3px var(--color-waiting-ring);
+      animation: pulse-waiting 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-idle {
+      0%, 100% { box-shadow: 0 0 8px var(--color-idle-glow), 0 0 0 2px var(--color-idle-ring); }
+      50% { box-shadow: 0 0 12px var(--color-idle-glow), 0 0 0 3px var(--color-idle-ring); }
+    }
+    @keyframes pulse-waiting {
+      0%, 100% { box-shadow: 0 0 8px var(--color-waiting-glow), 0 0 0 2px var(--color-waiting-ring); }
+      50% { box-shadow: 0 0 12px var(--color-waiting-glow), 0 0 0 3px var(--color-waiting-ring); }
+    }
+    @keyframes pulse-connected {
+      0%, 100% { box-shadow: 0 0 8px var(--color-connected-glow), 0 0 0 2px var(--color-connected-ring); }
+      50% { box-shadow: 0 0 12px var(--color-connected-glow), 0 0 0 3px var(--color-connected-ring); }
+    }
+    @keyframes pulse-error {
+      0%, 100% { box-shadow: 0 0 8px var(--color-error-glow), 0 0 0 2px var(--color-error-ring); }
+      50% { box-shadow: 0 0 12px var(--color-error-glow), 0 0 0 3px var(--color-error-ring); }
+    }
+    .status-text {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      transition: color 0.2s;
+    }
+    .status-text.active {
+      color: var(--color-connected);
+    }
+    .status-file-row {
+      display: none;
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--bg);
+    }
+    .status-file {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-dim);
+      transition: filter 0.2s;
+    }
+    .status-file.masked {
+      filter: blur(8px);
       user-select: none;
     }
-
-    .bridge-status {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 8px;
-      background: var(--figma-color-bg-secondary, #383838);
-      border: 1px solid var(--figma-color-border, #4a4a4a);
-      border-radius: 4px;
-      white-space: nowrap;
+    .file-toggle svg {
+      width: 14px;
+      height: 14px;
+    }
+    .status-hint {
+      font-size: 11px;
+      color: var(--text-dim);
+      padding: 4px 16px 0;
+      flex-shrink: 0;
     }
 
-    .status-indicator {
+    /* -- Connect Button -- */
+    .connect-btn {
+      margin-left: auto;
+      padding: 5px 14px;
+      border: 1.5px solid var(--text-dim);
+      border-radius: 6px;
+      background: none;
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+      flex-shrink: 0;
+    }
+    .connect-btn:hover {
+      border-color: var(--text-dim-hover);
+      color: var(--text-dim-hover);
+    }
+    .connect-btn.active {
+      border-color: var(--text-dim);
+      color: var(--text-dim);
+    }
+    .connect-btn.active:hover {
+      border-color: var(--text-dim-hover);
+      color: var(--text-dim-hover);
+    }
+
+    /* -- Instructions Panel -- */
+    .instructions-wrap {
+      flex-shrink: 0;
+      overflow: hidden;
+      display: none;
+    }
+    .instructions-wrap.visible {
+      display: block;
+    }
+    .instructions {
+      background: var(--bg-surface);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.7;
+      transition: background 0.2s;
+    }
+    .instructions h3 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .instructions ol {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .instructions li {
+      margin-bottom: 6px;
+    }
+    .instructions li:last-child {
+      margin-bottom: 0;
+    }
+    .instructions code {
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      user-select: all;
+      color: var(--text);
+    }
+    .instructions .step-note {
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    /* -- Legend -- */
+    .legend {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--bg);
+    }
+    .legend h4 {
+      margin: 0 0 8px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .legend-items {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
       flex-shrink: 0;
     }
-
-    .status-indicator.loading {
-      background: #f5a623;
-      animation: pulse 1.5s ease-in-out infinite;
+    .legend-dot.idle {
+      background: var(--color-idle);
+      box-shadow: 0 0 6px var(--color-idle-glow), 0 0 0 2px var(--color-idle-ring);
+      animation: pulse-idle-sm 1.5s ease-in-out infinite;
+    }
+    .legend-dot.waiting {
+      background: var(--color-waiting);
+      box-shadow: 0 0 6px var(--color-waiting-glow), 0 0 0 2px var(--color-waiting-ring);
+      animation: pulse-waiting-sm 1.5s ease-in-out infinite;
+    }
+    .legend-dot.connected {
+      background: var(--color-connected);
+      box-shadow: 0 0 6px var(--color-connected-glow), 0 0 0 2px var(--color-connected-ring);
+      animation: pulse-connected-sm 1.5s ease-in-out infinite;
+    }
+    .legend-dot.error {
+      background: var(--color-error);
+      box-shadow: 0 0 6px var(--color-error-glow), 0 0 0 2px var(--color-error-ring);
+      animation: pulse-error-sm 1.5s ease-in-out infinite;
+      position: relative;
+    }
+    .legend-dot.error::before,
+    .legend-dot.error::after {
+      content: '';
+      position: absolute;
+      background: #000;
+      border-radius: 1px;
+      top: 50%;
+      left: 50%;
+    }
+    .legend-dot.error::before {
+      width: 5px;
+      height: 1px;
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+    .legend-dot.error::after {
+      width: 5px;
+      height: 1px;
+      transform: translate(-50%, -50%) rotate(-45deg);
+    }
+    @keyframes pulse-idle-sm {
+      0%, 100% { box-shadow: 0 0 6px var(--color-idle-glow), 0 0 0 1px var(--color-idle-ring); }
+      50% { box-shadow: 0 0 8px var(--color-idle-glow), 0 0 0 2px var(--color-idle-ring); }
+    }
+    @keyframes pulse-waiting-sm {
+      0%, 100% { box-shadow: 0 0 6px var(--color-waiting-glow), 0 0 0 1px var(--color-waiting-ring); }
+      50% { box-shadow: 0 0 8px var(--color-waiting-glow), 0 0 0 2px var(--color-waiting-ring); }
+    }
+    @keyframes pulse-connected-sm {
+      0%, 100% { box-shadow: 0 0 6px var(--color-connected-glow), 0 0 0 1px var(--color-connected-ring); }
+      50% { box-shadow: 0 0 8px var(--color-connected-glow), 0 0 0 2px var(--color-connected-ring); }
+    }
+    @keyframes pulse-error-sm {
+      0%, 100% { box-shadow: 0 0 6px var(--color-error-glow), 0 0 0 1px var(--color-error-ring); }
+      50% { box-shadow: 0 0 8px var(--color-error-glow), 0 0 0 2px var(--color-error-ring); }
+    }
+    .legend-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text);
+      min-width: 72px;
+    }
+    .legend-desc {
+      font-size: 10px;
+      color: var(--text-dim);
     }
 
-    .status-indicator.active {
-      background: #18a957;
-      box-shadow: 0 0 6px rgba(24, 169, 87, 0.6);
-      animation: glow 2s ease-in-out infinite;
+    /* -- Toolbar -- */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 14px 4px;
+      flex-shrink: 0;
     }
+    .toolbar-spacer { margin-left: auto; }
+    .icon-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 11px;
+      font-family: inherit;
+      cursor: pointer;
+      padding: 4px 0;
+      transition: color 0.2s;
+    }
+    .icon-btn:hover { color: var(--text-dim-hover); }
+    .icon-btn svg { width: 14px; height: 14px; }
 
-    .status-indicator.error {
-      background: #f24822;
+    /* -- Log -- */
+    .log-wrap {
+      overflow: hidden;
+      display: none;
     }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 1; }
+    .log-wrap.visible {
+      display: block;
+      height: 200px;
     }
-
-    @keyframes glow {
-      0%, 100% { box-shadow: 0 0 4px rgba(24, 169, 87, 0.4); }
-      50% { box-shadow: 0 0 8px rgba(24, 169, 87, 0.8); }
+    .log {
+      background: var(--bg-surface);
+      border-radius: 4px;
+      padding: 0 14px 8px;
+      height: 100%;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 10px;
+      transition: background 0.2s;
     }
-
-    .status-text {
-      font-weight: 500;
-      letter-spacing: 0.2px;
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--bg-surface);
+      padding: 8px 0 6px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid var(--bg);
+      font-size: 10px;
+      color: var(--text-dim);
     }
-
-    .status-text .label {
-      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.7));
+    .log-entry {
+      margin: 2px 0;
+      color: var(--log-text);
+      word-break: break-all;
     }
-
-    .status-text .state {
-      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
-      margin-left: 4px;
-    }
-
-    /* Light theme support */
-    @media (prefers-color-scheme: light) {
-      body {
-        background: #f5f5f5;
-        color: #333;
-      }
-      .bridge-status {
-        background: #fff;
-        border-color: #e5e5e5;
-      }
-      .status-text .label {
-        color: #666;
-      }
-      .status-text .state {
-        color: #333;
-      }
-    }
+    .log-entry.info { color: var(--log-info); }
+    .log-entry.success { color: var(--log-success); }
+    .log-entry.error { color: var(--log-error); }
+    .log-entry.warn { color: var(--log-warn); }
+    .log.errors-only .log-entry:not(.error) { display: none; }
+    .icon-btn.active { color: var(--log-error); }
   </style>
 </head>
 <body>
-  <div class="bridge-status" id="status-container">
-    <div class="status-indicator loading" id="status-dot"></div>
-    <div class="status-text">
-      <span class="label">MCP</span>
-      <span class="state" id="status-state">connecting</span>
+  <div class="status">
+    <div class="dot connecting" id="statusDot"></div>
+    <div class="status-text" id="statusText">SCANNING</div>
+    <button class="connect-btn active" id="connectBtn">Disconnect</button>
+  </div>
+  <div class="status-hint" id="statusHint"></div>
+  <div class="toolbar">
+    <button class="icon-btn" id="instructionsToggle" title="Setup instructions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="16" x2="12" y2="12"/>
+        <line x1="12" y1="8" x2="12.01" y2="8"/>
+      </svg>
+      <span id="instructionsLabel">Info</span>
+    </button>
+    <button class="icon-btn" id="logToggle" title="Show log">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <circle cx="12" cy="12" r="3"/>
+        <line id="eyeSlash" x1="1" y1="1" x2="23" y2="23" style="display:none"/>
+      </svg>
+      <span id="toggleLabel">Show log</span>
+    </button>
+    <button class="icon-btn" id="errorsToggle" title="Show errors only" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span id="errorsLabel">Errors</span>
+    </button>
+    <div class="toolbar-spacer"></div>
+    <button class="icon-btn" id="themeToggle" title="Switch to light mode">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"/>
+        <line x1="12" y1="1" x2="12" y2="3"/>
+        <line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/>
+        <line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+    </button>
+  </div>
+  <div class="instructions-wrap" id="instructionsWrap">
+    <div class="instructions">
+      <div class="status-file-row" id="statusFileRow">
+        <h4 style="margin:0;">Connected file</h4>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <button class="icon-btn file-toggle" id="fileToggle" title="Show filename">
+            <svg id="fileToggleIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          </button>
+          <span class="status-file masked" id="statusFile"></span>
+        </div>
+      </div>
+      <ul style="margin:0 0 10px;padding-left:18px;line-height:1.7;">
+        <li>Auto-connects when plug-in is loaded.</li>
+        <li>To disconnect, press button or close plugin.</li>
+      </ul>
+      <div class="legend">
+        <h4>Statuses</h4>
+        <div class="legend-items">
+          <div class="legend-item">
+            <span class="legend-dot idle"></span>
+            <span class="legend-title">Off</span>
+            <span class="legend-desc">Not connected</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot waiting"></span>
+            <span class="legend-title">Scanning</span>
+            <span class="legend-desc">Looking for MCP servers</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot connected"></span>
+            <span class="legend-title">Connected</span>
+            <span class="legend-desc">Ready to go</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot error"></span>
+            <span class="legend-title">Error</span>
+            <span class="legend-desc">Something went wrong</span>
+          </div>
+        </div>
+      </div>
+      <div class="legend">
+        <h4>How it works</h4>
+        <p style="margin:0;line-height:1.5;">This plugin connects to your AI tool (e.g. Claude Code) automatically. If the connection drops, it will reconnect on its own.</p>
+      </div>
+    </div>
+  </div>
+  <div class="log-wrap" id="logWrap">
+    <div class="log" id="log">
+      <div class="log-header" id="logHeader">
+        <span id="logVersion"></span>
+        <span id="logServerCount"></span>
+      </div>
     </div>
   </div>
 
   <script>
     // ============================================================================
+    // UI CONTROLS
+    // ============================================================================
+    var PLUGIN_VERSION = '0.1.0';
+
+    var statusDot = document.getElementById('statusDot');
+    var statusTextEl = document.getElementById('statusText');
+    var statusFileRow = document.getElementById('statusFileRow');
+    var statusFile = document.getElementById('statusFile');
+    var fileToggle = document.getElementById('fileToggle');
+    var statusHint = document.getElementById('statusHint');
+    var connectBtn = document.getElementById('connectBtn');
+    var logWrap = document.getElementById('logWrap');
+    var logEl = document.getElementById('log');
+    var logToggle = document.getElementById('logToggle');
+    var toggleLabel = document.getElementById('toggleLabel');
+    var eyeSlash = document.getElementById('eyeSlash');
+    var themeToggle = document.getElementById('themeToggle');
+    var themeIcon = document.getElementById('themeIcon');
+    var instructionsToggle = document.getElementById('instructionsToggle');
+    var instructionsLabel = document.getElementById('instructionsLabel');
+    var instructionsWrap = document.getElementById('instructionsWrap');
+    var errorsToggle = document.getElementById('errorsToggle');
+    var errorsLabel = document.getElementById('errorsLabel');
+    var logVersion = document.getElementById('logVersion');
+    var logServerCount = document.getElementById('logServerCount');
+
+    logVersion.textContent = 'v' + PLUGIN_VERSION;
+
+    var logVisible = false;
+    var isDark = true;
+    var instructionsVisible = false;
+    var errorsOnly = false;
+    var fileVisible = false;
+
+    var eyeOpenSVG = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    var eyeOffSVG = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="1" y1="1" x2="23" y2="23"/>';
+
+    var sunSVG = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+    var moonSVG = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+
+    function autoResize() {
+      var h = 0;
+      var nodes = document.body.children;
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].tagName !== 'SCRIPT') h += nodes[i].offsetHeight;
+      }
+      var cs = getComputedStyle(document.body);
+      h += parseInt(cs.paddingTop) + parseInt(cs.paddingBottom);
+      parent.postMessage({ pluginMessage: { type: 'resize', width: 300, height: h } }, '*');
+    }
+
+    function log(message, level) {
+      level = level || 'info';
+      var entry = document.createElement('div');
+      entry.className = 'log-entry ' + level;
+      entry.textContent = message;
+      logEl.appendChild(entry);
+      logEl.scrollTop = logEl.scrollHeight;
+      while (logEl.children.length > 51) {
+        logEl.removeChild(logEl.children[1]);
+      }
+    }
+
+    var fileToggleIcon = document.getElementById('fileToggleIcon');
+
+    function updateFileDisplay() {
+      if (!window.__figmaFileName) return;
+      statusFile.textContent = window.__figmaFileName;
+      if (fileVisible) {
+        statusFile.classList.remove('masked');
+        fileToggleIcon.innerHTML = eyeOpenSVG;
+        fileToggle.title = 'Hide filename';
+      } else {
+        statusFile.classList.add('masked');
+        fileToggleIcon.innerHTML = eyeOffSVG;
+        fileToggle.title = 'Show filename';
+      }
+    }
+
+    fileToggle.addEventListener('click', function() {
+      fileVisible = !fileVisible;
+      updateFileDisplay();
+    });
+
+    logToggle.addEventListener('click', function() {
+      logVisible = !logVisible;
+      logWrap.classList.toggle('visible', logVisible);
+      toggleLabel.textContent = logVisible ? 'Hide log' : 'Show log';
+      eyeSlash.style.display = logVisible ? 'inline' : 'none';
+      errorsToggle.style.display = logVisible ? '' : 'none';
+      if (!logVisible) {
+        errorsOnly = false;
+        logEl.classList.remove('errors-only');
+        errorsToggle.classList.remove('active');
+        errorsLabel.textContent = 'Errors';
+      }
+      autoResize();
+    });
+
+    errorsToggle.addEventListener('click', function() {
+      errorsOnly = !errorsOnly;
+      logEl.classList.toggle('errors-only', errorsOnly);
+      errorsToggle.classList.toggle('active', errorsOnly);
+      errorsLabel.textContent = errorsOnly ? 'All' : 'Errors';
+    });
+
+    themeToggle.addEventListener('click', function() {
+      isDark = !isDark;
+      document.body.classList.toggle('light', !isDark);
+      themeIcon.innerHTML = isDark ? sunSVG : moonSVG;
+      themeToggle.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+      autoResize();
+    });
+
+    instructionsToggle.addEventListener('click', function() {
+      instructionsVisible = !instructionsVisible;
+      instructionsWrap.classList.toggle('visible', instructionsVisible);
+      instructionsLabel.textContent = instructionsVisible ? 'Hide info' : 'Info';
+      autoResize();
+    });
+
+    // ============================================================================
     // GLOBAL STATE - Data storage for Puppeteer/MCP access
     // ============================================================================
     window.__figmaVariablesData = null;
     window.__figmaVariablesReady = false;
+    window.__figmaFileName = null;
     window.__figmaComponentData = null;
     window.__figmaComponentRequests = new Map();
     window.__figmaPendingRequests = new Map();
 
     let requestIdCounter = 0;
 
-    // UI update helper
+    // UI update helper - adapted for new dot system
     function updateStatus(state, isActive, isError) {
-      const dot = document.getElementById('status-dot');
-      const stateText = document.getElementById('status-state');
-
-      dot.className = 'status-indicator ' + (isError ? 'error' : (isActive ? 'active' : 'loading'));
-      stateText.textContent = state;
+      if (isError) {
+        statusDot.className = 'dot error';
+        statusTextEl.textContent = state.toUpperCase();
+        statusTextEl.className = 'status-text';
+        statusFileRow.style.display = 'none';
+        statusHint.textContent = '';
+        statusHint.style.display = 'none';
+        connectBtn.textContent = 'Connect';
+        connectBtn.className = 'connect-btn';
+        log('Error: ' + state, 'error');
+      } else if (isActive) {
+        statusDot.className = 'dot connected';
+        statusTextEl.textContent = state.toUpperCase();
+        statusTextEl.className = 'status-text active';
+        if (window.__figmaFileName) {
+          statusFileRow.style.display = 'block';
+          updateFileDisplay();
+        }
+        statusHint.textContent = '';
+        statusHint.style.display = 'none';
+        connectBtn.textContent = 'Disconnect';
+        connectBtn.className = 'connect-btn active';
+      } else {
+        statusDot.className = 'dot connecting';
+        statusTextEl.textContent = state.toUpperCase();
+        statusTextEl.className = 'status-text';
+        statusFileRow.style.display = 'none';
+        statusHint.style.display = '';
+        statusHint.textContent = 'Scanning ports 9223-9232 for MCP servers...';
+      }
+      autoResize();
     }
 
     // ============================================================================
@@ -153,7 +729,7 @@
         }
 
         parent.postMessage({ pluginMessage: message }, '*');
-        console.log('[MCP Bridge] Sent:', type);
+        log('Sent: ' + type, 'info');
       });
     };
 
@@ -207,6 +783,11 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
+    window.setVariableDescription = (variableId, description) => {
+      return window.sendPluginCommand('SET_VARIABLE_DESCRIPTION', { variableId: variableId, description: description })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
     window.addMode = (collectionId, modeName) => {
       return window.sendPluginCommand('ADD_MODE', { collectionId: collectionId, modeName: modeName })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
@@ -218,7 +799,7 @@
     };
 
     window.refreshVariables = () => {
-      return window.sendPluginCommand('REFRESH_VARIABLES', {})
+      return window.sendPluginCommand('REFRESH_VARIABLES', {}, 300000)
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
@@ -260,10 +841,9 @@
     };
 
     // ============================================================================
-    // NEW: COMPONENT PROPERTY MANAGEMENT
+    // COMPONENT PROPERTY MANAGEMENT
     // ============================================================================
 
-    // Set component/node description
     window.setNodeDescription = (nodeId, description, descriptionMarkdown) => {
       return window.sendPluginCommand('SET_NODE_DESCRIPTION', {
         nodeId: nodeId,
@@ -272,8 +852,6 @@
       }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Add a component property (BOOLEAN, TEXT, INSTANCE_SWAP, VARIANT)
-    // Note: We use 'propertyType' instead of 'type' to avoid collision with message type field
     window.addComponentProperty = (nodeId, propertyName, type, defaultValue, options) => {
       var params = { nodeId: nodeId, propertyName: propertyName, propertyType: type, defaultValue: defaultValue };
       if (options) {
@@ -283,7 +861,6 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Edit an existing component property
     window.editComponentProperty = (nodeId, propertyName, newValue) => {
       return window.sendPluginCommand('EDIT_COMPONENT_PROPERTY', {
         nodeId: nodeId,
@@ -292,7 +869,6 @@
       }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Delete a component property
     window.deleteComponentProperty = (nodeId, propertyName) => {
       return window.sendPluginCommand('DELETE_COMPONENT_PROPERTY', {
         nodeId: nodeId,
@@ -301,10 +877,9 @@
     };
 
     // ============================================================================
-    // NEW: NODE MANIPULATION
+    // NODE MANIPULATION
     // ============================================================================
 
-    // Resize any node
     window.resizeNode = (nodeId, width, height, withConstraints) => {
       return window.sendPluginCommand('RESIZE_NODE', {
         nodeId: nodeId,
@@ -314,19 +889,16 @@
       }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Move/position a node
     window.moveNode = (nodeId, x, y) => {
       return window.sendPluginCommand('MOVE_NODE', { nodeId: nodeId, x: x, y: y })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Set node fills (colors)
     window.setNodeFills = (nodeId, fills) => {
       return window.sendPluginCommand('SET_NODE_FILLS', { nodeId: nodeId, fills: fills })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Set node strokes
     window.setNodeStrokes = (nodeId, strokes, strokeWeight) => {
       var params = { nodeId: nodeId, strokes: strokes };
       if (strokeWeight !== undefined) params.strokeWeight = strokeWeight;
@@ -334,37 +906,31 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Set node opacity
     window.setNodeOpacity = (nodeId, opacity) => {
       return window.sendPluginCommand('SET_NODE_OPACITY', { nodeId: nodeId, opacity: opacity })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Set node corner radius
     window.setNodeCornerRadius = (nodeId, radius) => {
       return window.sendPluginCommand('SET_NODE_CORNER_RADIUS', { nodeId: nodeId, radius: radius })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Clone a node
     window.cloneNode = (nodeId) => {
       return window.sendPluginCommand('CLONE_NODE', { nodeId: nodeId })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Delete a node
     window.deleteNode = (nodeId) => {
       return window.sendPluginCommand('DELETE_NODE', { nodeId: nodeId })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Rename a node
     window.renameNode = (nodeId, newName) => {
       return window.sendPluginCommand('RENAME_NODE', { nodeId: nodeId, newName: newName })
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Set text content (for text nodes)
     window.setTextContent = (nodeId, text, options) => {
       var params = { nodeId: nodeId, text: text };
       if (options) {
@@ -376,7 +942,6 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Create a new node as child
     window.createChildNode = (parentId, nodeType, properties) => {
       return window.sendPluginCommand('CREATE_CHILD_NODE', {
         parentId: parentId,
@@ -386,23 +951,19 @@
     };
 
     // ============================================================================
-    // NEW: SCREENSHOT & INSTANCE PROPERTIES (Fix for visual validation loop)
+    // SCREENSHOT & INSTANCE PROPERTIES
     // ============================================================================
 
-    // Capture screenshot using plugin's exportAsync (reads current plugin state, not cloud)
-    // This solves the race condition where REST API screenshots show stale state
     window.captureScreenshot = (nodeId, options) => {
       var params = { nodeId: nodeId };
       if (options) {
-        if (options.format) params.format = options.format;  // PNG, JPG, SVG
-        if (options.scale) params.scale = options.scale;      // 1, 2, 4, etc.
+        if (options.format) params.format = options.format;
+        if (options.scale) params.scale = options.scale;
       }
       return window.sendPluginCommand('CAPTURE_SCREENSHOT', params, 30000)
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Set component instance properties (TEXT, BOOLEAN, INSTANCE_SWAP, VARIANT)
-    // This is the correct way to update component instances vs direct text node editing
     window.setInstanceProperties = (nodeId, properties) => {
       return window.sendPluginCommand('SET_INSTANCE_PROPERTIES', {
         nodeId: nodeId,
@@ -411,13 +972,436 @@
     };
 
     // ============================================================================
+    // WEBSOCKET BRIDGE CLIENT - Multi-instance support
+    // ============================================================================
+    (function() {
+      var WS_PORT_RANGE_START = 9223;
+      var WS_PORT_RANGE_END = 9232;
+
+      var activeConnections = [];
+      var wsReconnectDelay = 500;
+      var wsMaxReconnectDelay = 5000;
+      var wsReconnectAttempts = 0;
+      var wsMaxReconnectAttempts = 50;
+      var isScanning = false;
+
+      var ws = null;
+      var wsPort = null;
+      var wsConnected = false;
+
+      var methodMap = {
+        'EXECUTE_CODE': function(params) { return window.executeCode(params.code, params.timeout); },
+        'UPDATE_VARIABLE': function(params) { return window.updateVariable(params.variableId, params.modeId, params.value); },
+        'CREATE_VARIABLE': function(params) { return window.createVariable(params.name, params.collectionId, params.resolvedType, params); },
+        'DELETE_VARIABLE': function(params) { return window.deleteVariable(params.variableId); },
+        'DELETE_VARIABLE_COLLECTION': function(params) { return window.deleteVariableCollection(params.collectionId); },
+        'RENAME_VARIABLE': function(params) { return window.renameVariable(params.variableId, params.newName); },
+        'SET_VARIABLE_DESCRIPTION': function(params) { return window.setVariableDescription(params.variableId, params.description); },
+        'ADD_MODE': function(params) { return window.addMode(params.collectionId, params.modeName); },
+        'RENAME_MODE': function(params) { return window.renameMode(params.collectionId, params.modeId, params.newName); },
+        'REFRESH_VARIABLES': function() { return window.refreshVariables(); },
+        'CREATE_VARIABLE_COLLECTION': function(params) { return window.createVariableCollection(params.name, params); },
+        'GET_LOCAL_COMPONENTS': function() { return window.getLocalComponents(); },
+        'INSTANTIATE_COMPONENT': function(params) { return window.instantiateComponent(params.componentKey, params); },
+        'GET_COMPONENT': function(params) { return window.requestComponentData(params.nodeId); },
+        'SET_NODE_DESCRIPTION': function(params) { return window.setNodeDescription(params.nodeId, params.description, params.descriptionMarkdown); },
+        'ADD_COMPONENT_PROPERTY': function(params) { return window.addComponentProperty(params.nodeId, params.propertyName, params.propertyType, params.defaultValue, params); },
+        'EDIT_COMPONENT_PROPERTY': function(params) { return window.editComponentProperty(params.nodeId, params.propertyName, params.newValue); },
+        'DELETE_COMPONENT_PROPERTY': function(params) { return window.deleteComponentProperty(params.nodeId, params.propertyName); },
+        'RESIZE_NODE': function(params) { return window.resizeNode(params.nodeId, params.width, params.height, params.withConstraints); },
+        'MOVE_NODE': function(params) { return window.moveNode(params.nodeId, params.x, params.y); },
+        'SET_NODE_FILLS': function(params) { return window.setNodeFills(params.nodeId, params.fills); },
+        'SET_NODE_STROKES': function(params) { return window.setNodeStrokes(params.nodeId, params.strokes, params.strokeWeight); },
+        'SET_NODE_OPACITY': function(params) { return window.setNodeOpacity(params.nodeId, params.opacity); },
+        'SET_NODE_CORNER_RADIUS': function(params) { return window.setNodeCornerRadius(params.nodeId, params.radius); },
+        'CLONE_NODE': function(params) { return window.cloneNode(params.nodeId); },
+        'DELETE_NODE': function(params) { return window.deleteNode(params.nodeId); },
+        'RENAME_NODE': function(params) { return window.renameNode(params.nodeId, params.newName); },
+        'SET_TEXT_CONTENT': function(params) { return window.setTextContent(params.nodeId, params.text, params); },
+        'CREATE_CHILD_NODE': function(params) { return window.createChildNode(params.parentId, params.nodeType, params.properties); },
+        'CAPTURE_SCREENSHOT': function(params) { return window.captureScreenshot(params.nodeId, params); },
+        'SET_INSTANCE_PROPERTIES': function(params) { return window.setInstanceProperties(params.nodeId, params.properties); },
+        'GET_VARIABLES_DATA': function() {
+          if (window.__figmaVariablesReady && window.__figmaVariablesData) {
+            return Promise.resolve(window.__figmaVariablesData);
+          }
+          return Promise.reject(new Error('Variables data not ready. Make sure the Desktop Bridge plugin has loaded.'));
+        },
+        'GET_FILE_INFO': function() {
+          return window.sendPluginCommand('GET_FILE_INFO', {});
+        },
+        'CLEAR_CONSOLE': function() {
+          return Promise.resolve({ cleared: true });
+        },
+        'RELOAD_UI': function() {
+          return window.sendPluginCommand('RELOAD_UI', {});
+        }
+      };
+
+      function isPortConnected(port) {
+        for (var i = 0; i < activeConnections.length; i++) {
+          if (activeConnections[i].port === port && activeConnections[i].ws.readyState === 1) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function removeConnection(port) {
+        activeConnections = activeConnections.filter(function(c) { return c.port !== port; });
+        updateCompatState();
+      }
+
+      function updateCompatState() {
+        var live = activeConnections.filter(function(c) { return c.ws.readyState === 1; });
+        wsConnected = live.length > 0;
+        if (live.length > 0) {
+          ws = live[0].ws;
+          wsPort = live[0].port;
+        } else {
+          ws = null;
+          wsPort = null;
+        }
+        // Update UI to reflect connection state
+        if (wsConnected) {
+          statusDot.className = 'dot connected';
+          statusTextEl.textContent = 'CONNECTED';
+          statusTextEl.className = 'status-text active';
+          if (window.__figmaFileName) {
+            statusFileRow.style.display = 'block';
+            updateFileDisplay();
+          } else {
+            // File info may not have arrived yet - request it
+            window.sendPluginCommand('GET_FILE_INFO', {}).catch(function() {});
+          }
+          statusHint.textContent = '';
+          statusHint.style.display = 'none';
+          logServerCount.textContent = live.length + ' server(s)';
+          connectBtn.textContent = 'Disconnect';
+          connectBtn.className = 'connect-btn active';
+        }
+      }
+
+      function initializeConnection(connWs, port) {
+        if (window.__figmaVariablesReady && window.__figmaVariablesData) {
+          connWs.send(JSON.stringify({
+            type: 'VARIABLES_DATA',
+            data: window.__figmaVariablesData
+          }));
+        }
+
+        window.sendPluginCommand('GET_FILE_INFO', {})
+          .then(function(info) {
+            if (connWs.readyState === 1 && info && info.success !== false) {
+              connWs.send(JSON.stringify({ type: 'FILE_INFO', data: info.fileInfo || info }));
+            }
+          })
+          .catch(function() { /* non-critical */ });
+      }
+
+      function wsScanAndConnect() {
+        if (isScanning) return;
+        isScanning = true;
+
+        var portsToTry = [];
+        for (var p = WS_PORT_RANGE_START; p <= WS_PORT_RANGE_END; p++) {
+          if (!isPortConnected(p)) {
+            portsToTry.push(p);
+          }
+        }
+
+        if (portsToTry.length === 0) {
+          isScanning = false;
+          return;
+        }
+
+        statusDot.className = 'dot connecting';
+        statusTextEl.textContent = 'SCANNING';
+        statusTextEl.className = 'status-text';
+        statusHint.textContent = 'Scanning ports 9223-9232 for MCP servers...';
+        statusHint.style.display = '';
+        connectBtn.textContent = 'Disconnect';
+        connectBtn.className = 'connect-btn active';
+        autoResize();
+
+        log('Scanning ports ' + WS_PORT_RANGE_START + '-' + WS_PORT_RANGE_END + '...', 'info');
+
+        var foundAny = false;
+        var pending = portsToTry.length;
+
+        portsToTry.forEach(function(port) {
+          try {
+            var testWs = new WebSocket('ws://localhost:' + port);
+
+            var timeout = setTimeout(function() {
+              if (testWs.readyState !== 1) {
+                testWs.close();
+              }
+            }, 3000);
+
+            testWs.onopen = function() {
+              clearTimeout(timeout);
+              foundAny = true;
+
+              activeConnections.push({ port: port, ws: testWs });
+              updateCompatState();
+
+              log('Connected to port ' + port + ' (' + activeConnections.length + ' server(s))', 'success');
+
+              attachWsHandlers(testWs, port);
+              initializeConnection(testWs, port);
+
+              pending--;
+              if (pending <= 0) {
+                isScanning = false;
+                if (foundAny) {
+                  wsReconnectDelay = 500;
+                  wsReconnectAttempts = 0;
+                }
+              }
+            };
+
+            testWs.onerror = function() {
+              clearTimeout(timeout);
+              pending--;
+              if (pending <= 0) {
+                isScanning = false;
+                if (!foundAny && activeConnections.length === 0) {
+                  wsReconnectAttempts++;
+                  if (wsReconnectAttempts <= wsMaxReconnectAttempts) {
+                    log('No MCP server found, retrying (' + wsReconnectAttempts + '/' + wsMaxReconnectAttempts + ')', 'warn');
+                    setTimeout(wsScanAndConnect, wsReconnectDelay);
+                    wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
+                  } else {
+                    statusDot.className = 'dot error';
+                    statusTextEl.textContent = 'ERROR';
+                    statusTextEl.className = 'status-text';
+                    statusHint.textContent = 'Unable to connect. Check if your AI agent is running.';
+                    statusHint.style.display = '';
+                    connectBtn.textContent = 'Connect';
+                    connectBtn.className = 'connect-btn';
+                    isScanning = false;
+                    log('Max reconnect attempts reached (' + wsMaxReconnectAttempts + ')', 'error');
+                    autoResize();
+                  }
+                }
+              }
+            };
+
+            testWs.onclose = function() {
+              clearTimeout(timeout);
+              pending--;
+              if (pending <= 0 && !foundAny && activeConnections.length === 0) {
+                isScanning = false;
+                wsReconnectAttempts++;
+                if (wsReconnectAttempts <= wsMaxReconnectAttempts) {
+                  setTimeout(wsScanAndConnect, wsReconnectDelay);
+                  wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
+                }
+              }
+            };
+          } catch (e) {
+            pending--;
+          }
+        });
+      }
+
+      function wsReconnectPort(port) {
+        try {
+          var testWs = new WebSocket('ws://localhost:' + port);
+          var timeout = setTimeout(function() {
+            if (testWs.readyState !== 1) {
+              testWs.close();
+              log('Port ' + port + ' unavailable, rescanning...', 'warn');
+              wsScanAndConnect();
+            }
+          }, 2000);
+
+          testWs.onopen = function() {
+            clearTimeout(timeout);
+            activeConnections.push({ port: port, ws: testWs });
+            updateCompatState();
+            log('Reconnected to port ' + port + ' (' + activeConnections.length + ' server(s))', 'success');
+            attachWsHandlers(testWs, port);
+            initializeConnection(testWs, port);
+          };
+
+          testWs.onerror = function() {
+            clearTimeout(timeout);
+            log('Port ' + port + ' unavailable, rescanning...', 'warn');
+            wsScanAndConnect();
+          };
+        } catch (e) {
+          wsScanAndConnect();
+        }
+      }
+
+      function attachWsHandlers(activeWs, port) {
+        activeWs.onmessage = function(event) {
+          try {
+            var message = JSON.parse(event.data);
+            if (!message.id || !message.method) {
+              log('WS:' + port + ': Malformed message', 'warn');
+              return;
+            }
+
+            var handler = methodMap[message.method];
+            if (!handler) {
+              activeWs.send(JSON.stringify({ id: message.id, error: 'Unknown method: ' + message.method }));
+              return;
+            }
+
+            Promise.resolve(handler(message.params || {}))
+              .then(function(result) {
+                if (activeWs.readyState === 1) {
+                  activeWs.send(JSON.stringify({ id: message.id, result: result }));
+                }
+              })
+              .catch(function(err) {
+                if (activeWs.readyState === 1) {
+                  activeWs.send(JSON.stringify({ id: message.id, error: err.message || String(err) }));
+                }
+              });
+          } catch (e) {
+            log('WS:' + port + ': Process error: ' + e.message, 'error');
+          }
+        };
+
+        activeWs.onclose = function(event) {
+          removeConnection(port);
+          log('Disconnected from port ' + port + ' (' + activeConnections.length + ' remaining)', 'warn');
+
+          // Update status if no connections remain
+          if (activeConnections.length === 0) {
+            statusDot.className = 'dot connecting';
+            statusTextEl.textContent = 'RECONNECTING';
+            statusTextEl.className = 'status-text';
+            statusHint.textContent = 'Connection lost, reconnecting...';
+            statusHint.style.display = '';
+            connectBtn.textContent = 'Disconnect';
+            connectBtn.className = 'connect-btn active';
+            autoResize();
+          }
+
+          var wasReplaced = (event.code === 1000 && (
+            event.reason === 'Replaced by new connection' ||
+            event.reason === 'Replaced by same file reconnection'
+          ));
+          if (wasReplaced) {
+            log('WS:' + port + ': Replaced by newer connection', 'info');
+            return;
+          }
+
+          wsReconnectAttempts++;
+          if (wsReconnectAttempts <= wsMaxReconnectAttempts) {
+            setTimeout(function() { wsReconnectPort(port); }, wsReconnectDelay);
+            wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
+          }
+        };
+
+        activeWs.onerror = function() {
+          // onclose will fire after this, triggering reconnect
+        };
+      }
+
+      function broadcastToAll(message) {
+        var json = JSON.stringify(message);
+        activeConnections.forEach(function(conn) {
+          if (conn.ws.readyState === 1) {
+            try { conn.ws.send(json); } catch(e) { /* ignore send errors */ }
+          }
+        });
+      }
+
+      window.__wsForwardVariables = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'VARIABLES_DATA', data: data });
+        }
+      };
+
+      window.__wsForwardDocumentChange = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'DOCUMENT_CHANGE', data: data });
+        }
+      };
+
+      window.__wsForwardConsoleCapture = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'CONSOLE_CAPTURE', data: data });
+        }
+      };
+
+      window.__wsForwardSelectionChange = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'SELECTION_CHANGE', data: data });
+        }
+      };
+
+      window.__wsForwardPageChange = function(data) {
+        if (wsConnected) {
+          broadcastToAll({ type: 'PAGE_CHANGE', data: data });
+        }
+      };
+
+      function wsDisconnectAll() {
+        // Stop any pending reconnects
+        wsReconnectAttempts = wsMaxReconnectAttempts + 1;
+        isScanning = false;
+
+        // Close all active connections
+        activeConnections.forEach(function(conn) {
+          try { conn.ws.onclose = null; conn.ws.close(1000, 'User disconnected'); } catch(e) {}
+        });
+        activeConnections = [];
+        ws = null;
+        wsPort = null;
+        wsConnected = false;
+
+        statusDot.className = 'dot idle';
+        statusTextEl.textContent = 'OFF';
+        statusTextEl.className = 'status-text';
+        statusFileRow.style.display = 'none';
+        statusHint.textContent = '';
+        statusHint.style.display = 'none';
+        logServerCount.textContent = '';
+        log('Disconnected by user', 'info');
+        autoResize();
+      }
+
+      // Expose for button handler
+      window.__wsConnect = function() {
+        wsReconnectAttempts = 0;
+        wsReconnectDelay = 500;
+        wsScanAndConnect();
+      };
+      window.__wsDisconnect = wsDisconnectAll;
+      window.__wsIsConnected = function() { return wsConnected || isScanning; };
+
+      // Auto-connect on plugin load
+      wsScanAndConnect();
+    })();
+
+    // Connect/Disconnect button handler
+    connectBtn.addEventListener('click', function() {
+      if (window.__wsIsConnected()) {
+        window.__wsDisconnect();
+        connectBtn.textContent = 'Connect';
+        connectBtn.className = 'connect-btn';
+      } else {
+        connectBtn.textContent = 'Disconnect';
+        connectBtn.className = 'connect-btn active';
+        window.__wsConnect();
+      }
+      autoResize();
+    });
+
+    // ============================================================================
     // MESSAGE HANDLER - Process responses from plugin worker
     // ============================================================================
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       if (!msg) return;
 
-      // Generic result handler
       const handleResult = (resultType, dataKey) => {
         const request = window.__figmaPendingRequests.get(msg.requestId);
         if (request) {
@@ -426,6 +1410,8 @@
             var result = { success: true };
             if (dataKey && msg[dataKey] !== undefined) result[dataKey] = msg[dataKey];
             if (msg.data !== undefined) result.data = msg.data;
+            if (msg.oldName !== undefined) result.oldName = msg.oldName;
+            if (msg.instance !== undefined) result.instance = msg.instance;
             request.resolve(result);
           } else {
             request.resolve({ success: false, error: msg.error || 'Unknown error' });
@@ -434,13 +1420,13 @@
         }
       };
 
-      // Handle message types
       switch (msg.type) {
         case 'VARIABLES_DATA':
           window.__figmaVariablesData = msg.data;
           window.__figmaVariablesReady = true;
-          updateStatus('ready', true, false);
-          console.log('[MCP Bridge] Active - ' + (msg.data.variables?.length || 0) + ' vars');
+          updateStatus('connected', true, false);
+          log('Variables loaded: ' + (msg.data.variables?.length || 0) + ' vars', 'success');
+          if (window.__wsForwardVariables) window.__wsForwardVariables(msg.data);
           break;
 
         case 'COMPONENT_DATA':
@@ -457,10 +1443,8 @@
         case 'ERROR':
           window.__figmaVariablesReady = false;
           updateStatus('error', false, true);
-          console.error('[MCP Bridge] Error:', msg.error);
           break;
 
-        // Variable operations
         case 'EXECUTE_CODE_RESULT':
           handleResult('EXECUTE_CODE', 'result');
           break;
@@ -485,6 +1469,9 @@
         case 'RENAME_VARIABLE_RESULT':
           handleResult('RENAME_VARIABLE', 'variable');
           break;
+        case 'SET_VARIABLE_DESCRIPTION_RESULT':
+          handleResult('SET_VARIABLE_DESCRIPTION', 'variable');
+          break;
         case 'ADD_MODE_RESULT':
           handleResult('ADD_MODE', 'collection');
           break;
@@ -498,7 +1485,6 @@
           handleResult('INSTANTIATE_COMPONENT', 'instance');
           break;
 
-        // NEW: Component property operations
         case 'SET_NODE_DESCRIPTION_RESULT':
           handleResult('SET_NODE_DESCRIPTION', 'node');
           break;
@@ -512,7 +1498,6 @@
           handleResult('DELETE_COMPONENT_PROPERTY', null);
           break;
 
-        // NEW: Node manipulation operations
         case 'RESIZE_NODE_RESULT':
           handleResult('RESIZE_NODE', 'node');
           break;
@@ -547,15 +1532,48 @@
           handleResult('CREATE_CHILD_NODE', 'node');
           break;
 
-        // NEW: Screenshot and instance properties (visual validation loop fix)
         case 'CAPTURE_SCREENSHOT_RESULT':
           handleResult('CAPTURE_SCREENSHOT', 'image');
           break;
         case 'SET_INSTANCE_PROPERTIES_RESULT':
           handleResult('SET_INSTANCE_PROPERTIES', 'instance');
           break;
+
+        case 'GET_FILE_INFO_RESULT':
+          if (msg.success && msg.fileInfo && msg.fileInfo.fileName) {
+            window.__figmaFileName = msg.fileInfo.fileName;
+            statusFileRow.style.display = 'block';
+            updateFileDisplay();
+            autoResize();
+          }
+          handleResult('GET_FILE_INFO', 'fileInfo');
+          break;
+
+        case 'RELOAD_UI_RESULT':
+          handleResult('RELOAD_UI', null);
+          break;
+
+        case 'DOCUMENT_CHANGE':
+          if (window.__wsForwardDocumentChange) window.__wsForwardDocumentChange(msg.data);
+          break;
+
+        case 'CONSOLE_CAPTURE':
+          if (window.__wsForwardConsoleCapture) window.__wsForwardConsoleCapture(msg);
+          break;
+
+        case 'SELECTION_CHANGE':
+          if (window.__wsForwardSelectionChange) window.__wsForwardSelectionChange(msg.data);
+          break;
+
+        case 'PAGE_CHANGE':
+          if (window.__wsForwardPageChange) window.__wsForwardPageChange(msg.data);
+          break;
       }
     };
+
+    // Start
+    log('Desktop Bridge starting...', 'info');
+    autoResize();
   </script>
 </body>
 </html>
