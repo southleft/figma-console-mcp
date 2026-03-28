@@ -1609,7 +1609,16 @@ export default {
 				const sessionId = clientId || code;
 				const tokenKey = `oauth_token:${sessionId}`;
 
-				logger.info({ grantType, clientId, code, sessionId, tokenKey }, "Token exchange request");
+				logger.info(
+					{
+						grantType,
+						clientId,
+						hasCode: !!code,
+						sessionId,
+						tokenKey,
+					},
+					"Token exchange request",
+				);
 
 				const tokenJson = await env.OAUTH_TOKENS.get(tokenKey);
 
@@ -1637,7 +1646,15 @@ export default {
 					});
 				}
 
-				logger.error({ tokenKey, sessionId, clientId, code }, "Token not found for exchange");
+				logger.error(
+					{
+						tokenKey,
+						sessionId,
+						clientId,
+						hasCode: !!code,
+					},
+					"Token not found for exchange",
+				);
 				return new Response(JSON.stringify({
 					error: "invalid_grant",
 					error_description: "Authorization code not found or expired. Please re-authenticate."
@@ -1846,7 +1863,14 @@ export default {
 			// Validate state token (CSRF protection)
 			const sessionId = await env.OAUTH_STATE.get(stateToken);
 
-			logger.info({ stateToken, sessionId, hasSessionId: !!sessionId }, "OAuth callback - state token lookup");
+			logger.info(
+				{
+					hasStateToken: !!stateToken,
+					sessionId,
+					hasSessionId: !!sessionId,
+				},
+				"OAuth callback - state token lookup",
+			);
 
 			if (!sessionId) {
 				return new Response(

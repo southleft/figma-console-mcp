@@ -75,6 +75,15 @@ function getStablePluginDir(): string {
 	return join(homedir(), "Claude Code", "figma-console-mcp", "plugin");
 }
 
+function isLoopbackHost(host: string): boolean {
+	const normalized = host.trim().toLowerCase();
+	return (
+		normalized === "localhost" ||
+		normalized === "127.0.0.1" ||
+		normalized === "::1"
+	);
+}
+
 /**
  * Copy plugin files to a stable directory.
  * This gives users a permanent, predictable path to import from instead of
@@ -6301,7 +6310,19 @@ return {
 			// Start WebSocket bridge server with port range fallback.
 			// If the preferred port is taken (e.g., Claude Desktop Chat tab already bound it),
 			// try subsequent ports in the range (9223-9232) so multiple instances can coexist.
-			const wsHost = process.env.FIGMA_WS_HOST || 'localhost';
+			const wsHostEnv = (process.env.FIGMA_WS_HOST || "localhost").trim();
+			const allowNonLocalhost = process.env.FIGMA_WS_ALLOW_NON_LOCALHOST === "true";
+			const wsHost =
+				allowNonLocalhost || isLoopbackHost(wsHostEnv) ? wsHostEnv : "localhost";
+			if (wsHost !== wsHostEnv) {
+				logger.warn(
+					{
+						requestedHost: wsHostEnv,
+						effectiveHost: wsHost,
+					},
+					"Rejected non-loopback FIGMA_WS_HOST; set FIGMA_WS_ALLOW_NON_LOCALHOST=true to override",
+				);
+			}
 			this.wsPreferredPort = parseInt(process.env.FIGMA_WS_PORT || String(DEFAULT_WS_PORT), 10);
 
 			// Clean up stale/orphaned MCP server instances before trying to bind.

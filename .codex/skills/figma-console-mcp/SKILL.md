@@ -30,6 +30,8 @@ Do not create extra plugin folders in random working directories.
 7. Keep `Desktop Bridge` section collapsible; default state is expanded.
 8. Keep `Cloud Mode` section behavior unchanged unless explicitly requested.
 9. `Copy Link` should return canonical Figma URL; `&t=` query is optional and not required.
+10. WebSocket bridge must bind loopback only by default (`localhost`/`127.0.0.1`/`::1`).
+11. Allow non-loopback bind only when explicitly set: `FIGMA_WS_ALLOW_NON_LOCALHOST=true`.
 
 ## Desktop Bridge UI Contract
 

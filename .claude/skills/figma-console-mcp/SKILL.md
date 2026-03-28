@@ -32,6 +32,8 @@ Always treat these as source of truth.
 9. Keep Desktop Bridge section expand/collapse behavior (default expanded).
 10. Keep Cloud Mode section behavior intact.
 11. Keep UI fidelity aligned with provided Figma frames (spacing, icon, wrapping, no clipping).
+12. Keep WebSocket bridge loopback-only by default; do not expose bridge on network interfaces unless explicitly requested.
+13. Non-loopback host is allowed only with `FIGMA_WS_ALLOW_NON_LOCALHOST=true`.
 
 ## UI Contract
 
