@@ -3159,6 +3159,29 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // SHOW_COPY_TOAST - Show native Figma toast after successful copy
+  // ============================================================================
+  else if (msg.type === 'SHOW_COPY_TOAST') {
+    try {
+      var toastMessage = msg.message || 'Frame link copied to clipboard';
+      figma.notify(String(toastMessage));
+      figma.ui.postMessage({
+        type: 'SHOW_COPY_TOAST_RESULT',
+        requestId: msg.requestId,
+        success: true
+      });
+    } catch (error) {
+      var toastError = error && error.message ? error.message : String(error);
+      figma.ui.postMessage({
+        type: 'SHOW_COPY_TOAST_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: toastError
+      });
+    }
+  }
+
+  // ============================================================================
   // STORE_CLOUD_CONFIG - Persist cloud pairing config in clientStorage
   // ============================================================================
   else if (msg.type === 'STORE_CLOUD_CONFIG') {

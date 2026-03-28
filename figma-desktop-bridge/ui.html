@@ -1363,6 +1363,8 @@
           feedbackEl.textContent = 'Link copied to clipboard';
           feedbackEl.className = 'copy-feedback success';
         }
+        window.sendPluginCommand('SHOW_COPY_TOAST', { message: 'Frame link copied to clipboard' }, 3000)
+          .catch(function() { /* non-blocking toast */ });
         if (copyBtn) {
           copyBtn.classList.add('copied');
           copyBtn.textContent = 'Link copied!';
@@ -2585,6 +2587,9 @@
         case 'GET_FILE_INFO_RESULT':
           applyFileInfo(msg.fileInfo);
           handleResult('GET_FILE_INFO', 'fileInfo');
+          break;
+        case 'SHOW_COPY_TOAST_RESULT':
+          handleResult('SHOW_COPY_TOAST', null);
           break;
         case 'GET_ACCOUNT_SETTINGS_RESULT':
           applyAccountSettings(msg.settings);
