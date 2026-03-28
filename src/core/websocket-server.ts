@@ -416,6 +416,16 @@ export class FigmaWebSocketServer extends EventEmitter {
         return;
       }
 
+      if (message.type === 'ACCOUNT_SWITCH' && message.data?.accountId) {
+        const current = this.loadSharedAccountSettings();
+        const exists = current.accounts.some((a: any) => a.id === message.data.accountId);
+        if (exists) {
+          current.activeAccountId = message.data.accountId;
+          this.saveSharedAccountSettings(current);
+        }
+        return;
+      }
+
       // FILE_INFO promotes pending clients to named clients
       if (message.type === 'FILE_INFO' && message.data) {
         this.handleFileInfo(message.data, ws);

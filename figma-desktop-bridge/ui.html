@@ -901,12 +901,7 @@
       <div class="action-row" id="bridge-copy-row">
         <button class="ghost-button" id="copy-link-btn" onclick="copyCurrentLink()" disabled>Copy Link</button>
       </div>
-      <div class="main-empty-form" id="bridge-empty-form">
-        <input class="settings-input" id="main-account-email" type="email" placeholder="Email" />
-        <input class="settings-input" id="main-account-token" type="password" placeholder="Personal access tokens" />
-        <button class="primary-button" id="main-add-account-btn" onclick="submitMainAccount()">Add Account</button>
-      </div>
-      <div class="main-empty-helper" id="bridge-empty-helper" style="display:none;">You need Personal access tokens to use this plugin</div>
+      <div class="main-empty-helper" id="bridge-empty-helper">Add accounts via Claude or Codex:<br><code>~/Claude Code/figma-console-mcp/accounts.json</code></div>
       <div class="copy-feedback" id="copy-feedback"></div>
     </div>
 
@@ -959,34 +954,10 @@
           <div class="settings-current-account-value">None</div>
         </div>
         <button class="ghost-button" id="apply-account-btn" onclick="applySelectedAccount()">Switch Account</button>
-        <button class="ghost-button secondary" id="new-account-btn" onclick="openNewAccountView()">New Account</button>
         <button class="ghost-button danger" id="delete-account-btn" onclick="deleteCurrentAccount()">Revoke Account</button>
       </div>
     </div>
 
-    <div class="new-account-view hidden-view" id="new-account-view">
-      <div class="settings-header">
-        <div class="settings-back" onclick="closeNewAccountView()">
-          <span class="settings-back-icon" aria-hidden="true">
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8 12.6667L3.33333 8L8 3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M12.6667 8H3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </span>
-          <span class="settings-breadcrumb">
-            <span class="settings-breadcrumb-muted">Setting / </span>
-            <span class="settings-breadcrumb-current">New Account</span>
-          </span>
-        </div>
-      </div>
-
-      <div class="new-account-form">
-        <input class="settings-input" id="new-account-email" type="email" placeholder="Email" />
-        <input class="settings-input" id="new-account-token" type="password" placeholder="Personal access tokens" />
-        <button class="ghost-button" id="create-account-btn" onclick="submitNewAccount()">Add Account</button>
-        <div class="settings-helper">Go to Account &gt; Settings &gt; Security</div>
-      </div>
-    </div>
   </div>
 
   <script>
