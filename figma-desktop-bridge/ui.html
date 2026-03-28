@@ -12,24 +12,40 @@
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 11px;
-      background: var(--figma-color-bg, #2c2c2c);
+      background: #2c2c2c;
       color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
       height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 6px 8px;
+      padding: 0;
       user-select: none;
+      overflow: hidden;
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    body::-webkit-scrollbar {
+      display: none;
+    }
+
+    .bridge-shell {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      background: var(--figma-color-bg, #2c2c2c);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 22px;
+      overflow: hidden;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     }
 
     .bridge-status {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 8px;
-      background: var(--figma-color-bg-secondary, #383838);
-      border: 1px solid var(--figma-color-border, #4a4a4a);
-      border-radius: 4px;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 16px 18px;
+      background: var(--figma-color-bg, #2c2c2c);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       white-space: nowrap;
     }
 
@@ -41,17 +57,27 @@
     }
 
     .status-indicator.loading {
+      color: #f5a623;
       background: #f5a623;
       animation: pulse 1.5s ease-in-out infinite;
     }
 
     .status-indicator.active {
-      background: #18a957;
-      box-shadow: 0 0 6px rgba(24, 169, 87, 0.6);
-      animation: glow 2s ease-in-out infinite;
+      color: #93d59b;
+      background: #93d59b;
+      box-shadow: none;
+      animation: none;
+    }
+
+    .status-indicator.disabled {
+      color: #f24822;
+      background: #f24822;
+      box-shadow: none;
+      animation: none;
     }
 
     .status-indicator.error {
+      color: #f24822;
       background: #f24822;
     }
 
@@ -66,17 +92,138 @@
     }
 
     .status-text {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
       font-weight: 500;
-      letter-spacing: 0.2px;
+      letter-spacing: 0;
     }
 
     .status-text .label {
-      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.7));
+      color: rgba(255, 255, 255, 0.95);
+      font-size: 16px;
+      font-weight: 600;
     }
 
     .status-text .state {
-      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
-      margin-left: 4px;
+      color: rgba(255, 255, 255, 0.52);
+      font-size: 11px;
+      margin-left: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .context-card {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 16px 18px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .context-grid {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 12px 12px;
+      align-items: center;
+    }
+
+    .context-label {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .context-value {
+      color: rgba(255, 255, 255, 0.96);
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: left;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      min-height: 34px;
+      padding: 8px 12px;
+    }
+
+    .account-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .account-avatar {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #0d99ff, #14ae5c);
+      color: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .account-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .action-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 2px;
+    }
+
+    .ghost-button {
+      width: 100%;
+      background: var(--figma-color-bg-secondary, #2c2c2c);
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.92));
+      border: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.14));
+      border-radius: 10px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+
+    .ghost-button:hover:not(:disabled) {
+      background: #343434;
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+
+    .ghost-button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .copy-feedback {
+      min-height: 12px;
+      font-size: 10px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.45));
+      text-align: left;
+      padding-left: 2px;
+    }
+
+    .copy-feedback.success {
+      color: #18a957;
+    }
+
+    .copy-feedback.error {
+      color: #f24822;
     }
 
     /* Cloud Mode toggle */
@@ -88,19 +235,21 @@
     .cloud-section.visible {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      margin-top: 6px;
+      gap: 8px;
+      margin: 0;
+      padding: 0 18px 16px;
     }
 
     .cloud-toggle {
       display: flex;
       align-items: center;
-      gap: 3px;
+      gap: 6px;
       cursor: pointer;
-      font-size: 10px;
-      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.6));
       user-select: none;
-      margin-top: 2px;
+      padding: 0 18px 14px;
     }
 
     .cloud-toggle:hover {
@@ -119,13 +268,13 @@
 
     .cloud-input-row input {
       width: 100%;
-      background: var(--figma-color-bg, #2c2c2c);
-      border: 1px solid var(--figma-color-border, #4a4a4a);
-      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
       color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
-      font-family: monospace;
-      font-size: 12px;
-      padding: 4px 6px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 13px;
+      padding: 10px 12px;
       text-transform: uppercase;
       letter-spacing: 3px;
       text-align: center;
@@ -142,13 +291,13 @@
 
     .cloud-input-row button {
       width: 100%;
-      background: var(--figma-color-bg-brand, #0d99ff);
-      color: #fff;
-      border: none;
-      border-radius: 3px;
-      font-size: 10px;
+      background: #303030;
+      color: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      font-size: 12px;
       font-weight: 500;
-      padding: 5px 8px;
+      padding: 10px 12px;
       cursor: pointer;
     }
 
@@ -174,44 +323,669 @@
     /* Light theme support */
     @media (prefers-color-scheme: light) {
       body {
-        background: #f5f5f5;
+        background: #e9e9e9;
         color: #333;
+      }
+      .bridge-shell {
+        background: #ffffff;
+        border-color: rgba(0, 0, 0, 0.08);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+      }
+      .context-card {
+        background: #ffffff;
+        border-color: #e5e5e5;
+      }
+      .ghost-button {
+        background: #f8f8f8;
+        color: #2c2c2c;
+        border-color: rgba(0, 0, 0, 0.12);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+      }
+      .ghost-button:hover:not(:disabled) {
+        background: #ffffff;
+        border-color: rgba(0, 0, 0, 0.18);
       }
       .bridge-status {
         background: #fff;
-        border-color: #e5e5e5;
+        border-bottom-color: rgba(0, 0, 0, 0.08);
       }
       .status-text .label {
-        color: #666;
+        color: #2c2c2c;
       }
       .status-text .state {
-        color: #333;
+        color: #7a7a7a;
       }
+      .context-label {
+        color: #666;
+      }
+      .context-value {
+        background: #f7f7f7;
+        border-color: rgba(0, 0, 0, 0.06);
+        color: #2c2c2c;
+      }
+    }
+    .bridge-shell.figma-panel {
+      width: 240px;
+      background: #2c2c2c;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      overflow: hidden;
+    }
+
+    .figma-panel .bridge-status {
+      padding: 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid #4b4b4b;
+      justify-content: flex-start;
+    }
+
+    .figma-panel .status-indicator {
+      width: 8px;
+      height: 8px;
+      box-shadow: none;
+      animation: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .figma-panel .status-text,
+    .figma-panel .context-grid {
+      display: block;
+    }
+
+    .figma-panel .status-text .label {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+      color: #c0c0c0;
+    }
+
+    .figma-panel .status-text .state {
+      display: none;
+    }
+
+    .figma-panel .context-card {
+      padding: 0 0 16px;
+      gap: 0;
+    }
+
+    .figma-panel .section-header,
+    .figma-panel .cloud-toggle {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 40px;
+      margin: 0;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .figma-panel .section-header {
+      padding: 0 16px;
+      cursor: default;
+    }
+
+    .figma-panel .cloud-toggle {
+      padding: 0 16px;
+      cursor: pointer;
+    }
+
+    .figma-panel .section-chevron,
+    .figma-panel .cloud-toggle .chevron {
+      width: 8px;
+      height: 8px;
+      text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .figma-panel .cloud-toggle .chevron {
+      transform: rotate(-90deg);
+      transition: transform 0.15s ease;
+    }
+
+    .figma-panel .cloud-toggle.expanded .chevron {
+      transform: rotate(0deg);
+    }
+
+    .figma-panel .context-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 0 16px;
+      margin-bottom: 16px;
+    }
+
+    .figma-panel .context-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+      min-height: 13px;
+      width: 208px;
+    }
+
+    .figma-panel .context-label {
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 400;
+      color: #c0c0c0;
+      width: 88px;
+      flex: 0 0 88px;
+    }
+
+    .figma-panel .context-value {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      min-height: 0;
+      padding: 0;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+      color: #ffffff;
+      text-align: left;
+      flex: 1 1 auto;
+    }
+
+    .figma-panel .context-value.status-value {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .figma-panel .section-action {
+      margin-left: auto;
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      opacity: 0.9;
+      border-radius: 4px;
+      transition: background-color 120ms ease, opacity 120ms ease;
+    }
+
+    .figma-panel .plain-value {
+      white-space: nowrap;
+    }
+
+    .figma-panel .action-row {
+      margin-top: 0;
+      padding: 0 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .figma-panel .ghost-button {
+      border: 1px solid #4b4b4b;
+      border-radius: 6px;
+      background: #373737;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 14px;
+      padding: 5px 24px;
+      height: 24px;
+      box-shadow: none;
+      width: 208px;
+    }
+
+    .figma-panel .ghost-button:hover:not(:disabled) {
+      background: #3d3d3d;
+      border-color: #565656;
+    }
+
+    .figma-panel .ghost-button.copied,
+    .figma-panel .ghost-button.copied:hover:not(:disabled) {
+      background: rgba(65, 137, 228, 0.1);
+      border-color: transparent;
+      color: #4189e4;
+    }
+
+    .figma-panel .primary-button {
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: #4189e4;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 14px;
+      padding: 5px 24px;
+      height: 24px;
+      box-shadow: none;
+      width: 208px;
+    }
+
+    .figma-panel .primary-button:hover:not(:disabled) {
+      background: #4f95eb;
+    }
+
+    .figma-panel .section-divider {
+      height: 1px;
+      background: #4b4b4b;
+      margin: 0;
+    }
+
+    .figma-panel .cloud-section {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      margin: 0;
+      padding: 0 16px 16px;
+    }
+
+    .figma-panel .cloud-section.visible {
+      display: flex;
+    }
+
+    .figma-panel .cloud-input-row input,
+    .figma-panel .cloud-input-row button {
+      width: 208px;
+      height: 25px;
+      border-radius: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      line-height: 14px;
+    }
+
+    .figma-panel .cloud-input-row input {
+      background: #383838;
+      border: none;
+      color: rgba(255, 255, 255, 0.5);
+      padding: 5px 12px;
+      text-align: center;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .figma-panel .cloud-input-row input:focus {
+      outline: none;
+      box-shadow: 0 0 0 1px #4189e4;
+    }
+
+    .figma-panel .cloud-input-row input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+    }
+
+    .figma-panel .cloud-status {
+      display: none;
+    }
+
+    .figma-panel .account-chip,
+    .figma-panel .account-avatar,
+    .figma-panel .copy-feedback {
+      display: none;
+    }
+
+    .figma-panel .main-view.hidden-view,
+    .figma-panel .settings-view.hidden-view,
+    .figma-panel .new-account-view.hidden-view {
+      display: none !important;
+    }
+
+    .figma-panel .section-action.settings-trigger {
+      cursor: pointer;
+    }
+
+    .figma-panel .section-action.settings-trigger:hover {
+      background: #454545;
+      opacity: 1;
+    }
+
+    .figma-panel .settings-view {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .figma-panel .new-account-view {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .figma-panel .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 40px;
+      padding: 0 16px;
+      color: #ffffff;
+    }
+
+    .figma-panel .settings-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .figma-panel .settings-breadcrumb {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+      padding-top: 1px;
+    }
+
+    .figma-panel .settings-breadcrumb-muted {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .figma-panel .settings-breadcrumb-current {
+      color: #ffffff;
+    }
+
+    .figma-panel .settings-back-icon {
+      width: 12px;
+      height: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+    }
+
+    .figma-panel .settings-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 16px 16px;
+      width: 100%;
+    }
+
+    .figma-panel .settings-current-account {
+      width: 208px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .figma-panel .settings-current-account-label {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+      line-height: 13px;
+    }
+
+    .figma-panel .settings-current-account-value {
+      color: #ffffff;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+    }
+
+    .figma-panel .main-empty-helper {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0 16px;
+      margin-top: 4px;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+      line-height: 13px;
+    }
+
+    .figma-panel .main-empty-form {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 16px;
+      width: 100%;
+    }
+
+    .figma-panel .main-empty-form.visible {
+      display: flex;
+    }
+
+    .figma-panel .new-account-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 16px 16px;
+      width: 100%;
+    }
+
+    .figma-panel .settings-select-wrap {
+      position: relative;
+      width: 208px;
+    }
+
+    .figma-panel .settings-select {
+      width: 208px;
+      height: 24px;
+      border: none;
+      border-radius: 6px;
+      background: #383838;
+      color: rgba(255, 255, 255, 0.5);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      line-height: 14px;
+      padding: 5px 24px 5px 8px;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      outline: none;
+    }
+
+    .figma-panel .settings-select:focus {
+      box-shadow: 0 0 0 1px #4189e4;
+    }
+
+    .figma-panel .settings-select:disabled {
+      opacity: 1;
+    }
+
+    .figma-panel .settings-select-chevron {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 8px;
+      height: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.5);
+      pointer-events: none;
+    }
+
+    .figma-panel .ghost-button.secondary {
+      background: transparent;
+    }
+
+    .figma-panel .ghost-button.danger {
+      background: transparent;
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .figma-panel .settings-input {
+      width: 208px;
+      height: 24px;
+      border: none;
+      border-radius: 6px;
+      background: #383838;
+      color: rgba(255, 255, 255, 0.92);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      line-height: 14px;
+      padding: 5px 8px;
+      outline: none;
+    }
+
+    .figma-panel .settings-input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .figma-panel .settings-input:focus {
+      box-shadow: 0 0 0 1px #4189e4;
+    }
+
+    .figma-panel .settings-helper {
+      display: flex;
+      align-items: center;
+      width: 208px;
+      padding: 16px 0 0;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+      line-height: 13px;
     }
   </style>
 </head>
 <body>
-  <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+  <div class="bridge-shell figma-panel">
     <div class="bridge-status" id="status-container">
-      <div class="status-indicator loading" id="status-dot"></div>
       <div class="status-text">
-        <span class="label">MCP</span>
-        <span class="state" id="status-state">connecting</span>
+        <span class="label" id="file-name">File name</span>
       </div>
     </div>
 
+    <div class="main-view" id="main-view">
+    <div class="context-card">
+      <div class="section-header">
+        <span class="section-chevron" aria-hidden="true">
+          <svg viewBox="0 0 8 8" width="8" height="8" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M2 3L4 5L6 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="section-title">Desktop Bridge</span>
+        <span class="section-action settings-trigger" id="settings-trigger" aria-hidden="true" onclick="openAccountSettings(event)">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M9.33333 11.3333H3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12.6667 4.66667H6.66667" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M11.3333 13.3333C12.4379 13.3333 13.3333 12.4379 13.3333 11.3333C13.3333 10.2288 12.4379 9.33333 11.3333 9.33333C10.2288 9.33333 9.33333 10.2288 9.33333 11.3333C9.33333 12.4379 10.2288 13.3333 11.3333 13.3333Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4.66667 6.66667C5.77124 6.66667 6.66667 5.77124 6.66667 4.66667C6.66667 3.5621 5.77124 2.66667 4.66667 2.66667C3.5621 2.66667 2.66667 3.5621 2.66667 4.66667C2.66667 5.77124 3.5621 6.66667 4.66667 6.66667Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </div>
+      <div class="context-grid">
+        <div class="context-row">
+          <div class="context-label">MCP Status</div>
+          <div class="context-value status-value">
+            <span class="status-indicator disabled" id="status-dot" aria-hidden="true">
+              <svg viewBox="0 0 8 8" width="8" height="8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="4" cy="4" r="4" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="state" id="status-state">Not Enabled</span>
+          </div>
+        </div>
+
+        <div class="context-row" id="session-row">
+          <div class="context-label">Session activity</div>
+          <div class="context-value plain-value" id="session-activity">Not sent</div>
+        </div>
+
+        <div class="context-row" id="selection-row">
+          <div class="context-label">Selection</div>
+          <div class="context-value plain-value" id="selection-summary">Not select</div>
+        </div>
+      </div>
+
+      <div class="action-row" id="bridge-copy-row">
+        <button class="ghost-button" id="copy-link-btn" onclick="copyCurrentLink()" disabled>Copy Link</button>
+      </div>
+      <div class="main-empty-form" id="bridge-empty-form">
+        <input class="settings-input" id="main-account-email" type="email" placeholder="Email" />
+        <input class="settings-input" id="main-account-token" type="password" placeholder="Personal access tokens" />
+        <button class="primary-button" id="main-add-account-btn" onclick="submitMainAccount()">Add Account</button>
+      </div>
+      <div class="main-empty-helper" id="bridge-empty-helper" style="display:none;">You need Personal access tokens to use this plugin</div>
+      <div class="copy-feedback" id="copy-feedback"></div>
+    </div>
+
+    <div class="section-divider"></div>
+
     <div class="cloud-toggle" id="cloud-toggle" onclick="toggleCloudSection()">
-      <span class="chevron">▶</span> Cloud Mode
+      <span class="chevron" aria-hidden="true">
+        <svg viewBox="0 0 8 8" width="8" height="8" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2 3L4 5L6 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span>Cloud Mode</span>
     </div>
 
     <div class="cloud-section" id="cloud-section">
       <div class="cloud-input-row">
-        <input type="text" id="cloud-code" maxlength="6" placeholder="Pairing code" autocomplete="off" />
+        <input type="text" id="cloud-code" maxlength="6" placeholder="Pairing Code" autocomplete="off" onkeydown="if(event.key==='Enter'){cloudConnect();}" />
       </div>
       <div class="cloud-input-row">
-        <button id="cloud-btn" onclick="cloudConnect()">Connect</button>
+        <button class="ghost-button" id="cloud-btn" onclick="cloudConnect()">Connect</button>
       </div>
       <div class="cloud-status" id="cloud-status"></div>
+    </div>
+    </div>
+
+    <div class="settings-view hidden-view" id="settings-view">
+      <div class="settings-header">
+        <div class="settings-back" onclick="closeAccountSettings()">
+          <span class="settings-back-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 12.6667L3.33333 8L8 3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M12.6667 8H3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span>Account</span>
+        </div>
+      </div>
+
+      <div class="settings-form">
+        <div class="settings-select-wrap">
+          <select class="settings-select" id="account-select"></select>
+          <span class="settings-select-chevron" aria-hidden="true">
+            <svg viewBox="0 0 8 8" width="8" height="8" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 3L4 5L6 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </div>
+        <div class="settings-current-account" id="current-account-info">
+          <div class="settings-current-account-label">Current account</div>
+          <div class="settings-current-account-value">None</div>
+        </div>
+        <button class="ghost-button" id="apply-account-btn" onclick="applySelectedAccount()">Switch Account</button>
+        <button class="ghost-button secondary" id="new-account-btn" onclick="openNewAccountView()">New Account</button>
+        <button class="ghost-button danger" id="delete-account-btn" onclick="deleteCurrentAccount()">Revoke Account</button>
+      </div>
+    </div>
+
+    <div class="new-account-view hidden-view" id="new-account-view">
+      <div class="settings-header">
+        <div class="settings-back" onclick="closeNewAccountView()">
+          <span class="settings-back-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 12.6667L3.33333 8L8 3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M12.6667 8H3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="settings-breadcrumb">
+            <span class="settings-breadcrumb-muted">Setting / </span>
+            <span class="settings-breadcrumb-current">New Account</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="new-account-form">
+        <input class="settings-input" id="new-account-email" type="email" placeholder="Email" />
+        <input class="settings-input" id="new-account-token" type="password" placeholder="Personal access tokens" />
+        <button class="ghost-button" id="create-account-btn" onclick="submitNewAccount()">Add Account</button>
+        <div class="settings-helper">Go to Account &gt; Settings &gt; Security</div>
+      </div>
     </div>
   </div>
 
@@ -224,16 +998,464 @@
     window.__figmaComponentData = null;
     window.__figmaComponentRequests = new Map();
     window.__figmaPendingRequests = new Map();
+    window.__bridgeContext = {
+      currentUser: null,
+      fileName: 'Untitled',
+      selectionCount: 0,
+      selectionNodes: [],
+      copyUrl: null
+    };
+    window.__accountSettings = {
+      accounts: [],
+      activeAccountId: null
+    };
+    window.__newAccountEntryView = 'settings';
+    window.__bridgeBusyCount = 0;
 
     let requestIdCounter = 0;
+
+    function requestResizeToContent() {
+      var shell = document.querySelector('.bridge-shell');
+      if (!shell) return;
+
+      window.requestAnimationFrame(function() {
+        var rect = shell.getBoundingClientRect();
+        var nextWidth = Math.max(240, Math.ceil(rect.width));
+        var nextHeight = Math.max(160, Math.ceil(rect.height));
+        parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: nextWidth, height: nextHeight } }, '*');
+      });
+    }
 
     // UI update helper
     function updateStatus(state, isActive, isError) {
       const dot = document.getElementById('status-dot');
       const stateText = document.getElementById('status-state');
+      var normalizedState = state || (isError ? 'error' : (isActive ? 'enabled' : 'disabled'));
 
-      dot.className = 'status-indicator ' + (isError ? 'error' : (isActive ? 'active' : 'loading'));
-      stateText.textContent = state;
+      if (normalizedState === 'error') {
+        dot.className = 'status-indicator error';
+        stateText.textContent = 'Error';
+        updateCopyButtonState(true);
+        return;
+      }
+
+      if (normalizedState === 'enabled' || normalizedState === 'ready') {
+        dot.className = 'status-indicator active';
+        stateText.textContent = 'Enabled';
+        updateCopyButtonState(false);
+        return;
+      }
+
+      dot.className = 'status-indicator disabled';
+      stateText.textContent = 'Not Enabled';
+      updateCopyButtonState(false);
+    }
+
+    function updateCopyButtonState(hasError) {
+      var copyBtn = document.getElementById('copy-link-btn');
+      if (!copyBtn) return;
+
+      var isBusy = (window.__bridgeBusyCount || 0) > 0;
+      var isError = !!hasError;
+      copyBtn.dataset.busy = isBusy ? 'true' : 'false';
+      copyBtn.textContent = isError ? 'Error' : (isBusy ? 'Working...' : 'Copy Link');
+      copyBtn.disabled = isError || isBusy || !window.__bridgeContext.copyUrl;
+    }
+
+    function getAccountInitials(name) {
+      if (!name) return '?';
+      var parts = String(name).trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return '?';
+      return parts.slice(0, 2).map(function(part) { return part.charAt(0).toUpperCase(); }).join('');
+    }
+
+    function getAccountDisplayName(account) {
+      if (!account) return 'Unknown account';
+      var email = account.email ? String(account.email).trim() : '';
+      return email || 'Unknown account';
+    }
+
+    function getActiveAccountPayload() {
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      if (!settings.accounts.length || !settings.activeAccountId) {
+        return null;
+      }
+
+      var activeAccount = settings.accounts.find(function(account) {
+        return account.id === settings.activeAccountId;
+      }) || settings.accounts[0];
+
+      if (!activeAccount || !activeAccount.token) {
+        return null;
+      }
+
+      return {
+        accountId: activeAccount.id,
+        email: getAccountDisplayName(activeAccount),
+        token: activeAccount.token
+      };
+    }
+
+    function normalizeAccountSettings(settings) {
+      var accounts = Array.isArray(settings && settings.accounts) ? settings.accounts : [];
+      accounts = accounts
+        .filter(function(account) {
+          if (!account) return false;
+          var email = account.email ? String(account.email).trim() : '';
+          var token = account.token ? String(account.token).trim() : '';
+          return !!(email || token);
+        })
+        .map(function(account, index) {
+          return {
+            id: account.id || ('account-' + index + '-' + Date.now()),
+            email: account.email ? String(account.email).trim() : '',
+            token: account.token ? String(account.token) : ''
+          };
+        });
+
+      var activeAccountId = settings && settings.activeAccountId;
+      if (!activeAccountId || !accounts.some(function(account) { return account.id === activeAccountId; })) {
+        activeAccountId = accounts.length ? accounts[0].id : null;
+      }
+
+      return {
+        accounts: accounts,
+        activeAccountId: activeAccountId
+      };
+    }
+
+    function renderAccountSettings() {
+      var select = document.getElementById('account-select');
+      var applyBtn = document.getElementById('apply-account-btn');
+      var deleteBtn = document.getElementById('delete-account-btn');
+      var currentAccountInfo = document.getElementById('current-account-info');
+      var currentAccountValue = currentAccountInfo ? currentAccountInfo.querySelector('.settings-current-account-value') : null;
+      if (!select) return;
+
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      window.__accountSettings = settings;
+      select.innerHTML = '';
+
+      if (!settings.accounts.length) {
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Email';
+        select.appendChild(placeholder);
+        select.disabled = true;
+        if (applyBtn) applyBtn.disabled = true;
+        if (deleteBtn) deleteBtn.disabled = true;
+        if (currentAccountValue) currentAccountValue.textContent = 'None';
+      } else {
+        settings.accounts.forEach(function(account) {
+          var option = document.createElement('option');
+          option.value = account.id;
+          option.textContent = getAccountDisplayName(account);
+          if (account.id === settings.activeAccountId) option.selected = true;
+          select.appendChild(option);
+        });
+        select.disabled = false;
+        if (applyBtn) applyBtn.disabled = false;
+        if (deleteBtn) deleteBtn.disabled = false;
+        var activeAccount = settings.accounts.find(function(account) {
+          return account.id === settings.activeAccountId;
+        }) || settings.accounts[0];
+        if (currentAccountValue) currentAccountValue.textContent = getAccountDisplayName(activeAccount);
+      }
+
+      updateMainAccountState();
+      requestResizeToContent();
+    }
+
+    function updateMainAccountState() {
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      var hasAccounts = settings.accounts.length > 0;
+      var sessionRow = document.getElementById('session-row');
+      var selectionRow = document.getElementById('selection-row');
+      var copyRow = document.getElementById('bridge-copy-row');
+      var emptyForm = document.getElementById('bridge-empty-form');
+      var helper = document.getElementById('bridge-empty-helper');
+      var settingsTrigger = document.getElementById('settings-trigger');
+
+      if (sessionRow) sessionRow.style.display = hasAccounts ? '' : 'none';
+      if (selectionRow) selectionRow.style.display = hasAccounts ? '' : 'none';
+      if (copyRow) copyRow.style.display = hasAccounts ? '' : 'none';
+      if (emptyForm) emptyForm.classList.toggle('visible', !hasAccounts);
+      if (helper) helper.style.display = hasAccounts ? 'none' : 'block';
+      if (settingsTrigger) settingsTrigger.style.display = hasAccounts ? 'inline-flex' : 'none';
+    }
+
+    function applyAccountSettings(settings) {
+      window.__accountSettings = normalizeAccountSettings(settings);
+      renderAccountSettings();
+    }
+
+    function syncActiveAccountToConnection(connWs) {
+      if (!connWs || connWs.readyState !== 1) return;
+      var payload = getActiveAccountPayload();
+      connWs.send(JSON.stringify({
+        type: 'ACCOUNT_SWITCH',
+        data: payload
+      }));
+    }
+
+    function syncAccountSettingsToConnection(connWs) {
+      if (!connWs || connWs.readyState !== 1) return;
+      connWs.send(JSON.stringify({
+        type: 'ACCOUNT_SETTINGS_SYNC',
+        data: {
+          settings: normalizeAccountSettings(window.__accountSettings)
+        }
+      }));
+    }
+
+    function syncActiveAccountToServers() {
+      if (!wsConnected) return;
+      broadcastToAll({
+        type: 'ACCOUNT_SWITCH',
+        data: getActiveAccountPayload()
+      });
+    }
+
+    function syncAccountSettingsToServers() {
+      if (!wsConnected) return;
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      if (!settings.accounts.length) return;
+      broadcastToAll({
+        type: 'ACCOUNT_SETTINGS_SYNC',
+        data: { settings: settings }
+      });
+    }
+
+    function requestSharedAccountSettings(connWs) {
+      if (connWs) {
+        if (connWs.readyState === 1) {
+          connWs.send(JSON.stringify({ type: 'GET_SHARED_ACCOUNT_SETTINGS' }));
+        }
+        return;
+      }
+
+      if (!wsConnected) return;
+      broadcastToAll({ type: 'GET_SHARED_ACCOUNT_SETTINGS' });
+    }
+
+    function openAccountSettings(event) {
+      if (event) event.stopPropagation();
+      var mainView = document.getElementById('main-view');
+      var settingsView = document.getElementById('settings-view');
+      if (mainView) mainView.classList.add('hidden-view');
+      if (settingsView) settingsView.classList.remove('hidden-view');
+      renderAccountSettings();
+      requestResizeToContent();
+    }
+
+    function closeAccountSettings() {
+      var mainView = document.getElementById('main-view');
+      var settingsView = document.getElementById('settings-view');
+      var newAccountView = document.getElementById('new-account-view');
+      if (newAccountView) newAccountView.classList.add('hidden-view');
+      if (settingsView) settingsView.classList.add('hidden-view');
+      if (mainView) mainView.classList.remove('hidden-view');
+      requestResizeToContent();
+    }
+
+    function openNewAccountView(fromMain) {
+      window.__newAccountEntryView = fromMain ? 'main' : 'settings';
+      var mainView = document.getElementById('main-view');
+      var settingsView = document.getElementById('settings-view');
+      var newAccountView = document.getElementById('new-account-view');
+      if (mainView) mainView.classList.add('hidden-view');
+      if (settingsView) settingsView.classList.add('hidden-view');
+      if (newAccountView) newAccountView.classList.remove('hidden-view');
+      requestResizeToContent();
+    }
+
+    function closeNewAccountView() {
+      var mainView = document.getElementById('main-view');
+      var settingsView = document.getElementById('settings-view');
+      var newAccountView = document.getElementById('new-account-view');
+      if (newAccountView) newAccountView.classList.add('hidden-view');
+      if (window.__newAccountEntryView === 'main') {
+        if (settingsView) settingsView.classList.add('hidden-view');
+        if (mainView) mainView.classList.remove('hidden-view');
+      } else {
+        if (settingsView) settingsView.classList.remove('hidden-view');
+      }
+      requestResizeToContent();
+    }
+
+    function saveAccountSettings() {
+      return window.sendPluginCommand('SAVE_ACCOUNT_SETTINGS', {
+        settings: window.__accountSettings
+      }).then(function(result) {
+        if (result && result.settings) {
+          applyAccountSettings(result.settings);
+        }
+        syncAccountSettingsToServers();
+        syncActiveAccountToServers();
+        return result;
+      });
+    }
+
+    function applySelectedAccount() {
+      var select = document.getElementById('account-select');
+      if (!select || !select.value) return;
+      window.__accountSettings = normalizeAccountSettings(window.__accountSettings);
+      window.__accountSettings.activeAccountId = select.value;
+      saveAccountSettings().catch(function() {});
+    }
+
+    function submitNewAccount() {
+      return submitAccountForm('new-account-email', 'new-account-token', function(emailInput, tokenInput) {
+        if (emailInput) emailInput.value = '';
+        if (tokenInput) tokenInput.value = '';
+        // After creating an account, always return to the Account settings screen.
+        window.__newAccountEntryView = 'settings';
+        var mainView = document.getElementById('main-view');
+        var settingsView = document.getElementById('settings-view');
+        var newAccountView = document.getElementById('new-account-view');
+        if (mainView) mainView.classList.add('hidden-view');
+        if (newAccountView) newAccountView.classList.add('hidden-view');
+        if (settingsView) settingsView.classList.remove('hidden-view');
+        requestResizeToContent();
+      });
+    }
+
+    function submitMainAccount() {
+      return submitAccountForm('main-account-email', 'main-account-token', function(emailInput, tokenInput) {
+        if (emailInput) emailInput.value = '';
+        if (tokenInput) tokenInput.value = '';
+      });
+    }
+
+    function submitAccountForm(emailInputId, tokenInputId, onSuccess) {
+      var emailInput = document.getElementById(emailInputId);
+      var tokenInput = document.getElementById(tokenInputId);
+      var email = emailInput ? String(emailInput.value || '').trim() : '';
+      var token = tokenInput ? String(tokenInput.value || '').trim() : '';
+      if (!email || !token) return false;
+
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      var existing = settings.accounts.find(function(account) {
+        return account.email && account.email.toLowerCase() === email.toLowerCase();
+      });
+
+      if (existing) {
+        existing.token = token;
+        settings.activeAccountId = existing.id;
+      } else {
+        var nextAccount = {
+          id: 'account-' + Date.now(),
+          email: email,
+          token: token
+        };
+        settings.accounts.push(nextAccount);
+        settings.activeAccountId = nextAccount.id;
+      }
+
+      window.__accountSettings = settings;
+      renderAccountSettings();
+      // Keep UI responsive even if storage sync fails in this environment.
+      if (typeof onSuccess === 'function') onSuccess(emailInput, tokenInput);
+      saveAccountSettings().catch(function() {});
+      return true;
+    }
+
+    function deleteCurrentAccount() {
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      if (!settings.accounts.length || !settings.activeAccountId) return;
+
+      settings.accounts = settings.accounts.filter(function(account) {
+        return account.id !== settings.activeAccountId;
+      });
+      settings.activeAccountId = settings.accounts.length ? settings.accounts[0].id : null;
+
+      window.__accountSettings = settings;
+      renderAccountSettings();
+      saveAccountSettings().catch(function() {});
+    }
+
+    function renderBridgeContext() {
+      var selectionCount = window.__bridgeContext.selectionCount || 0;
+      var selectionNodes = window.__bridgeContext.selectionNodes || [];
+      var selectionLabel = 'Not select';
+
+      if (selectionNodes.length === 1 && selectionNodes[0].name) {
+        selectionLabel = selectionNodes[0].name + ' (1)';
+      } else if (selectionCount > 1) {
+        selectionLabel = 'Selection (' + selectionCount + ')';
+      }
+
+      var fileNameEl = document.getElementById('file-name');
+      var selectionEl = document.getElementById('selection-summary');
+
+      if (fileNameEl) fileNameEl.textContent = window.__bridgeContext.fileName || 'Untitled';
+      if (selectionEl) selectionEl.textContent = selectionLabel;
+      updateCopyButtonState(false);
+      requestResizeToContent();
+    }
+
+    function applyFileInfo(fileInfo) {
+      if (!fileInfo) return;
+      if (fileInfo.currentUser !== undefined) window.__bridgeContext.currentUser = fileInfo.currentUser;
+      if (fileInfo.fileName !== undefined) window.__bridgeContext.fileName = fileInfo.fileName || 'Untitled';
+      if (fileInfo.selectionCount !== undefined) window.__bridgeContext.selectionCount = fileInfo.selectionCount || 0;
+      if (fileInfo.selectionNodes !== undefined) window.__bridgeContext.selectionNodes = fileInfo.selectionNodes || [];
+      if (fileInfo.copyUrl !== undefined) window.__bridgeContext.copyUrl = fileInfo.copyUrl || null;
+      renderBridgeContext();
+    }
+
+    async function copyCurrentLink() {
+      var feedbackEl = document.getElementById('copy-feedback');
+      var copyBtn = document.getElementById('copy-link-btn');
+      var url = window.__bridgeContext.copyUrl;
+
+      if (!url) {
+        if (feedbackEl) {
+          feedbackEl.textContent = 'No file link available yet';
+          feedbackEl.className = 'copy-feedback error';
+        }
+        return;
+      }
+
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+        } else {
+          var tempInput = document.createElement('textarea');
+          tempInput.value = url;
+          tempInput.setAttribute('readonly', 'readonly');
+          tempInput.style.position = 'absolute';
+          tempInput.style.left = '-9999px';
+          document.body.appendChild(tempInput);
+          tempInput.select();
+          document.execCommand('copy');
+          document.body.removeChild(tempInput);
+        }
+
+        if (feedbackEl) {
+          feedbackEl.textContent = 'Link copied to clipboard';
+          feedbackEl.className = 'copy-feedback success';
+        }
+        var sessionEl = document.getElementById('session-activity');
+        if (sessionEl) sessionEl.textContent = 'Sent';
+        if (copyBtn) {
+          copyBtn.classList.add('copied');
+          copyBtn.textContent = 'Link copied!';
+          setTimeout(function() {
+            copyBtn.classList.remove('copied');
+            var isBusy = copyBtn.dataset.busy === 'true';
+            copyBtn.textContent = isBusy ? 'Working...' : 'Copy Link';
+            requestResizeToContent();
+          }, 1200);
+        }
+        requestResizeToContent();
+      } catch (error) {
+        if (feedbackEl) {
+          feedbackEl.textContent = 'Copy failed';
+          feedbackEl.className = 'copy-feedback error';
+        }
+        requestResizeToContent();
+      }
     }
 
     // ============================================================================
@@ -800,15 +2022,19 @@
        */
       function initializeConnection(connWs, port) {
         // Forward cached variables if available
-        if (window.__figmaVariablesReady && window.__figmaVariablesData) {
-          connWs.send(JSON.stringify({
-            type: 'VARIABLES_DATA',
-            data: window.__figmaVariablesData
-          }));
-        }
+      if (window.__figmaVariablesReady && window.__figmaVariablesData) {
+        connWs.send(JSON.stringify({
+          type: 'VARIABLES_DATA',
+          data: window.__figmaVariablesData
+        }));
+      }
 
-        // Proactively report file identity to this server
-        window.sendPluginCommand('GET_FILE_INFO', {})
+      requestSharedAccountSettings(connWs);
+      syncAccountSettingsToConnection(connWs);
+      syncActiveAccountToConnection(connWs);
+
+      // Proactively report file identity to this server
+      window.sendPluginCommand('GET_FILE_INFO', {})
           .then(function(info) {
             if (connWs.readyState === 1 && info && info.success !== false) {
               connWs.send(JSON.stringify({ type: 'FILE_INFO', data: info.fileInfo || info }));
@@ -941,6 +2167,15 @@
               return;
             }
 
+            if (message.type === 'SHARED_ACCOUNT_SETTINGS' && message.data) {
+              if (message.data.settings && Array.isArray(message.data.settings.accounts) && message.data.settings.accounts.length) {
+                applyAccountSettings(message.data.settings);
+                window.sendPluginCommand('SAVE_ACCOUNT_SETTINGS', { settings: window.__accountSettings }).catch(function() {});
+                syncActiveAccountToServers();
+              }
+              return;
+            }
+
             if (!message.id || !message.method) {
               console.log('[MCP Bridge] WS:' + port + ': Ignoring malformed message');
               return;
@@ -953,6 +2188,8 @@
             }
 
             // Call the handler (returns a Promise) and send back the result
+            window.__bridgeBusyCount = (window.__bridgeBusyCount || 0) + 1;
+            updateCopyButtonState(false);
             Promise.resolve(handler(message.params || {}))
               .then(function(result) {
                 if (activeWs.readyState === 1) {
@@ -963,6 +2200,10 @@
                 if (activeWs.readyState === 1) {
                   activeWs.send(JSON.stringify({ id: message.id, error: err.message || String(err) }));
                 }
+              })
+              .finally(function() {
+                window.__bridgeBusyCount = Math.max(0, (window.__bridgeBusyCount || 0) - 1);
+                updateCopyButtonState(false);
               });
           } catch (e) {
             console.error('[MCP Bridge] WS:' + port + ': Failed to process message:', e);
@@ -1080,11 +2321,8 @@
       var toggle = document.getElementById('cloud-toggle');
       var isExpanding = !section.classList.contains('visible');
       section.classList.toggle('visible');
-      toggle.classList.toggle('expanded');
-
-      // Resize plugin window to fit content
-      var height = isExpanding ? 130 : 50;
-      parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 140, height: height } }, '*');
+      toggle.classList.toggle('expanded', isExpanding);
+      requestResizeToContent();
     }
 
     function resetCloudUI() {
@@ -1100,6 +2338,7 @@
         btn.onclick = cloudConnect;
       }
       cloudWs = null;
+      requestResizeToContent();
     }
 
     function cloudConnect() {
@@ -1111,10 +2350,11 @@
       if (!code || code.length < 4) {
         statusEl.textContent = 'Enter pairing code';
         statusEl.className = 'cloud-status error';
+        requestResizeToContent();
         return;
       }
 
-      btn.disabled = true;
+      if (btn) btn.disabled = true;
       statusEl.textContent = 'Connecting...';
       statusEl.className = 'cloud-status';
 
@@ -1129,9 +2369,12 @@
         cloudWs.onopen = function() {
           statusEl.textContent = 'Connected to cloud relay';
           statusEl.className = 'cloud-status connected';
-          btn.disabled = false;
-          btn.textContent = 'Disconnect';
-          btn.onclick = cloudDisconnect;
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Disconnect';
+            btn.onclick = cloudDisconnect;
+          }
+          requestResizeToContent();
 
           // Add to the shared connection pool (uses same handlers as localhost).
           // Pass resetCloudUI as disconnect callback — attachWsHandlers overwrites
@@ -1150,7 +2393,8 @@
         cloudWs.onerror = function() {
           statusEl.textContent = 'Connection failed — check code';
           statusEl.className = 'cloud-status error';
-          btn.disabled = false;
+          if (btn) btn.disabled = false;
+          requestResizeToContent();
         };
 
         // Note: onclose here handles pre-connection close (e.g., bad code).
@@ -1162,7 +2406,8 @@
       } catch (e) {
         statusEl.textContent = 'Failed: ' + e.message;
         statusEl.className = 'cloud-status error';
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
+        requestResizeToContent();
       }
     }
 
@@ -1407,7 +2652,16 @@
 
         // File info
         case 'GET_FILE_INFO_RESULT':
+          applyFileInfo(msg.fileInfo);
           handleResult('GET_FILE_INFO', 'fileInfo');
+          break;
+        case 'GET_ACCOUNT_SETTINGS_RESULT':
+          applyAccountSettings(msg.settings);
+          handleResult('GET_ACCOUNT_SETTINGS', 'settings');
+          break;
+        case 'SAVE_ACCOUNT_SETTINGS_RESULT':
+          applyAccountSettings(msg.settings);
+          handleResult('SAVE_ACCOUNT_SETTINGS', 'settings');
           break;
 
         // Plugin UI reload
@@ -1448,15 +2702,38 @@
 
         // Selection change events (for selection tracking via WebSocket)
         case 'SELECTION_CHANGE':
+          applyFileInfo({
+            selectionCount: msg.data && msg.data.count,
+            selectionNodes: msg.data && msg.data.nodes,
+            fileName: msg.data && msg.data.fileName,
+            copyUrl: msg.data && msg.data.copyUrl
+          });
           if (window.__wsForwardSelectionChange) window.__wsForwardSelectionChange(msg.data);
           break;
 
         // Page change events (for page tracking via WebSocket)
         case 'PAGE_CHANGE':
+          applyFileInfo({
+            selectionCount: msg.data && msg.data.selectionCount,
+            selectionNodes: msg.data && msg.data.selectionNodes,
+            fileName: msg.data && msg.data.fileName,
+            copyUrl: msg.data && msg.data.copyUrl
+          });
           if (window.__wsForwardPageChange) window.__wsForwardPageChange(msg.data);
           break;
       }
     };
+
+    window.sendPluginCommand('GET_FILE_INFO', {}).catch(function() {
+      // Non-critical: UI can still populate after the next page/selection event.
+    });
+    window.sendPluginCommand('GET_ACCOUNT_SETTINGS', {}).then(function(result) {
+      applyAccountSettings(result && result.settings);
+      syncAccountSettingsToServers();
+      syncActiveAccountToServers();
+      requestSharedAccountSettings();
+    }).catch(function() {});
+    requestResizeToContent();
   </script>
 </body>
 </html>

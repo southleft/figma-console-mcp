@@ -10,8 +10,8 @@ var PLUGIN_VERSION = '1.14.0';
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
-// Show minimal UI - compact status indicator
-figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
+// Show richer bridge UI with file/account context and quick actions.
+figma.showUI(__html__, { width: 280, height: 360, visible: true, themeColors: true });
 
 // ============================================================================
 // CONSOLE CAPTURE — Intercept console.* in the QuickJS sandbox and forward
@@ -82,6 +82,79 @@ var __stickyColors = {
   'LIGHT_GRAY': { r: 0.9, g: 0.9, b: 0.9 },
   'GRAY': { r: 0.7, g: 0.7, b: 0.7 }
 };
+
+function getCurrentUserInfo() {
+  try {
+    if (!figma.currentUser) return null;
+    return {
+      id: figma.currentUser.id || null,
+      name: figma.currentUser.name || 'Unknown',
+      photoUrl: figma.currentUser.photoUrl || null
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function getSelectionSummary(limit) {
+  var selection = figma.currentPage && figma.currentPage.selection ? figma.currentPage.selection : [];
+  var maxItems = typeof limit === 'number' ? limit : 10;
+  var selectedNodes = [];
+
+  for (var i = 0; i < Math.min(selection.length, maxItems); i++) {
+    try {
+      var node = selection[i];
+      selectedNodes.push({
+        id: node.id,
+        name: node.name,
+        type: node.type,
+        width: node.width,
+        height: node.height
+      });
+    } catch (error) {
+      // Slot sublayers and table cells may not be fully resolvable.
+    }
+  }
+
+  return {
+    count: selection.length,
+    nodes: selectedNodes,
+    primaryNodeId: selectedNodes.length > 0 ? selectedNodes[0].id : null
+  };
+}
+
+function getEditorPath() {
+  if (__editorType === 'figjam') return 'board';
+  if (__editorType === 'slides') return 'slides';
+  return 'design';
+}
+
+function buildNodeUrl(nodeId) {
+  if (!figma.fileKey) return null;
+  var fileName = encodeURIComponent(figma.root.name || 'Untitled');
+  var url = 'https://www.figma.com/' + getEditorPath() + '/' + figma.fileKey + '/' + fileName;
+  var targetNodeId = nodeId || (figma.currentPage ? figma.currentPage.id : null);
+  if (targetNodeId) {
+    url += '?node-id=' + targetNodeId.replace(/:/g, '-');
+  }
+  return url;
+}
+
+function buildFileInfoPayload() {
+  var selectionSummary = getSelectionSummary(10);
+  return {
+    fileName: figma.root.name,
+    fileKey: figma.fileKey || null,
+    currentPage: figma.currentPage.name,
+    currentPageId: figma.currentPage.id,
+    selectionCount: selectionSummary.count,
+    selectionNodes: selectionSummary.nodes,
+    copyUrl: buildNodeUrl(selectionSummary.primaryNodeId),
+    pluginVersion: PLUGIN_VERSION,
+    editorType: __editorType,
+    currentUser: getCurrentUserInfo()
+  };
+}
 
 // Immediately fetch and send variables data to UI (skip in FigJam — no variables API)
 (async () => {
@@ -228,7 +301,7 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   if (msg.type === 'BOOT_LOAD_UI' && msg.html) {
     console.log('🌉 [Desktop Bridge] Bootloader delivered fresh UI (' + msg.html.length + ' bytes), loading...');
-    figma.showUI(msg.html, { width: 140, height: 50, visible: true, themeColors: true });
+    figma.showUI(msg.html, { width: 280, height: 360, visible: true, themeColors: true });
 
     // Re-send variables data to the fresh UI — the original send went to the
     // bootloader which discarded it. The fresh UI needs it to show "ready" status.
@@ -269,7 +342,7 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   if (msg.type === 'BOOT_FALLBACK') {
     console.log('🌉 [Desktop Bridge] Old server detected on port ' + msg.port + ', using cached UI');
-    figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
+    figma.showUI(__html__, { width: 280, height: 360, visible: true, themeColors: true });
     return;
   }
 
@@ -3046,20 +3119,11 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   else if (msg.type === 'GET_FILE_INFO') {
     try {
-      var selection = figma.currentPage.selection;
       figma.ui.postMessage({
         type: 'GET_FILE_INFO_RESULT',
         requestId: msg.requestId,
         success: true,
-        fileInfo: {
-          fileName: figma.root.name,
-          fileKey: figma.fileKey || null,
-          currentPage: figma.currentPage.name,
-          currentPageId: figma.currentPage.id,
-          selectionCount: selection ? selection.length : 0,
-          pluginVersion: PLUGIN_VERSION,
-          editorType: __editorType
-        }
+        fileInfo: buildFileInfoPayload()
       });
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
@@ -3088,6 +3152,53 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // GET_ACCOUNT_SETTINGS - Load saved plugin account profiles from clientStorage
+  // ============================================================================
+  else if (msg.type === 'GET_ACCOUNT_SETTINGS') {
+    try {
+      var accountSettings = await figma.clientStorage.getAsync('accountSettings');
+      figma.ui.postMessage({
+        type: 'GET_ACCOUNT_SETTINGS_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        settings: accountSettings || { accounts: [], activeAccountId: null }
+      });
+    } catch (error) {
+      var getSettingsError = error && error.message ? error.message : String(error);
+      figma.ui.postMessage({
+        type: 'GET_ACCOUNT_SETTINGS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: getSettingsError
+      });
+    }
+  }
+
+  // ============================================================================
+  // SAVE_ACCOUNT_SETTINGS - Persist plugin account profiles in clientStorage
+  // ============================================================================
+  else if (msg.type === 'SAVE_ACCOUNT_SETTINGS') {
+    try {
+      var nextSettings = msg.settings || { accounts: [], activeAccountId: null };
+      await figma.clientStorage.setAsync('accountSettings', nextSettings);
+      figma.ui.postMessage({
+        type: 'SAVE_ACCOUNT_SETTINGS_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        settings: nextSettings
+      });
+    } catch (error) {
+      var saveSettingsError = error && error.message ? error.message : String(error);
+      figma.ui.postMessage({
+        type: 'SAVE_ACCOUNT_SETTINGS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: saveSettingsError
+      });
+    }
+  }
+
+  // ============================================================================
   // RELOAD_UI - Reload the plugin UI iframe (re-establishes WebSocket connection)
   // Uses figma.showUI(__html__) to reload without restarting code.js
   // ============================================================================
@@ -3101,7 +3212,7 @@ figma.ui.onmessage = async (msg) => {
       });
       // Short delay to let the response message be sent before reload
       setTimeout(function() {
-        figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
+        figma.showUI(__html__, { width: 280, height: 360, visible: true, themeColors: true });
       }, 100);
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
@@ -4823,30 +4934,17 @@ figma.loadAllPagesAsync().then(function() {
   });
   // Selection change listener — tracks what the user has selected in Figma
   figma.on('selectionchange', function() {
-    var selection = figma.currentPage.selection;
-    var selectedNodes = [];
-    for (var i = 0; i < Math.min(selection.length, 50); i++) {
-      try {
-        var node = selection[i];
-        selectedNodes.push({
-          id: node.id,
-          name: node.name,
-          type: node.type,
-          width: node.width,
-          height: node.height
-        });
-      } catch (e) {
-        // Slot sublayers and table cells may not be fully resolvable —
-        // accessing .name throws "does not exist" for these node types.
-        // Skip silently rather than crashing the plugin.
-      }
-    }
+    var selectionSummary = getSelectionSummary(50);
     figma.ui.postMessage({
       type: 'SELECTION_CHANGE',
       data: {
-        nodes: selectedNodes,
-        count: selection.length,
+        nodes: selectionSummary.nodes,
+        count: selectionSummary.count,
         page: figma.currentPage.name,
+        pageId: figma.currentPage.id,
+        fileName: figma.root.name,
+        fileKey: figma.fileKey || null,
+        copyUrl: buildNodeUrl(selectionSummary.primaryNodeId),
         timestamp: Date.now()
       }
     });
@@ -4854,11 +4952,17 @@ figma.loadAllPagesAsync().then(function() {
 
   // Page change listener — tracks which page the user is viewing
   figma.on('currentpagechange', function() {
+    var selectionSummary = getSelectionSummary(10);
     figma.ui.postMessage({
       type: 'PAGE_CHANGE',
       data: {
         pageId: figma.currentPage.id,
         pageName: figma.currentPage.name,
+        fileName: figma.root.name,
+        fileKey: figma.fileKey || null,
+        selectionCount: selectionSummary.count,
+        selectionNodes: selectionSummary.nodes,
+        copyUrl: buildNodeUrl(selectionSummary.primaryNodeId),
         timestamp: Date.now()
       }
     });

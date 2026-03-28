@@ -62,7 +62,20 @@ import { registerSlidesTools } from "./core/slides-tools.js";
 const logger = createChildLogger({ component: "local-server" });
 
 /**
- * Copy plugin files to a stable directory (~/.figma-console-mcp/plugin/).
+ * Resolve stable plugin directory.
+ * Override via FIGMA_CONSOLE_STABLE_PLUGIN_DIR to avoid collisions with
+ * other figma-console-mcp instances on the same machine.
+ */
+function getStablePluginDir(): string {
+	const customStableDir = (process.env.FIGMA_CONSOLE_STABLE_PLUGIN_DIR || "").trim();
+	if (customStableDir) {
+		return resolve(customStableDir);
+	}
+	return join(homedir(), ".figma-console-mcp", "plugin");
+}
+
+/**
+ * Copy plugin files to a stable directory.
  * This gives users a permanent, predictable path to import from instead of
  * the volatile npx cache path that changes between updates.
  *
@@ -70,7 +83,7 @@ const logger = createChildLogger({ component: "local-server" });
  */
 function setupStablePluginDir(sourcePluginDir: string): string | null {
 	try {
-		const stableDir = join(homedir(), ".figma-console-mcp", "plugin");
+		const stableDir = getStablePluginDir();
 		mkdirSync(stableDir, { recursive: true });
 
 		const filesToCopy = ["manifest.json", "code.js", "ui.html", "ui-full.html"];
@@ -107,6 +120,8 @@ class LocalFigmaConsoleMCP {
 	private browserManager: LocalBrowserManager | null = null;
 	private consoleMonitor: ConsoleMonitor | null = null;
 	private figmaAPI: FigmaAPI | null = null;
+	private figmaAccessTokenOverride: string | null = null;
+	private figmaAccessTokenSource: "env" | "plugin" = "env";
 	private desktopConnector: IFigmaConnector | null = null;
 	private wsServer: FigmaWebSocketServer | null = null;
 	private wsStartupError: { code: string; port: number } | null = null;
@@ -137,6 +152,31 @@ class LocalFigmaConsoleMCP {
 		if (this.variablesCache.size > 0) {
 			this.variablesCache.clear();
 			logger.info('Variables cache invalidated after write operation');
+		}
+	}
+
+	private loadPersistedAccountOverride(): void {
+		try {
+			const sharedSettingsPath = join(homedir(), ".figma-console-mcp", "accounts.json");
+			if (!existsSync(sharedSettingsPath)) return;
+
+			const raw = readFileSync(sharedSettingsPath, "utf-8");
+			const parsed = JSON.parse(raw);
+			const accounts = Array.isArray(parsed?.accounts) ? parsed.accounts : [];
+			const activeAccountId = parsed?.activeAccountId || null;
+			const activeAccount =
+				accounts.find((account: any) => account && account.id === activeAccountId) || accounts[0];
+			const token =
+				activeAccount && activeAccount.token ? String(activeAccount.token).trim() : null;
+
+			if (token) {
+				this.setFigmaAccessTokenOverride(token, {
+					email: activeAccount?.email || null,
+					fileKey: null,
+				});
+			}
+		} catch (error) {
+			logger.warn({ error }, "Failed to load persisted account override");
 		}
 	}
 
@@ -218,7 +258,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 */
 	private async getFigmaAPI(): Promise<FigmaAPI> {
 		if (!this.figmaAPI) {
-			const accessToken = process.env.FIGMA_ACCESS_TOKEN;
+			const accessToken = this.figmaAccessTokenOverride || process.env.FIGMA_ACCESS_TOKEN;
 
 			if (!accessToken) {
 				throw new Error(
@@ -232,14 +272,39 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				{
 					tokenPreview: `${accessToken.substring(0, 10)}...`,
 					tokenLength: accessToken.length,
+					source: this.figmaAccessTokenSource,
 				},
-				"Initializing Figma API with token from environment",
+				"Initializing Figma API with access token",
 			);
 
 			this.figmaAPI = new FigmaAPI({ accessToken });
 		}
 
 		return this.figmaAPI;
+	}
+
+	private setFigmaAccessTokenOverride(token: string | null, meta?: { email?: string | null; fileKey?: string | null }): void {
+		const normalizedToken = token && token.trim() ? token.trim() : null;
+		const previousToken = this.figmaAccessTokenOverride;
+		const nextSource: "env" | "plugin" = normalizedToken ? "plugin" : "env";
+
+		if (previousToken === normalizedToken && this.figmaAccessTokenSource === nextSource) {
+			return;
+		}
+
+		this.figmaAccessTokenOverride = normalizedToken;
+		this.figmaAccessTokenSource = nextSource;
+		this.figmaAPI = null;
+
+		logger.info(
+			{
+				source: this.figmaAccessTokenSource,
+				hasOverride: !!normalizedToken,
+				email: meta?.email || null,
+				fileKey: meta?.fileKey || null,
+			},
+			"Updated active Figma access token",
+		);
 	}
 
 	/**
@@ -342,7 +407,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 	/**
 	 * Resolve the path to the Desktop Bridge plugin manifest.
-	 * Prefers the stable directory (~/.figma-console-mcp/plugin/) over the npx cache path.
+	 * Prefers the stable directory over the npx cache path.
 	 */
 	private getPluginPath(): string | null {
 		// Prefer stable path — consistent across npx updates
@@ -6197,6 +6262,8 @@ return {
 	 * Start the MCP server
 	 */
 	async start(): Promise<void> {
+		this.loadPersistedAccountOverride();
+
 		try {
 			logger.info(
 				{ config: this.config },
@@ -6355,6 +6422,16 @@ return {
 						);
 					}
 				});
+
+				this.wsServer.on("pluginMessage", (message: any) => {
+					if (!message || message.type !== "ACCOUNT_SWITCH") return;
+
+					const data = message.data || {};
+					this.setFigmaAccessTokenOverride(data.token || null, {
+						email: data.email || null,
+						fileKey: data.fileKey || null,
+					});
+				});
 			}
 
 			// Check if Figma Desktop is accessible (non-blocking, just for logging)
@@ -6482,7 +6559,7 @@ if (currentFile === entryFile) {
 
 			// Last resort: print the stable dir path even if it doesn't exist yet
 			// (the server will create it on first startup)
-			const stableDir = join(homedir(), ".figma-console-mcp", "plugin", "manifest.json");
+			const stableDir = join(getStablePluginDir(), "manifest.json");
 			console.log(stableDir);
 			console.error("\nNote: This path will be populated when the MCP server starts.");
 			process.exit(0);

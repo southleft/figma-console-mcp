@@ -17,8 +17,9 @@ import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http';
 import type { Server as HttpServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
 import type { ConsoleLogEntry } from './types/index.js';
@@ -135,11 +136,39 @@ export class FigmaWebSocketServer extends EventEmitter {
   private documentChangeBufferSize = 200;
   /** Cached plugin UI HTML content — loaded once and served to bootloader requests */
   private _pluginUIContent: string | null = null;
+  private sharedAccountSettingsPath = join(homedir(), '.figma-console-mcp', 'accounts.json');
 
   constructor(options: WebSocketServerOptions) {
     super();
     this.options = options;
     this._startedAt = Date.now();
+  }
+
+  private loadSharedAccountSettings(): { accounts: any[]; activeAccountId: string | null } {
+    try {
+      if (!existsSync(this.sharedAccountSettingsPath)) {
+        return { accounts: [], activeAccountId: null };
+      }
+
+      const raw = readFileSync(this.sharedAccountSettingsPath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      return {
+        accounts: Array.isArray(parsed?.accounts) ? parsed.accounts : [],
+        activeAccountId: parsed?.activeAccountId || null,
+      };
+    } catch (error) {
+      logger.warn({ error }, 'Failed to load shared account settings');
+      return { accounts: [], activeAccountId: null };
+    }
+  }
+
+  private saveSharedAccountSettings(settings: { accounts: any[]; activeAccountId: string | null }): void {
+    try {
+      mkdirSync(join(homedir(), '.figma-console-mcp'), { recursive: true });
+      writeFileSync(this.sharedAccountSettingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+    } catch (error) {
+      logger.warn({ error }, 'Failed to save shared account settings');
+    }
   }
 
   /**
@@ -368,6 +397,25 @@ export class FigmaWebSocketServer extends EventEmitter {
 
     // Unsolicited data from plugin (FILE_INFO, events, forwarded data)
     if (message.type) {
+      if (message.type === 'GET_SHARED_ACCOUNT_SETTINGS') {
+        try {
+          ws.send(JSON.stringify({
+            type: 'SHARED_ACCOUNT_SETTINGS',
+            data: {
+              settings: this.loadSharedAccountSettings(),
+            },
+          }));
+        } catch (error) {
+          logger.warn({ error }, 'Failed to send shared account settings');
+        }
+        return;
+      }
+
+      if (message.type === 'ACCOUNT_SETTINGS_SYNC') {
+        this.saveSharedAccountSettings(message.data?.settings || { accounts: [], activeAccountId: null });
+        return;
+      }
+
       // FILE_INFO promotes pending clients to named clients
       if (message.type === 'FILE_INFO' && message.data) {
         this.handleFileInfo(message.data, ws);
