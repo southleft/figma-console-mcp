@@ -129,10 +129,25 @@ function getEditorPath() {
   return 'design';
 }
 
+function toShareSlug(name) {
+  var raw = (name || 'Untitled').trim();
+  if (!raw) return 'Untitled';
+
+  // Match Figma-style readable slugs: words joined by '-', no URI-encoded %20 noise.
+  var normalized = raw.normalize ? raw.normalize('NFKD') : raw;
+  var slug = normalized
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+
+  return slug || 'Untitled';
+}
+
 function buildNodeUrl(nodeId) {
   if (!figma.fileKey) return null;
-  var fileName = encodeURIComponent(figma.root.name || 'Untitled');
-  var url = 'https://www.figma.com/' + getEditorPath() + '/' + figma.fileKey + '/' + fileName;
+  var fileSlug = toShareSlug(figma.root.name || 'Untitled');
+  var url = 'https://www.figma.com/' + getEditorPath() + '/' + figma.fileKey + '/' + fileSlug;
   var targetNodeId = nodeId || (figma.currentPage ? figma.currentPage.id : null);
   if (targetNodeId) {
     url += '?node-id=' + targetNodeId.replace(/:/g, '-');

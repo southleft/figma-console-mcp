@@ -1009,7 +1009,8 @@
       fileName: 'Untitled',
       selectionCount: 0,
       selectionNodes: [],
-      copyUrl: null
+      copyUrl: null,
+      shareToken: null
     };
     window.__accountSettings = {
       accounts: [],
@@ -1020,6 +1021,32 @@
     window.__lastResize = { width: 0, height: 0 };
 
     let requestIdCounter = 0;
+
+    function extractShareTokenFromReferrer() {
+      try {
+        if (!document.referrer) return null;
+        var ref = new URL(document.referrer);
+        var token = ref.searchParams.get('t');
+        return token ? String(token).trim() : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function appendShareTokenIfAvailable(url) {
+      try {
+        if (!url) return url;
+        var token = window.__bridgeContext.shareToken;
+        if (!token) return url;
+        var parsed = new URL(url);
+        if (!parsed.searchParams.get('t')) {
+          parsed.searchParams.set('t', token);
+        }
+        return parsed.toString();
+      } catch (error) {
+        return url;
+      }
+    }
 
     function requestResizeToContent() {
       var shell = document.querySelector('.bridge-shell');
@@ -1283,7 +1310,7 @@
     async function copyCurrentLink() {
       var feedbackEl = document.getElementById('copy-feedback');
       var copyBtn = document.getElementById('copy-link-btn');
-      var url = window.__bridgeContext.copyUrl;
+      var url = appendShareTokenIfAvailable(window.__bridgeContext.copyUrl);
 
       if (!url) {
         if (feedbackEl) {
@@ -1331,6 +1358,8 @@
         requestResizeToContent();
       }
     }
+
+    window.__bridgeContext.shareToken = extractShareTokenFromReferrer();
 
     // ============================================================================
     // COMMAND INFRASTRUCTURE - Generic plugin command sender
