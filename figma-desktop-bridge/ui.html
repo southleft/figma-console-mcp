@@ -93,7 +93,7 @@
 
     .status-text {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 8px;
       font-weight: 500;
       letter-spacing: 0;
@@ -379,6 +379,9 @@
       border: none;
       border-bottom: 1px solid #4b4b4b;
       justify-content: flex-start;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
     }
 
     .figma-panel .status-indicator {
@@ -391,7 +394,12 @@
       justify-content: center;
     }
 
-    .figma-panel .status-text,
+    .figma-panel .status-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
     .figma-panel .context-grid {
       display: block;
     }
@@ -402,15 +410,58 @@
       line-height: 13px;
       font-weight: 500;
       color: #c0c0c0;
+      white-space: nowrap;
     }
 
     .figma-panel .status-text .state {
       display: none;
     }
 
+    .figma-panel .file-name-icon {
+      width: 12px;
+      height: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 12px;
+    }
+
+    .figma-panel .active-account-email {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+      color: #ffffff;
+      width: 208px;
+      max-width: 208px;
+      display: block;
+      white-space: normal;
+      overflow: visible;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .figma-panel .account-switch-hint {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      line-height: 13px;
+      color: rgba(255, 255, 255, 0.5);
+      width: 100%;
+      max-width: 208px;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
     .figma-panel .context-card {
       padding: 0 0 16px;
       gap: 0;
+    }
+
+    .figma-panel .context-card.collapsed {
+      padding-bottom: 0;
     }
 
     .figma-panel .section-header,
@@ -427,7 +478,7 @@
 
     .figma-panel .section-header {
       padding: 0 16px;
-      cursor: default;
+      cursor: pointer;
     }
 
     .figma-panel .cloud-toggle {
@@ -444,6 +495,15 @@
       align-items: center;
       justify-content: center;
       color: rgba(255, 255, 255, 0.5);
+    }
+
+    .figma-panel .section-header .section-chevron {
+      transform: rotate(-90deg);
+      transition: transform 0.15s ease;
+    }
+
+    .figma-panel .section-header.expanded .section-chevron {
+      transform: rotate(0deg);
     }
 
     .figma-panel .cloud-toggle .chevron {
@@ -576,6 +636,14 @@
       height: 1px;
       background: #4b4b4b;
       margin: 0;
+    }
+
+    .figma-panel .desktop-section {
+      display: none;
+    }
+
+    .figma-panel .desktop-section.visible {
+      display: block;
     }
 
     .figma-panel .cloud-section {
@@ -846,34 +914,37 @@
       font-size: 11px;
       line-height: 13px;
     }
+
   </style>
 </head>
 <body>
   <div class="bridge-shell figma-panel">
     <div class="bridge-status" id="status-container">
       <div class="status-text">
+        <span class="file-name-icon" aria-hidden="true">
+          <svg viewBox="0 0 12 12" width="12" height="12" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g opacity="0.65">
+              <path d="M7.926 4.4905H5.632V0H7.926C9.164 0 10.171 1.007 10.171 2.245C10.171 3.483 9.164 4.4905 7.926 4.4905ZM6.3675 3.755H7.926C8.7585 3.755 9.4355 3.0775 9.4355 2.2455C9.4355 1.4135 8.758 0.736 7.926 0.736H6.3675V3.755ZM6.3675 4.4905H4.074C2.836 4.4905 1.829 3.4835 1.829 2.2455C1.829 1.0075 2.836 0 4.074 0H6.368V4.4905H6.3675ZM4.074 0.7355C3.2415 0.7355 2.5645 1.413 2.5645 2.245C2.5645 3.077 3.2415 3.755 4.074 3.755H5.6325V0.7355H4.074ZM6.3675 8.245H4.074C2.836 8.245 1.829 7.238 1.829 6C1.829 4.762 2.836 3.755 4.074 3.755H6.368V8.245H6.3675ZM4.074 4.4905C3.2415 4.4905 2.5645 5.168 2.5645 6C2.5645 6.832 3.242 7.5095 4.074 7.5095H5.6325V4.4905H4.074ZM4.086 12C2.8415 12 1.8285 10.993 1.8285 9.755C1.8285 8.517 2.8355 7.51 4.0735 7.51H6.3675V9.7305C6.3675 10.982 5.344 12 4.086 12ZM4.074 8.245C3.67382 8.24553 3.29018 8.40474 3.00721 8.68771C2.72424 8.97068 2.56503 9.35432 2.5645 9.7545C2.5645 10.587 3.247 11.264 4.0865 11.264C4.939 11.264 5.633 10.576 5.633 9.73V8.245H4.074ZM7.926 8.245H7.877C6.639 8.245 5.632 7.238 5.632 6C5.632 4.762 6.639 3.755 7.877 3.755H7.926C9.164 3.755 10.171 4.762 10.171 6C10.171 7.238 9.164 8.245 7.926 8.245ZM7.8775 4.4905C7.045 4.4905 6.368 5.168 6.368 6C6.368 6.832 7.0455 7.5095 7.8775 7.5095H7.9265C8.759 7.5095 9.436 6.832 9.436 6C9.436 5.168 8.758 4.4905 7.926 4.4905H7.8775Z" fill="white"/>
+            </g>
+          </svg>
+        </span>
         <span class="label" id="file-name">File name</span>
       </div>
+      <div class="active-account-email" id="active-account-email">No active account</div>
+      <p class="account-switch-hint" id="account-switch-hint">To switch accounts, ask Claude or Codex, then reload the plugin.</p>
     </div>
 
     <div class="main-view" id="main-view">
     <div class="context-card">
-      <div class="section-header">
+      <div class="section-header expanded" id="desktop-toggle" onclick="toggleDesktopSection()">
         <span class="section-chevron" aria-hidden="true">
           <svg viewBox="0 0 8 8" width="8" height="8" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M2 3L4 5L6 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
         <span class="section-title">Desktop Bridge</span>
-        <span class="section-action settings-trigger" id="settings-trigger" aria-hidden="true" onclick="openAccountSettings(event)">
-          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M9.33333 11.3333H3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M12.6667 4.66667H6.66667" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M11.3333 13.3333C12.4379 13.3333 13.3333 12.4379 13.3333 11.3333C13.3333 10.2288 12.4379 9.33333 11.3333 9.33333C10.2288 9.33333 9.33333 10.2288 9.33333 11.3333C9.33333 12.4379 10.2288 13.3333 11.3333 13.3333Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M4.66667 6.66667C5.77124 6.66667 6.66667 5.77124 6.66667 4.66667C6.66667 3.5621 5.77124 2.66667 4.66667 2.66667C3.5621 2.66667 2.66667 3.5621 2.66667 4.66667C2.66667 5.77124 3.5621 6.66667 4.66667 6.66667Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </span>
       </div>
+      <div class="desktop-section visible" id="desktop-section">
       <div class="context-grid">
         <div class="context-row">
           <div class="context-label">MCP Status</div>
@@ -887,11 +958,6 @@
           </div>
         </div>
 
-        <div class="context-row" id="session-row">
-          <div class="context-label">Session activity</div>
-          <div class="context-value plain-value" id="session-activity">Not sent</div>
-        </div>
-
         <div class="context-row" id="selection-row">
           <div class="context-label">Selection</div>
           <div class="context-value plain-value" id="selection-summary">Not select</div>
@@ -901,8 +967,8 @@
       <div class="action-row" id="bridge-copy-row">
         <button class="ghost-button" id="copy-link-btn" onclick="copyCurrentLink()" disabled>Copy Link</button>
       </div>
-      <div class="main-empty-helper" id="bridge-empty-helper">Add accounts via Claude or Codex:<br><code>~/Claude Code/figma-console-mcp/accounts.json</code></div>
       <div class="copy-feedback" id="copy-feedback"></div>
+      </div>
     </div>
 
     <div class="section-divider"></div>
@@ -927,36 +993,6 @@
     </div>
     </div>
 
-    <div class="settings-view hidden-view" id="settings-view">
-      <div class="settings-header">
-        <div class="settings-back" onclick="closeAccountSettings()">
-          <span class="settings-back-icon" aria-hidden="true">
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8 12.6667L3.33333 8L8 3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M12.6667 8H3.33333" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </span>
-          <span>Account</span>
-        </div>
-      </div>
-
-      <div class="settings-form">
-        <div class="settings-select-wrap">
-          <select class="settings-select" id="account-select"></select>
-          <span class="settings-select-chevron" aria-hidden="true">
-            <svg viewBox="0 0 8 8" width="8" height="8" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 3L4 5L6 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </span>
-        </div>
-        <div class="settings-current-account" id="current-account-info">
-          <div class="settings-current-account-label">Current account</div>
-          <div class="settings-current-account-value">None</div>
-        </div>
-        <button class="ghost-button" id="apply-account-btn" onclick="applySelectedAccount()">Switch Account</button>
-      </div>
-    </div>
-
   </div>
 
   <script>
@@ -979,19 +1015,27 @@
       accounts: [],
       activeAccountId: null
     };
-    window.__newAccountEntryView = 'settings';
     window.__bridgeBusyCount = 0;
+    window.__uiResizeRAF = null;
+    window.__lastResize = { width: 0, height: 0 };
 
     let requestIdCounter = 0;
 
     function requestResizeToContent() {
       var shell = document.querySelector('.bridge-shell');
       if (!shell) return;
+      if (window.__uiResizeRAF) return;
 
-      window.requestAnimationFrame(function() {
+      window.__uiResizeRAF = window.requestAnimationFrame(function() {
+        window.__uiResizeRAF = null;
         var rect = shell.getBoundingClientRect();
         var nextWidth = Math.max(240, Math.ceil(rect.width));
         var nextHeight = Math.max(160, Math.ceil(rect.height));
+        if (window.__lastResize.width === nextWidth && window.__lastResize.height === nextHeight) {
+          return;
+        }
+        window.__lastResize.width = nextWidth;
+        window.__lastResize.height = nextHeight;
         parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: nextWidth, height: nextHeight } }, '*');
       });
     }
@@ -1055,14 +1099,14 @@
         return account.id === settings.activeAccountId;
       }) || settings.accounts[0];
 
-      if (!activeAccount || !activeAccount.token) {
+      if (!activeAccount) {
         return null;
       }
 
       return {
         accountId: activeAccount.id,
         email: getAccountDisplayName(activeAccount),
-        token: activeAccount.token
+        token: activeAccount.token || null
       };
     }
 
@@ -1095,41 +1139,16 @@
     }
 
     function renderAccountSettings() {
-      var select = document.getElementById('account-select');
-      var applyBtn = document.getElementById('apply-account-btn');
-      var deleteBtn = document.getElementById('delete-account-btn');
-      var currentAccountInfo = document.getElementById('current-account-info');
-      var currentAccountValue = currentAccountInfo ? currentAccountInfo.querySelector('.settings-current-account-value') : null;
-      if (!select) return;
+      var activeAccountEmail = document.getElementById('active-account-email');
 
       var settings = normalizeAccountSettings(window.__accountSettings);
       window.__accountSettings = settings;
-      select.innerHTML = '';
 
-      if (!settings.accounts.length) {
-        var placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = 'Email';
-        select.appendChild(placeholder);
-        select.disabled = true;
-        if (applyBtn) applyBtn.disabled = true;
-        if (deleteBtn) deleteBtn.disabled = true;
-        if (currentAccountValue) currentAccountValue.textContent = 'None';
-      } else {
-        settings.accounts.forEach(function(account) {
-          var option = document.createElement('option');
-          option.value = account.id;
-          option.textContent = getAccountDisplayName(account);
-          if (account.id === settings.activeAccountId) option.selected = true;
-          select.appendChild(option);
-        });
-        select.disabled = false;
-        if (applyBtn) applyBtn.disabled = false;
-        if (deleteBtn) deleteBtn.disabled = false;
-        var activeAccount = settings.accounts.find(function(account) {
-          return account.id === settings.activeAccountId;
-        }) || settings.accounts[0];
-        if (currentAccountValue) currentAccountValue.textContent = getAccountDisplayName(activeAccount);
+      var activeAccount = settings.accounts.find(function(account) {
+        return account.id === settings.activeAccountId;
+      }) || settings.accounts[0] || null;
+      if (activeAccountEmail) {
+        activeAccountEmail.textContent = activeAccount ? getAccountDisplayName(activeAccount) : 'No active account';
       }
 
       updateMainAccountState();
@@ -1139,19 +1158,33 @@
     function updateMainAccountState() {
       var settings = normalizeAccountSettings(window.__accountSettings);
       var hasAccounts = settings.accounts.length > 0;
-      var sessionRow = document.getElementById('session-row');
       var selectionRow = document.getElementById('selection-row');
       var copyRow = document.getElementById('bridge-copy-row');
-      var emptyForm = document.getElementById('bridge-empty-form');
-      var helper = document.getElementById('bridge-empty-helper');
-      var settingsTrigger = document.getElementById('settings-trigger');
 
-      if (sessionRow) sessionRow.style.display = hasAccounts ? '' : 'none';
-      if (selectionRow) selectionRow.style.display = hasAccounts ? '' : 'none';
-      if (copyRow) copyRow.style.display = hasAccounts ? '' : 'none';
-      if (emptyForm) emptyForm.classList.toggle('visible', !hasAccounts);
-      if (helper) helper.style.display = hasAccounts ? 'none' : 'block';
-      if (settingsTrigger) settingsTrigger.style.display = hasAccounts ? 'inline-flex' : 'none';
+      if (selectionRow) {
+        var nextSelectionDisplay = hasAccounts ? '' : 'none';
+        if (selectionRow.style.display !== nextSelectionDisplay) {
+          selectionRow.style.display = nextSelectionDisplay;
+        }
+      }
+      if (copyRow) {
+        var nextCopyDisplay = hasAccounts ? '' : 'none';
+        if (copyRow.style.display !== nextCopyDisplay) {
+          copyRow.style.display = nextCopyDisplay;
+        }
+      }
+    }
+
+    function toggleDesktopSection() {
+      var section = document.getElementById('desktop-section');
+      var toggle = document.getElementById('desktop-toggle');
+      var card = document.querySelector('.context-card');
+      if (!section || !toggle) return;
+      var isExpanding = !section.classList.contains('visible');
+      section.classList.toggle('visible');
+      toggle.classList.toggle('expanded', isExpanding);
+      if (card) card.classList.toggle('collapsed', !isExpanding);
+      requestResizeToContent();
     }
 
     function applyAccountSettings(settings) {
@@ -1162,6 +1195,7 @@
     function syncActiveAccountToConnection(connWs) {
       if (!connWs || connWs.readyState !== 1) return;
       var payload = getActiveAccountPayload();
+      if (!payload || !payload.accountId) return;
       connWs.send(JSON.stringify({
         type: 'ACCOUNT_SWITCH',
         data: payload
@@ -1180,9 +1214,11 @@
 
     function syncActiveAccountToServers() {
       if (!wsConnected) return;
+      var payload = getActiveAccountPayload();
+      if (!payload || !payload.accountId) return;
       broadcastToAll({
         type: 'ACCOUNT_SWITCH',
-        data: getActiveAccountPayload()
+        data: payload
       });
     }
 
@@ -1207,134 +1243,11 @@
       broadcastToAll({ type: 'GET_SHARED_ACCOUNT_SETTINGS' });
     }
 
-    function openAccountSettings(event) {
-      if (event) event.stopPropagation();
-      var mainView = document.getElementById('main-view');
-      var settingsView = document.getElementById('settings-view');
-      if (mainView) mainView.classList.add('hidden-view');
-      if (settingsView) settingsView.classList.remove('hidden-view');
-      renderAccountSettings();
-      requestResizeToContent();
-    }
-
-    function closeAccountSettings() {
-      var mainView = document.getElementById('main-view');
-      var settingsView = document.getElementById('settings-view');
-      var newAccountView = document.getElementById('new-account-view');
-      if (newAccountView) newAccountView.classList.add('hidden-view');
-      if (settingsView) settingsView.classList.add('hidden-view');
-      if (mainView) mainView.classList.remove('hidden-view');
-      requestResizeToContent();
-    }
-
-    function openNewAccountView(fromMain) {
-      window.__newAccountEntryView = fromMain ? 'main' : 'settings';
-      var mainView = document.getElementById('main-view');
-      var settingsView = document.getElementById('settings-view');
-      var newAccountView = document.getElementById('new-account-view');
-      if (mainView) mainView.classList.add('hidden-view');
-      if (settingsView) settingsView.classList.add('hidden-view');
-      if (newAccountView) newAccountView.classList.remove('hidden-view');
-      requestResizeToContent();
-    }
-
-    function closeNewAccountView() {
-      var mainView = document.getElementById('main-view');
-      var settingsView = document.getElementById('settings-view');
-      var newAccountView = document.getElementById('new-account-view');
-      if (newAccountView) newAccountView.classList.add('hidden-view');
-      if (window.__newAccountEntryView === 'main') {
-        if (settingsView) settingsView.classList.add('hidden-view');
-        if (mainView) mainView.classList.remove('hidden-view');
-      } else {
-        if (settingsView) settingsView.classList.remove('hidden-view');
-      }
-      requestResizeToContent();
-    }
-
     function saveAccountSettings() {
       // Option B: server is single source of truth — sync directly, no clientStorage
       syncAccountSettingsToServers();
       syncActiveAccountToServers();
       return Promise.resolve({ settings: window.__accountSettings });
-    }
-
-    function applySelectedAccount() {
-      var select = document.getElementById('account-select');
-      if (!select || !select.value) return;
-      window.__accountSettings = normalizeAccountSettings(window.__accountSettings);
-      window.__accountSettings.activeAccountId = select.value;
-      saveAccountSettings().catch(function() {});
-    }
-
-    function submitNewAccount() {
-      return submitAccountForm('new-account-email', 'new-account-token', function(emailInput, tokenInput) {
-        if (emailInput) emailInput.value = '';
-        if (tokenInput) tokenInput.value = '';
-        // After creating an account, always return to the Account settings screen.
-        window.__newAccountEntryView = 'settings';
-        var mainView = document.getElementById('main-view');
-        var settingsView = document.getElementById('settings-view');
-        var newAccountView = document.getElementById('new-account-view');
-        if (mainView) mainView.classList.add('hidden-view');
-        if (newAccountView) newAccountView.classList.add('hidden-view');
-        if (settingsView) settingsView.classList.remove('hidden-view');
-        requestResizeToContent();
-      });
-    }
-
-    function submitMainAccount() {
-      return submitAccountForm('main-account-email', 'main-account-token', function(emailInput, tokenInput) {
-        if (emailInput) emailInput.value = '';
-        if (tokenInput) tokenInput.value = '';
-      });
-    }
-
-    function submitAccountForm(emailInputId, tokenInputId, onSuccess) {
-      var emailInput = document.getElementById(emailInputId);
-      var tokenInput = document.getElementById(tokenInputId);
-      var email = emailInput ? String(emailInput.value || '').trim() : '';
-      var token = tokenInput ? String(tokenInput.value || '').trim() : '';
-      if (!email || !token) return false;
-
-      var settings = normalizeAccountSettings(window.__accountSettings);
-      var existing = settings.accounts.find(function(account) {
-        return account.email && account.email.toLowerCase() === email.toLowerCase();
-      });
-
-      if (existing) {
-        existing.token = token;
-        settings.activeAccountId = existing.id;
-      } else {
-        var nextAccount = {
-          id: 'account-' + Date.now(),
-          email: email,
-          token: token
-        };
-        settings.accounts.push(nextAccount);
-        settings.activeAccountId = nextAccount.id;
-      }
-
-      window.__accountSettings = settings;
-      renderAccountSettings();
-      // Keep UI responsive even if storage sync fails in this environment.
-      if (typeof onSuccess === 'function') onSuccess(emailInput, tokenInput);
-      saveAccountSettings().catch(function() {});
-      return true;
-    }
-
-    function deleteCurrentAccount() {
-      var settings = normalizeAccountSettings(window.__accountSettings);
-      if (!settings.accounts.length || !settings.activeAccountId) return;
-
-      settings.accounts = settings.accounts.filter(function(account) {
-        return account.id !== settings.activeAccountId;
-      });
-      settings.activeAccountId = settings.accounts.length ? settings.accounts[0].id : null;
-
-      window.__accountSettings = settings;
-      renderAccountSettings();
-      saveAccountSettings().catch(function() {});
     }
 
     function renderBridgeContext() {
@@ -1399,8 +1312,6 @@
           feedbackEl.textContent = 'Link copied to clipboard';
           feedbackEl.className = 'copy-feedback success';
         }
-        var sessionEl = document.getElementById('session-activity');
-        if (sessionEl) sessionEl.textContent = 'Sent';
         if (copyBtn) {
           copyBtn.classList.add('copied');
           copyBtn.textContent = 'Link copied!';
@@ -1787,7 +1698,7 @@
       // Port range for multi-instance support (matches server's port-discovery.ts)
       // Dev safety: lock to one local MCP server to avoid mixed UI/state from old instances.
       var WS_PORT_RANGE_START = 9223;
-      var WS_PORT_RANGE_END = 9223;
+      var WS_PORT_RANGE_END = 9232;
 
       // Multi-connection state: plugin connects to ALL active MCP servers
       // so that every Claude tab/CLI instance gets Figma access.
