@@ -601,6 +601,19 @@
       width: 208px;
     }
 
+    .figma-panel #copy-link-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 24px;
+      padding: 0 12px;
+    }
+
+    .figma-panel #copy-link-btn .copy-link-shortcut {
+      color: rgba(192, 192, 192, 0.5);
+    }
+
     .figma-panel .ghost-button:hover:not(:disabled) {
       background: #3d3d3d;
       border-color: #565656;
@@ -965,7 +978,7 @@
       </div>
 
       <div class="action-row" id="bridge-copy-row">
-        <button class="ghost-button" id="copy-link-btn" onclick="copyCurrentLink()" disabled>Copy Link ⌘F</button>
+        <button class="ghost-button" id="copy-link-btn" onclick="copyCurrentLink()" disabled><span class="copy-link-label">Copy Link</span><span class="copy-link-shortcut">⌘F</span></button>
       </div>
       <div class="copy-feedback" id="copy-feedback"></div>
       </div>
@@ -1092,6 +1105,11 @@
       updateCopyButtonState(false);
     }
 
+    function setCopyButtonIdleLabel(copyBtn) {
+      if (!copyBtn) return;
+      copyBtn.innerHTML = '<span class="copy-link-label">Copy Link</span><span class="copy-link-shortcut">⌘F</span>';
+    }
+
     function updateCopyButtonState(hasError) {
       var copyBtn = document.getElementById('copy-link-btn');
       if (!copyBtn) return;
@@ -1099,7 +1117,13 @@
       var isBusy = (window.__bridgeBusyCount || 0) > 0;
       var isError = !!hasError;
       copyBtn.dataset.busy = isBusy ? 'true' : 'false';
-      copyBtn.textContent = isError ? 'Error' : (isBusy ? 'Working...' : 'Copy Link ⌘F');
+      if (isError) {
+        copyBtn.textContent = 'Error';
+      } else if (isBusy) {
+        copyBtn.textContent = 'Working...';
+      } else {
+        setCopyButtonIdleLabel(copyBtn);
+      }
       copyBtn.disabled = isError || isBusy || !window.__bridgeContext.copyUrl;
     }
 
@@ -1345,7 +1369,11 @@
           setTimeout(function() {
             copyBtn.classList.remove('copied');
             var isBusy = copyBtn.dataset.busy === 'true';
-            copyBtn.textContent = isBusy ? 'Working...' : 'Copy Link ⌘F';
+            if (isBusy) {
+              copyBtn.textContent = 'Working...';
+            } else {
+              setCopyButtonIdleLabel(copyBtn);
+            }
             requestResizeToContent();
           }, 1200);
         }
