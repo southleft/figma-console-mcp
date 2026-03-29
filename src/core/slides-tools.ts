@@ -217,6 +217,36 @@ export function registerSlidesTools(
 	);
 
 	server.tool(
+		"figma_get_text_styles",
+		`Get all local text styles in the current file. Returns style IDs, names, font info, and sizes. Use these IDs when setting textStyleId on text nodes via figma_execute.`,
+		{},
+		async () => {
+			try {
+				const connector = await getDesktopConnector();
+				const result = await connector.getTextStyles();
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(result) },
+					],
+				};
+			} catch (error) {
+				logger.error({ error }, "figma_get_text_styles failed");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
 		"figma_get_focused_slide",
 		`Get the slide currently focused in single-slide view.`,
 		{},
@@ -502,7 +532,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_add_text_to_slide",
-		`Add a new text element to a specific slide. Uses Inter font by default.`,
+		`Add a new text element to a specific slide. Supports custom fonts, colors, alignment, and text formatting.`,
 		{
 			slideId: z
 				.string()
@@ -521,8 +551,47 @@ export function registerSlidesTools(
 				.optional()
 				.default(24)
 				.describe("Font size in pixels"),
+			fontFamily: z
+				.string()
+				.optional()
+				.default("Inter")
+				.describe("Font family (e.g., 'Manrope', 'IBM Plex Sans')"),
+			fontStyle: z
+				.string()
+				.optional()
+				.default("Regular")
+				.describe("Font style/weight (e.g., 'Bold', 'SemiBold', 'Medium')"),
+			color: z
+				.string()
+				.regex(/^#[0-9a-fA-F]{6}$/)
+				.optional()
+				.describe("Text fill color as hex (e.g., '#FFFFFF')"),
+			textAlign: z
+				.enum(["LEFT", "CENTER", "RIGHT"])
+				.optional()
+				.describe("Horizontal text alignment"),
+			width: z
+				.number()
+				.min(1)
+				.max(MAX_DIMENSION)
+				.optional()
+				.describe("Text box width for wrapping. When set, enables text wrapping."),
+			lineHeight: z
+				.number()
+				.min(1)
+				.max(500)
+				.optional()
+				.describe("Line height in pixels"),
+			letterSpacing: z
+				.number()
+				.optional()
+				.describe("Letter spacing in pixels"),
+			textCase: z
+				.enum(["ORIGINAL", "UPPER", "LOWER", "TITLE"])
+				.optional()
+				.describe("Text case transformation"),
 		},
-		async ({ slideId, text, x, y, fontSize }) => {
+		async ({ slideId, text, x, y, fontSize, fontFamily, fontStyle, color, textAlign, width, lineHeight, letterSpacing, textCase }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.addTextToSlide({
@@ -531,6 +600,14 @@ export function registerSlidesTools(
 					x,
 					y,
 					fontSize,
+					fontFamily,
+					fontStyle,
+					color,
+					textAlign,
+					width,
+					lineHeight,
+					letterSpacing,
+					textCase,
 				});
 				return {
 					content: [
@@ -604,6 +681,46 @@ export function registerSlidesTools(
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_add_shape_to_slide failed");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in Figma Slides files.",
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	server.tool(
+		"figma_set_slide_background",
+		`Set the background color of a slide. Creates or updates a full-slide background rectangle.`,
+		{
+			slideId: z
+				.string()
+				.max(50)
+				.describe("The node ID of the slide"),
+			color: z
+				.string()
+				.regex(/^#[0-9a-fA-F]{6}$/, "Must be a 6-digit hex color like '#181818'")
+				.describe("Background color as hex (e.g., '#181818')"),
+		},
+		async ({ slideId, color }) => {
+			try {
+				const connector = await getDesktopConnector();
+				const result = await connector.setSlideBackground({ slideId, color });
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(result) },
+					],
+				};
+			} catch (error) {
+				logger.error({ error }, "figma_set_slide_background failed");
 				return {
 					content: [
 						{

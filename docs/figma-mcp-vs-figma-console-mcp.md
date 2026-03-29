@@ -16,12 +16,12 @@ The short answer: **approach** and **audience**. The Figma MCP is a task-driven 
   <Card title="Figma MCP (Official)" icon="figma">
     **Made by Figma, Inc.** — A design agent platform. Reads designs, generates code, captures web pages, and now writes to the canvas via `use_figma`. Skills guide agent behavior for consistent results.
 
-    90+ tools. Plugin API + REST API. Closed source.
+    91+ tools. Plugin API + REST API. Closed source.
   </Card>
   <Card title="Figma Console MCP" icon="terminal">
     **Made by Southleft** — A design system management platform. 90+ dedicated tools for reading, writing, managing tokens, analyzing parity, and bridging the gap between designers and developers.
 
-    90+ tools. Plugin API + REST API. Open source (MIT).
+    91+ tools. Plugin API + REST API. Open source (MIT).
   </Card>
 </Columns>
 
@@ -129,7 +129,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 | Read FigJam boards | Yes | Yes |
 | Create FigJam diagrams (Mermaid) | Yes | No |
 | Structured FigJam tools (stickies, connectors, tables, etc.) | No | Yes (9 dedicated tools) |
-| Figma Slides (create, edit, manage) | No | Yes (79 tools) |
+| Figma Slides (create, edit, manage) | No | Yes (81 tools) |
 | File comments (read, post, delete) | No | Yes |
 | Design annotations (read, write, clear, categories) | No | Yes (3 dedicated tools) |
 
@@ -238,7 +238,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 | Question | Figma MCP | Console MCP |
 |---|---|---|
 | *Can it read my designs?* | Yes | Yes |
-| *Can it write to my designs?* | Yes (via `use_figma`) | Yes (90+ tools) |
+| *Can it write to my designs?* | Yes (via `use_figma`) | Yes (91+ tools) |
 | *Can it manage variables?* | Yes (via code execution) | Yes (11 dedicated tools + batch) |
 | *Can it run plugin code?* | Yes | Yes |
 | *Does it know what I selected?* | No | Yes, in real time |
@@ -270,7 +270,7 @@ Both tools are better together. Use the one that fits your workflow, or use both
 
 <Columns cols={2}>
   <Card title="Set Up Figma Console MCP" icon="rocket" href="/setup">
-    Full 90+ tool access in ~10 minutes. Manage your design system with AI.
+    Full 91+ tool access in ~10 minutes. Manage your design system with AI.
   </Card>
   <Card title="Set Up Figma MCP (Official)" icon="figma" href="https://developers.figma.com/docs/figma-mcp-server/">
     Figma's official documentation for their MCP server.

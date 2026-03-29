@@ -93,8 +93,10 @@ export interface IFigmaConnector {
   getFocusedSlide(): Promise<any>;
   focusSlide(params: { slideId: string }): Promise<any>;
   skipSlide(params: { slideId: string; skip: boolean }): Promise<any>;
-  addTextToSlide(params: { slideId: string; text: string; x?: number; y?: number; fontSize?: number }): Promise<any>;
+  addTextToSlide(params: { slideId: string; text: string; x?: number; y?: number; fontSize?: number; fontFamily?: string; fontStyle?: string; color?: string; textAlign?: string; width?: number; lineHeight?: number; letterSpacing?: number; textCase?: string }): Promise<any>;
   addShapeToSlide(params: { slideId: string; shapeType: string; x: number; y: number; width: number; height: number; fillColor?: string }): Promise<any>;
+  setSlideBackground(params: { slideId: string; color: string }): Promise<any>;
+  getTextStyles(): Promise<any>;
 
   // Annotation operations
   getAnnotations(nodeId: string, includeChildren?: boolean, depth?: number): Promise<any>;

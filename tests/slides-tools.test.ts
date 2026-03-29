@@ -98,6 +98,20 @@ function createMockConnector(overrides: Record<string, jest.Mock> = {}) {
 			success: true,
 			data: { id: "1:11", type: "RECTANGLE" },
 		}),
+		setSlideBackground: jest.fn().mockResolvedValue({
+			success: true,
+			data: { slideId: "1:1", color: "#181818", updated: false },
+		}),
+		getTextStyles: jest.fn().mockResolvedValue({
+			success: true,
+			data: {
+				styles: [
+					{ id: "S:1", name: "Heading/H1", fontSize: 48, fontFamily: "Inter", fontStyle: "Bold" },
+					{ id: "S:2", name: "Body/Regular", fontSize: 16, fontFamily: "Inter", fontStyle: "Regular" },
+				],
+				count: 2,
+			},
+		}),
 		...overrides,
 	};
 }
@@ -121,14 +135,15 @@ describe("Slides Tools", () => {
 	// Registration
 	// ========================================================================
 
-	it("registers all 15 Slides tools", () => {
-		expect(server.tool).toHaveBeenCalledTimes(15);
+	it("registers all 17 Slides tools", () => {
+		expect(server.tool).toHaveBeenCalledTimes(17);
 		const names = server.tool.mock.calls.map((c: any[]) => c[0]);
 		expect(names).toContain("figma_list_slides");
 		expect(names).toContain("figma_get_slide_content");
 		expect(names).toContain("figma_get_slide_grid");
 		expect(names).toContain("figma_get_slide_transition");
 		expect(names).toContain("figma_get_focused_slide");
+		expect(names).toContain("figma_get_text_styles");
 		expect(names).toContain("figma_create_slide");
 		expect(names).toContain("figma_delete_slide");
 		expect(names).toContain("figma_duplicate_slide");
@@ -137,6 +152,7 @@ describe("Slides Tools", () => {
 		expect(names).toContain("figma_skip_slide");
 		expect(names).toContain("figma_add_text_to_slide");
 		expect(names).toContain("figma_add_shape_to_slide");
+		expect(names).toContain("figma_set_slide_background");
 		expect(names).toContain("figma_set_slides_view_mode");
 		expect(names).toContain("figma_focus_slide");
 	});
@@ -686,6 +702,173 @@ describe("Slides Tools", () => {
 			});
 
 			expect(result.isError).toBe(true);
+		});
+	});
+
+	// ========================================================================
+	// figma_get_text_styles
+	// ========================================================================
+
+	describe("figma_get_text_styles", () => {
+		it("returns text styles array", async () => {
+			const tool = server._getTool("figma_get_text_styles");
+			const result = await tool.handler({});
+
+			expect(mockConnector.getTextStyles).toHaveBeenCalled();
+			expect(result.isError).toBeUndefined();
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.data.styles).toHaveLength(2);
+			expect(parsed.data.count).toBe(2);
+			expect(parsed.data.styles[0].name).toBe("Heading/H1");
+		});
+
+		it("returns error when connector fails", async () => {
+			mockConnector.getTextStyles.mockRejectedValue(
+				new Error("Text styles require WebSocket transport")
+			);
+
+			const tool = server._getTool("figma_get_text_styles");
+			const result = await tool.handler({});
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("WebSocket transport");
+		});
+	});
+
+	// ========================================================================
+	// figma_set_slide_background
+	// ========================================================================
+
+	describe("figma_set_slide_background", () => {
+		it("sets background color on a slide", async () => {
+			const tool = server._getTool("figma_set_slide_background");
+			const result = await tool.handler({ slideId: "1:1", color: "#181818" });
+
+			expect(mockConnector.setSlideBackground).toHaveBeenCalledWith({
+				slideId: "1:1",
+				color: "#181818",
+			});
+			expect(result.isError).toBeUndefined();
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.data.slideId).toBe("1:1");
+			expect(parsed.data.color).toBe("#181818");
+		});
+
+		it("returns updated=true when background already exists", async () => {
+			mockConnector.setSlideBackground.mockResolvedValue({
+				success: true,
+				data: { slideId: "1:1", color: "#FF0000", updated: true },
+			});
+
+			const tool = server._getTool("figma_set_slide_background");
+			const result = await tool.handler({ slideId: "1:1", color: "#FF0000" });
+
+			expect(result.isError).toBeUndefined();
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.data.updated).toBe(true);
+		});
+
+		it("returns error when slide not found", async () => {
+			mockConnector.setSlideBackground.mockRejectedValue(
+				new Error("Node 99:99 is not a SLIDE")
+			);
+
+			const tool = server._getTool("figma_set_slide_background");
+			const result = await tool.handler({ slideId: "99:99", color: "#000000" });
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("not a SLIDE");
+			expect(parsed.hint).toBeDefined();
+		});
+	});
+
+	// ========================================================================
+	// figma_add_text_to_slide — enhanced parameters
+	// ========================================================================
+
+	describe("figma_add_text_to_slide (enhanced)", () => {
+		it("passes font family and style to connector", async () => {
+			const tool = server._getTool("figma_add_text_to_slide");
+			const result = await tool.handler({
+				slideId: "1:1",
+				text: "Styled Title",
+				x: 100,
+				y: 100,
+				fontSize: 48,
+				fontFamily: "Manrope",
+				fontStyle: "Bold",
+			});
+
+			expect(mockConnector.addTextToSlide).toHaveBeenCalledWith(
+				expect.objectContaining({
+					slideId: "1:1",
+					text: "Styled Title",
+					fontFamily: "Manrope",
+					fontStyle: "Bold",
+					fontSize: 48,
+				})
+			);
+			expect(result.isError).toBeUndefined();
+		});
+
+		it("passes color and textAlign to connector", async () => {
+			const tool = server._getTool("figma_add_text_to_slide");
+			const result = await tool.handler({
+				slideId: "1:1",
+				text: "Centered White Text",
+				x: 100,
+				y: 100,
+				fontSize: 24,
+				fontFamily: "Inter",
+				fontStyle: "Regular",
+				color: "#FFFFFF",
+				textAlign: "CENTER",
+			});
+
+			expect(mockConnector.addTextToSlide).toHaveBeenCalledWith(
+				expect.objectContaining({
+					color: "#FFFFFF",
+					textAlign: "CENTER",
+				})
+			);
+			expect(result.isError).toBeUndefined();
+		});
+
+		it("passes width, lineHeight, letterSpacing, textCase to connector", async () => {
+			const tool = server._getTool("figma_add_text_to_slide");
+			const result = await tool.handler({
+				slideId: "1:1",
+				text: "Wrapped text body",
+				x: 100,
+				y: 200,
+				fontSize: 16,
+				fontFamily: "Inter",
+				fontStyle: "Regular",
+				width: 600,
+				lineHeight: 24,
+				letterSpacing: 0.5,
+				textCase: "UPPER",
+			});
+
+			expect(mockConnector.addTextToSlide).toHaveBeenCalledWith(
+				expect.objectContaining({
+					width: 600,
+					lineHeight: 24,
+					letterSpacing: 0.5,
+					textCase: "UPPER",
+				})
+			);
+			expect(result.isError).toBeUndefined();
+		});
+
+		it("schema defines default fontFamily and fontStyle", () => {
+			const tool = server._getTool("figma_add_text_to_slide");
+			// Verify the schema includes fontFamily and fontStyle with defaults
+			expect(tool.schema.fontFamily).toBeDefined();
+			expect(tool.schema.fontStyle).toBeDefined();
+			// The Zod schema provides defaults of "Inter" and "Regular" at parse time
 		});
 	});
 

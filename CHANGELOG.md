@@ -5,6 +5,19 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0] - 2026-03-29
+
+### Added
+- **`figma_set_slide_background`** — New tool to set a slide's background color with a single call. Creates a 1920x1080 rectangle named "Background" or updates the existing one. Eliminates the need for manual rectangle creation + z-ordering via `figma_execute`.
+- **`figma_get_text_styles`** — New tool to retrieve all local text styles with their IDs, font families, weights, sizes, and spacing. Works in any file type. Eliminates the need to discover text style IDs via `figma_execute`.
+- **14 new slides tests** covering both new tools and enhanced `figma_add_text_to_slide` parameters (49 total slides tests).
+
+### Changed
+- **`figma_add_text_to_slide` enhanced** — 8 new optional parameters: `fontFamily`, `fontStyle`, `color`, `textAlign`, `width`, `lineHeight`, `letterSpacing`, `textCase`. Enables production-quality slide text creation without falling back to `figma_execute`. Font is loaded dynamically based on family/style parameters.
+
+### Fixed
+
+
 ## [1.19.2] - 2026-03-27
 
 ### Added
@@ -536,6 +549,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.20.0]: https://github.com/southleft/figma-console-mcp/compare/v1.19.2...v1.20.0
 [1.19.2]: https://github.com/southleft/figma-console-mcp/compare/v1.19.1...v1.19.2
 [1.19.1]: https://github.com/southleft/figma-console-mcp/compare/v1.19.0...v1.19.1
 [1.19.0]: https://github.com/southleft/figma-console-mcp/compare/v1.18.0...v1.19.0

@@ -4691,6 +4691,108 @@ figma.ui.onmessage = async (msg) => {
     }
   }
 
+  // GET_TEXT_STYLES - Get all local text styles
+  else if (msg.type === 'GET_TEXT_STYLES') {
+    try {
+      var textStyles = await figma.getLocalTextStylesAsync();
+      var styles = [];
+      for (var si = 0; si < textStyles.length; si++) {
+        var style = textStyles[si];
+        styles.push({
+          id: style.id,
+          name: style.name,
+          description: style.description || '',
+          fontSize: style.fontSize,
+          fontFamily: style.fontName ? style.fontName.family : 'unknown',
+          fontStyle: style.fontName ? style.fontName.style : 'unknown',
+          letterSpacing: style.letterSpacing,
+          lineHeight: style.lineHeight,
+          textCase: style.textCase,
+          textDecoration: style.textDecoration
+        });
+      }
+      console.log('🌉 [Desktop Bridge] Got ' + styles.length + ' text styles');
+
+      figma.ui.postMessage({
+        type: 'GET_TEXT_STYLES_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { styles: styles, count: styles.length }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get text styles error:', error);
+      figma.ui.postMessage({
+        type: 'GET_TEXT_STYLES_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // SET_SLIDE_BACKGROUND - Set slide background color
+  else if (msg.type === 'SET_SLIDE_BACKGROUND') {
+    try {
+      if (__editorType !== 'slides') {
+        throw new Error('SET_SLIDE_BACKGROUND is only available in Slides files');
+      }
+      var bgSlide = await figma.getNodeByIdAsync(msg.slideId);
+      if (!bgSlide || bgSlide.type !== 'SLIDE') {
+        throw new Error('Node ' + msg.slideId + ' is not a SLIDE');
+      }
+      console.log('🌉 [Desktop Bridge] Setting slide background:', bgSlide.name);
+
+      // Parse hex color
+      var bgHex = (msg.color || '#CCCCCC').replace('#', '');
+      var bgR = parseInt(bgHex.substring(0, 2), 16) / 255;
+      var bgG = parseInt(bgHex.substring(2, 4), 16) / 255;
+      var bgB = parseInt(bgHex.substring(4, 6), 16) / 255;
+      var bgColor = { r: bgR, g: bgG, b: bgB };
+
+      // Check if a background rectangle already exists
+      var existingBg = null;
+      for (var ci = 0; ci < bgSlide.children.length; ci++) {
+        var child = bgSlide.children[ci];
+        if (child.type === 'RECTANGLE' && child.name === 'Background' && child.width === 1920 && child.height === 1080) {
+          existingBg = child;
+          break;
+        }
+      }
+
+      if (existingBg) {
+        // Update existing background
+        existingBg.fills = [{ type: 'SOLID', color: bgColor }];
+      } else {
+        // Create new background rectangle
+        var bgRect = figma.createRectangle();
+        bgRect.name = 'Background';
+        bgRect.resize(1920, 1080);
+        bgRect.x = 0;
+        bgRect.y = 0;
+        bgRect.fills = [{ type: 'SOLID', color: bgColor }];
+        bgSlide.appendChild(bgRect);
+        bgSlide.insertChild(0, bgRect);
+      }
+
+      figma.ui.postMessage({
+        type: 'SET_SLIDE_BACKGROUND_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { slideId: bgSlide.id, color: msg.color, updated: !!existingBg }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Set slide background error:', error);
+      figma.ui.postMessage({
+        type: 'SET_SLIDE_BACKGROUND_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
   // ADD_TEXT_TO_SLIDE - Add a text node to a slide
   else if (msg.type === 'ADD_TEXT_TO_SLIDE') {
     try {
@@ -4704,11 +4806,37 @@ figma.ui.onmessage = async (msg) => {
       console.log('🌉 [Desktop Bridge] Adding text to slide:', textSlide.name);
 
       var textNode = figma.createText();
-      await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+      var fontFamily = msg.fontFamily || 'Inter';
+      var fontStyle = msg.fontStyle || 'Regular';
+      await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
+      textNode.fontName = { family: fontFamily, style: fontStyle };
       textNode.characters = msg.text || '';
       textNode.fontSize = msg.fontSize || 24;
       textNode.x = typeof msg.x === 'number' ? msg.x : 100;
       textNode.y = typeof msg.y === 'number' ? msg.y : 100;
+      if (msg.color) {
+        var hex = msg.color.replace('#', '');
+        var r = parseInt(hex.substring(0, 2), 16) / 255;
+        var g = parseInt(hex.substring(2, 4), 16) / 255;
+        var b = parseInt(hex.substring(4, 6), 16) / 255;
+        textNode.fills = [{ type: 'SOLID', color: { r: r, g: g, b: b } }];
+      }
+      if (msg.textAlign) {
+        textNode.textAlignHorizontal = msg.textAlign;
+      }
+      if (msg.width) {
+        textNode.resize(msg.width, textNode.height);
+        textNode.textAutoResize = 'HEIGHT';
+      }
+      if (typeof msg.lineHeight === 'number') {
+        textNode.lineHeight = { value: msg.lineHeight, unit: 'PIXELS' };
+      }
+      if (typeof msg.letterSpacing === 'number') {
+        textNode.letterSpacing = { value: msg.letterSpacing, unit: 'PIXELS' };
+      }
+      if (msg.textCase) {
+        textNode.textCase = msg.textCase;
+      }
       textSlide.appendChild(textNode);
 
       figma.ui.postMessage({

@@ -1684,4 +1684,6 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   async skipSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
   async addTextToSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
   async addShapeToSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async setSlideBackground(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
+  async getTextStyles(): Promise<any> { throw new Error('Text styles require WebSocket transport'); }
 }

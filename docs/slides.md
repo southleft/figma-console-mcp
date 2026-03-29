@@ -70,8 +70,10 @@ Every tool is available in both **Local Mode** and **Cloud Mode**.
 | `figma_reorder_slides` | Move slides to new positions in the deck |
 | `figma_set_slide_transition` | Apply a transition style with easing and duration to a slide |
 | `figma_skip_slide` | Mark a slide to be skipped during presentation mode |
-| `figma_add_text_to_slide` | Place a text element on a slide with configurable size and position |
+| `figma_add_text_to_slide` | Add text with custom fonts, colors, alignment, wrapping, and text case |
 | `figma_add_shape_to_slide` | Add a shape element to a slide for visual structure |
+| `figma_set_slide_background` | Set a slide's background color (creates or updates a full-slide rectangle) |
+| `figma_get_text_styles` | Get all local text styles with IDs, font info, and sizes |
 
 ### Navigation Tools
 

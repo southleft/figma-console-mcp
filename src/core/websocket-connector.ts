@@ -407,12 +407,20 @@ export class WebSocketConnector implements IFigmaConnector {
     return this.wsServer.sendCommand('SKIP_SLIDE', params, 5000);
   }
 
-  async addTextToSlide(params: { slideId: string; text: string; x?: number; y?: number; fontSize?: number }): Promise<any> {
+  async addTextToSlide(params: { slideId: string; text: string; x?: number; y?: number; fontSize?: number; fontFamily?: string; fontStyle?: string; color?: string; textAlign?: string; width?: number; lineHeight?: number; letterSpacing?: number; textCase?: string }): Promise<any> {
     return this.wsServer.sendCommand('ADD_TEXT_TO_SLIDE', params, 10000);
   }
 
   async addShapeToSlide(params: { slideId: string; shapeType: string; x: number; y: number; width: number; height: number; fillColor?: string }): Promise<any> {
     return this.wsServer.sendCommand('ADD_SHAPE_TO_SLIDE', params, 5000);
+  }
+
+  async setSlideBackground(params: { slideId: string; color: string }): Promise<any> {
+    return this.wsServer.sendCommand('SET_SLIDE_BACKGROUND', params, 5000);
+  }
+
+  async getTextStyles(): Promise<any> {
+    return this.wsServer.sendCommand('GET_TEXT_STYLES', {}, 5000);
   }
 
   // ============================================================================

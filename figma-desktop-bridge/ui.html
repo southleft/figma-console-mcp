@@ -727,6 +727,12 @@
         'SKIP_SLIDE': function(params) {
           return window.sendPluginCommand('SKIP_SLIDE', params, 5000);
         },
+        'GET_TEXT_STYLES': function(params) {
+          return window.sendPluginCommand('GET_TEXT_STYLES', params, 5000);
+        },
+        'SET_SLIDE_BACKGROUND': function(params) {
+          return window.sendPluginCommand('SET_SLIDE_BACKGROUND', params, 5000);
+        },
         'ADD_TEXT_TO_SLIDE': function(params) {
           return window.sendPluginCommand('ADD_TEXT_TO_SLIDE', params, 10000);
         },
@@ -1397,6 +1403,12 @@
           break;
         case 'SKIP_SLIDE_RESULT':
           handleResult('SKIP_SLIDE', 'data');
+          break;
+        case 'GET_TEXT_STYLES_RESULT':
+          handleResult('GET_TEXT_STYLES', 'data');
+          break;
+        case 'SET_SLIDE_BACKGROUND_RESULT':
+          handleResult('SET_SLIDE_BACKGROUND', 'data');
           break;
         case 'ADD_TEXT_TO_SLIDE_RESULT':
           handleResult('ADD_TEXT_TO_SLIDE', 'data');
