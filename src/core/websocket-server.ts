@@ -17,10 +17,12 @@ import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http';
 import type { Server as HttpServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
+import { getAccountToken, saveAccountToken } from './account-secrets.js';
 import type { ConsoleLogEntry } from './types/index.js';
 
 // Read version from package.json using the resolved package root.
@@ -71,6 +73,17 @@ interface PendingRequest {
   timeoutId: ReturnType<typeof setTimeout>;
   createdAt: number;
   targetFileKey: string;
+}
+
+interface SharedAccountSettings {
+  accounts: any[];
+  activeAccountId: string | null;
+}
+
+interface ActiveAccountPayload {
+  accountId: string | null;
+  email: string | null;
+  token: string | null;
 }
 
 export interface ConnectedFileInfo {
@@ -135,11 +148,87 @@ export class FigmaWebSocketServer extends EventEmitter {
   private documentChangeBufferSize = 200;
   /** Cached plugin UI HTML content — loaded once and served to bootloader requests */
   private _pluginUIContent: string | null = null;
+  private sharedAccountSettingsPath = join(homedir(), 'Claude Code', 'figma-console-mcp', 'accounts.json');
 
   constructor(options: WebSocketServerOptions) {
     super();
     this.options = options;
     this._startedAt = Date.now();
+  }
+
+  private normalizeSharedAccountSettings(settings: any): SharedAccountSettings {
+    const accounts = Array.isArray(settings?.accounts) ? settings.accounts : [];
+    let migratedLegacyTokens = false;
+    const normalizedAccounts = accounts
+      .filter((account: any) => account && typeof account === 'object')
+      .map((account: any, index: number) => {
+        const id = account.id || `account-${index}`;
+        const email = account.email ? String(account.email).trim() : '';
+        const token = account.token ? String(account.token).trim() : '';
+        if (token) {
+          if (saveAccountToken(id, token)) {
+            migratedLegacyTokens = true;
+          }
+        }
+        return { id, email };
+      });
+
+    let activeAccountId = settings?.activeAccountId ? String(settings.activeAccountId) : null;
+    if (!activeAccountId || !normalizedAccounts.some((account: any) => account.id === activeAccountId)) {
+      activeAccountId = normalizedAccounts.length ? normalizedAccounts[0].id : null;
+    }
+
+    if (migratedLegacyTokens) {
+      logger.info("Migrated legacy plaintext account tokens to Keychain");
+    }
+
+    return { accounts: normalizedAccounts, activeAccountId };
+  }
+
+  private getActiveAccountPayload(settings: SharedAccountSettings): ActiveAccountPayload {
+    const activeAccount =
+      settings.accounts.find((account: any) => account?.id === settings.activeAccountId) ||
+      settings.accounts[0] ||
+      null;
+    const token = activeAccount?.id ? getAccountToken(String(activeAccount.id)) : null;
+
+    return {
+      accountId: activeAccount?.id || null,
+      email: activeAccount?.email ? String(activeAccount.email).trim() : null,
+      token: token || null,
+    };
+  }
+
+  private emitActiveAccountChanged(settings: SharedAccountSettings, source: string): void {
+    const active = this.getActiveAccountPayload(settings);
+    this.emit('activeAccountChanged', {
+      ...active,
+      source,
+    });
+  }
+
+  private loadSharedAccountSettings(): SharedAccountSettings {
+    try {
+      if (!existsSync(this.sharedAccountSettingsPath)) {
+        return { accounts: [], activeAccountId: null };
+      }
+
+      const raw = readFileSync(this.sharedAccountSettingsPath, 'utf-8');
+      return this.normalizeSharedAccountSettings(JSON.parse(raw));
+    } catch (error) {
+      logger.warn({ error }, 'Failed to load shared account settings');
+      return { accounts: [], activeAccountId: null };
+    }
+  }
+
+  private saveSharedAccountSettings(settings: SharedAccountSettings): void {
+    try {
+      const normalized = this.normalizeSharedAccountSettings(settings);
+      mkdirSync(join(homedir(), 'Claude Code', 'figma-console-mcp'), { recursive: true });
+      writeFileSync(this.sharedAccountSettingsPath, JSON.stringify(normalized, null, 2), 'utf-8');
+    } catch (error) {
+      logger.warn({ error }, 'Failed to save shared account settings');
+    }
   }
 
   /**
@@ -368,6 +457,45 @@ export class FigmaWebSocketServer extends EventEmitter {
 
     // Unsolicited data from plugin (FILE_INFO, events, forwarded data)
     if (message.type) {
+      if (message.type === 'GET_SHARED_ACCOUNT_SETTINGS') {
+        try {
+          ws.send(JSON.stringify({
+            type: 'SHARED_ACCOUNT_SETTINGS',
+            data: {
+              settings: this.loadSharedAccountSettings(),
+            },
+          }));
+        } catch (error) {
+          logger.warn({ error }, 'Failed to send shared account settings');
+        }
+        return;
+      }
+
+      if (message.type === 'ACCOUNT_SETTINGS_SYNC') {
+        const settings = this.normalizeSharedAccountSettings(
+          message.data?.settings || { accounts: [], activeAccountId: null }
+        );
+        this.saveSharedAccountSettings(settings);
+        this.emitActiveAccountChanged(settings, 'ACCOUNT_SETTINGS_SYNC');
+        return;
+      }
+
+      if (message.type === 'ACCOUNT_SWITCH') {
+        const current = this.loadSharedAccountSettings();
+        const requestedAccountId = message.data?.accountId ? String(message.data.accountId) : null;
+        if (requestedAccountId) {
+          const exists = current.accounts.some((a: any) => a.id === requestedAccountId);
+          if (exists) {
+            current.activeAccountId = requestedAccountId;
+          }
+        } else {
+          current.activeAccountId = null;
+        }
+        this.saveSharedAccountSettings(current);
+        this.emitActiveAccountChanged(current, 'ACCOUNT_SWITCH');
+        return;
+      }
+
       // FILE_INFO promotes pending clients to named clients
       if (message.type === 'FILE_INFO' && message.data) {
         this.handleFileInfo(message.data, ws);

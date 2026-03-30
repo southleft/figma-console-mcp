@@ -12,24 +12,40 @@
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 11px;
-      background: var(--figma-color-bg, #2c2c2c);
+      background: #2c2c2c;
       color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
       height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 6px 8px;
+      padding: 0;
       user-select: none;
+      overflow: hidden;
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    body::-webkit-scrollbar {
+      display: none;
+    }
+
+    .bridge-shell {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      background: var(--figma-color-bg, #2c2c2c);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 22px;
+      overflow: hidden;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
     }
 
     .bridge-status {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 8px;
-      background: var(--figma-color-bg-secondary, #383838);
-      border: 1px solid var(--figma-color-border, #4a4a4a);
-      border-radius: 4px;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 16px 18px;
+      background: var(--figma-color-bg, #2c2c2c);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       white-space: nowrap;
     }
 
@@ -41,17 +57,27 @@
     }
 
     .status-indicator.loading {
+      color: #f5a623;
       background: #f5a623;
       animation: pulse 1.5s ease-in-out infinite;
     }
 
     .status-indicator.active {
-      background: #18a957;
-      box-shadow: 0 0 6px rgba(24, 169, 87, 0.6);
-      animation: glow 2s ease-in-out infinite;
+      color: #93d59b;
+      background: #93d59b;
+      box-shadow: none;
+      animation: none;
+    }
+
+    .status-indicator.disabled {
+      color: #f24822;
+      background: #f24822;
+      box-shadow: none;
+      animation: none;
     }
 
     .status-indicator.error {
+      color: #f24822;
       background: #f24822;
     }
 
@@ -66,17 +92,138 @@
     }
 
     .status-text {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       font-weight: 500;
-      letter-spacing: 0.2px;
+      letter-spacing: 0;
     }
 
     .status-text .label {
-      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.7));
+      color: rgba(255, 255, 255, 0.95);
+      font-size: 16px;
+      font-weight: 600;
     }
 
     .status-text .state {
-      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
-      margin-left: 4px;
+      color: rgba(255, 255, 255, 0.52);
+      font-size: 11px;
+      margin-left: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .context-card {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 16px 18px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .context-grid {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 12px 12px;
+      align-items: center;
+    }
+
+    .context-label {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .context-value {
+      color: rgba(255, 255, 255, 0.96);
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: left;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      min-height: 34px;
+      padding: 8px 12px;
+    }
+
+    .account-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .account-avatar {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #0d99ff, #14ae5c);
+      color: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .account-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .action-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 2px;
+    }
+
+    .ghost-button {
+      width: 100%;
+      background: var(--figma-color-bg-secondary, #2c2c2c);
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.92));
+      border: 1px solid var(--figma-color-border, rgba(255, 255, 255, 0.14));
+      border-radius: 10px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+
+    .ghost-button:hover:not(:disabled) {
+      background: #343434;
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+
+    .ghost-button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .copy-feedback {
+      min-height: 12px;
+      font-size: 10px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.45));
+      text-align: left;
+      padding-left: 2px;
+    }
+
+    .copy-feedback.success {
+      color: #18a957;
+    }
+
+    .copy-feedback.error {
+      color: #f24822;
     }
 
     /* Cloud Mode toggle */
@@ -88,19 +235,21 @@
     .cloud-section.visible {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      margin-top: 6px;
+      gap: 8px;
+      margin: 0;
+      padding: 0 18px 16px;
     }
 
     .cloud-toggle {
       display: flex;
       align-items: center;
-      gap: 3px;
+      gap: 6px;
       cursor: pointer;
-      font-size: 10px;
-      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.6));
       user-select: none;
-      margin-top: 2px;
+      padding: 0 18px 14px;
     }
 
     .cloud-toggle:hover {
@@ -119,13 +268,13 @@
 
     .cloud-input-row input {
       width: 100%;
-      background: var(--figma-color-bg, #2c2c2c);
-      border: 1px solid var(--figma-color-border, #4a4a4a);
-      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
       color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
-      font-family: monospace;
-      font-size: 12px;
-      padding: 4px 6px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 13px;
+      padding: 10px 12px;
       text-transform: uppercase;
       letter-spacing: 3px;
       text-align: center;
@@ -142,13 +291,13 @@
 
     .cloud-input-row button {
       width: 100%;
-      background: var(--figma-color-bg-brand, #0d99ff);
-      color: #fff;
-      border: none;
-      border-radius: 3px;
-      font-size: 10px;
+      background: #303030;
+      color: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      font-size: 12px;
       font-weight: 500;
-      padding: 5px 8px;
+      padding: 10px 12px;
       cursor: pointer;
     }
 
@@ -174,45 +323,689 @@
     /* Light theme support */
     @media (prefers-color-scheme: light) {
       body {
-        background: #f5f5f5;
+        background: #e9e9e9;
         color: #333;
+      }
+      .bridge-shell {
+        background: #ffffff;
+        border-color: rgba(0, 0, 0, 0.08);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+      }
+      .context-card {
+        background: #ffffff;
+        border-color: #e5e5e5;
+      }
+      .ghost-button {
+        background: #f8f8f8;
+        color: #2c2c2c;
+        border-color: rgba(0, 0, 0, 0.12);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+      }
+      .ghost-button:hover:not(:disabled) {
+        background: #ffffff;
+        border-color: rgba(0, 0, 0, 0.18);
       }
       .bridge-status {
         background: #fff;
-        border-color: #e5e5e5;
+        border-bottom-color: rgba(0, 0, 0, 0.08);
       }
       .status-text .label {
-        color: #666;
+        color: #2c2c2c;
       }
       .status-text .state {
-        color: #333;
+        color: #7a7a7a;
+      }
+      .context-label {
+        color: #666;
+      }
+      .context-value {
+        background: #f7f7f7;
+        border-color: rgba(0, 0, 0, 0.06);
+        color: #2c2c2c;
       }
     }
+    .bridge-shell.figma-panel {
+      width: 240px;
+      background: #2c2c2c;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      overflow: hidden;
+    }
+
+    .figma-panel .bridge-status {
+      padding: 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid #4b4b4b;
+      justify-content: flex-start;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .figma-panel .status-indicator {
+      width: 8px;
+      height: 8px;
+      box-shadow: none;
+      animation: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .figma-panel .status-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .figma-panel .context-grid {
+      display: block;
+    }
+
+    .figma-panel .status-text .label {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+      color: #c0c0c0;
+      white-space: nowrap;
+    }
+
+    .figma-panel .status-text .state {
+      display: none;
+    }
+
+    .figma-panel .file-name-icon {
+      width: 12px;
+      height: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 12px;
+    }
+
+    .figma-panel .active-account-email {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+      color: #ffffff;
+      width: 208px;
+      max-width: 208px;
+      display: block;
+      white-space: normal;
+      overflow: visible;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .figma-panel .account-switch-hint {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      line-height: 13px;
+      color: rgba(255, 255, 255, 0.5);
+      width: 100%;
+      max-width: 208px;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .figma-panel .context-card {
+      padding: 0 0 16px;
+      gap: 0;
+    }
+
+    .figma-panel .context-card.collapsed {
+      padding-bottom: 0;
+    }
+
+    .figma-panel .section-header,
+    .figma-panel .cloud-toggle {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 40px;
+      margin: 0;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .figma-panel .section-header {
+      padding: 0 16px;
+      cursor: pointer;
+    }
+
+    .figma-panel .cloud-toggle {
+      padding: 0 16px;
+      cursor: pointer;
+    }
+
+    .figma-panel .section-chevron,
+    .figma-panel .cloud-toggle .chevron {
+      width: 8px;
+      height: 8px;
+      text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .figma-panel .section-header .section-chevron {
+      transform: rotate(-90deg);
+      transition: transform 0.15s ease;
+    }
+
+    .figma-panel .section-header.expanded .section-chevron {
+      transform: rotate(0deg);
+    }
+
+    .figma-panel .cloud-toggle .chevron {
+      transform: rotate(-90deg);
+      transition: transform 0.15s ease;
+    }
+
+    .figma-panel .cloud-toggle.expanded .chevron {
+      transform: rotate(0deg);
+    }
+
+    .figma-panel .context-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 0 16px;
+      margin-bottom: 16px;
+    }
+
+    .figma-panel .context-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+      min-height: 13px;
+      width: 208px;
+    }
+
+    .figma-panel .context-label {
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 400;
+      color: #c0c0c0;
+      width: 88px;
+      flex: 0 0 88px;
+    }
+
+    .figma-panel .context-value {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      min-height: 0;
+      padding: 0;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+      color: #ffffff;
+      text-align: left;
+      flex: 1 1 auto;
+    }
+
+    .figma-panel .context-value.status-value {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .figma-panel .section-action {
+      margin-left: auto;
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      opacity: 0.9;
+      border-radius: 4px;
+      transition: background-color 120ms ease, opacity 120ms ease;
+    }
+
+    .figma-panel .plain-value {
+      white-space: nowrap;
+    }
+
+    .figma-panel .action-row {
+      margin-top: 0;
+      padding: 0 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .figma-panel .ghost-button {
+      border: 1px solid #4b4b4b;
+      border-radius: 6px;
+      background: #373737;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 14px;
+      padding: 5px 24px;
+      height: 24px;
+      box-shadow: none;
+      width: 208px;
+    }
+
+    .figma-panel #copy-link-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 24px;
+      padding: 0 12px;
+    }
+
+    .figma-panel #copy-link-btn .copy-link-shortcut {
+      color: rgba(192, 192, 192, 0.5);
+    }
+
+    .figma-panel .ghost-button:hover:not(:disabled) {
+      background: #3d3d3d;
+      border-color: #565656;
+    }
+
+    .figma-panel .ghost-button.copied,
+    .figma-panel .ghost-button.copied:hover:not(:disabled) {
+      background: rgba(65, 137, 228, 0.1);
+      border-color: transparent;
+      color: #4189e4;
+    }
+
+    .figma-panel .primary-button {
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: #4189e4;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 14px;
+      padding: 5px 24px;
+      height: 24px;
+      box-shadow: none;
+      width: 208px;
+    }
+
+    .figma-panel .primary-button:hover:not(:disabled) {
+      background: #4f95eb;
+    }
+
+    .figma-panel .section-divider {
+      height: 1px;
+      background: #4b4b4b;
+      margin: 0;
+    }
+
+    .figma-panel .desktop-section {
+      display: none;
+    }
+
+    .figma-panel .desktop-section.visible {
+      display: block;
+    }
+
+    .figma-panel .cloud-section {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      margin: 0;
+      padding: 0 16px 16px;
+    }
+
+    .figma-panel .cloud-section.visible {
+      display: flex;
+    }
+
+    .figma-panel .cloud-input-row input,
+    .figma-panel .cloud-input-row button {
+      width: 208px;
+      height: 25px;
+      border-radius: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      line-height: 14px;
+    }
+
+    .figma-panel .cloud-input-row input {
+      background: #383838;
+      border: none;
+      color: rgba(255, 255, 255, 0.5);
+      padding: 5px 12px;
+      text-align: center;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .figma-panel .cloud-input-row input:focus {
+      outline: none;
+      box-shadow: 0 0 0 1px #4189e4;
+    }
+
+    .figma-panel .cloud-input-row input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+    }
+
+    .figma-panel .cloud-status {
+      display: none;
+    }
+
+    .figma-panel .account-chip,
+    .figma-panel .account-avatar,
+    .figma-panel .copy-feedback {
+      display: none;
+    }
+
+    .figma-panel .main-view.hidden-view,
+    .figma-panel .settings-view.hidden-view,
+    .figma-panel .new-account-view.hidden-view {
+      display: none !important;
+    }
+
+    .figma-panel .section-action.settings-trigger {
+      cursor: pointer;
+    }
+
+    .figma-panel .section-action.settings-trigger:hover {
+      background: #454545;
+      opacity: 1;
+    }
+
+    .figma-panel .settings-view {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .figma-panel .new-account-view {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .figma-panel .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 40px;
+      padding: 0 16px;
+      color: #ffffff;
+    }
+
+    .figma-panel .settings-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .figma-panel .settings-breadcrumb {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+      padding-top: 1px;
+    }
+
+    .figma-panel .settings-breadcrumb-muted {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .figma-panel .settings-breadcrumb-current {
+      color: #ffffff;
+    }
+
+    .figma-panel .settings-back-icon {
+      width: 12px;
+      height: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+    }
+
+    .figma-panel .settings-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 16px 16px;
+      width: 100%;
+    }
+
+    .figma-panel .settings-current-account {
+      width: 208px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .figma-panel .settings-current-account-label {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+      line-height: 13px;
+    }
+
+    .figma-panel .settings-current-account-value {
+      color: #ffffff;
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 500;
+    }
+
+    .figma-panel .main-empty-helper {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0 16px;
+      margin-top: 4px;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+      line-height: 13px;
+    }
+
+    .figma-panel .main-empty-form {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 16px;
+      width: 100%;
+    }
+
+    .figma-panel .main-empty-form.visible {
+      display: flex;
+    }
+
+    .figma-panel .new-account-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 16px 16px;
+      width: 100%;
+    }
+
+    .figma-panel .settings-select-wrap {
+      position: relative;
+      width: 208px;
+    }
+
+    .figma-panel .settings-select {
+      width: 208px;
+      height: 24px;
+      border: none;
+      border-radius: 6px;
+      background: #383838;
+      color: rgba(255, 255, 255, 0.5);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      line-height: 14px;
+      padding: 5px 24px 5px 8px;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      outline: none;
+    }
+
+    .figma-panel .settings-select:focus {
+      box-shadow: 0 0 0 1px #4189e4;
+    }
+
+    .figma-panel .settings-select:disabled {
+      opacity: 1;
+    }
+
+    .figma-panel .settings-select-chevron {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 8px;
+      height: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.5);
+      pointer-events: none;
+    }
+
+    .figma-panel .ghost-button.secondary {
+      background: transparent;
+    }
+
+    .figma-panel .ghost-button.danger {
+      background: transparent;
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .figma-panel .settings-input {
+      width: 208px;
+      height: 24px;
+      border: none;
+      border-radius: 6px;
+      background: #383838;
+      color: rgba(255, 255, 255, 0.92);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      font-size: 11px;
+      line-height: 14px;
+      padding: 5px 8px;
+      outline: none;
+    }
+
+    .figma-panel .settings-input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .figma-panel .settings-input:focus {
+      box-shadow: 0 0 0 1px #4189e4;
+    }
+
+    .figma-panel .settings-helper {
+      display: flex;
+      align-items: center;
+      width: 208px;
+      padding: 16px 0 0;
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 11px;
+      line-height: 13px;
+    }
+
   </style>
 </head>
 <body>
-  <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+  <div class="bridge-shell figma-panel">
     <div class="bridge-status" id="status-container">
-      <div class="status-indicator loading" id="status-dot"></div>
       <div class="status-text">
-        <span class="label">MCP</span>
-        <span class="state" id="status-state">connecting</span>
+        <span class="file-name-icon" aria-hidden="true">
+          <svg viewBox="0 0 12 12" width="12" height="12" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g opacity="0.65">
+              <path d="M7.926 4.4905H5.632V0H7.926C9.164 0 10.171 1.007 10.171 2.245C10.171 3.483 9.164 4.4905 7.926 4.4905ZM6.3675 3.755H7.926C8.7585 3.755 9.4355 3.0775 9.4355 2.2455C9.4355 1.4135 8.758 0.736 7.926 0.736H6.3675V3.755ZM6.3675 4.4905H4.074C2.836 4.4905 1.829 3.4835 1.829 2.2455C1.829 1.0075 2.836 0 4.074 0H6.368V4.4905H6.3675ZM4.074 0.7355C3.2415 0.7355 2.5645 1.413 2.5645 2.245C2.5645 3.077 3.2415 3.755 4.074 3.755H5.6325V0.7355H4.074ZM6.3675 8.245H4.074C2.836 8.245 1.829 7.238 1.829 6C1.829 4.762 2.836 3.755 4.074 3.755H6.368V8.245H6.3675ZM4.074 4.4905C3.2415 4.4905 2.5645 5.168 2.5645 6C2.5645 6.832 3.242 7.5095 4.074 7.5095H5.6325V4.4905H4.074ZM4.086 12C2.8415 12 1.8285 10.993 1.8285 9.755C1.8285 8.517 2.8355 7.51 4.0735 7.51H6.3675V9.7305C6.3675 10.982 5.344 12 4.086 12ZM4.074 8.245C3.67382 8.24553 3.29018 8.40474 3.00721 8.68771C2.72424 8.97068 2.56503 9.35432 2.5645 9.7545C2.5645 10.587 3.247 11.264 4.0865 11.264C4.939 11.264 5.633 10.576 5.633 9.73V8.245H4.074ZM7.926 8.245H7.877C6.639 8.245 5.632 7.238 5.632 6C5.632 4.762 6.639 3.755 7.877 3.755H7.926C9.164 3.755 10.171 4.762 10.171 6C10.171 7.238 9.164 8.245 7.926 8.245ZM7.8775 4.4905C7.045 4.4905 6.368 5.168 6.368 6C6.368 6.832 7.0455 7.5095 7.8775 7.5095H7.9265C8.759 7.5095 9.436 6.832 9.436 6C9.436 5.168 8.758 4.4905 7.926 4.4905H7.8775Z" fill="white"/>
+            </g>
+          </svg>
+        </span>
+        <span class="label" id="file-name">File name</span>
+      </div>
+      <div class="active-account-email" id="active-account-email">No active account</div>
+      <p class="account-switch-hint" id="account-switch-hint">To switch accounts, ask Claude or Codex, then reload the plugin.</p>
+    </div>
+
+    <div class="main-view" id="main-view">
+    <div class="context-card">
+      <div class="section-header expanded" id="desktop-toggle" onclick="toggleDesktopSection()">
+        <span class="section-chevron" aria-hidden="true">
+          <svg viewBox="0 0 8 8" width="8" height="8" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M2 3L4 5L6 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="section-title">Desktop Bridge</span>
+      </div>
+      <div class="desktop-section visible" id="desktop-section">
+      <div class="context-grid">
+        <div class="context-row">
+          <div class="context-label">MCP Status</div>
+          <div class="context-value status-value">
+            <span class="status-indicator disabled" id="status-dot" aria-hidden="true">
+              <svg viewBox="0 0 8 8" width="8" height="8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="4" cy="4" r="4" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="state" id="status-state">Not Enabled</span>
+          </div>
+        </div>
+
+        <div class="context-row" id="selection-row">
+          <div class="context-label">Selection</div>
+          <div class="context-value plain-value" id="selection-summary">Not select</div>
+        </div>
+      </div>
+
+      <div class="action-row" id="bridge-copy-row">
+        <button class="ghost-button" id="copy-link-btn" onclick="copyCurrentLink()" disabled><span class="copy-link-label">Copy Link</span><span class="copy-link-shortcut">⌘F</span></button>
+      </div>
+      <div class="copy-feedback" id="copy-feedback"></div>
       </div>
     </div>
 
+    <div class="section-divider"></div>
+
     <div class="cloud-toggle" id="cloud-toggle" onclick="toggleCloudSection()">
-      <span class="chevron">▶</span> Cloud Mode
+      <span class="chevron" aria-hidden="true">
+        <svg viewBox="0 0 8 8" width="8" height="8" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2 3L4 5L6 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span>Cloud Mode</span>
     </div>
 
     <div class="cloud-section" id="cloud-section">
       <div class="cloud-input-row">
-        <input type="text" id="cloud-code" maxlength="6" placeholder="Pairing code" autocomplete="off" />
+        <input type="text" id="cloud-code" maxlength="6" placeholder="Pairing Code" autocomplete="off" onkeydown="if(event.key==='Enter'){cloudConnect();}" />
       </div>
       <div class="cloud-input-row">
-        <button id="cloud-btn" onclick="cloudConnect()">Connect</button>
+        <button class="ghost-button" id="cloud-btn" onclick="cloudConnect()">Connect</button>
       </div>
       <div class="cloud-status" id="cloud-status"></div>
     </div>
+    </div>
+
   </div>
 
   <script>
@@ -224,17 +1017,379 @@
     window.__figmaComponentData = null;
     window.__figmaComponentRequests = new Map();
     window.__figmaPendingRequests = new Map();
+    window.__bridgeContext = {
+      currentUser: null,
+      fileName: 'Untitled',
+      selectionCount: 0,
+      selectionNodes: [],
+      copyUrl: null,
+      shareToken: null
+    };
+    window.__accountSettings = {
+      accounts: [],
+      activeAccountId: null
+    };
+    window.__bridgeBusyCount = 0;
+    window.__uiResizeRAF = null;
+    window.__lastResize = { width: 0, height: 0 };
 
     let requestIdCounter = 0;
+
+    function extractShareTokenFromReferrer() {
+      try {
+        if (!document.referrer) return null;
+        var ref = new URL(document.referrer);
+        var token = ref.searchParams.get('t');
+        return token ? String(token).trim() : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function appendShareTokenIfAvailable(url) {
+      try {
+        if (!url) return url;
+        var token = window.__bridgeContext.shareToken;
+        if (!token) return url;
+        var parsed = new URL(url);
+        if (!parsed.searchParams.get('t')) {
+          parsed.searchParams.set('t', token);
+        }
+        return parsed.toString();
+      } catch (error) {
+        return url;
+      }
+    }
+
+    function requestResizeToContent() {
+      var shell = document.querySelector('.bridge-shell');
+      if (!shell) return;
+      if (window.__uiResizeRAF) return;
+
+      window.__uiResizeRAF = window.requestAnimationFrame(function() {
+        window.__uiResizeRAF = null;
+        var rect = shell.getBoundingClientRect();
+        var nextWidth = Math.max(240, Math.ceil(rect.width));
+        var nextHeight = Math.max(160, Math.ceil(rect.height));
+        if (window.__lastResize.width === nextWidth && window.__lastResize.height === nextHeight) {
+          return;
+        }
+        window.__lastResize.width = nextWidth;
+        window.__lastResize.height = nextHeight;
+        parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: nextWidth, height: nextHeight } }, '*');
+      });
+    }
 
     // UI update helper
     function updateStatus(state, isActive, isError) {
       const dot = document.getElementById('status-dot');
       const stateText = document.getElementById('status-state');
+      var normalizedState = state || (isError ? 'error' : (isActive ? 'enabled' : 'disabled'));
 
-      dot.className = 'status-indicator ' + (isError ? 'error' : (isActive ? 'active' : 'loading'));
-      stateText.textContent = state;
+      if (normalizedState === 'error') {
+        dot.className = 'status-indicator error';
+        stateText.textContent = 'Error';
+        updateCopyButtonState(true);
+        return;
+      }
+
+      if (normalizedState === 'enabled' || normalizedState === 'ready') {
+        dot.className = 'status-indicator active';
+        stateText.textContent = 'Enabled';
+        updateCopyButtonState(false);
+        return;
+      }
+
+      dot.className = 'status-indicator disabled';
+      stateText.textContent = 'Not Enabled';
+      updateCopyButtonState(false);
     }
+
+    function setCopyButtonIdleLabel(copyBtn) {
+      if (!copyBtn) return;
+      copyBtn.innerHTML = '<span class="copy-link-label">Copy Link</span><span class="copy-link-shortcut">⌘F</span>';
+    }
+
+    function updateCopyButtonState(hasError) {
+      var copyBtn = document.getElementById('copy-link-btn');
+      if (!copyBtn) return;
+
+      var isBusy = (window.__bridgeBusyCount || 0) > 0;
+      var isError = !!hasError;
+      copyBtn.dataset.busy = isBusy ? 'true' : 'false';
+      if (isError) {
+        copyBtn.textContent = 'Error';
+      } else if (isBusy) {
+        copyBtn.textContent = 'Working...';
+      } else {
+        setCopyButtonIdleLabel(copyBtn);
+      }
+      copyBtn.disabled = isError || isBusy || !window.__bridgeContext.copyUrl;
+    }
+
+    function getAccountInitials(name) {
+      if (!name) return '?';
+      var parts = String(name).trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return '?';
+      return parts.slice(0, 2).map(function(part) { return part.charAt(0).toUpperCase(); }).join('');
+    }
+
+    function getAccountDisplayName(account) {
+      if (!account) return 'Unknown account';
+      var email = account.email ? String(account.email).trim() : '';
+      return email || 'Unknown account';
+    }
+
+    function getActiveAccountPayload() {
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      if (!settings.accounts.length || !settings.activeAccountId) {
+        return null;
+      }
+
+      var activeAccount = settings.accounts.find(function(account) {
+        return account.id === settings.activeAccountId;
+      }) || settings.accounts[0];
+
+      if (!activeAccount) {
+        return null;
+      }
+
+      return {
+        accountId: activeAccount.id,
+        email: getAccountDisplayName(activeAccount),
+        token: activeAccount.token || null
+      };
+    }
+
+    function normalizeAccountSettings(settings) {
+      var accounts = Array.isArray(settings && settings.accounts) ? settings.accounts : [];
+      accounts = accounts
+        .filter(function(account) {
+          if (!account) return false;
+          var email = account.email ? String(account.email).trim() : '';
+          var token = account.token ? String(account.token).trim() : '';
+          return !!(email || token);
+        })
+        .map(function(account, index) {
+          return {
+            id: account.id || ('account-' + index + '-' + Date.now()),
+            email: account.email ? String(account.email).trim() : '',
+            token: account.token ? String(account.token) : ''
+          };
+        });
+
+      var activeAccountId = settings && settings.activeAccountId;
+      if (!activeAccountId || !accounts.some(function(account) { return account.id === activeAccountId; })) {
+        activeAccountId = accounts.length ? accounts[0].id : null;
+      }
+
+      return {
+        accounts: accounts,
+        activeAccountId: activeAccountId
+      };
+    }
+
+    function renderAccountSettings() {
+      var activeAccountEmail = document.getElementById('active-account-email');
+
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      window.__accountSettings = settings;
+
+      var activeAccount = settings.accounts.find(function(account) {
+        return account.id === settings.activeAccountId;
+      }) || settings.accounts[0] || null;
+      if (activeAccountEmail) {
+        activeAccountEmail.textContent = activeAccount ? getAccountDisplayName(activeAccount) : 'No active account';
+      }
+
+      updateMainAccountState();
+      requestResizeToContent();
+    }
+
+    function updateMainAccountState() {
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      var hasAccounts = settings.accounts.length > 0;
+      var selectionRow = document.getElementById('selection-row');
+      var copyRow = document.getElementById('bridge-copy-row');
+
+      if (selectionRow) {
+        var nextSelectionDisplay = hasAccounts ? '' : 'none';
+        if (selectionRow.style.display !== nextSelectionDisplay) {
+          selectionRow.style.display = nextSelectionDisplay;
+        }
+      }
+      if (copyRow) {
+        var nextCopyDisplay = hasAccounts ? '' : 'none';
+        if (copyRow.style.display !== nextCopyDisplay) {
+          copyRow.style.display = nextCopyDisplay;
+        }
+      }
+    }
+
+    function toggleDesktopSection() {
+      var section = document.getElementById('desktop-section');
+      var toggle = document.getElementById('desktop-toggle');
+      var card = document.querySelector('.context-card');
+      if (!section || !toggle) return;
+      var isExpanding = !section.classList.contains('visible');
+      section.classList.toggle('visible');
+      toggle.classList.toggle('expanded', isExpanding);
+      if (card) card.classList.toggle('collapsed', !isExpanding);
+      requestResizeToContent();
+    }
+
+    function applyAccountSettings(settings) {
+      window.__accountSettings = normalizeAccountSettings(settings);
+      renderAccountSettings();
+    }
+
+    function syncActiveAccountToConnection(connWs) {
+      if (!connWs || connWs.readyState !== 1) return;
+      var payload = getActiveAccountPayload();
+      if (!payload || !payload.accountId) return;
+      connWs.send(JSON.stringify({
+        type: 'ACCOUNT_SWITCH',
+        data: payload
+      }));
+    }
+
+    function syncAccountSettingsToConnection(connWs) {
+      if (!connWs || connWs.readyState !== 1) return;
+      connWs.send(JSON.stringify({
+        type: 'ACCOUNT_SETTINGS_SYNC',
+        data: {
+          settings: normalizeAccountSettings(window.__accountSettings)
+        }
+      }));
+    }
+
+    function syncActiveAccountToServers() {
+      if (!wsConnected) return;
+      var payload = getActiveAccountPayload();
+      if (!payload || !payload.accountId) return;
+      broadcastToAll({
+        type: 'ACCOUNT_SWITCH',
+        data: payload
+      });
+    }
+
+    function syncAccountSettingsToServers() {
+      if (!wsConnected) return;
+      var settings = normalizeAccountSettings(window.__accountSettings);
+      broadcastToAll({
+        type: 'ACCOUNT_SETTINGS_SYNC',
+        data: { settings: settings }
+      });
+    }
+
+    function requestSharedAccountSettings(connWs) {
+      if (connWs) {
+        if (connWs.readyState === 1) {
+          connWs.send(JSON.stringify({ type: 'GET_SHARED_ACCOUNT_SETTINGS' }));
+        }
+        return;
+      }
+
+      if (!wsConnected) return;
+      broadcastToAll({ type: 'GET_SHARED_ACCOUNT_SETTINGS' });
+    }
+
+    function saveAccountSettings() {
+      // Option B: server is single source of truth — sync directly, no clientStorage
+      syncAccountSettingsToServers();
+      syncActiveAccountToServers();
+      return Promise.resolve({ settings: window.__accountSettings });
+    }
+
+    function renderBridgeContext() {
+      var selectionCount = window.__bridgeContext.selectionCount || 0;
+      var selectionNodes = window.__bridgeContext.selectionNodes || [];
+      var selectionLabel = 'Not select';
+
+      if (selectionNodes.length === 1 && selectionNodes[0].name) {
+        selectionLabel = selectionNodes[0].name + ' (1)';
+      } else if (selectionCount > 1) {
+        selectionLabel = 'Selection (' + selectionCount + ')';
+      }
+
+      var fileNameEl = document.getElementById('file-name');
+      var selectionEl = document.getElementById('selection-summary');
+
+      if (fileNameEl) fileNameEl.textContent = window.__bridgeContext.fileName || 'Untitled';
+      if (selectionEl) selectionEl.textContent = selectionLabel;
+      updateCopyButtonState(false);
+      requestResizeToContent();
+    }
+
+    function applyFileInfo(fileInfo) {
+      if (!fileInfo) return;
+      if (fileInfo.currentUser !== undefined) window.__bridgeContext.currentUser = fileInfo.currentUser;
+      if (fileInfo.fileName !== undefined) window.__bridgeContext.fileName = fileInfo.fileName || 'Untitled';
+      if (fileInfo.selectionCount !== undefined) window.__bridgeContext.selectionCount = fileInfo.selectionCount || 0;
+      if (fileInfo.selectionNodes !== undefined) window.__bridgeContext.selectionNodes = fileInfo.selectionNodes || [];
+      if (fileInfo.copyUrl !== undefined) window.__bridgeContext.copyUrl = fileInfo.copyUrl || null;
+      renderBridgeContext();
+    }
+
+    async function copyCurrentLink() {
+      var feedbackEl = document.getElementById('copy-feedback');
+      var copyBtn = document.getElementById('copy-link-btn');
+      var url = appendShareTokenIfAvailable(window.__bridgeContext.copyUrl);
+
+      if (!url) {
+        if (feedbackEl) {
+          feedbackEl.textContent = 'No file link available yet';
+          feedbackEl.className = 'copy-feedback error';
+        }
+        return;
+      }
+
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+        } else {
+          var tempInput = document.createElement('textarea');
+          tempInput.value = url;
+          tempInput.setAttribute('readonly', 'readonly');
+          tempInput.style.position = 'absolute';
+          tempInput.style.left = '-9999px';
+          document.body.appendChild(tempInput);
+          tempInput.select();
+          document.execCommand('copy');
+          document.body.removeChild(tempInput);
+        }
+
+        if (feedbackEl) {
+          feedbackEl.textContent = 'Link copied to clipboard';
+          feedbackEl.className = 'copy-feedback success';
+        }
+        window.sendPluginCommand('SHOW_COPY_TOAST', { message: 'Frame link copied to clipboard' }, 3000)
+          .catch(function() { /* non-blocking toast */ });
+        if (copyBtn) {
+          copyBtn.classList.add('copied');
+          copyBtn.textContent = 'Link copied!';
+          setTimeout(function() {
+            copyBtn.classList.remove('copied');
+            var isBusy = copyBtn.dataset.busy === 'true';
+            if (isBusy) {
+              copyBtn.textContent = 'Working...';
+            } else {
+              setCopyButtonIdleLabel(copyBtn);
+            }
+            requestResizeToContent();
+          }, 1200);
+        }
+        requestResizeToContent();
+      } catch (error) {
+        if (feedbackEl) {
+          feedbackEl.textContent = 'Copy failed';
+          feedbackEl.className = 'copy-feedback error';
+        }
+        requestResizeToContent();
+      }
+    }
+
+    window.__bridgeContext.shareToken = extractShareTokenFromReferrer();
 
     // ============================================================================
     // COMMAND INFRASTRUCTURE - Generic plugin command sender
@@ -600,6 +1755,7 @@
     // ============================================================================
     (function() {
       // Port range for multi-instance support (matches server's port-discovery.ts)
+      // Dev safety: lock to one local MCP server to avoid mixed UI/state from old instances.
       var WS_PORT_RANGE_START = 9223;
       var WS_PORT_RANGE_END = 9232;
 
@@ -806,15 +1962,18 @@
        */
       function initializeConnection(connWs, port) {
         // Forward cached variables if available
-        if (window.__figmaVariablesReady && window.__figmaVariablesData) {
-          connWs.send(JSON.stringify({
-            type: 'VARIABLES_DATA',
-            data: window.__figmaVariablesData
-          }));
-        }
+      if (window.__figmaVariablesReady && window.__figmaVariablesData) {
+        connWs.send(JSON.stringify({
+          type: 'VARIABLES_DATA',
+          data: window.__figmaVariablesData
+        }));
+      }
 
-        // Proactively report file identity to this server
-        window.sendPluginCommand('GET_FILE_INFO', {})
+      requestSharedAccountSettings(connWs);
+      syncActiveAccountToConnection(connWs);
+
+      // Proactively report file identity to this server
+      window.sendPluginCommand('GET_FILE_INFO', {})
           .then(function(info) {
             if (connWs.readyState === 1 && info && info.success !== false) {
               connWs.send(JSON.stringify({ type: 'FILE_INFO', data: info.fileInfo || info }));
@@ -947,6 +2106,15 @@
               return;
             }
 
+            if (message.type === 'SHARED_ACCOUNT_SETTINGS' && message.data) {
+              if (message.data.settings && Array.isArray(message.data.settings.accounts) && message.data.settings.accounts.length) {
+                applyAccountSettings(message.data.settings);
+                window.sendPluginCommand('SAVE_ACCOUNT_SETTINGS', { settings: window.__accountSettings }).catch(function() {});
+                syncActiveAccountToServers();
+              }
+              return;
+            }
+
             if (!message.id || !message.method) {
               console.log('[MCP Bridge] WS:' + port + ': Ignoring malformed message');
               return;
@@ -959,6 +2127,8 @@
             }
 
             // Call the handler (returns a Promise) and send back the result
+            window.__bridgeBusyCount = (window.__bridgeBusyCount || 0) + 1;
+            updateCopyButtonState(false);
             Promise.resolve(handler(message.params || {}))
               .then(function(result) {
                 if (activeWs.readyState === 1) {
@@ -969,6 +2139,10 @@
                 if (activeWs.readyState === 1) {
                   activeWs.send(JSON.stringify({ id: message.id, error: err.message || String(err) }));
                 }
+              })
+              .finally(function() {
+                window.__bridgeBusyCount = Math.max(0, (window.__bridgeBusyCount || 0) - 1);
+                updateCopyButtonState(false);
               });
           } catch (e) {
             console.error('[MCP Bridge] WS:' + port + ': Failed to process message:', e);
@@ -1086,11 +2260,8 @@
       var toggle = document.getElementById('cloud-toggle');
       var isExpanding = !section.classList.contains('visible');
       section.classList.toggle('visible');
-      toggle.classList.toggle('expanded');
-
-      // Resize plugin window to fit content
-      var height = isExpanding ? 130 : 50;
-      parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 140, height: height } }, '*');
+      toggle.classList.toggle('expanded', isExpanding);
+      requestResizeToContent();
     }
 
     function resetCloudUI() {
@@ -1106,6 +2277,7 @@
         btn.onclick = cloudConnect;
       }
       cloudWs = null;
+      requestResizeToContent();
     }
 
     function cloudConnect() {
@@ -1117,10 +2289,11 @@
       if (!code || code.length < 4) {
         statusEl.textContent = 'Enter pairing code';
         statusEl.className = 'cloud-status error';
+        requestResizeToContent();
         return;
       }
 
-      btn.disabled = true;
+      if (btn) btn.disabled = true;
       statusEl.textContent = 'Connecting...';
       statusEl.className = 'cloud-status';
 
@@ -1135,9 +2308,12 @@
         cloudWs.onopen = function() {
           statusEl.textContent = 'Connected to cloud relay';
           statusEl.className = 'cloud-status connected';
-          btn.disabled = false;
-          btn.textContent = 'Disconnect';
-          btn.onclick = cloudDisconnect;
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Disconnect';
+            btn.onclick = cloudDisconnect;
+          }
+          requestResizeToContent();
 
           // Add to the shared connection pool (uses same handlers as localhost).
           // Pass resetCloudUI as disconnect callback — attachWsHandlers overwrites
@@ -1156,7 +2332,8 @@
         cloudWs.onerror = function() {
           statusEl.textContent = 'Connection failed — check code';
           statusEl.className = 'cloud-status error';
-          btn.disabled = false;
+          if (btn) btn.disabled = false;
+          requestResizeToContent();
         };
 
         // Note: onclose here handles pre-connection close (e.g., bad code).
@@ -1168,7 +2345,8 @@
       } catch (e) {
         statusEl.textContent = 'Failed: ' + e.message;
         statusEl.className = 'cloud-status error';
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
+        requestResizeToContent();
       }
     }
 
@@ -1419,7 +2597,19 @@
 
         // File info
         case 'GET_FILE_INFO_RESULT':
+          applyFileInfo(msg.fileInfo);
           handleResult('GET_FILE_INFO', 'fileInfo');
+          break;
+        case 'SHOW_COPY_TOAST_RESULT':
+          handleResult('SHOW_COPY_TOAST', null);
+          break;
+        case 'GET_ACCOUNT_SETTINGS_RESULT':
+          applyAccountSettings(msg.settings);
+          handleResult('GET_ACCOUNT_SETTINGS', 'settings');
+          break;
+        case 'SAVE_ACCOUNT_SETTINGS_RESULT':
+          applyAccountSettings(msg.settings);
+          handleResult('SAVE_ACCOUNT_SETTINGS', 'settings');
           break;
 
         // Plugin UI reload
@@ -1460,15 +2650,34 @@
 
         // Selection change events (for selection tracking via WebSocket)
         case 'SELECTION_CHANGE':
+          applyFileInfo({
+            selectionCount: msg.data && msg.data.count,
+            selectionNodes: msg.data && msg.data.nodes,
+            fileName: msg.data && msg.data.fileName,
+            copyUrl: msg.data && msg.data.copyUrl
+          });
           if (window.__wsForwardSelectionChange) window.__wsForwardSelectionChange(msg.data);
           break;
 
         // Page change events (for page tracking via WebSocket)
         case 'PAGE_CHANGE':
+          applyFileInfo({
+            selectionCount: msg.data && msg.data.selectionCount,
+            selectionNodes: msg.data && msg.data.selectionNodes,
+            fileName: msg.data && msg.data.fileName,
+            copyUrl: msg.data && msg.data.copyUrl
+          });
           if (window.__wsForwardPageChange) window.__wsForwardPageChange(msg.data);
           break;
       }
     };
+
+    window.sendPluginCommand('GET_FILE_INFO', {}).catch(function() {
+      // Non-critical: UI can still populate after the next page/selection event.
+    });
+    // Option B: load accounts from server, not clientStorage
+    requestSharedAccountSettings();
+    requestResizeToContent();
   </script>
 </body>
 </html>

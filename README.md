@@ -621,6 +621,10 @@ This ensures designs aren't just technically correct—they *look* right.
 
 The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to the MCP server. It communicates via WebSocket — no special Figma launch flags needed, and it persists across Figma restarts.
 
+### UI Preview
+
+![Desktop Bridge UI preview](docs/images/pr-57-desktop-bridge-ui-v2.gif)
+
 ### Setup
 
 1. Open Figma Desktop (normal launch — no debug flags needed)
@@ -657,7 +661,8 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 
 **Environment variables:**
 - `FIGMA_WS_PORT` — Override the preferred WebSocket port (default: 9223). The server will fall back through a 10-port range starting from this value if the preferred port is occupied.
-- `FIGMA_WS_HOST` — Override the WebSocket server bind address (default: `localhost`). Set to `0.0.0.0` when running inside Docker so the host machine can reach the MCP server.
+- `FIGMA_WS_HOST` — Override the WebSocket server bind address (default: `localhost`). Non-loopback values are rejected by default for safety.
+- `FIGMA_WS_ALLOW_NON_LOCALHOST=true` — Explicitly allow non-loopback bind values (for advanced/containerized setups).
 
 **Cloud Mode:** The plugin also supports a **Cloud Mode** toggle for pairing with web AI clients (Claude.ai, v0, Replit, Lovable). Toggle "Cloud Mode" in the plugin UI, enter the 6-character pairing code from your AI assistant, and click Connect. See [Cloud Mode](#-cloud-mode-web-ai-clients) for details.
 
