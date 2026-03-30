@@ -206,11 +206,13 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 				throw new Error("No token found");
 			}
 
-			let tokenData = JSON.parse(tokenJson) as {
-				accessToken: string;
-				refreshToken?: string;
-				expiresAt: number;
-			};
+			let tokenData: { accessToken: string; refreshToken?: string; expiresAt: number };
+			try {
+				tokenData = JSON.parse(tokenJson) as typeof tokenData;
+			} catch (_parseErr) {
+				logger.warn({ sessionId }, "Corrupt token data in KV — treating as missing");
+				throw new Error("No token found");
+			}
 
 			logger.info({
 				sessionId,
@@ -255,7 +257,8 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 				logger.info({ sessionId }, "No OAuth token found - user needs to authenticate");
 
 				// No authentication available - direct user to OAuth flow
-				const authUrl = `https://figma-console-mcp.thibault-serre.workers.dev/oauth/authorize?session_id=${sessionId}`;
+				const workerBase = (env as unknown as Env).WORKER_URL || '';
+				const authUrl = `${workerBase}/oauth/authorize?session_id=${sessionId}`;
 
 				// Only use PAT fallback if explicitly configured AND no OAuth token exists
 				if (env?.FIGMA_ACCESS_TOKEN) {
@@ -278,7 +281,8 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			// For other OAuth errors (expired token, refresh failed, etc.), do NOT fall back to PAT
 			logger.error({ error, sessionId }, "OAuth token retrieval failed - re-authentication required");
 
-			const authUrl = `https://figma-console-mcp.thibault-serre.workers.dev/oauth/authorize?session_id=${sessionId}`;
+			const workerBase2 = (env as unknown as Env).WORKER_URL || '';
+			const authUrl = `${workerBase2}/oauth/authorize?session_id=${sessionId}`;
 
 			throw new Error(
 				JSON.stringify({
@@ -940,11 +944,22 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 }
 
 /**
+ * Add minimal security headers to every Worker response.
+ * Applied globally via the fetch handler wrapper below.
+ */
+function addSecurityHeaders(res: Response): Response {
+	const h = new Headers(res.headers);
+	if (!h.has('X-Content-Type-Options')) h.set('X-Content-Type-Options', 'nosniff');
+	if (!h.has('X-Frame-Options')) h.set('X-Frame-Options', 'DENY');
+	if (!h.has('Referrer-Policy')) h.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+	return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+
+/**
  * Cloudflare Workers fetch handler
  * Routes requests to appropriate MCP endpoints
  */
-export default {
-	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+async function _handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
 
 		// Redirect /docs to subdomain
@@ -997,7 +1012,13 @@ export default {
 					});
 				}
 
-				const tokenData = JSON.parse(tokenDataJson) as { sessionId: string; expiresAt: number };
+				let tokenData: { sessionId: string; expiresAt: number };
+				try {
+					tokenData = JSON.parse(tokenDataJson) as typeof tokenData;
+				} catch (_parseErr) {
+					const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
+					return new Response(JSON.stringify({ error: "invalid_token", error_description: "Token data corrupted" }), { status: 401, headers: { "Content-Type": "application/json", "WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", error="invalid_token"` } });
+				}
 
 				// Check if token is expired
 				if (tokenData.expiresAt < Date.now()) {
@@ -1074,7 +1095,13 @@ export default {
 					});
 				}
 
-				const tokenData = JSON.parse(tokenDataJson) as { sessionId: string; expiresAt: number };
+				let tokenData: { sessionId: string; expiresAt: number };
+				try {
+					tokenData = JSON.parse(tokenDataJson) as typeof tokenData;
+				} catch (_parseErr) {
+					const resourceMetadataUrl = `${url.origin}/.well-known/oauth-protected-resource`;
+					return new Response(JSON.stringify({ error: "invalid_token", error_description: "Token data corrupted" }), { status: 401, headers: { "Content-Type": "application/json", "WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", error="invalid_token"` } });
+				}
 				mcpSessionId = tokenData.sessionId;
 
 				if (tokenData.expiresAt < Date.now()) {
@@ -1225,9 +1252,10 @@ export default {
 			const codeChallengeMethod = url.searchParams.get("code_challenge_method");
 			const scope = url.searchParams.get("scope");
 
-			// For MCP clients, use the client_id as the session identifier
-			// This allows token retrieval after the OAuth flow completes
-			const sessionId = clientId || FigmaConsoleMCPv3.generateStateToken();
+			// Always generate a fresh session ID — never use attacker-controlled client_id as the
+			// session identifier to prevent session fixation. The authorization code sent back to
+			// the MCP client IS the session ID, so the token endpoint will find it via code lookup.
+			const sessionId = FigmaConsoleMCPv3.generateStateToken();
 
 			// Store the MCP client's redirect_uri and state for the callback
 			if (redirectUri && state) {
@@ -1302,23 +1330,25 @@ export default {
 
 			// For authorization_code grant, exchange the code for tokens
 			if (grantType === "authorization_code" && code) {
-				// The code here is actually our session-based token
-				// Look up the stored token by session/client ID
-				const sessionId = clientId || code;
+				// The authorization code IS the session ID (set during /authorize flow).
+				// Always use code — never clientId — to prevent session fixation.
+				const sessionId = code;
 				const tokenKey = `oauth_token:${sessionId}`;
 
-				logger.info({ grantType, clientId, code, sessionId, tokenKey }, "Token exchange request");
+				logger.info({ grantType, clientId, hasCode: !!code }, "Token exchange request");
 
 				const tokenJson = await env.OAUTH_TOKENS.get(tokenKey);
 
 				logger.info({ tokenKey, hasToken: !!tokenJson }, "Token lookup result");
 
 				if (tokenJson) {
-					const tokenData = JSON.parse(tokenJson) as {
-						accessToken: string;
-						refreshToken?: string;
-						expiresAt: number;
-					};
+					let tokenData: { accessToken: string; refreshToken?: string; expiresAt: number };
+					try {
+						tokenData = JSON.parse(tokenJson) as typeof tokenData;
+					} catch (_parseErr) {
+						logger.warn({ tokenKey }, "Corrupt token data during code exchange");
+						return new Response(JSON.stringify({ error: "server_error", error_description: "Token data corrupted" }), { status: 500, headers: { "Content-Type": "application/json" } });
+					}
 
 					// Return tokens in OAuth 2.0 format
 					return new Response(JSON.stringify({
@@ -1335,7 +1365,7 @@ export default {
 					});
 				}
 
-				logger.error({ tokenKey, sessionId, clientId, code }, "Token not found for exchange");
+				logger.error({ clientId, hasCode: !!code }, "Token not found for exchange");
 				return new Response(JSON.stringify({
 					error: "invalid_grant",
 					error_description: "Authorization code not found or expired. Please re-authenticate."
@@ -1443,13 +1473,17 @@ export default {
 				redirect_uris?: string[];
 			};
 
+			// Validate redirect_uris: only allow https:// or http://localhost/* schemes
+			const ALLOWED_REDIRECT_PATTERN = /^(https:\/\/|http:\/\/localhost[:/])/;
+			const validRedirectUris = (body.redirect_uris || []).filter((uri: string) => ALLOWED_REDIRECT_PATTERN.test(uri));
+
 			// Generate a client ID for this registration
 			const clientId = `mcp_${FigmaConsoleMCPv3.generateStateToken().substring(0, 16)}`;
 
 			// Store client registration (30 day expiration)
 			await env.OAUTH_STATE.put(`client:${clientId}`, JSON.stringify({
 				client_name: body.client_name || "MCP Client",
-				redirect_uris: body.redirect_uris || [],
+				redirect_uris: validRedirectUris,
 				created_at: Date.now()
 			}), {
 				expirationTtl: 30 * 24 * 60 * 60
@@ -1458,7 +1492,7 @@ export default {
 			return new Response(JSON.stringify({
 				client_id: clientId,
 				client_name: body.client_name || "MCP Client",
-				redirect_uris: body.redirect_uris || [],
+				redirect_uris: validRedirectUris,
 				token_endpoint_auth_method: "none",
 				grant_types: ["authorization_code", "refresh_token"],
 				response_types: ["code"]
@@ -1544,7 +1578,7 @@ export default {
 			// Validate state token (CSRF protection)
 			const sessionId = await env.OAUTH_STATE.get(stateToken);
 
-			logger.info({ stateToken, sessionId, hasSessionId: !!sessionId }, "OAuth callback - state token lookup");
+			logger.info({ hasSessionId: !!sessionId }, "OAuth callback - state token lookup");
 
 			if (!sessionId) {
 				return new Response(
@@ -1677,7 +1711,7 @@ export default {
 
 				if (mcpAuthJson) {
 					// MCP client flow - redirect back with authorization code
-					const mcpAuthData = JSON.parse(mcpAuthJson) as {
+					type McpAuthData = {
 						redirectUri: string;
 						state: string;
 						codeChallenge?: string;
@@ -1686,9 +1720,31 @@ export default {
 						clientId?: string;
 						sessionId: string;
 					};
+					let mcpAuthData: McpAuthData;
+					try {
+						mcpAuthData = JSON.parse(mcpAuthJson) as McpAuthData;
+					} catch (_parseErr) {
+						logger.warn({ sessionId }, "Corrupt MCP auth data in KV — skipping client redirect");
+						return new Response("Invalid auth state", { status: 400 });
+					}
 
 					// Clean up the MCP auth state
 					await env.OAUTH_STATE.delete(mcpStateKey);
+
+					// Validate redirect_uri against registered client's allowed URIs (open redirect prevention).
+					if (mcpAuthData.clientId) {
+						const clientJson = await env.OAUTH_STATE.get(`client:${mcpAuthData.clientId}`);
+						if (clientJson) {
+							try {
+								const clientReg = JSON.parse(clientJson) as { redirect_uris?: string[] };
+								const allowedUris = clientReg.redirect_uris || [];
+								if (allowedUris.length > 0 && !allowedUris.includes(mcpAuthData.redirectUri)) {
+									logger.warn({ redirectUri: mcpAuthData.redirectUri }, "redirect_uri not in registered list — rejecting");
+									return new Response("Invalid redirect_uri", { status: 400 });
+								}
+							} catch (_parseErr) { /* ignore parse error, allow redirect */ }
+						}
+					}
 
 					// Generate an authorization code for the MCP client
 					// We use the sessionId as the code since we've already stored the token
@@ -1963,16 +2019,18 @@ export default {
 			}
 		}
 
-		// Bridge config endpoint — returns Supabase config + session ID for the Figma plugin
+		// Bridge config endpoint — returns Supabase config + session ID for the Figma plugin.
+		// Requires a session_id query param (obtained from the OAuth success page).
+		// No fallback auto-generation: callers without a session_id get a 400 to prevent
+		// unauthenticated retrieval of Supabase credentials.
 		if (url.pathname === "/bridge/config" && request.method === "GET") {
-			const { SUPABASE_URL, SUPABASE_ANON_KEY, OAUTH_TOKENS } = env as unknown as Env;
-			// If the plugin provides a session_id (from the OAuth success page), use it directly.
-			// Otherwise fall back to the global bridge:session_id (dev/compat mode).
-			const reqSessionId = url.searchParams.get('session_id');
-			let sessionId = reqSessionId || await OAUTH_TOKENS.get('bridge:session_id').catch(() => null);
+			const { SUPABASE_URL, SUPABASE_ANON_KEY } = env as unknown as Env;
+			const sessionId = url.searchParams.get('session_id');
 			if (!sessionId) {
-				sessionId = crypto.randomUUID();
-				await OAUTH_TOKENS.put('bridge:session_id', sessionId).catch(() => {});
+				return new Response(
+					JSON.stringify({ error: "missing_session_id", message: "Provide ?session_id= from your OAuth success page" }),
+					{ status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
+				);
 			}
 			return new Response(
 				JSON.stringify({ supabaseUrl: SUPABASE_URL ?? null, supabaseAnonKey: SUPABASE_ANON_KEY ?? null, sessionId }),
@@ -3258,6 +3316,11 @@ export default {
 	}
 
 	return new Response("Not found", { status: 404 });
+}
+
+export default {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+		return addSecurityHeaders(await _handleRequest(request, env, ctx));
 	},
 
 	async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {

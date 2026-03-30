@@ -23,11 +23,16 @@ export interface FigmaAPIConfig {
 export function extractFileKey(url: string): string | null {
   try {
     const urlObj = new URL(url);
+    // Only accept Figma-owned hostnames to prevent SSRF-style misuse.
+    if (!urlObj.hostname.endsWith('figma.com')) {
+      logger.warn({ hostname: urlObj.hostname }, 'Non-Figma hostname rejected in extractFileKey');
+      return null;
+    }
     // Match patterns like /design/FILE_KEY or /file/FILE_KEY
     const match = urlObj.pathname.match(/\/(design|file)\/([a-zA-Z0-9]+)/);
     return match ? match[2] : null;
   } catch (error) {
-    logger.error({ error, url }, 'Failed to extract file key from URL');
+    logger.error({ error }, 'Failed to extract file key from URL');
     return null;
   }
 }

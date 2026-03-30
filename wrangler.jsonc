@@ -55,6 +55,11 @@
 			"id": "4a7af4c5abc54a1ebc570002d119c3cf"
 		}
 	],
+	"vars": {
+		// Public base URL of this worker — used in OAuth error messages to guide users to authentication.
+		// Update this if you deploy to a custom domain.
+		"WORKER_URL": "https://figma-console-mcp.thibault-serre.workers.dev"
+	},
 	"observability": {
 		"enabled": true
 	},
