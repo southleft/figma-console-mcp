@@ -51,7 +51,11 @@ function createMockConnector(overrides: Record<string, jest.Mock> = {}) {
 		}),
 		createShapeWithText: jest.fn().mockResolvedValue({
 			success: true,
-			data: { id: "1:3", type: "SHAPE_WITH_TEXT", name: "shape" },
+			data: { id: "1:3", type: "SHAPE_WITH_TEXT", name: "shape", x: 0, y: 0, width: 200, height: 100 },
+		}),
+		createSection: jest.fn().mockResolvedValue({
+			success: true,
+			data: { id: "1:6", type: "SECTION", name: "My Section", x: 0, y: 0, width: 1000, height: 800 },
 		}),
 		createTable: jest.fn().mockResolvedValue({
 			success: true,
@@ -114,13 +118,14 @@ describe("FigJam Tools", () => {
 	// Registration
 	// ========================================================================
 
-	it("registers all 9 FigJam tools", () => {
-		expect(server.tool).toHaveBeenCalledTimes(9);
+	it("registers all 10 FigJam tools", () => {
+		expect(server.tool).toHaveBeenCalledTimes(10);
 		const names = server.tool.mock.calls.map((c: any[]) => c[0]);
 		expect(names).toContain("figjam_create_sticky");
 		expect(names).toContain("figjam_create_stickies");
 		expect(names).toContain("figjam_create_connector");
 		expect(names).toContain("figjam_create_shape_with_text");
+		expect(names).toContain("figjam_create_section");
 		expect(names).toContain("figjam_create_table");
 		expect(names).toContain("figjam_create_code_block");
 		expect(names).toContain("figjam_auto_arrange");
@@ -500,6 +505,166 @@ describe("FigJam Tools", () => {
 			const parsed = JSON.parse(result.content[0].text);
 			expect(parsed.data.edges).toHaveLength(0);
 			expect(parsed.data.totalConnectors).toBe(0);
+		});
+	});
+
+	// ========================================================================
+	// figjam_create_connector — enhanced magnets
+	// ========================================================================
+
+	describe("figjam_create_connector (magnet params)", () => {
+		it("passes startMagnet and endMagnet to connector", async () => {
+			const tool = server._getTool("figjam_create_connector");
+			const result = await tool.handler({
+				startNodeId: "1:1",
+				endNodeId: "1:2",
+				label: "flow",
+				startMagnet: "BOTTOM",
+				endMagnet: "TOP",
+			});
+
+			expect(mockConnector.createConnector).toHaveBeenCalledWith({
+				startNodeId: "1:1",
+				endNodeId: "1:2",
+				label: "flow",
+				startMagnet: "BOTTOM",
+				endMagnet: "TOP",
+			});
+			expect(result.isError).toBeUndefined();
+		});
+
+		it("passes undefined magnets when not provided (defaults applied by Zod schema)", async () => {
+			const tool = server._getTool("figjam_create_connector");
+			await tool.handler({
+				startNodeId: "1:1",
+				endNodeId: "1:2",
+			});
+
+			const callArgs = mockConnector.createConnector.mock.calls[0][0];
+			// In production, Zod .default("AUTO") applies before the handler.
+			// Our mock bypasses schema validation, so we verify params are passed through.
+			expect(mockConnector.createConnector).toHaveBeenCalledTimes(1);
+			expect(callArgs.startNodeId).toBe("1:1");
+			expect(callArgs.endNodeId).toBe("1:2");
+		});
+	});
+
+	// ========================================================================
+	// figjam_create_shape_with_text — enhanced params
+	// ========================================================================
+
+	describe("figjam_create_shape_with_text (enhanced params)", () => {
+		it("passes size and color params to connector", async () => {
+			const tool = server._getTool("figjam_create_shape_with_text");
+			const result = await tool.handler({
+				text: "Step 1",
+				shapeType: "ROUNDED_RECTANGLE",
+				x: 100,
+				y: 200,
+				width: 300,
+				height: 150,
+				fillColor: "#E1F5EE",
+				strokeColor: "#2D6A4F",
+				fontSize: 18,
+				strokeDashPattern: "10,5",
+			});
+
+			expect(mockConnector.createShapeWithText).toHaveBeenCalledWith({
+				text: "Step 1",
+				shapeType: "ROUNDED_RECTANGLE",
+				x: 100,
+				y: 200,
+				width: 300,
+				height: 150,
+				fillColor: "#E1F5EE",
+				strokeColor: "#2D6A4F",
+				fontSize: 18,
+				strokeDashPattern: "10,5",
+			});
+			expect(result.isError).toBeUndefined();
+		});
+
+		it("works with only original params (backward compat)", async () => {
+			const tool = server._getTool("figjam_create_shape_with_text");
+			const result = await tool.handler({
+				text: "Hello",
+				shapeType: "DIAMOND",
+				x: 0,
+				y: 0,
+			});
+
+			const callArgs = mockConnector.createShapeWithText.mock.calls[0][0];
+			expect(callArgs.text).toBe("Hello");
+			expect(callArgs.shapeType).toBe("DIAMOND");
+			expect(callArgs.width).toBeUndefined();
+			expect(callArgs.fillColor).toBeUndefined();
+			expect(result.isError).toBeUndefined();
+		});
+	});
+
+	// ========================================================================
+	// figjam_create_section
+	// ========================================================================
+
+	describe("figjam_create_section", () => {
+		it("creates a section with name, position, and size", async () => {
+			const tool = server._getTool("figjam_create_section");
+			const result = await tool.handler({
+				name: "Sprint Board",
+				x: 0,
+				y: 0,
+				width: 2000,
+				height: 1500,
+			});
+
+			expect(mockConnector.createSection).toHaveBeenCalledWith({
+				name: "Sprint Board",
+				x: 0,
+				y: 0,
+				width: 2000,
+				height: 1500,
+				fillColor: undefined,
+			});
+			expect(result.isError).toBeUndefined();
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.success).toBe(true);
+			expect(parsed.data.type).toBe("SECTION");
+		});
+
+		it("creates a section with fill color", async () => {
+			const tool = server._getTool("figjam_create_section");
+			await tool.handler({
+				name: "Colored Section",
+				fillColor: "#FFE4B5",
+			});
+
+			const callArgs = mockConnector.createSection.mock.calls[0][0];
+			expect(callArgs.fillColor).toBe("#FFE4B5");
+		});
+
+		it("returns error when connector fails", async () => {
+			mockConnector.createSection.mockRejectedValue(
+				new Error("CREATE_SECTION is only available in FigJam files")
+			);
+
+			const tool = server._getTool("figjam_create_section");
+			const result = await tool.handler({ name: "Test" });
+
+			expect(result.isError).toBe(true);
+			const parsed = JSON.parse(result.content[0].text);
+			expect(parsed.error).toContain("only available in FigJam");
+			expect(parsed.hint).toBeDefined();
+		});
+
+		it("passes through params when width/height not provided (defaults applied by Zod schema)", async () => {
+			const tool = server._getTool("figjam_create_section");
+			await tool.handler({ name: "Default Size" });
+
+			// In production, Zod .default(1000)/.default(800) applies before handler.
+			// Our mock bypasses schema validation, so we just verify the call was made.
+			expect(mockConnector.createSection).toHaveBeenCalledTimes(1);
+			const callArgs = mockConnector.createSection.mock.calls[0][0];
+			expect(callArgs.name).toBe("Default Size");
 		});
 	});
 

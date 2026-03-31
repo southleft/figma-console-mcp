@@ -5,6 +5,18 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.1] - 2026-03-31
+
+### Added
+- **`figjam_create_section`** — New tool to create positioned, sized FigJam sections with fill color.
+
+### Changed
+- **`figjam_create_shape_with_text`** — Added `width`, `height`, `fillColor`, `strokeColor`, `fontSize`, `strokeDashPattern` parameters.
+- **`figjam_create_connector`** — Added `startMagnet`, `endMagnet` parameters (AUTO, TOP, BOTTOM, LEFT, RIGHT) for directional connector routing.
+
+### Fixed
+
+
 ## [1.20.0] - 2026-03-29
 
 ### Added
@@ -549,6 +561,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.20.1]: https://github.com/southleft/figma-console-mcp/compare/v1.20.0...v1.20.1
 [1.20.0]: https://github.com/southleft/figma-console-mcp/compare/v1.19.2...v1.20.0
 [1.19.2]: https://github.com/southleft/figma-console-mcp/compare/v1.19.1...v1.19.2
 [1.19.1]: https://github.com/southleft/figma-console-mcp/compare/v1.19.0...v1.19.1

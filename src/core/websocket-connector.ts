@@ -327,12 +327,16 @@ export class WebSocketConnector implements IFigmaConnector {
     return this.wsServer.sendCommand('CREATE_STICKIES', params, 30000);
   }
 
-  async createConnector(params: { startNodeId: string; endNodeId: string; label?: string }): Promise<any> {
+  async createConnector(params: { startNodeId: string; endNodeId: string; label?: string; startMagnet?: string; endMagnet?: string }): Promise<any> {
     return this.wsServer.sendCommand('CREATE_CONNECTOR', params);
   }
 
-  async createShapeWithText(params: { text?: string; shapeType?: string; x?: number; y?: number }): Promise<any> {
+  async createShapeWithText(params: { text?: string; shapeType?: string; x?: number; y?: number; width?: number; height?: number; fillColor?: string; strokeColor?: string; fontSize?: number; strokeDashPattern?: string }): Promise<any> {
     return this.wsServer.sendCommand('CREATE_SHAPE_WITH_TEXT', params);
+  }
+
+  async createSection(params: { name?: string; x?: number; y?: number; width?: number; height?: number; fillColor?: string }): Promise<any> {
+    return this.wsServer.sendCommand('CREATE_SECTION', params);
   }
 
   async createTable(params: { rows: number; columns: number; data?: string[][]; x?: number; y?: number }): Promise<any> {

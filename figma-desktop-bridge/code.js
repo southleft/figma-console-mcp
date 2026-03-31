@@ -3864,11 +3864,11 @@ figma.ui.onmessage = async (msg) => {
 
       connector.connectorStart = {
         endpointNodeId: msg.startNodeId,
-        magnet: 'AUTO'
+        magnet: msg.startMagnet || 'AUTO'
       };
       connector.connectorEnd = {
         endpointNodeId: msg.endNodeId,
-        magnet: 'AUTO'
+        magnet: msg.endMagnet || 'AUTO'
       };
 
       // Set label text if provided
@@ -3901,6 +3901,55 @@ figma.ui.onmessage = async (msg) => {
     }
   }
 
+  // CREATE_SECTION - Create a section on FigJam board
+  else if (msg.type === 'CREATE_SECTION') {
+    try {
+      if (__editorType !== 'figjam') {
+        throw new Error('CREATE_SECTION is only available in FigJam files');
+      }
+      console.log('🌉 [Desktop Bridge] Creating section');
+
+      var section = figma.createSection();
+      if (msg.name) section.name = msg.name;
+      if (typeof msg.x === 'number') section.x = msg.x;
+      if (typeof msg.y === 'number') section.y = msg.y;
+      if (typeof msg.width === 'number' && typeof msg.height === 'number') {
+        section.resizeWithoutConstraints(msg.width, msg.height);
+      }
+      if (msg.fillColor) {
+        var scHex = msg.fillColor.replace('#', '');
+        var scR = parseInt(scHex.substring(0, 2), 16) / 255;
+        var scG = parseInt(scHex.substring(2, 4), 16) / 255;
+        var scB = parseInt(scHex.substring(4, 6), 16) / 255;
+        section.fills = [{ type: 'SOLID', color: { r: scR, g: scG, b: scB } }];
+      }
+
+      figma.ui.postMessage({
+        type: 'CREATE_SECTION_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          id: section.id,
+          type: section.type,
+          name: section.name,
+          x: section.x,
+          y: section.y,
+          width: section.width,
+          height: section.height
+        }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Create section error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_SECTION_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
   // CREATE_SHAPE_WITH_TEXT - Create a labeled shape
   else if (msg.type === 'CREATE_SHAPE_WITH_TEXT') {
     try {
@@ -3916,7 +3965,45 @@ figma.ui.onmessage = async (msg) => {
         shape.shapeType = msg.shapeType;
       }
 
-      // Set text
+      // Set position
+      if (typeof msg.x === 'number') shape.x = msg.x;
+      if (typeof msg.y === 'number') shape.y = msg.y;
+
+      // Resize (before text so text reflows to fit)
+      if (typeof msg.width === 'number' && typeof msg.height === 'number') {
+        shape.resize(msg.width, msg.height);
+      } else if (typeof msg.width === 'number') {
+        shape.resize(msg.width, shape.height);
+      } else if (typeof msg.height === 'number') {
+        shape.resize(shape.width, msg.height);
+      }
+
+      // Fill color
+      if (msg.fillColor) {
+        var fHex = msg.fillColor.replace('#', '');
+        var fR = parseInt(fHex.substring(0, 2), 16) / 255;
+        var fG = parseInt(fHex.substring(2, 4), 16) / 255;
+        var fB = parseInt(fHex.substring(4, 6), 16) / 255;
+        shape.fills = [{ type: 'SOLID', color: { r: fR, g: fG, b: fB } }];
+      }
+
+      // Stroke color
+      if (msg.strokeColor) {
+        var sHex = msg.strokeColor.replace('#', '');
+        var sR = parseInt(sHex.substring(0, 2), 16) / 255;
+        var sG = parseInt(sHex.substring(2, 4), 16) / 255;
+        var sB = parseInt(sHex.substring(4, 6), 16) / 255;
+        shape.strokes = [{ type: 'SOLID', color: { r: sR, g: sG, b: sB } }];
+        shape.strokeWeight = 1;
+      }
+
+      // Dash pattern
+      if (msg.strokeDashPattern) {
+        var parts = msg.strokeDashPattern.split(',').map(function(p) { return parseFloat(p.trim()); });
+        shape.dashPattern = parts;
+      }
+
+      // Set text (after resize so text reflows to fit new size)
       if (msg.text) {
         try {
           await figma.loadFontAsync(shape.text.fontName);
@@ -3925,16 +4012,16 @@ figma.ui.onmessage = async (msg) => {
           shape.text.fontName = { family: 'Inter', style: 'Medium' };
         }
         shape.text.characters = msg.text;
+        if (typeof msg.fontSize === 'number') {
+          shape.text.fontSize = msg.fontSize;
+        }
       }
-
-      if (typeof msg.x === 'number') shape.x = msg.x;
-      if (typeof msg.y === 'number') shape.y = msg.y;
 
       figma.ui.postMessage({
         type: 'CREATE_SHAPE_WITH_TEXT_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: { id: shape.id, type: shape.type, name: shape.name, x: shape.x, y: shape.y }
+        data: { id: shape.id, type: shape.type, name: shape.name, x: shape.x, y: shape.y, width: shape.width, height: shape.height }
       });
 
     } catch (error) {

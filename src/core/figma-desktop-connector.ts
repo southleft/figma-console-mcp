@@ -1663,6 +1663,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   async createStickies(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
   async createConnector(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
   async createShapeWithText(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+  async createSection(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
   async createTable(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
   async createCodeBlock(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
   async getBoardContents(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }

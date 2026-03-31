@@ -166,7 +166,9 @@ export function registerFigJamTools(
 		"figjam_create_connector",
 		`Connect two nodes with a connector line in FigJam. Use to create flowcharts, diagrams, and relationship maps.
 
-Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from creation results.`,
+Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from creation results.
+
+**Magnet positions:** AUTO (default), TOP, BOTTOM, LEFT, RIGHT — controls where the connector attaches to each node.`,
 		{
 			startNodeId: z.string().describe("Node ID of the start element"),
 			endNodeId: z.string().describe("Node ID of the end element"),
@@ -175,14 +177,26 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 				.max(MAX_TEXT_LENGTH)
 				.optional()
 				.describe("Optional text label on the connector"),
+			startMagnet: z
+				.enum(["AUTO", "TOP", "BOTTOM", "LEFT", "RIGHT"])
+				.optional()
+				.default("AUTO")
+				.describe("Magnet position on the start node"),
+			endMagnet: z
+				.enum(["AUTO", "TOP", "BOTTOM", "LEFT", "RIGHT"])
+				.optional()
+				.default("AUTO")
+				.describe("Magnet position on the end node"),
 		},
-		async ({ startNodeId, endNodeId, label }) => {
+		async ({ startNodeId, endNodeId, label, startMagnet, endMagnet }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.createConnector({
 					startNodeId,
 					endNodeId,
 					label,
+					startMagnet,
+					endMagnet,
 				});
 				return {
 					content: [{ type: "text" as const, text: JSON.stringify(result) }],
@@ -211,7 +225,7 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 
 	server.tool(
 		"figjam_create_shape_with_text",
-		`Create a labeled shape on a FigJam board. Use for flowchart nodes, process diagrams, and visual organization.
+		`Create a labeled shape on a FigJam board with optional size, colors, and font control. Use for flowchart nodes, process diagrams, and visual organization.
 
 **Shape types:** ROUNDED_RECTANGLE (default), DIAMOND, ELLIPSE, TRIANGLE_UP, TRIANGLE_DOWN, PARALLELOGRAM_RIGHT, PARALLELOGRAM_LEFT, ENG_DATABASE, ENG_QUEUE, ENG_FILE, ENG_FOLDER`,
 		{
@@ -226,8 +240,14 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 				.describe("Shape type"),
 			x: z.number().optional().describe("X position on canvas"),
 			y: z.number().optional().describe("Y position on canvas"),
+			width: z.number().min(1).max(10000).optional().describe("Width in pixels"),
+			height: z.number().min(1).max(10000).optional().describe("Height in pixels"),
+			fillColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Fill color as hex (e.g., '#E1F5EE')"),
+			strokeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Stroke/border color as hex"),
+			fontSize: z.number().min(1).max(200).optional().describe("Text font size in pixels"),
+			strokeDashPattern: z.string().optional().describe("Dash pattern as comma-separated numbers (e.g., '10,5' for dashed)"),
 		},
-		async ({ text, shapeType, x, y }) => {
+		async ({ text, shapeType, x, y, width, height, fillColor, strokeColor, fontSize, strokeDashPattern }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.createShapeWithText({
@@ -235,12 +255,60 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 					shapeType,
 					x,
 					y,
+					width,
+					height,
+					fillColor,
+					strokeColor,
+					fontSize,
+					strokeDashPattern,
 				});
 				return {
 					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figjam_create_shape_with_text failed");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "This tool only works in FigJam files.",
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	// ============================================================================
+	// SECTION TOOL
+	// ============================================================================
+
+	server.tool(
+		"figjam_create_section",
+		`Create a section on a FigJam board. Sections are containers that can hold other elements. Use for grouping related content.\n\n**Note:** After creating a section, place elements inside it by setting their x/y coordinates within the section's bounds, then use figma_execute to call section.appendChild(node) to parent them.`,
+		{
+			name: z.string().max(500).optional().describe("Section name/title"),
+			x: z.number().optional().describe("X position on canvas"),
+			y: z.number().optional().describe("Y position on canvas"),
+			width: z.number().min(1).max(20000).optional().default(1000).describe("Section width in pixels"),
+			height: z.number().min(1).max(20000).optional().default(800).describe("Section height in pixels"),
+			fillColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Fill color as hex"),
+		},
+		async ({ name, x, y, width, height, fillColor }) => {
+			try {
+				const connector = await getDesktopConnector();
+				const result = await connector.createSection({
+					name, x, y, width, height, fillColor,
+				});
+				return {
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
+				};
+			} catch (error) {
+				logger.error({ error }, "figjam_create_section failed");
 				return {
 					content: [
 						{

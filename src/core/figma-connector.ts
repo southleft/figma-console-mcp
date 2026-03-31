@@ -72,8 +72,9 @@ export interface IFigmaConnector {
   // FigJam operations
   createSticky(params: { text: string; color?: string; x?: number; y?: number }): Promise<any>;
   createStickies(params: { stickies: Array<{ text: string; color?: string; x?: number; y?: number }> }): Promise<any>;
-  createConnector(params: { startNodeId: string; endNodeId: string; label?: string }): Promise<any>;
-  createShapeWithText(params: { text?: string; shapeType?: string; x?: number; y?: number }): Promise<any>;
+  createConnector(params: { startNodeId: string; endNodeId: string; label?: string; startMagnet?: string; endMagnet?: string }): Promise<any>;
+  createShapeWithText(params: { text?: string; shapeType?: string; x?: number; y?: number; width?: number; height?: number; fillColor?: string; strokeColor?: string; fontSize?: number; strokeDashPattern?: string }): Promise<any>;
+  createSection(params: { name?: string; x?: number; y?: number; width?: number; height?: number; fillColor?: string }): Promise<any>;
   createTable(params: { rows: number; columns: number; data?: string[][]; x?: number; y?: number }): Promise<any>;
   createCodeBlock(params: { code: string; language?: string; x?: number; y?: number }): Promise<any>;
   getBoardContents(params: { nodeTypes?: string[]; maxNodes?: number }): Promise<any>;

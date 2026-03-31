@@ -675,6 +675,9 @@
         'CREATE_SHAPE_WITH_TEXT': function(params) {
           return window.sendPluginCommand('CREATE_SHAPE_WITH_TEXT', params);
         },
+        'CREATE_SECTION': function(params) {
+          return window.sendPluginCommand('CREATE_SECTION', params);
+        },
         'CREATE_TABLE': function(params) {
           return window.sendPluginCommand('CREATE_TABLE', params, 30000);
         },
@@ -1350,6 +1353,9 @@
           break;
         case 'CREATE_SHAPE_WITH_TEXT_RESULT':
           handleResult('CREATE_SHAPE_WITH_TEXT', 'data');
+          break;
+        case 'CREATE_SECTION_RESULT':
+          handleResult('CREATE_SECTION', 'data');
           break;
         case 'CREATE_TABLE_RESULT':
           handleResult('CREATE_TABLE', 'data');
