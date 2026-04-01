@@ -828,6 +828,9 @@
        * Tries the same port first (server may have just restarted),
        * then does a full rescan to pick up any new servers.
        */
+      // Long-interval reconnect timers — keyed by port to avoid duplicates
+      var longIntervalTimers = {};
+
       function wsReconnectPort(port) {
         try {
           var testWs = new WebSocket('ws://localhost:' + port);
@@ -839,6 +842,13 @@
             clearTimeout(timeout);
             activeConnections.push({ port: port, ws: testWs });
             updateCompatState();
+            // Reset reconnect counter on ANY successful connect (fixes global counter bug)
+            wsReconnectAttempts = 0;
+            // Cancel long-interval retry for this port
+            if (longIntervalTimers[port]) {
+              clearInterval(longIntervalTimers[port]);
+              delete longIntervalTimers[port];
+            }
             console.log('[MCP Bridge] Reconnected to port ' + port + ' (' + activeConnections.length + ' server(s) total)');
             attachWsHandlers(testWs, port);
             initializeConnection(testWs, port);
@@ -915,6 +925,20 @@
           if (wsReconnectAttempts <= 5) {
             var delay = Math.min(1000 * wsReconnectAttempts, 5000);
             setTimeout(function() { wsReconnectPort(port); }, delay);
+          } else if (!longIntervalTimers[port]) {
+            // After rapid retries exhausted, start a low-frequency background retry.
+            // One attempt every 30s — if the MCP server restarts, we'll find it
+            // without requiring the user to manually reopen the plugin.
+            console.log('[MCP Bridge] Rapid retries exhausted for port ' + port + '. Starting 30s background retry.');
+            longIntervalTimers[port] = setInterval(function() {
+              if (isPortConnected(port)) {
+                // Already reconnected (e.g., via another path) — stop retrying
+                clearInterval(longIntervalTimers[port]);
+                delete longIntervalTimers[port];
+                return;
+              }
+              wsReconnectPort(port);
+            }, 30000);
           }
         };
 

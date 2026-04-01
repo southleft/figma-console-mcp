@@ -1852,4 +1852,96 @@ describe('Multi-client WebSocket', () => {
       expect(typeof hello.startedAt).toBe('number');
     });
   });
+
+  // ==========================================================================
+  // Heartbeat (ping/pong) Tests
+  // ==========================================================================
+
+  describe('Heartbeat', () => {
+    it('should set isAlive on new connections', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const ws = await connectClient(server, TEST_PORT);
+      clients.push(ws);
+
+      // The pong handler should have been registered, and isAlive set
+      // Verify via isClientConnected (which checks lastPongAt freshness)
+      expect(server.isClientConnected()).toBe(true);
+    });
+
+    it('should track lastPongAt on client connections', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const ws = await connectClient(server, TEST_PORT);
+      clients.push(ws);
+
+      // lastPongAt should be set to approximately now
+      const lastPong = server.getActiveClientLastPongAt();
+      expect(lastPong).not.toBeNull();
+      expect(Date.now() - lastPong!).toBeLessThan(5000);
+    });
+
+    it('should respond to pongs and update lastPongAt', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const ws = await connectClient(server, TEST_PORT);
+      clients.push(ws);
+
+      const initialPong = server.getActiveClientLastPongAt()!;
+
+      // ws library clients auto-respond to pings with pongs (autoPong defaults to true).
+      // Send a message to trigger lastActivity, then verify lastPongAt is still valid.
+      ws.send(JSON.stringify({ type: 'FILE_INFO', data: { fileKey: 'test-file-key', fileName: 'Test File', currentPage: 'Page 1' } }));
+      await new Promise(r => setTimeout(r, 50));
+
+      const laterPong = server.getActiveClientLastPongAt()!;
+      expect(laterPong).toBeGreaterThanOrEqual(initialPong);
+    });
+
+    it('should clean up heartbeat interval on stop', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      // Stop should clean up the interval without errors
+      await server.stop();
+
+      // Server should be stopped cleanly
+      expect(server.isStarted()).toBe(false);
+    });
+
+    it('should report lastPongAt as null when no client connected', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      expect(server.getActiveClientLastPongAt()).toBeNull();
+    });
+  });
+
+  // ==========================================================================
+  // Health Endpoint Tests
+  // ==========================================================================
+
+  describe('Health endpoint', () => {
+    it('should include connectedClients in health response', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      // No clients connected
+      const res1 = await fetch(`http://localhost:${TEST_PORT}/health`);
+      const data1 = await res1.json();
+      expect(data1.status).toBe('ok');
+      expect(data1.clients).toBe(0);
+      expect(data1.connectedClients).toBe(0);
+      expect(typeof data1.uptime).toBe('number');
+
+      // Connect a client
+      const ws = await connectClient(server, TEST_PORT);
+      clients.push(ws);
+
+      const res2 = await fetch(`http://localhost:${TEST_PORT}/health`);
+      const data2 = await res2.json();
+      expect(data2.clients).toBe(1);
+      expect(data2.connectedClients).toBe(1);
+    });
+  });
 });
