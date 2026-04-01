@@ -228,13 +228,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				);
 			}
 
-			logger.info(
-				{
-					tokenPreview: `${accessToken.substring(0, 10)}...`,
-					tokenLength: accessToken.length,
-				},
-				"Initializing Figma API with token from environment",
-			);
+			logger.debug({ authMethod: accessToken.startsWith('figu_') ? 'OAuth' : 'PAT' }, 'Initializing Figma API');
 
 			this.figmaAPI = new FigmaAPI({ accessToken });
 		}

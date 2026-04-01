@@ -1908,9 +1908,7 @@ export default {
 
 				logger.info({
 					sessionId,
-					hasAccessToken: !!accessToken,
-					accessTokenPreview: accessToken ? accessToken.substring(0, 10) + "..." : null,
-					hasRefreshToken: !!refreshToken,
+					hasTokens: !!accessToken && !!refreshToken,
 					expiresIn
 				}, "Token exchange successful");
 

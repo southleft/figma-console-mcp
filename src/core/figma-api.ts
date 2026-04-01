@@ -128,16 +128,7 @@ export class FigmaAPI {
     // Personal Access Tokens use X-Figma-Token header
     const isOAuthToken = this.accessToken.startsWith('figu_');
 
-    // Debug logging to verify token is being used
-    const tokenPreview = this.accessToken ? `${this.accessToken.substring(0, 10)}...` : 'NO TOKEN';
-    logger.info({
-      url,
-      tokenPreview,
-      hasToken: !!this.accessToken,
-      tokenLength: this.accessToken?.length,
-      isOAuthToken,
-      authMethod: isOAuthToken ? 'Bearer' : 'X-Figma-Token'
-    }, 'Making Figma API request with token');
+    logger.debug({ url, authMethod: isOAuthToken ? 'Bearer' : 'X-Figma-Token' }, 'Making Figma API request');
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
