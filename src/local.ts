@@ -283,12 +283,95 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		}
 
 		const wsPort = this.wsActualPort || this.wsPreferredPort || DEFAULT_WS_PORT;
-		throw new Error(
+		const err = new Error(
 			"Cannot connect to Figma Desktop.\n\n" +
 			"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n" +
 			`The plugin will connect automatically to ws://localhost:${wsPort}.\n` +
 			"No special launch flags needed."
 		);
+		// Attach structured connection error for programmatic agent recovery
+		(err as any).connectionError = this.buildConnectionError(err);
+		throw err;
+	}
+
+	/**
+	 * Build a bridge tool error response with structured connectionError.
+	 * Extracts connectionError from enhanced Error objects thrown by getDesktopConnector(),
+	 * or computes it on-demand for other errors. Backward compatible — adds connectionError
+	 * alongside existing error/message/hint fields.
+	 */
+	private bridgeToolError(error: unknown, message: string, hint: string) {
+		const errorMsg = error instanceof Error ? error.message : String(error);
+		const connectionError = (error as any)?.connectionError || this.buildConnectionError(error);
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: JSON.stringify({
+						error: errorMsg,
+						message,
+						hint,
+						connectionError,
+					}),
+				},
+			],
+			isError: true as const,
+		};
+	}
+
+	/**
+	 * Build a structured connectionError object for bridge-dependent tool failures.
+	 * Added alongside existing error/message/hint fields for backward compatibility.
+	 * Agents can key on this field for programmatic recovery instead of parsing hint strings.
+	 */
+	private buildConnectionError(error: Error | unknown): {
+		layer: 1 | 2;
+		type: string;
+		canRetry: boolean;
+		recoverySteps: string[];
+	} {
+		const errorMsg = error instanceof Error ? error.message : String(error);
+		const wsServerRunning = this.wsServer?.isStarted() ?? false;
+		const isTimeout = errorMsg.includes('timed out');
+		const isNoClient = errorMsg.includes('No active file') || errorMsg.includes('No WebSocket client');
+
+		if (!wsServerRunning) {
+			return {
+				layer: 1,
+				type: 'MCP_SERVER_UNAVAILABLE',
+				canRetry: true,
+				recoverySteps: [
+					"Ensure your AI client is running with figma-console-mcp configured",
+					"Check for port conflicts: lsof -i :9223-9232 | grep LISTEN",
+					"Restart your AI client — the MCP server starts automatically",
+				],
+			};
+		}
+
+		if (isTimeout) {
+			return {
+				layer: 2,
+				type: 'BRIDGE_COMMAND_TIMEOUT',
+				canRetry: true,
+				recoverySteps: [
+					"The plugin may be unresponsive — close and reopen the Desktop Bridge plugin in Figma",
+					"If the issue persists, restart Figma Desktop",
+					"Call figma_get_status with probe:true to verify the connection",
+				],
+			};
+		}
+
+		return {
+			layer: isNoClient ? 2 : 2,
+			type: isNoClient ? 'BRIDGE_NOT_CONNECTED' : 'BRIDGE_ERROR',
+			canRetry: !isNoClient,
+			recoverySteps: [
+				"Open Figma Desktop with your target file",
+				"Go to Plugins → Development → Figma Desktop Bridge",
+				"Click 'Run' to open the plugin",
+				"Wait 3 seconds, then call figma_get_status with probe:true to verify",
+			],
+		};
 	}
 
 	/**
@@ -1263,9 +1346,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool 7: Get Status (with setup validation)
 		this.server.tool(
 			"figma_get_status",
-			"Check connection status to Figma Desktop. Reports transport status and connection health via the Desktop Bridge plugin (WebSocket transport).",
-			{},
-			async () => {
+			"Check connection status to Figma Desktop. Reports transport status and connection health via the Desktop Bridge plugin (WebSocket transport). Use probe:true for an active roundtrip verification that the plugin is actually responding.",
+			{
+				probe: z.boolean().optional().describe("When true, sends a live roundtrip command to the plugin to verify the connection is actually responsive (not just TCP-open). Returns probeResult with success/latency. Recommended for health checks."),
+			},
+			async ({ probe }) => {
 				try {
 					// Check WebSocket availability
 					const wsConnected = this.wsServer?.isClientConnected() ?? false;
@@ -1304,6 +1389,52 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					}
 
 					const setupValid = activeTransport !== "none";
+
+					// Compute failure layer for machine-readable diagnostics
+					// Layer 1 = MCP server/WS server issue, Layer 2 = plugin bridge not connected
+					const wsServerRunning = this.wsServer?.isStarted() ?? false;
+					const failureLayer: 1 | 2 | null = setupValid
+						? null
+						: !wsServerRunning
+							? 1
+							: 2;
+
+					// Active probe: verify the plugin actually responds to commands
+					let probeResult: { success: boolean; latencyMs: number; error?: string } | undefined;
+					if (probe) {
+						const probeStart = Date.now();
+						try {
+							const result = await this.wsServer!.sendCommand('GET_FILE_INFO', {}, 3000);
+							probeResult = {
+								success: !!(result && result.fileInfo),
+								latencyMs: Date.now() - probeStart,
+							};
+						} catch (probeError: any) {
+							probeResult = {
+								success: false,
+								latencyMs: Date.now() - probeStart,
+								error: probeError?.message || String(probeError),
+							};
+						}
+					}
+
+					// Recovery steps for agents to act on programmatically
+					const recoverySteps: string[] | undefined = setupValid
+						? undefined
+						: failureLayer === 1
+							? [
+								"Ensure your AI client (Claude Code, Cursor, etc.) is running with figma-console-mcp configured",
+								"Check if all ports 9223-9232 are occupied: lsof -i :9223-9232 | grep LISTEN",
+								"Kill stale processes if needed: pkill -f figma-console-mcp",
+								"Restart your AI client — the MCP server will start automatically on the next tool call",
+							]
+							: [
+								"Open Figma Desktop with your target file",
+								"Go to Plugins → Development → Figma Desktop Bridge",
+								"Click 'Run' to open the plugin",
+								"Wait 3 seconds for the WebSocket connection to establish",
+								"Call figma_get_status with probe:true to verify the connection",
+							];
 
 					return {
 						content: [
@@ -1371,10 +1502,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 														page: sel.page,
 													};
 												})(),
+												lastPongAt: this.wsServer?.getActiveClientLastPongAt() ? new Date(this.wsServer.getActiveClientLastPongAt()!).toISOString() : undefined,
 											},
 										},
 										setup: {
 											valid: setupValid,
+											failureLayer,
+											probeResult,
+											recoverySteps,
 											message: activeTransport === "websocket"
 												? this.wsActualPort !== this.wsPreferredPort
 													? `✅ Connected to Figma Desktop via WebSocket Bridge (port ${this.wsActualPort}, fallback from ${this.wsPreferredPort})`
@@ -1529,6 +1664,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											error instanceof Error ? error.message : String(error),
 										message: "Failed to reconnect to Figma Desktop",
 										hint: "Open the Desktop Bridge plugin in Figma",
+										connectionError: this.buildConnectionError(error),
 									},
 								),
 							},
@@ -1999,6 +2135,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 									error: lastError?.message || "Unknown error",
 									message: "Failed to execute code in Figma plugin context",
 									hint: "Make sure the Desktop Bridge plugin is running in Figma",
+									connectionError: this.buildConnectionError(lastError),
 								},
 							),
 						},
@@ -2056,22 +2193,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					};
 				} catch (error) {
 					logger.error({ error }, "Failed to update variable");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to update variable",
-										hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
+					return this.bridgeToolError(error, "Failed to update variable", "Make sure the Desktop Bridge plugin is running and the variable ID is correct");
 				}
 			},
 		);

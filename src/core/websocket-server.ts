@@ -114,6 +114,7 @@ export interface ClientConnection {
   documentChanges: DocumentChangeEntry[];
   consoleLogs: ConsoleLogEntry[];
   lastActivity: number;
+  lastPongAt: number;
   gracePeriodTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -135,6 +136,8 @@ export class FigmaWebSocketServer extends EventEmitter {
   private documentChangeBufferSize = 200;
   /** Cached plugin UI HTML content — loaded once and served to bootloader requests */
   private _pluginUIContent: string | null = null;
+  /** Heartbeat interval for detecting dead connections via ping/pong */
+  private _heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: WebSocketServerOptions) {
     super();
@@ -175,12 +178,17 @@ export class FigmaWebSocketServer extends EventEmitter {
 
     // Health/version endpoint
     if (url === '/health' || url === '/') {
+      const now = Date.now();
+      const connectedClients = Array.from(this.clients.values()).filter(
+        c => c.ws.readyState === WebSocket.OPEN && (now - c.lastPongAt) < 90000
+      ).length;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
         version: SERVER_VERSION,
         clients: this.clients.size,
-        uptime: Math.floor((Date.now() - this._startedAt) / 1000),
+        connectedClients,
+        uptime: Math.floor((now - this._startedAt) / 1000),
       }));
       return;
     }
@@ -251,6 +259,7 @@ export class FigmaWebSocketServer extends EventEmitter {
         // Start listening on the HTTP server (which also handles WS upgrades)
         this.httpServer.listen(this.options.port, this.options.host || 'localhost', () => {
           this._isStarted = true;
+          this.startHeartbeat();
           logger.info(
             { port: this.options.port, host: this.options.host || 'localhost' },
             'WebSocket bridge server started (with HTTP plugin UI endpoint)'
@@ -314,6 +323,19 @@ export class FigmaWebSocketServer extends EventEmitter {
 
           ws.on('error', (error: any) => {
             logger.error({ error }, 'WebSocket client error');
+          });
+
+          // Track pong responses for heartbeat-based liveness detection.
+          // Browser WebSocket clients auto-respond to pings per RFC 6455 —
+          // no plugin-side code changes needed.
+          (ws as any).isAlive = true;
+          ws.on('pong', () => {
+            (ws as any).isAlive = true;
+            // Update lastPongAt on the named client if identified
+            const found = this.findClientByWs(ws);
+            if (found) {
+              found.client.lastPongAt = Date.now();
+            }
           });
         });
       } catch (error) {
@@ -509,6 +531,7 @@ export class FigmaWebSocketServer extends EventEmitter {
       documentChanges: existing?.documentChanges || [],
       consoleLogs: existing?.consoleLogs || [],
       lastActivity: Date.now(),
+      lastPongAt: Date.now(),
       gracePeriodTimer: null,
     });
 
@@ -641,11 +664,35 @@ export class FigmaWebSocketServer extends EventEmitter {
   }
 
   /**
-   * Check if any named client is connected (transport availability check)
+   * Start the heartbeat interval that pings all connected clients every 30s.
+   * Detects silently dropped connections (e.g., macOS sleep, network change)
+   * that the OS TCP keepalive would take 30-120s to catch.
+   * Browser WebSocket clients auto-respond to pings per RFC 6455.
+   */
+  private startHeartbeat(): void {
+    this._heartbeatInterval = setInterval(() => {
+      if (!this.wss) return;
+      for (const ws of this.wss.clients) {
+        if ((ws as any).isAlive === false) {
+          logger.info('Terminating unresponsive WebSocket client (missed heartbeat pong)');
+          ws.terminate();
+          continue;
+        }
+        (ws as any).isAlive = false;
+        ws.ping();
+      }
+    }, 30000);
+  }
+
+  /**
+   * Check if any named client is connected (transport availability check).
+   * Checks both socket readyState and heartbeat pong freshness to avoid
+   * reporting phantom-connected state on silently dropped connections.
    */
   isClientConnected(): boolean {
+    const now = Date.now();
     for (const [, client] of this.clients) {
-      if (client.ws.readyState === WebSocket.OPEN) {
+      if (client.ws.readyState === WebSocket.OPEN && (now - client.lastPongAt) < 90000) {
         return true;
       }
     }
@@ -818,6 +865,16 @@ export class FigmaWebSocketServer extends EventEmitter {
   }
 
   /**
+   * Get the last pong timestamp for the active client.
+   * Returns null if no active client or no pong received yet.
+   */
+  getActiveClientLastPongAt(): number | null {
+    if (!this._activeFileKey) return null;
+    const client = this.clients.get(this._activeFileKey);
+    return client?.lastPongAt ?? null;
+  }
+
+  /**
    * Set the active file by fileKey. Returns true if the file is connected.
    */
   setActiveFile(fileKey: string): boolean {
@@ -880,6 +937,12 @@ export class FigmaWebSocketServer extends EventEmitter {
    * Stop the server and clean up all connections
    */
   async stop(): Promise<void> {
+    // Clear heartbeat interval
+    if (this._heartbeatInterval) {
+      clearInterval(this._heartbeatInterval);
+      this._heartbeatInterval = null;
+    }
+
     // Clear all per-client grace period timers
     for (const [, client] of this.clients) {
       if (client.gracePeriodTimer) {
