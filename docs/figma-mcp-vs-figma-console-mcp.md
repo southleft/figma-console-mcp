@@ -130,7 +130,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 | Read FigJam boards | Yes | Yes |
 | Create FigJam diagrams (Mermaid) | Yes | No |
 | Structured FigJam tools (stickies, connectors, tables, etc.) | No | Yes (9 dedicated tools) |
-| Figma Slides (create, edit, manage) | No | Yes (15 tools) |
+| Figma Slides (create, edit, manage) | No | Yes (82 tools) |
 | File comments (read, post, delete) | No | Yes |
 | Design annotations (read, write, clear, categories) | No | Yes (3 dedicated tools) |
 
