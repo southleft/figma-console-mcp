@@ -384,7 +384,7 @@ How to add this depends on your platform:
 |----------|-------------|
 | **Claude.ai** | Settings → Connectors → Add Custom Connector → Name: `Figma Console` / URL: `https://figma-console-mcp.southleft.com/mcp` |
 | **Lovable** | Project Settings → Integrations → Add MCP Server → paste the URL and add your Figma PAT as Bearer token |
-| **v0** | Settings → MCP Servers → Add Server → Streamable HTTP → paste URL and token |
+| **v0** | Settings → MCP Servers → Add Server → Streamable HTTP → paste URL → select **Bearer** auth → paste your Figma PAT (not OAuth) |
 | **Replit** | Tools → MCP → Add Server → paste URL, set Authorization header to `Bearer figd_YOUR_TOKEN` |
 | **Other clients** | Look for "Add MCP Server", "Custom Tool", or "Integrations" in your platform's settings. Provide the URL above and your Figma PAT as the Bearer token. |
 
