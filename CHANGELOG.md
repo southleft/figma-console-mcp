@@ -5,6 +5,27 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.0] - 2026-04-04
+
+Comprehensive accessibility scanning — full-spectrum WCAG coverage across design and code without maintaining a rule database. Design-side checks are bounded by Figma's API surface (~15 rules); code-side checks delegate to axe-core (104 rules from Deque).
+
+### Added
+- **9 new WCAG lint rules** in `figma_lint_design` — non-text contrast (1.4.11), color-only differentiation (1.4.1), focus indicators (2.4.7), letter/paragraph spacing (1.4.12), image alt text (1.1.1), heading hierarchy (1.3.1), reflow/responsive (1.4.10), reading order (1.3.2). Expands from 4 to 13 WCAG checks.
+- **`figma_audit_component_accessibility`** — deep accessibility scorecard for component sets with 6 audit categories: state coverage, focus indicator quality, non-color differentiation, target size consistency, annotation completeness, and color-blind simulation (protanopia/deuteranopia/tritanopia via Brettel/Vienot matrices). Returns weighted 0-100 score with prioritized recommendations.
+- **`figma_scan_code_accessibility`** — server-side HTML scanning via axe-core 4.11.2 + JSDOM. Runs ~50 structural/semantic checks (ARIA, labels, alt text, headings, landmarks, tabindex, duplicate IDs). Visual rules disabled (handled by design-side lint). No Figma connection required.
+- **`mapToCodeSpec` parameter** on `figma_scan_code_accessibility` — auto-generates a `codeSpec.accessibility` object from HTML + scan results, ready to pass directly into `figma_check_design_parity` for automated design-to-code accessibility parity checking.
+- **7 new design-to-code parity checks** in `figma_check_design_parity` — focus indicator parity (design variant ↔ :focus-visible), disabled state parity, error state parity, required field parity, semantic element matching (button→`<button>`), target size parity, keyboard interaction documentation.
+- **`CodeSpec.accessibility` fields** — `semanticElement`, `supportsDisabled`, `supportsError`, `renderedSize` for richer parity comparison.
+- **`axe-core`** and **`jsdom`** added as dependencies for code-side accessibility scanning.
+
+### Changed
+- `figma_lint_design` WCAG rule group expanded from 4 to 13 rules. Existing rules unchanged — fully backward compatible.
+- `figma_check_design_parity` accessibility comparison expanded from 2 to 9 checks. Existing CodeSpec fields remain optional.
+
+### Fixed
+- **Closed-world assumption in CodeSpec mapper** — `supportsDisabled` and `supportsError` now report `undefined` (unknown) instead of `false` when scanning a single HTML state snapshot. Prevents false positives when the scanned HTML is in default state but the component supports error/disabled states dynamically.
+
+
 ## [1.21.1] - 2026-04-01
 
 ### Fixed
@@ -588,6 +609,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.22.0]: https://github.com/southleft/figma-console-mcp/compare/v1.21.1...v1.22.0
 [1.21.1]: https://github.com/southleft/figma-console-mcp/compare/v1.21.0...v1.21.1
 [1.21.0]: https://github.com/southleft/figma-console-mcp/compare/v1.20.1...v1.21.0
 [1.20.1]: https://github.com/southleft/figma-console-mcp/compare/v1.20.0...v1.20.1
