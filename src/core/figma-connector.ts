@@ -69,6 +69,9 @@ export interface IFigmaConnector {
   // Design lint
   lintDesign(nodeId?: string, rules?: string[], maxDepth?: number, maxFindings?: number): Promise<any>;
 
+  // Component accessibility audit
+  auditComponentAccessibility(nodeId?: string, targetSize?: number): Promise<any>;
+
   // FigJam operations
   createSticky(params: { text: string; color?: string; x?: number; y?: number }): Promise<any>;
   createStickies(params: { stickies: Array<{ text: string; color?: string; x?: number; y?: number }> }): Promise<any>;

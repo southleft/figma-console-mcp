@@ -25,6 +25,7 @@ import { registerCommentTools } from "./core/comment-tools.js";
 import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
+import { registerAccessibilityTools } from "./core/accessibility-tools.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
 import { registerWriteTools } from "./core/write-tools.js";
@@ -1036,6 +1037,14 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			undefined, // variablesCache
 			{ isRemoteMode: true },
 		);
+
+		// Register code-side accessibility scanning (axe-core + JSDOM)
+		// Note: May not work in Cloudflare Workers due to JSDOM dependency
+		try {
+			registerAccessibilityTools(this.server);
+		} catch (e) {
+			// Silently skip if axe-core/jsdom not available in Workers environment
+		}
 
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
 		// They require Node.js file system APIs that don't work in Cloudflare Workers

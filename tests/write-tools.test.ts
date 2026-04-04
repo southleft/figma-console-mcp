@@ -95,8 +95,8 @@ describe("Write Tools", () => {
 	// Registration
 	// ========================================================================
 
-	it("registers all 29 write tools", () => {
-		expect(server.tool).toHaveBeenCalledTimes(29);
+	it("registers all 30 write tools", () => {
+		expect(server.tool).toHaveBeenCalledTimes(30);
 	});
 
 	// ========================================================================

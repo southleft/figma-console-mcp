@@ -2591,14 +2591,18 @@ return {
 	// Tool: Lint Design for accessibility and quality issues
 	server.tool(
 		"figma_lint_design",
-		"Run accessibility (WCAG) and design quality checks on the current page or a specific node tree. " +
-		"Checks color contrast ratios, text sizing, touch targets, hardcoded values, detached components, " +
-		"naming conventions, and layout quality. Returns categorized findings with severity levels. " +
+		"Run comprehensive accessibility (WCAG 2.2) and design quality checks on the current page or a specific node tree. " +
+		"WCAG checks (13 rules): color contrast (AA), non-text contrast (1.4.11), color-only differentiation (1.4.1), " +
+		"focus indicators (2.4.7), text sizing, touch targets, line height, letter spacing, paragraph spacing (1.4.12), " +
+		"image alt text (1.1.1), heading hierarchy (1.3.1), reflow/responsive (1.4.10), and reading order (1.3.2). " +
+		"Design system checks: hardcoded colors, missing text styles, default names, detached components. " +
+		"Layout checks: missing auto-layout, empty containers. " +
+		"Returns categorized findings with severity levels (critical/warning/info). " +
 		"Use natural language like 'check my design for accessibility issues' or 'lint this page'. " +
 		"Requires Desktop Bridge plugin.",
 		{
 			nodeId: z.string().optional().describe("Node ID to lint (defaults to current page)"),
-			rules: z.array(z.string()).optional().describe("Rule filter: ['all'] (default), ['wcag'], ['design-system'], ['layout'], or specific rule IDs like ['wcag-contrast', 'detached-component']"),
+			rules: z.array(z.string()).optional().describe("Rule filter: ['all'] (default), ['wcag'] (13 WCAG rules), ['design-system'], ['layout'], or specific rule IDs like ['wcag-contrast', 'wcag-focus-indicator', 'wcag-image-alt']"),
 			maxDepth: z.number().optional().describe("Maximum tree depth to traverse (default: 10)"),
 			maxFindings: z.number().optional().describe("Maximum findings before stopping (default: 100)"),
 		},
@@ -2633,6 +2637,54 @@ return {
 							text: JSON.stringify({
 								error: error instanceof Error ? error.message : String(error),
 								hint: "Make sure the Desktop Bridge plugin is running in your Figma file.",
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	// Tool: Audit Component Accessibility
+	server.tool(
+		"figma_audit_component_accessibility",
+		"Deep accessibility audit for a specific component or component set. Produces a scorecard covering: " +
+		"state coverage (default/hover/focus/disabled/error/active/loading), focus indicator quality and contrast, " +
+		"non-color differentiation (WCAG 1.4.1), target size consistency (WCAG 2.5.8), annotation completeness, " +
+		"and color-blind simulation (protanopia/deuteranopia/tritanopia). Returns per-category scores (0-100) " +
+		"and prioritized recommendations. Use after designing a component to validate accessibility before handoff. " +
+		"Requires Desktop Bridge plugin.",
+		{
+			nodeId: z.string().optional().describe("Node ID of a COMPONENT_SET, COMPONENT, or INSTANCE to audit. Falls back to current selection if omitted."),
+			targetSize: z.number().optional().describe("Minimum touch target size in px (default: 24 per WCAG 2.5.8). Use 44 for iOS or 48 for Android guidelines."),
+		},
+		async ({ nodeId, targetSize }) => {
+			try {
+				const connector = await getDesktopConnector();
+				const result = await connector.auditComponentAccessibility(nodeId, targetSize);
+
+				if (!result.success) {
+					throw new Error(result.error || "Audit failed");
+				}
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify(result.data || result, null, 2),
+						},
+					],
+				};
+			} catch (error) {
+				logger.error({ error }, "Failed to audit component accessibility");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the Desktop Bridge plugin is running. Provide a COMPONENT_SET nodeId or select one in Figma.",
 							}),
 						},
 					],

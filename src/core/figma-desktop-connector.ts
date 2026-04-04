@@ -1658,6 +1658,9 @@ export class FigmaDesktopConnector implements IFigmaConnector {
     }
   }
 
+  // Component accessibility audit — not supported via legacy CDP transport
+  async auditComponentAccessibility(): Promise<any> { throw new Error('Component accessibility audit requires WebSocket transport'); }
+
   // FigJam operations — not supported via legacy CDP transport
   async createSticky(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
   async createStickies(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
