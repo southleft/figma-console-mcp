@@ -103,6 +103,105 @@ async function scanHtmlWithAxe(
 }
 
 /**
+ * Extract a CodeSpec.accessibility object from HTML + axe-core results.
+ * This bridges Phase 3 (code scanning) → Phase 4 (parity comparison).
+ *
+ * Parses the HTML to extract semantic element, ARIA attributes, and states.
+ * Uses axe-core results to infer what the code supports.
+ */
+export function axeResultsToCodeSpec(html: string, axeResults: any): Record<string, any> {
+	const spec: Record<string, any> = {};
+
+	// Parse HTML to extract attributes (lightweight regex-based, no DOM needed)
+	const htmlLower = html.toLowerCase();
+
+	// Semantic element: find the root/first meaningful element
+	const rootElementMatch = html.match(/<(button|a|input|select|textarea|details|dialog|nav|main|form|label|fieldset)\b/i);
+	if (rootElementMatch) {
+		spec.semanticElement = rootElementMatch[1].toLowerCase();
+	} else {
+		const firstElementMatch = html.match(/<(\w+)[\s>]/);
+		if (firstElementMatch && !["div", "span", "html", "head", "body", "script", "style", "!doctype"].includes(firstElementMatch[1].toLowerCase())) {
+			spec.semanticElement = firstElementMatch[1].toLowerCase();
+		} else {
+			spec.semanticElement = "div";
+		}
+	}
+
+	// ARIA role
+	const roleMatch = html.match(/role=["']([^"']+)["']/i);
+	if (roleMatch) {
+		spec.role = roleMatch[1];
+	}
+
+	// ARIA label
+	const ariaLabelMatch = html.match(/aria-label=["']([^"']+)["']/i);
+	if (ariaLabelMatch) {
+		spec.ariaLabel = ariaLabelMatch[1];
+	}
+
+	// Focus visible: check for :focus-visible or :focus in inline styles/class names,
+	// or infer from element type (native interactive elements have default focus)
+	const nativeFocusElements = ["button", "a", "input", "select", "textarea"];
+	const hasFocusCSS = /focus-visible|:focus\b|outline.*focus|ring.*focus|focus.*ring/i.test(html);
+	spec.focusVisible = hasFocusCSS || nativeFocusElements.includes(spec.semanticElement || "");
+
+	// Disabled support: check for disabled or aria-disabled attributes
+	spec.supportsDisabled = /\bdisabled\b|aria-disabled/i.test(htmlLower);
+
+	// Error support: check for aria-invalid or error-related patterns
+	spec.supportsError = /aria-invalid|aria-errormessage|aria-describedby.*error/i.test(htmlLower);
+
+	// Required: check for required or aria-required attributes
+	if (/aria-required=["']true["']|required(?!=)/i.test(html)) {
+		spec.ariaRequired = true;
+	} else if (/aria-required=["']false["']/i.test(html)) {
+		spec.ariaRequired = false;
+	}
+
+	// Keyboard interactions: infer from element type
+	const keyboardInteractions: string[] = [];
+	if (spec.semanticElement === "button" || spec.role === "button") {
+		keyboardInteractions.push("Enter", "Space");
+	} else if (spec.semanticElement === "a" || spec.role === "link") {
+		keyboardInteractions.push("Enter");
+	} else if (spec.semanticElement === "input" || spec.semanticElement === "textarea") {
+		keyboardInteractions.push("Tab (focus)", "Type (input)");
+	} else if (spec.semanticElement === "select" || spec.role === "listbox") {
+		keyboardInteractions.push("Arrow keys", "Enter", "Space");
+	} else if (spec.role === "checkbox" || spec.role === "switch") {
+		keyboardInteractions.push("Space");
+	} else if (spec.role === "tab") {
+		keyboardInteractions.push("Arrow keys");
+	}
+	// Check HTML for custom keyboard handlers
+	if (/onkeydown|onkeyup|onkeypress|@keydown|@keyup|v-on:keydown/i.test(html)) {
+		if (!keyboardInteractions.includes("Custom key handler")) {
+			keyboardInteractions.push("Custom key handler");
+		}
+	}
+	if (keyboardInteractions.length > 0) {
+		spec.keyboardInteractions = keyboardInteractions;
+	}
+
+	// Use axe-core results to refine: if certain violations exist, it tells us what's missing
+	if (axeResults?.violations) {
+		for (const v of axeResults.violations) {
+			// If button-name violation exists, the button has no accessible name
+			if (v.id === "button-name") {
+				spec.ariaLabel = undefined; // Explicitly missing
+			}
+			// If label violation exists, input lacks a label
+			if (v.id === "label") {
+				spec.ariaLabel = undefined;
+			}
+		}
+	}
+
+	return spec;
+}
+
+/**
  * Format axe-core results into our standard lint-like output structure.
  */
 function formatAxeResults(axeResults: any): any {
@@ -183,8 +282,12 @@ export function registerAccessibilityTools(
 			),
 			context: z.string().optional().describe("CSS selector to scope the scan to a specific element (e.g., '#my-component', '.card'). Scans entire document if omitted."),
 			includePassingRules: z.boolean().optional().describe("If true, includes count of passing and incomplete rules in the response (default: false)."),
+			mapToCodeSpec: z.boolean().optional().describe(
+				"If true, includes a codeSpec.accessibility object auto-extracted from the HTML + scan results. " +
+				"Pass this directly into figma_check_design_parity's codeSpec.accessibility field for automated design-to-code a11y parity checking.",
+			),
 		},
-		async ({ html, tags, context, includePassingRules }) => {
+		async ({ html, tags, context, includePassingRules, mapToCodeSpec }) => {
 			try {
 				const axeResults = await scanHtmlWithAxe(html, {
 					tags: tags || undefined,
@@ -198,6 +301,12 @@ export function registerAccessibilityTools(
 					delete formatted.passes;
 					delete formatted.incomplete;
 					delete formatted.inapplicable;
+				}
+
+				// Auto-generate CodeSpec.accessibility from HTML + results
+				if (mapToCodeSpec) {
+					formatted.codeSpecAccessibility = axeResultsToCodeSpec(html, axeResults);
+					formatted.codeSpecAccessibility._usage = "Pass this object as codeSpec.accessibility in figma_check_design_parity for automated a11y parity checking.";
 				}
 
 				return {

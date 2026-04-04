@@ -7,6 +7,7 @@
  */
 
 import type { CodeSpec, ParityDiscrepancy } from "../src/core/types/design-code";
+import { axeResultsToCodeSpec } from "../src/core/accessibility-tools";
 
 // Re-implement compareAccessibility logic for unit testing
 // (The actual function is private in design-code-tools.ts)
@@ -674,6 +675,186 @@ describe("compareAccessibility (Phase 4 parity checks)", () => {
 		it("should assign info to: role annotations, keyboard docs", () => {
 			const infoChecks = ["role", "keyboardInteractions"];
 			expect(infoChecks.length).toBe(2);
+		});
+	});
+});
+
+// ============================================================================
+// axeResultsToCodeSpec mapper tests
+// ============================================================================
+
+describe("axeResultsToCodeSpec mapper", () => {
+	describe("semantic element extraction", () => {
+		it("should extract <button> as semantic element", () => {
+			const spec = axeResultsToCodeSpec('<button class="btn">Click me</button>', { violations: [] });
+			expect(spec.semanticElement).toBe("button");
+		});
+
+		it("should extract <a> as semantic element", () => {
+			const spec = axeResultsToCodeSpec('<a href="/page">Link</a>', { violations: [] });
+			expect(spec.semanticElement).toBe("a");
+		});
+
+		it("should extract <input> as semantic element", () => {
+			const spec = axeResultsToCodeSpec('<input type="text" id="name">', { violations: [] });
+			expect(spec.semanticElement).toBe("input");
+		});
+
+		it("should default to div for non-semantic elements", () => {
+			const spec = axeResultsToCodeSpec('<div class="card"><span>content</span></div>', { violations: [] });
+			expect(spec.semanticElement).toBe("div");
+		});
+
+		it("should prefer semantic elements over wrappers", () => {
+			const spec = axeResultsToCodeSpec('<div class="wrapper"><button>Submit</button></div>', { violations: [] });
+			expect(spec.semanticElement).toBe("button");
+		});
+	});
+
+	describe("ARIA attribute extraction", () => {
+		it("should extract role", () => {
+			const spec = axeResultsToCodeSpec('<div role="alert">Error!</div>', { violations: [] });
+			expect(spec.role).toBe("alert");
+		});
+
+		it("should extract aria-label", () => {
+			const spec = axeResultsToCodeSpec('<button aria-label="Close dialog">X</button>', { violations: [] });
+			expect(spec.ariaLabel).toBe("Close dialog");
+		});
+
+		it("should extract aria-required", () => {
+			const spec = axeResultsToCodeSpec('<input aria-required="true">', { violations: [] });
+			expect(spec.ariaRequired).toBe(true);
+		});
+
+		it("should extract required attribute", () => {
+			const spec = axeResultsToCodeSpec('<input required>', { violations: [] });
+			expect(spec.ariaRequired).toBe(true);
+		});
+	});
+
+	describe("state support detection", () => {
+		it("should detect disabled attribute support", () => {
+			const spec = axeResultsToCodeSpec('<button disabled>Submit</button>', { violations: [] });
+			expect(spec.supportsDisabled).toBe(true);
+		});
+
+		it("should detect aria-disabled support", () => {
+			const spec = axeResultsToCodeSpec('<div role="button" aria-disabled="true">Submit</div>', { violations: [] });
+			expect(spec.supportsDisabled).toBe(true);
+		});
+
+		it("should detect no disabled support", () => {
+			const spec = axeResultsToCodeSpec('<button>Submit</button>', { violations: [] });
+			expect(spec.supportsDisabled).toBe(false);
+		});
+
+		it("should detect aria-invalid support", () => {
+			const spec = axeResultsToCodeSpec('<input aria-invalid="true">', { violations: [] });
+			expect(spec.supportsError).toBe(true);
+		});
+
+		it("should detect no error support", () => {
+			const spec = axeResultsToCodeSpec('<input type="text">', { violations: [] });
+			expect(spec.supportsError).toBe(false);
+		});
+	});
+
+	describe("focus visible inference", () => {
+		it("should infer focusVisible for native button", () => {
+			const spec = axeResultsToCodeSpec('<button>Click</button>', { violations: [] });
+			expect(spec.focusVisible).toBe(true);
+		});
+
+		it("should infer focusVisible for native input", () => {
+			const spec = axeResultsToCodeSpec('<input type="text">', { violations: [] });
+			expect(spec.focusVisible).toBe(true);
+		});
+
+		it("should infer focusVisible for native link", () => {
+			const spec = axeResultsToCodeSpec('<a href="/page">Link</a>', { violations: [] });
+			expect(spec.focusVisible).toBe(true);
+		});
+
+		it("should detect focus-visible in CSS references", () => {
+			const spec = axeResultsToCodeSpec('<div class="focus-visible-ring" role="button">Custom</div>', { violations: [] });
+			expect(spec.focusVisible).toBe(true);
+		});
+
+		it("should NOT infer focusVisible for plain div", () => {
+			const spec = axeResultsToCodeSpec('<div class="card">Content</div>', { violations: [] });
+			expect(spec.focusVisible).toBe(false);
+		});
+	});
+
+	describe("keyboard interactions inference", () => {
+		it("should infer Enter/Space for buttons", () => {
+			const spec = axeResultsToCodeSpec('<button>Click</button>', { violations: [] });
+			expect(spec.keyboardInteractions).toContain("Enter");
+			expect(spec.keyboardInteractions).toContain("Space");
+		});
+
+		it("should infer Enter for links", () => {
+			const spec = axeResultsToCodeSpec('<a href="/page">Link</a>', { violations: [] });
+			expect(spec.keyboardInteractions).toContain("Enter");
+		});
+
+		it("should detect custom key handlers", () => {
+			const spec = axeResultsToCodeSpec('<div onkeydown="handleKey(event)">Custom</div>', { violations: [] });
+			expect(spec.keyboardInteractions).toContain("Custom key handler");
+		});
+
+		it("should infer Space for checkboxes", () => {
+			const spec = axeResultsToCodeSpec('<div role="checkbox">Check</div>', { violations: [] });
+			expect(spec.keyboardInteractions).toContain("Space");
+		});
+	});
+
+	describe("axe-core results integration", () => {
+		it("should clear ariaLabel when button-name violation exists", () => {
+			const spec = axeResultsToCodeSpec(
+				'<button></button>',
+				{ violations: [{ id: "button-name", impact: "critical", nodes: [] }] },
+			);
+			expect(spec.ariaLabel).toBeUndefined();
+		});
+
+		it("should clear ariaLabel when label violation exists", () => {
+			const spec = axeResultsToCodeSpec(
+				'<input type="text">',
+				{ violations: [{ id: "label", impact: "critical", nodes: [] }] },
+			);
+			expect(spec.ariaLabel).toBeUndefined();
+		});
+	});
+
+	describe("end-to-end CodeSpec generation", () => {
+		it("should produce a complete CodeSpec for a well-formed component", () => {
+			const html = '<button class="btn" aria-label="Submit form" disabled>Submit</button>';
+			const spec = axeResultsToCodeSpec(html, { violations: [] });
+
+			expect(spec.semanticElement).toBe("button");
+			expect(spec.ariaLabel).toBe("Submit form");
+			expect(spec.supportsDisabled).toBe(true);
+			expect(spec.focusVisible).toBe(true);
+			expect(spec.keyboardInteractions).toContain("Enter");
+			expect(spec.keyboardInteractions).toContain("Space");
+		});
+
+		it("should produce a CodeSpec usable by compareAccessibility", () => {
+			const html = '<button aria-label="Save">Save</button>';
+			const spec = axeResultsToCodeSpec(html, { violations: [] });
+
+			// This should be directly passable to compareAccessibility as codeSpec.accessibility
+			const d: ParityDiscrepancy[] = [];
+			compareAccessibility(
+				{ name: "Button", description: "", children: [{ name: "State=Focused" }] },
+				{ accessibility: spec as any },
+				d,
+			);
+
+			// focusVisible should be true (native button), focus variant exists → no focus mismatch
+			expect(d.find((i) => i.property === "focusVisible")).toBeUndefined();
 		});
 	});
 });

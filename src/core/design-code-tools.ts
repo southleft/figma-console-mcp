@@ -2552,7 +2552,11 @@ const codeSpecSchema = z.object({
 		keyboardInteractions: z.array(z.string()).optional(),
 		contrastRatio: z.number().optional(),
 		focusVisible: z.boolean().optional(),
-	}).optional().describe("Accessibility properties from code"),
+		semanticElement: z.string().optional().describe("Semantic HTML element (e.g., 'button', 'a', 'input')"),
+		supportsDisabled: z.boolean().optional().describe("Whether code supports disabled/aria-disabled state"),
+		supportsError: z.boolean().optional().describe("Whether code supports aria-invalid/error state"),
+		renderedSize: z.tuple([z.number(), z.number()]).optional().describe("Rendered size [width, height] in px"),
+	}).optional().describe("Accessibility properties from code. Tip: use figma_scan_code_accessibility with mapToCodeSpec:true to auto-generate this from component HTML."),
 	metadata: z.object({
 		name: z.string().optional(),
 		description: z.string().optional(),
