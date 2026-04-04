@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
 
-> **🆕 High-Fidelity Design-to-Code:** Deep component trees (depth 4), resolved design tokens, interaction state machines with CSS mappings, and codebase-aware component scanning. AI gets everything a senior engineer needs — tokens, sizing, states, annotations, and a cross-reference of what already exists in your codebase. [See what's new →](docs/figma-mcp-vs-figma-console-mcp.md)
+> **🆕 Comprehensive Accessibility Scanning (v1.22.0):** Full-spectrum WCAG coverage across design and code — 13 design-side lint rules, component accessibility scorecards with color-blind simulation, code-side scanning via axe-core (104 rules), and design-to-code accessibility parity checking. No rule database to maintain. [See what's new →](docs/figma-mcp-vs-figma-console-mcp.md)
 
 ## What is this?
 
@@ -21,6 +21,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 - **🔧 Variable management** - Create, update, rename, and delete design tokens
 - **⚡ Real-time monitoring** - Watch logs as plugins execute
 - **📌 FigJam boards** - Create stickies, flowcharts, tables, and code blocks on collaborative boards
+- **♿ Accessibility scanning** - 13 WCAG design checks, component scorecards, axe-core code scanning, design-to-code parity
 - **☁️ Cloud Write Relay** - Web AI clients (Claude.ai, v0, Replit) can design in Figma via cloud pairing
 - **🔄 Four ways to connect** - Remote SSE, Cloud Mode, NPX, or Local Git
 

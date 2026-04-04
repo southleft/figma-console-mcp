@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.19.0 — High-Fidelity Design-to-Code:** Deep component trees with resolved design tokens, variant state machines with CSS pseudo-class mappings, and codebase-aware component scanning that prevents recreating existing components. 94+ tools total. [See what's new →](/figma-mcp-vs-figma-console-mcp)
+**New in v1.22.0 — Comprehensive Accessibility Scanning:** Full-spectrum WCAG coverage across design and code. 13 design-side lint rules, component accessibility scorecards with color-blind simulation, code-side scanning via axe-core (104 rules), and design-to-code parity checking. 94+ tools total. [See what's new →](/figma-mcp-vs-figma-console-mcp)
 </Note>
 
 # Your Design System as an API
@@ -167,6 +167,17 @@ Real component data. Real token values. Real code that uses your actual design s
     - `figma_add_text_to_slide` / `figma_add_shape_to_slide` — Add content to slides
 
     [Full Slides Guide →](/slides)
+  </Accordion>
+
+  <Accordion title="Accessibility Scanning" icon="universal-access">
+    Full-spectrum WCAG coverage across design and code:
+
+    - **Design-side lint** — 13 WCAG checks: contrast, non-text contrast, color-only differentiation, focus indicators, spacing, alt text, heading hierarchy, reflow, reading order
+    - **Component audit** — State coverage scoring, focus indicator quality, color-blind simulation (protanopia, deuteranopia, tritanopia)
+    - **Code-side scan** — axe-core with 104 rules via JSDOM: ARIA, labels, landmarks, semantics, headings
+    - **Parity bridge** — 9 checks ensuring design accessibility intent survives code implementation
+
+    [Full Accessibility Guide →](/tools#-accessibility-tools)
   </Accordion>
 </AccordionGroup>
 
