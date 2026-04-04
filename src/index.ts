@@ -25,6 +25,7 @@ import { registerCommentTools } from "./core/comment-tools.js";
 import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
+import { registerAccessibilityTools } from "./core/accessibility-tools.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
 import { registerWriteTools } from "./core/write-tools.js";
@@ -71,7 +72,7 @@ function isFigmaPAT(token: string): boolean {
 export class FigmaConsoleMCPv3 extends McpAgent {
 	server = new McpServer({
 		name: "Figma Console MCP",
-		version: "1.21.1",
+		version: "1.22.0",
 	});
 
 	private browserManager: BrowserManager | null = null;
@@ -1037,6 +1038,14 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			{ isRemoteMode: true },
 		);
 
+		// Register code-side accessibility scanning (axe-core + JSDOM)
+		// Note: May not work in Cloudflare Workers due to JSDOM dependency
+		try {
+			registerAccessibilityTools(this.server);
+		} catch (e) {
+			// Silently skip if axe-core/jsdom not available in Workers environment
+		}
+
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
 		// They require Node.js file system APIs that don't work in Cloudflare Workers
 	}
@@ -1321,7 +1330,7 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.21.1",
+				version: "1.22.0",
 			});
 
 			// ================================================================
@@ -2107,7 +2116,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.21.1",
+					version: "1.22.0",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
@@ -2163,13 +2172,13 @@ export default {
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Figma Console MCP - The Most Comprehensive MCP Server for Figma</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="Turn your Figma design system into a living API. 92+ tools give AI assistants deep access to design tokens, component specs, variables, and programmatic design creation.">
+	<meta name="description" content="Turn your Figma design system into a living API. 94+ tools give AI assistants deep access to design tokens, component specs, variables, and programmatic design creation.">
 
 	<!-- Open Graph -->
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="https://figma-console-mcp.southleft.com">
 	<meta property="og:title" content="Figma Console MCP - Turn Your Design System Into a Living API">
-	<meta property="og:description" content="The most comprehensive MCP server for Figma. 92+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
+	<meta property="og:description" content="The most comprehensive MCP server for Figma. 94+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
 	<meta property="og:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 	<meta property="og:image:width" content="1200">
 	<meta property="og:image:height" content="630">
@@ -2177,7 +2186,7 @@ export default {
 	<!-- Twitter -->
 	<meta name="twitter:card" content="summary_large_image">
 	<meta name="twitter:title" content="Figma Console MCP - Turn Your Design System Into a Living API">
-	<meta name="twitter:description" content="The most comprehensive MCP server for Figma. 92+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
+	<meta name="twitter:description" content="The most comprehensive MCP server for Figma. 94+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
 	<meta name="twitter:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 
 	<meta name="theme-color" content="#0D9488">
@@ -3064,7 +3073,7 @@ export default {
 			<div class="grid-cell showcase-cell rule-left">
 				<div class="showcase-label">What AI Can Access</div>
 				<div class="showcase-stat">
-					<span class="number">92+</span>
+					<span class="number">94+</span>
 					<span class="label">MCP tools for Figma</span>
 				</div>
 				<div class="capability-list">

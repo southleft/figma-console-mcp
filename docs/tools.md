@@ -7,7 +7,7 @@ description: "Complete API reference for all 90+ MCP tools, including parameters
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **92+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **61 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **94+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **61 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -72,7 +72,9 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_set_strokes` | Set stroke colors | Local / Cloud |
 | | `figma_create_child` | Create child node | Local / Cloud |
 | **🖼️ Image** | `figma_set_image_fill` | Set image fill on nodes | Local / Cloud |
-| **🔍 Design Lint** | `figma_lint_design` | WCAG accessibility and design quality checks | Local / Cloud |
+| **🔍 Accessibility** | `figma_lint_design` | 13 WCAG checks on design nodes (contrast, spacing, focus, alt text, etc.) | Local / Cloud |
+| | `figma_audit_component_accessibility` | Deep component scorecard: states, focus, color-blind simulation | Local / Cloud |
+| | `figma_scan_code_accessibility` | Scan HTML with axe-core (104 rules): ARIA, labels, landmarks, semantics | Local / Cloud |
 | **📌 FigJam** | `figjam_create_sticky` | Create a sticky note | Local / Cloud |
 | | `figjam_create_stickies` | Batch create up to 200 stickies | Local / Cloud |
 | | `figjam_create_connector` | Connect two nodes with optional label | Local / Cloud |
@@ -2124,19 +2126,21 @@ figma_set_image_fill({
 
 ---
 
-## 🔍 Design Lint Tool
+## 🔍 Accessibility Tools
+
+Three tools provide full-spectrum accessibility coverage across design and code — without maintaining a rule database. Design-side checks are bounded by Figma's API; code-side checks delegate to axe-core (Deque).
 
 ### `figma_lint_design`
 
-Run accessibility (WCAG) and design quality checks on the current page or a specific node tree. Returns categorized findings with severity levels.
+Run comprehensive WCAG 2.2 accessibility and design quality checks on the current page or a specific node tree. Returns categorized findings with severity levels.
 
 **Mode:** Local / Cloud
 
 **When to Use:**
-- Checking designs for WCAG accessibility compliance
+- Checking designs for WCAG accessibility compliance (13 checks)
 - Finding hardcoded colors that should use design tokens
-- Detecting detached components in your file
-- Auditing naming conventions and layout quality
+- Detecting detached components, missing focus variants, color-only states
+- Auditing heading hierarchy, reading order, reflow readiness
 - Pre-handoff quality checks
 
 **Usage:**
@@ -2144,7 +2148,7 @@ Run accessibility (WCAG) and design quality checks on the current page or a spec
 // Lint the current page for all issues
 figma_lint_design()
 
-// Only WCAG accessibility checks
+// Only WCAG accessibility checks (13 rules)
 figma_lint_design({
   rules: ["wcag"]
 })
@@ -2156,7 +2160,7 @@ figma_lint_design({
 
 // Specific rules only
 figma_lint_design({
-  rules: ["wcag-contrast", "detached-component"],
+  rules: ["wcag-contrast", "wcag-focus-indicator", "wcag-image-alt"],
   maxFindings: 50
 })
 
@@ -2169,7 +2173,7 @@ figma_lint_design({
 
 **Parameters:**
 - `nodeId` (optional): Node ID to lint (defaults to current page)
-- `rules` (optional): Rule filter — `["all"]` (default), `["wcag"]`, `["design-system"]`, `["layout"]`, or specific rule IDs
+- `rules` (optional): Rule filter — `["all"]` (default), `["wcag"]` (13 rules), `["design-system"]`, `["layout"]`, or specific rule IDs
 - `maxDepth` (optional): Maximum tree depth to traverse (default: 10)
 - `maxFindings` (optional): Maximum findings before stopping (default: 100)
 
@@ -2177,24 +2181,33 @@ figma_lint_design({
 
 | Group | Rules | What It Checks |
 |-------|-------|---------------|
-| `wcag` | `wcag-contrast`, `wcag-text-size`, `wcag-target-size`, `wcag-line-height` | WCAG accessibility compliance |
+| `wcag` | 13 rules (see below) | WCAG 2.2 accessibility compliance |
 | `design-system` | `hardcoded-color`, `no-text-style`, `default-name`, `detached-component` | Design system hygiene |
 | `layout` | `no-autolayout`, `empty-container` | Layout quality |
 
 **Individual Rules:**
 
-| Rule | Severity | Description |
-|------|----------|-------------|
-| `wcag-contrast` | critical | Text foreground/background contrast ratio below WCAG AA (4.5:1 normal, 3:1 large text) |
-| `wcag-text-size` | warning | Text nodes with font size below 12px |
-| `wcag-target-size` | critical | Interactive elements (buttons, inputs, etc.) smaller than 24x24px |
-| `wcag-line-height` | warning | Line height below 1.5x the font size (supports pixel and percent values) |
-| `hardcoded-color` | warning | Solid fills not bound to a variable or paint style |
-| `no-text-style` | warning | Text nodes without an applied text style |
-| `default-name` | warning | Nodes with generic Figma names (Frame 1, Rectangle 3, etc.) |
-| `detached-component` | warning | Frames with component naming convention (contains "/") but not actually a component or instance |
-| `no-autolayout` | warning | Frames with 2+ children that don't use auto-layout |
-| `empty-container` | info | Frames with zero children |
+| Rule | Severity | WCAG | Description |
+|------|----------|------|-------------|
+| `wcag-contrast` | critical | 1.4.3 | Text contrast ratio below AA (4.5:1 normal, 3:1 large) |
+| `wcag-non-text-contrast` | critical | 1.4.11 | UI component/graphical object below 3:1 against background |
+| `wcag-color-only` | critical | 1.4.1 | Component variants differ only by color (no icon/border indicator) |
+| `wcag-target-size` | critical | 2.5.8 | Interactive elements smaller than 24x24px |
+| `wcag-focus-indicator` | warning | 2.4.7 | Interactive component missing focus variant or visible indicator |
+| `wcag-text-size` | warning | 1.4.4 | Text below 12px minimum |
+| `wcag-line-height` | warning | 1.4.12 | Line height below 1.5x font size |
+| `wcag-letter-spacing` | warning | 1.4.12 | Negative letter spacing |
+| `wcag-paragraph-spacing` | warning | 1.4.12 | Paragraph spacing below 2x font size |
+| `wcag-image-alt` | warning | 1.1.1 | Image fills without description annotation |
+| `wcag-heading-hierarchy` | warning | 1.3.1 | Heading levels skip (e.g., H1 → H3) |
+| `wcag-reflow` | warning | 1.4.10 | Fixed-position frames that won't reflow |
+| `wcag-reading-order` | warning | 1.3.2 | Layer order doesn't match visual reading order |
+| `hardcoded-color` | warning | — | Solid fills not bound to a variable or style |
+| `no-text-style` | warning | — | Text nodes without an applied text style |
+| `default-name` | warning | — | Nodes with generic Figma names |
+| `detached-component` | warning | — | Frames with component naming but not a component |
+| `no-autolayout` | warning | — | Frames with 2+ children without auto-layout |
+| `empty-container` | info | — | Frames with zero children |
 
 **Returns:**
 ```json
@@ -2229,6 +2242,98 @@ figma_lint_design({
 - "Are there any detached components?"
 - "Run a WCAG contrast check"
 - "Audit the design quality"
+
+### `figma_audit_component_accessibility`
+
+Deep accessibility audit for a specific component or component set. Produces a scorecard covering state coverage, focus indicator quality, non-color differentiation, target size consistency, annotation completeness, and color-blind simulation.
+
+**Mode:** Local / Cloud
+
+**When to Use:**
+- Validating a component's accessibility before design handoff
+- Checking if all interactive states (focus, disabled, error) are present
+- Verifying color-blind safety with protanopia/deuteranopia/tritanopia simulation
+- Auditing whether components have accessibility documentation
+
+**Usage:**
+```javascript
+// Audit a component set
+figma_audit_component_accessibility({
+  nodeId: "438:1401"
+})
+
+// Audit with iOS touch target minimum (44px)
+figma_audit_component_accessibility({
+  nodeId: "438:1401",
+  targetSize: 44
+})
+
+// Audit current selection (no nodeId needed)
+figma_audit_component_accessibility()
+```
+
+**Parameters:**
+- `nodeId` (optional): Node ID of a COMPONENT_SET, COMPONENT, or INSTANCE. Falls back to current selection.
+- `targetSize` (optional): Minimum touch target size in px (default: 24 per WCAG 2.5.8). Use 44 for iOS, 48 for Android.
+
+**Scoring (0-100):**
+
+| Category (weight) | What It Checks |
+|---|---|
+| State Coverage (20%) | Presence of default, hover, focus, disabled, error, active, loading variants |
+| Focus Indicator (20%) | Focus variant exists + has visible stroke or shadow |
+| Color Differentiation (15%) | Status states use more than just color |
+| Target Size (15%) | All variants meet minimum touch target |
+| Annotations (10%) | Component description + accessibility notes |
+| Color-Blind Safety (20%) | Contrast preserved under protanopia, deuteranopia, tritanopia |
+
+### `figma_scan_code_accessibility`
+
+Scan HTML code for accessibility violations using axe-core (Deque). Runs structural/semantic checks via JSDOM — no browser needed. Visual rules (color contrast) are disabled since they're handled by `figma_lint_design`.
+
+**Mode:** Local / Cloud (standalone — no Figma connection required)
+
+**When to Use:**
+- Scanning component HTML for ARIA, label, and semantic issues
+- Checking code accessibility before merging
+- Generating a CodeSpec for design-to-code parity comparison
+- Validating that implemented code matches design accessibility intent
+
+**Usage:**
+```javascript
+// Scan component HTML
+figma_scan_code_accessibility({
+  html: '<button></button><img src="photo.jpg">'
+})
+
+// Filter to WCAG 2.0 AA rules only
+figma_scan_code_accessibility({
+  html: '<input type="text">',
+  tags: ["wcag2aa"]
+})
+
+// Auto-generate CodeSpec for parity checking
+figma_scan_code_accessibility({
+  html: '<button aria-label="Save" disabled>Save</button>',
+  mapToCodeSpec: true
+})
+```
+
+**Parameters:**
+- `html` (required): HTML string to scan (fragment or full document)
+- `tags` (optional): WCAG tag filter — `["wcag2a"]`, `["wcag2aa"]`, `["wcag22aa"]`, `["best-practice"]`
+- `context` (optional): CSS selector to scope the scan
+- `mapToCodeSpec` (optional): If true, auto-generates `codeSpecAccessibility` for use with `figma_check_design_parity`
+- `includePassingRules` (optional): Include pass/incomplete counts
+
+**End-to-end workflow:**
+```
+1. figma_lint_design          → visual a11y on design side
+2. figma_audit_component_a11y → component scorecard
+3. figma_scan_code_a11y       → structural a11y on code side
+   └─ mapToCodeSpec: true     → auto-generate CodeSpec
+4. figma_check_design_parity  → compare design intent vs code
+```
 
 ---
 

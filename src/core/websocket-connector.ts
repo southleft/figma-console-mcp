@@ -316,6 +316,17 @@ export class WebSocketConnector implements IFigmaConnector {
   }
 
   // ============================================================================
+  // Component accessibility audit
+  // ============================================================================
+
+  async auditComponentAccessibility(nodeId?: string, targetSize?: number): Promise<any> {
+    const params: any = {};
+    if (nodeId) params.nodeId = nodeId;
+    if (targetSize !== undefined) params.targetSize = targetSize;
+    return this.wsServer.sendCommand('AUDIT_COMPONENT_ACCESSIBILITY', params, 120000);
+  }
+
+  // ============================================================================
   // FigJam operations
   // ============================================================================
 

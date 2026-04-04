@@ -3286,13 +3286,21 @@ figma.ui.onmessage = async (msg) => {
       // ---- Rule configuration ----
       var allRuleIds = [
         'wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height',
+        'wcag-non-text-contrast', 'wcag-color-only', 'wcag-focus-indicator',
+        'wcag-letter-spacing', 'wcag-paragraph-spacing', 'wcag-image-alt',
+        'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
         'hardcoded-color', 'no-text-style', 'default-name', 'detached-component',
         'no-autolayout', 'empty-container'
       ];
 
       var ruleGroups = {
         'all': allRuleIds,
-        'wcag': ['wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height'],
+        'wcag': [
+          'wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height',
+          'wcag-non-text-contrast', 'wcag-color-only', 'wcag-focus-indicator',
+          'wcag-letter-spacing', 'wcag-paragraph-spacing', 'wcag-image-alt',
+          'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order'
+        ],
         'design-system': ['hardcoded-color', 'no-text-style', 'default-name', 'detached-component'],
         'layout': ['no-autolayout', 'empty-container']
       };
@@ -3300,8 +3308,17 @@ figma.ui.onmessage = async (msg) => {
       var severityMap = {
         'wcag-contrast': 'critical',
         'wcag-target-size': 'critical',
+        'wcag-non-text-contrast': 'critical',
+        'wcag-color-only': 'critical',
         'wcag-text-size': 'warning',
         'wcag-line-height': 'warning',
+        'wcag-focus-indicator': 'warning',
+        'wcag-letter-spacing': 'warning',
+        'wcag-paragraph-spacing': 'warning',
+        'wcag-image-alt': 'warning',
+        'wcag-heading-hierarchy': 'warning',
+        'wcag-reflow': 'warning',
+        'wcag-reading-order': 'warning',
         'hardcoded-color': 'warning',
         'no-text-style': 'warning',
         'default-name': 'warning',
@@ -3315,6 +3332,15 @@ figma.ui.onmessage = async (msg) => {
         'wcag-text-size': 'Text size is below 12px minimum',
         'wcag-target-size': 'Interactive element is smaller than 24x24px minimum target size',
         'wcag-line-height': 'Line height is less than 1.5x the font size',
+        'wcag-non-text-contrast': 'UI component or graphical object does not meet 3:1 contrast ratio against adjacent color (WCAG 1.4.11)',
+        'wcag-color-only': 'Component variants appear to differ only by color without additional visual indicator (WCAG 1.4.1)',
+        'wcag-focus-indicator': 'Interactive component is missing a focus/focused variant or focus indicator is insufficient (WCAG 2.4.7)',
+        'wcag-letter-spacing': 'Negative letter spacing harms readability (WCAG 1.4.12)',
+        'wcag-paragraph-spacing': 'Paragraph spacing is less than 2x the font size (WCAG 1.4.12)',
+        'wcag-image-alt': 'Image or image fill has no description annotation for alternative text (WCAG 1.1.1)',
+        'wcag-heading-hierarchy': 'Heading levels skip a level (e.g., H1 followed by H3) breaking document structure (WCAG 1.3.1)',
+        'wcag-reflow': 'Frame uses fixed positioning without auto-layout, may not reflow for different viewport sizes (WCAG 1.4.10)',
+        'wcag-reading-order': 'Visual position of elements does not match layer order, which may confuse screen readers (WCAG 1.3.2)',
         'hardcoded-color': 'Fill color is not bound to a variable or style',
         'no-text-style': 'Text node is not using a text style',
         'default-name': 'Node has a default Figma name (e.g., "Frame 1")',
@@ -3325,6 +3351,95 @@ figma.ui.onmessage = async (msg) => {
 
       var defaultNameRegex = /^(Frame|Rectangle|Ellipse|Line|Text|Group|Component|Instance|Vector|Polygon|Star|Section)(\s+\d+)?$/;
       var interactiveNameRegex = /button|link|input|checkbox|radio|switch|toggle|tab|menu-item/i;
+
+      // ---- Additional helpers for new WCAG rules ----
+
+      // Get the first visible solid fill color from a node (for non-text contrast)
+      function lintGetNodeFillColor(node) {
+        try {
+          var fills = node.fills;
+          if (fills && fills.length > 0) {
+            for (var i = fills.length - 1; i >= 0; i--) {
+              if (fills[i].type === 'SOLID' && fills[i].visible !== false) {
+                return { r: fills[i].color.r, g: fills[i].color.g, b: fills[i].color.b };
+              }
+            }
+          }
+        } catch (e) { /* slot sublayer */ }
+        return null;
+      }
+
+      // Get the first visible solid stroke color from a node
+      function lintGetNodeStrokeColor(node) {
+        try {
+          var strokes = node.strokes;
+          if (strokes && strokes.length > 0) {
+            for (var i = strokes.length - 1; i >= 0; i--) {
+              if (strokes[i].type === 'SOLID' && strokes[i].visible !== false) {
+                return { r: strokes[i].color.r, g: strokes[i].color.g, b: strokes[i].color.b };
+              }
+            }
+          }
+        } catch (e) { /* slot sublayer */ }
+        return null;
+      }
+
+      // Check if a node has any non-color visual differentiation (icon children, text change, border)
+      function lintHasNonColorIndicator(node) {
+        try {
+          if (!node.children) return false;
+          for (var i = 0; i < node.children.length; i++) {
+            var child = node.children[i];
+            try {
+              // Icons are typically vectors, instances, or small frames with vector children
+              if (child.type === 'VECTOR' || child.type === 'BOOLEAN_OPERATION') return true;
+              if (child.type === 'INSTANCE') return true;
+              // Check for visible strokes (borders)
+              if (child.strokes && child.strokes.length > 0) {
+                for (var si = 0; si < child.strokes.length; si++) {
+                  if (child.strokes[si].visible !== false) return true;
+                }
+              }
+            } catch (e) { /* skip */ }
+          }
+        } catch (e) { /* no children */ }
+        return false;
+      }
+
+      // Heading level detection from text style name or font size
+      var headingStyleRegex = /\bh(\d)\b|heading[\s-]*(\d)/i;
+      function lintGetHeadingLevel(node) {
+        // Try text style name first
+        try {
+          if (node.textStyleId && typeof node.textStyleId === 'string') {
+            // We can't resolve style name in plugin sandbox directly from ID alone,
+            // but we check the node name and font size as fallback
+          }
+        } catch (e) { /* skip */ }
+        // Check node name for heading patterns
+        try {
+          var match = headingStyleRegex.exec(node.name);
+          if (match) return parseInt(match[1] || match[2], 10);
+        } catch (e) { /* skip */ }
+        // Infer from font size (common convention)
+        try {
+          var fs = node.fontSize;
+          if (typeof fs === 'number') {
+            if (fs >= 40) return 1;
+            if (fs >= 32) return 2;
+            if (fs >= 24) return 3;
+            if (fs >= 20) return 4;
+            if (fs >= 18) return 5;
+          }
+        } catch (e) { /* mixed */ }
+        return 0; // Not a heading
+      }
+
+      // Tracking for heading hierarchy check (reset per root scan)
+      var headingSequence = [];
+
+      // Tracking for reading order check — collect positioned children per parent
+      // (checked after tree walk per-frame)
 
       // ---- Resolve active rules ----
       var requestedRules = msg.rules || ['all'];
@@ -3531,6 +3646,355 @@ figma.ui.onmessage = async (msg) => {
           } catch (e) { /* slot sublayer or mixed */ }
         }
 
+        // wcag-non-text-contrast: UI components need 3:1 against adjacent color (WCAG 1.4.11)
+        if (activeRuleSet['wcag-non-text-contrast'] && !isPage && !isSection && !truncated) {
+          try {
+            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && interactiveNameRegex.test(nodeName)) {
+              var uiFill = lintGetNodeFillColor(node);
+              var uiStroke = lintGetNodeStrokeColor(node);
+              var uiBg = lintGetEffectiveBg(node);
+              // Check fill against background
+              if (uiFill) {
+                var uiRatio = lintContrastRatio(uiFill.r, uiFill.g, uiFill.b, uiBg.r, uiBg.g, uiBg.b);
+                if (uiRatio < 3.0) {
+                  if (totalFindings < maxFindings) {
+                    findings['wcag-non-text-contrast'].push({
+                      id: nodeId,
+                      name: nodeName,
+                      ratio: uiRatio.toFixed(1) + ':1',
+                      required: '3.0:1',
+                      component: lintRgbToHex(uiFill.r, uiFill.g, uiFill.b),
+                      bg: lintRgbToHex(uiBg.r, uiBg.g, uiBg.b),
+                      element: 'fill'
+                    });
+                    totalFindings++;
+                  } else { truncated = true; }
+                }
+              }
+              // Check stroke/border against background
+              if (uiStroke && !truncated) {
+                var strokeRatio = lintContrastRatio(uiStroke.r, uiStroke.g, uiStroke.b, uiBg.r, uiBg.g, uiBg.b);
+                if (strokeRatio < 3.0) {
+                  if (totalFindings < maxFindings) {
+                    findings['wcag-non-text-contrast'].push({
+                      id: nodeId,
+                      name: nodeName,
+                      ratio: strokeRatio.toFixed(1) + ':1',
+                      required: '3.0:1',
+                      component: lintRgbToHex(uiStroke.r, uiStroke.g, uiStroke.b),
+                      bg: lintRgbToHex(uiBg.r, uiBg.g, uiBg.b),
+                      element: 'stroke'
+                    });
+                    totalFindings++;
+                  } else { truncated = true; }
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // wcag-color-only: Component variants that differ only by color (WCAG 1.4.1)
+        if (activeRuleSet['wcag-color-only'] && nodeType === 'COMPONENT_SET' && !truncated) {
+          try {
+            var variants = node.children;
+            if (variants && variants.length >= 2) {
+              // Compare each variant pair for color-only differentiation
+              for (var vi = 0; vi < variants.length && !truncated; vi++) {
+                var variant = variants[vi];
+                try {
+                  var vName = variant.name.toLowerCase();
+                  // Only check state-related variants (error, warning, success, disabled)
+                  if (/(error|warning|danger|success|invalid|alert)/.test(vName)) {
+                    if (!lintHasNonColorIndicator(variant)) {
+                      // Check if this variant's fill differs from default
+                      var defaultVariant = null;
+                      for (var dvi = 0; dvi < variants.length; dvi++) {
+                        var dvName = variants[dvi].name.toLowerCase();
+                        if (/(default|rest|idle|normal|base)/.test(dvName) || dvi === 0) {
+                          defaultVariant = variants[dvi];
+                          break;
+                        }
+                      }
+                      if (defaultVariant) {
+                        var varFill = lintGetNodeFillColor(variant);
+                        var defFill = lintGetNodeFillColor(defaultVariant);
+                        if (varFill && defFill && (varFill.r !== defFill.r || varFill.g !== defFill.g || varFill.b !== defFill.b)) {
+                          if (totalFindings < maxFindings) {
+                            findings['wcag-color-only'].push({
+                              id: variant.id,
+                              name: nodeName + ' / ' + variant.name,
+                              variantColor: lintRgbToHex(varFill.r, varFill.g, varFill.b),
+                              defaultColor: lintRgbToHex(defFill.r, defFill.g, defFill.b),
+                              suggestion: 'Add an icon, text label, or border to differentiate this state beyond color alone'
+                            });
+                            totalFindings++;
+                          } else { truncated = true; }
+                        }
+                      }
+                    }
+                  }
+                } catch (e) { /* skip variant */ }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // wcag-focus-indicator: Interactive components missing focus variant (WCAG 2.4.7)
+        if (activeRuleSet['wcag-focus-indicator'] && nodeType === 'COMPONENT_SET' && !truncated) {
+          try {
+            if (interactiveNameRegex.test(nodeName)) {
+              var hasFocusVariant = false;
+              var focusVariantNode = null;
+              var csVariants = node.children;
+              if (csVariants) {
+                for (var fvi = 0; fvi < csVariants.length; fvi++) {
+                  var fvName = csVariants[fvi].name.toLowerCase();
+                  if (/focus|focused/.test(fvName)) {
+                    hasFocusVariant = true;
+                    focusVariantNode = csVariants[fvi];
+                    break;
+                  }
+                }
+              }
+              if (!hasFocusVariant) {
+                if (totalFindings < maxFindings) {
+                  findings['wcag-focus-indicator'].push({
+                    id: nodeId,
+                    name: nodeName,
+                    issue: 'missing-variant',
+                    suggestion: 'Add a focus/focused variant with a visible focus ring or outline'
+                  });
+                  totalFindings++;
+                } else { truncated = true; }
+              } else if (focusVariantNode) {
+                // Check if focus variant has a visible stroke/border (focus ring)
+                var focusStroke = lintGetNodeStrokeColor(focusVariantNode);
+                var hasFocusEffect = false;
+                try {
+                  var effects = focusVariantNode.effects;
+                  if (effects) {
+                    for (var ei = 0; ei < effects.length; ei++) {
+                      if (effects[ei].visible !== false && (effects[ei].type === 'DROP_SHADOW' || effects[ei].type === 'INNER_SHADOW')) {
+                        hasFocusEffect = true;
+                        break;
+                      }
+                    }
+                  }
+                } catch (e) { /* skip */ }
+                if (!focusStroke && !hasFocusEffect) {
+                  if (totalFindings < maxFindings) {
+                    findings['wcag-focus-indicator'].push({
+                      id: focusVariantNode.id,
+                      name: nodeName + ' / ' + focusVariantNode.name,
+                      issue: 'no-visible-indicator',
+                      suggestion: 'Focus variant exists but has no visible border, outline, or shadow for the focus indicator'
+                    });
+                    totalFindings++;
+                  } else { truncated = true; }
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // wcag-letter-spacing: Negative letter spacing (WCAG 1.4.12)
+        if (activeRuleSet['wcag-letter-spacing'] && nodeType === 'TEXT' && !truncated) {
+          try {
+            var ls = node.letterSpacing;
+            if (ls && typeof ls === 'object' && typeof ls.value === 'number') {
+              if (ls.unit === 'PIXELS' && ls.value < 0) {
+                if (totalFindings < maxFindings) {
+                  findings['wcag-letter-spacing'].push({
+                    id: nodeId,
+                    name: nodeName,
+                    letterSpacing: ls.value + 'px'
+                  });
+                  totalFindings++;
+                } else { truncated = true; }
+              } else if (ls.unit === 'PERCENT' && ls.value < 0) {
+                if (totalFindings < maxFindings) {
+                  findings['wcag-letter-spacing'].push({
+                    id: nodeId,
+                    name: nodeName,
+                    letterSpacing: ls.value + '%'
+                  });
+                  totalFindings++;
+                } else { truncated = true; }
+              }
+            }
+          } catch (e) { /* slot sublayer or mixed */ }
+        }
+
+        // wcag-paragraph-spacing: Paragraph spacing < 2x font size (WCAG 1.4.12)
+        if (activeRuleSet['wcag-paragraph-spacing'] && nodeType === 'TEXT' && !truncated) {
+          try {
+            var ps = node.paragraphSpacing;
+            var psFs = node.fontSize;
+            if (typeof ps === 'number' && typeof psFs === 'number' && ps > 0) {
+              var requiredPs = 2 * psFs;
+              if (ps < requiredPs) {
+                if (totalFindings < maxFindings) {
+                  findings['wcag-paragraph-spacing'].push({
+                    id: nodeId,
+                    name: nodeName,
+                    paragraphSpacing: ps,
+                    fontSize: psFs,
+                    recommended: requiredPs
+                  });
+                  totalFindings++;
+                } else { truncated = true; }
+              }
+            }
+          } catch (e) { /* slot sublayer or mixed */ }
+        }
+
+        // wcag-image-alt: Image fills without description (WCAG 1.1.1)
+        if (activeRuleSet['wcag-image-alt'] && !isPage && !isSection && !truncated) {
+          try {
+            var hasImageFill = false;
+            var imgFills = node.fills;
+            if (imgFills && imgFills.length > 0) {
+              for (var ifi = 0; ifi < imgFills.length; ifi++) {
+                if (imgFills[ifi].type === 'IMAGE' && imgFills[ifi].visible !== false) {
+                  hasImageFill = true;
+                  break;
+                }
+              }
+            }
+            if (hasImageFill) {
+              var hasDescription = false;
+              try {
+                if (node.description && node.description.trim().length > 0) {
+                  hasDescription = true;
+                }
+              } catch (e) { /* skip */ }
+              // Also check if node name indicates decorative
+              var isDecorative = false;
+              try {
+                var lowerName = nodeName.toLowerCase();
+                if (lowerName === 'decorative' || lowerName === 'decoration' || lowerName.indexOf('decorative') !== -1) {
+                  isDecorative = true;
+                }
+              } catch (e) { /* skip */ }
+              if (!hasDescription && !isDecorative) {
+                if (totalFindings < maxFindings) {
+                  findings['wcag-image-alt'].push({
+                    id: nodeId,
+                    name: nodeName,
+                    suggestion: 'Add a description in the node\'s description field, or name it "decorative" if purely presentational'
+                  });
+                  totalFindings++;
+                } else { truncated = true; }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // wcag-heading-hierarchy: Track heading levels for hierarchy check (WCAG 1.3.1)
+        if (activeRuleSet['wcag-heading-hierarchy'] && nodeType === 'TEXT' && !truncated) {
+          try {
+            var hlevel = lintGetHeadingLevel(node);
+            if (hlevel > 0) {
+              headingSequence.push({ level: hlevel, id: nodeId, name: nodeName });
+            }
+          } catch (e) { /* skip */ }
+        }
+
+        // wcag-reflow: Fixed-position frames without auto-layout (WCAG 1.4.10)
+        if (activeRuleSet['wcag-reflow'] && !isPage && !isSection && !truncated) {
+          try {
+            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT') && node.children && node.children.length >= 3) {
+              var rlLayoutMode = 'NONE';
+              try { rlLayoutMode = node.layoutMode; } catch (e) { /* skip */ }
+              if (!rlLayoutMode || rlLayoutMode === 'NONE') {
+                // Check if children use absolute positioning (different x/y values)
+                var hasAbsoluteChildren = false;
+                var childXs = [];
+                var childYs = [];
+                for (var rci = 0; rci < Math.min(node.children.length, 10); rci++) {
+                  try {
+                    childXs.push(node.children[rci].x);
+                    childYs.push(node.children[rci].y);
+                  } catch (e) { /* skip */ }
+                }
+                if (childXs.length >= 3) {
+                  // If children are spread across both axes, it's likely absolute positioning
+                  var uniqueXs = [];
+                  var uniqueYs = [];
+                  for (var uxi = 0; uxi < childXs.length; uxi++) {
+                    if (uniqueXs.indexOf(childXs[uxi]) === -1) uniqueXs.push(childXs[uxi]);
+                    if (uniqueYs.indexOf(childYs[uxi]) === -1) uniqueYs.push(childYs[uxi]);
+                  }
+                  hasAbsoluteChildren = uniqueXs.length > 2 && uniqueYs.length > 2;
+                }
+                if (hasAbsoluteChildren) {
+                  if (totalFindings < maxFindings) {
+                    findings['wcag-reflow'].push({
+                      id: nodeId,
+                      name: nodeName,
+                      childCount: node.children.length,
+                      suggestion: 'Convert to auto-layout so content can reflow at different viewport sizes'
+                    });
+                    totalFindings++;
+                  } else { truncated = true; }
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
+        // wcag-reading-order: Check if visual order matches layer order (WCAG 1.3.2)
+        if (activeRuleSet['wcag-reading-order'] && !isPage && !isSection && !truncated) {
+          try {
+            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE') && node.children && node.children.length >= 2) {
+              var roLayoutMode = 'NONE';
+              try { roLayoutMode = node.layoutMode; } catch (e) { /* skip */ }
+              // Only check non-auto-layout frames (auto-layout enforces order)
+              if (!roLayoutMode || roLayoutMode === 'NONE') {
+                // Collect children y positions (for vertical reading order)
+                var childPositions = [];
+                for (var roi = 0; roi < node.children.length; roi++) {
+                  try {
+                    childPositions.push({
+                      index: roi,
+                      y: node.children[roi].y,
+                      x: node.children[roi].x,
+                      name: node.children[roi].name
+                    });
+                  } catch (e) { /* skip */ }
+                }
+                if (childPositions.length >= 2) {
+                  // Sort by visual position (top-to-bottom, left-to-right)
+                  var visualOrder = childPositions.slice().sort(function(a, b) {
+                    if (Math.abs(a.y - b.y) > 10) return a.y - b.y; // Different row
+                    return a.x - b.x; // Same row, left to right
+                  });
+                  // Check if layer order matches visual order
+                  var orderMismatches = 0;
+                  for (var omi = 0; omi < visualOrder.length; omi++) {
+                    if (visualOrder[omi].index !== omi) {
+                      orderMismatches++;
+                    }
+                  }
+                  // Flag if more than 30% of elements are out of order
+                  if (orderMismatches > childPositions.length * 0.3 && orderMismatches >= 2) {
+                    if (totalFindings < maxFindings) {
+                      findings['wcag-reading-order'].push({
+                        id: nodeId,
+                        name: nodeName,
+                        childCount: childPositions.length,
+                        mismatches: orderMismatches,
+                        suggestion: 'Reorder layers to match visual top-to-bottom, left-to-right reading order'
+                      });
+                      totalFindings++;
+                    } else { truncated = true; }
+                  }
+                }
+              }
+            }
+          } catch (e) { /* slot sublayer */ }
+        }
+
         // ---- Design System checks ----
 
         // hardcoded-color: Solid fills without variable binding or style
@@ -3690,6 +4154,31 @@ figma.ui.onmessage = async (msg) => {
       // ---- Execute walk ----
       walkNode(rootNode, 0);
 
+      // ---- Post-walk: heading hierarchy validation ----
+      if (activeRuleSet['wcag-heading-hierarchy'] && headingSequence.length >= 2 && !truncated) {
+        var prevLevel = 0;
+        for (var hi = 0; hi < headingSequence.length; hi++) {
+          var h = headingSequence[hi];
+          if (prevLevel > 0 && h.level > prevLevel + 1) {
+            // Skipped a level (e.g., H1 → H3)
+            if (totalFindings < maxFindings) {
+              findings['wcag-heading-hierarchy'].push({
+                id: h.id,
+                name: h.name,
+                level: h.level,
+                previousLevel: prevLevel,
+                suggestion: 'Expected H' + (prevLevel + 1) + ' but found H' + h.level + '. Do not skip heading levels.'
+              });
+              totalFindings++;
+            } else {
+              truncated = true;
+              break;
+            }
+          }
+          prevLevel = h.level;
+        }
+      }
+
       // ---- Build response ----
       var categories = [];
       var summaryObj = { critical: 0, warning: 0, info: 0, total: 0 };
@@ -3738,6 +4227,536 @@ figma.ui.onmessage = async (msg) => {
         requestId: msg.requestId,
         success: false,
         error: errorMsg
+      });
+    }
+  }
+
+  // ============================================================================
+  // AUDIT_COMPONENT_ACCESSIBILITY — Deep accessibility audit for a component set
+  // ============================================================================
+  else if (msg.type === 'AUDIT_COMPONENT_ACCESSIBILITY') {
+    try {
+      console.log('🌉 [Desktop Bridge] Running component accessibility audit...');
+
+      // ---- Color science helpers (shared with lint) ----
+      function auditLinearize(c) {
+        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      }
+      function auditLuminance(r, g, b) {
+        return 0.2126 * auditLinearize(r) + 0.7152 * auditLinearize(g) + 0.0722 * auditLinearize(b);
+      }
+      function auditContrastRatio(r1, g1, b1, r2, g2, b2) {
+        var l1 = auditLuminance(r1, g1, b1);
+        var l2 = auditLuminance(r2, g2, b2);
+        return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      }
+      function auditRgbToHex(r, g, b) {
+        var rr = Math.round(r * 255).toString(16);
+        var gg = Math.round(g * 255).toString(16);
+        var bb = Math.round(b * 255).toString(16);
+        if (rr.length === 1) rr = '0' + rr;
+        if (gg.length === 1) gg = '0' + gg;
+        if (bb.length === 1) bb = '0' + bb;
+        return '#' + rr.toUpperCase() + gg.toUpperCase() + bb.toUpperCase();
+      }
+
+      // ---- Color-blind simulation matrices ----
+      // Brettel/Vienot transformation matrices for dichromatic vision
+      var colorBlindMatrices = {
+        protanopia: [
+          [0.152286, 1.052583, -0.204868],
+          [0.114503, 0.786281, 0.099216],
+          [-0.003882, -0.048116, 1.051998]
+        ],
+        deuteranopia: [
+          [0.367322, 0.860646, -0.227968],
+          [0.280085, 0.672501, 0.047413],
+          [-0.011820, 0.042940, 0.968881]
+        ],
+        tritanopia: [
+          [1.255528, -0.076749, -0.178779],
+          [-0.078411, 0.930809, 0.147602],
+          [0.004733, 0.691367, 0.303900]
+        ]
+      };
+
+      function simulateColorBlind(r, g, b, matrix) {
+        var nr = Math.max(0, Math.min(1, matrix[0][0] * r + matrix[0][1] * g + matrix[0][2] * b));
+        var ng = Math.max(0, Math.min(1, matrix[1][0] * r + matrix[1][1] * g + matrix[1][2] * b));
+        var nb = Math.max(0, Math.min(1, matrix[2][0] * r + matrix[2][1] * g + matrix[2][2] * b));
+        return { r: nr, g: ng, b: nb };
+      }
+
+      // ---- Node inspection helpers ----
+      function auditGetFillColor(node) {
+        try {
+          var fills = node.fills;
+          if (fills && fills.length > 0) {
+            for (var i = fills.length - 1; i >= 0; i--) {
+              if (fills[i].type === 'SOLID' && fills[i].visible !== false) {
+                return { r: fills[i].color.r, g: fills[i].color.g, b: fills[i].color.b };
+              }
+            }
+          }
+        } catch (e) { /* skip */ }
+        return null;
+      }
+
+      function auditGetStrokeColor(node) {
+        try {
+          var strokes = node.strokes;
+          if (strokes && strokes.length > 0) {
+            for (var i = strokes.length - 1; i >= 0; i--) {
+              if (strokes[i].type === 'SOLID' && strokes[i].visible !== false) {
+                return { r: strokes[i].color.r, g: strokes[i].color.g, b: strokes[i].color.b };
+              }
+            }
+          }
+        } catch (e) { /* skip */ }
+        return null;
+      }
+
+      function auditGetEffectiveBg(node) {
+        var current = node.parent;
+        while (current) {
+          try {
+            if (current.fills && current.fills.length > 0) {
+              for (var fi = current.fills.length - 1; fi >= 0; fi--) {
+                var fill = current.fills[fi];
+                if (fill.type === 'SOLID' && fill.visible !== false) {
+                  return { r: fill.color.r, g: fill.color.g, b: fill.color.b };
+                }
+              }
+            }
+          } catch (e) { /* skip */ }
+          current = current.parent;
+        }
+        return { r: 1, g: 1, b: 1 };
+      }
+
+      function auditHasChildOfType(node, types) {
+        try {
+          if (!node.children) return false;
+          for (var i = 0; i < node.children.length; i++) {
+            var child = node.children[i];
+            try {
+              for (var t = 0; t < types.length; t++) {
+                if (child.type === types[t]) return true;
+              }
+              // Recurse one level deeper for nested icons
+              if (child.children) {
+                for (var j = 0; j < child.children.length; j++) {
+                  try {
+                    for (var t2 = 0; t2 < types.length; t2++) {
+                      if (child.children[j].type === types[t2]) return true;
+                    }
+                  } catch (e) { /* skip */ }
+                }
+              }
+            } catch (e) { /* skip */ }
+          }
+        } catch (e) { /* skip */ }
+        return false;
+      }
+
+      // Collect all text fill colors and background colors from a variant tree
+      function auditCollectColorPairs(node, pairs, depth) {
+        if (depth > 5) return;
+        try {
+          if (node.type === 'TEXT') {
+            var fills = node.fills;
+            if (fills && fills.length > 0) {
+              for (var i = 0; i < fills.length; i++) {
+                if (fills[i].type === 'SOLID' && fills[i].visible !== false) {
+                  var bg = auditGetEffectiveBg(node);
+                  pairs.push({
+                    fg: { r: fills[i].color.r, g: fills[i].color.g, b: fills[i].color.b },
+                    bg: bg,
+                    nodeName: node.name,
+                    nodeId: node.id
+                  });
+                  break;
+                }
+              }
+            }
+          }
+          if (node.children) {
+            for (var ci = 0; ci < node.children.length; ci++) {
+              auditCollectColorPairs(node.children[ci], pairs, depth + 1);
+            }
+          }
+        } catch (e) { /* skip */ }
+      }
+
+      // ---- Resolve target node ----
+      var targetNode;
+      if (msg.nodeId) {
+        targetNode = await figma.getNodeByIdAsync(msg.nodeId);
+        if (!targetNode) {
+          throw new Error('Node not found: ' + msg.nodeId);
+        }
+      } else {
+        // Try current selection
+        var sel = figma.currentPage.selection;
+        if (sel && sel.length === 1) {
+          targetNode = sel[0];
+        } else {
+          throw new Error('No nodeId provided and no single node selected. Select a component set or provide a nodeId.');
+        }
+      }
+
+      // If user selected a COMPONENT or INSTANCE, walk up to the COMPONENT_SET
+      var componentSet = targetNode;
+      if (targetNode.type === 'COMPONENT' && targetNode.parent && targetNode.parent.type === 'COMPONENT_SET') {
+        componentSet = targetNode.parent;
+      } else if (targetNode.type === 'INSTANCE') {
+        try {
+          var mainComponent = await targetNode.getMainComponentAsync();
+          if (mainComponent && mainComponent.parent && mainComponent.parent.type === 'COMPONENT_SET') {
+            componentSet = mainComponent.parent;
+          } else if (mainComponent && mainComponent.type === 'COMPONENT') {
+            componentSet = mainComponent;
+          }
+        } catch (e) { /* use target as-is */ }
+      }
+
+      var isComponentSet = componentSet.type === 'COMPONENT_SET';
+      var isComponent = componentSet.type === 'COMPONENT';
+      if (!isComponentSet && !isComponent) {
+        throw new Error('Node "' + componentSet.name + '" is type ' + componentSet.type + '. Expected COMPONENT_SET or COMPONENT.');
+      }
+
+      // ---- Analyze variants ----
+      var variants = isComponentSet ? componentSet.children : [componentSet];
+      var variantCount = variants.length;
+
+      // 1. State coverage analysis
+      var stateKeywords = {
+        'default': /(default|rest|idle|normal|base)/i,
+        'hover': /(hover|hovered)/i,
+        'focus': /(focus|focused)/i,
+        'disabled': /(disabled|inactive)/i,
+        'error': /(error|invalid|danger)/i,
+        'active': /(active|pressed|selected)/i,
+        'loading': /(loading|spinner)/i
+      };
+      var statesCovered = {};
+      var statesFound = {};
+      for (var sk in stateKeywords) {
+        statesCovered[sk] = false;
+        statesFound[sk] = null;
+      }
+      for (var vi = 0; vi < variants.length; vi++) {
+        var vName = variants[vi].name;
+        for (var sk2 in stateKeywords) {
+          if (stateKeywords[sk2].test(vName)) {
+            statesCovered[sk2] = true;
+            if (!statesFound[sk2]) statesFound[sk2] = vName;
+          }
+        }
+      }
+      // If only one variant and no state keywords match, assume it's default
+      if (variantCount === 1 && !statesCovered['default']) {
+        statesCovered['default'] = true;
+        statesFound['default'] = variants[0].name;
+      }
+      var coveredCount = 0;
+      var totalStates = 0;
+      var missingStates = [];
+      for (var sk3 in statesCovered) {
+        totalStates++;
+        if (statesCovered[sk3]) {
+          coveredCount++;
+        } else {
+          missingStates.push(sk3);
+        }
+      }
+
+      // 2. Focus indicator quality
+      var focusAnalysis = { hasVariant: false, hasVisibleIndicator: false, contrastRatio: null, details: '' };
+      if (statesCovered['focus'] && isComponentSet) {
+        focusAnalysis.hasVariant = true;
+        for (var fvi = 0; fvi < variants.length; fvi++) {
+          if (/(focus|focused)/i.test(variants[fvi].name)) {
+            var focusNode = variants[fvi];
+            // Check for stroke (focus ring)
+            var fStroke = auditGetStrokeColor(focusNode);
+            if (fStroke) {
+              var fBg = auditGetEffectiveBg(focusNode);
+              var fRatio = auditContrastRatio(fStroke.r, fStroke.g, fStroke.b, fBg.r, fBg.g, fBg.b);
+              focusAnalysis.hasVisibleIndicator = true;
+              focusAnalysis.contrastRatio = parseFloat(fRatio.toFixed(1));
+              focusAnalysis.details = 'Focus ring (stroke) with ' + fRatio.toFixed(1) + ':1 contrast';
+              break;
+            }
+            // Check for shadow effect
+            try {
+              var effects = focusNode.effects;
+              if (effects) {
+                for (var ei = 0; ei < effects.length; ei++) {
+                  if (effects[ei].visible !== false && (effects[ei].type === 'DROP_SHADOW' || effects[ei].type === 'INNER_SHADOW')) {
+                    focusAnalysis.hasVisibleIndicator = true;
+                    focusAnalysis.details = 'Focus indicator via ' + effects[ei].type.toLowerCase().replace('_', ' ');
+                    break;
+                  }
+                }
+              }
+            } catch (e) { /* skip */ }
+            if (!focusAnalysis.hasVisibleIndicator) {
+              focusAnalysis.details = 'Focus variant exists but no visible stroke or shadow detected';
+            }
+            break;
+          }
+        }
+      } else if (!statesCovered['focus']) {
+        focusAnalysis.details = 'No focus/focused variant found';
+      }
+
+      // 3. Non-color differentiation for status states
+      var colorDifferentiation = { issues: [], checked: 0 };
+      if (isComponentSet) {
+        var statusStates = ['error', 'disabled', 'active'];
+        var defaultVariant = null;
+        for (var dvi = 0; dvi < variants.length; dvi++) {
+          if (/(default|rest|idle|normal|base)/i.test(variants[dvi].name) || dvi === 0) {
+            defaultVariant = variants[dvi];
+            break;
+          }
+        }
+        for (var ssi = 0; ssi < statusStates.length; ssi++) {
+          var stateName = statusStates[ssi];
+          if (statesCovered[stateName]) {
+            colorDifferentiation.checked++;
+            for (var svi = 0; svi < variants.length; svi++) {
+              if (stateKeywords[stateName].test(variants[svi].name)) {
+                var stateVariant = variants[svi];
+                var stateFill = auditGetFillColor(stateVariant);
+                var defaultFill = defaultVariant ? auditGetFillColor(defaultVariant) : null;
+                var hasIcon = auditHasChildOfType(stateVariant, ['VECTOR', 'BOOLEAN_OPERATION', 'INSTANCE']);
+                var hasStroke = auditGetStrokeColor(stateVariant) !== null;
+                var colorDiffers = stateFill && defaultFill && (stateFill.r !== defaultFill.r || stateFill.g !== defaultFill.g || stateFill.b !== defaultFill.b);
+                if (colorDiffers && !hasIcon && !hasStroke) {
+                  colorDifferentiation.issues.push({
+                    variant: stateVariant.name,
+                    state: stateName,
+                    variantColor: stateFill ? auditRgbToHex(stateFill.r, stateFill.g, stateFill.b) : null,
+                    defaultColor: defaultFill ? auditRgbToHex(defaultFill.r, defaultFill.g, defaultFill.b) : null,
+                    suggestion: 'Add icon, border, or text indicator beyond color'
+                  });
+                }
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // 4. Target size analysis
+      var targetSizeAnalysis = { minWidth: Infinity, minHeight: Infinity, variants: [], issues: [] };
+      var minTarget = msg.targetSize || 24; // Default WCAG 2.5.8 minimum
+      for (var tvi = 0; tvi < variants.length; tvi++) {
+        try {
+          var tw = variants[tvi].width;
+          var th = variants[tvi].height;
+          if (typeof tw === 'number' && typeof th === 'number') {
+            targetSizeAnalysis.variants.push({ name: variants[tvi].name, width: tw, height: th });
+            if (tw < targetSizeAnalysis.minWidth) targetSizeAnalysis.minWidth = tw;
+            if (th < targetSizeAnalysis.minHeight) targetSizeAnalysis.minHeight = th;
+            if (tw < minTarget || th < minTarget) {
+              targetSizeAnalysis.issues.push({
+                variant: variants[tvi].name,
+                width: tw,
+                height: th,
+                required: minTarget + 'x' + minTarget
+              });
+            }
+          }
+        } catch (e) { /* skip */ }
+      }
+      if (targetSizeAnalysis.minWidth === Infinity) targetSizeAnalysis.minWidth = null;
+      if (targetSizeAnalysis.minHeight === Infinity) targetSizeAnalysis.minHeight = null;
+
+      // 5. Annotation completeness
+      var annotations = { hasDescription: false, description: '', hasA11yNotes: false, a11yNotes: '' };
+      try {
+        var desc = componentSet.description || '';
+        if (desc.trim().length > 0) {
+          annotations.hasDescription = true;
+          annotations.description = desc.substring(0, 200);
+        }
+        if (/aria|accessibility|a11y|screen.?reader|keyboard|role|tab.?order/i.test(desc)) {
+          annotations.hasA11yNotes = true;
+          // Extract just the a11y-relevant section
+          var lines = desc.split('\n');
+          var a11yLines = [];
+          for (var ali = 0; ali < lines.length; ali++) {
+            if (/aria|accessibility|a11y|screen.?reader|keyboard|role|tab.?order/i.test(lines[ali])) {
+              a11yLines.push(lines[ali].trim());
+            }
+          }
+          annotations.a11yNotes = a11yLines.join('; ').substring(0, 300);
+        }
+      } catch (e) { /* skip */ }
+
+      // 6. Color-blind simulation
+      var colorBlindAnalysis = { simulations: [], issues: [] };
+      // Collect all text/bg color pairs from the default variant (or first variant)
+      var sampleVariant = defaultVariant || variants[0];
+      var colorPairs = [];
+      auditCollectColorPairs(sampleVariant, colorPairs, 0);
+
+      // Also check component fill against its background
+      var compFill = auditGetFillColor(sampleVariant);
+      var compBg = auditGetEffectiveBg(sampleVariant);
+      if (compFill) {
+        colorPairs.push({ fg: compFill, bg: compBg, nodeName: sampleVariant.name + ' (fill)', nodeId: sampleVariant.id });
+      }
+
+      var cbTypes = ['protanopia', 'deuteranopia', 'tritanopia'];
+      for (var cbi = 0; cbi < cbTypes.length; cbi++) {
+        var cbType = cbTypes[cbi];
+        var matrix = colorBlindMatrices[cbType];
+        var failingPairs = [];
+        for (var cpi = 0; cpi < Math.min(colorPairs.length, 20); cpi++) {
+          var pair = colorPairs[cpi];
+          var simFg = simulateColorBlind(pair.fg.r, pair.fg.g, pair.fg.b, matrix);
+          var simBg = simulateColorBlind(pair.bg.r, pair.bg.g, pair.bg.b, matrix);
+          var originalRatio = auditContrastRatio(pair.fg.r, pair.fg.g, pair.fg.b, pair.bg.r, pair.bg.g, pair.bg.b);
+          var simRatio = auditContrastRatio(simFg.r, simFg.g, simFg.b, simBg.r, simBg.g, simBg.b);
+          // Flag if simulated contrast drops below 4.5:1 (AA) when original was passing
+          if (originalRatio >= 4.5 && simRatio < 4.5) {
+            failingPairs.push({
+              nodeName: pair.nodeName,
+              originalRatio: parseFloat(originalRatio.toFixed(1)),
+              simulatedRatio: parseFloat(simRatio.toFixed(1)),
+              originalFg: auditRgbToHex(pair.fg.r, pair.fg.g, pair.fg.b),
+              simulatedFg: auditRgbToHex(simFg.r, simFg.g, simFg.b)
+            });
+          }
+          // Also flag if contrast drops significantly (>30% reduction) even if still passing
+          if (originalRatio >= 4.5 && simRatio >= 4.5 && (simRatio / originalRatio) < 0.7) {
+            failingPairs.push({
+              nodeName: pair.nodeName,
+              originalRatio: parseFloat(originalRatio.toFixed(1)),
+              simulatedRatio: parseFloat(simRatio.toFixed(1)),
+              originalFg: auditRgbToHex(pair.fg.r, pair.fg.g, pair.fg.b),
+              simulatedFg: auditRgbToHex(simFg.r, simFg.g, simFg.b),
+              note: 'Significant contrast reduction (>30%)'
+            });
+          }
+        }
+        colorBlindAnalysis.simulations.push({
+          type: cbType,
+          pairsChecked: Math.min(colorPairs.length, 20),
+          issues: failingPairs.length,
+          details: failingPairs
+        });
+        if (failingPairs.length > 0) {
+          colorBlindAnalysis.issues.push(cbType + ': ' + failingPairs.length + ' color pair(s) lose sufficient contrast');
+        }
+      }
+
+      // ---- Compute overall score ----
+      var scores = {};
+      // State coverage: percentage of states found
+      scores.stateCoverage = Math.round((coveredCount / totalStates) * 100);
+      // Focus indicator: 0 (missing), 50 (exists but no indicator), 100 (good indicator)
+      scores.focusIndicator = !focusAnalysis.hasVariant ? 0 : (!focusAnalysis.hasVisibleIndicator ? 50 : 100);
+      // Color differentiation: 100 if no issues, decremented per issue
+      scores.colorDifferentiation = colorDifferentiation.checked === 0 ? 100 : Math.max(0, Math.round(((colorDifferentiation.checked - colorDifferentiation.issues.length) / colorDifferentiation.checked) * 100));
+      // Target size: 100 if all pass, 0 if any fail
+      scores.targetSize = targetSizeAnalysis.issues.length === 0 ? 100 : Math.max(0, Math.round(((targetSizeAnalysis.variants.length - targetSizeAnalysis.issues.length) / Math.max(1, targetSizeAnalysis.variants.length)) * 100));
+      // Annotations: 0 (nothing), 50 (description only), 100 (has a11y notes)
+      scores.annotations = annotations.hasA11yNotes ? 100 : (annotations.hasDescription ? 50 : 0);
+      // Color blind: percentage of simulations with no issues
+      var cbPassCount = 0;
+      for (var cbsi = 0; cbsi < colorBlindAnalysis.simulations.length; cbsi++) {
+        if (colorBlindAnalysis.simulations[cbsi].issues === 0) cbPassCount++;
+      }
+      scores.colorBlindSafety = colorBlindAnalysis.simulations.length > 0 ? Math.round((cbPassCount / colorBlindAnalysis.simulations.length) * 100) : 100;
+
+      // Overall weighted score
+      var overall = Math.round(
+        scores.stateCoverage * 0.20 +
+        scores.focusIndicator * 0.20 +
+        scores.colorDifferentiation * 0.15 +
+        scores.targetSize * 0.15 +
+        scores.annotations * 0.10 +
+        scores.colorBlindSafety * 0.20
+      );
+
+      // ---- Build response ----
+      var auditResult = {
+        component: {
+          id: componentSet.id,
+          name: componentSet.name,
+          type: componentSet.type,
+          variantCount: variantCount
+        },
+        overallScore: overall,
+        scores: scores,
+        stateCoverage: {
+          found: statesFound,
+          missing: missingStates,
+          coverage: coveredCount + '/' + totalStates
+        },
+        focusIndicator: focusAnalysis,
+        colorDifferentiation: colorDifferentiation,
+        targetSize: {
+          minimum: minTarget + 'x' + minTarget,
+          smallest: targetSizeAnalysis.minWidth + 'x' + targetSizeAnalysis.minHeight,
+          issues: targetSizeAnalysis.issues
+        },
+        annotations: annotations,
+        colorBlindSimulation: colorBlindAnalysis,
+        recommendations: []
+      };
+
+      // Generate recommendations
+      if (!focusAnalysis.hasVariant) {
+        auditResult.recommendations.push({ priority: 'high', area: 'focus', message: 'Add a focus/focused variant with a visible focus ring (WCAG 2.4.7)' });
+      } else if (!focusAnalysis.hasVisibleIndicator) {
+        auditResult.recommendations.push({ priority: 'medium', area: 'focus', message: 'Focus variant exists but lacks visible indicator — add a border or shadow' });
+      }
+      if (colorDifferentiation.issues.length > 0) {
+        auditResult.recommendations.push({ priority: 'high', area: 'color', message: 'Add non-color indicators (icons, borders, text) to ' + colorDifferentiation.issues.length + ' state variant(s) (WCAG 1.4.1)' });
+      }
+      if (targetSizeAnalysis.issues.length > 0) {
+        auditResult.recommendations.push({ priority: 'high', area: 'target-size', message: targetSizeAnalysis.issues.length + ' variant(s) below ' + minTarget + 'x' + minTarget + 'px minimum target size (WCAG 2.5.8)' });
+      }
+      if (!annotations.hasDescription) {
+        auditResult.recommendations.push({ priority: 'medium', area: 'documentation', message: 'Add a component description with usage guidelines' });
+      }
+      if (!annotations.hasA11yNotes) {
+        auditResult.recommendations.push({ priority: 'medium', area: 'documentation', message: 'Add accessibility notes (ARIA role, keyboard interactions, screen reader behavior)' });
+      }
+      if (colorBlindAnalysis.issues.length > 0) {
+        auditResult.recommendations.push({ priority: 'medium', area: 'color-blind', message: colorBlindAnalysis.issues.join('; ') });
+      }
+      for (var msi = 0; msi < missingStates.length; msi++) {
+        var ms = missingStates[msi];
+        if (ms === 'focus' || ms === 'disabled') {
+          auditResult.recommendations.push({ priority: 'medium', area: 'states', message: 'Consider adding a "' + ms + '" variant for complete interactive state coverage' });
+        }
+      }
+
+      console.log('🌉 [Desktop Bridge] Component audit complete: score ' + overall + '/100 for "' + componentSet.name + '"');
+
+      figma.ui.postMessage({
+        type: 'AUDIT_COMPONENT_ACCESSIBILITY_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: auditResult
+      });
+
+    } catch (error) {
+      var auditErrorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Component accessibility audit error:', auditErrorMsg);
+      figma.ui.postMessage({
+        type: 'AUDIT_COMPONENT_ACCESSIBILITY_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: auditErrorMsg
       });
     }
   }

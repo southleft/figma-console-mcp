@@ -552,6 +552,15 @@
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
+    // Audit component accessibility (deep a11y scorecard with color-blind simulation)
+    window.auditComponentAccessibility = function(nodeId, targetSize) {
+      var params = {};
+      if (nodeId) params.nodeId = nodeId;
+      if (targetSize !== undefined) params.targetSize = targetSize;
+      return window.sendPluginCommand('AUDIT_COMPONENT_ACCESSIBILITY', params, 120000)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
     // Analyze component set (variant state machine + cross-variant diff)
     window.analyzeComponentSet = (nodeId) => {
       return window.sendPluginCommand('ANALYZE_COMPONENT_SET', {
@@ -652,6 +661,7 @@
         'SET_IMAGE_FILL': function(params) { return window.setImageFill(params.nodeIds || params.nodeId, params.imageData, params.scaleMode); },
         'SET_INSTANCE_PROPERTIES': function(params) { return window.setInstanceProperties(params.nodeId, params.properties); },
         'LINT_DESIGN': function(params) { return window.lintDesign(params.nodeId, params.rules, params.maxDepth, params.maxFindings); },
+        'AUDIT_COMPONENT_ACCESSIBILITY': function(params) { return window.auditComponentAccessibility(params.nodeId, params.targetSize); },
         'GET_VARIABLES_DATA': function() {
           // Return the cached variables data directly
           if (window.__figmaVariablesReady && window.__figmaVariablesData) {
@@ -1339,6 +1349,9 @@
           break;
         case 'LINT_DESIGN_RESULT':
           handleResult('LINT_DESIGN', 'data');
+          break;
+        case 'AUDIT_COMPONENT_ACCESSIBILITY_RESULT':
+          handleResult('AUDIT_COMPONENT_ACCESSIBILITY', 'data');
           break;
 
         // FigJam tools

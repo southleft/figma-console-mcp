@@ -1177,8 +1177,10 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 
 	// Check description/annotations for accessibility hints
 	const description = node.descriptionMarkdown || node.description || "";
-	const hasAriaAnnotation = description.toLowerCase().includes("aria") || description.toLowerCase().includes("accessibility");
+	const descLower = description.toLowerCase();
+	const hasAriaAnnotation = descLower.includes("aria") || descLower.includes("accessibility");
 
+	// ---- 1. ARIA Role Parity ----
 	if (ca.role && !hasAriaAnnotation) {
 		discrepancies.push({
 			category: "accessibility",
@@ -1191,6 +1193,38 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 		});
 	}
 
+	// ---- 2. Semantic Element vs Component Name ----
+	if (ca.semanticElement) {
+		const nodeName = (node.name || "").toLowerCase();
+		const element = ca.semanticElement.toLowerCase();
+		// Check if interactive component uses correct semantic element
+		const interactivePattern = /button|link|input|checkbox|radio|switch|toggle|tab|select/i;
+		if (interactivePattern.test(nodeName)) {
+			const elementMatchesDesign =
+				(nodeName.includes("button") && (element === "button" || ca.role === "button")) ||
+				(nodeName.includes("link") && (element === "a" || ca.role === "link")) ||
+				(nodeName.includes("input") && (element === "input" || element === "textarea")) ||
+				(nodeName.includes("checkbox") && (element === "input" || ca.role === "checkbox")) ||
+				(nodeName.includes("radio") && (element === "input" || ca.role === "radio")) ||
+				(nodeName.includes("switch") && (ca.role === "switch" || element === "input")) ||
+				(nodeName.includes("select") && (element === "select" || ca.role === "listbox")) ||
+				(nodeName.includes("tab") && (ca.role === "tab" || element === "button"));
+
+			if (!elementMatchesDesign) {
+				discrepancies.push({
+					category: "accessibility",
+					property: "semanticElement",
+					severity: "major",
+					designValue: nodeName,
+					codeValue: `<${element}>${ca.role ? ` role="${ca.role}"` : ""}`,
+					message: `Design component "${node.name}" may not match code element <${element}>`,
+					suggestion: `Verify that <${element}> is the correct semantic element for a component named "${node.name}". Use native HTML elements over ARIA roles where possible.`,
+				});
+			}
+		}
+	}
+
+	// ---- 3. Contrast Ratio ----
 	if (ca.contrastRatio !== undefined && ca.contrastRatio < 4.5) {
 		discrepancies.push({
 			category: "accessibility",
@@ -1200,6 +1234,146 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 			codeValue: ca.contrastRatio,
 			message: `Contrast ratio ${ca.contrastRatio}:1 fails WCAG AA minimum (4.5:1)`,
 			suggestion: "Increase contrast ratio to at least 4.5:1",
+		});
+	}
+
+	// ---- 4. Focus Indicator Parity ----
+	// Check if design has a focus variant but code doesn't implement focus-visible
+	const variants = node.children || [];
+	const hasFocusVariant = variants.some(
+		(v: any) => /focus|focused/i.test(v.name || ""),
+	);
+
+	if (hasFocusVariant && ca.focusVisible === false) {
+		discrepancies.push({
+			category: "accessibility",
+			property: "focusVisible",
+			severity: "critical",
+			designValue: "focus variant exists",
+			codeValue: "focusVisible: false",
+			message: "Design has a focus variant but code does not implement :focus-visible styles",
+			suggestion: "Add :focus-visible CSS with a visible focus ring matching the design's focus variant (WCAG 2.4.7)",
+		});
+	} else if (!hasFocusVariant && ca.focusVisible === true) {
+		discrepancies.push({
+			category: "accessibility",
+			property: "focusVisible",
+			severity: "minor",
+			designValue: "no focus variant",
+			codeValue: "focusVisible: true",
+			message: "Code implements :focus-visible but design has no focus variant to specify the visual treatment",
+			suggestion: "Add a focus/focused variant in Figma to document the intended focus indicator design",
+		});
+	}
+
+	// ---- 5. Disabled State Parity ----
+	const hasDisabledVariant = variants.some(
+		(v: any) => /disabled|inactive/i.test(v.name || ""),
+	);
+
+	if (hasDisabledVariant && ca.supportsDisabled === false) {
+		discrepancies.push({
+			category: "accessibility",
+			property: "disabled",
+			severity: "major",
+			designValue: "disabled variant exists",
+			codeValue: "supportsDisabled: false",
+			message: "Design has a disabled variant but code does not support disabled/aria-disabled state",
+			suggestion: "Implement disabled or aria-disabled attribute support in the component",
+		});
+	} else if (!hasDisabledVariant && ca.supportsDisabled === true) {
+		discrepancies.push({
+			category: "accessibility",
+			property: "disabled",
+			severity: "minor",
+			designValue: "no disabled variant",
+			codeValue: "supportsDisabled: true",
+			message: "Code supports disabled state but design has no disabled variant",
+			suggestion: "Add a disabled variant in Figma showing the visual treatment for disabled state",
+		});
+	}
+
+	// ---- 6. Error State Parity ----
+	const hasErrorVariant = variants.some(
+		(v: any) => /error|invalid|danger/i.test(v.name || ""),
+	);
+
+	if (hasErrorVariant && ca.supportsError === false) {
+		discrepancies.push({
+			category: "accessibility",
+			property: "errorState",
+			severity: "major",
+			designValue: "error variant exists",
+			codeValue: "supportsError: false",
+			message: "Design has an error variant but code does not support aria-invalid or error messaging",
+			suggestion: "Implement aria-invalid attribute and associated error message (aria-describedby) in the component",
+		});
+	}
+
+	// ---- 7. Required Field Parity ----
+	if (ca.ariaRequired !== undefined) {
+		const hasRequiredVariant = variants.some(
+			(v: any) => /required/i.test(v.name || ""),
+		);
+		const hasRequiredInDescription = descLower.includes("required");
+
+		if (ca.ariaRequired && !hasRequiredVariant && !hasRequiredInDescription) {
+			discrepancies.push({
+				category: "accessibility",
+				property: "required",
+				severity: "minor",
+				designValue: "no required indicator",
+				codeValue: "ariaRequired: true",
+				message: "Code marks field as required but design has no visual required indicator",
+				suggestion: "Add a required indicator (asterisk, label text) in the design and/or a required variant",
+			});
+		}
+	}
+
+	// ---- 8. Target Size Parity ----
+	if (ca.renderedSize) {
+		const [codeWidth, codeHeight] = ca.renderedSize;
+		const designWidth = node.absoluteBoundingBox?.width || node.size?.x;
+		const designHeight = node.absoluteBoundingBox?.height || node.size?.y;
+
+		if (designWidth && designHeight) {
+			// Check if code size is significantly smaller than design (>20% reduction)
+			if (codeWidth < designWidth * 0.8 || codeHeight < designHeight * 0.8) {
+				discrepancies.push({
+					category: "accessibility",
+					property: "targetSize",
+					severity: "major",
+					designValue: `${Math.round(designWidth)}x${Math.round(designHeight)}`,
+					codeValue: `${codeWidth}x${codeHeight}`,
+					message: `Code renders significantly smaller (${codeWidth}x${codeHeight}px) than design (${Math.round(designWidth)}x${Math.round(designHeight)}px)`,
+					suggestion: "Ensure rendered component meets the design's touch target size. Check CSS min-width/min-height.",
+				});
+			}
+			// Check WCAG 2.5.8 minimum (24x24)
+			if (codeWidth < 24 || codeHeight < 24) {
+				discrepancies.push({
+					category: "accessibility",
+					property: "targetSize",
+					severity: "critical",
+					designValue: `${Math.round(designWidth)}x${Math.round(designHeight)}`,
+					codeValue: `${codeWidth}x${codeHeight}`,
+					message: `Code renders below WCAG 2.5.8 minimum (24x24px): ${codeWidth}x${codeHeight}px`,
+					suggestion: "Increase touch target size to at least 24x24px",
+				});
+			}
+		}
+	}
+
+	// ---- 9. Keyboard Interactions ----
+	if (ca.keyboardInteractions && ca.keyboardInteractions.length > 0 && !descLower.includes("keyboard")) {
+		discrepancies.push({
+			category: "accessibility",
+			property: "keyboardInteractions",
+			severity: "info",
+			designValue: null,
+			codeValue: ca.keyboardInteractions.join(", "),
+			message: `Code defines keyboard interactions (${ca.keyboardInteractions.join(", ")}) but design has no keyboard documentation`,
+			suggestion: "Document keyboard interactions in the Figma component description for developer handoff",
 		});
 	}
 }
@@ -2378,7 +2552,11 @@ const codeSpecSchema = z.object({
 		keyboardInteractions: z.array(z.string()).optional(),
 		contrastRatio: z.number().optional(),
 		focusVisible: z.boolean().optional(),
-	}).optional().describe("Accessibility properties from code"),
+		semanticElement: z.string().optional().describe("Semantic HTML element (e.g., 'button', 'a', 'input')"),
+		supportsDisabled: z.boolean().optional().describe("Whether code supports disabled/aria-disabled state"),
+		supportsError: z.boolean().optional().describe("Whether code supports aria-invalid/error state"),
+		renderedSize: z.tuple([z.number(), z.number()]).optional().describe("Rendered size [width, height] in px"),
+	}).optional().describe("Accessibility properties from code. Tip: use figma_scan_code_accessibility with mapToCodeSpec:true to auto-generate this from component HTML."),
 	metadata: z.object({
 		name: z.string().optional(),
 		description: z.string().optional(),
