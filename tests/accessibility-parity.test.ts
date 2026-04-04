@@ -744,9 +744,11 @@ describe("axeResultsToCodeSpec mapper", () => {
 			expect(spec.supportsDisabled).toBe(true);
 		});
 
-		it("should detect no disabled support", () => {
+		it("should leave supportsDisabled undefined when no evidence found", () => {
 			const spec = axeResultsToCodeSpec('<button>Submit</button>', { violations: [] });
-			expect(spec.supportsDisabled).toBe(false);
+			expect(spec.supportsDisabled).toBeUndefined();
+			// Absence of `disabled` attr doesn't mean the component can't be disabled —
+			// it may just be in a non-disabled state. Only positive evidence counts.
 		});
 
 		it("should detect aria-invalid support", () => {
@@ -754,9 +756,10 @@ describe("axeResultsToCodeSpec mapper", () => {
 			expect(spec.supportsError).toBe(true);
 		});
 
-		it("should detect no error support", () => {
+		it("should leave supportsError undefined when no evidence found", () => {
 			const spec = axeResultsToCodeSpec('<input type="text">', { violations: [] });
-			expect(spec.supportsError).toBe(false);
+			expect(spec.supportsError).toBeUndefined();
+			// Default-state HTML won't have aria-invalid — doesn't mean error state is unsupported.
 		});
 	});
 

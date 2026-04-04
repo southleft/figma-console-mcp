@@ -146,11 +146,21 @@ export function axeResultsToCodeSpec(html: string, axeResults: any): Record<stri
 	const hasFocusCSS = /focus-visible|:focus\b|outline.*focus|ring.*focus|focus.*ring/i.test(html);
 	spec.focusVisible = hasFocusCSS || nativeFocusElements.includes(spec.semanticElement || "");
 
-	// Disabled support: check for disabled or aria-disabled attributes
-	spec.supportsDisabled = /\bdisabled\b|aria-disabled/i.test(htmlLower);
+	// Disabled support: only assert true when we find positive evidence.
+	// Absence of disabled/aria-disabled in a single HTML snapshot does NOT mean
+	// the component lacks disabled support — it may be in a non-disabled state.
+	if (/\bdisabled\b|aria-disabled/i.test(htmlLower)) {
+		spec.supportsDisabled = true;
+	}
+	// (leave undefined when not found — absence ≠ lack of support)
 
-	// Error support: check for aria-invalid or error-related patterns
-	spec.supportsError = /aria-invalid|aria-errormessage|aria-describedby.*error/i.test(htmlLower);
+	// Error support: same principle — only assert true on positive evidence.
+	// A default-state HTML snippet won't have aria-invalid; that doesn't mean
+	// the component can't enter an error state.
+	if (/aria-invalid|aria-errormessage|aria-describedby.*error/i.test(htmlLower)) {
+		spec.supportsError = true;
+	}
+	// (leave undefined when not found — scan a different state to confirm)
 
 	// Required: check for required or aria-required attributes
 	if (/aria-required=["']true["']|required(?!=)/i.test(html)) {
