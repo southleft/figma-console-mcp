@@ -2597,7 +2597,7 @@ return {
 		"image alt text (1.1.1), heading hierarchy (1.3.1), reflow/responsive (1.4.10), and reading order (1.3.2). " +
 		"Design system checks: hardcoded colors, missing text styles, default names, detached components. " +
 		"Layout checks: missing auto-layout, empty containers. " +
-		"Returns categorized findings with severity levels (critical/warning/info). " +
+		"Returns categorized findings with severity levels (critical/warning/info) and WCAG conformance level (a/aa/aaa/best-practice) so teams can filter by target level. " +
 		"Use natural language like 'check my design for accessibility issues' or 'lint this page'. " +
 		"Requires Desktop Bridge plugin.",
 		{

@@ -129,15 +129,15 @@ describe('figma_lint_design', () => {
 			'wcag-target-size': 'critical',
 			'wcag-non-text-contrast': 'critical',
 			'wcag-color-only': 'critical',
+			'wcag-focus-indicator': 'critical',
 			'wcag-text-size': 'warning',
-			'wcag-line-height': 'warning',
-			'wcag-focus-indicator': 'warning',
 			'wcag-letter-spacing': 'warning',
-			'wcag-paragraph-spacing': 'warning',
 			'wcag-image-alt': 'warning',
 			'wcag-heading-hierarchy': 'warning',
 			'wcag-reflow': 'warning',
 			'wcag-reading-order': 'warning',
+			'wcag-line-height': 'info',
+			'wcag-paragraph-spacing': 'info',
 			'hardcoded-color': 'warning',
 			'no-text-style': 'warning',
 			'default-name': 'warning',
@@ -146,24 +146,25 @@ describe('figma_lint_design', () => {
 			'empty-container': 'info',
 		};
 
-		it('should have 4 critical rules', () => {
+		it('should have 5 critical rules', () => {
 			const critical = Object.entries(SEVERITY_MAP).filter(([, s]) => s === 'critical');
-			expect(critical).toHaveLength(4);
+			expect(critical).toHaveLength(5);
 		});
 
-		it('should have 14 warning rules', () => {
+		it('should have 11 warning rules', () => {
 			const warnings = Object.entries(SEVERITY_MAP).filter(([, s]) => s === 'warning');
-			expect(warnings).toHaveLength(14);
+			expect(warnings).toHaveLength(11);
 		});
 
-		it('should have 1 info rule', () => {
+		it('should have 3 info rules', () => {
 			const info = Object.entries(SEVERITY_MAP).filter(([, s]) => s === 'info');
-			expect(info).toHaveLength(1);
+			expect(info).toHaveLength(3);
 		});
 
-		it('should map contrast and target size as critical', () => {
+		it('should map contrast, target size, and focus indicator as critical', () => {
 			expect(SEVERITY_MAP['wcag-contrast']).toBe('critical');
 			expect(SEVERITY_MAP['wcag-target-size']).toBe('critical');
+			expect(SEVERITY_MAP['wcag-focus-indicator']).toBe('critical');
 		});
 
 		it('should map non-text contrast and color-only as critical', () => {
@@ -171,14 +172,68 @@ describe('figma_lint_design', () => {
 			expect(SEVERITY_MAP['wcag-color-only']).toBe('critical');
 		});
 
-		it('should map new Phase 1 rules to correct severities', () => {
-			expect(SEVERITY_MAP['wcag-focus-indicator']).toBe('warning');
+		it('should map line-height and paragraph-spacing as info (best practice, not strict WCAG requirement)', () => {
+			// WCAG 1.4.12 requires supporting user overrides, not specific default values
+			expect(SEVERITY_MAP['wcag-line-height']).toBe('info');
+			expect(SEVERITY_MAP['wcag-paragraph-spacing']).toBe('info');
+		});
+
+		it('should map remaining WCAG rules to correct severities', () => {
 			expect(SEVERITY_MAP['wcag-letter-spacing']).toBe('warning');
-			expect(SEVERITY_MAP['wcag-paragraph-spacing']).toBe('warning');
 			expect(SEVERITY_MAP['wcag-image-alt']).toBe('warning');
 			expect(SEVERITY_MAP['wcag-heading-hierarchy']).toBe('warning');
 			expect(SEVERITY_MAP['wcag-reflow']).toBe('warning');
 			expect(SEVERITY_MAP['wcag-reading-order']).toBe('warning');
+		});
+	});
+
+	// ========================================================================
+	// WCAG conformance level tagging
+	// ========================================================================
+
+	describe('WCAG level tagging', () => {
+		const WCAG_LEVEL_MAP: Record<string, string> = {
+			'wcag-contrast': 'aa',
+			'wcag-target-size': 'aa',
+			'wcag-non-text-contrast': 'aa',
+			'wcag-color-only': 'a',
+			'wcag-focus-indicator': 'aa',
+			'wcag-text-size': 'best-practice',
+			'wcag-line-height': 'best-practice',
+			'wcag-letter-spacing': 'best-practice',
+			'wcag-paragraph-spacing': 'best-practice',
+			'wcag-image-alt': 'a',
+			'wcag-heading-hierarchy': 'a',
+			'wcag-reflow': 'aa',
+			'wcag-reading-order': 'a',
+		};
+
+		it('should tag all 13 WCAG rules with conformance levels', () => {
+			expect(Object.keys(WCAG_LEVEL_MAP)).toHaveLength(13);
+		});
+
+		it('should have Level A rules', () => {
+			const levelA = Object.entries(WCAG_LEVEL_MAP).filter(([, l]) => l === 'a');
+			expect(levelA.length).toBeGreaterThanOrEqual(3);
+		});
+
+		it('should have Level AA rules', () => {
+			const levelAA = Object.entries(WCAG_LEVEL_MAP).filter(([, l]) => l === 'aa');
+			expect(levelAA.length).toBeGreaterThanOrEqual(4);
+		});
+
+		it('should have best-practice rules (not strict WCAG requirements)', () => {
+			const bestPractice = Object.entries(WCAG_LEVEL_MAP).filter(([, l]) => l === 'best-practice');
+			expect(bestPractice.length).toBeGreaterThanOrEqual(3);
+			// These rules check useful patterns but are not strict WCAG conformance requirements
+			expect(WCAG_LEVEL_MAP['wcag-text-size']).toBe('best-practice');
+			expect(WCAG_LEVEL_MAP['wcag-line-height']).toBe('best-practice');
+			expect(WCAG_LEVEL_MAP['wcag-paragraph-spacing']).toBe('best-practice');
+		});
+
+		it('should correctly classify focus-indicator as AA (not AAA)', () => {
+			// WCAG 2.4.7 Focus Visible is Level AA — critical for keyboard users
+			expect(WCAG_LEVEL_MAP['wcag-focus-indicator']).toBe('aa');
 		});
 	});
 
@@ -1044,11 +1099,11 @@ describe('figma_lint_design', () => {
 			'wcag-contrast': 'WCAG 1.4.3 / 1.4.6',
 			'wcag-non-text-contrast': 'WCAG 1.4.11',
 			'wcag-color-only': 'WCAG 1.4.1',
-			'wcag-text-size': 'WCAG 1.4.4',
+			'wcag-text-size': 'Best practice (not 1.4.4 — that criterion is about zoom support)',
 			'wcag-target-size': 'WCAG 2.5.5 / 2.5.8',
-			'wcag-line-height': 'WCAG 1.4.12',
-			'wcag-letter-spacing': 'WCAG 1.4.12',
-			'wcag-paragraph-spacing': 'WCAG 1.4.12',
+			'wcag-line-height': 'Best practice (1.4.12 requires supporting user overrides, not specific defaults)',
+			'wcag-letter-spacing': 'Best practice (negative spacing harms readability)',
+			'wcag-paragraph-spacing': 'Best practice (1.4.12 requires supporting user overrides)',
 			'wcag-focus-indicator': 'WCAG 2.4.7 / 2.4.11',
 			'wcag-image-alt': 'WCAG 1.1.1',
 			'wcag-heading-hierarchy': 'WCAG 1.3.1',
@@ -1062,7 +1117,9 @@ describe('figma_lint_design', () => {
 
 		it('should cover Perceivable principle (1.x.x)', () => {
 			const perceivable = Object.values(WCAG_CRITERIA_MAP).filter(v => v.startsWith('WCAG 1.'));
-			expect(perceivable.length).toBeGreaterThanOrEqual(9);
+			// 6 strict WCAG perceivable rules (contrast, non-text, color-only, image-alt, reflow, plus heading/reading)
+			// 3 rules reclassified as best-practice (text-size, line-height, paragraph-spacing)
+			expect(perceivable.length).toBeGreaterThanOrEqual(5);
 		});
 
 		it('should cover Operable principle (2.x.x)', () => {
