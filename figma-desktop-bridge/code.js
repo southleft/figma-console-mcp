@@ -4430,7 +4430,47 @@ figma.ui.onmessage = async (msg) => {
       var variants = isComponentSet ? componentSet.children : [componentSet];
       var variantCount = variants.length;
 
-      // 1. State coverage analysis
+      // ---- Classify component as interactive vs presentational ----
+      var interactiveNames = /^(button|link|input|checkbox|radio|switch|toggle|tab|select|slider|dropdown|menu-item|search|combobox|listbox)/i;
+      var presentationalNames = /^(alert|badge|card|avatar|divider|skeleton|tooltip|tag|chip|banner|callout|notification|toast|icon|image|separator|progress|spinner|loader|breadcrumb|label|heading|paragraph|caption|stat|meter|indicator)/i;
+
+      // Parse variant axes from variant names (e.g., "type=success, style=fill" → {type: [...], style: [...]})
+      var variantAxes = {};
+      var hasStateAxis = false;
+      for (var vai = 0; vai < variants.length; vai++) {
+        var vParts = variants[vai].name.split(',');
+        for (var vpi = 0; vpi < vParts.length; vpi++) {
+          var kv = vParts[vpi].trim().split('=');
+          if (kv.length === 2) {
+            var axisName = kv[0].trim().toLowerCase();
+            var axisValue = kv[1].trim().toLowerCase();
+            if (!variantAxes[axisName]) variantAxes[axisName] = [];
+            if (variantAxes[axisName].indexOf(axisValue) === -1) {
+              variantAxes[axisName].push(axisValue);
+            }
+            // Check if this axis contains interaction state values
+            if (axisName === 'state' && /(hover|focus|pressed|disabled|active)/i.test(axisValue)) {
+              hasStateAxis = true;
+            }
+          }
+        }
+      }
+
+      var componentName = componentSet.name || '';
+      var isInteractive = interactiveNames.test(componentName) || hasStateAxis;
+      var isPresentational = !isInteractive && (presentationalNames.test(componentName) || !hasStateAxis);
+      // If ambiguous, check if any variant mentions interaction states
+      if (!isInteractive && !isPresentational) {
+        for (var ami = 0; ami < variants.length; ami++) {
+          if (/(hover|focus|pressed|disabled)/i.test(variants[ami].name)) {
+            isInteractive = true;
+            break;
+          }
+        }
+        if (!isInteractive) isPresentational = true;
+      }
+
+      // 1. Coverage analysis — adapts to component classification
       var stateKeywords = {
         'default': /(default|rest|idle|normal|base)/i,
         'hover': /(hover|hovered)/i,
@@ -4440,35 +4480,69 @@ figma.ui.onmessage = async (msg) => {
         'active': /(active|pressed|selected)/i,
         'loading': /(loading|spinner)/i
       };
-      var statesCovered = {};
-      var statesFound = {};
-      for (var sk in stateKeywords) {
-        statesCovered[sk] = false;
-        statesFound[sk] = null;
-      }
-      for (var vi = 0; vi < variants.length; vi++) {
-        var vName = variants[vi].name;
-        for (var sk2 in stateKeywords) {
-          if (stateKeywords[sk2].test(vName)) {
-            statesCovered[sk2] = true;
-            if (!statesFound[sk2]) statesFound[sk2] = vName;
-          }
-        }
-      }
-      // If only one variant and no state keywords match, assume it's default
-      if (variantCount === 1 && !statesCovered['default']) {
-        statesCovered['default'] = true;
-        statesFound['default'] = variants[0].name;
-      }
+
       var coveredCount = 0;
       var totalStates = 0;
       var missingStates = [];
-      for (var sk3 in statesCovered) {
-        totalStates++;
-        if (statesCovered[sk3]) {
-          coveredCount++;
-        } else {
-          missingStates.push(sk3);
+      var statesCovered = {};
+      var statesFound = {};
+      var coverageLabel = '';
+      var variantAxisCoverage = null;
+
+      if (isInteractive) {
+        // Interactive components: check for interaction states
+        coverageLabel = 'interactive-states';
+        for (var sk in stateKeywords) {
+          statesCovered[sk] = false;
+          statesFound[sk] = null;
+        }
+        for (var vi = 0; vi < variants.length; vi++) {
+          var vName = variants[vi].name;
+          for (var sk2 in stateKeywords) {
+            if (stateKeywords[sk2].test(vName)) {
+              statesCovered[sk2] = true;
+              if (!statesFound[sk2]) statesFound[sk2] = vName;
+            }
+          }
+        }
+        if (variantCount === 1 && !statesCovered['default']) {
+          statesCovered['default'] = true;
+          statesFound['default'] = variants[0].name;
+        }
+        for (var sk3 in statesCovered) {
+          totalStates++;
+          if (statesCovered[sk3]) {
+            coveredCount++;
+          } else {
+            missingStates.push(sk3);
+          }
+        }
+      } else {
+        // Presentational components: check variant axis completeness
+        coverageLabel = 'variant-axes';
+        // Calculate expected combinations vs actual
+        var axisNames = [];
+        var axisCounts = [];
+        var expectedCombinations = 1;
+        for (var axName in variantAxes) {
+          axisNames.push(axName);
+          axisCounts.push(variantAxes[axName].length);
+          expectedCombinations *= variantAxes[axName].length;
+        }
+        // Score: actual variants / expected combinations (capped at 100%)
+        var axisCoverageRatio = expectedCombinations > 0 ? Math.min(1, variantCount / expectedCombinations) : 1;
+        coveredCount = variantCount;
+        totalStates = expectedCombinations;
+        variantAxisCoverage = {
+          axes: variantAxes,
+          axisCount: axisNames.length,
+          expectedCombinations: expectedCombinations,
+          actualVariants: variantCount,
+          completeness: Math.round(axisCoverageRatio * 100) + '%'
+        };
+        // For presentational, no "missing states" — instead note if combinations are incomplete
+        if (variantCount < expectedCombinations) {
+          missingStates.push(variantCount + '/' + expectedCombinations + ' axis combinations present');
         }
       }
 
@@ -4658,10 +4732,11 @@ figma.ui.onmessage = async (msg) => {
 
       // ---- Compute overall score ----
       var scores = {};
-      // State coverage: percentage of states found
-      scores.stateCoverage = Math.round((coveredCount / totalStates) * 100);
+      // Coverage: percentage of states (interactive) or axis combinations (presentational)
+      scores.variantCoverage = totalStates > 0 ? Math.round((coveredCount / totalStates) * 100) : 100;
       // Focus indicator: 0 (missing), 50 (exists but no indicator), 100 (good indicator)
-      scores.focusIndicator = !focusAnalysis.hasVariant ? 0 : (!focusAnalysis.hasVisibleIndicator ? 50 : 100);
+      // For presentational: N/A → score 100 (don't penalize)
+      scores.focusIndicator = isPresentational ? 100 : (!focusAnalysis.hasVariant ? 0 : (!focusAnalysis.hasVisibleIndicator ? 50 : 100));
       // Color differentiation: 100 if no issues, decremented per issue
       scores.colorDifferentiation = colorDifferentiation.checked === 0 ? 100 : Math.max(0, Math.round(((colorDifferentiation.checked - colorDifferentiation.issues.length) / colorDifferentiation.checked) * 100));
       // Target size: 100 if all pass, 0 if any fail
@@ -4675,32 +4750,58 @@ figma.ui.onmessage = async (msg) => {
       }
       scores.colorBlindSafety = colorBlindAnalysis.simulations.length > 0 ? Math.round((cbPassCount / colorBlindAnalysis.simulations.length) * 100) : 100;
 
-      // Overall weighted score
-      var overall = Math.round(
-        scores.stateCoverage * 0.20 +
-        scores.focusIndicator * 0.20 +
-        scores.colorDifferentiation * 0.15 +
-        scores.targetSize * 0.15 +
-        scores.annotations * 0.10 +
-        scores.colorBlindSafety * 0.20
-      );
+      // Overall weighted score — weights differ by component classification
+      var overall;
+      if (isInteractive) {
+        // Interactive: focus and states matter most
+        overall = Math.round(
+          scores.variantCoverage * 0.20 +
+          scores.focusIndicator * 0.20 +
+          scores.colorDifferentiation * 0.15 +
+          scores.targetSize * 0.15 +
+          scores.annotations * 0.10 +
+          scores.colorBlindSafety * 0.20
+        );
+      } else {
+        // Presentational: variant completeness and color safety matter most, focus is N/A
+        overall = Math.round(
+          scores.variantCoverage * 0.25 +
+          scores.colorDifferentiation * 0.25 +
+          scores.annotations * 0.15 +
+          scores.colorBlindSafety * 0.25 +
+          scores.targetSize * 0.10
+        );
+      }
 
       // ---- Build response ----
+      var coverageSection;
+      if (isInteractive) {
+        coverageSection = {
+          mode: 'interactive-states',
+          found: statesFound,
+          missing: missingStates,
+          coverage: coveredCount + '/' + totalStates
+        };
+      } else {
+        coverageSection = {
+          mode: 'variant-axes',
+          axes: variantAxisCoverage,
+          coverage: coveredCount + '/' + totalStates
+        };
+      }
+
       var auditResult = {
         component: {
           id: componentSet.id,
           name: componentSet.name,
           type: componentSet.type,
-          variantCount: variantCount
+          variantCount: variantCount,
+          classification: isInteractive ? 'interactive' : 'presentational'
         },
         overallScore: overall,
         scores: scores,
-        stateCoverage: {
-          found: statesFound,
-          missing: missingStates,
-          coverage: coveredCount + '/' + totalStates
-        },
-        focusIndicator: focusAnalysis,
+        variantCoverage: coverageSection,
+        focusIndicator: isInteractive ? focusAnalysis : { notApplicable: true, details: 'Focus indicators are not expected for presentational components' },
         colorDifferentiation: colorDifferentiation,
         targetSize: {
           minimum: minTarget + 'x' + minTarget,
@@ -4712,11 +4813,13 @@ figma.ui.onmessage = async (msg) => {
         recommendations: []
       };
 
-      // Generate recommendations
-      if (!focusAnalysis.hasVariant) {
-        auditResult.recommendations.push({ priority: 'high', area: 'focus', message: 'Add a focus/focused variant with a visible focus ring (WCAG 2.4.7)' });
-      } else if (!focusAnalysis.hasVisibleIndicator) {
-        auditResult.recommendations.push({ priority: 'medium', area: 'focus', message: 'Focus variant exists but lacks visible indicator — add a border or shadow' });
+      // Generate recommendations — classification-aware
+      if (isInteractive) {
+        if (!focusAnalysis.hasVariant) {
+          auditResult.recommendations.push({ priority: 'high', area: 'focus', message: 'Add a focus/focused variant with a visible focus ring (WCAG 2.4.7)' });
+        } else if (!focusAnalysis.hasVisibleIndicator) {
+          auditResult.recommendations.push({ priority: 'medium', area: 'focus', message: 'Focus variant exists but lacks visible indicator — add a border or shadow' });
+        }
       }
       if (colorDifferentiation.issues.length > 0) {
         auditResult.recommendations.push({ priority: 'high', area: 'color', message: 'Add non-color indicators (icons, borders, text) to ' + colorDifferentiation.issues.length + ' state variant(s) (WCAG 1.4.1)' });
@@ -4728,16 +4831,23 @@ figma.ui.onmessage = async (msg) => {
         auditResult.recommendations.push({ priority: 'medium', area: 'documentation', message: 'Add a component description with usage guidelines' });
       }
       if (!annotations.hasA11yNotes) {
-        auditResult.recommendations.push({ priority: 'medium', area: 'documentation', message: 'Add accessibility notes (ARIA role, keyboard interactions, screen reader behavior)' });
+        var a11yHint = isInteractive
+          ? 'Add accessibility notes (ARIA role, keyboard interactions, screen reader behavior)'
+          : 'Add accessibility notes (ARIA role, live region behavior, semantic usage)';
+        auditResult.recommendations.push({ priority: 'medium', area: 'documentation', message: a11yHint });
       }
       if (colorBlindAnalysis.issues.length > 0) {
         auditResult.recommendations.push({ priority: 'medium', area: 'color-blind', message: colorBlindAnalysis.issues.join('; ') });
       }
-      for (var msi = 0; msi < missingStates.length; msi++) {
-        var ms = missingStates[msi];
-        if (ms === 'focus' || ms === 'disabled') {
-          auditResult.recommendations.push({ priority: 'medium', area: 'states', message: 'Consider adding a "' + ms + '" variant for complete interactive state coverage' });
+      if (isInteractive) {
+        for (var msi = 0; msi < missingStates.length; msi++) {
+          var ms = missingStates[msi];
+          if (ms === 'focus' || ms === 'disabled') {
+            auditResult.recommendations.push({ priority: 'medium', area: 'states', message: 'Consider adding a "' + ms + '" variant for complete interactive state coverage' });
+          }
         }
+      } else if (variantAxisCoverage && variantCount < variantAxisCoverage.expectedCombinations) {
+        auditResult.recommendations.push({ priority: 'low', area: 'coverage', message: variantCount + ' of ' + variantAxisCoverage.expectedCombinations + ' axis combinations present — consider adding missing variants for completeness' });
       }
 
       console.log('🌉 [Desktop Bridge] Component audit complete: score ' + overall + '/100 for "' + componentSet.name + '"');

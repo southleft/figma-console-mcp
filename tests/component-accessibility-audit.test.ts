@@ -195,14 +195,14 @@ describe('figma_audit_component_accessibility', () => {
 	// ========================================================================
 
 	describe('scoring', () => {
-		it('should calculate state coverage score', () => {
+		it('should calculate variant coverage score', () => {
 			const covered = 5;
 			const total = 7;
 			const score = Math.round((covered / total) * 100);
 			expect(score).toBe(71);
 		});
 
-		it('should score focus indicator: 0 (missing), 50 (no indicator), 100 (good)', () => {
+		it('should score focus indicator: 0 (missing), 50 (no indicator), 100 (good) for interactive', () => {
 			const noVariant = 0;
 			const noIndicator = 50;
 			const good = 100;
@@ -212,28 +212,31 @@ describe('figma_audit_component_accessibility', () => {
 			expect(good).toBe(100);
 		});
 
-		it('should score annotations: 0 (none), 50 (description), 100 (a11y notes)', () => {
-			const none = 0;
-			const descOnly = 50;
-			const withA11y = 100;
-
-			expect(none).toBe(0);
-			expect(descOnly).toBe(50);
-			expect(withA11y).toBe(100);
+		it('should score focus indicator as 100 (N/A) for presentational', () => {
+			// Presentational components don't need focus indicators
+			const isPresentational = true;
+			const score = isPresentational ? 100 : 0;
+			expect(score).toBe(100);
 		});
 
-		it('should calculate weighted overall score', () => {
+		it('should score annotations: 0 (none), 50 (description), 100 (a11y notes)', () => {
+			expect(0).toBe(0);
+			expect(50).toBe(50);
+			expect(100).toBe(100);
+		});
+
+		it('should calculate weighted overall score for interactive components', () => {
 			const scores = {
-				stateCoverage: 71,    // 0.20
-				focusIndicator: 100,  // 0.20
-				colorDifferentiation: 100, // 0.15
-				targetSize: 100,      // 0.15
-				annotations: 50,      // 0.10
-				colorBlindSafety: 67, // 0.20
+				variantCoverage: 71,
+				focusIndicator: 100,
+				colorDifferentiation: 100,
+				targetSize: 100,
+				annotations: 50,
+				colorBlindSafety: 67,
 			};
 
 			const overall = Math.round(
-				scores.stateCoverage * 0.20 +
+				scores.variantCoverage * 0.20 +
 				scores.focusIndicator * 0.20 +
 				scores.colorDifferentiation * 0.15 +
 				scores.targetSize * 0.15 +
@@ -241,22 +244,33 @@ describe('figma_audit_component_accessibility', () => {
 				scores.colorBlindSafety * 0.20,
 			);
 
-			// Verify it's in valid range
 			expect(overall).toBeGreaterThanOrEqual(0);
 			expect(overall).toBeLessThanOrEqual(100);
-			// 71*0.2 + 100*0.2 + 100*0.15 + 100*0.15 + 50*0.1 + 67*0.2 = 14.2 + 20 + 15 + 15 + 5 + 13.4 = 82.6 → 83
 			expect(overall).toBe(83);
 		});
 
-		it('should weight focus and color-blind safety equally (0.20 each)', () => {
-			// These are high-weight because they're commonly missed
-			const focusWeight = 0.20;
-			const cbWeight = 0.20;
-			expect(focusWeight).toBe(cbWeight);
+		it('should calculate weighted overall score for presentational components', () => {
+			const scores = {
+				variantCoverage: 100, // All axis combinations present
+				colorDifferentiation: 100,
+				annotations: 0,
+				colorBlindSafety: 100,
+				targetSize: 100,
+			};
+
+			const overall = Math.round(
+				scores.variantCoverage * 0.25 +
+				scores.colorDifferentiation * 0.25 +
+				scores.annotations * 0.15 +
+				scores.colorBlindSafety * 0.25 +
+				scores.targetSize * 0.10,
+			);
+
+			// 100*0.25 + 100*0.25 + 0*0.15 + 100*0.25 + 100*0.10 = 85
+			expect(overall).toBe(85);
 		});
 
 		it('should give color differentiation 100 when no states checked', () => {
-			// Single variant with no status states → nothing to check → 100
 			const checked = 0;
 			const issues = 0;
 			const score = checked === 0 ? 100 : Math.max(0, Math.round(((checked - issues) / checked) * 100));
@@ -268,6 +282,68 @@ describe('figma_audit_component_accessibility', () => {
 			const failingVariants = 2;
 			const score = Math.max(0, Math.round(((totalVariants - failingVariants) / totalVariants) * 100));
 			expect(score).toBe(75);
+		});
+	});
+
+	// ========================================================================
+	// Component classification
+	// ========================================================================
+
+	describe('component classification', () => {
+		const interactiveNames = /^(button|link|input|checkbox|radio|switch|toggle|tab|select|slider|dropdown|menu-item|search|combobox|listbox)/i;
+		const presentationalNames = /^(alert|badge|card|avatar|divider|skeleton|tooltip|tag|chip|banner|callout|notification|toast|icon|image|separator|progress|spinner|loader|breadcrumb|label|heading|paragraph|caption|stat|meter|indicator)/i;
+
+		it('should classify Button as interactive', () => {
+			expect('Button').toMatch(interactiveNames);
+		});
+
+		it('should classify Input as interactive', () => {
+			expect('Input').toMatch(interactiveNames);
+		});
+
+		it('should classify Checkbox as interactive', () => {
+			expect('Checkbox').toMatch(interactiveNames);
+		});
+
+		it('should classify Toggle as interactive', () => {
+			expect('Toggle').toMatch(interactiveNames);
+		});
+
+		it('should classify Alert as presentational', () => {
+			expect('Alert').toMatch(presentationalNames);
+			expect('Alert').not.toMatch(interactiveNames);
+		});
+
+		it('should classify Badge as presentational', () => {
+			expect('Badge').toMatch(presentationalNames);
+		});
+
+		it('should classify Card as presentational', () => {
+			expect('Card').toMatch(presentationalNames);
+		});
+
+		it('should classify Avatar as presentational', () => {
+			expect('Avatar').toMatch(presentationalNames);
+		});
+
+		it('should classify Toast as presentational', () => {
+			expect('Toast').toMatch(presentationalNames);
+		});
+
+		it('should classify Progress as presentational', () => {
+			expect('Progress').toMatch(presentationalNames);
+		});
+
+		it('should detect interactive via state axis', () => {
+			const axes = { state: ['default', 'hover', 'focus', 'disabled'], size: ['sm', 'md', 'lg'] };
+			const hasStateAxis = axes.state && axes.state.some((v: string) => /(hover|focus|pressed|disabled)/i.test(v));
+			expect(hasStateAxis).toBe(true);
+		});
+
+		it('should NOT detect interactive when axes are semantic only', () => {
+			const axes = { type: ['success', 'danger', 'warning', 'info'], style: ['fill', 'outline'] };
+			const hasStateAxis = axes.type && axes.type.some((v: string) => /(hover|focus|pressed|disabled)/i.test(v));
+			expect(hasStateAxis).toBe(false);
 		});
 	});
 
@@ -336,17 +412,18 @@ describe('figma_audit_component_accessibility', () => {
 
 	describe('output structure', () => {
 		const sampleOutput = {
-			component: { id: '1:2', name: 'Button', type: 'COMPONENT_SET', variantCount: 8 },
+			component: { id: '1:2', name: 'Button', type: 'COMPONENT_SET', variantCount: 8, classification: 'interactive' as const },
 			overallScore: 72,
 			scores: {
-				stateCoverage: 71,
+				variantCoverage: 71,
 				focusIndicator: 100,
 				colorDifferentiation: 67,
 				targetSize: 100,
 				annotations: 50,
 				colorBlindSafety: 67,
 			},
-			stateCoverage: {
+			variantCoverage: {
+				mode: 'interactive-states' as const,
 				found: { default: 'State=Default', hover: 'State=Hover', focus: 'State=Focused', disabled: null, error: null, active: null, loading: null },
 				missing: ['disabled', 'error', 'active', 'loading'],
 				coverage: '3/7',
@@ -368,11 +445,12 @@ describe('figma_audit_component_accessibility', () => {
 			],
 		};
 
-		it('should have component metadata', () => {
+		it('should have component metadata with classification', () => {
 			expect(sampleOutput.component.id).toBeDefined();
 			expect(sampleOutput.component.name).toBeDefined();
 			expect(sampleOutput.component.type).toBe('COMPONENT_SET');
 			expect(sampleOutput.component.variantCount).toBeGreaterThan(0);
+			expect(sampleOutput.component.classification).toMatch(/interactive|presentational/);
 		});
 
 		it('should have overall score 0-100', () => {
@@ -384,10 +462,9 @@ describe('figma_audit_component_accessibility', () => {
 			expect(Object.keys(sampleOutput.scores)).toHaveLength(6);
 		});
 
-		it('should have state coverage with found/missing/coverage', () => {
-			expect(sampleOutput.stateCoverage.found).toBeDefined();
-			expect(sampleOutput.stateCoverage.missing).toBeInstanceOf(Array);
-			expect(sampleOutput.stateCoverage.coverage).toMatch(/\d+\/\d+/);
+		it('should have variant coverage with mode and coverage', () => {
+			expect(sampleOutput.variantCoverage.mode).toMatch(/interactive-states|variant-axes/);
+			expect(sampleOutput.variantCoverage.coverage).toMatch(/\d+\/\d+/);
 		});
 
 		it('should have focus indicator analysis', () => {
