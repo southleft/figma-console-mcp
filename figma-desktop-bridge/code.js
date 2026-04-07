@@ -4626,6 +4626,9 @@ figma.ui.onmessage = async (msg) => {
       }
 
       // 4. Target size analysis
+      // WCAG 2.5.8 applies to interactive targets — presentational components
+      // (badges, avatars, progress bars) are not tap targets by definition.
+      // Skip target size checking for presentational components to avoid false positives.
       var targetSizeAnalysis = { minWidth: Infinity, minHeight: Infinity, variants: [], issues: [] };
       var minTarget = msg.targetSize || 24; // Default WCAG 2.5.8 minimum
       for (var tvi = 0; tvi < variants.length; tvi++) {
@@ -4636,7 +4639,8 @@ figma.ui.onmessage = async (msg) => {
             targetSizeAnalysis.variants.push({ name: variants[tvi].name, width: tw, height: th });
             if (tw < targetSizeAnalysis.minWidth) targetSizeAnalysis.minWidth = tw;
             if (th < targetSizeAnalysis.minHeight) targetSizeAnalysis.minHeight = th;
-            if (tw < minTarget || th < minTarget) {
+            // Only flag target size issues for interactive components
+            if (isInteractive && (tw < minTarget || th < minTarget)) {
               targetSizeAnalysis.issues.push({
                 variant: variants[tvi].name,
                 width: tw,
@@ -4739,8 +4743,8 @@ figma.ui.onmessage = async (msg) => {
       scores.focusIndicator = isPresentational ? 100 : (!focusAnalysis.hasVariant ? 0 : (!focusAnalysis.hasVisibleIndicator ? 50 : 100));
       // Color differentiation: 100 if no issues, decremented per issue
       scores.colorDifferentiation = colorDifferentiation.checked === 0 ? 100 : Math.max(0, Math.round(((colorDifferentiation.checked - colorDifferentiation.issues.length) / colorDifferentiation.checked) * 100));
-      // Target size: 100 if all pass, 0 if any fail
-      scores.targetSize = targetSizeAnalysis.issues.length === 0 ? 100 : Math.max(0, Math.round(((targetSizeAnalysis.variants.length - targetSizeAnalysis.issues.length) / Math.max(1, targetSizeAnalysis.variants.length)) * 100));
+      // Target size: N/A for presentational (not tap targets), scored for interactive
+      scores.targetSize = isPresentational ? 100 : (targetSizeAnalysis.issues.length === 0 ? 100 : Math.max(0, Math.round(((targetSizeAnalysis.variants.length - targetSizeAnalysis.issues.length) / Math.max(1, targetSizeAnalysis.variants.length)) * 100)));
       // Annotations: 0 (nothing), 50 (description only), 100 (has a11y notes)
       scores.annotations = annotations.hasA11yNotes ? 100 : (annotations.hasDescription ? 50 : 0);
       // Color blind: percentage of simulations with no issues
@@ -4803,11 +4807,11 @@ figma.ui.onmessage = async (msg) => {
         variantCoverage: coverageSection,
         focusIndicator: isInteractive ? focusAnalysis : { notApplicable: true, details: 'Focus indicators are not expected for presentational components' },
         colorDifferentiation: colorDifferentiation,
-        targetSize: {
+        targetSize: isInteractive ? {
           minimum: minTarget + 'x' + minTarget,
           smallest: targetSizeAnalysis.minWidth + 'x' + targetSizeAnalysis.minHeight,
           issues: targetSizeAnalysis.issues
-        },
+        } : { notApplicable: true, details: 'Target size checks apply to interactive components (WCAG 2.5.8 is about tap targets)', smallest: targetSizeAnalysis.minWidth + 'x' + targetSizeAnalysis.minHeight },
         annotations: annotations,
         colorBlindSimulation: colorBlindAnalysis,
         recommendations: []
