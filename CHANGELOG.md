@@ -5,6 +5,20 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.3] - 2026-04-07
+
+### Added
+- **`wcag-disabled-no-context`** rule — flags disabled variants that have no tooltip, helper text, or annotation explaining why the element is disabled. Based on accessibility consultant Isabella Minzly's guidance: use `aria-disabled` (not HTML `disabled`) to keep elements focusable for screen readers, and add a tooltip so all users understand the disabled reason.
+- **`token-misuse`** rule — flags semantic token misuse: `bg/*` variables used as text fills, or `text/*` variables used as background fills. Catches misbound tokens that may or may not produce contrast failures.
+- **WCAG conformance level tagging** — every finding now carries a `wcagLevel` field (`a`, `aa`, or `best-practice`). Teams targeting AA can filter out best-practice findings that don't represent legal requirements.
+
+### Fixed
+- **`wcag-focus-indicator` severity: warning → critical** — WCAG 2.4.7 (Focus Visible) is Level AA. Missing focus indicators are a blocker for keyboard users. Reviewed by Isabella Minzly.
+- **`wcag-line-height` and `wcag-paragraph-spacing` severity: warning → info** — WCAG 1.4.12 (Text Spacing) requires supporting user-overridden spacing, not requiring specific default values. Flagging every heading with 1.33x line-height was a misinterpretation that created unnecessary noise.
+- **`wcag-text-size` reclassified as best-practice** — WCAG 1.4.4 is about supporting 200% text-only zoom (use rem units), not about minimum pixel sizes. The 12px check remains as a readability best practice.
+- **13 rule descriptions corrected** based on Isabella Minzly's accessibility review spreadsheet, including proper large text thresholds, 1.4.12 user-override clarification, 320px minimum width for reflow, and decorative image guidance.
+
+
 ## [1.22.0] - 2026-04-04
 
 Comprehensive accessibility scanning — full-spectrum WCAG coverage across design and code without maintaining a rule database. Design-side checks are bounded by Figma's API surface (~15 rules); code-side checks delegate to axe-core (104 rules from Deque).
@@ -617,6 +631,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.22.3]: https://github.com/southleft/figma-console-mcp/compare/v1.22.1...v1.22.3
 [1.22.1]: https://github.com/southleft/figma-console-mcp/compare/v1.22.0...v1.22.1
 [1.22.0]: https://github.com/southleft/figma-console-mcp/compare/v1.21.1...v1.22.0
 [1.21.1]: https://github.com/southleft/figma-console-mcp/compare/v1.21.0...v1.21.1
