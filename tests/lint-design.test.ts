@@ -73,6 +73,8 @@ describe('figma_lint_design', () => {
 			'wcag-non-text-contrast', 'wcag-color-only', 'wcag-focus-indicator',
 			'wcag-letter-spacing', 'wcag-paragraph-spacing', 'wcag-image-alt',
 			'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
+			'wcag-disabled-no-context',
+			'token-misuse',
 			'hardcoded-color', 'no-text-style', 'default-name', 'detached-component',
 			'no-autolayout', 'empty-container',
 		];
@@ -82,20 +84,21 @@ describe('figma_lint_design', () => {
 			'wcag-non-text-contrast', 'wcag-color-only', 'wcag-focus-indicator',
 			'wcag-letter-spacing', 'wcag-paragraph-spacing', 'wcag-image-alt',
 			'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
+			'wcag-disabled-no-context',
 		];
-		const DESIGN_SYSTEM_RULES = ['hardcoded-color', 'no-text-style', 'default-name', 'detached-component'];
+		const DESIGN_SYSTEM_RULES = ['hardcoded-color', 'no-text-style', 'default-name', 'detached-component', 'token-misuse'];
 		const LAYOUT_RULES = ['no-autolayout', 'empty-container'];
 
-		it('should have 19 rules total', () => {
-			expect(ALL_RULES).toHaveLength(19);
+		it('should have 21 rules total', () => {
+			expect(ALL_RULES).toHaveLength(21);
 		});
 
-		it('should have 13 WCAG rules', () => {
-			expect(WCAG_RULES).toHaveLength(13);
+		it('should have 14 WCAG rules', () => {
+			expect(WCAG_RULES).toHaveLength(14);
 		});
 
-		it('should have 4 design system rules', () => {
-			expect(DESIGN_SYSTEM_RULES).toHaveLength(4);
+		it('should have 5 design system rules', () => {
+			expect(DESIGN_SYSTEM_RULES).toHaveLength(5);
 		});
 
 		it('should have 2 layout rules', () => {
@@ -136,8 +139,10 @@ describe('figma_lint_design', () => {
 			'wcag-heading-hierarchy': 'warning',
 			'wcag-reflow': 'warning',
 			'wcag-reading-order': 'warning',
+			'wcag-disabled-no-context': 'warning',
 			'wcag-line-height': 'info',
 			'wcag-paragraph-spacing': 'info',
+			'token-misuse': 'warning',
 			'hardcoded-color': 'warning',
 			'no-text-style': 'warning',
 			'default-name': 'warning',
@@ -151,9 +156,9 @@ describe('figma_lint_design', () => {
 			expect(critical).toHaveLength(5);
 		});
 
-		it('should have 11 warning rules', () => {
+		it('should have 13 warning rules', () => {
 			const warnings = Object.entries(SEVERITY_MAP).filter(([, s]) => s === 'warning');
-			expect(warnings).toHaveLength(11);
+			expect(warnings).toHaveLength(13);
 		});
 
 		it('should have 3 info rules', () => {
@@ -206,10 +211,11 @@ describe('figma_lint_design', () => {
 			'wcag-heading-hierarchy': 'a',
 			'wcag-reflow': 'aa',
 			'wcag-reading-order': 'a',
+			'wcag-disabled-no-context': 'aa',
 		};
 
-		it('should tag all 13 WCAG rules with conformance levels', () => {
-			expect(Object.keys(WCAG_LEVEL_MAP)).toHaveLength(13);
+		it('should tag all 14 WCAG rules with conformance levels', () => {
+			expect(Object.keys(WCAG_LEVEL_MAP)).toHaveLength(14);
 		});
 
 		it('should have Level A rules', () => {
@@ -1109,10 +1115,11 @@ describe('figma_lint_design', () => {
 			'wcag-heading-hierarchy': 'WCAG 1.3.1',
 			'wcag-reflow': 'WCAG 1.4.10',
 			'wcag-reading-order': 'WCAG 1.3.2',
+			'wcag-disabled-no-context': 'WCAG 4.1.2 (disabled elements need ARIA context for screen readers)',
 		};
 
-		it('should map all 13 WCAG rules to success criteria', () => {
-			expect(Object.keys(WCAG_CRITERIA_MAP)).toHaveLength(13);
+		it('should map all 14 WCAG rules to success criteria', () => {
+			expect(Object.keys(WCAG_CRITERIA_MAP)).toHaveLength(14);
 		});
 
 		it('should cover Perceivable principle (1.x.x)', () => {
@@ -1125,6 +1132,149 @@ describe('figma_lint_design', () => {
 		it('should cover Operable principle (2.x.x)', () => {
 			const operable = Object.values(WCAG_CRITERIA_MAP).filter(v => v.startsWith('WCAG 2.'));
 			expect(operable.length).toBeGreaterThanOrEqual(2);
+		});
+	});
+
+	// ========================================================================
+	// Phase B: Disabled variant structural check
+	// ========================================================================
+
+	describe('wcag-disabled-no-context', () => {
+		it('should flag disabled variants without tooltip or helper text', () => {
+			const disabledVariant = {
+				name: 'state=disabled',
+				children: [
+					{ name: 'Label', type: 'TEXT' },
+					{ name: 'Icon', type: 'INSTANCE' },
+				],
+			};
+			const hasContextChild = disabledVariant.children.some(
+				(c: any) => /tooltip|helper|hint|description|message/i.test(c.name),
+			);
+			expect(hasContextChild).toBe(false);
+		});
+
+		it('should NOT flag disabled variants with tooltip child', () => {
+			const disabledVariant = {
+				name: 'state=disabled',
+				children: [
+					{ name: 'Label', type: 'TEXT' },
+					{ name: 'Tooltip', type: 'INSTANCE' },
+				],
+			};
+			const hasContextChild = disabledVariant.children.some(
+				(c: any) => /tooltip|helper|hint|description|message/i.test(c.name),
+			);
+			expect(hasContextChild).toBe(true);
+		});
+
+		it('should NOT flag disabled variants with helper text', () => {
+			const disabledVariant = {
+				name: 'state=disabled',
+				children: [
+					{ name: 'Input', type: 'INSTANCE' },
+					{ name: 'Helper text', type: 'TEXT' },
+				],
+			};
+			const hasContextChild = disabledVariant.children.some(
+				(c: any) => /tooltip|helper|hint|description|message/i.test(c.name),
+			);
+			expect(hasContextChild).toBe(true);
+		});
+
+		it('should NOT flag when component description mentions disabled tooltip', () => {
+			const description = 'When disabled, show a tooltip explaining why the action is unavailable.';
+			const hasAnnotation = /disabled.*tooltip|disabled.*helper|aria-disabled/i.test(description);
+			expect(hasAnnotation).toBe(true);
+		});
+
+		it('should detect disabled and inactive variant names', () => {
+			const disabledPattern = /(disabled|inactive)/i;
+			expect('state=disabled').toMatch(disabledPattern);
+			expect('State=Inactive').toMatch(disabledPattern);
+			expect('state=hover').not.toMatch(disabledPattern);
+		});
+
+		it('should produce finding with Isabella pattern suggestion', () => {
+			const finding = {
+				id: '1:2',
+				name: 'Button / state=disabled',
+				suggestion: 'Disabled elements should remain focusable (use aria-disabled, not HTML disabled). Add a tooltip or helper text explaining why the element is disabled so screen reader users understand the context.',
+			};
+			expect(finding.suggestion).toContain('aria-disabled');
+			expect(finding.suggestion).toContain('tooltip');
+			expect(finding.suggestion).toContain('screen reader');
+		});
+	});
+
+	// ========================================================================
+	// Phase B: Token misuse detection
+	// ========================================================================
+
+	describe('token-misuse', () => {
+		it('should flag bg/* token used as text fill', () => {
+			const variable = { name: 'bg/accent/weakest-hover' };
+			const nodeType = 'TEXT';
+			const isBgToken = /^(bg|background|surface|fill)[\/-]/.test(variable.name.toLowerCase());
+			const isTextNode = nodeType === 'TEXT';
+			expect(isBgToken && isTextNode).toBe(true);
+		});
+
+		it('should flag text/* token used as frame background', () => {
+			const variable = { name: 'text/primary' };
+			const nodeType = 'FRAME';
+			const isTextToken = /^(text|fg|foreground|font)[\/-]/.test(variable.name.toLowerCase());
+			const isContainerNode = ['FRAME', 'COMPONENT', 'INSTANCE', 'RECTANGLE'].includes(nodeType);
+			expect(isTextToken && isContainerNode).toBe(true);
+		});
+
+		it('should NOT flag text/* token on TEXT node', () => {
+			const variable = { name: 'text/primary' };
+			const nodeType = 'TEXT';
+			const isTextToken = /^(text|fg|foreground|font)[\/-]/.test(variable.name.toLowerCase());
+			const isContainerNode = ['FRAME', 'COMPONENT', 'INSTANCE', 'RECTANGLE'].includes(nodeType);
+			expect(isTextToken && isContainerNode).toBe(false);
+		});
+
+		it('should NOT flag bg/* token on FRAME node', () => {
+			const variable = { name: 'bg/surface/default' };
+			const nodeType = 'FRAME';
+			const isBgToken = /^(bg|background|surface|fill)[\/-]/.test(variable.name.toLowerCase());
+			const isTextNode = nodeType === 'TEXT';
+			expect(isBgToken && isTextNode).toBe(false);
+		});
+
+		it('should detect various bg token prefixes', () => {
+			const bgPattern = /^(bg|background|surface|fill)[\/-]/;
+			expect(bgPattern.test('bg/primary')).toBe(true);
+			expect(bgPattern.test('background/default')).toBe(true);
+			expect(bgPattern.test('surface/elevated')).toBe(true);
+			expect(bgPattern.test('fill/accent')).toBe(true);
+			expect(bgPattern.test('text/primary')).toBe(false);
+			expect(bgPattern.test('border/default')).toBe(false);
+		});
+
+		it('should detect various text token prefixes', () => {
+			const textPattern = /^(text|fg|foreground|font)[\/-]/;
+			expect(textPattern.test('text/primary')).toBe(true);
+			expect(textPattern.test('fg/secondary')).toBe(true);
+			expect(textPattern.test('foreground/muted')).toBe(true);
+			expect(textPattern.test('font/accent')).toBe(true);
+			expect(textPattern.test('bg/primary')).toBe(false);
+		});
+
+		it('should produce actionable finding', () => {
+			const finding = {
+				id: '1:2',
+				name: 'Label',
+				variable: 'bg/accent/weakest-hover',
+				usage: 'text fill',
+				expectedPrefix: 'text/*, fg/*, foreground/*',
+				suggestion: 'This text node uses a background/surface token as its fill color.',
+			};
+			expect(finding.variable).toContain('bg/');
+			expect(finding.usage).toBe('text fill');
+			expect(finding.expectedPrefix).toContain('text/*');
 		});
 	});
 });
