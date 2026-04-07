@@ -26,6 +26,14 @@ Comprehensive accessibility scanning — full-spectrum WCAG coverage across desi
 - **Closed-world assumption in CodeSpec mapper** — `supportsDisabled` and `supportsError` now report `undefined` (unknown) instead of `false` when scanning a single HTML state snapshot. Prevents false positives when the scanned HTML is in default state but the component supports error/disabled states dynamically.
 
 
+## [1.22.1] - 2026-04-06
+
+### Fixed
+- **Component audit false positives on presentational components** — The audit tool was applying interactive-component expectations (hover, focus, disabled states) to all components. An Alert component scored 53/100 when it actually had excellent coverage of its real variant axes (5/5 types, 2/2 styles). Components are now classified as `interactive` (button, input, checkbox, toggle) or `presentational` (alert, badge, card, avatar, tooltip, progress) based on name and variant axis analysis. Presentational components are scored on variant axis completeness instead of interaction state coverage.
+- **Target size false positives on presentational components** — WCAG 2.5.8 defines minimum target size for interactive elements. Badges (16px), avatars (16x16), and other non-tap-target components were incorrectly flagged. Target size checks now only apply to interactive components; presentational components get `notApplicable` (scored 100%).
+- **Focus indicator false positives on presentational components** — Focus indicators are not expected on presentational components like alerts and badges. Now marked `notApplicable` instead of "missing".
+
+
 ## [1.21.1] - 2026-04-01
 
 ### Fixed
@@ -609,6 +617,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.22.1]: https://github.com/southleft/figma-console-mcp/compare/v1.22.0...v1.22.1
 [1.22.0]: https://github.com/southleft/figma-console-mcp/compare/v1.21.1...v1.22.0
 [1.21.1]: https://github.com/southleft/figma-console-mcp/compare/v1.21.0...v1.21.1
 [1.21.0]: https://github.com/southleft/figma-console-mcp/compare/v1.20.1...v1.21.0
