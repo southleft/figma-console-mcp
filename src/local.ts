@@ -5846,9 +5846,9 @@ return {
 		this.server.tool(
 			"figma_lint_design",
 			"Run comprehensive accessibility (WCAG 2.2) and design quality checks on the current page or a specific node tree. " +
-			"WCAG checks (13 rules): color contrast (AA), non-text contrast (1.4.11), color-only differentiation (1.4.1), " +
+			"WCAG checks (14 rules): color contrast (AA), non-text contrast (1.4.11), color-only differentiation (1.4.1), " +
 			"focus indicators (2.4.7), text sizing, touch targets, line height, letter spacing, paragraph spacing (1.4.12), " +
-			"image alt text (1.1.1), heading hierarchy (1.3.1), reflow/responsive (1.4.10), and reading order (1.3.2). " +
+			"image alt text (1.1.1), heading hierarchy (1.3.1), reflow/responsive (1.4.10), reading order (1.3.2), and disabled context (4.1.2). " +
 			"Design system checks: hardcoded colors, missing text styles, default names, detached components. " +
 			"Layout checks: missing auto-layout, empty containers. " +
 			"Returns categorized findings with severity levels (critical/warning/info) and WCAG conformance level (a/aa/aaa/best-practice) so teams can filter by target level. " +
@@ -5856,7 +5856,7 @@ return {
 			"Requires Desktop Bridge plugin.",
 			{
 				nodeId: z.string().optional().describe("Node ID to lint (defaults to current page)"),
-				rules: z.array(z.string()).optional().describe("Rule filter: ['all'] (default), ['wcag'] (13 WCAG rules), ['design-system'], ['layout'], or specific rule IDs like ['wcag-contrast', 'wcag-focus-indicator', 'wcag-image-alt']"),
+				rules: z.array(z.string()).optional().describe("Rule filter: ['all'] (default), ['wcag'] (13 WCAG rules), ['design-system'], ['layout'], or specific rule IDs like ['wcag-contrast', 'wcag-focus-indicator', 'wcag-disabled-no-context']"),
 				maxDepth: z.number().optional().describe("Maximum tree depth to traverse (default: 10)"),
 				maxFindings: z.number().optional().describe("Maximum findings before stopping (default: 100)"),
 			},

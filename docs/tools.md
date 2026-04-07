@@ -72,7 +72,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_set_strokes` | Set stroke colors | Local / Cloud |
 | | `figma_create_child` | Create child node | Local / Cloud |
 | **🖼️ Image** | `figma_set_image_fill` | Set image fill on nodes | Local / Cloud |
-| **🔍 Accessibility** | `figma_lint_design` | 13 WCAG checks on design nodes (contrast, spacing, focus, alt text, etc.) | Local / Cloud |
+| **🔍 Accessibility** | `figma_lint_design` | 14 WCAG checks with AA/best-practice level tagging | Local / Cloud |
 | | `figma_audit_component_accessibility` | Deep component scorecard: states, focus, color-blind simulation | Local / Cloud |
 | | `figma_scan_code_accessibility` | Scan HTML with axe-core (104 rules): ARIA, labels, landmarks, semantics | Local / Cloud |
 | **📌 FigJam** | `figjam_create_sticky` | Create a sticky note | Local / Cloud |
@@ -2148,7 +2148,7 @@ Run comprehensive WCAG 2.2 accessibility and design quality checks on the curren
 // Lint the current page for all issues
 figma_lint_design()
 
-// Only WCAG accessibility checks (13 rules)
+// Only WCAG accessibility checks (14 rules)
 figma_lint_design({
   rules: ["wcag"]
 })
@@ -2173,7 +2173,7 @@ figma_lint_design({
 
 **Parameters:**
 - `nodeId` (optional): Node ID to lint (defaults to current page)
-- `rules` (optional): Rule filter — `["all"]` (default), `["wcag"]` (13 rules), `["design-system"]`, `["layout"]`, or specific rule IDs
+- `rules` (optional): Rule filter — `["all"]` (default), `["wcag"]` (14 rules), `["design-system"]`, `["layout"]`, or specific rule IDs
 - `maxDepth` (optional): Maximum tree depth to traverse (default: 10)
 - `maxFindings` (optional): Maximum findings before stopping (default: 100)
 
@@ -2181,27 +2181,31 @@ figma_lint_design({
 
 | Group | Rules | What It Checks |
 |-------|-------|---------------|
-| `wcag` | 13 rules (see below) | WCAG 2.2 accessibility compliance |
-| `design-system` | `hardcoded-color`, `no-text-style`, `default-name`, `detached-component` | Design system hygiene |
+| `wcag` | 14 rules (see below) | WCAG accessibility compliance |
+| `design-system` | `hardcoded-color`, `no-text-style`, `default-name`, `detached-component`, `token-misuse` | Design system hygiene |
 | `layout` | `no-autolayout`, `empty-container` | Layout quality |
+
+Each finding includes a `wcagLevel` field (`a`, `aa`, or `best-practice`) so teams can filter by their target conformance level.
 
 **Individual Rules:**
 
-| Rule | Severity | WCAG | Description |
-|------|----------|------|-------------|
-| `wcag-contrast` | critical | 1.4.3 | Text contrast ratio below AA (4.5:1 normal, 3:1 large) |
-| `wcag-non-text-contrast` | critical | 1.4.11 | UI component/graphical object below 3:1 against background |
-| `wcag-color-only` | critical | 1.4.1 | Component variants differ only by color (no icon/border indicator) |
-| `wcag-target-size` | critical | 2.5.8 | Interactive elements smaller than 24x24px |
-| `wcag-focus-indicator` | warning | 2.4.7 | Interactive component missing focus variant or visible indicator |
-| `wcag-text-size` | warning | 1.4.4 | Text below 12px minimum |
-| `wcag-line-height` | warning | 1.4.12 | Line height below 1.5x font size |
-| `wcag-letter-spacing` | warning | 1.4.12 | Negative letter spacing |
-| `wcag-paragraph-spacing` | warning | 1.4.12 | Paragraph spacing below 2x font size |
-| `wcag-image-alt` | warning | 1.1.1 | Image fills without description annotation |
-| `wcag-heading-hierarchy` | warning | 1.3.1 | Heading levels skip (e.g., H1 → H3) |
-| `wcag-reflow` | warning | 1.4.10 | Fixed-position frames that won't reflow |
-| `wcag-reading-order` | warning | 1.3.2 | Layer order doesn't match visual reading order |
+| Rule | Severity | Level | Description |
+|------|----------|-------|-------------|
+| `wcag-contrast` | critical | AA | Text contrast below 4.5:1 (3:1 for large text ≥24px or ≥18.5px bold) |
+| `wcag-non-text-contrast` | critical | AA | UI component/graphical object below 3:1 against background |
+| `wcag-color-only` | critical | A | Information conveyed only through color (no icon/border indicator) |
+| `wcag-target-size` | critical | AA | Interactive elements smaller than 24x24px |
+| `wcag-focus-indicator` | critical | AA | Interactive component missing focus variant or visible indicator — blocker for keyboard users |
+| `wcag-disabled-no-context` | warning | AA | Disabled variant has no tooltip/helper text explaining why disabled. Recommends aria-disabled over HTML disabled to keep element focusable for screen readers. |
+| `wcag-text-size` | warning | best-practice | Text below 12px (readability best practice — WCAG 1.4.4 is about zoom support, not minimum size) |
+| `wcag-letter-spacing` | warning | best-practice | Negative letter spacing harms readability |
+| `wcag-image-alt` | warning | A | Image fills without description annotation |
+| `wcag-heading-hierarchy` | warning | A | Heading levels skip (e.g., H1 → H3) |
+| `wcag-reflow` | warning | AA | Fixed-position frames; content must support 320px min width (400% zoom on 1280px) |
+| `wcag-reading-order` | warning | A | Layer order doesn't match visual reading order |
+| `wcag-line-height` | info | best-practice | Line height below 1.5x (WCAG 1.4.12 requires supporting user overrides, not specific defaults) |
+| `wcag-paragraph-spacing` | info | best-practice | Paragraph spacing below 2x font size (same — about user override support) |
+| `token-misuse` | warning | — | Variable name prefix doesn't match usage (e.g., bg/* token as text fill) |
 | `hardcoded-color` | warning | — | Solid fills not bound to a variable or style |
 | `no-text-style` | warning | — | Text nodes without an applied text style |
 | `default-name` | warning | — | Nodes with generic Figma names |
