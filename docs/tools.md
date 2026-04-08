@@ -2137,7 +2137,7 @@ Run comprehensive WCAG 2.2 accessibility and design quality checks on the curren
 **Mode:** Local / Cloud
 
 **When to Use:**
-- Checking designs for WCAG accessibility compliance (13 checks)
+- Checking designs for WCAG accessibility compliance (14 checks)
 - Finding hardcoded colors that should use design tokens
 - Detecting detached components, missing focus variants, color-only states
 - Auditing heading hierarchy, reading order, reflow readiness
