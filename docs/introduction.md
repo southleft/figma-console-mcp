@@ -35,8 +35,8 @@ Without MCP, AI assistants are limited to what they already know. With MCP, they
   <Card title="Create" icon="wand-magic-sparkles">
     Build UI components and layouts directly in Figma through conversation
   </Card>
-  <Card title="Debug" icon="bug">
-    Capture console logs, errors, and screenshots from Figma plugins
+  <Card title="Audit" icon="universal-access">
+    Accessibility scanning with WCAG checks, component scorecards, and code analysis
   </Card>
 </Columns>
 
@@ -126,20 +126,20 @@ Figma Console MCP makes this real. Your design system becomes:
     "Get the Button component specs and implement it in React using our design tokens"
     ```
   </Tab>
-  <Tab title="Plugin Developers">
-    ### Debug Plugins Without the DevTools Hassle
+  <Tab title="Accessibility">
+    ### Full-Spectrum Accessibility Scanning
 
-    Real-time console access, right in your AI chat.
+    WCAG coverage across design and code, without maintaining a rule database.
 
     **With Figma Console MCP, you can:**
-    - Stream console logs in real-time
-    - Capture errors with full stack traces
-    - Take screenshots of plugin UI state
-    - Test without constantly switching windows
+    - Lint designs for 14 WCAG checks with AA/best-practice level tagging
+    - Audit components for state coverage, focus quality, and color-blind safety
+    - Scan HTML code with axe-core (104 rules) for ARIA, labels, and semantics
+    - Compare design intent vs code implementation with parity checks
 
     **Example prompt:**
     ```
-    "Watch console logs for 30 seconds while I test my plugin"
+    "Run an accessibility audit on the Button component and scan the code for issues"
     ```
   </Tab>
   <Tab title="Design System Teams">
@@ -258,14 +258,14 @@ Get the Card component specs and help me implement it in React
 What's the spacing between elements in the navigation bar?
 ```
 
-### Plugin Debugging
+### Accessibility Scanning
 
 ```
-Watch console logs for 60 seconds while I test my plugin
+Run an accessibility check on this page and show me all WCAG violations
 ```
 
 ```
-Show me only error logs from the last 5 minutes
+Audit the Button component for accessibility completeness and color-blind safety
 ```
 
 ### Design Creation (Local & Cloud Mode)
@@ -292,7 +292,7 @@ Figma Console MCP offers three connection tiers with different capabilities:
 | **Edit designs** | ✅ | ✅ | ❌ |
 | **Manage variables** | ✅ | ✅ | ❌ |
 | **Read design data** | ✅ | ✅ | ✅ |
-| **Real-time monitoring** | ✅ | ❌ | ❌ |
+| **Accessibility scanning** | ✅ | ❌ | ❌ |
 | **Variables on any plan** | ✅ | ✅ | Enterprise only |
 | **Requires Node.js** | Yes | No | No |
 

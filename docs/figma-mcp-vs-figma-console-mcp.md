@@ -118,7 +118,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 | Track what the user has selected | No | Yes, in real time |
 | Monitor document changes as they happen | No | Yes |
 | Track page navigation events | No | Yes |
-| Stream console logs from plugins | No | Yes |
+| Stream console logs from Desktop Bridge | No | Yes |
 | Live plugin reload for development | No | Yes |
 | Multi-file connection tracking | No | Yes |
 | Connection health diagnostics | No | Yes |

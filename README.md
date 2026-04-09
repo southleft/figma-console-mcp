@@ -14,12 +14,11 @@
 
 Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
-- **🐛 Plugin debugging** - Capture console logs, errors, and stack traces
-- **📸 Visual debugging** - Take screenshots for context
 - **🎨 Design system extraction** - Pull variables, components, and styles
+- **📸 Visual debugging** - Take screenshots for context
 - **✏️ Design creation** - Create UI components, frames, and layouts directly in Figma
 - **🔧 Variable management** - Create, update, rename, and delete design tokens
-- **⚡ Real-time monitoring** - Watch logs as plugins execute
+- **⚡ Real-time monitoring** - Watch console logs from the Desktop Bridge plugin
 - **📌 FigJam boards** - Create stickies, flowcharts, tables, and code blocks on collaborative boards
 - **♿ Accessibility scanning** - 14 WCAG design checks with conformance level tagging, component scorecards, axe-core code scanning, design-to-code parity
 - **☁️ Cloud Write Relay** - Web AI clients (Claude.ai, v0, Replit) can design in Figma via cloud pairing
