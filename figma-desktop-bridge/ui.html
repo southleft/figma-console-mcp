@@ -757,13 +757,22 @@
       var text = 'Figma Desktop Bridge - Session Log\n'
         + 'Exported: ' + new Date().toISOString() + '\n'
         + 'Plugin: v' + PLUGIN_VERSION + '\n'
-        + '─'.repeat(48) + '\n'
+        + '────────────────────────────────────────────────\n'
         + lines.join('\n') + '\n';
-      navigator.clipboard.writeText(text).then(function() {
-        log('Log copied to clipboard (' + logHistory.length + ' entries)', 'success');
-      }).catch(function() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e) {}
+      document.body.removeChild(ta);
+      if (ok) {
+        log('Copied to pasteboard (' + logHistory.length + ' entries)', 'success');
+      } else {
         log('Copy failed - clipboard not available', 'error');
-      });
+      }
     }
 
     // ============================================================================
