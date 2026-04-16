@@ -24,12 +24,12 @@
       --bg-surface: #2a2a2a;
       --text: #fff;
       --text-muted: #999;
-      --text-dim: #858585;
-      --text-dim-hover: #aaa;
+      --text-dim: #9a9a9a;
+      --text-dim-hover: #bbb;
       --log-text: #aaa;
       --log-info: #6cf;
       --log-success: #6f6;
-      --log-error: #f66;
+      --log-error: #ff8080;
       --log-warn: #fc0;
     }
     body.light {
@@ -49,8 +49,8 @@
       --bg-surface: #e8e8e8;
       --text: #1e1e1e;
       --text-muted: #666;
-      --text-dim: #707070;
-      --text-dim-hover: #555;
+      --text-dim: #5c5c5c;
+      --text-dim-hover: #444;
       --log-text: #555;
       --log-info: #00639e;
       --log-success: #167016;
@@ -63,7 +63,7 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin: 0;
-      padding: 12px;
+      padding: 3px 11px 3px 16px;
       background: var(--bg);
       color: var(--text);
       font-size: 12px;
@@ -77,13 +77,13 @@
     .status {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 8px 14px;
+      gap: 6px;
+      padding: 3px 0;
       flex-shrink: 0;
     }
     .dot {
-      width: 16px;
-      height: 16px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
       background: var(--color-idle);
       flex-shrink: 0;
@@ -117,13 +117,13 @@
       left: 50%;
     }
     .dot.error::before {
-      width: 8px;
-      height: 1.5px;
+      width: 5px;
+      height: 1px;
       transform: translate(-50%, -50%) rotate(45deg);
     }
     .dot.error::after {
-      width: 8px;
-      height: 1.5px;
+      width: 5px;
+      height: 1px;
       transform: translate(-50%, -50%) rotate(-45deg);
     }
     .dot.connecting {
@@ -148,23 +148,24 @@
       50% { box-shadow: 0 0 12px var(--color-error-glow), 0 0 0 3px var(--color-error-ring); }
     }
     .status-text {
-      font-size: 15px;
+      font-size: 11px;
       font-weight: 700;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
       color: var(--text-muted);
       transition: color 0.2s;
+      margin-right: 2px;
     }
     .status-text.active {
       color: var(--color-connected);
     }
     .status-file-row {
       display: none;
-      margin-bottom: 10px;
-      padding-bottom: 10px;
+      margin-bottom: 4px;
+      padding-bottom: 4px;
       border-bottom: 1px solid var(--bg);
     }
     .status-file {
-      font-size: 12px;
+      font-size: 9px;
       font-weight: 700;
       color: var(--text-dim);
       transition: filter 0.2s;
@@ -174,28 +175,27 @@
       user-select: none;
     }
     .file-toggle svg {
-      width: 14px;
-      height: 14px;
+      width: 10px;
+      height: 10px;
     }
     .status-hint {
-      font-size: 11px;
+      font-size: 9px;
       color: var(--text-dim);
-      padding: 4px 16px 0;
+      padding: 1px 0 0;
       flex-shrink: 0;
     }
 
     /* -- Connect Button -- */
     .connect-btn {
-      margin-left: auto;
-      padding: 5px 14px;
-      border: 1.5px solid var(--text-dim);
-      border-radius: 6px;
+      padding: 2px 8px;
+      border: 1px solid var(--text-dim);
+      border-radius: 4px;
       background: none;
       color: var(--text-dim);
       font-family: inherit;
-      font-size: 11px;
+      font-size: 9px;
       font-weight: 600;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.2px;
       cursor: pointer;
       transition: border-color 0.2s, color 0.2s, background 0.2s;
       flex-shrink: 0;
@@ -213,6 +213,30 @@
       color: var(--text-dim-hover);
     }
 
+    /* -- Expand/Collapse Button (+ / -) -- */
+    .expand-btn {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border: 1px solid var(--text-dim);
+      border-radius: 4px;
+      background: none;
+      color: var(--text-dim);
+      font-size: 13px;
+      font-weight: 400;
+      line-height: 1;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .expand-btn:hover {
+      border-color: var(--text-dim-hover);
+      color: var(--text-dim-hover);
+    }
+
     /* -- Instructions Panel -- */
     .instructions-wrap {
       flex-shrink: 0;
@@ -224,51 +248,51 @@
     }
     .instructions {
       background: var(--bg-surface);
-      border-radius: 6px;
-      padding: 12px 14px;
-      font-size: 11px;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 9px;
       color: var(--text-muted);
-      line-height: 1.7;
+      line-height: 1.5;
       transition: background 0.2s;
     }
     .instructions h3 {
-      margin: 0 0 8px;
-      font-size: 12px;
+      margin: 0 0 4px;
+      font-size: 10px;
       font-weight: 700;
       color: var(--text);
     }
     .instructions ol {
       margin: 0;
-      padding-left: 18px;
+      padding-left: 14px;
     }
     .instructions li {
-      margin-bottom: 6px;
+      margin-bottom: 3px;
     }
     .instructions li:last-child {
       margin-bottom: 0;
     }
     .instructions code {
       background: var(--bg);
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-size: 10px;
+      padding: 1px 4px;
+      border-radius: 2px;
+      font-size: 9px;
       user-select: all;
       color: var(--text);
     }
     .instructions .step-note {
       color: var(--text-muted);
-      font-size: 10px;
+      font-size: 9px;
     }
 
     /* -- Legend -- */
     .legend {
-      margin-top: 12px;
-      padding-top: 10px;
+      margin-top: 6px;
+      padding-top: 4px;
       border-top: 1px solid var(--bg);
     }
     .legend h4 {
-      margin: 0 0 8px;
-      font-size: 11px;
+      margin: 0 0 4px;
+      font-size: 9px;
       font-weight: 700;
       color: var(--text-dim);
       text-transform: uppercase;
@@ -277,16 +301,16 @@
     .legend-items {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 3px;
     }
     .legend-item {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
     .legend-dot {
-      width: 8px;
-      height: 8px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
       flex-shrink: 0;
     }
@@ -321,12 +345,12 @@
       left: 50%;
     }
     .legend-dot.error::before {
-      width: 5px;
+      width: 4px;
       height: 1px;
       transform: translate(-50%, -50%) rotate(45deg);
     }
     .legend-dot.error::after {
-      width: 5px;
+      width: 4px;
       height: 1px;
       transform: translate(-50%, -50%) rotate(-45deg);
     }
@@ -347,40 +371,43 @@
       50% { box-shadow: 0 0 8px var(--color-error-glow), 0 0 0 2px var(--color-error-ring); }
     }
     .legend-title {
-      font-size: 11px;
+      font-size: 9px;
       font-weight: 600;
       color: var(--text);
-      min-width: 72px;
+      min-width: 56px;
     }
     .legend-desc {
-      font-size: 10px;
+      font-size: 9px;
       color: var(--text-dim);
     }
 
     /* -- Toolbar -- */
     .toolbar {
-      display: flex;
+      display: none;
       align-items: center;
-      gap: 12px;
-      padding: 8px 14px 4px;
+      gap: 8px;
+      padding: 2px 0;
       flex-shrink: 0;
+    }
+    .toolbar.visible {
+      display: flex;
     }
     .toolbar-spacer { margin-left: auto; }
     .icon-btn {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       background: none;
       border: none;
       color: var(--text-dim);
-      font-size: 11px;
+      font-size: 9px;
       font-family: inherit;
       cursor: pointer;
-      padding: 4px 0;
+      padding: 2px 0;
       transition: color 0.2s;
     }
     .icon-btn:hover { color: var(--text-dim-hover); }
-    .icon-btn svg { width: 14px; height: 14px; }
+    .icon-btn svg { width: 12px; height: 12px; }
 
     /* -- Log -- */
     .log-wrap {
@@ -389,16 +416,16 @@
     }
     .log-wrap.visible {
       display: block;
-      height: 200px;
+      height: 150px;
     }
     .log {
       background: var(--bg-surface);
-      border-radius: 4px;
-      padding: 0 14px 8px;
+      border-radius: 3px;
+      padding: 0 6px 3px;
       height: 100%;
       overflow-y: auto;
       font-family: monospace;
-      font-size: 10px;
+      font-size: 9px;
       transition: background 0.2s;
     }
     .log-header {
@@ -409,14 +436,14 @@
       top: 0;
       z-index: 1;
       background: var(--bg-surface);
-      padding: 8px 0 6px;
-      margin-bottom: 4px;
+      padding: 3px 0 2px;
+      margin-bottom: 2px;
       border-bottom: 1px solid var(--bg);
-      font-size: 10px;
+      font-size: 9px;
       color: var(--text-dim);
     }
     .log-entry {
-      margin: 2px 0;
+      margin: 1px 0;
       color: var(--log-text);
       word-break: break-all;
     }
@@ -433,9 +460,10 @@
     <div class="dot connecting" id="statusDot"></div>
     <div class="status-text" id="statusText">SCANNING</div>
     <button class="connect-btn active" id="connectBtn">Disconnect</button>
+    <button class="expand-btn" id="expandBtn" title="Show options">+</button>
   </div>
   <div class="status-hint" id="statusHint"></div>
-  <div class="toolbar">
+  <div class="toolbar" id="toolbar">
     <button class="icon-btn" id="instructionsToggle" title="Setup instructions">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/>
@@ -460,8 +488,15 @@
       </svg>
       <span id="errorsLabel">Errors</span>
     </button>
+    <button class="icon-btn" id="copyLogBtn" title="Copy log to clipboard" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+      </svg>
+      <span>Copy log</span>
+    </button>
     <div class="toolbar-spacer"></div>
-    <button class="icon-btn" id="themeToggle" title="Switch to light mode">
+    <button class="icon-btn" id="themeToggle" title="Switch to light mode" style="margin-right:2px">
       <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="5"/>
         <line x1="12" y1="1" x2="12" y2="3"/>
@@ -478,8 +513,8 @@
   <div class="instructions-wrap" id="instructionsWrap">
     <div class="instructions">
       <div class="status-file-row" id="statusFileRow">
-        <h4 style="margin:0;">Connected file</h4>
-        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+        <h4 style="margin:0;font-size:9px;">Connected file</h4>
+        <div style="display:flex;align-items:center;gap:4px;margin-top:2px;">
           <button class="icon-btn file-toggle" id="fileToggle" title="Show filename">
             <svg id="fileToggleIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -490,7 +525,7 @@
           <span class="status-file masked" id="statusFile"></span>
         </div>
       </div>
-      <ul style="margin:0 0 10px;padding-left:18px;line-height:1.7;">
+      <ul style="margin:0 0 4px;padding-left:14px;line-height:1.4;">
         <li>Auto-connects when plug-in is loaded.</li>
         <li>To disconnect, press button or close plugin.</li>
       </ul>
@@ -559,6 +594,9 @@
     var instructionsWrap = document.getElementById('instructionsWrap');
     var errorsToggle = document.getElementById('errorsToggle');
     var errorsLabel = document.getElementById('errorsLabel');
+    var copyLogBtn = document.getElementById('copyLogBtn');
+    var expandBtn = document.getElementById('expandBtn');
+    var toolbar = document.getElementById('toolbar');
     var logVersion = document.getElementById('logVersion');
     var logServerCount = document.getElementById('logServerCount');
 
@@ -569,6 +607,7 @@
     var instructionsVisible = false;
     var errorsOnly = false;
     var fileVisible = false;
+    var toolbarVisible = false;
 
     var eyeOpenSVG = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
     var eyeOffSVG = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="1" y1="1" x2="23" y2="23"/>';
@@ -620,12 +659,38 @@
       updateFileDisplay();
     });
 
+    var savedLogScroll = 0;
+
+    expandBtn.addEventListener('click', function() {
+      toolbarVisible = !toolbarVisible;
+      toolbar.classList.toggle('visible', toolbarVisible);
+      expandBtn.textContent = toolbarVisible ? '−' : '+';
+      expandBtn.title = toolbarVisible ? 'Hide options' : 'Show options';
+      if (!toolbarVisible) {
+        // Save scroll position, then hide panels (keep state flags intact)
+        savedLogScroll = logEl.scrollTop;
+        logWrap.classList.remove('visible');
+        instructionsWrap.classList.remove('visible');
+      } else {
+        // Restore panels that were open
+        if (logVisible) {
+          logWrap.classList.add('visible');
+          requestAnimationFrame(function() { logEl.scrollTop = savedLogScroll; });
+        }
+        if (instructionsVisible) {
+          instructionsWrap.classList.add('visible');
+        }
+      }
+      autoResize();
+    });
+
     logToggle.addEventListener('click', function() {
       logVisible = !logVisible;
       logWrap.classList.toggle('visible', logVisible);
       toggleLabel.textContent = logVisible ? 'Hide log' : 'Show log';
       eyeSlash.style.display = logVisible ? 'inline' : 'none';
       errorsToggle.style.display = logVisible ? '' : 'none';
+      copyLogBtn.style.display = logVisible ? '' : 'none';
       if (!logVisible) {
         errorsOnly = false;
         logEl.classList.remove('errors-only');
@@ -640,6 +705,10 @@
       logEl.classList.toggle('errors-only', errorsOnly);
       errorsToggle.classList.toggle('active', errorsOnly);
       errorsLabel.textContent = errorsOnly ? 'All' : 'Errors';
+    });
+
+    copyLogBtn.addEventListener('click', function() {
+      copyLogToClipboard();
     });
 
     themeToggle.addEventListener('click', function() {
@@ -669,6 +738,166 @@
 
     let requestIdCounter = 0;
 
+    // ============================================================================
+    // LOG HISTORY - Full audit trail (survives DOM trimming)
+    // ============================================================================
+    var logHistory = [];
+
+    function logWithHistory(message, level) {
+      level = level || 'info';
+      var ts = new Date().toISOString().replace('T', ' ').replace(/\.\d+Z/, '');
+      logHistory.push({ ts: ts, level: level, message: message });
+      log(message, level);
+    }
+
+    function copyLogToClipboard() {
+      var lines = logHistory.map(function(e) {
+        return e.ts + '  [' + e.level.toUpperCase() + ']  ' + e.message;
+      });
+      var text = 'Figma Desktop Bridge - Session Log\n'
+        + 'Exported: ' + new Date().toISOString() + '\n'
+        + 'Plugin: v' + PLUGIN_VERSION + '\n'
+        + '─'.repeat(48) + '\n'
+        + lines.join('\n') + '\n';
+      navigator.clipboard.writeText(text).then(function() {
+        log('Log copied to clipboard (' + logHistory.length + ' entries)', 'success');
+      }).catch(function() {
+        log('Copy failed - clipboard not available', 'error');
+      });
+    }
+
+    // ============================================================================
+    // SMART COMMAND SUMMARIES
+    // ============================================================================
+    var COMMAND_LABELS = {
+      'GET_FILE_INFO': 'Get file info',
+      'REFRESH_VARIABLES': 'Refresh variables',
+      'GET_LOCAL_COMPONENTS': 'Get local components',
+      'CLEAR_CONSOLE': 'Clear console',
+      'RELOAD_UI': 'Reload UI',
+      'GET_VARIABLES_DATA': 'Get variables data'
+    };
+
+    var FIGMA_API_PATTERNS = [
+      { re: /figma\.create(\w+)/,          fn: function(m) { return 'Create ' + camelToWords(m[1]); } },
+      { re: /figma\.getNodeByIdAsync/,      fn: function()  { return 'Get node'; } },
+      { re: /figma\.setCurrentPageAsync/,   fn: function()  { return 'Switch page'; } },
+      { re: /figma\.loadFontAsync/,         fn: function()  { return 'Load font'; } },
+      { re: /figma\.loadAllPagesAsync/,     fn: function()  { return 'Load all pages'; } },
+      { re: /figma\.currentPage\.findAll/,  fn: function()  { return 'Find nodes'; } },
+      { re: /figma\.currentPage\.findOne/,  fn: function()  { return 'Find node'; } },
+      { re: /figma\.(union|subtract|intersect|flatten)\b/, fn: function(m) { return 'Boolean ' + m[1]; } },
+      { re: /\.exportAsync/,                fn: function()  { return 'Export'; } },
+      { re: /\.clone\(\)/,                  fn: function()  { return 'Clone node'; } },
+      { re: /\.remove\(\)/,                 fn: function()  { return 'Remove node'; } },
+      { re: /\.appendChild\b/,              fn: function()  { return 'Append child'; } },
+      { re: /\.insertChild\b/,              fn: function()  { return 'Insert child'; } },
+      { re: /\.resize\(/,                   fn: function()  { return 'Resize'; } },
+      { re: /\.characters\s*=/,             fn: function()  { return 'Set text'; } },
+      { re: /\.fills\s*=/,                  fn: function()  { return 'Set fills'; } },
+      { re: /\.strokes\s*=/,                fn: function()  { return 'Set strokes'; } },
+      { re: /\.effects\s*=/,                fn: function()  { return 'Set effects'; } },
+      { re: /combineAsVariants/,            fn: function()  { return 'Combine as variants'; } },
+      { re: /swapComponent/,                fn: function()  { return 'Swap component'; } }
+    ];
+
+    function camelToWords(s) {
+      return s.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+    }
+
+    function truncate(s, max) {
+      max = max || 60;
+      if (s.length <= max) return s;
+      return s.substring(0, max - 1) + '…';
+    }
+
+    function summariseCommand(type, params) {
+      // Named commands with params
+      if (type === 'EXECUTE_CODE' && params && params.code) {
+        var hits = [];
+        for (var i = 0; i < FIGMA_API_PATTERNS.length; i++) {
+          var m = params.code.match(FIGMA_API_PATTERNS[i].re);
+          if (m) hits.push(FIGMA_API_PATTERNS[i].fn(m));
+        }
+        if (hits.length > 0) {
+          var unique = hits.filter(function(v, i, a) { return a.indexOf(v) === i; });
+          return truncate('Run: ' + unique.join(', '));
+        }
+        // Fallback: first non-comment, non-blank line
+        var lines = params.code.split('\n');
+        for (var j = 0; j < lines.length; j++) {
+          var line = lines[j].trim();
+          if (line && !line.startsWith('//') && !line.startsWith('/*')) {
+            return truncate('Run: ' + line);
+          }
+        }
+        return 'Run: (code)';
+      }
+
+      // Simple label lookup
+      if (COMMAND_LABELS[type]) return COMMAND_LABELS[type];
+
+      // Commands with useful param context
+      switch (type) {
+        case 'RENAME_NODE':
+          return truncate('Rename node → ' + (params.newName || '?'));
+        case 'MOVE_NODE':
+          return 'Move node to (' + (params.x || 0) + ', ' + (params.y || 0) + ')';
+        case 'RESIZE_NODE':
+          return 'Resize node to ' + (params.width || '?') + '×' + (params.height || '?');
+        case 'DELETE_NODE':
+          return 'Delete node';
+        case 'CLONE_NODE':
+          return 'Clone node';
+        case 'SET_TEXT_CONTENT':
+          return truncate('Set text: ' + (params.text || ''));
+        case 'SET_NODE_FILLS':
+          return 'Set fills';
+        case 'SET_NODE_STROKES':
+          return 'Set strokes';
+        case 'SET_NODE_OPACITY':
+          return 'Set opacity → ' + (params.opacity != null ? params.opacity : '?');
+        case 'SET_NODE_CORNER_RADIUS':
+          return 'Set corner radius → ' + (params.radius != null ? params.radius : '?');
+        case 'SET_NODE_DESCRIPTION':
+          return 'Set description';
+        case 'CREATE_CHILD_NODE':
+          return 'Create child: ' + (params.nodeType || '?');
+        case 'CAPTURE_SCREENSHOT':
+          return 'Capture screenshot';
+        case 'INSTANTIATE_COMPONENT':
+          return 'Instantiate component';
+        case 'SET_INSTANCE_PROPERTIES':
+          return 'Set instance properties';
+        case 'UPDATE_VARIABLE':
+          return 'Update variable';
+        case 'CREATE_VARIABLE':
+          return truncate('Create variable: ' + (params.name || '?'));
+        case 'DELETE_VARIABLE':
+          return 'Delete variable';
+        case 'CREATE_VARIABLE_COLLECTION':
+          return truncate('Create collection: ' + (params.name || '?'));
+        case 'DELETE_VARIABLE_COLLECTION':
+          return 'Delete collection';
+        case 'RENAME_VARIABLE':
+          return truncate('Rename variable → ' + (params.newName || '?'));
+        case 'SET_VARIABLE_DESCRIPTION':
+          return 'Set variable description';
+        case 'ADD_MODE':
+          return truncate('Add mode: ' + (params.modeName || '?'));
+        case 'RENAME_MODE':
+          return truncate('Rename mode → ' + (params.newName || '?'));
+        case 'ADD_COMPONENT_PROPERTY':
+          return truncate('Add property: ' + (params.propertyName || '?'));
+        case 'EDIT_COMPONENT_PROPERTY':
+          return truncate('Edit property: ' + (params.propertyName || '?'));
+        case 'DELETE_COMPONENT_PROPERTY':
+          return truncate('Delete property: ' + (params.propertyName || '?'));
+        default:
+          return type.replace(/_/g, ' ').toLowerCase().replace(/^\w/, function(c) { return c.toUpperCase(); });
+      }
+    }
+
     // UI update helper - adapted for new dot system
     function updateStatus(state, isActive, isError) {
       if (isError) {
@@ -680,7 +909,7 @@
         statusHint.style.display = 'none';
         connectBtn.textContent = 'Connect';
         connectBtn.className = 'connect-btn';
-        log('Error: ' + state, 'error');
+        logWithHistory('Error: ' + state, 'error');
       } else if (isActive) {
         statusDot.className = 'dot connected';
         statusTextEl.textContent = state.toUpperCase();
@@ -729,7 +958,7 @@
         }
 
         parent.postMessage({ pluginMessage: message }, '*');
-        log('Sent: ' + type, 'info');
+        logWithHistory(summariseCommand(type, params), 'info');
       });
     };
 
@@ -1124,7 +1353,7 @@
         connectBtn.className = 'connect-btn active';
         autoResize();
 
-        log('Scanning ports ' + WS_PORT_RANGE_START + '-' + WS_PORT_RANGE_END + '...', 'info');
+        logWithHistory('Scanning ports ' + WS_PORT_RANGE_START + '-' + WS_PORT_RANGE_END + '...', 'info');
 
         var foundAny = false;
         var pending = portsToTry.length;
@@ -1146,7 +1375,7 @@
               activeConnections.push({ port: port, ws: testWs });
               updateCompatState();
 
-              log('Connected to port ' + port + ' (' + activeConnections.length + ' server(s))', 'success');
+              logWithHistory('Connected to port ' + port + ' (' + activeConnections.length + ' server(s))', 'success');
 
               attachWsHandlers(testWs, port);
               initializeConnection(testWs, port);
@@ -1169,7 +1398,7 @@
                 if (!foundAny && activeConnections.length === 0) {
                   wsReconnectAttempts++;
                   if (wsReconnectAttempts <= wsMaxReconnectAttempts) {
-                    log('No MCP server found, retrying (' + wsReconnectAttempts + '/' + wsMaxReconnectAttempts + ')', 'warn');
+                    logWithHistory('No MCP server found, retrying (' + wsReconnectAttempts + '/' + wsMaxReconnectAttempts + ')', 'warn');
                     setTimeout(wsScanAndConnect, wsReconnectDelay);
                     wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, wsMaxReconnectDelay);
                   } else {
@@ -1181,7 +1410,7 @@
                     connectBtn.textContent = 'Connect';
                     connectBtn.className = 'connect-btn';
                     isScanning = false;
-                    log('Max reconnect attempts reached (' + wsMaxReconnectAttempts + ')', 'error');
+                    logWithHistory('Max reconnect attempts reached (' + wsMaxReconnectAttempts + ')', 'error');
                     autoResize();
                   }
                 }
@@ -1212,7 +1441,7 @@
           var timeout = setTimeout(function() {
             if (testWs.readyState !== 1) {
               testWs.close();
-              log('Port ' + port + ' unavailable, rescanning...', 'warn');
+              logWithHistory('Port ' + port + ' unavailable, rescanning...', 'warn');
               wsScanAndConnect();
             }
           }, 2000);
@@ -1221,14 +1450,14 @@
             clearTimeout(timeout);
             activeConnections.push({ port: port, ws: testWs });
             updateCompatState();
-            log('Reconnected to port ' + port + ' (' + activeConnections.length + ' server(s))', 'success');
+            logWithHistory('Reconnected to port ' + port + ' (' + activeConnections.length + ' server(s))', 'success');
             attachWsHandlers(testWs, port);
             initializeConnection(testWs, port);
           };
 
           testWs.onerror = function() {
             clearTimeout(timeout);
-            log('Port ' + port + ' unavailable, rescanning...', 'warn');
+            logWithHistory('Port ' + port + ' unavailable, rescanning...', 'warn');
             wsScanAndConnect();
           };
         } catch (e) {
@@ -1241,7 +1470,7 @@
           try {
             var message = JSON.parse(event.data);
             if (!message.id || !message.method) {
-              log('WS:' + port + ': Malformed message', 'warn');
+              logWithHistory('WS:' + port + ': Malformed message', 'warn');
               return;
             }
 
@@ -1263,13 +1492,13 @@
                 }
               });
           } catch (e) {
-            log('WS:' + port + ': Process error: ' + e.message, 'error');
+            logWithHistory('WS:' + port + ': Process error: ' + e.message, 'error');
           }
         };
 
         activeWs.onclose = function(event) {
           removeConnection(port);
-          log('Disconnected from port ' + port + ' (' + activeConnections.length + ' remaining)', 'warn');
+          logWithHistory('Disconnected from port ' + port + ' (' + activeConnections.length + ' remaining)', 'warn');
 
           // Update status if no connections remain
           if (activeConnections.length === 0) {
@@ -1288,7 +1517,7 @@
             event.reason === 'Replaced by same file reconnection'
           ));
           if (wasReplaced) {
-            log('WS:' + port + ': Replaced by newer connection', 'info');
+            logWithHistory('WS:' + port + ': Replaced by newer connection', 'info');
             return;
           }
 
@@ -1364,7 +1593,7 @@
         statusHint.textContent = '';
         statusHint.style.display = 'none';
         logServerCount.textContent = '';
-        log('Disconnected by user', 'info');
+        logWithHistory('Disconnected by user', 'info');
         autoResize();
       }
 
@@ -1425,7 +1654,7 @@
           window.__figmaVariablesData = msg.data;
           window.__figmaVariablesReady = true;
           updateStatus('connected', true, false);
-          log('Variables loaded: ' + (msg.data.variables?.length || 0) + ' vars', 'success');
+          logWithHistory('Variables loaded: ' + (msg.data.variables?.length || 0) + ' vars', 'success');
           if (window.__wsForwardVariables) window.__wsForwardVariables(msg.data);
           break;
 
@@ -1572,7 +1801,7 @@
     };
 
     // Start
-    log('Desktop Bridge starting...', 'info');
+    logWithHistory('Desktop Bridge starting...', 'info');
     autoResize();
   </script>
 </body>
