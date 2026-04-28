@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/southleft-figma-console-mcp-badge.png)](https://mseep.ai/app/southleft-figma-console-mcp)
+
 # Figma Console MCP Server
 
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io/)
