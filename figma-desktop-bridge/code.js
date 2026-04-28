@@ -6,7 +6,7 @@
 
 // Plugin version — sent in FILE_INFO for server-side version compatibility checks.
 // The server compares this against its own version to detect stale cached plugins.
-var PLUGIN_VERSION = '1.14.0';
+var PLUGIN_VERSION = '1.22.3'; // Kept in sync with package.json by scripts/release.sh — see issue #62.
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 

@@ -210,6 +210,16 @@ replace_in_file "$ROOT/src/index.ts" \
   "version: \"$VERSION\"" \
   "all McpServer + health version strings"
 
+# ── 3b. PLUGIN_VERSION sync in figma-desktop-bridge/code.js ──
+# Keeps the in-plugin PLUGIN_VERSION constant aligned with package.json. Without this,
+# Figma's plugin runtime can serve cached pre-bump code.js / ui.html and tools added
+# after the cached version's release will fail with "Unknown method". See issue #62.
+echo -e "${BOLD}3b. figma-desktop-bridge PLUGIN_VERSION${NC}"
+replace_in_file "$ROOT/figma-desktop-bridge/code.js" \
+  "var PLUGIN_VERSION = '[0-9]+\.[0-9]+\.[0-9]+'" \
+  "var PLUGIN_VERSION = '$VERSION'" \
+  "PLUGIN_VERSION constant"
+
 # ── 4. Local tool count (N+ tools) ─────────────────────
 # Matches any number followed by + and "tool(s)" in context of local/full mode
 # Patterns: "60+ tools", "the full 60+", "All 59+ tools", "**59+**"
