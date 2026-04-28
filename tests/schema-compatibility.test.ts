@@ -408,4 +408,128 @@ describe("Schema Compatibility Tests", () => {
 			}
 		});
 	});
+
+	// ========================================================================
+	// Tuple Regression Tests (Issue #64)
+	// ========================================================================
+	//
+	// z.tuple([...]) emits JSON Schema with `items` as an ARRAY of schemas
+	// (the "tuple validation" form from JSON Schema draft-04). Gemini's stricter
+	// Function Calling validator rejects this with:
+	//   "[{type:'number'},{type:'number'}] is not of type 'object', 'boolean'"
+	//
+	// The same payload also breaks OpenCode and Codex CLI clients.
+	//
+	// These tests guard against any contributor reintroducing z.tuple in a
+	// tool parameter schema, and verify the canonical safe replacement.
+	// ========================================================================
+
+	/** Walk a JSON Schema and return paths where `items` is an array (tuple shape) */
+	function findTupleItems(schema: unknown, path = "root"): string[] {
+		const found: string[] = [];
+		if (schema === null || typeof schema !== "object") return found;
+
+		const obj = schema as Record<string, unknown>;
+		if (Array.isArray(obj.items)) {
+			found.push(`${path}.items (length=${(obj.items as unknown[]).length})`);
+		}
+
+		for (const [key, value] of Object.entries(obj)) {
+			if (typeof value === "object" && value !== null) {
+				if (Array.isArray(value)) {
+					value.forEach((entry, idx) => {
+						found.push(...findTupleItems(entry, `${path}.${key}[${idx}]`));
+					});
+				} else {
+					found.push(...findTupleItems(value, `${path}.${key}`));
+				}
+			}
+		}
+		return found;
+	}
+
+	describe("Tuple schemas (regression for #64)", () => {
+		it("documents the bug: z.tuple emits items-as-array (Gemini-incompatible)", () => {
+			const tuple = z.tuple([z.number(), z.number()]);
+			const json = zodToJsonSchema(tuple);
+			const issues = findTupleItems(json);
+			// Sanity: confirm the bug shape is what we expect to detect.
+			expect(issues.length).toBeGreaterThan(0);
+		});
+
+		it("z.array(z.number()).min(2).max(2) is the Gemini-safe replacement for tuples of 2 numbers", () => {
+			const fixed = z.array(z.number()).min(2).max(2);
+			const json = zodToJsonSchema(fixed) as Record<string, unknown>;
+			expect(findTupleItems(json)).toEqual([]);
+			expect(json.type).toBe("array");
+			expect(json.minItems).toBe(2);
+			expect(json.maxItems).toBe(2);
+			// items must be an OBJECT schema, not an array of schemas
+			expect(typeof json.items).toBe("object");
+			expect(Array.isArray(json.items)).toBe(false);
+		});
+
+		it("renderedSize codeSpec field (canonical fix shape) emits Gemini-safe items", () => {
+			// Mirrors the post-fix shape at src/core/design-code-tools.ts (codeSpecSchema.accessibility.renderedSize).
+			// This test fails immediately if a contributor reverts back to z.tuple.
+			const renderedSize = z
+				.array(z.number())
+				.min(2)
+				.max(2)
+				.optional()
+				.describe("Rendered size [width, height] in px");
+			const json = zodToJsonSchema(renderedSize);
+			expect(findTupleItems(json)).toEqual([]);
+		});
+	});
+
+	// ========================================================================
+	// End-to-end sweep: every tool registered by registerDesignCodeTools
+	// must emit Gemini-safe schemas (no items-as-array tuples).
+	// ========================================================================
+	describe("registerDesignCodeTools schemas (sweep)", () => {
+		it("no registered tool emits a tuple-shaped items array", async () => {
+			const { registerDesignCodeTools } = await import("../src/core/design-code-tools");
+
+			interface CapturedTool {
+				name: string;
+				schema: Record<string, z.ZodTypeAny>;
+			}
+			const captured: CapturedTool[] = [];
+
+			const mockServer = {
+				tool: (name: string, _description: string, schema: any, _handler: any) => {
+					captured.push({ name, schema });
+				},
+			} as any;
+
+			const stubFigmaApi = async () =>
+				({
+					getNodes: async () => ({}),
+					getComponents: async () => ({}),
+				}) as any;
+			const stubGetUrl = () => null;
+
+			registerDesignCodeTools(mockServer, stubFigmaApi, stubGetUrl, undefined, {
+				isRemoteMode: false,
+			});
+
+			expect(captured.length).toBeGreaterThan(0);
+
+			const errors: string[] = [];
+			for (const tool of captured) {
+				// server.tool() takes a raw shape (Record<string, ZodType>); wrap in z.object to validate.
+				const wrapped = z.object(tool.schema);
+				const json = zodToJsonSchema(wrapped);
+				const tupleIssues = findTupleItems(json);
+				if (tupleIssues.length > 0) {
+					errors.push(`Tool "${tool.name}" has tuple-shaped items at: ${tupleIssues.join(", ")}`);
+				}
+			}
+
+			if (errors.length > 0) {
+				throw new Error(`Gemini-incompatible tuple schemas detected:\n${errors.join("\n")}`);
+			}
+		});
+	});
 });

@@ -2555,7 +2555,11 @@ const codeSpecSchema = z.object({
 		semanticElement: z.string().optional().describe("Semantic HTML element (e.g., 'button', 'a', 'input')"),
 		supportsDisabled: z.boolean().optional().describe("Whether code supports disabled/aria-disabled state"),
 		supportsError: z.boolean().optional().describe("Whether code supports aria-invalid/error state"),
-		renderedSize: z.tuple([z.number(), z.number()]).optional().describe("Rendered size [width, height] in px"),
+		// NOTE: Use array-with-length, NOT z.tuple — tuples emit JSON Schema `items: [...]`
+		// (array of schemas), which Gemini's stricter Function Calling validator rejects with
+		// "is not of type 'object', 'boolean'". See issue #64. A constrained array emits
+		// `items: { type: 'number' }` which all major MCP clients accept.
+		renderedSize: z.array(z.number()).min(2).max(2).optional().describe("Rendered size [width, height] in px"),
 	}).optional().describe("Accessibility properties from code. Tip: use figma_scan_code_accessibility with mapToCodeSpec:true to auto-generate this from component HTML."),
 	metadata: z.object({
 		name: z.string().optional(),
@@ -2754,16 +2758,23 @@ export function registerDesignCodeTools(
 					}
 				}
 
+				// Cast to the structural CodeSpec interface. The Zod schema infers
+				// `accessibility.renderedSize` as `number[]` (post-#64 fix uses
+				// `z.array(z.number()).min(2).max(2)` for Gemini compat), but at runtime
+				// the validator guarantees exactly two numbers, matching CodeSpec's
+				// `[number, number]`. TypeScript can't bridge the inference gap.
+				const codeSpecTyped = codeSpec as CodeSpec;
+
 				// Run all comparators (use nodeForVisual for design properties, nodeForAPI for component API)
 				const discrepancies: ParityDiscrepancy[] = [];
-				compareVisual(nodeForVisual, codeSpec, discrepancies);
-				compareSpacing(nodeForVisual, codeSpec, discrepancies);
-				compareTypography(nodeForVisual, codeSpec, discrepancies);
-				compareTokens(enrichedData, codeSpec, discrepancies);
-				compareComponentAPI(nodeForAPI, codeSpec, discrepancies);
-				compareAccessibility(node, codeSpec, discrepancies);
-				compareNaming(node, codeSpec, discrepancies);
-				compareMetadata(node, componentMeta, codeSpec, discrepancies);
+				compareVisual(nodeForVisual, codeSpecTyped, discrepancies);
+				compareSpacing(nodeForVisual, codeSpecTyped, discrepancies);
+				compareTypography(nodeForVisual, codeSpecTyped, discrepancies);
+				compareTokens(enrichedData, codeSpecTyped, discrepancies);
+				compareComponentAPI(nodeForAPI, codeSpecTyped, discrepancies);
+				compareAccessibility(node, codeSpecTyped, discrepancies);
+				compareNaming(node, codeSpecTyped, discrepancies);
+				compareMetadata(node, componentMeta, codeSpecTyped, discrepancies);
 
 				// Sort by severity
 				const severityOrder: Record<DiscrepancySeverity, number> = {
@@ -2825,7 +2836,7 @@ export function registerDesignCodeTools(
 							: [],
 						tokenCoverage: enrichedData?.token_coverage,
 					},
-					codeData: codeSpec,
+					codeData: codeSpecTyped,
 				};
 
 				return {
