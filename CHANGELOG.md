@@ -5,6 +5,19 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.4] - 2026-04-28
+
+Critical patch release. Restores compatibility with Gemini CLI / OpenCode / Codex CLI clients that broke in v1.21+, fixes silent variable-fetch failures via the Desktop Bridge, and addresses the plugin-version cache-staleness pattern that caused "Unknown method" errors after upgrades.
+
+### Fixed
+- **Schema regression broke Gemini CLI / OpenCode / Codex CLI** — `figma_check_design_parity` used `z.tuple([z.number(), z.number()])` for `codeSpec.accessibility.renderedSize`, which `zod-to-json-schema` emits as `items: [{type:'number'},{type:'number'}]`. Gemini's stricter Function Calling validator rejects this with `"is not of type 'object', 'boolean'"`, crashing the entire CLI. Replaced with `z.array(z.number()).min(2).max(2)` — same runtime validation, Gemini-safe schema (`items: {type:'number'}` plus `minItems`/`maxItems`). Added a regression test that sweeps every tool registered by `registerDesignCodeTools` and fails CI if any schema reintroduces the tuple shape. Closes #64, #66.
+- **`figma_get_variables({refreshCache: true})` silently returned no variables via Desktop Bridge** — the plugin's `code.js` already wraps every `EXECUTE_CODE` payload in `(async function() { <code> })()`. The connectors at `src/core/websocket-connector.ts` and `src/core/cloud-websocket-connector.ts` were also wrapping the script body in an inner `(async () => { ... })()` IIFE; the inner `return` returned from the inner function but the outer async returned `undefined`, so the variables were silently dropped, the success guard at `figma-tools.ts:1926` failed, and the call fell through to the REST API fallback (which 403s on Pro/Org plans) — ending in "All methods failed." Both connectors now use a bare `try/catch` with top-level `return`. `figma-tools.ts` unwraps the `EXECUTE_CODE` response envelope so both transport paths produce a uniform shape downstream. Verified end-to-end: a ~700-variable file now returns the full token set instead of failing. Closes #68.
+- **Plugin version drift caused "Unknown method" errors after upgrades** — `figma-desktop-bridge/code.js` had `var PLUGIN_VERSION = '1.14.0'` hardcoded while the npm package shipped 1.22.3. Figma Desktop appears to use the plugin version string as a cache key; without bumping it, Figma kept serving cached pre-update plugin code, so methods added in newer versions (`DEEP_GET_COMPONENT` from v1.19.0, `ANALYZE_COMPONENT_SET`, etc.) hit a `methodMap` miss and failed with `"Unknown method: DEEP_GET_COMPONENT"` even after users re-imported the manifest. Bumped `PLUGIN_VERSION` to match `package.json`, added step 3b to `scripts/release.sh` to keep them in sync on every release, and added a regression test that asserts the two values stay equal. Closes #62.
+
+### Notes for users still hitting "Unknown method" after upgrading
+If `figma_get_component_for_development_deep` or `figma_analyze_component_set` still fails after installing v1.22.4, fully delete the plugin from Figma (Plugins → Manage Plugins → trash icon) and re-import the manifest. Re-importing alone does not always invalidate Figma's content cache.
+
+
 ## [1.22.3] - 2026-04-07
 
 ### Added
@@ -631,6 +644,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.22.4]: https://github.com/southleft/figma-console-mcp/compare/v1.22.3...v1.22.4
 [1.22.3]: https://github.com/southleft/figma-console-mcp/compare/v1.22.1...v1.22.3
 [1.22.1]: https://github.com/southleft/figma-console-mcp/compare/v1.22.0...v1.22.1
 [1.22.0]: https://github.com/southleft/figma-console-mcp/compare/v1.21.1...v1.22.0
