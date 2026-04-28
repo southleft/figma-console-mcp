@@ -1923,11 +1923,22 @@ export function registerFigmaAPITools(
 							? await connector.getVariables(fileKey)
 							: await connector.getVariablesFromPluginUI(fileKey);
 
-						if (desktopResult.success && desktopResult.variables) {
+						// EXECUTE_CODE responses come back wrapped one level deeper:
+						// `{ success: true, result: { success: true, variables, ... } }`
+						// because handleResult in ui-full.html nests the script return value
+						// under `result`. The plugin-UI cache path (GET_VARIABLES_DATA) does
+						// not nest. Unwrap when we detect the EXECUTE_CODE shape so both
+						// paths produce a uniform { success, variables, ... } below. See #68.
+						const variableData =
+							desktopResult?.result?.variables
+								? desktopResult.result
+								: desktopResult;
+
+						if (variableData?.success && variableData?.variables) {
 							logger.info(
 								{
-									variableCount: desktopResult.variables.length,
-									collectionCount: desktopResult.variableCollections?.length
+									variableCount: variableData.variables.length,
+									collectionCount: variableData.variableCollections?.length
 								},
 								"Successfully retrieved variables via Desktop connection!"
 							);
@@ -1936,9 +1947,9 @@ export function registerFigmaAPITools(
 							const dataForCache = {
 								fileKey,
 								source: "desktop_connection",
-								timestamp: desktopResult.timestamp || Date.now(),
-								variables: desktopResult.variables,
-								variableCollections: desktopResult.variableCollections,
+								timestamp: variableData.timestamp || Date.now(),
+								variables: variableData.variables,
+								variableCollections: variableData.variableCollections,
 							};
 
 							// Store in cache with LRU eviction

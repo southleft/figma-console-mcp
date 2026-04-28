@@ -48,26 +48,32 @@ export class WebSocketConnector implements IFigmaConnector {
   }
 
   async getVariables(fileKey?: string): Promise<any> {
-    // Execute the same variables-fetching code in the plugin worker context
+    // Execute the same variables-fetching code in the plugin worker context.
+    //
+    // IMPORTANT: Do NOT wrap this in an inner `(async () => { ... })()` IIFE.
+    // figma-desktop-bridge/code.js already wraps every EXECUTE_CODE payload in
+    // `(async function() { <code> })()`. An inner IIFE turns `return X` into a
+    // statement-expression that builds (but doesn't return) a Promise — the
+    // outer async returns undefined, and the result is silently dropped. See
+    // issue #68. The bare try/catch with top-level `return` is the contract
+    // code.js expects.
     const code = `
-      (async () => {
-        try {
-          if (typeof figma === 'undefined') {
-            throw new Error('Figma API not available in this context');
-          }
-          const variables = await figma.variables.getLocalVariablesAsync();
-          const collections = await figma.variables.getLocalVariableCollectionsAsync();
-          return {
-            success: true,
-            timestamp: Date.now(),
-            fileMetadata: { fileName: figma.root.name, fileKey: figma.fileKey || null },
-            variables: variables.map(function(v) { return { id: v.id, name: v.name, key: v.key, resolvedType: v.resolvedType, valuesByMode: v.valuesByMode, variableCollectionId: v.variableCollectionId, scopes: v.scopes, description: v.description, hiddenFromPublishing: v.hiddenFromPublishing }; }),
-            variableCollections: collections.map(function(c) { return { id: c.id, name: c.name, key: c.key, modes: c.modes, defaultModeId: c.defaultModeId, variableIds: c.variableIds }; })
-          };
-        } catch (error) {
-          return { success: false, error: error.message };
+      try {
+        if (typeof figma === 'undefined') {
+          throw new Error('Figma API not available in this context');
         }
-      })()
+        const variables = await figma.variables.getLocalVariablesAsync();
+        const collections = await figma.variables.getLocalVariableCollectionsAsync();
+        return {
+          success: true,
+          timestamp: Date.now(),
+          fileMetadata: { fileName: figma.root.name, fileKey: figma.fileKey || null },
+          variables: variables.map(function(v) { return { id: v.id, name: v.name, key: v.key, resolvedType: v.resolvedType, valuesByMode: v.valuesByMode, variableCollectionId: v.variableCollectionId, scopes: v.scopes, description: v.description, hiddenFromPublishing: v.hiddenFromPublishing }; }),
+          variableCollections: collections.map(function(c) { return { id: c.id, name: c.name, key: c.key, modes: c.modes, defaultModeId: c.defaultModeId, variableIds: c.variableIds }; })
+        };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
     `;
     return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: 30000 }, 32000, fileKey);
   }

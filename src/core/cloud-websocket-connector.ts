@@ -49,25 +49,27 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 	}
 
 	async getVariables(fileKey?: string): Promise<any> {
+		// IMPORTANT: bare try/catch with top-level `return`, NO inner IIFE.
+		// See issue #68 + the matching note in websocket-connector.ts. The plugin
+		// (code.js) wraps every EXECUTE_CODE payload in its own async IIFE; nesting
+		// another swallows the inner return and silently drops the variables.
 		const code = `
-      (async () => {
-        try {
-          if (typeof figma === 'undefined') {
-            throw new Error('Figma API not available in this context');
-          }
-          const variables = await figma.variables.getLocalVariablesAsync();
-          const collections = await figma.variables.getLocalVariableCollectionsAsync();
-          return {
-            success: true,
-            timestamp: Date.now(),
-            fileMetadata: { fileName: figma.root.name, fileKey: figma.fileKey || null },
-            variables: variables.map(function(v) { return { id: v.id, name: v.name, key: v.key, resolvedType: v.resolvedType, valuesByMode: v.valuesByMode, variableCollectionId: v.variableCollectionId, scopes: v.scopes, description: v.description, hiddenFromPublishing: v.hiddenFromPublishing }; }),
-            variableCollections: collections.map(function(c) { return { id: c.id, name: c.name, key: c.key, modes: c.modes, defaultModeId: c.defaultModeId, variableIds: c.variableIds }; })
-          };
-        } catch (error) {
-          return { success: false, error: error.message };
+      try {
+        if (typeof figma === 'undefined') {
+          throw new Error('Figma API not available in this context');
         }
-      })()
+        const variables = await figma.variables.getLocalVariablesAsync();
+        const collections = await figma.variables.getLocalVariableCollectionsAsync();
+        return {
+          success: true,
+          timestamp: Date.now(),
+          fileMetadata: { fileName: figma.root.name, fileKey: figma.fileKey || null },
+          variables: variables.map(function(v) { return { id: v.id, name: v.name, key: v.key, resolvedType: v.resolvedType, valuesByMode: v.valuesByMode, variableCollectionId: v.variableCollectionId, scopes: v.scopes, description: v.description, hiddenFromPublishing: v.hiddenFromPublishing }; }),
+          variableCollections: collections.map(function(c) { return { id: c.id, name: c.name, key: c.key, modes: c.modes, defaultModeId: c.defaultModeId, variableIds: c.variableIds }; })
+        };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
     `;
 		return this.sendCommand('EXECUTE_CODE', { code, timeout: 30000 }, 32000);
 	}
