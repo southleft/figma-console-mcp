@@ -66,7 +66,7 @@ figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: tru
   }
 })();
 
-// Detect editor type (figma | figjam | slides | dev)
+// Detect editor type (figma | figjam | slides | buzz | dev)
 var __editorType = figma.editorType || 'figma';
 console.log('🌉 [Desktop Bridge] Editor type:', __editorType);
 
@@ -83,9 +83,68 @@ var __stickyColors = {
   'GRAY': { r: 0.7, g: 0.7, b: 0.7 }
 };
 
-// Immediately fetch and send variables data to UI (skip in FigJam — no variables API)
+function __serializeBuzzNode(node) {
+  if (!node) return null;
+  var result = {
+    id: node.id,
+    type: node.type,
+    name: node.name
+  };
+  if (typeof node.x === 'number') result.x = node.x;
+  if (typeof node.y === 'number') result.y = node.y;
+  if (typeof node.width === 'number') result.width = node.width;
+  if (typeof node.height === 'number') result.height = node.height;
+  return result;
+}
+
+function __copySerializableBuzzProps(target, source, props) {
+  for (var i = 0; i < props.length; i++) {
+    var key = props[i];
+    if (source[key] === undefined) continue;
+    var value = source[key];
+    if (value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      target[key] = value;
+    }
+  }
+}
+
+function __serializeBuzzField(field, index) {
+  var result = { index: index };
+  __copySerializableBuzzProps(result, field, [
+    'name',
+    'fieldType',
+    'type',
+    'text',
+    'characters',
+    'value',
+    'placeholder',
+    'label',
+    'description',
+    'mediaType',
+    'contentType',
+    'assetType'
+  ]);
+
+  if (field.node) {
+    result.node = __serializeBuzzNode(field.node);
+  }
+  if (field.boundNode) {
+    result.boundNode = __serializeBuzzNode(field.boundNode);
+  }
+
+  var rawKeys = Object.keys(field).filter(function(key) {
+    return typeof field[key] !== 'function';
+  });
+  if (rawKeys.length > 0) {
+    result.keys = rawKeys;
+  }
+
+  return result;
+}
+
+// Immediately fetch and send variables data to UI (skip in FigJam/Slides/Buzz)
 (async () => {
-  if (__editorType === 'figjam' || __editorType === 'slides') {
+  if (__editorType === 'figjam' || __editorType === 'slides' || __editorType === 'buzz') {
     console.log('🌉 [Desktop Bridge] ' + __editorType + ' mode — skipping variables fetch');
     figma.ui.postMessage({
       type: 'VARIABLES_DATA',
@@ -5584,6 +5643,464 @@ figma.ui.onmessage = async (msg) => {
       console.error('🌉 [Desktop Bridge] Get connections error:', error);
       figma.ui.postMessage({
         type: 'GET_CONNECTIONS_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+  // ==========================================================================
+  // BUZZ TOOLS — Figma Buzz command handlers
+  // ==========================================================================
+
+  // GET_CANVAS_GRID - Get 2D grid layout for Buzz assets
+  else if (msg.type === 'GET_CANVAS_GRID') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('GET_CANVAS_GRID is only available in Buzz files');
+      }
+      console.log('🌉 [Desktop Bridge] Getting Buzz canvas grid');
+
+      var canvasGrid = figma.getCanvasGrid();
+      var gridRows = [];
+
+      for (var bri = 0; bri < canvasGrid.length; bri++) {
+        var buzzRow = canvasGrid[bri];
+        var rowAssets = [];
+        for (var bci = 0; bci < buzzRow.length; bci++) {
+          var assetNode = buzzRow[bci];
+          rowAssets.push({
+            id: assetNode.id,
+            name: assetNode.name,
+            type: assetNode.type,
+            row: bri,
+            col: bci
+          });
+        }
+        gridRows.push({ rowIndex: bri, assets: rowAssets });
+      }
+
+      figma.ui.postMessage({
+        type: 'GET_CANVAS_GRID_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { grid: gridRows, totalRows: gridRows.length }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get Buzz canvas grid error:', error);
+      figma.ui.postMessage({
+        type: 'GET_CANVAS_GRID_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // CREATE_CANVAS_ROW - Create a row in the Buzz canvas grid
+  else if (msg.type === 'CREATE_CANVAS_ROW') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('CREATE_CANVAS_ROW is only available in Buzz files');
+      }
+      console.log('🌉 [Desktop Bridge] Creating Buzz canvas row');
+
+      var newRow = typeof msg.rowIndex === 'number'
+        ? figma.createCanvasRow(msg.rowIndex)
+        : figma.createCanvasRow();
+
+      figma.ui.postMessage({
+        type: 'CREATE_CANVAS_ROW_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: __serializeBuzzNode(newRow)
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Create Buzz canvas row error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_CANVAS_ROW_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // MOVE_NODES_TO_COORD - Move nodes into a specific Buzz canvas grid coordinate
+  else if (msg.type === 'MOVE_NODES_TO_COORD') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('MOVE_NODES_TO_COORD is only available in Buzz files');
+      }
+      if (!Array.isArray(msg.nodeIds) || msg.nodeIds.length === 0) {
+        throw new Error('nodeIds is required');
+      }
+      console.log('🌉 [Desktop Bridge] Moving nodes in Buzz canvas grid');
+
+      // Validate nodes exist, but pass IDs (strings) to the Buzz API
+      for (var mni = 0; mni < msg.nodeIds.length; mni++) {
+        var moveNode = await figma.getNodeByIdAsync(msg.nodeIds[mni]);
+        if (!moveNode) {
+          throw new Error('Node not found: ' + msg.nodeIds[mni]);
+        }
+      }
+
+      figma.moveNodesToCoord(
+        msg.nodeIds,
+        typeof msg.rowIndex === 'number' ? msg.rowIndex : undefined,
+        typeof msg.columnIndex === 'number' ? msg.columnIndex : undefined
+      );
+
+      figma.ui.postMessage({
+        type: 'MOVE_NODES_TO_COORD_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          moved: msg.nodeIds,
+          rowIndex: typeof msg.rowIndex === 'number' ? msg.rowIndex : null,
+          columnIndex: typeof msg.columnIndex === 'number' ? msg.columnIndex : null
+        }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Move nodes to Buzz coord error:', error);
+      figma.ui.postMessage({
+        type: 'MOVE_NODES_TO_COORD_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_CANVAS_VIEW - Read the current Buzz canvas view
+  else if (msg.type === 'GET_CANVAS_VIEW') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('GET_CANVAS_VIEW is only available in Buzz files');
+      }
+      console.log('🌉 [Desktop Bridge] Getting Buzz canvas view');
+
+      figma.ui.postMessage({
+        type: 'GET_CANVAS_VIEW_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { view: figma.viewport.canvasView }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get Buzz canvas view error:', error);
+      figma.ui.postMessage({
+        type: 'GET_CANVAS_VIEW_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // SET_CANVAS_VIEW - Set the current Buzz canvas view
+  else if (msg.type === 'SET_CANVAS_VIEW') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('SET_CANVAS_VIEW is only available in Buzz files');
+      }
+      console.log('🌉 [Desktop Bridge] Setting Buzz canvas view:', msg.view);
+
+      figma.viewport.canvasView = msg.view;
+
+      figma.ui.postMessage({
+        type: 'SET_CANVAS_VIEW_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: { view: figma.viewport.canvasView }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Set Buzz canvas view error:', error);
+      figma.ui.postMessage({
+        type: 'SET_CANVAS_VIEW_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_FOCUSED_ASSET - Get the currently focused Buzz asset
+  else if (msg.type === 'GET_FOCUSED_ASSET') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('GET_FOCUSED_ASSET is only available in Buzz files');
+      }
+      console.log('🌉 [Desktop Bridge] Getting focused Buzz asset');
+
+      var focusedAsset = figma.currentPage.focusedNode;
+      figma.ui.postMessage({
+        type: 'GET_FOCUSED_ASSET_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: focusedAsset ? __serializeBuzzNode(focusedAsset) : { focused: null }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get focused Buzz asset error:', error);
+      figma.ui.postMessage({
+        type: 'GET_FOCUSED_ASSET_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // FOCUS_ASSET - Focus a Buzz asset in single-asset view
+  else if (msg.type === 'FOCUS_ASSET') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('FOCUS_ASSET is only available in Buzz files');
+      }
+      var buzzFocusTarget = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!buzzFocusTarget) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+      console.log('🌉 [Desktop Bridge] Focusing Buzz asset:', buzzFocusTarget.name);
+
+      figma.viewport.canvasView = 'single-asset';
+      figma.currentPage.focusedNode = buzzFocusTarget;
+
+      figma.ui.postMessage({
+        type: 'FOCUS_ASSET_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: __serializeBuzzNode(buzzFocusTarget)
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Focus Buzz asset error:', error);
+      figma.ui.postMessage({
+        type: 'FOCUS_ASSET_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // CREATE_BUZZ_FRAME - Create a grid-aware Buzz frame
+  else if (msg.type === 'CREATE_BUZZ_FRAME') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('CREATE_BUZZ_FRAME is only available in Buzz files');
+      }
+      console.log('🌉 [Desktop Bridge] Creating Buzz frame');
+
+      var buzzFrame = (typeof msg.row === 'number' || typeof msg.col === 'number')
+        ? figma.buzz.createFrame(msg.row, msg.col)
+        : figma.buzz.createFrame();
+
+      if (msg.name) buzzFrame.name = msg.name;
+      if (typeof msg.width === 'number' && typeof msg.height === 'number') {
+        buzzFrame.resize(msg.width, msg.height);
+      }
+
+      figma.ui.postMessage({
+        type: 'CREATE_BUZZ_FRAME_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: __serializeBuzzNode(buzzFrame)
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Create Buzz frame error:', error);
+      figma.ui.postMessage({
+        type: 'CREATE_BUZZ_FRAME_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_BUZZ_ASSET_TYPE - Get the Buzz asset type for a node
+  else if (msg.type === 'GET_BUZZ_ASSET_TYPE') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('GET_BUZZ_ASSET_TYPE is only available in Buzz files');
+      }
+      var assetTypeNode = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!assetTypeNode) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+      console.log('🌉 [Desktop Bridge] Getting Buzz asset type:', assetTypeNode.name);
+
+      var currentAssetType = figma.buzz.getBuzzAssetTypeForNode(assetTypeNode);
+
+      figma.ui.postMessage({
+        type: 'GET_BUZZ_ASSET_TYPE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          nodeId: assetTypeNode.id,
+          name: assetTypeNode.name,
+          assetType: currentAssetType || null
+        }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get Buzz asset type error:', error);
+      figma.ui.postMessage({
+        type: 'GET_BUZZ_ASSET_TYPE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // SET_BUZZ_ASSET_TYPE - Set the Buzz asset type for a node
+  else if (msg.type === 'SET_BUZZ_ASSET_TYPE') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('SET_BUZZ_ASSET_TYPE is only available in Buzz files');
+      }
+      var setAssetTypeNode = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!setAssetTypeNode) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+      console.log('🌉 [Desktop Bridge] Setting Buzz asset type:', setAssetTypeNode.name, '→', msg.assetType);
+
+      figma.buzz.setBuzzAssetTypeForNode(setAssetTypeNode, msg.assetType);
+
+      figma.ui.postMessage({
+        type: 'SET_BUZZ_ASSET_TYPE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          nodeId: setAssetTypeNode.id,
+          name: setAssetTypeNode.name,
+          assetType: figma.buzz.getBuzzAssetTypeForNode(setAssetTypeNode) || null
+        }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Set Buzz asset type error:', error);
+      figma.ui.postMessage({
+        type: 'SET_BUZZ_ASSET_TYPE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // SMART_RESIZE_BUZZ_NODE - Resize a Buzz node using the Buzz API
+  else if (msg.type === 'SMART_RESIZE_BUZZ_NODE') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('SMART_RESIZE_BUZZ_NODE is only available in Buzz files');
+      }
+      var smartResizeNode = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!smartResizeNode) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+      console.log('🌉 [Desktop Bridge] Smart resizing Buzz node:', smartResizeNode.name);
+
+      figma.buzz.smartResize(smartResizeNode, msg.width, msg.height);
+
+      figma.ui.postMessage({
+        type: 'SMART_RESIZE_BUZZ_NODE_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: __serializeBuzzNode(smartResizeNode)
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Smart resize Buzz node error:', error);
+      figma.ui.postMessage({
+        type: 'SMART_RESIZE_BUZZ_NODE_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_BUZZ_TEXT_CONTENT - Extract dynamic text fields from a Buzz asset
+  else if (msg.type === 'GET_BUZZ_TEXT_CONTENT') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('GET_BUZZ_TEXT_CONTENT is only available in Buzz files');
+      }
+      var textContentNode = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!textContentNode) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+      console.log('🌉 [Desktop Bridge] Getting Buzz text content:', textContentNode.name);
+
+      var textFields = figma.buzz.getTextContent(textContentNode) || [];
+      var serializedTextFields = [];
+      for (var tfi = 0; tfi < textFields.length; tfi++) {
+        serializedTextFields.push(__serializeBuzzField(textFields[tfi], tfi));
+      }
+
+      figma.ui.postMessage({
+        type: 'GET_BUZZ_TEXT_CONTENT_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          nodeId: textContentNode.id,
+          name: textContentNode.name,
+          fields: serializedTextFields
+        }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get Buzz text content error:', error);
+      figma.ui.postMessage({
+        type: 'GET_BUZZ_TEXT_CONTENT_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: error.message || String(error)
+      });
+    }
+  }
+
+  // GET_BUZZ_MEDIA_CONTENT - Extract dynamic media fields from a Buzz asset
+  else if (msg.type === 'GET_BUZZ_MEDIA_CONTENT') {
+    try {
+      if (__editorType !== 'buzz') {
+        throw new Error('GET_BUZZ_MEDIA_CONTENT is only available in Buzz files');
+      }
+      var mediaContentNode = await figma.getNodeByIdAsync(msg.nodeId);
+      if (!mediaContentNode) {
+        throw new Error('Node not found: ' + msg.nodeId);
+      }
+      console.log('🌉 [Desktop Bridge] Getting Buzz media content:', mediaContentNode.name);
+
+      var mediaFields = figma.buzz.getMediaContent(mediaContentNode) || [];
+      var serializedMediaFields = [];
+      for (var mfi = 0; mfi < mediaFields.length; mfi++) {
+        serializedMediaFields.push(__serializeBuzzField(mediaFields[mfi], mfi));
+      }
+
+      figma.ui.postMessage({
+        type: 'GET_BUZZ_MEDIA_CONTENT_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          nodeId: mediaContentNode.id,
+          name: mediaContentNode.name,
+          fields: serializedMediaFields
+        }
+      });
+
+    } catch (error) {
+      console.error('🌉 [Desktop Bridge] Get Buzz media content error:', error);
+      figma.ui.postMessage({
+        type: 'GET_BUZZ_MEDIA_CONTENT_RESULT',
         requestId: msg.requestId,
         success: false,
         error: error.message || String(error)

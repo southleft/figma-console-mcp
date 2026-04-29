@@ -113,6 +113,21 @@ export interface IFigmaConnector {
   // Component set analysis (variant state machine + cross-variant diff)
   analyzeComponentSet(nodeId: string): Promise<any>;
 
+  // Buzz operations
+  getCanvasGrid(): Promise<any>;
+  createCanvasRow(params: { rowIndex?: number }): Promise<any>;
+  moveNodesToCoord(params: { nodeIds: string[]; rowIndex?: number; columnIndex?: number }): Promise<any>;
+  getCanvasView(): Promise<any>;
+  setCanvasView(params: { view: string }): Promise<any>;
+  getFocusedAsset(): Promise<any>;
+  focusAsset(params: { nodeId: string }): Promise<any>;
+  createBuzzFrame(params: { row?: number; col?: number; name?: string; width?: number; height?: number }): Promise<any>;
+  getBuzzAssetType(params: { nodeId: string }): Promise<any>;
+  setBuzzAssetType(params: { nodeId: string; assetType: string }): Promise<any>;
+  smartResizeBuzzNode(params: { nodeId: string; width: number; height: number }): Promise<any>;
+  getBuzzTextContent(params: { nodeId: string }): Promise<any>;
+  getBuzzMediaContent(params: { nodeId: string }): Promise<any>;
+
   // Cache management
   clearFrameCache(): void;
 }

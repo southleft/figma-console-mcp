@@ -59,6 +59,7 @@ import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import { registerDesignSystemDashboardApp } from "./apps/design-system-dashboard/server.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
+import { registerBuzzTools } from "./core/buzz-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -6009,6 +6010,12 @@ return {
 
 		// Register Figma Slides tools (slide management, transitions, content)
 		registerSlidesTools(
+			this.server,
+			() => this.getDesktopConnector(),
+		);
+
+		// Register Figma Buzz tools (asset workflows, canvas grid, Buzz metadata)
+		registerBuzzTools(
 			this.server,
 			() => this.getDesktopConnector(),
 		);

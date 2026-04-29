@@ -193,6 +193,61 @@ describe('CloudWebSocketConnector', () => {
 			expect(body.params.componentKey).toBe('comp-key');
 			expect(body.params.parentId).toBe('frame1');
 		});
+
+		it('sends GET_CANVAS_GRID to relay', async () => {
+			const stub = createMockStub({ commandResult: { success: true, data: { rows: [] } } });
+			const connector = new CloudWebSocketConnector(stub);
+			await connector.getCanvasGrid();
+
+			const call = stub.fetch.mock.calls.find(
+				(c: any[]) => typeof c[1]?.body === 'string' && c[1].body.includes('GET_CANVAS_GRID')
+			);
+			expect(call).toBeDefined();
+		});
+
+		it('sends FOCUS_ASSET with nodeId', async () => {
+			const stub = createMockStub({ commandResult: { success: true } });
+			const connector = new CloudWebSocketConnector(stub);
+			await connector.focusAsset({ nodeId: '1:2' });
+
+			const call = stub.fetch.mock.calls.find(
+				(c: any[]) => typeof c[1]?.body === 'string' && c[1].body.includes('FOCUS_ASSET')
+			);
+			const body = JSON.parse(call![1].body);
+			expect(body.params.nodeId).toBe('1:2');
+		});
+
+		it('sends CREATE_BUZZ_FRAME with placement options', async () => {
+			const stub = createMockStub({ commandResult: { success: true } });
+			const connector = new CloudWebSocketConnector(stub);
+			await connector.createBuzzFrame({
+				row: 0,
+				col: 1,
+				name: 'Promo Asset',
+				width: 1080,
+				height: 1080,
+			});
+
+			const call = stub.fetch.mock.calls.find(
+				(c: any[]) => typeof c[1]?.body === 'string' && c[1].body.includes('CREATE_BUZZ_FRAME')
+			);
+			const body = JSON.parse(call![1].body);
+			expect(body.params.row).toBe(0);
+			expect(body.params.col).toBe(1);
+			expect(body.params.name).toBe('Promo Asset');
+		});
+
+		it('sends GET_BUZZ_TEXT_CONTENT to relay', async () => {
+			const stub = createMockStub({ commandResult: { success: true, data: { fields: [] } } });
+			const connector = new CloudWebSocketConnector(stub);
+			await connector.getBuzzTextContent({ nodeId: '1:1' });
+
+			const call = stub.fetch.mock.calls.find(
+				(c: any[]) => typeof c[1]?.body === 'string' && c[1].body.includes('GET_BUZZ_TEXT_CONTENT')
+			);
+			const body = JSON.parse(call![1].body);
+			expect(body.params.nodeId).toBe('1:1');
+		});
 	});
 
 	describe('error handling', () => {
