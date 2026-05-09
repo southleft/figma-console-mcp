@@ -70,14 +70,21 @@ export class FigmaDesktopConnector implements IFigmaConnector {
       const workers = this.page.workers();
 
       // Log to browser console so MCP can capture it
-      await this.logToFigmaConsole((count, urls) => {
-        console.log(`[DESKTOP_CONNECTOR] Found ${count} workers via Puppeteer API:`, urls);
-      }, workers.length, workers.map(w => w.url()));
+      await this.logToFigmaConsole(
+        (count, urls) => {
+          console.log(`[DESKTOP_CONNECTOR] Found ${count} workers via Puppeteer API:`, urls);
+        },
+        workers.length,
+        workers.map((w) => w.url())
+      );
 
-      logger.info({
-        workerCount: workers.length,
-        workerUrls: workers.map(w => w.url())
-      }, 'Found workers via Puppeteer API');
+      logger.info(
+        {
+          workerCount: workers.length,
+          workerUrls: workers.map((w) => w.url()),
+        },
+        'Found workers via Puppeteer API'
+      );
 
       // Try each worker to find one with figma API
       for (const worker of workers) {
@@ -92,9 +99,13 @@ export class FigmaDesktopConnector implements IFigmaConnector {
           const hasFigmaApi = await worker.evaluate('typeof figma !== "undefined"');
 
           // Log result to browser console
-          await this.logToFigmaConsole((url, hasApi) => {
-            console.log(`[DESKTOP_CONNECTOR] Worker ${url} has figma API: ${hasApi}`);
-          }, worker.url(), hasFigmaApi);
+          await this.logToFigmaConsole(
+            (url, hasApi) => {
+              console.log(`[DESKTOP_CONNECTOR] Worker ${url} has figma API: ${hasApi}`);
+            },
+            worker.url(),
+            hasFigmaApi
+          );
 
           if (hasFigmaApi) {
             logger.info({ workerUrl: worker.url() }, 'Found worker with Figma API');
@@ -111,23 +122,31 @@ export class FigmaDesktopConnector implements IFigmaConnector {
           }
         } catch (workerError) {
           // This worker doesn't have figma API or evaluation failed, try next
-          await this.logToFigmaConsole((url, err) => {
-            console.error(`[DESKTOP_CONNECTOR] ❌ Worker ${url} check failed:`, err);
-          }, worker.url(), workerError instanceof Error ? workerError.message : String(workerError));
+          await this.logToFigmaConsole(
+            (url, err) => {
+              console.error(`[DESKTOP_CONNECTOR] ❌ Worker ${url} check failed:`, err);
+            },
+            worker.url(),
+            workerError instanceof Error ? workerError.message : String(workerError)
+          );
 
-          logger.error({ error: workerError, workerUrl: worker.url() }, 'Worker check failed, trying next');
+          logger.error(
+            { error: workerError, workerUrl: worker.url() },
+            'Worker check failed, trying next'
+          );
           continue;
         }
       }
 
       // If no worker found with figma API, throw error
-      throw new Error('No plugin worker found with Figma API. Make sure a plugin is running in Figma Desktop.');
+      throw new Error(
+        'No plugin worker found with Figma API. Make sure a plugin is running in Figma Desktop.'
+      );
     } catch (error) {
       logger.error({ error, code: code.substring(0, 200) }, 'Failed to execute in plugin context');
       throw error;
     }
   }
-
 
   /**
    * Get Figma variables from plugin UI window object
@@ -168,39 +187,54 @@ export class FigmaDesktopConnector implements IFigmaConnector {
           }, frameUrl);
 
           // Check if this frame has our variables data
-          const hasData = await frame.evaluate('typeof window.__figmaVariablesData !== "undefined" && window.__figmaVariablesReady === true');
+          const hasData = await frame.evaluate(
+            'typeof window.__figmaVariablesData !== "undefined" && window.__figmaVariablesReady === true'
+          );
 
-          await this.logToFigmaConsole((url, has) => {
-            console.log(`[DESKTOP_CONNECTOR] Frame ${url} has variables data: ${has}`);
-          }, frameUrl, hasData);
+          await this.logToFigmaConsole(
+            (url, has) => {
+              console.log(`[DESKTOP_CONNECTOR] Frame ${url} has variables data: ${has}`);
+            },
+            frameUrl,
+            hasData
+          );
 
           if (hasData) {
             logger.info({ frameUrl }, 'Found frame with variables data');
 
             await this.logToFigmaConsole((url) => {
-              console.log(`[DESKTOP_CONNECTOR] ✅ SUCCESS! Found plugin UI with variables data: ${url}`);
+              console.log(
+                `[DESKTOP_CONNECTOR] ✅ SUCCESS! Found plugin UI with variables data: ${url}`
+              );
             }, frameUrl);
 
             // Get the data from window object
-            const result = await frame.evaluate('window.__figmaVariablesData') as any;
+            const result = (await frame.evaluate('window.__figmaVariablesData')) as any;
 
             logger.info(
               {
                 variableCount: result.variables?.length,
-                collectionCount: result.variableCollections?.length
+                collectionCount: result.variableCollections?.length,
               },
               'Successfully retrieved variables from plugin UI'
             );
 
-            await this.logToFigmaConsole((varCount, collCount) => {
-              console.log(`[DESKTOP_CONNECTOR] ✅ Retrieved ${varCount} variables in ${collCount} collections`);
-            }, result.variables?.length || 0, result.variableCollections?.length || 0);
+            await this.logToFigmaConsole(
+              (varCount, collCount) => {
+                console.log(
+                  `[DESKTOP_CONNECTOR] ✅ Retrieved ${varCount} variables in ${collCount} collections`
+                );
+              },
+              result.variables?.length || 0,
+              result.variableCollections?.length || 0
+            );
 
             return result;
           }
         } catch (frameError) {
           const errorMsg = frameError instanceof Error ? frameError.message : String(frameError);
-          const isDetachedError = errorMsg.includes('detached') || errorMsg.includes('Execution context was destroyed');
+          const isDetachedError =
+            errorMsg.includes('detached') || errorMsg.includes('Execution context was destroyed');
 
           // Safely get frame URL (may fail if frame is detached)
           let safeFrameUrl = 'unknown';
@@ -211,25 +245,40 @@ export class FigmaDesktopConnector implements IFigmaConnector {
           }
 
           if (isDetachedError) {
-            logger.debug({ frameUrl: safeFrameUrl }, 'Frame was detached during variables check, trying next');
+            logger.debug(
+              { frameUrl: safeFrameUrl },
+              'Frame was detached during variables check, trying next'
+            );
           } else {
-            await this.logToFigmaConsole((url: string, err: string) => {
-              console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
-            }, safeFrameUrl, errorMsg);
-            logger.debug({ error: frameError, frameUrl: safeFrameUrl }, 'Frame check failed, trying next');
+            await this.logToFigmaConsole(
+              (url: string, err: string) => {
+                console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
+              },
+              safeFrameUrl,
+              errorMsg
+            );
+            logger.debug(
+              { error: frameError, frameUrl: safeFrameUrl },
+              'Frame check failed, trying next'
+            );
           }
           continue;
         }
       }
 
       // If no frame found with data, throw error
-      throw new Error('No plugin UI found with variables data. Make sure the Variables Exporter (Persistent) plugin is running.');
+      throw new Error(
+        'No plugin UI found with variables data. Make sure the Variables Exporter (Persistent) plugin is running.'
+      );
     } catch (error) {
       logger.error({ error }, 'Failed to get variables from plugin UI');
 
-      await this.logToFigmaConsole((msg) => {
-        console.error('[DESKTOP_CONNECTOR] ❌ getVariablesFromPluginUI failed:', msg);
-      }, error instanceof Error ? error.message : String(error));
+      await this.logToFigmaConsole(
+        (msg) => {
+          console.error('[DESKTOP_CONNECTOR] ❌ getVariablesFromPluginUI failed:', msg);
+        },
+        error instanceof Error ? error.message : String(error)
+      );
 
       throw error;
     }
@@ -274,41 +323,58 @@ export class FigmaDesktopConnector implements IFigmaConnector {
           }, frameUrl);
 
           // Check if this frame has our requestComponentData function
-          const hasFunction = await frame.evaluate('typeof window.requestComponentData === "function"');
+          const hasFunction = await frame.evaluate(
+            'typeof window.requestComponentData === "function"'
+          );
 
-          await this.logToFigmaConsole((url, has) => {
-            console.log(`[DESKTOP_CONNECTOR] Frame ${url} has requestComponentData: ${has}`);
-          }, frameUrl, hasFunction);
+          await this.logToFigmaConsole(
+            (url, has) => {
+              console.log(`[DESKTOP_CONNECTOR] Frame ${url} has requestComponentData: ${has}`);
+            },
+            frameUrl,
+            hasFunction
+          );
 
           if (hasFunction) {
             logger.info({ frameUrl }, 'Found frame with requestComponentData function');
 
             await this.logToFigmaConsole((url) => {
-              console.log(`[DESKTOP_CONNECTOR] ✅ SUCCESS! Found plugin UI with requestComponentData: ${url}`);
+              console.log(
+                `[DESKTOP_CONNECTOR] ✅ SUCCESS! Found plugin UI with requestComponentData: ${url}`
+              );
             }, frameUrl);
 
             // Call the function with the nodeId - it returns a Promise
             // Use JSON.stringify to safely pass the nodeId as a string literal
-            const result = await frame.evaluate(`window.requestComponentData(${JSON.stringify(nodeId)})`) as any;
+            const result = (await frame.evaluate(
+              `window.requestComponentData(${JSON.stringify(nodeId)})`
+            )) as any;
 
             logger.info(
               {
                 nodeId,
                 componentName: result.component?.name,
-                hasDescription: !!result.component?.description
+                hasDescription: !!result.component?.description,
               },
               'Successfully retrieved component from plugin UI'
             );
 
-            await this.logToFigmaConsole((name, hasDesc) => {
-              console.log(`[DESKTOP_CONNECTOR] ✅ Retrieved component "${name}", has description: ${hasDesc}`);
-            }, result.component?.name, !!result.component?.description);
+            await this.logToFigmaConsole(
+              (name, hasDesc) => {
+                console.log(
+                  `[DESKTOP_CONNECTOR] ✅ Retrieved component "${name}", has description: ${hasDesc}`
+                );
+              },
+              result.component?.name,
+              !!result.component?.description
+            );
 
             return result;
           }
         } catch (frameError) {
           const errorMsg = frameError instanceof Error ? frameError.message : String(frameError);
-          const isDetachedError = errorMsg.includes('detached') || errorMsg.includes('Execution context was destroyed');
+          const isDetachedError =
+            errorMsg.includes('detached') || errorMsg.includes('Execution context was destroyed');
 
           // Safely get frame URL (may fail if frame is detached)
           let safeFrameUrl = 'unknown';
@@ -319,25 +385,40 @@ export class FigmaDesktopConnector implements IFigmaConnector {
           }
 
           if (isDetachedError) {
-            logger.debug({ frameUrl: safeFrameUrl }, 'Frame was detached during component check, trying next');
+            logger.debug(
+              { frameUrl: safeFrameUrl },
+              'Frame was detached during component check, trying next'
+            );
           } else {
-            await this.logToFigmaConsole((url: string, err: string) => {
-              console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
-            }, safeFrameUrl, errorMsg);
-            logger.debug({ error: frameError, frameUrl: safeFrameUrl }, 'Frame check failed, trying next');
+            await this.logToFigmaConsole(
+              (url: string, err: string) => {
+                console.log(`[DESKTOP_CONNECTOR] Frame ${url} check failed: ${err}`);
+              },
+              safeFrameUrl,
+              errorMsg
+            );
+            logger.debug(
+              { error: frameError, frameUrl: safeFrameUrl },
+              'Frame check failed, trying next'
+            );
           }
           continue;
         }
       }
 
       // If no frame found with function, throw error
-      throw new Error('No plugin UI found with requestComponentData function. Make sure the Desktop Bridge plugin is running.');
+      throw new Error(
+        'No plugin UI found with requestComponentData function. Make sure the Desktop Bridge plugin is running.'
+      );
     } catch (error) {
       logger.error({ error, nodeId }, 'Failed to get component from plugin UI');
 
-      await this.logToFigmaConsole((msg) => {
-        console.error('[DESKTOP_CONNECTOR] ❌ getComponentFromPluginUI failed:', msg);
-      }, error instanceof Error ? error.message : String(error));
+      await this.logToFigmaConsole(
+        (msg) => {
+          console.error('[DESKTOP_CONNECTOR] ❌ getComponentFromPluginUI failed:', msg);
+        },
+        error instanceof Error ? error.message : String(error)
+      );
 
       throw error;
     }
@@ -417,7 +498,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
       logger.info(
         {
           variableCount: result.variables?.length,
-          collectionCount: result.variableCollections?.length
+          collectionCount: result.variableCollections?.length,
         },
         'Successfully retrieved variables via Desktop'
       );
@@ -519,27 +600,36 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         {
           nodeId,
           componentName: result.component?.name,
-          hasDescription: !!result.component?.description
+          hasDescription: !!result.component?.description,
         },
         'Successfully retrieved component via Desktop Plugin API'
       );
 
-      await this.logToFigmaConsole((name, hasDesc) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Retrieved component "${name}", has description: ${hasDesc}`);
-      }, result.component?.name, !!result.component?.description);
+      await this.logToFigmaConsole(
+        (name, hasDesc) => {
+          console.log(
+            `[DESKTOP_CONNECTOR] ✅ Retrieved component "${name}", has description: ${hasDesc}`
+          );
+        },
+        result.component?.name,
+        !!result.component?.description
+      );
 
       return result;
     } catch (error) {
       logger.error({ error, nodeId }, 'Failed to get component via Desktop Plugin API');
-      
-      await this.logToFigmaConsole((id, err) => {
-        console.error(`[DESKTOP_CONNECTOR] ❌ getComponentByNodeId failed for ${id}:`, err);
-      }, nodeId, error instanceof Error ? error.message : String(error));
-      
+
+      await this.logToFigmaConsole(
+        (id, err) => {
+          console.error(`[DESKTOP_CONNECTOR] ❌ getComponentByNodeId failed for ${id}:`, err);
+        },
+        nodeId,
+        error instanceof Error ? error.message : String(error)
+      );
+
       throw error;
     }
   }
-
 
   async dispose(): Promise<void> {
     logger.info('Figma Desktop connector disposed');
@@ -599,7 +689,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
 
     throw new Error(
       'Desktop Bridge plugin UI not found. Make sure the Desktop Bridge plugin is running in Figma. ' +
-      'The plugin must be open for write operations to work.'
+        'The plugin must be open for write operations to work.'
     );
   }
 
@@ -609,9 +699,15 @@ export class FigmaDesktopConnector implements IFigmaConnector {
    * Includes retry logic for detached frame errors
    */
   async executeCodeViaUI(code: string, timeout: number = 5000): Promise<any> {
-    await this.logToFigmaConsole((codeStr: string, timeoutMs: number) => {
-      console.log(`[DESKTOP_CONNECTOR] executeCodeViaUI() called, code length: ${codeStr.length}, timeout: ${timeoutMs}ms`);
-    }, code, timeout);
+    await this.logToFigmaConsole(
+      (codeStr: string, timeoutMs: number) => {
+        console.log(
+          `[DESKTOP_CONNECTOR] executeCodeViaUI() called, code length: ${codeStr.length}, timeout: ${timeoutMs}ms`
+        );
+      },
+      code,
+      timeout
+    );
 
     logger.info({ codeLength: code.length, timeout }, 'Executing code via plugin UI');
 
@@ -635,13 +731,17 @@ export class FigmaDesktopConnector implements IFigmaConnector {
 
         logger.info({ success: result.success, error: result.error }, 'Code execution completed');
 
-        await this.logToFigmaConsole((success: boolean, errorMsg: string) => {
-          if (success) {
-            console.log('[DESKTOP_CONNECTOR] ✅ Code execution succeeded');
-          } else {
-            console.log('[DESKTOP_CONNECTOR] ⚠️ Code execution returned error:', errorMsg);
-          }
-        }, result.success, result.error || '');
+        await this.logToFigmaConsole(
+          (success: boolean, errorMsg: string) => {
+            if (success) {
+              console.log('[DESKTOP_CONNECTOR] ✅ Code execution succeeded');
+            } else {
+              console.log('[DESKTOP_CONNECTOR] ⚠️ Code execution returned error:', errorMsg);
+            }
+          },
+          result.success,
+          result.error || ''
+        );
 
         return result;
       } catch (error) {
@@ -653,7 +753,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
           logger.warn({ attempt, maxRetries }, 'Frame detached, retrying with fresh frames');
           this.clearFrameCache();
           // Small delay before retry
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
           continue;
         }
 
@@ -675,9 +775,13 @@ export class FigmaDesktopConnector implements IFigmaConnector {
    * Update a variable's value in a specific mode
    */
   async updateVariable(variableId: string, modeId: string, value: any): Promise<any> {
-    await this.logToFigmaConsole((vId, mId) => {
-      console.log(`[DESKTOP_CONNECTOR] updateVariable() called: ${vId} mode ${mId}`);
-    }, variableId, modeId);
+    await this.logToFigmaConsole(
+      (vId, mId) => {
+        console.log(`[DESKTOP_CONNECTOR] updateVariable() called: ${vId} mode ${mId}`);
+      },
+      variableId,
+      modeId
+    );
 
     logger.info({ variableId, modeId }, 'Updating variable via plugin UI');
 
@@ -688,7 +792,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.updateVariable(${JSON.stringify(variableId)}, ${JSON.stringify(modeId)}, ${JSON.stringify(value)})`
       );
 
-      logger.info({ success: result.success, variableName: result.variable?.name }, 'Variable updated');
+      logger.info(
+        { success: result.success, variableName: result.variable?.name },
+        'Variable updated'
+      );
 
       await this.logToFigmaConsole((name: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${name}" updated successfully`);
@@ -714,9 +821,16 @@ export class FigmaDesktopConnector implements IFigmaConnector {
       scopes?: string[];
     }
   ): Promise<any> {
-    await this.logToFigmaConsole((n, cId, type) => {
-      console.log(`[DESKTOP_CONNECTOR] createVariable() called: "${n}" in collection ${cId}, type: ${type}`);
-    }, name, collectionId, resolvedType);
+    await this.logToFigmaConsole(
+      (n, cId, type) => {
+        console.log(
+          `[DESKTOP_CONNECTOR] createVariable() called: "${n}" in collection ${cId}, type: ${type}`
+        );
+      },
+      name,
+      collectionId,
+      resolvedType
+    );
 
     logger.info({ name, collectionId, resolvedType }, 'Creating variable via plugin UI');
 
@@ -729,9 +843,13 @@ export class FigmaDesktopConnector implements IFigmaConnector {
 
       logger.info({ success: result.success, variableId: result.variable?.id }, 'Variable created');
 
-      await this.logToFigmaConsole((id: string, n: string) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${n}" created with ID: ${id}`);
-      }, result.variable?.id || 'unknown', name);
+      await this.logToFigmaConsole(
+        (id: string, n: string) => {
+          console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${n}" created with ID: ${id}`);
+        },
+        result.variable?.id || 'unknown',
+        name
+      );
 
       return result;
     } catch (error) {
@@ -763,11 +881,18 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.createVariableCollection(${JSON.stringify(name)}, ${JSON.stringify(options || {})})`
       );
 
-      logger.info({ success: result.success, collectionId: result.collection?.id }, 'Collection created');
+      logger.info(
+        { success: result.success, collectionId: result.collection?.id },
+        'Collection created'
+      );
 
-      await this.logToFigmaConsole((id: string, n: string) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Collection "${n}" created with ID: ${id}`);
-      }, result.collection?.id || 'unknown', name);
+      await this.logToFigmaConsole(
+        (id: string, n: string) => {
+          console.log(`[DESKTOP_CONNECTOR] ✅ Collection "${n}" created with ID: ${id}`);
+        },
+        result.collection?.id || 'unknown',
+        name
+      );
 
       return result;
     } catch (error) {
@@ -789,11 +914,12 @@ export class FigmaDesktopConnector implements IFigmaConnector {
     const frame = await this.findPluginUIFrame();
 
     try {
-      const result = await frame.evaluate(
-        `window.deleteVariable(${JSON.stringify(variableId)})`
-      );
+      const result = await frame.evaluate(`window.deleteVariable(${JSON.stringify(variableId)})`);
 
-      logger.info({ success: result.success, deletedName: result.deleted?.name }, 'Variable deleted');
+      logger.info(
+        { success: result.success, deletedName: result.deleted?.name },
+        'Variable deleted'
+      );
 
       await this.logToFigmaConsole((name: string) => {
         console.log(`[DESKTOP_CONNECTOR] ✅ Variable "${name}" deleted`);
@@ -823,11 +949,20 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.deleteVariableCollection(${JSON.stringify(collectionId)})`
       );
 
-      logger.info({ success: result.success, deletedName: result.deleted?.name }, 'Collection deleted');
+      logger.info(
+        { success: result.success, deletedName: result.deleted?.name },
+        'Collection deleted'
+      );
 
-      await this.logToFigmaConsole((name: string, count: number) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Collection "${name}" deleted (had ${count} variables)`);
-      }, result.deleted?.name || collectionId, result.deleted?.variableCount || 0);
+      await this.logToFigmaConsole(
+        (name: string, count: number) => {
+          console.log(
+            `[DESKTOP_CONNECTOR] ✅ Collection "${name}" deleted (had ${count} variables)`
+          );
+        },
+        result.deleted?.name || collectionId,
+        result.deleted?.variableCount || 0
+      );
 
       return result;
     } catch (error) {
@@ -855,14 +990,20 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         {
           success: result.success,
           variableCount: result.data?.variables?.length,
-          collectionCount: result.data?.variableCollections?.length
+          collectionCount: result.data?.variableCollections?.length,
         },
         'Variables refreshed'
       );
 
-      await this.logToFigmaConsole((vCount: number, cCount: number) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Variables refreshed: ${vCount} variables in ${cCount} collections`);
-      }, result.data?.variables?.length || 0, result.data?.variableCollections?.length || 0);
+      await this.logToFigmaConsole(
+        (vCount: number, cCount: number) => {
+          console.log(
+            `[DESKTOP_CONNECTOR] ✅ Variables refreshed: ${vCount} variables in ${cCount} collections`
+          );
+        },
+        result.data?.variables?.length || 0,
+        result.data?.variableCollections?.length || 0
+      );
 
       return result;
     } catch (error) {
@@ -875,9 +1016,13 @@ export class FigmaDesktopConnector implements IFigmaConnector {
    * Rename a variable
    */
   async renameVariable(variableId: string, newName: string): Promise<any> {
-    await this.logToFigmaConsole((vId, name) => {
-      console.log(`[DESKTOP_CONNECTOR] renameVariable() called: ${vId} -> "${name}"`);
-    }, variableId, newName);
+    await this.logToFigmaConsole(
+      (vId, name) => {
+        console.log(`[DESKTOP_CONNECTOR] renameVariable() called: ${vId} -> "${name}"`);
+      },
+      variableId,
+      newName
+    );
 
     logger.info({ variableId, newName }, 'Renaming variable via plugin UI');
 
@@ -899,11 +1044,18 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         })()`
       );
 
-      logger.info({ success: result.success, oldName: result.oldName, newName: result.variable?.name }, 'Variable renamed');
+      logger.info(
+        { success: result.success, oldName: result.oldName, newName: result.variable?.name },
+        'Variable renamed'
+      );
 
-      await this.logToFigmaConsole((oldN: string, newN: string) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Variable renamed from "${oldN}" to "${newN}"`);
-      }, result.oldName || 'unknown', result.variable?.name || newName);
+      await this.logToFigmaConsole(
+        (oldN: string, newN: string) => {
+          console.log(`[DESKTOP_CONNECTOR] ✅ Variable renamed from "${oldN}" to "${newN}"`);
+        },
+        result.oldName || 'unknown',
+        result.variable?.name || newName
+      );
 
       return result;
     } catch (error) {
@@ -916,9 +1068,13 @@ export class FigmaDesktopConnector implements IFigmaConnector {
    * Set the description on a variable (not a node — variables use a separate API)
    */
   async setVariableDescription(variableId: string, description: string): Promise<any> {
-    await this.logToFigmaConsole((vId, desc) => {
-      console.log(`[DESKTOP_CONNECTOR] setVariableDescription() called: ${vId} -> "${desc}"`);
-    }, variableId, description);
+    await this.logToFigmaConsole(
+      (vId, desc) => {
+        console.log(`[DESKTOP_CONNECTOR] setVariableDescription() called: ${vId} -> "${desc}"`);
+      },
+      variableId,
+      description
+    );
 
     logger.info({ variableId, description }, 'Setting variable description via plugin UI');
 
@@ -931,9 +1087,15 @@ export class FigmaDesktopConnector implements IFigmaConnector {
 
       logger.info({ success: result.success, variableId }, 'Variable description set');
 
-      await this.logToFigmaConsole((vId: string, success: boolean) => {
-        console.log(`[DESKTOP_CONNECTOR] ${success ? '✅' : '❌'} Variable description ${success ? 'set' : 'failed'} for ${vId}`);
-      }, variableId, result.success);
+      await this.logToFigmaConsole(
+        (vId: string, success: boolean) => {
+          console.log(
+            `[DESKTOP_CONNECTOR] ${success ? '✅' : '❌'} Variable description ${success ? 'set' : 'failed'} for ${vId}`
+          );
+        },
+        variableId,
+        result.success
+      );
 
       return result;
     } catch (error) {
@@ -946,9 +1108,13 @@ export class FigmaDesktopConnector implements IFigmaConnector {
    * Add a mode to a variable collection
    */
   async addMode(collectionId: string, modeName: string): Promise<any> {
-    await this.logToFigmaConsole((cId, name) => {
-      console.log(`[DESKTOP_CONNECTOR] addMode() called: "${name}" to collection ${cId}`);
-    }, collectionId, modeName);
+    await this.logToFigmaConsole(
+      (cId, name) => {
+        console.log(`[DESKTOP_CONNECTOR] addMode() called: "${name}" to collection ${cId}`);
+      },
+      collectionId,
+      modeName
+    );
 
     logger.info({ collectionId, modeName }, 'Adding mode via plugin UI');
 
@@ -961,9 +1127,13 @@ export class FigmaDesktopConnector implements IFigmaConnector {
 
       logger.info({ success: result.success, newModeId: result.newMode?.modeId }, 'Mode added');
 
-      await this.logToFigmaConsole((name: string, modeId: string) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Mode "${name}" added with ID: ${modeId}`);
-      }, modeName, result.newMode?.modeId || 'unknown');
+      await this.logToFigmaConsole(
+        (name: string, modeId: string) => {
+          console.log(`[DESKTOP_CONNECTOR] ✅ Mode "${name}" added with ID: ${modeId}`);
+        },
+        modeName,
+        result.newMode?.modeId || 'unknown'
+      );
 
       return result;
     } catch (error) {
@@ -976,9 +1146,16 @@ export class FigmaDesktopConnector implements IFigmaConnector {
    * Rename a mode in a variable collection
    */
   async renameMode(collectionId: string, modeId: string, newName: string): Promise<any> {
-    await this.logToFigmaConsole((cId, mId, name) => {
-      console.log(`[DESKTOP_CONNECTOR] renameMode() called: mode ${mId} in collection ${cId} -> "${name}"`);
-    }, collectionId, modeId, newName);
+    await this.logToFigmaConsole(
+      (cId, mId, name) => {
+        console.log(
+          `[DESKTOP_CONNECTOR] renameMode() called: mode ${mId} in collection ${cId} -> "${name}"`
+        );
+      },
+      collectionId,
+      modeId,
+      newName
+    );
 
     logger.info({ collectionId, modeId, newName }, 'Renaming mode via plugin UI');
 
@@ -1009,9 +1186,13 @@ export class FigmaDesktopConnector implements IFigmaConnector {
 
       logger.info({ success: result.success, oldName: result.oldName, newName }, 'Mode renamed');
 
-      await this.logToFigmaConsole((oldN: string, newN: string) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Mode renamed from "${oldN}" to "${newN}"`);
-      }, result.oldName || 'unknown', newName);
+      await this.logToFigmaConsole(
+        (oldN: string, newN: string) => {
+          console.log(`[DESKTOP_CONNECTOR] ✅ Mode renamed from "${oldN}" to "${newN}"`);
+        },
+        result.oldName || 'unknown',
+        newName
+      );
 
       return result;
     } catch (error) {
@@ -1050,14 +1231,20 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         {
           success: result.success,
           componentCount: result.data?.totalComponents,
-          componentSetCount: result.data?.totalComponentSets
+          componentSetCount: result.data?.totalComponentSets,
         },
         'Local components retrieved'
       );
 
-      await this.logToFigmaConsole((cCount: number, csCount: number) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Found ${cCount} components and ${csCount} component sets`);
-      }, result.data?.totalComponents || 0, result.data?.totalComponentSets || 0);
+      await this.logToFigmaConsole(
+        (cCount: number, csCount: number) => {
+          console.log(
+            `[DESKTOP_CONNECTOR] ✅ Found ${cCount} components and ${csCount} component sets`
+          );
+        },
+        result.data?.totalComponents || 0,
+        result.data?.totalComponentSets || 0
+      );
 
       return result;
     } catch (error) {
@@ -1073,7 +1260,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   async instantiateComponent(
     componentKey: string,
     options?: {
-      nodeId?: string;  // For local (unpublished) components
+      nodeId?: string; // For local (unpublished) components
       position?: { x: number; y: number };
       size?: { width: number; height: number };
       overrides?: Record<string, any>;
@@ -1092,11 +1279,20 @@ export class FigmaDesktopConnector implements IFigmaConnector {
     };
     error?: string;
   }> {
-    await this.logToFigmaConsole((key, nodeId) => {
-      console.log(`[DESKTOP_CONNECTOR] instantiateComponent() called: key=${key}, nodeId=${nodeId}`);
-    }, componentKey, options?.nodeId || null);
+    await this.logToFigmaConsole(
+      (key, nodeId) => {
+        console.log(
+          `[DESKTOP_CONNECTOR] instantiateComponent() called: key=${key}, nodeId=${nodeId}`
+        );
+      },
+      componentKey,
+      options?.nodeId || null
+    );
 
-    logger.info({ componentKey, nodeId: options?.nodeId, options }, 'Instantiating component via plugin UI');
+    logger.info(
+      { componentKey, nodeId: options?.nodeId, options },
+      'Instantiating component via plugin UI'
+    );
 
     const frame = await this.findPluginUIFrame();
 
@@ -1105,11 +1301,18 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.instantiateComponent(${JSON.stringify(componentKey)}, ${JSON.stringify(options || {})})`
       );
 
-      logger.info({ success: result.success, instanceId: result.instance?.id }, 'Component instantiated');
+      logger.info(
+        { success: result.success, instanceId: result.instance?.id },
+        'Component instantiated'
+      );
 
-      await this.logToFigmaConsole((instanceId: string, name: string) => {
-        console.log(`[DESKTOP_CONNECTOR] ✅ Component instantiated: ${name} (${instanceId})`);
-      }, result.instance?.id || 'unknown', result.instance?.name || 'unknown');
+      await this.logToFigmaConsole(
+        (instanceId: string, name: string) => {
+          console.log(`[DESKTOP_CONNECTOR] ✅ Component instantiated: ${name} (${instanceId})`);
+        },
+        result.instance?.id || 'unknown',
+        result.instance?.name || 'unknown'
+      );
 
       return result;
     } catch (error) {
@@ -1125,8 +1328,15 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   /**
    * Set description on a component or style
    */
-  async setNodeDescription(nodeId: string, description: string, descriptionMarkdown?: string): Promise<any> {
-    logger.info({ nodeId, descriptionLength: description.length }, 'Setting node description via plugin UI');
+  async setNodeDescription(
+    nodeId: string,
+    description: string,
+    descriptionMarkdown?: string
+  ): Promise<any> {
+    logger.info(
+      { nodeId, descriptionLength: description.length },
+      'Setting node description via plugin UI'
+    );
 
     const frame = await this.findPluginUIFrame();
 
@@ -1160,7 +1370,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.getAnnotations(${JSON.stringify(nodeId)}, ${JSON.stringify(!!includeChildren)}, ${JSON.stringify(depth || 1)})`
       );
 
-      logger.info({ success: result?.success, count: result?.data?.annotationCount }, 'Annotations retrieved');
+      logger.info(
+        { success: result?.success, count: result?.data?.annotationCount },
+        'Annotations retrieved'
+      );
       return result;
     } catch (error) {
       logger.error({ error, nodeId }, 'Get annotations failed');
@@ -1171,8 +1384,15 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   /**
    * Set annotations on a node
    */
-  async setAnnotations(nodeId: string, annotations: any[], mode?: 'replace' | 'append'): Promise<any> {
-    logger.info({ nodeId, count: annotations.length, mode: mode || 'replace' }, 'Setting annotations via plugin UI');
+  async setAnnotations(
+    nodeId: string,
+    annotations: any[],
+    mode?: 'replace' | 'append'
+  ): Promise<any> {
+    logger.info(
+      { nodeId, count: annotations.length, mode: mode || 'replace' },
+      'Setting annotations via plugin UI'
+    );
 
     const frame = await this.findPluginUIFrame();
 
@@ -1200,7 +1420,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
     try {
       const result = await frame.evaluate(`window.getAnnotationCategories()`);
 
-      logger.info({ success: result?.success, count: result?.data?.categories?.length }, 'Annotation categories retrieved');
+      logger.info(
+        { success: result?.success, count: result?.data?.categories?.length },
+        'Annotation categories retrieved'
+      );
       return result;
     } catch (error) {
       logger.error({ error }, 'Get annotation categories failed');
@@ -1217,9 +1440,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
     const frame = await this.findPluginUIFrame();
 
     try {
-      const result = await frame.evaluate(
-        `window.analyzeComponentSet(${JSON.stringify(nodeId)})`
-      );
+      const result = await frame.evaluate(`window.analyzeComponentSet(${JSON.stringify(nodeId)})`);
 
       logger.info({ success: result?.success }, 'Component set analysis complete');
       return result;
@@ -1294,7 +1515,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.editComponentProperty(${JSON.stringify(nodeId)}, ${JSON.stringify(propertyName)}, ${JSON.stringify(newValue)})`
       );
 
-      logger.info({ success: result.success, propertyName: result.propertyName }, 'Property edited');
+      logger.info(
+        { success: result.success, propertyName: result.propertyName },
+        'Property edited'
+      );
       return result;
     } catch (error) {
       logger.error({ error, nodeId, propertyName }, 'Edit component property failed');
@@ -1330,7 +1554,12 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   /**
    * Resize a node
    */
-  async resizeNode(nodeId: string, width: number, height: number, withConstraints: boolean = true): Promise<any> {
+  async resizeNode(
+    nodeId: string,
+    width: number,
+    height: number,
+    withConstraints: boolean = true
+  ): Promise<any> {
     logger.info({ nodeId, width, height, withConstraints }, 'Resizing node via plugin UI');
 
     const frame = await this.findPluginUIFrame();
@@ -1357,9 +1586,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
     const frame = await this.findPluginUIFrame();
 
     try {
-      const result = await frame.evaluate(
-        `window.moveNode(${JSON.stringify(nodeId)}, ${x}, ${y})`
-      );
+      const result = await frame.evaluate(`window.moveNode(${JSON.stringify(nodeId)}, ${x}, ${y})`);
 
       logger.info({ success: result.success, nodeId: result.node?.id }, 'Node moved');
       return result;
@@ -1394,7 +1621,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
    * Set strokes on a node
    */
   async setNodeStrokes(nodeId: string, strokes: any[], strokeWeight?: number): Promise<any> {
-    logger.info({ nodeId, strokeCount: strokes.length, strokeWeight }, 'Setting node strokes via plugin UI');
+    logger.info(
+      { nodeId, strokeCount: strokes.length, strokeWeight },
+      'Setting node strokes via plugin UI'
+    );
 
     const frame = await this.findPluginUIFrame();
 
@@ -1445,7 +1675,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.setNodeCornerRadius(${JSON.stringify(nodeId)}, ${radius})`
       );
 
-      logger.info({ success: result.success, radius: result.node?.cornerRadius }, 'Corner radius set');
+      logger.info(
+        { success: result.success, radius: result.node?.cornerRadius },
+        'Corner radius set'
+      );
       return result;
     } catch (error) {
       logger.error({ error, nodeId }, 'Set corner radius failed');
@@ -1462,9 +1695,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
     const frame = await this.findPluginUIFrame();
 
     try {
-      const result = await frame.evaluate(
-        `window.cloneNode(${JSON.stringify(nodeId)})`
-      );
+      const result = await frame.evaluate(`window.cloneNode(${JSON.stringify(nodeId)})`);
 
       logger.info({ success: result.success, clonedId: result.node?.id }, 'Node cloned');
       return result;
@@ -1483,9 +1714,7 @@ export class FigmaDesktopConnector implements IFigmaConnector {
     const frame = await this.findPluginUIFrame();
 
     try {
-      const result = await frame.evaluate(
-        `window.deleteNode(${JSON.stringify(nodeId)})`
-      );
+      const result = await frame.evaluate(`window.deleteNode(${JSON.stringify(nodeId)})`);
 
       logger.info({ success: result.success, deletedName: result.deleted?.name }, 'Node deleted');
       return result;
@@ -1508,7 +1737,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.renameNode(${JSON.stringify(nodeId)}, ${JSON.stringify(newName)})`
       );
 
-      logger.info({ success: result.success, oldName: result.node?.oldName, newName: result.node?.name }, 'Node renamed');
+      logger.info(
+        { success: result.success, oldName: result.node?.oldName, newName: result.node?.name },
+        'Node renamed'
+      );
       return result;
     } catch (error) {
       logger.error({ error, nodeId }, 'Rename node failed');
@@ -1519,7 +1751,11 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   /**
    * Set text content on a text node
    */
-  async setTextContent(nodeId: string, text: string, options?: { fontSize?: number }): Promise<any> {
+  async setTextContent(
+    nodeId: string,
+    text: string,
+    options?: { fontSize?: number }
+  ): Promise<any> {
     logger.info({ nodeId, textLength: text.length }, 'Setting text content via plugin UI');
 
     const frame = await this.findPluginUIFrame();
@@ -1529,7 +1765,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.setTextContent(${JSON.stringify(nodeId)}, ${JSON.stringify(text)}, ${JSON.stringify(options || {})})`
       );
 
-      logger.info({ success: result.success, characters: result.node?.characters?.substring(0, 50) }, 'Text content set');
+      logger.info(
+        { success: result.success, characters: result.node?.characters?.substring(0, 50) },
+        'Text content set'
+      );
       return result;
     } catch (error) {
       logger.error({ error, nodeId }, 'Set text content failed');
@@ -1562,7 +1801,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
         `window.createChildNode(${JSON.stringify(parentId)}, ${JSON.stringify(nodeType)}, ${JSON.stringify(properties || {})})`
       );
 
-      logger.info({ success: result.success, nodeId: result.node?.id, nodeType: result.node?.type }, 'Child node created');
+      logger.info(
+        { success: result.success, nodeId: result.node?.id, nodeType: result.node?.type },
+        'Child node created'
+      );
       return result;
     } catch (error) {
       logger.error({ error, parentId, nodeType }, 'Create child node failed');
@@ -1577,7 +1819,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   /**
    * Capture screenshot via plugin's exportAsync
    */
-  async captureScreenshot(nodeId: string, options?: { format?: string; scale?: number }): Promise<any> {
+  async captureScreenshot(
+    nodeId: string,
+    options?: { format?: string; scale?: number }
+  ): Promise<any> {
     logger.info({ nodeId, options }, 'Capturing screenshot via plugin UI');
 
     const frame = await this.findPluginUIFrame();
@@ -1599,7 +1844,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
    * Set component instance properties
    */
   async setInstanceProperties(nodeId: string, properties: any): Promise<any> {
-    logger.info({ nodeId, properties: Object.keys(properties || {}) }, 'Setting instance properties via plugin UI');
+    logger.info(
+      { nodeId, properties: Object.keys(properties || {}) },
+      'Setting instance properties via plugin UI'
+    );
 
     const frame = await this.findPluginUIFrame();
 
@@ -1620,7 +1868,10 @@ export class FigmaDesktopConnector implements IFigmaConnector {
    * Set image fill on one or more nodes (decodes base64 in browser bridge, sends bytes to plugin)
    */
   async setImageFill(nodeIds: string[], imageData: string, scaleMode = 'FILL'): Promise<any> {
-    logger.info({ nodeIds, scaleMode, dataLength: imageData.length }, 'Setting image fill via plugin UI');
+    logger.info(
+      { nodeIds, scaleMode, dataLength: imageData.length },
+      'Setting image fill via plugin UI'
+    );
 
     const frame = await this.findPluginUIFrame();
 
@@ -1640,7 +1891,12 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   /**
    * Lint design for accessibility and quality issues via plugin UI
    */
-  async lintDesign(nodeId?: string, rules?: string[], maxDepth?: number, maxFindings?: number): Promise<any> {
+  async lintDesign(
+    nodeId?: string,
+    rules?: string[],
+    maxDepth?: number,
+    maxFindings?: number
+  ): Promise<any> {
     logger.info({ nodeId, rules }, 'Linting design via plugin UI');
 
     const frame = await this.findPluginUIFrame();
@@ -1662,32 +1918,125 @@ export class FigmaDesktopConnector implements IFigmaConnector {
   async auditComponentAccessibility(): Promise<any> { throw new Error('Component accessibility audit requires WebSocket transport'); }
 
   // FigJam operations — not supported via legacy CDP transport
-  async createSticky(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
-  async createStickies(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
-  async createConnector(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
-  async createShapeWithText(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
-  async createSection(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
-  async createTable(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
-  async createCodeBlock(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
-  async getBoardContents(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
-  async getConnections(): Promise<any> { throw new Error('FigJam operations require WebSocket transport'); }
+  async createSticky(): Promise<any> {
+    throw new Error('FigJam operations require WebSocket transport');
+  }
+  async createStickies(): Promise<any> {
+    throw new Error('FigJam operations require WebSocket transport');
+  }
+  async createConnector(): Promise<any> {
+    throw new Error('FigJam operations require WebSocket transport');
+  }
+  async createShapeWithText(): Promise<any> {
+    throw new Error('FigJam operations require WebSocket transport');
+  }
+  async createSection(): Promise<any> {
+    throw new Error('FigJam operations require WebSocket transport');
+  }
+  async createTable(): Promise<any> {
+    throw new Error('FigJam operations require WebSocket transport');
+  }
+  async createCodeBlock(): Promise<any> {
+    throw new Error('FigJam operations require WebSocket transport');
+  }
+  async getBoardContents(): Promise<any> {
+    throw new Error('FigJam operations require WebSocket transport');
+  }
+  async getConnections(): Promise<any> {
+    throw new Error('FigJam operations require WebSocket transport');
+  }
 
   // Slides operations — not supported via legacy CDP transport
-  async listSlides(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async getSlideContent(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async createSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async deleteSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async duplicateSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async getSlideGrid(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async reorderSlides(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async setSlideTransition(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async getSlideTransition(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async setSlidesViewMode(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async getFocusedSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async focusSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async skipSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async addTextToSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async addShapeToSlide(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async setSlideBackground(): Promise<any> { throw new Error('Slides operations require WebSocket transport'); }
-  async getTextStyles(): Promise<any> { throw new Error('Text styles require WebSocket transport'); }
+  async listSlides(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async getSlideContent(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async createSlide(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async deleteSlide(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async duplicateSlide(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async getSlideGrid(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async reorderSlides(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async setSlideTransition(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async getSlideTransition(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async setSlidesViewMode(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async getFocusedSlide(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async focusSlide(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async skipSlide(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async addTextToSlide(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async addShapeToSlide(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async setSlideBackground(): Promise<any> {
+    throw new Error('Slides operations require WebSocket transport');
+  }
+  async getTextStyles(): Promise<any> {
+    throw new Error('Text styles require WebSocket transport');
+  }
+
+  // Buzz operations — not supported via legacy CDP transport
+  async getCanvasGrid(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async createCanvasRow(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async moveNodesToCoord(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async getCanvasView(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async setCanvasView(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async getFocusedAsset(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async focusAsset(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async createBuzzFrame(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async getBuzzAssetType(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async setBuzzAssetType(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async smartResizeBuzzNode(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async getBuzzTextContent(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
+  async getBuzzMediaContent(): Promise<any> {
+    throw new Error('Buzz operations require WebSocket transport');
+  }
 }

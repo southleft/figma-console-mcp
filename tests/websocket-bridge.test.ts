@@ -474,6 +474,43 @@ describe('WebSocketConnector', () => {
       expect(result.params.position).toEqual({ x: 100, y: 200 });
     });
 
+    test('getCanvasGrid sends correct command', async () => {
+      const result = await connector.getCanvasGrid();
+      expect(result.method).toBe('GET_CANVAS_GRID');
+    });
+
+    test('setCanvasView sends correct command', async () => {
+      const result = await connector.setCanvasView({ view: 'single-asset' });
+      expect(result.method).toBe('SET_CANVAS_VIEW');
+      expect(result.params.view).toBe('single-asset');
+    });
+
+    test('focusAsset sends correct command', async () => {
+      const result = await connector.focusAsset({ nodeId: '1:2' });
+      expect(result.method).toBe('FOCUS_ASSET');
+      expect(result.params.nodeId).toBe('1:2');
+    });
+
+    test('createBuzzFrame sends correct command', async () => {
+      const result = await connector.createBuzzFrame({
+        row: 0,
+        col: 1,
+        name: 'Promo Asset',
+        width: 1080,
+        height: 1080,
+      });
+      expect(result.method).toBe('CREATE_BUZZ_FRAME');
+      expect(result.params.row).toBe(0);
+      expect(result.params.col).toBe(1);
+      expect(result.params.name).toBe('Promo Asset');
+    });
+
+    test('getBuzzTextContent sends correct command', async () => {
+      const result = await connector.getBuzzTextContent({ nodeId: '1:1' });
+      expect(result.method).toBe('GET_BUZZ_TEXT_CONTENT');
+      expect(result.params.nodeId).toBe('1:1');
+    });
+
     test('clearFrameCache is a no-op', () => {
       expect(() => connector.clearFrameCache()).not.toThrow();
     });

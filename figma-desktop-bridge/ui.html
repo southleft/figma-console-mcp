@@ -752,6 +752,46 @@
         'ADD_SHAPE_TO_SLIDE': function(params) {
           return window.sendPluginCommand('ADD_SHAPE_TO_SLIDE', params, 5000);
         },
+        // Buzz tools — forward directly to plugin code.js
+        'GET_CANVAS_GRID': function(params) {
+          return window.sendPluginCommand('GET_CANVAS_GRID', params || {}, 10000);
+        },
+        'CREATE_CANVAS_ROW': function(params) {
+          return window.sendPluginCommand('CREATE_CANVAS_ROW', params || {}, 10000);
+        },
+        'MOVE_NODES_TO_COORD': function(params) {
+          return window.sendPluginCommand('MOVE_NODES_TO_COORD', params, 10000);
+        },
+        'GET_CANVAS_VIEW': function(params) {
+          return window.sendPluginCommand('GET_CANVAS_VIEW', params || {}, 5000);
+        },
+        'SET_CANVAS_VIEW': function(params) {
+          return window.sendPluginCommand('SET_CANVAS_VIEW', params, 5000);
+        },
+        'GET_FOCUSED_ASSET': function(params) {
+          return window.sendPluginCommand('GET_FOCUSED_ASSET', params || {}, 5000);
+        },
+        'FOCUS_ASSET': function(params) {
+          return window.sendPluginCommand('FOCUS_ASSET', params, 5000);
+        },
+        'CREATE_BUZZ_FRAME': function(params) {
+          return window.sendPluginCommand('CREATE_BUZZ_FRAME', params || {}, 10000);
+        },
+        'GET_BUZZ_ASSET_TYPE': function(params) {
+          return window.sendPluginCommand('GET_BUZZ_ASSET_TYPE', params, 5000);
+        },
+        'SET_BUZZ_ASSET_TYPE': function(params) {
+          return window.sendPluginCommand('SET_BUZZ_ASSET_TYPE', params, 5000);
+        },
+        'SMART_RESIZE_BUZZ_NODE': function(params) {
+          return window.sendPluginCommand('SMART_RESIZE_BUZZ_NODE', params, 10000);
+        },
+        'GET_BUZZ_TEXT_CONTENT': function(params) {
+          return window.sendPluginCommand('GET_BUZZ_TEXT_CONTENT', params, 10000);
+        },
+        'GET_BUZZ_MEDIA_CONTENT': function(params) {
+          return window.sendPluginCommand('GET_BUZZ_MEDIA_CONTENT', params, 10000);
+        },
         'CLEAR_CONSOLE': function() {
           // Console buffer is maintained server-side; this is a no-op ack
           return Promise.resolve({ cleared: true });
@@ -1434,6 +1474,47 @@
           break;
         case 'ADD_SHAPE_TO_SLIDE_RESULT':
           handleResult('ADD_SHAPE_TO_SLIDE', 'data');
+          break;
+
+        // Buzz tools
+        case 'GET_CANVAS_GRID_RESULT':
+          handleResult('GET_CANVAS_GRID', 'data');
+          break;
+        case 'CREATE_CANVAS_ROW_RESULT':
+          handleResult('CREATE_CANVAS_ROW', 'data');
+          break;
+        case 'MOVE_NODES_TO_COORD_RESULT':
+          handleResult('MOVE_NODES_TO_COORD', 'data');
+          break;
+        case 'GET_CANVAS_VIEW_RESULT':
+          handleResult('GET_CANVAS_VIEW', 'data');
+          break;
+        case 'SET_CANVAS_VIEW_RESULT':
+          handleResult('SET_CANVAS_VIEW', 'data');
+          break;
+        case 'GET_FOCUSED_ASSET_RESULT':
+          handleResult('GET_FOCUSED_ASSET', 'data');
+          break;
+        case 'FOCUS_ASSET_RESULT':
+          handleResult('FOCUS_ASSET', 'data');
+          break;
+        case 'CREATE_BUZZ_FRAME_RESULT':
+          handleResult('CREATE_BUZZ_FRAME', 'data');
+          break;
+        case 'GET_BUZZ_ASSET_TYPE_RESULT':
+          handleResult('GET_BUZZ_ASSET_TYPE', 'data');
+          break;
+        case 'SET_BUZZ_ASSET_TYPE_RESULT':
+          handleResult('SET_BUZZ_ASSET_TYPE', 'data');
+          break;
+        case 'SMART_RESIZE_BUZZ_NODE_RESULT':
+          handleResult('SMART_RESIZE_BUZZ_NODE', 'data');
+          break;
+        case 'GET_BUZZ_TEXT_CONTENT_RESULT':
+          handleResult('GET_BUZZ_TEXT_CONTENT', 'data');
+          break;
+        case 'GET_BUZZ_MEDIA_CONTENT_RESULT':
+          handleResult('GET_BUZZ_MEDIA_CONTENT', 'data');
           break;
 
         // File info
