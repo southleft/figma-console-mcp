@@ -252,7 +252,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 * Returns the active WebSocket Desktop Bridge connector.
 	 */
 	private async getDesktopConnector(): Promise<IFigmaConnector> {
-		// Try WebSocket first — instant check, no network timeout delay
 		if (this.wsServer?.isClientConnected()) {
 			try {
 				const wsConnector = new WebSocketConnector(this.wsServer);
@@ -262,29 +261,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				return this.desktopConnector;
 			} catch (wsError) {
 				const errorMsg = wsError instanceof Error ? wsError.message : String(wsError);
-				logger.debug({ error: errorMsg }, "WebSocket connector init failed, trying legacy fallback");
+				logger.debug({ error: errorMsg }, "WebSocket connector init failed");
 			}
-		}
-
-		// Legacy fallback path
-		try {
-			await this.ensureInitialized();
-
-			if (this.browserManager) {
-				// Always get a fresh page reference to handle page navigation/refresh
-				const page = await this.browserManager.getPage();
-
-				// Always recreate the connector with the current page to avoid stale references
-				// This prevents "detached Frame" errors when Figma page is refreshed
-				const cdpConnector = new FigmaDesktopConnector(page);
-				await cdpConnector.initialize();
-				this.desktopConnector = cdpConnector;
-				logger.debug("Desktop connector initialized via legacy fallback with fresh page reference");
-				return this.desktopConnector;
-			}
-		} catch (cdpError) {
-			const errorMsg = cdpError instanceof Error ? cdpError.message : String(cdpError);
-			logger.debug({ error: errorMsg }, "Legacy fallback connection also unavailable");
 		}
 
 		const wsPort = this.wsActualPort || this.wsPreferredPort || DEFAULT_WS_PORT;
@@ -849,35 +827,19 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					let clearedCount = 0;
 					let currentUrl: string | null = null;
 
-					// Try browser reload first
-					if (this.browserManager?.isRunning()) {
-						if (clearConsoleBefore && this.consoleMonitor) {
-							clearedCount = this.consoleMonitor.clear();
-						}
-						await this.browserManager.reload();
-						currentUrl = this.browserManager.getCurrentUrl();
-					} else if (this.wsServer?.isClientConnected()) {
-						// WebSocket fallback: reload the plugin UI iframe
+					// Reload the plugin UI iframe through the WebSocket bridge.
+					if (this.wsServer?.isClientConnected()) {
 						transport = "websocket";
-						if (clearConsoleBefore && this.wsServer) {
+						if (clearConsoleBefore) {
 							clearedCount = this.wsServer.clearConsoleLogs();
 						}
 						await this.wsServer.sendCommand("RELOAD_UI", {}, 10000);
 						// Wait for the UI to reload and WebSocket to reconnect
 						await new Promise((resolve) => setTimeout(resolve, 3000));
 					} else {
-						// Try to initialize browser manager
-						await this.ensureInitialized();
-						if (!this.browserManager) {
-							throw new Error(
-								"No connection available. Open the Desktop Bridge plugin in Figma.",
-							);
-						}
-						if (clearConsoleBefore && this.consoleMonitor) {
-							clearedCount = this.consoleMonitor.clear();
-						}
-						await this.browserManager.reload();
-						currentUrl = this.browserManager.getCurrentUrl();
+						throw new Error(
+							"No connection available. Open the Desktop Bridge plugin in Figma.",
+						);
 					}
 
 					const responseData: any = {
@@ -1006,12 +968,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 			async ({ url }) => {
 				try {
-					// Try browser navigation first
-					try {
-						await this.ensureInitialized();
-					} catch {
-						// Browser not available — check if WebSocket is connected
-						if (this.wsServer?.isClientConnected()) {
+					// Phase 3: local mode now talks to Figma exclusively through the
+					// WebSocket Desktop Bridge plugin. Navigation is plugin-side: we
+					// either switch the active file (if the target file already has
+					// the plugin open) or ask the user to open the plugin in the
+					// target file. Cross-file browser navigation via the old CDP
+					// path no longer exists.
+					if (this.wsServer?.isClientConnected()) {
+						{
 							const fileInfo = this.wsServer.getConnectedFileInfo();
 							// Check if the requested URL points to the same file already connected via WebSocket
 							const requestedFileKey = extractFileKey(url);
@@ -1110,68 +1074,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						);
 					}
 
-					if (!this.browserManager) {
-						throw new Error("Browser manager not initialized");
-					}
-
-					// Navigate to the URL (may switch to existing tab)
-					const result = await this.browserManager.navigateToFigma(url);
-
-					if (result.action === 'switched_to_existing') {
-						if (this.consoleMonitor) {
-							this.consoleMonitor.stopMonitoring();
-							await this.consoleMonitor.startMonitoring(result.page);
-						}
-
-						if (this.desktopConnector) {
-							this.desktopConnector.clearFrameCache();
-						}
-
-						const currentUrl = this.browserManager.getCurrentUrl();
-
-						return {
-							content: [
-								{
-									type: "text",
-									text: JSON.stringify(
-										{
-											status: "switched_to_existing",
-											url: currentUrl,
-											timestamp: Date.now(),
-											message:
-												"Switched to existing tab for this Figma file. Console monitoring is active.",
-										},
-									),
-								},
-							],
-						};
-					}
-
-					// Normal navigation
-					if (this.desktopConnector) {
-						this.desktopConnector.clearFrameCache();
-					}
-
-					await new Promise((resolve) => setTimeout(resolve, 2000));
-
-					const currentUrl = this.browserManager.getCurrentUrl();
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										status: "navigated",
-										url: currentUrl,
-										timestamp: Date.now(),
-										message:
-											"Browser navigated to Figma. Console monitoring is active.",
-									},
-								),
-							},
-						],
-					};
+					// If we got here, the WebSocket plugin bridge wasn't connected.
+					// Tell the user how to recover — local mode has no Puppeteer
+					// fallback after the Phase 3 CDP cleanup.
+					throw new Error(
+						"Desktop Bridge plugin is not connected. Open the Figma Console MCP plugin in Figma Desktop and try again.",
+					);
 				} catch (error) {
 					logger.error({ error }, "Failed to navigate to Figma");
 					const errorMessage =
@@ -1441,27 +1349,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					let currentUrl: string | null = null;
 					let fileName: string | null = null;
 
-					// Try browser manager reconnection if it exists
-					if (this.browserManager) {
-						try {
-							await this.browserManager.forceReconnect();
-
-							// Reinitialize console monitor with new page
-							if (this.consoleMonitor) {
-								this.consoleMonitor.stopMonitoring();
-								const page = await this.browserManager.getPage();
-								await this.consoleMonitor.startMonitoring(page);
-							}
-
-							currentUrl = this.getCurrentFileUrl();
-							transport = "websocket";
-						} catch (reconnectError) {
-							logger.debug({ error: reconnectError }, "Browser reconnection failed, checking WebSocket");
-						}
-					}
-
-					// If browser reconnect didn't work, check WebSocket
-					if (transport === "none" && this.wsServer?.isClientConnected()) {
+					// figma_reconnect is informational in WebSocket-only mode — the
+					// plugin handles its own reconnect logic. We just report whether
+					// the bridge is currently connected.
+					if (this.wsServer?.isClientConnected()) {
 						transport = "websocket";
 					}
 
@@ -1731,26 +1622,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			async () => {
 				try {
 					if (!this.wsServer?.isClientConnected()) {
-						// Fall back to browser manager if available
-						if (this.browserManager) {
-							try {
-								await this.ensureInitialized();
-								const currentUrl = this.browserManager.getCurrentUrl();
-								return {
-									content: [{
-										type: "text",
-										text: JSON.stringify({
-											transport: "browser",
-											files: currentUrl ? [{ url: currentUrl, isActive: true }] : [],
-											message: "WebSocket not connected. Open the Desktop Bridge plugin for multi-file support.",
-										}),
-									}],
-								};
-							} catch {
-								// Browser also unavailable
-							}
-						}
-
 						return {
 							content: [{
 								type: "text",
@@ -3734,10 +3605,6 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 			if (this.wsServer) {
 				await this.wsServer.stop();
-			}
-
-			if (this.browserManager) {
-				await this.browserManager.close();
 			}
 
 			logger.info("MCP server shutdown complete");
