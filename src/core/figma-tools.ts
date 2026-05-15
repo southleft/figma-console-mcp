@@ -10,6 +10,7 @@ import * as path from "path";
 import type { FigmaAPI, FigmaUrlInfo } from "./figma-api.js";
 import { extractFileKey, extractFigmaUrlInfo, formatVariables, formatComponentData, withTimeout } from "./figma-api.js";
 import { createChildLogger } from "./logger.js";
+import { identifiedError, withIdentity } from "./identity.js";
 import { EnrichmentService } from "./enrichment/index.js";
 import type { EnrichmentOptions } from "./types/enriched.js";
 import { SnippetInjector } from "./snippet-injector.js";
@@ -148,7 +149,13 @@ function adaptiveResponse(
 		suggestedActions?: string[];
 	}
 ): { content: any[] } {
-	const sizeKB = calculateSizeKB(responseData);
+	// Tag every response with our MCP identity so LLMs can attribute it
+	// unambiguously when other Figma-related MCPs are also connected.
+	const tagged = responseData && typeof responseData === "object" && !Array.isArray(responseData)
+		? withIdentity(responseData as Record<string, unknown>)
+		: { _mcp: "figma-console-mcp", data: responseData };
+
+	const sizeKB = calculateSizeKB(tagged);
 
 	// No compression needed
 	if (sizeKB <= RESPONSE_SIZE_THRESHOLDS.IDEAL_SIZE_KB) {
@@ -156,7 +163,7 @@ function adaptiveResponse(
 			content: [
 				{
 					type: "text",
-					text: JSON.stringify(responseData),
+					text: JSON.stringify(tagged),
 				},
 			],
 		};
@@ -226,11 +233,15 @@ function adaptiveResponse(
 		}
 	}
 
-	// Build response content
+	// Build response content (tagged with identity so cross-MCP attribution is clear)
+	const taggedFinal = finalData && typeof finalData === "object" && !Array.isArray(finalData)
+		? withIdentity(finalData as Record<string, unknown>)
+		: { _mcp: "figma-console-mcp", data: finalData };
+
 	const content: any[] = [
 		{
 			type: "text",
-			text: JSON.stringify(finalData),
+			text: JSON.stringify(taggedFinal),
 		},
 	];
 
@@ -793,6 +804,24 @@ export function registerFigmaAPITools(
 	getDesktopConnector?: () => Promise<any>,
 ) {
 	const isRemoteMode = options?.isRemoteMode ?? false;
+
+	/**
+	 * Build a designer-readable REST-auth error tagged with our MCP identity.
+	 * Shows only the remediation path that applies to the caller's mode — local
+	 * users never see OAuth instructions, cloud users never see env-var
+	 * instructions. Identity prefix lets LLMs disambiguate this error from
+	 * errors thrown by other Figma-related MCP servers running in parallel.
+	 */
+	function restAuthError(context: string, originalError: string, extra?: string): Error {
+		const remediation = isRemoteMode
+			? "Re-authenticate via the OAuth flow in your MCP client, or pass a Figma personal access token (figd_...) as a Bearer token."
+			: "Set FIGMA_ACCESS_TOKEN in your MCP client config to a Figma personal access token. Generate one at https://www.figma.com/developers/api#access-tokens.";
+
+		return identifiedError(
+			`${context}\nError: ${originalError}\n\nTo fix: ${remediation}${extra ? `\n\n${extra}` : ""}`,
+		);
+	}
+
 	// Tool 8: Get File Data (General Purpose)
 	// NOTE: For specific use cases, consider using specialized tools:
 	// - figma_get_component_for_development: For UI component implementation
@@ -843,14 +872,10 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve file data. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth\n\n` +
-						`Note: figma_get_file_data requires REST API access. ` +
-						`For component-specific data, use figma_get_component which has Desktop Bridge fallback.`
+					throw restAuthError(
+						"Cannot retrieve file data. REST API authentication required.",
+						errorMessage,
+						"Note: figma_get_file_data requires REST API access. For component-specific data, use figma_get_component which has Desktop Bridge fallback.",
 					);
 				}
 
@@ -2359,12 +2384,9 @@ export function registerFigmaAPITools(
 							api = await getFigmaAPI();
 						} catch (apiError) {
 							const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-							throw new Error(
-								`Cannot retrieve variables or styles. REST API authentication required for both.\n` +
-								`Error: ${errorMessage}\n\n` +
-								`To fix:\n` +
-								`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-								`2. Cloud mode: Authenticate via OAuth`
+							throw restAuthError(
+								"Cannot retrieve variables or styles. REST API authentication required for both.",
+								errorMessage,
 							);
 						}
 						// Use the Styles API directly - much faster than getFile!
@@ -2645,14 +2667,13 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve component data. Both Desktop Bridge and REST API are unavailable.\n` +
-						`Desktop Bridge: ${getDesktopConnector || (getBrowserManager && ensureInitialized) ? 'Failed (see logs above)' : 'Not available (local mode only)'}\n` +
-						`REST API: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable, OR ensure Figma Desktop Bridge plugin is running\n` +
-						`2. Cloud mode: Authenticate via OAuth\n` +
-						`3. Ensure the Desktop Bridge plugin is running in Figma Desktop`
+					const dbStatus = getDesktopConnector || (getBrowserManager && ensureInitialized)
+						? "Failed (see logs above)"
+						: "Not available";
+					throw restAuthError(
+						"Cannot retrieve component data. Both Desktop Bridge and REST API are unavailable.",
+						`Desktop Bridge: ${dbStatus}; REST API: ${errorMessage}`,
+						"Alternatively: open the Figma Desktop Bridge plugin in Figma Desktop to enable the plugin-based fallback.",
 					);
 				}
 
@@ -2814,12 +2835,9 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve styles. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth`
+					throw restAuthError(
+						"Cannot retrieve styles. REST API authentication required.",
+						errorMessage,
 					);
 				}
 
@@ -2987,14 +3005,10 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot render component image. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth\n\n` +
-						`Note: For component screenshots, figma_capture_screenshot may work as an alternative ` +
-						`if the Desktop Bridge plugin is connected.`
+					throw restAuthError(
+						"Cannot render component image. REST API authentication required.",
+						errorMessage,
+						"Note: For component screenshots, figma_capture_screenshot may work as an alternative if the Desktop Bridge plugin is connected.",
 					);
 				}
 
@@ -3138,14 +3152,10 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve component for development. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth\n\n` +
-						`Note: For component metadata, figma_get_component has Desktop Bridge fallback ` +
-						`that works without token (requires the Desktop Bridge plugin to be connected).`
+					throw restAuthError(
+						"Cannot retrieve component for development. REST API authentication required.",
+						errorMessage,
+						"Note: For component metadata, figma_get_component has a Desktop Bridge fallback that works without a token (requires the Desktop Bridge plugin to be connected)."
 					);
 				}
 
@@ -3560,12 +3570,9 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve file data for plugin development. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth`
+					throw restAuthError(
+						"Cannot retrieve file data for plugin development. REST API authentication required.",
+						errorMessage,
 					);
 				}
 
