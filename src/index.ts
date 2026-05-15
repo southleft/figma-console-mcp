@@ -27,6 +27,7 @@ import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
+import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
 import { registerWriteTools } from "./core/write-tools.js";
@@ -1054,6 +1055,16 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		} catch (e) {
 			// Silently skip if axe-core/jsdom not available in Workers environment
 		}
+
+		// Register figma_diagnose for cloud mode. Plugin state isn't directly
+		// observable from here (the paired plugin's WS lives in the relay DO),
+		// so we report mode and let the cross-MCP disclaimer do most of the work.
+		registerDiagnoseTool(this.server, {
+			mode: "cloud",
+			getServerVersion: () => "cloud",
+			getPluginState: () => null,
+			getTokenState: () => ({ hasToken: false }),
+		});
 
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
 		// They require Node.js file system APIs that don't work in Cloudflare Workers

@@ -39,6 +39,8 @@ import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
+import { registerDiagnoseTool } from "./core/diagnose-tool.js";
+import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
 import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
 import { FigmaWebSocketServer } from "./core/websocket-server.js";
@@ -6009,6 +6011,41 @@ return {
 
 		// Register code-side accessibility scanning (axe-core + JSDOM)
 		registerAccessibilityTools(this.server);
+
+		// Register figma_diagnose — designer-readable health check + cross-MCP disambiguator.
+		// This is the first tool to point a confused user at: it self-identifies the server,
+		// reports plugin/token state in plain language, and explicitly disclaims any
+		// token/OAuth error that may have been emitted by a different Figma-related MCP.
+		registerDiagnoseTool(this.server, {
+			mode: "local",
+			getServerVersion: () => {
+				try {
+					return JSON.parse(
+						readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"),
+					).version;
+				} catch {
+					return "0.0.0";
+				}
+			},
+			getPluginState: () => {
+				if (!this.wsServer) return null;
+				const fileInfo = this.wsServer.getConnectedFileInfo();
+				const connected = this.wsServer.isClientConnected();
+				return {
+					connected,
+					fileName: fileInfo?.fileName,
+					fileKey: fileInfo?.fileKey ?? undefined,
+					currentPage: fileInfo?.currentPage,
+					editorType: fileInfo?.editorType,
+					port: this.wsActualPort ?? undefined,
+					portFallbackFrom: this.wsPreferredPort,
+				};
+			},
+			getTokenState: () => {
+				const hasToken = !!process.env.FIGMA_ACCESS_TOKEN;
+				return { hasToken, source: hasToken ? "env" : undefined };
+			},
+		});
 
 		// Register Annotation tools (read/write design annotations via Desktop Bridge)
 		registerAnnotationTools(
