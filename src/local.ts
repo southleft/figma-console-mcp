@@ -526,30 +526,15 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					let status: ReturnType<import("./core/console-monitor.js").ConsoleMonitor["getStatus"]> | ReturnType<NonNullable<typeof this.wsServer>["getConsoleStatus"]>;
 					let source: "cdp" | "websocket" = "cdp";
 
-					if (this.consoleMonitor?.getStatus().isMonitoring) {
-						// Console monitor is active — use it (captures all page logs)
-						logs = this.consoleMonitor.getLogs({ count, level, since });
-						status = this.consoleMonitor.getStatus();
-					} else if (this.wsServer?.isClientConnected()) {
-						// WebSocket fallback — plugin-captured console logs
+					if (this.wsServer?.isClientConnected()) {
+						// Plugin-captured console logs delivered via WebSocket bridge
 						logs = this.wsServer.getConsoleLogs({ count, level, since });
 						status = this.wsServer.getConsoleStatus();
 						source = "websocket";
 					} else {
-						// Neither available — try to initialize
-						try {
-							await this.ensureInitialized();
-							if (this.consoleMonitor) {
-								logs = this.consoleMonitor.getLogs({ count, level, since });
-								status = this.consoleMonitor.getStatus();
-							} else {
-								throw new Error("Console monitor not initialized");
-							}
-						} catch {
-							throw new Error(
-								"No console monitoring available. Open the Desktop Bridge plugin in Figma for console capture.",
-							);
-						}
+						throw new Error(
+							"No console monitoring available. Open the Desktop Bridge plugin in Figma for console capture.",
+						);
 					}
 
 					const responseData: any = {
@@ -954,22 +939,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					let clearedCount = 0;
 					let transport: "cdp" | "websocket" = "cdp";
 
-					// Try WebSocket buffer first (non-disruptive)
+					// Clear the WebSocket plugin-side log buffer (non-disruptive)
 					if (this.wsServer?.isClientConnected()) {
 						clearedCount = this.wsServer.clearConsoleLogs();
 						transport = "websocket";
 					} else {
-						// Try browser manager (initialize if needed)
-						if (!this.consoleMonitor) {
-							await this.ensureInitialized();
-						}
-						if (this.consoleMonitor) {
-							clearedCount = this.consoleMonitor.clear();
-						} else {
-							throw new Error(
-								"No console monitoring available. Open the Desktop Bridge plugin in Figma.",
-							);
-						}
+						throw new Error(
+							"No console monitoring available. Open the Desktop Bridge plugin in Figma.",
+						);
 					}
 
 					const responseData: any = {
@@ -3757,10 +3734,6 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 			if (this.wsServer) {
 				await this.wsServer.stop();
-			}
-
-			if (this.consoleMonitor) {
-				await this.consoleMonitor.stopMonitoring();
 			}
 
 			if (this.browserManager) {
