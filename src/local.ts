@@ -501,8 +501,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				try {
 					// Try console monitor first, fall back to WebSocket console buffer
 					let logs: import("./core/types/index.js").ConsoleLogEntry[];
-					let status: ReturnType<import("./core/console-monitor.js").ConsoleMonitor["getStatus"]> | ReturnType<NonNullable<typeof this.wsServer>["getConsoleStatus"]>;
-					let source: "cdp" | "websocket" = "cdp";
+					let status: ReturnType<NonNullable<typeof this.wsServer>["getConsoleStatus"]>;
+					let source: "websocket" = "websocket";
 
 					if (this.wsServer?.isClientConnected()) {
 						// Plugin-captured console logs delivered via WebSocket bridge
@@ -746,37 +746,24 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					.describe("Filter by log level"),
 			},
 			async ({ duration, level }) => {
-				// Determine which console source to use
-				const useCDP = this.consoleMonitor?.getStatus().isMonitoring;
-				const useWS = !useCDP && this.wsServer?.isClientConnected();
-
-				if (!useCDP && !useWS) {
+				if (!this.wsServer?.isClientConnected()) {
 					throw new Error(
 						"No console monitoring available. Open the Desktop Bridge plugin in Figma for console capture.",
 					);
 				}
 
 				const startTime = Date.now();
-				const startLogCount = useCDP
-					? this.consoleMonitor!.getStatus().logCount
-					: this.wsServer!.getConsoleStatus().logCount;
+				const startLogCount = this.wsServer.getConsoleStatus().logCount;
 
 				// Wait for the specified duration while collecting logs
 				await new Promise((resolve) => setTimeout(resolve, duration * 1000));
 
-				const watchedLogs = useCDP
-					? this.consoleMonitor!.getLogs({
-							level: level === "all" ? undefined : level,
-							since: startTime,
-						})
-					: this.wsServer!.getConsoleLogs({
-							level: level === "all" ? undefined : level,
-							since: startTime,
-						});
+				const watchedLogs = this.wsServer.getConsoleLogs({
+					level: level === "all" ? undefined : level,
+					since: startTime,
+				});
 
-				const endLogCount = useCDP
-					? this.consoleMonitor!.getStatus().logCount
-					: this.wsServer!.getConsoleStatus().logCount;
+				const endLogCount = this.wsServer.getConsoleStatus().logCount;
 				const newLogsCount = endLogCount - startLogCount;
 
 				const responseData: any = {
@@ -785,19 +772,16 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					startTime: new Date(startTime).toISOString(),
 					endTime: new Date(Date.now()).toISOString(),
 					filter: level,
-					transport: useCDP ? "cdp" : "websocket",
+					transport: "websocket",
 					statistics: {
 						totalLogsInBuffer: endLogCount,
 						logsAddedDuringWatch: newLogsCount,
 						logsMatchingFilter: watchedLogs.length,
 					},
 					logs: watchedLogs,
+					ai_instruction:
+						"Console logs captured via WebSocket Bridge (plugin sandbox only).",
 				};
-
-				if (useWS) {
-					responseData.ai_instruction =
-						"Console logs captured via WebSocket Bridge (plugin sandbox only).";
-				}
 
 				return {
 					content: [
@@ -823,7 +807,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 			async ({ clearConsole: clearConsoleBefore }) => {
 				try {
-					let transport: "cdp" | "websocket" = "cdp";
+					let transport: "websocket" = "websocket";
 					let clearedCount = 0;
 					let currentUrl: string | null = null;
 
@@ -899,7 +883,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			async () => {
 				try {
 					let clearedCount = 0;
-					let transport: "cdp" | "websocket" = "cdp";
+					let transport: "websocket" = "websocket";
 
 					// Clear the WebSocket plugin-side log buffer (non-disruptive)
 					if (this.wsServer?.isClientConnected()) {
