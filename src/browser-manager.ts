@@ -6,7 +6,17 @@
 import puppeteer, { type Browser, type Page } from '@cloudflare/puppeteer';
 import { createChildLogger } from './core/logger.js';
 import type { BrowserConfig } from './core/types/index.js';
-import type { NavigationResult } from './browser/base.js';
+
+/**
+ * Result of a navigateToFigma call indicating what action was taken.
+ * Inlined from the deleted browser/base.ts (Phase 3 CDP cleanup) — only
+ * the cloud BrowserManager needs this type now.
+ */
+interface NavigationResult {
+	page: any;
+	action: 'switched_to_existing' | 'navigated';
+	url: string;
+}
 
 const logger = createChildLogger({ component: 'browser-manager' });
 
