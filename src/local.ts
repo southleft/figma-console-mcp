@@ -40,6 +40,7 @@ import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
+import { wrapServerForIdentity } from "./core/identity.js";
 import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
 import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
@@ -215,6 +216,11 @@ For component-specific design guidance (sizing, proportions, accessibility, etc.
 If Design Systems Assistant MCP is not available, install it from: https://github.com/southleft/design-systems-mcp`,
 			},
 		);
+
+		// Stamp every tool response (and every thrown error) with our MCP identity
+		// so LLMs can attribute output unambiguously when multiple Figma-related
+		// MCPs are connected. Idempotent for already-tagged responses.
+		wrapServerForIdentity(this.server);
 	}
 
 	/**

@@ -28,6 +28,7 @@ import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
+import { wrapServerForIdentity } from "./core/identity.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
 import { registerWriteTools } from "./core/write-tools.js";
@@ -72,10 +73,16 @@ function isFigmaPAT(token: string): boolean {
  * Extends McpAgent to provide Figma-specific debugging tools
  */
 export class FigmaConsoleMCPv3 extends McpAgent {
-	server = new McpServer({
-		name: "Figma Console MCP",
-		version: "1.25.0",
-	});
+	server = (() => {
+		const s = new McpServer({
+			name: "Figma Console MCP",
+			version: "1.25.0",
+		});
+		// Identity wrap — every tool's response and thrown error gets stamped
+		// with our MCP name so cross-MCP attribution is unambiguous.
+		wrapServerForIdentity(s);
+		return s;
+	})();
 
 	private browserManager: BrowserManager | null = null;
 	private consoleMonitor: ConsoleMonitor | null = null;
@@ -1352,6 +1359,7 @@ export default {
 				name: "Figma Console MCP",
 				version: "1.25.0",
 			});
+			wrapServerForIdentity(statelessServer);
 
 			// ================================================================
 			// Cloud Write Relay — Pairing Tool (stateless /mcp path)
