@@ -78,15 +78,13 @@ flowchart TB
 **Transport:**
 - **WebSocket + HTTP** — via Desktop Bridge Plugin on ports 9223–9232. No debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running. Orphaned processes are automatically detected and terminated on startup.
-- The same port serves both WebSocket (plugin communication) and HTTP (bootloader UI delivery at `/plugin/ui` and health checks at `/health`).
+- The HTTP server on the same port exposes `/health` for liveness checks.
 - All 100+ tools work through the WebSocket transport.
 
-**Bootloader Architecture (v1.14.0+):**
-- The Desktop Bridge plugin uses a thin bootloader (`ui.html`, ~120 lines) that Figma caches permanently.
-- On each plugin open, the bootloader scans ports 9223–9232 via WebSocket, finds the MCP server, and requests the full UI HTML via a `GET_PLUGIN_UI` WebSocket message.
-- The server responds with the complete plugin UI (~50KB), which the bootloader passes to `code.js` to load via `figma.showUI()`.
-- This means the plugin UI is always up-to-date with the running server — no re-importing needed after the initial setup.
-- Plugin files are also copied to `~/.figma-console-mcp/plugin/` for a stable import path.
+**Plugin distribution:**
+- The Desktop Bridge plugin ships as `manifest.json`, `code.js`, and `ui.html` — the full UI (~60 KB) is loaded directly by Figma at plugin-open time (no bootloader fetch).
+- Plugin files are copied to `~/.figma-console-mcp/plugin/` on server startup so users have a stable import path; the MCP server keeps the copy in sync with the running build.
+- Updating the plugin code requires re-importing `manifest.json` in Figma (Plugins → Manage plugins → re-import) because Figma caches plugin files at the application level. Closing and reopening the plugin window is enough for most edits; a full Figma restart is rarely needed.
 
 **Capabilities:**
 - Everything in Remote Mode, plus:

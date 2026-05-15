@@ -213,3 +213,7 @@ Temporary Items
 
 # Internal notes and drafts
 .notes/
+
+# Claude Code agent worktrees and Playwright CLI debug artifacts
+.claude/worktrees/
+.playwright-cli/

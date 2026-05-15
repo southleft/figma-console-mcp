@@ -78,7 +78,7 @@ function setupStablePluginDir(sourcePluginDir: string): string | null {
 		const stableDir = join(homedir(), ".figma-console-mcp", "plugin");
 		mkdirSync(stableDir, { recursive: true });
 
-		const filesToCopy = ["manifest.json", "code.js", "ui.html", "ui-full.html"];
+		const filesToCopy = ["manifest.json", "code.js", "ui.html"];
 		for (const file of filesToCopy) {
 			const src = join(sourcePluginDir, file);
 			const dest = join(stableDir, file);

@@ -221,59 +221,6 @@ function hexToFigmaRGB(hex) {
 figma.ui.onmessage = async (msg) => {
 
   // ============================================================================
-  // BOOT_LOAD_UI - Bootloader fetched fresh UI HTML from the MCP server.
-  // Replace the bootloader with the full, always-up-to-date plugin UI.
-  // This uses figma.showUI() with the HTML string directly — no redirects,
-  // no cross-origin, no CSP issues.
-  // ============================================================================
-  if (msg.type === 'BOOT_LOAD_UI' && msg.html) {
-    console.log('🌉 [Desktop Bridge] Bootloader delivered fresh UI (' + msg.html.length + ' bytes), loading...');
-    figma.showUI(msg.html, { width: 180, height: 50, visible: true, themeColors: true });
-
-    // Re-send variables data to the fresh UI — the original send went to the
-    // bootloader which discarded it. The fresh UI needs it to show "ready" status.
-    (async function() {
-      try {
-        var variables = await figma.variables.getLocalVariablesAsync();
-        var collections = await figma.variables.getLocalVariableCollectionsAsync();
-        figma.ui.postMessage({
-          type: 'VARIABLES_DATA',
-          data: {
-            success: true,
-            timestamp: Date.now(),
-            fileKey: figma.fileKey || null,
-            variables: variables.map(function(v) { return {
-              id: v.id, name: v.name, key: v.key, resolvedType: v.resolvedType,
-              valuesByMode: v.valuesByMode, variableCollectionId: v.variableCollectionId,
-              scopes: v.scopes, codeSyntax: v.codeSyntax || {}, description: v.description, hiddenFromPublishing: v.hiddenFromPublishing
-            }; }),
-            variableCollections: collections.map(function(c) { return {
-              id: c.id, name: c.name, key: c.key, modes: c.modes,
-              defaultModeId: c.defaultModeId, variableIds: c.variableIds
-            }; })
-          }
-        });
-        console.log('🌉 [Desktop Bridge] Re-sent variables to fresh UI (' + variables.length + ' vars)');
-      } catch (e) {
-        console.log('🌉 [Desktop Bridge] Could not re-send variables:', e.message || e);
-      }
-    })();
-    return;
-  }
-
-  // ============================================================================
-  // BOOT_FALLBACK - Bootloader found an old server that doesn't support the
-  // bootloader protocol. Fall back to reloading the cached __html__ which
-  // contains the full UI (for users who haven't switched to the bootloader yet,
-  // __html__ IS the full UI; for bootloader users, this is a no-op reload).
-  // ============================================================================
-  if (msg.type === 'BOOT_FALLBACK') {
-    console.log('🌉 [Desktop Bridge] Old server detected on port ' + msg.port + ', using cached UI');
-    figma.showUI(__html__, { width: 180, height: 50, visible: true, themeColors: true });
-    return;
-  }
-
-  // ============================================================================
   // EXECUTE_CODE - Arbitrary code execution (Power Tool)
   // ============================================================================
   if (msg.type === 'EXECUTE_CODE') {

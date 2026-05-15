@@ -1950,7 +1950,7 @@ export function registerFigmaAPITools(
 
 						// EXECUTE_CODE responses come back wrapped one level deeper:
 						// `{ success: true, result: { success: true, variables, ... } }`
-						// because handleResult in ui-full.html nests the script return value
+						// because handleResult in ui.html nests the script return value
 						// under `result`. The plugin-UI cache path (GET_VARIABLES_DATA) does
 						// not nest. Unwrap when we detect the EXECUTE_CODE shape so both
 						// paths produce a uniform { success, variables, ... } below. See #68.
