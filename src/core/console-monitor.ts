@@ -4,13 +4,14 @@
  * Monitors both main page console AND Web Worker consoles (where Figma plugins run)
  */
 
-// Use type imports to support both puppeteer-core and @cloudflare/puppeteer
-// Both have compatible Page/WebWorker interfaces for our use case
-import type { Page as PuppeteerPage, WebWorker as PuppeteerWorker } from 'puppeteer-core';
+// Type imports come from @cloudflare/puppeteer — cloud mode is the only
+// consumer of ConsoleMonitor after Phase 3 (CDP/Puppeteer fallback removed
+// from local mode). The runtime Page/WebWorker types in this package are
+// structurally compatible with what the consumers in this file expect.
+import type { Page as PuppeteerPage, WebWorker as PuppeteerWorker } from '@cloudflare/puppeteer';
 import { createChildLogger } from './logger.js';
 import type { ConsoleLogEntry, ConsoleConfig } from './types/index.js';
 
-// Type alias to accept either puppeteer implementation
 type Page = PuppeteerPage;
 type WebWorker = PuppeteerWorker;
 
