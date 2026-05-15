@@ -1955,6 +1955,1229 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 		);
 
+		// ============================================================================
+		// DESIGN SYSTEM TOOLS (Token-Efficient Tool Family)
+		// ============================================================================
+		// These tools provide progressive disclosure of design system data
+		// to minimize context window usage. Start with summary, then search,
+		// then get details for specific components.
+
+		// Helper function to ensure design system cache is loaded (auto-loads if needed)
+		const ensureDesignSystemCache = async (): Promise<{
+			cacheEntry: any;
+			fileKey: string;
+			wasLoaded: boolean;
+		}> => {
+			const {
+				DesignSystemManifestCache,
+				createEmptyManifest,
+				figmaColorToHex,
+			} = await import("./core/design-system-manifest.js");
+
+			const cache = DesignSystemManifestCache.getInstance();
+			const currentUrl = this.getCurrentFileUrl();
+			const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
+			const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
+
+			// Check cache first
+			let cacheEntry = cache.get(fileKey);
+			if (cacheEntry) {
+				return { cacheEntry, fileKey, wasLoaded: false };
+			}
+
+			// Need to extract fresh data - do this silently without returning an error
+			logger.info({ fileKey }, "Auto-loading design system cache");
+			const connector = await this.getDesktopConnector();
+			const manifest = createEmptyManifest(fileKey);
+			manifest.fileUrl = currentUrl || undefined;
+
+			// Get variables (tokens)
+			try {
+				const variablesResult = await connector.getVariables(fileKey);
+				if (variablesResult.success && variablesResult.data) {
+					for (const collection of variablesResult.data.variableCollections ||
+						[]) {
+						manifest.collections.push({
+							id: collection.id,
+							name: collection.name,
+							modes: collection.modes.map((m: any) => ({
+								modeId: m.modeId,
+								name: m.name,
+							})),
+							defaultModeId: collection.defaultModeId,
+						});
+					}
+					for (const variable of variablesResult.data.variables || []) {
+						const tokenName = variable.name;
+						const defaultModeId = manifest.collections.find(
+							(c: any) => c.id === variable.variableCollectionId,
+						)?.defaultModeId;
+						const defaultValue = defaultModeId
+							? variable.valuesByMode?.[defaultModeId]
+							: undefined;
+
+						if (variable.resolvedType === "COLOR") {
+							manifest.tokens.colors[tokenName] = {
+								name: tokenName,
+								value: figmaColorToHex(defaultValue),
+								variableId: variable.id,
+								scopes: variable.scopes,
+							};
+						} else if (variable.resolvedType === "FLOAT") {
+							manifest.tokens.spacing[tokenName] = {
+								name: tokenName,
+								value: typeof defaultValue === "number" ? defaultValue : 0,
+								variableId: variable.id,
+							};
+						}
+					}
+				}
+			} catch (error) {
+				logger.warn({ error }, "Could not fetch variables during auto-load");
+			}
+
+			// Get components
+			let rawComponents:
+				| { components: any[]; componentSets: any[] }
+				| undefined;
+			try {
+				const componentsResult = await connector.getLocalComponents();
+				if (componentsResult.success && componentsResult.data) {
+					rawComponents = {
+						components: componentsResult.data.components || [],
+						componentSets: componentsResult.data.componentSets || [],
+					};
+					for (const comp of rawComponents.components) {
+						manifest.components[comp.name] = {
+							key: comp.key,
+							nodeId: comp.nodeId,
+							name: comp.name,
+							description: comp.description || undefined,
+							defaultSize: { width: comp.width, height: comp.height },
+						};
+					}
+					for (const compSet of rawComponents.componentSets) {
+						manifest.componentSets[compSet.name] = {
+							key: compSet.key,
+							nodeId: compSet.nodeId,
+							name: compSet.name,
+							description: compSet.description || undefined,
+							variants:
+								compSet.variants?.map((v: any) => ({
+									key: v.key,
+									nodeId: v.nodeId,
+									name: v.name,
+								})) || [],
+							variantAxes:
+								compSet.variantAxes?.map((a: any) => ({
+									name: a.name,
+									values: a.values,
+								})) || [],
+						};
+					}
+				}
+			} catch (error) {
+				logger.warn({ error }, "Could not fetch components during auto-load");
+			}
+
+			// Update summary
+			manifest.summary = {
+				totalTokens:
+					Object.keys(manifest.tokens.colors).length +
+					Object.keys(manifest.tokens.spacing).length,
+				totalComponents: Object.keys(manifest.components).length,
+				totalComponentSets: Object.keys(manifest.componentSets).length,
+				colorPalette: Object.keys(manifest.tokens.colors).slice(0, 10),
+				spacingScale: Object.values(manifest.tokens.spacing)
+					.map((s: any) => s.value)
+					.sort((a: number, b: number) => a - b)
+					.slice(0, 10),
+				typographyScale: [],
+				componentCategories: [],
+			};
+
+			// Cache the result
+			cache.set(fileKey, manifest, rawComponents);
+			cacheEntry = cache.get(fileKey);
+
+			return { cacheEntry, fileKey, wasLoaded: true };
+		};
+		// ============================================================================
+		// READ-SIDE LIBRARY / DESIGN-SYSTEM TOOLS
+		// (Previously interleaved with write tools in local.ts; restored after the
+		// Phase-2 write-tools dedupe excised them along with the surrounding writes.)
+		// ============================================================================
+
+		this.server.tool(
+			"figma_get_design_system_summary",
+			"Get a compact overview of the design system. Returns categories, component counts, and token collection names WITHOUT full details. Use this first to understand what's available, then use figma_search_components to find specific components. This tool is optimized for minimal token usage.",
+			{
+				forceRefresh: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Force refresh the cached data (use sparingly - extraction can take minutes for large files)",
+					),
+			},
+			async ({ forceRefresh }) => {
+				try {
+					const {
+						DesignSystemManifestCache,
+						createEmptyManifest,
+						figmaColorToHex,
+						getCategories,
+						getTokenSummary,
+					} = await import("./core/design-system-manifest.js");
+
+					const cache = DesignSystemManifestCache.getInstance();
+					const currentUrl = this.getCurrentFileUrl();
+					const fileKeyMatch = currentUrl?.match(
+						/\/(file|design)\/([a-zA-Z0-9]+)/,
+					);
+					const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
+
+					// Check cache first
+					let cacheEntry = cache.get(fileKey);
+					if (cacheEntry && !forceRefresh) {
+						const categories = getCategories(cacheEntry.manifest);
+						const tokenSummary = getTokenSummary(cacheEntry.manifest);
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											success: true,
+											cached: true,
+											cacheAge: Math.round(
+												(Date.now() - cacheEntry.timestamp) / 1000,
+											),
+											fileKey,
+											categories: categories.slice(0, 15),
+											tokens: tokenSummary,
+											totals: {
+												components: cacheEntry.manifest.summary.totalComponents,
+												componentSets:
+													cacheEntry.manifest.summary.totalComponentSets,
+												tokens: cacheEntry.manifest.summary.totalTokens,
+											},
+											hint: "Use figma_search_components to find specific components by name or category.",
+										},
+									),
+								},
+							],
+						};
+					}
+
+					// Need to extract fresh data
+					const connector = await this.getDesktopConnector();
+					const manifest = createEmptyManifest(fileKey);
+					manifest.fileUrl = currentUrl || undefined;
+
+					// Get variables (tokens)
+					try {
+						const variablesResult = await connector.getVariables(fileKey);
+						if (variablesResult.success && variablesResult.data) {
+							for (const collection of variablesResult.data
+								.variableCollections || []) {
+								manifest.collections.push({
+									id: collection.id,
+									name: collection.name,
+									modes: collection.modes.map((m: any) => ({
+										modeId: m.modeId,
+										name: m.name,
+									})),
+									defaultModeId: collection.defaultModeId,
+								});
+							}
+							for (const variable of variablesResult.data.variables || []) {
+								const tokenName = variable.name;
+								const defaultModeId = manifest.collections.find(
+									(c) => c.id === variable.variableCollectionId,
+								)?.defaultModeId;
+								const defaultValue = defaultModeId
+									? variable.valuesByMode?.[defaultModeId]
+									: undefined;
+
+								if (variable.resolvedType === "COLOR") {
+									manifest.tokens.colors[tokenName] = {
+										name: tokenName,
+										value: figmaColorToHex(defaultValue),
+										variableId: variable.id,
+										scopes: variable.scopes,
+									};
+								} else if (variable.resolvedType === "FLOAT") {
+									manifest.tokens.spacing[tokenName] = {
+										name: tokenName,
+										value: typeof defaultValue === "number" ? defaultValue : 0,
+										variableId: variable.id,
+									};
+								}
+							}
+						}
+					} catch (error) {
+						logger.warn({ error }, "Could not fetch variables");
+					}
+
+					// Get components (can be slow for large files)
+					let rawComponents:
+						| { components: any[]; componentSets: any[] }
+						| undefined;
+					try {
+						const componentsResult = await connector.getLocalComponents();
+						if (componentsResult.success && componentsResult.data) {
+							rawComponents = {
+								components: componentsResult.data.components || [],
+								componentSets: componentsResult.data.componentSets || [],
+							};
+							for (const comp of rawComponents.components) {
+								manifest.components[comp.name] = {
+									key: comp.key,
+									nodeId: comp.nodeId,
+									name: comp.name,
+									description: comp.description || undefined,
+									defaultSize: { width: comp.width, height: comp.height },
+								};
+							}
+							for (const compSet of rawComponents.componentSets) {
+								manifest.componentSets[compSet.name] = {
+									key: compSet.key,
+									nodeId: compSet.nodeId,
+									name: compSet.name,
+									description: compSet.description || undefined,
+									variants:
+										compSet.variants?.map((v: any) => ({
+											key: v.key,
+											nodeId: v.nodeId,
+											name: v.name,
+										})) || [],
+									variantAxes:
+										compSet.variantAxes?.map((a: any) => ({
+											name: a.name,
+											values: a.values,
+										})) || [],
+								};
+							}
+						}
+					} catch (error) {
+						logger.warn({ error }, "Could not fetch components");
+					}
+
+					// Update summary
+					manifest.summary = {
+						totalTokens:
+							Object.keys(manifest.tokens.colors).length +
+							Object.keys(manifest.tokens.spacing).length,
+						totalComponents: Object.keys(manifest.components).length,
+						totalComponentSets: Object.keys(manifest.componentSets).length,
+						colorPalette: Object.keys(manifest.tokens.colors).slice(0, 10),
+						spacingScale: Object.values(manifest.tokens.spacing)
+							.map((s) => s.value)
+							.sort((a, b) => a - b)
+							.slice(0, 10),
+						typographyScale: [],
+						componentCategories: [],
+					};
+
+					// Cache the result
+					cache.set(fileKey, manifest, rawComponents);
+
+					const categories = getCategories(manifest);
+					const tokenSummary = getTokenSummary(manifest);
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										cached: false,
+										fileKey,
+										categories: categories.slice(0, 15),
+										tokens: tokenSummary,
+										totals: {
+											components: manifest.summary.totalComponents,
+											componentSets: manifest.summary.totalComponentSets,
+											tokens: manifest.summary.totalTokens,
+										},
+										hint: "Use figma_search_components to find specific components by name or category.",
+									},
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to get design system summary");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error:
+											error instanceof Error ? error.message : String(error),
+										hint: "Make sure the Desktop Bridge plugin is running in Figma",
+									},
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool 2: Search Components (~3000 tokens response max, paginated)
+		this.server.tool(
+			"figma_search_components",
+			`Search for components by name, category, or description. Returns paginated results with component keys for instantiation. Automatically loads the design system cache if needed.
+
+**NEW: Cross-file library search!** Pass a libraryFileKey or libraryFileUrl to search for components in a published shared library (different file). This uses the REST API and requires FIGMA_ACCESS_TOKEN.
+
+Without libraryFileKey/libraryFileUrl, searches the currently open file (local components via Plugin API).`,
+			{
+				query: z
+					.string()
+					.optional()
+					.default("")
+					.describe("Search query to match component names or descriptions"),
+				category: z
+					.string()
+					.optional()
+					.describe("Filter by category (e.g., 'Button', 'Input', 'Card')"),
+				libraryFileKey: z
+					.string()
+					.optional()
+					.describe(
+						"File key of a published library to search in (for cross-file library access). Overrides local search.",
+					),
+				libraryFileUrl: z
+					.string()
+					.optional()
+					.describe(
+						"URL of a published library file to search in (e.g., https://www.figma.com/design/abc123/...). Alternative to libraryFileKey.",
+					),
+				limit: z
+					.number()
+					.optional()
+					.default(10)
+					.describe("Maximum results to return (default: 10, max: 25)"),
+				offset: z
+					.number()
+					.optional()
+					.default(0)
+					.describe("Offset for pagination"),
+			},
+			async ({ query, category, libraryFileKey, libraryFileUrl, limit, offset }) => {
+				try {
+					// Determine if this is a library search or local search
+					let resolvedLibraryKey = libraryFileKey;
+					if (!resolvedLibraryKey && libraryFileUrl) {
+						const { extractFileKey } = await import(
+							"./core/figma-api.js"
+						);
+						resolvedLibraryKey = extractFileKey(libraryFileUrl) ?? undefined;
+					}
+
+					// LIBRARY SEARCH PATH: Use REST API for cross-file access
+					if (resolvedLibraryKey) {
+						const api = await this.getFigmaAPI();
+						const [componentsResponse, componentSetsResponse] =
+							await Promise.all([
+								api.getComponents(resolvedLibraryKey).catch((err: Error) => {
+									logger.warn(
+										{ error: err },
+										"Failed to fetch components from library",
+									);
+									return { meta: { components: [] } };
+								}),
+								api
+									.getComponentSets(resolvedLibraryKey)
+									.catch((err: Error) => {
+										logger.warn(
+											{ error: err },
+											"Failed to fetch component sets from library",
+										);
+										return { meta: { component_sets: [] } };
+									}),
+							]);
+
+						const rawComponents =
+							componentsResponse?.meta?.components || [];
+						const rawComponentSets =
+							componentSetsResponse?.meta?.component_sets || [];
+
+						// Build combined results — component sets + standalone components
+						const componentSetNodeIds = new Set(
+							rawComponentSets.map((cs: any) => cs.node_id),
+						);
+
+						let results: any[] = [];
+
+						// Add component sets with their variant info
+						// NOTE: REST API returns containingComponentSet as an object { name, nodeId }
+						// not a boolean. Match via containingComponentSet.nodeId or component_set_id.
+						for (const cs of rawComponentSets) {
+							const variants = rawComponents.filter((c: any) => {
+								const ccs = c.containing_frame?.containingComponentSet;
+								// Match via containingComponentSet object (preferred)
+								if (ccs && typeof ccs === "object" && ccs.nodeId === cs.node_id) return true;
+								// Fallback: match via containing_frame.nodeId (some API versions)
+								if (ccs && c.containing_frame?.nodeId === cs.node_id) return true;
+								// Fallback: match via component_set_id field
+								if (c.component_set_id === cs.node_id) return true;
+								return false;
+							});
+							results.push({
+								name: cs.name,
+								key: cs.key,
+								nodeId: cs.node_id,
+								description: cs.description || undefined,
+								type: "COMPONENT_SET",
+								variantCount: variants.length,
+								variants: variants.slice(0, 5).map((v: any) => ({
+									name: v.name,
+									key: v.key,
+								})),
+								source: "library",
+							});
+						}
+
+						// Add standalone components (not part of a set)
+						for (const c of rawComponents) {
+							const ccs = c.containing_frame?.containingComponentSet;
+							const isVariant = ccs || c.component_set_id;
+							if (!isVariant) {
+								results.push({
+									name: c.name,
+									key: c.key,
+									nodeId: c.node_id,
+									description: c.description || undefined,
+									type: "COMPONENT",
+									source: "library",
+								});
+							}
+						}
+
+						// Apply search filter
+						if (query) {
+							const queryLower = query.toLowerCase();
+							results = results.filter(
+								(item) =>
+									item.name.toLowerCase().includes(queryLower) ||
+									item.description?.toLowerCase().includes(queryLower),
+							);
+						}
+
+						if (category) {
+							const catLower = category.toLowerCase();
+							results = results.filter(
+								(item) =>
+									item.name.toLowerCase().includes(catLower) ||
+									item.description?.toLowerCase().includes(catLower),
+							);
+						}
+
+						// Sort and paginate
+						results.sort((a: any, b: any) => a.name.localeCompare(b.name));
+						const effectiveLimit = Math.min(limit || 10, 25);
+						const effectiveOffset = offset || 0;
+						const total = results.length;
+						const paginatedResults = results.slice(
+							effectiveOffset,
+							effectiveOffset + effectiveLimit,
+						);
+
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										success: true,
+										source: "library",
+										libraryFileKey: resolvedLibraryKey,
+										query: query || "(all)",
+										category: category || "(all)",
+										results: paginatedResults,
+										pagination: {
+											offset: effectiveOffset,
+											limit: effectiveLimit,
+											total,
+											hasMore: effectiveOffset + effectiveLimit < total,
+										},
+										hint: "Use figma_instantiate_component with the componentKey to place library components in your current file.",
+									}),
+								},
+							],
+						};
+					}
+
+					// LOCAL SEARCH PATH: Use cached design system manifest (existing behavior)
+					const { searchComponents } = await import(
+						"./core/design-system-manifest.js"
+					);
+
+					// Auto-load design system cache if needed (no error returned to user)
+					const { cacheEntry } = await ensureDesignSystemCache();
+					if (!cacheEntry) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											error:
+												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
+											hint: "If you're trying to search a published library from another file, pass the libraryFileKey or libraryFileUrl parameter.",
+										},
+									),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					const effectiveLimit = Math.min(limit || 10, 25);
+					const results = searchComponents(cacheEntry.manifest, query || "", {
+						category,
+						limit: effectiveLimit,
+						offset: offset || 0,
+					});
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										source: "local",
+										query: query || "(all)",
+										category: category || "(all)",
+										results: results.results,
+										pagination: {
+											offset: offset || 0,
+											limit: effectiveLimit,
+											total: results.total,
+											hasMore: results.hasMore,
+										},
+										hint: results.hasMore
+											? `Use offset=${(offset || 0) + effectiveLimit} to get more results.`
+											: "Use figma_get_component_details with a component key for full details. To search a published library, pass libraryFileKey.",
+									},
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to search components");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error:
+											error instanceof Error ? error.message : String(error),
+									},
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool 3: Get Component Details (~500 tokens per component)
+		this.server.tool(
+			"figma_get_component_details",
+			"Get full details for a specific component including all variants, properties, and keys needed for instantiation. Use the component key or name from figma_search_components.",
+			{
+				componentKey: z
+					.string()
+					.optional()
+					.describe("The component key (preferred for exact match)"),
+				componentName: z
+					.string()
+					.optional()
+					.describe("The component name (used if key not provided)"),
+			},
+			async ({ componentKey, componentName }) => {
+				try {
+					if (!componentKey && !componentName) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											error: "Either componentKey or componentName is required",
+										},
+									),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					// Auto-load design system cache if needed
+					const { cacheEntry } = await ensureDesignSystemCache();
+					if (!cacheEntry) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											error:
+												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
+										},
+									),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					// Search for the component
+					let component: any = null;
+					let isComponentSet = false;
+
+					// Check component sets first (they have variants)
+					for (const [name, compSet] of Object.entries(
+						cacheEntry.manifest.componentSets,
+					) as [string, any][]) {
+						if (
+							(componentKey && compSet.key === componentKey) ||
+							(componentName && name === componentName)
+						) {
+							component = compSet;
+							isComponentSet = true;
+							break;
+						}
+					}
+
+					// Check standalone components
+					if (!component) {
+						for (const [name, comp] of Object.entries(
+							cacheEntry.manifest.components,
+						) as [string, any][]) {
+							if (
+								(componentKey && comp.key === componentKey) ||
+								(componentName && name === componentName)
+							) {
+								component = comp;
+								break;
+							}
+						}
+					}
+
+					if (!component) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											error: `Component not found: ${componentKey || componentName}`,
+											hint: "Use figma_search_components to find available components.",
+										},
+									),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										type: isComponentSet ? "componentSet" : "component",
+										component,
+										instantiation: {
+											key: component.key,
+											example: `Use figma_instantiate_component with componentKey: "${component.key}"`,
+										},
+									},
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to get component details");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error:
+											error instanceof Error ? error.message : String(error),
+									},
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool 4: Get Token Values (~2000 tokens response max)
+		this.server.tool(
+			"figma_get_token_values",
+			"Get actual values for design tokens (colors, spacing, etc). Use after figma_get_design_system_summary to get specific token values for implementation.",
+			{
+				type: z
+					.enum(["colors", "spacing", "all"])
+					.optional()
+					.default("all")
+					.describe("Type of tokens to retrieve"),
+				filter: z
+					.string()
+					.optional()
+					.describe(
+						"Filter token names (e.g., 'primary' to get all primary colors)",
+					),
+				limit: z
+					.number()
+					.optional()
+					.default(50)
+					.describe("Maximum tokens to return (default: 50)"),
+			},
+			async ({ type, filter, limit }) => {
+				try {
+					// Auto-load design system cache if needed
+					const { cacheEntry } = await ensureDesignSystemCache();
+					if (!cacheEntry) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify(
+										{
+											error:
+												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
+										},
+									),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					const tokens = cacheEntry.manifest.tokens;
+					const effectiveLimit = Math.min(limit || 50, 100);
+					const filterLower = filter?.toLowerCase();
+
+					const result: Record<string, any> = {};
+
+					if (type === "colors" || type === "all") {
+						const colors: Record<string, any> = {};
+						let count = 0;
+						for (const [name, token] of Object.entries(tokens.colors) as [
+							string,
+							any,
+						][]) {
+							if (count >= effectiveLimit) break;
+							if (!filterLower || name.toLowerCase().includes(filterLower)) {
+								colors[name] = { value: token.value, scopes: token.scopes };
+								count++;
+							}
+						}
+						result.colors = colors;
+					}
+
+					if (type === "spacing" || type === "all") {
+						const spacing: Record<string, any> = {};
+						let count = 0;
+						for (const [name, token] of Object.entries(tokens.spacing) as [
+							string,
+							any,
+						][]) {
+							if (count >= effectiveLimit) break;
+							if (!filterLower || name.toLowerCase().includes(filterLower)) {
+								spacing[name] = { value: token.value };
+								count++;
+							}
+						}
+						result.spacing = spacing;
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										success: true,
+										type,
+										filter: filter || "(none)",
+										tokens: result,
+										hint: "Use these exact token names and values when generating designs.",
+									},
+								),
+							},
+						],
+					};
+				} catch (error) {
+					logger.error({ error }, "Failed to get token values");
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(
+									{
+										error:
+											error instanceof Error ? error.message : String(error),
+									},
+								),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// Tool 5: Instantiate Component
+		this.server.tool(
+			"figma_get_library_components",
+			`Discover published components from a shared/team library file.
+
+**USE THIS when you need to use components from a published design system library** (a different file than the one currently open). This bridges the gap between library discovery and instantiation.
+
+**WORKFLOW:**
+1. Call this tool with the library file's URL or file key
+2. Browse the returned components — results include COMPONENT_SET (with variants array) and standalone COMPONENT types
+3. Use figma_instantiate_component with a VARIANT key (from the variants array inside a COMPONENT_SET result, NOT the component set key itself)
+
+**SEARCH NOTE:** The query filter matches both component names AND descriptions. If you get unexpected results (e.g., "Accordion" when searching "Button"), verify the result name matches what you need — it may have matched on a description mention.
+
+**MULTI-FILE TIP:** If you need to find a specific component and REST API search returns too many results, you can switch to the library file via figma_navigate, use figma_execute to find the exact component and its variant key, then switch back.
+
+**NOTE:** Requires FIGMA_ACCESS_TOKEN to be set (uses the Figma REST API to read the library file).`,
+			{
+				libraryFileUrl: z
+					.string()
+					.optional()
+					.describe(
+						"The URL of the library file (e.g., https://www.figma.com/design/abc123/My-Design-System). Either this or libraryFileKey is required.",
+					),
+				libraryFileKey: z
+					.string()
+					.optional()
+					.describe(
+						"The file key of the library file (e.g., 'abc123'). Either this or libraryFileUrl is required.",
+					),
+				query: z
+					.string()
+					.optional()
+					.describe(
+						"Search query to filter components by name (e.g., 'Button', 'Card'). Leave empty to get all components.",
+					),
+				limit: z
+					.number()
+					.optional()
+					.default(25)
+					.describe("Maximum results to return (default: 25, max: 100)"),
+				offset: z
+					.number()
+					.optional()
+					.default(0)
+					.describe("Offset for pagination"),
+				includeVariants: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Include individual variant components (default: false, only returns component sets)",
+					),
+			},
+			async ({
+				libraryFileUrl,
+				libraryFileKey,
+				query,
+				limit,
+				offset,
+				includeVariants,
+			}) => {
+				try {
+					// Resolve file key from URL or direct key
+					let fileKey = libraryFileKey;
+					if (!fileKey && libraryFileUrl) {
+						const { extractFileKey } = await import(
+							"./core/figma-api.js"
+						);
+						fileKey = extractFileKey(libraryFileUrl) ?? undefined;
+						if (!fileKey) {
+							return {
+								content: [
+									{
+										type: "text",
+										text: JSON.stringify({
+											error:
+												"Could not extract file key from URL. Please provide a valid Figma file URL or use libraryFileKey directly.",
+											example:
+												"https://www.figma.com/design/abc123/My-Design-System",
+										}),
+									},
+								],
+								isError: true,
+							};
+						}
+					}
+
+					if (!fileKey) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										error:
+											"Either libraryFileUrl or libraryFileKey is required.",
+										hint: "Provide the URL of your design system file, e.g., https://www.figma.com/design/abc123/My-Design-System",
+									}),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					// Use REST API to get published components from the library file
+					const api = await this.getFigmaAPI();
+
+					// Fetch both components and component sets in parallel
+					// Surface errors instead of swallowing them — token/scope issues need to be visible
+					const apiErrors: string[] = [];
+					const [componentsResponse, componentSetsResponse] =
+						await Promise.all([
+							api.getComponents(fileKey).catch((err: Error) => {
+								const msg = err.message || String(err);
+								logger.warn(
+									{ error: err },
+									"Failed to fetch components from library",
+								);
+								apiErrors.push(`Components API: ${msg}`);
+								return { meta: { components: [] } };
+							}),
+							api.getComponentSets(fileKey).catch((err: Error) => {
+								const msg = err.message || String(err);
+								logger.warn(
+									{ error: err },
+									"Failed to fetch component sets from library",
+								);
+								apiErrors.push(`Component Sets API: ${msg}`);
+								return { meta: { component_sets: [] } };
+							}),
+						]);
+
+					const rawComponents =
+						componentsResponse?.meta?.components || [];
+					const rawComponentSets =
+						componentSetsResponse?.meta?.component_sets || [];
+
+					// Helper: check if a component belongs to a given component set
+					// REST API returns containingComponentSet as an object { name, nodeId }
+					const isVariantOf = (c: any, csNodeId: string): boolean => {
+						const ccs = c.containing_frame?.containingComponentSet;
+						if (ccs && typeof ccs === "object" && ccs.nodeId === csNodeId) return true;
+						if (ccs && c.containing_frame?.nodeId === csNodeId) return true;
+						if (c.component_set_id === csNodeId) return true;
+						return false;
+					};
+					const isVariant = (c: any): boolean => {
+						return !!(c.containing_frame?.containingComponentSet || c.component_set_id);
+					};
+					const getParentSetName = (c: any): string | undefined => {
+						const ccs = c.containing_frame?.containingComponentSet;
+						if (ccs && typeof ccs === "object" && ccs.name) return ccs.name;
+						return c.containing_frame?.name || c.component_set_name || undefined;
+					};
+
+					// Process component sets (groups of variants)
+					const componentSets = rawComponentSets.map((cs: any) => {
+						const variants = rawComponents.filter((c: any) => isVariantOf(c, cs.node_id));
+
+						return {
+							name: cs.name,
+							key: cs.key,
+							nodeId: cs.node_id,
+							description: cs.description || undefined,
+							type: "COMPONENT_SET" as const,
+							variantCount: variants.length,
+							variants: variants.map((v: any) => ({
+								name: v.name,
+								key: v.key,
+								nodeId: v.node_id,
+							})),
+						};
+					});
+
+					// Process standalone components (not part of a set)
+					const standaloneComponents = rawComponents
+						.filter((c: any) => !isVariant(c))
+						.map((c: any) => ({
+							name: c.name,
+							key: c.key,
+							nodeId: c.node_id,
+							description: c.description || undefined,
+							type: "COMPONENT" as const,
+						}));
+
+					// Combine results
+					let allResults: any[] = [
+						...componentSets,
+						...standaloneComponents,
+					];
+
+					// Include individual variants if requested
+					if (includeVariants) {
+						const variantComponents = rawComponents
+							.filter((c: any) => isVariant(c))
+							.map((c: any) => ({
+								name: c.name,
+								key: c.key,
+								nodeId: c.node_id,
+								description: c.description || undefined,
+								type: "VARIANT" as const,
+								parentSetName: getParentSetName(c),
+							}));
+						allResults = [...allResults, ...variantComponents];
+					}
+
+					// Apply search filter
+					if (query) {
+						const queryLower = query.toLowerCase();
+						allResults = allResults.filter(
+							(item) =>
+								item.name
+									.toLowerCase()
+									.includes(queryLower) ||
+								item.description
+									?.toLowerCase()
+									.includes(queryLower),
+						);
+					}
+
+					// Sort by name for consistent results
+					allResults.sort((a, b) => a.name.localeCompare(b.name));
+
+					// Apply pagination
+					const effectiveLimit = Math.min(limit || 25, 100);
+					const effectiveOffset = offset || 0;
+					const total = allResults.length;
+					const paginatedResults = allResults.slice(
+						effectiveOffset,
+						effectiveOffset + effectiveLimit,
+					);
+					const hasMore =
+						effectiveOffset + effectiveLimit < total;
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									success: apiErrors.length === 0,
+									libraryFileKey: fileKey,
+									query: query || "(all)",
+									...(apiErrors.length > 0 && {
+										apiErrors,
+										hint: "REST API errors occurred. Check that FIGMA_ACCESS_TOKEN is valid and has file_content:read scope. If the token is correct, the library components may not be published to a team library.",
+									}),
+									summary: {
+										totalComponentSets:
+											componentSets.length,
+										totalStandaloneComponents:
+											standaloneComponents.length,
+										totalComponents: rawComponents.length,
+									},
+									results: paginatedResults,
+									pagination: {
+										offset: effectiveOffset,
+										limit: effectiveLimit,
+										total,
+										hasMore,
+									},
+									usage: {
+										instantiate: `To use a component: call figma_instantiate_component with a VARIANT key (not the component set key). For COMPONENT_SET results, pick a variant from the "variants" array.`,
+										example: (() => {
+											const first = paginatedResults[0];
+											if (!first) return undefined;
+											if (first.type === "COMPONENT_SET" && first.variants?.length > 0) {
+												return `figma_instantiate_component({ componentKey: "${first.variants[0].key}" }) — using first variant of "${first.name}"`;
+											}
+											return `figma_instantiate_component({ componentKey: "${first.key}" })`;
+										})(),
+										note: "IMPORTANT: Use variant keys (type COMPONENT), not component set keys (type COMPONENT_SET). Component set keys will fail. Also pre-load any custom fonts the component uses via figma_execute before instantiating.",
+									},
+								}),
+							},
+						],
+					};
+				} catch (error) {
+					const errorMessage =
+						error instanceof Error ? error.message : String(error);
+					logger.error(
+						{ error },
+						"Failed to get library components",
+					);
+
+					// Provide helpful guidance based on error type
+					let hint =
+						"Make sure FIGMA_ACCESS_TOKEN is set and the library file key is correct.";
+					if (errorMessage.includes("FIGMA_ACCESS_TOKEN")) {
+						hint =
+							"Set FIGMA_ACCESS_TOKEN environment variable with your Figma personal access token. Get one at: https://www.figma.com/developers/api#access-tokens";
+					} else if (
+						errorMessage.includes("403") ||
+						errorMessage.includes("Forbidden")
+					) {
+						hint =
+							"Access denied. Make sure your Figma token has access to this file and the file's library is published.";
+					} else if (
+						errorMessage.includes("404") ||
+						errorMessage.includes("Not found")
+					) {
+						hint =
+							"File not found. Check the file URL/key and make sure the file exists and you have access to it.";
+					} else if (
+						errorMessage.includes("429") ||
+						errorMessage.includes("Rate")
+					) {
+						hint =
+							"Rate limited by Figma API. Wait a moment and try again, or reduce the number of requests.";
+					}
+
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									error: errorMessage,
+									hint,
+								}),
+							},
+						],
+						isError: true,
+					};
+				}
+			},
+		);
+
+		// ============================================================================
+		// NEW: Component Property Management Tools
+		// ============================================================================
+
+		// Tool: Set Node Description
 		// Register all write/manipulation tools (figma_execute, variable CRUD, node mutations,
 		// design-token setup, accessibility audits, etc.). Sourced from src/core/write-tools.ts
 		// so local mode and cloud mode share the same 30 implementations — no risk of drift.
