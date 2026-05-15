@@ -6526,8 +6526,16 @@ return {
 				this.wsServer.on("fileConnected", (data: { fileKey: string; fileName: string }) => {
 					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin connected via WebSocket");
 				});
+
+				// Plugin disconnect leaves cached variables stale — when the plugin reconnects
+				// after a sleep/wake or network blip, the file may have edits we missed
+				// (no DOCUMENT_CHANGE event was delivered while we were disconnected).
+				// Invalidate the cache for the disconnected file so the next read is fresh.
 				this.wsServer.on("fileDisconnected", (data: { fileKey: string; fileName: string }) => {
 					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin disconnected from WebSocket");
+					if (data.fileKey) {
+						this.variablesCache.delete(data.fileKey);
+					}
 				});
 
 				// Invalidate variable cache when document changes are reported.
@@ -6539,13 +6547,20 @@ return {
 						if (data.fileKey) {
 							// Per-file cache invalidation — only clear the affected file's cache
 							this.variablesCache.delete(data.fileKey);
+							logger.debug(
+								{ fileKey: data.fileKey, changeCount: data.changeCount, hasStyleChanges: data.hasStyleChanges, hasNodeChanges: data.hasNodeChanges },
+								"Variable cache invalidated due to document changes"
+							);
 						} else {
-							this.variablesCache.clear();
+							// Unidentified file (event arrived before FILE_INFO handshake completed).
+							// We don't know which cache entry to invalidate; do nothing rather than
+							// blanket-clear other files' caches. FILE_INFO will arrive shortly and
+							// any subsequent document changes will route correctly.
+							logger.debug(
+								{ changeCount: data.changeCount },
+								"Document change received before file identification — cache untouched"
+							);
 						}
-						logger.debug(
-							{ fileKey: data.fileKey, changeCount: data.changeCount, hasStyleChanges: data.hasStyleChanges, hasNodeChanges: data.hasNodeChanges },
-							"Variable cache invalidated due to document changes"
-						);
 					}
 				});
 			}
