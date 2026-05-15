@@ -227,13 +227,60 @@
 
     let requestIdCounter = 0;
 
-    // UI update helper
-    function updateStatus(state, isActive, isError) {
-      const dot = document.getElementById('status-dot');
-      const stateText = document.getElementById('status-state');
+    // Status pill state — captured here so we can re-render whenever the
+    // mode (local port count, cloud paired) changes without losing the
+    // ready/connecting/error state set by the data layer.
+    let _currentStatusState = 'connecting';
+    let _currentStatusActive = false;
+    let _currentStatusError = false;
 
-      dot.className = 'status-indicator ' + (isError ? 'error' : (isActive ? 'active' : 'loading'));
-      stateText.textContent = state;
+    // Compute the mode label shown in place of the static "MCP" prefix.
+    // Returns "Local", "Cloud", "Local + Cloud", or "" (unknown — falls back
+    // to the original "MCP" label so the pill always says something).
+    // Lets users see at a glance which transport is carrying their session,
+    // so a confused user doesn't have to guess whether they're talking to
+    // the local server, the cloud relay, or both. Port numbers are omitted
+    // here to keep the pill compact at the plugin window's 140px width —
+    // figma_diagnose exposes the port when it's actually needed.
+    function renderModeText() {
+      try {
+        var conns = (typeof activeConnections !== 'undefined' && activeConnections) ? activeConnections : [];
+        var localUp = conns.some(function(c) {
+          return c && c.ws && c.ws.readyState === 1 && c.port !== 'cloud';
+        });
+        var cloudUp = conns.some(function(c) {
+          return c && c.ws && c.ws.readyState === 1 && c.port === 'cloud';
+        });
+        if (localUp && cloudUp) return 'Local + Cloud';
+        if (localUp) return 'Local';
+        if (cloudUp) return 'Cloud';
+        return '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function refreshStatus() {
+      var dot = document.getElementById('status-dot');
+      var stateText = document.getElementById('status-state');
+      var labelEl = document.querySelector('.status-text .label');
+      if (!dot || !stateText) return;
+      dot.className = 'status-indicator ' + (_currentStatusError ? 'error' : (_currentStatusActive ? 'active' : 'loading'));
+      var mode = renderModeText();
+      // Replace the static "MCP" label with the live mode label (Local / Cloud
+      // / Local + Cloud). Fall back to "MCP" when nothing is connected yet so
+      // the pill still has a visible label during initial scan.
+      if (labelEl) labelEl.textContent = mode || 'MCP';
+      stateText.textContent = _currentStatusState;
+    }
+
+    // UI update helper — preserves the latest state and re-renders, picking
+    // up any mode-text changes (local/cloud connect/disconnect).
+    function updateStatus(state, isActive, isError) {
+      _currentStatusState = state;
+      _currentStatusActive = isActive;
+      _currentStatusError = isError;
+      refreshStatus();
     }
 
     // ============================================================================
@@ -800,7 +847,9 @@
       }
 
       /**
-       * Update backward-compat variables (ws, wsPort, wsConnected).
+       * Update backward-compat variables (ws, wsPort, wsConnected) and
+       * re-render the status pill so the Local/Cloud mode suffix reflects
+       * the new connection set.
        */
       function updateCompatState() {
         var live = activeConnections.filter(function(c) { return c.ws.readyState === 1; });
@@ -812,6 +861,9 @@
           ws = null;
           wsPort = null;
         }
+        // refreshStatus is defined in the outer scope (top-level script block).
+        // Guarded for the unlikely case it's invoked before that script runs.
+        if (typeof refreshStatus === 'function') refreshStatus();
       }
 
       /**
@@ -1109,9 +1161,10 @@
       section.classList.toggle('visible');
       toggle.classList.toggle('expanded');
 
-      // Resize plugin window to fit content
+      // Resize plugin window to fit content. Default width is 180px to give
+      // the status pill enough room for the "Local + Cloud" mode label.
       var height = isExpanding ? 130 : 50;
-      parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 140, height: height } }, '*');
+      parent.postMessage({ pluginMessage: { type: 'RESIZE_UI', width: 180, height: height } }, '*');
     }
 
     function resetCloudUI() {
