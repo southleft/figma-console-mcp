@@ -1596,8 +1596,7 @@ export function registerFigmaAPITools(
 					logger.info("Calling ensureInitialized to initialize browser manager (legacy path)");
 					await ensureInitialized();
 				}
-				const browserManager = getBrowserManager?.();
-				const hasDesktopConnection = !!getDesktopConnector || !!browserManager;
+				const hasDesktopConnection = !!getDesktopConnector;
 
 				// PRIORITY LOGIC:
 				// 1. If Desktop Bridge connected → Try Desktop Bridge FIRST (instant, all plans, full Plugin API data)
@@ -1926,21 +1925,12 @@ export function registerFigmaAPITools(
 
 				// PRIMARY: Try Desktop Bridge (instant, all plans, full Plugin API data including aliases)
 				// Also used as fallback when REST API fails (403, timeout, rate limit)
-				if (hasDesktopConnection && !parseFromConsole && !restApiSucceeded) {
+				if (hasDesktopConnection && !parseFromConsole && !restApiSucceeded && getDesktopConnector) {
 					try {
 						logger.info({ fileKey }, "Attempting to get variables via Desktop connection");
 
-						let connector: any;
-						if (getDesktopConnector) {
-							connector = await getDesktopConnector();
-						} else {
-							// Fallback: direct connector (legacy path)
-							const { FigmaDesktopConnector } = await import('./figma-desktop-connector.js');
-							const page = await browserManager.getPage();
-							connector = new FigmaDesktopConnector(page);
-							await connector.initialize();
-						}
-						logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Desktop connector ready");
+						const connector = await getDesktopConnector();
+						logger.info({ transport: connector.getTransportType?.() || 'websocket' }, "Desktop connector ready");
 
 						// When refreshCache is requested, bypass the plugin UI's stale snapshot
 						// and fetch live data directly from the Figma Plugin API
@@ -2194,21 +2184,6 @@ export function registerFigmaAPITools(
 							message: errorMessage,
 							stack: errorStack
 						}, "Desktop connection failed, falling back to other methods");
-
-						// Try to log to browser console if we have access to page
-						try {
-							if (browserManager) {
-								const page = await browserManager.getPage();
-								await page.evaluate((msg: string, stack: string | undefined) => {
-									console.error('[FIGMA_TOOLS] ❌ Desktop connection failed:', msg);
-									if (stack) {
-										console.error('[FIGMA_TOOLS] Stack trace:', stack);
-									}
-								}, errorMessage, errorStack);
-							}
-						} catch (logError) {
-							// Ignore logging errors
-						}
 
 						// Continue to try REST API fallback
 					}
@@ -2521,25 +2496,11 @@ export function registerFigmaAPITools(
 				logger.info({ fileKey, nodeId, format, enrich }, "Fetching component data");
 
 				// PRIORITY 1: Try Desktop Bridge plugin UI first (has reliable description field!)
-				if (getDesktopConnector || (getBrowserManager && ensureInitialized)) {
+				if (getDesktopConnector) {
 					try {
 						logger.info({ nodeId }, "Attempting to get component via Desktop Bridge plugin UI");
 
-						let connector: any;
-						if (getDesktopConnector) {
-							connector = await getDesktopConnector();
-						} else {
-							// Fallback: direct connector (legacy path)
-							if (ensureInitialized) await ensureInitialized();
-							const browserManager = getBrowserManager?.();
-							if (!browserManager) {
-								throw new Error("Browser manager not available after initialization");
-							}
-							const { FigmaDesktopConnector } = await import('./figma-desktop-connector.js');
-							const page = await browserManager.getPage();
-							connector = new FigmaDesktopConnector(page);
-							await connector.initialize();
-						}
+						const connector = await getDesktopConnector();
 
 						const desktopResult = await connector.getComponentFromPluginUI(nodeId);
 
@@ -2667,7 +2628,7 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					const dbStatus = getDesktopConnector || (getBrowserManager && ensureInitialized)
+					const dbStatus = getDesktopConnector
 						? "Failed (see logs above)"
 						: "Not available";
 					throw restAuthError(
@@ -3781,40 +3742,6 @@ export function registerFigmaAPITools(
 					}
 				}
 
-				// Legacy CDP fallback (only when no connector factory is available)
-				if (!result && !getDesktopConnector) {
-					const browserManager = getBrowserManager?.();
-					if (!browserManager) {
-						throw new Error(
-							"Desktop Bridge not available. To capture screenshots:\n" +
-							"1. Open your Figma file in Figma Desktop\n" +
-							"2. Install and run the 'Figma Console MCP' plugin\n" +
-							"3. Ensure the plugin shows 'MCP ready' status"
-						);
-					}
-
-					if (ensureInitialized) {
-						await ensureInitialized();
-					}
-
-					const page = await browserManager.getPage();
-					const frames = page.frames();
-
-					for (const frame of frames) {
-						try {
-							const hasFunction = await frame.evaluate('typeof window.captureScreenshot === "function"');
-							if (hasFunction) {
-								result = await frame.evaluate(
-									`window.captureScreenshot(${JSON.stringify(nodeId || '')}, ${JSON.stringify({ format, scale })})`
-								);
-								break;
-							}
-						} catch {
-							continue;
-						}
-					}
-				}
-
 				if (!result) {
 					throw new Error(
 						"Desktop Bridge plugin not found. Ensure the 'Figma Console MCP' plugin is running in Figma Desktop."
@@ -3909,40 +3836,6 @@ export function registerFigmaAPITools(
 					const connector = await getDesktopConnector();
 					logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Instance properties via connector");
 					result = await connector.setInstanceProperties(nodeId, properties);
-				}
-
-				// Legacy CDP fallback (only when no connector factory is available)
-				if (!result && !getDesktopConnector) {
-					const browserManager = getBrowserManager?.();
-					if (!browserManager) {
-						throw new Error(
-							"Desktop Bridge not available. To set instance properties:\n" +
-							"1. Open your Figma file in Figma Desktop\n" +
-							"2. Install and run the 'Figma Console MCP' plugin\n" +
-							"3. Ensure the plugin shows 'MCP ready' status"
-						);
-					}
-
-					if (ensureInitialized) {
-						await ensureInitialized();
-					}
-
-					const page = await browserManager.getPage();
-					const frames = page.frames();
-
-					for (const frame of frames) {
-						try {
-							const hasFunction = await frame.evaluate('typeof window.setInstanceProperties === "function"');
-							if (hasFunction) {
-								result = await frame.evaluate(
-									`window.setInstanceProperties(${JSON.stringify(nodeId)}, ${JSON.stringify(properties)})`
-								);
-								break;
-							}
-						} catch {
-							continue;
-						}
-					}
 				}
 
 				if (!result) {
