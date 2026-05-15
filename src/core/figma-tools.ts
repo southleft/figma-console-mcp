@@ -13,8 +13,6 @@ import { createChildLogger } from "./logger.js";
 import { identifiedError, withIdentity } from "./identity.js";
 import { EnrichmentService } from "./enrichment/index.js";
 import type { EnrichmentOptions } from "./types/enriched.js";
-import { SnippetInjector } from "./snippet-injector.js";
-import type { ConsoleMonitor } from "./console-monitor.js";
 import { extractNodeSpec, validateReconstructionSpec, listVariants } from "./figma-reconstruction-spec.js";
 
 const logger = createChildLogger({ component: "figma-tools" });
@@ -83,9 +81,6 @@ function scanCodebaseComponents(componentsDir: string): { name: string; path: st
 	}
 	return registry;
 }
-
-// Initialize snippet injector
-const snippetInjector = new SnippetInjector();
 
 // ============================================================================
 // Cache Management & Data Processing Helpers
@@ -796,9 +791,6 @@ export function registerFigmaAPITools(
 	server: McpServer,
 	getFigmaAPI: () => Promise<FigmaAPI>,
 	getCurrentUrl: () => string | null,
-	getConsoleMonitor?: () => ConsoleMonitor | null,
-	getBrowserManager?: () => any,
-	ensureInitialized?: () => Promise<void>,
 	variablesCache?: Map<string, { data: any; timestamp: number }>,
 	options?: FigmaAPIToolsOptions,
 	getDesktopConnector?: () => Promise<any>,
@@ -1590,12 +1582,6 @@ export function registerFigmaAPITools(
 				// Check if REST API token is available
 				const hasToken = !!process.env.FIGMA_ACCESS_TOKEN;
 				let restApiSucceeded = false;
-
-				// Detect Desktop Bridge availability early (needed for priority decision)
-				if (ensureInitialized && !getDesktopConnector && !parseFromConsole) {
-					logger.info("Calling ensureInitialized to initialize browser manager (legacy path)");
-					await ensureInitialized();
-				}
 				const hasDesktopConnection = !!getDesktopConnector;
 
 				// PRIORITY LOGIC:
@@ -2274,63 +2260,20 @@ export function registerFigmaAPITools(
 					}
 				}
 
-				// LAST RESORT: Parse from console logs if requested
+				// LAST RESORT: parseFromConsole was a Puppeteer-era workflow that read
+				// the magic-string output of a console snippet from the browser's
+				// console buffer. After the Phase 3 CDP cleanup there is no longer a
+				// Puppeteer-attached console for the snippet's output to land in, so
+				// the flag has become a no-op. Tell the caller what to do instead.
 				if (parseFromConsole) {
-					const consoleMonitor = getConsoleMonitor?.();
-					if (!consoleMonitor) {
-						throw new Error("Console monitoring not available. Make sure browser is connected to Figma.");
-					}
-
-					logger.info({ fileKey }, "Parsing variables from console logs");
-
-					// Get recent logs
-					const logs = consoleMonitor.getLogs({ count: 100, level: "log" });
-					const varLog = snippetInjector.findVariablesLog(logs);
-
-					if (!varLog) {
-						throw new Error(
-							"No variables found in console logs.\n\n" +
-							"Did you run the snippet in Figma's plugin console? Here's the correct workflow:\n\n" +
-							"1. Call figma_get_variables() without parameters (you may have already done this)\n" +
-							"2. Copy the provided snippet\n" +
-							"3. Open Figma Desktop → Plugins → Development → Open Console\n" +
-							"4. Paste and run the snippet in the PLUGIN console (not browser DevTools)\n" +
-							"5. Wait for '✅ Variables data captured!' confirmation\n" +
-							"6. Then call figma_get_variables({ parseFromConsole: true })\n\n" +
-							"Note: The browser console won't work - you need a plugin console for the figma.variables API."
-						);
-					}
-
-					// Parse variables from log
-					const parsedData = snippetInjector.parseVariablesFromLog(varLog);
-
-					if (!parsedData) {
-						throw new Error("Failed to parse variables from console log");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										fileKey,
-										source: "console_capture",
-										local: {
-											summary: {
-												total_variables: parsedData.variables.length,
-												total_collections: parsedData.variableCollections.length,
-											},
-											collections: parsedData.variableCollections,
-											variables: parsedData.variables,
-										},
-										timestamp: parsedData.timestamp,
-										enriched: false,
-									}
-								),
-							},
-						],
-					};
+					throw identifiedError(
+						"parseFromConsole is no longer supported.\n\n" +
+						"The console-snippet workflow it relied on required a Puppeteer browser " +
+						"connection to Figma Desktop, which was removed in Phase 3 of the cleanup. " +
+						"To extract variables, open the Figma Console MCP Desktop Bridge plugin in " +
+						"Figma Desktop and call figma_get_variables() without parseFromConsole — " +
+						"the plugin returns full variable data through the WebSocket bridge."
+					);
 				}
 
 				// No more fallback options available
@@ -2341,8 +2284,7 @@ export function registerFigmaAPITools(
 					`✗ Desktop Bridge (failed or not available)\n` +
 					`\nTo fix:\n` +
 					`1. If you have FIGMA_ACCESS_TOKEN: Check your token permissions\n` +
-					`2. Install and run the Figma Desktop Bridge plugin\n` +
-					`3. Alternative: Use parseFromConsole=true with console snippet workflow`
+					`2. Install and run the Figma Desktop Bridge plugin and re-run this tool`
 				);
 			} catch (error) {
 				logger.error({ error }, "Failed to get variables");

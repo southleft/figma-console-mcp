@@ -1012,9 +1012,6 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			this.server,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
-			() => this.consoleMonitor || null,
-			() => this.browserManager || null,
-			() => this.ensureInitialized(),
 			undefined, // variablesCache
 			{ isRemoteMode: true },
 			getCloudDesktopConnector,
@@ -1466,9 +1463,6 @@ export default {
 				statelessServer,
 				async () => statelessApi,
 				getCloudFileUrl,
-				() => null, // No console monitor
-				() => null, // No browser manager
-				undefined,  // No ensureInitialized
 				new Map(),  // Fresh variables cache per request
 				{ isRemoteMode: true },
 				getCloudDesktopConnector,

@@ -21,8 +21,6 @@ import { fileURLToPath } from "url";
 import { dirname, resolve, join } from "path";
 import { realpathSync, existsSync, readFileSync, mkdirSync, copyFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { LocalBrowserManager } from "./browser/local.js";
-import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
 import { createChildLogger } from "./core/logger.js";
 import {
@@ -43,7 +41,6 @@ import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { registerWriteTools } from "./core/write-tools.js";
 import { wrapServerForIdentity } from "./core/identity.js";
 import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
-import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
 import { FigmaWebSocketServer } from "./core/websocket-server.js";
 import { WebSocketConnector } from "./core/websocket-connector.js";
@@ -110,8 +107,6 @@ function setupStablePluginDir(sourcePluginDir: string): string | null {
  */
 class LocalFigmaConsoleMCP {
 	private server: McpServer;
-	private browserManager: LocalBrowserManager | null = null;
-	private consoleMonitor: ConsoleMonitor | null = null;
 	private figmaAPI: FigmaAPI | null = null;
 	private desktopConnector: IFigmaConnector | null = null;
 	private wsServer: FigmaWebSocketServer | null = null;
@@ -363,11 +358,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 * The synthesized URL is compatible with extractFileKey() and extractFigmaUrlInfo().
 	 */
 	private getCurrentFileUrl(): string | null {
-		// Priority 1: Browser URL (full URL with branch/node info)
-		const browserUrl = this.browserManager?.getCurrentUrl() || null;
-		if (browserUrl) return browserUrl;
-
-		// Priority 2: Synthesize URL from WebSocket file identity
+		// Synthesize the URL from the WebSocket plugin's reported file identity.
+		// (Pre-Phase-3 this also tried a live Puppeteer browser URL; that path is
+		// gone now along with the LocalBrowserManager.)
 		const wsFileInfo = this.wsServer?.getConnectedFileInfo() ?? null;
 		if (wsFileInfo?.fileKey) {
 			const pageIdParam = wsFileInfo.currentPageId
@@ -426,52 +419,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		}
 	}
 
-	/**
-	 * Auto-connect to Figma Desktop at startup
-	 * Runs in background - never blocks or throws
-	 * Enables "get latest logs" workflow without manual setup
-	 */
-	private autoConnectToFigma(): void {
-		// Fire-and-forget with proper async handling
-		(async () => {
-			try {
-				logger.info(
-					"🔄 Auto-connecting to Figma Desktop for immediate log capture...",
-				);
-				await this.ensureInitialized();
-				logger.info(
-					"✅ Auto-connect successful - console monitoring active. Logs will be captured immediately.",
-				);
-			} catch (error) {
-				// Don't crash - just log that auto-connect didn't work
-				const errorMsg = error instanceof Error ? error.message : String(error);
-				logger.warn(
-					{ error: errorMsg },
-					"⚠️ Auto-connect to Figma Desktop failed - will connect when you use a tool",
-				);
-				// This is fine - the user can still use tools to trigger connection later
-			}
-		})();
-	}
 
-	/**
-	 * Legacy initialization hook.
-	 *
-	 * Pre-Phase-3 this constructed LocalBrowserManager (Puppeteer connection to
-	 * Figma Desktop's --remote-debugging-port=9222 CDP endpoint) and a ConsoleMonitor
-	 * bound to its Page. That entire transport has been removed — every tool now
-	 * routes through the WebSocket Desktop Bridge plugin.
-	 *
-	 * The method is kept as a no-op so existing call sites (getDesktopConnector
-	 * legacy fallback, the dead-but-not-yet-deleted CDP guards in tool handlers)
-	 * still compile. Those guards check `this.browserManager` and `this.consoleMonitor`
-	 * which are now always null, so the surrounding code becomes safe dead branches.
-	 *
-	 * Slated for full removal alongside the field declarations in a later commit.
-	 */
-	private async ensureInitialized(): Promise<void> {
-		return;
-	}
 
 	/**
 	 * Register all MCP tools
@@ -1102,7 +1050,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					// Check WebSocket availability
 					const wsConnected = this.wsServer?.isClientConnected() ?? false;
 
-					let monitorStatus = this.consoleMonitor?.getStatus() ?? null;
+					// ConsoleMonitor is gone in WS-only local mode — both fields below
+					// (monitorWorkerCount, consoleMonitor) report static zero/null so the
+					// status-shape stays stable for any consumer that parses it.
 					let currentUrl = this.getCurrentFileUrl();
 
 					// Determine active transport
@@ -1196,7 +1146,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										currentFileKey: currentFileKey || undefined,
 										editorType: this.wsServer?.getEditorType() || "figma",
 										monitoredPageUrl: currentUrl,
-										monitorWorkerCount: monitorStatus?.workerCount ?? 0,
+										monitorWorkerCount: 0,
 										transport: {
 											active: activeTransport,
 											websocket: {
@@ -1287,7 +1237,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 													: "All tools are ready to use.",
 										},
 										pluginPath: this.getPluginPath() || undefined,
-										consoleMonitor: monitorStatus,
+										consoleMonitor: null,
 										initialized: setupValid,
 										timestamp: Date.now(),
 									},
@@ -2893,9 +2843,6 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			this.server,
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
-			() => this.consoleMonitor || null,
-			() => this.browserManager || null,
-			() => this.ensureInitialized(),
 			this.variablesCache, // Pass cache for efficient variable queries
 			undefined, // options (use default)
 			() => this.getDesktopConnector(), // Transport-aware connector factory
@@ -3556,7 +3503,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 			// 🆕 AUTO-CONNECT: Start monitoring immediately if Figma Desktop is available
 			// This enables "get latest logs" workflow without requiring manual setup
-			this.autoConnectToFigma();
+			// In WS-only mode, no auto-connect is needed — the Desktop Bridge plugin
+			// pushes a connection from the Figma side as soon as the user opens it.
 		} catch (error) {
 			logger.error({ error }, "Failed to start MCP server");
 
