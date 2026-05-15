@@ -240,11 +240,18 @@
     // Lets users see at a glance which transport is carrying their session,
     // so a confused user doesn't have to guess whether they're talking to
     // the local server, the cloud relay, or both. Port numbers are omitted
-    // here to keep the pill compact at the plugin window's 140px width —
-    // figma_diagnose exposes the port when it's actually needed.
+    // here to keep the pill compact — figma_diagnose exposes the port when
+    // it's actually needed.
+    //
+    // NOTE: `activeConnections` is declared inside the connection-pool IIFE
+    // below (around line ~617), so it is NOT in scope from this top-level
+    // function. The IIFE exposes `window.__wsGetActiveConnections()` for
+    // exactly this reason — calling that getter is what makes the pill
+    // update once the pool reports a live connection.
     function renderModeText() {
       try {
-        var conns = (typeof activeConnections !== 'undefined' && activeConnections) ? activeConnections : [];
+        var getConns = window.__wsGetActiveConnections;
+        var conns = typeof getConns === 'function' ? (getConns() || []) : [];
         var localUp = conns.some(function(c) {
           return c && c.ws && c.ws.readyState === 1 && c.port !== 'cloud';
         });
