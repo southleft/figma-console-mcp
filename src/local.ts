@@ -534,7 +534,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					.string()
 					.optional()
 					.describe(
-						"Optional node ID to screenshot. If not provided, uses the currently viewed page/frame from the browser URL.",
+						"Optional node ID to screenshot (e.g., '123:456'). If omitted, uses the node-id from the Desktop Bridge plugin's reported file URL when present. To screenshot what the user is currently looking at on the canvas, prefer figma_capture_screenshot (uses the plugin's exportAsync and reflects the current state).",
 					),
 				scale: z
 					.number()
@@ -882,10 +882,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 		);
 
-		// Tool 6: Navigate to Figma
+		// Tool 6: Navigate / switch active file
 		this.server.tool(
 			"figma_navigate",
-			"Navigate browser to a Figma URL and start console monitoring. ALWAYS use this first when starting a new debugging session or switching files. Initializes browser connection and begins capturing console logs. Use when user provides a Figma URL or says: 'open this file', 'debug this design', 'switch to'. Returns navigation status and current URL. If the file is already open in a tab, switches to it without reloading.",
+			"Switch the active Figma file target among files that already have the Desktop Bridge plugin running. Local mode is WebSocket-only — this tool does NOT launch a browser or open files. If the requested URL is already the active file, it confirms the connection. If another connected plugin matches the URL, it switches the active target so subsequent tool calls hit that file. If no connected plugin matches, returns guidance for the user to open the Desktop Bridge plugin in the target file. Use figma_list_open_files to see all connected files.",
 			{
 				url: z
 					.string()

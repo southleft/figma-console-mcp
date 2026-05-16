@@ -382,7 +382,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Tool 1: Get Console Logs
 		this.server.tool(
 			"figma_get_console_logs",
-			"Retrieve console logs from Figma. Captures all plugin console output including [Main], [Swapper], etc. prefixes. Call figma_navigate first to initialize browser monitoring.",
+			"Retrieve console logs from a Cloudflare Browser Rendering session opened with figma_navigate. Captures plugin console output ([Main], [Swapper], etc. prefixes) and page-level logs. NOTE: cloud mode does NOT currently capture logs from a paired Desktop Bridge plugin — for plugin sandbox logs, use Local mode. Call figma_navigate first to open the file and start browser monitoring.",
 			{
 				count: z.number().optional().default(100).describe("Number of recent logs to retrieve"),
 				level: z
@@ -468,7 +468,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 				nodeId: z
 					.string()
 					.optional()
-					.describe("Optional node ID to screenshot. If not provided, uses the currently viewed page/frame from the browser URL."),
+					.describe("Optional node ID to screenshot (e.g., '123:456'). If omitted, uses the node-id query param from the Cloudflare Browser Rendering page's current URL."),
 				scale: z
 					.number()
 					.min(0.01)

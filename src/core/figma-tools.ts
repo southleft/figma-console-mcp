@@ -1039,20 +1039,19 @@ export function registerFigmaAPITools(
 	/**
 	 * Tool 9: Get Variables (Design Tokens)
 	 *
-	 * WORKFLOW:
-	 * - Primary: Attempts to fetch variables via Figma REST API (requires Enterprise plan)
-	 * - Fallback: On 403 error, provides console-based extraction snippet
+	 * RESOLUTION ORDER (in order, first success wins):
+	 *   1. Cache hit (if fresh and refreshCache=false)
+	 *   2. Desktop Bridge plugin via WebSocket — works on any Figma plan
+	 *   3. REST API — requires Enterprise plan (returns 403 otherwise)
+	 *   4. Styles API — partial fallback for non-Enterprise (styles, not variables)
 	 *
-	 * TWO-CALL PATTERN (when API unavailable):
-	 * 1. First call: Returns snippet + instructions (useConsoleFallback: true, default)
-	 * 2. User runs snippet in Figma plugin console
-	 * 3. Second call: Parses captured data (parseFromConsole: true)
-	 *
-	 * IMPORTANT: Snippet requires Figma Plugin API context, not browser DevTools console.
+	 * The legacy `parseFromConsole` two-call console-snippet workflow was
+	 * removed in the Phase 3 cleanup. Setting parseFromConsole=true now
+	 * throws an identified error pointing the caller at the bridge.
 	 */
 	server.tool(
 		"figma_get_variables",
-		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Supports filtering by collection/mode/name and verbosity control to prevent token exhaustion. Enterprise plan required for Variables API; automatically falls back to Styles API or console-based extraction if unavailable. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
+		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Supports filtering by collection/mode/name and verbosity control to prevent token exhaustion. Resolution order: Desktop Bridge plugin (works on any plan) → Variables REST API (Enterprise only) → Styles API as a partial fallback. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
 		{
 			fileUrl: z
 				.string()
@@ -1119,7 +1118,7 @@ export function registerFigmaAPITools(
 				.boolean()
 				.optional()
 				.default(false)
-				.describe("Return variables as resource_link references instead of full data. Drastically reduces payload size (100+ variables = ~20KB vs >1MB). Use with figma_get_variable_by_id to fetch specific variables. Recommended for large variable sets. Default: false"),
+				.describe("Return variables as resource_link references instead of full data. Drastically reduces payload size (100+ variables = ~20KB vs >1MB). Recommended for large variable sets — combine with format='filtered' + namePattern/collection/mode to fetch only the variables you need. Default: false"),
 			refreshCache: z
 				.boolean()
 				.optional()
@@ -1130,22 +1129,14 @@ export function registerFigmaAPITools(
 				.optional()
 				.default(true)
 				.describe(
-					"Enable automatic fallback to console-based extraction when REST API returns 403 (Figma Enterprise plan required). " +
-					"When enabled, provides a JavaScript snippet that users run in Figma's plugin console. " +
-					"This is STEP 1 of a two-call workflow. After receiving the snippet, instruct the user to run it, then call this tool again with parseFromConsole=true. " +
-					"Default: true. Set to false only to disable the fallback entirely."
+					"DEPRECATED — has no effect. The console-snippet workflow was removed in the Phase 3 CDP cleanup; the Desktop Bridge plugin now handles all non-REST variable extraction automatically. Kept for parameter compatibility only — safe to ignore."
 				),
 			parseFromConsole: z
 				.boolean()
 				.optional()
 				.default(false)
 				.describe(
-					"Parse variables from console logs after user has executed the snippet. " +
-					"This is STEP 2 of the two-call workflow. Set to true ONLY after: " +
-					"(1) you received a console snippet from the first call, " +
-					"(2) instructed the user to run it in Figma's PLUGIN console (Plugins → Development → Open Console or existing plugin), " +
-					"(3) user confirmed they ran the snippet and saw '✅ Variables data captured!' message. " +
-					"Default: false. Never set to true on the first call."
+					"DEPRECATED — setting this to true now raises an explicit error. The Puppeteer-based console parser no longer exists. Open the Figma Console MCP Desktop Bridge plugin in Figma Desktop and call figma_get_variables() without parseFromConsole; the plugin returns full variable data through the WebSocket bridge."
 				),
 			page: z
 				.number()
@@ -1803,7 +1794,7 @@ export function registerFigmaAPITools(
 							const content: any[] = [
 								{
 									type: "text",
-									text: `Variables for file ${fileKey} (${localFormatted.variables.length} variables). Use figma_get_variable_by_id to fetch specific variables:\n\n`,
+									text: `Variables for file ${fileKey} (${localFormatted.variables.length} variables). Call figma_get_variables again with format='filtered' and a namePattern/collection/mode filter to fetch specific variables:\n\n`,
 								},
 							];
 
