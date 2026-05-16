@@ -54,10 +54,6 @@ const DEFAULT_CONFIG: ServerConfig = {
     quality: 90,
     storePath: join(process.env.TMPDIR || '/tmp', 'figma-console-mcp', 'screenshots'),
   },
-  local: {
-    debugHost: process.env.FIGMA_DEBUG_HOST || 'localhost',
-    debugPort: parseInt(process.env.FIGMA_DEBUG_PORT || '9222', 10),
-  },
 };
 
 /**
@@ -121,10 +117,6 @@ function mergeConfig(defaults: ServerConfig, overrides: Partial<ServerConfig>): 
     screenshots: {
       ...defaults.screenshots,
       ...(overrides.screenshots || {}),
-    },
-    local: {
-      ...defaults.local!,
-      ...(overrides.local || {}),
     },
   };
 }

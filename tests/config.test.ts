@@ -35,10 +35,6 @@ function makeValidConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
 			quality: 90,
 			storePath: "/tmp/test",
 		},
-		local: {
-			debugHost: "localhost",
-			debugPort: 9222,
-		},
 		...overrides,
 	};
 }

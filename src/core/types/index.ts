@@ -74,7 +74,6 @@ export interface ServerConfig {
   browser: BrowserConfig;
   console: ConsoleConfig;
   screenshots: ScreenshotConfig;
-  local?: LocalModeConfig;
 }
 
 /**
@@ -84,14 +83,6 @@ export interface BrowserConfig {
   headless: boolean;
   args: string[];
   executablePath?: string;
-}
-
-/**
- * Local mode configuration
- */
-export interface LocalModeConfig {
-  debugHost: string;
-  debugPort: number;
 }
 
 /**

@@ -376,10 +376,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 * Check if Figma Desktop is accessible via WebSocket
 	 */
 	private async checkFigmaDesktop(): Promise<void> {
-		if (!this.config.local) {
-			throw new Error("Local mode configuration missing");
-		}
-
 		// Check WebSocket availability
 		const wsAvailable = this.wsServer?.isClientConnected() ?? false;
 
