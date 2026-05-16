@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 100+ MCP tools, including parameters, return values, and usage examples."
+description: "Complete API reference for all 94 MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **100+ tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **61 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **101 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **93 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -98,7 +98,7 @@ This guide provides detailed documentation for each tool, including when to use 
 
 ### `figma_navigate`
 
-Navigate to any Figma URL to start monitoring.
+Switch the active Figma file target (Local Mode) or navigate the cloud headless browser to a file (Remote/Cloud Mode).
 
 **Usage:**
 ```javascript
@@ -107,12 +107,14 @@ figma_navigate({
 })
 ```
 
-**Always use this first** to initialize the browser and start console monitoring.
+**Local Mode:** Switches the active file among files that already have the Desktop Bridge plugin running. Does NOT launch a browser or open files — open the target file in Figma Desktop and run the Desktop Bridge plugin in it first.
+
+**Remote/Cloud Mode:** Navigates the Cloudflare-hosted headless browser to the URL and starts monitoring.
 
 **Returns:**
 - Navigation status
 - Current URL
-- Console monitoring status
+- Connection or monitoring status
 
 ---
 

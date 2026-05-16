@@ -10,10 +10,9 @@ import * as path from "path";
 import type { FigmaAPI, FigmaUrlInfo } from "./figma-api.js";
 import { extractFileKey, extractFigmaUrlInfo, formatVariables, formatComponentData, withTimeout } from "./figma-api.js";
 import { createChildLogger } from "./logger.js";
+import { identifiedError, withIdentity } from "./identity.js";
 import { EnrichmentService } from "./enrichment/index.js";
 import type { EnrichmentOptions } from "./types/enriched.js";
-import { SnippetInjector } from "./snippet-injector.js";
-import type { ConsoleMonitor } from "./console-monitor.js";
 import { extractNodeSpec, validateReconstructionSpec, listVariants } from "./figma-reconstruction-spec.js";
 
 const logger = createChildLogger({ component: "figma-tools" });
@@ -83,9 +82,6 @@ function scanCodebaseComponents(componentsDir: string): { name: string; path: st
 	return registry;
 }
 
-// Initialize snippet injector
-const snippetInjector = new SnippetInjector();
-
 // ============================================================================
 // Cache Management & Data Processing Helpers
 // ============================================================================
@@ -148,7 +144,13 @@ function adaptiveResponse(
 		suggestedActions?: string[];
 	}
 ): { content: any[] } {
-	const sizeKB = calculateSizeKB(responseData);
+	// Tag every response with our MCP identity so LLMs can attribute it
+	// unambiguously when other Figma-related MCPs are also connected.
+	const tagged = responseData && typeof responseData === "object" && !Array.isArray(responseData)
+		? withIdentity(responseData as Record<string, unknown>)
+		: { _mcp: "figma-console-mcp", data: responseData };
+
+	const sizeKB = calculateSizeKB(tagged);
 
 	// No compression needed
 	if (sizeKB <= RESPONSE_SIZE_THRESHOLDS.IDEAL_SIZE_KB) {
@@ -156,7 +158,7 @@ function adaptiveResponse(
 			content: [
 				{
 					type: "text",
-					text: JSON.stringify(responseData),
+					text: JSON.stringify(tagged),
 				},
 			],
 		};
@@ -226,11 +228,15 @@ function adaptiveResponse(
 		}
 	}
 
-	// Build response content
+	// Build response content (tagged with identity so cross-MCP attribution is clear)
+	const taggedFinal = finalData && typeof finalData === "object" && !Array.isArray(finalData)
+		? withIdentity(finalData as Record<string, unknown>)
+		: { _mcp: "figma-console-mcp", data: finalData };
+
 	const content: any[] = [
 		{
 			type: "text",
-			text: JSON.stringify(finalData),
+			text: JSON.stringify(taggedFinal),
 		},
 	];
 
@@ -785,14 +791,29 @@ export function registerFigmaAPITools(
 	server: McpServer,
 	getFigmaAPI: () => Promise<FigmaAPI>,
 	getCurrentUrl: () => string | null,
-	getConsoleMonitor?: () => ConsoleMonitor | null,
-	getBrowserManager?: () => any,
-	ensureInitialized?: () => Promise<void>,
 	variablesCache?: Map<string, { data: any; timestamp: number }>,
 	options?: FigmaAPIToolsOptions,
 	getDesktopConnector?: () => Promise<any>,
 ) {
 	const isRemoteMode = options?.isRemoteMode ?? false;
+
+	/**
+	 * Build a designer-readable REST-auth error tagged with our MCP identity.
+	 * Shows only the remediation path that applies to the caller's mode — local
+	 * users never see OAuth instructions, cloud users never see env-var
+	 * instructions. Identity prefix lets LLMs disambiguate this error from
+	 * errors thrown by other Figma-related MCP servers running in parallel.
+	 */
+	function restAuthError(context: string, originalError: string, extra?: string): Error {
+		const remediation = isRemoteMode
+			? "Re-authenticate via the OAuth flow in your MCP client, or pass a Figma personal access token (figd_...) as a Bearer token."
+			: "Set FIGMA_ACCESS_TOKEN in your MCP client config to a Figma personal access token. Generate one at https://www.figma.com/developers/api#access-tokens.";
+
+		return identifiedError(
+			`${context}\nError: ${originalError}\n\nTo fix: ${remediation}${extra ? `\n\n${extra}` : ""}`,
+		);
+	}
+
 	// Tool 8: Get File Data (General Purpose)
 	// NOTE: For specific use cases, consider using specialized tools:
 	// - figma_get_component_for_development: For UI component implementation
@@ -843,14 +864,10 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve file data. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth\n\n` +
-						`Note: figma_get_file_data requires REST API access. ` +
-						`For component-specific data, use figma_get_component which has Desktop Bridge fallback.`
+					throw restAuthError(
+						"Cannot retrieve file data. REST API authentication required.",
+						errorMessage,
+						"Note: figma_get_file_data requires REST API access. For component-specific data, use figma_get_component which has Desktop Bridge fallback.",
 					);
 				}
 
@@ -1022,20 +1039,19 @@ export function registerFigmaAPITools(
 	/**
 	 * Tool 9: Get Variables (Design Tokens)
 	 *
-	 * WORKFLOW:
-	 * - Primary: Attempts to fetch variables via Figma REST API (requires Enterprise plan)
-	 * - Fallback: On 403 error, provides console-based extraction snippet
+	 * RESOLUTION ORDER (in order, first success wins):
+	 *   1. Cache hit (if fresh and refreshCache=false)
+	 *   2. Desktop Bridge plugin via WebSocket — works on any Figma plan
+	 *   3. REST API — requires Enterprise plan (returns 403 otherwise)
+	 *   4. Styles API — partial fallback for non-Enterprise (styles, not variables)
 	 *
-	 * TWO-CALL PATTERN (when API unavailable):
-	 * 1. First call: Returns snippet + instructions (useConsoleFallback: true, default)
-	 * 2. User runs snippet in Figma plugin console
-	 * 3. Second call: Parses captured data (parseFromConsole: true)
-	 *
-	 * IMPORTANT: Snippet requires Figma Plugin API context, not browser DevTools console.
+	 * The legacy `parseFromConsole` two-call console-snippet workflow was
+	 * removed in the Phase 3 cleanup. Setting parseFromConsole=true now
+	 * throws an identified error pointing the caller at the bridge.
 	 */
 	server.tool(
 		"figma_get_variables",
-		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Supports filtering by collection/mode/name and verbosity control to prevent token exhaustion. Enterprise plan required for Variables API; automatically falls back to Styles API or console-based extraction if unavailable. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
+		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Supports filtering by collection/mode/name and verbosity control to prevent token exhaustion. Resolution order: Desktop Bridge plugin (works on any plan) → Variables REST API (Enterprise only) → Styles API as a partial fallback. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
 		{
 			fileUrl: z
 				.string()
@@ -1102,7 +1118,7 @@ export function registerFigmaAPITools(
 				.boolean()
 				.optional()
 				.default(false)
-				.describe("Return variables as resource_link references instead of full data. Drastically reduces payload size (100+ variables = ~20KB vs >1MB). Use with figma_get_variable_by_id to fetch specific variables. Recommended for large variable sets. Default: false"),
+				.describe("Return variables as resource_link references instead of full data. Drastically reduces payload size (100+ variables = ~20KB vs >1MB). Recommended for large variable sets — combine with format='filtered' + namePattern/collection/mode to fetch only the variables you need. Default: false"),
 			refreshCache: z
 				.boolean()
 				.optional()
@@ -1113,22 +1129,14 @@ export function registerFigmaAPITools(
 				.optional()
 				.default(true)
 				.describe(
-					"Enable automatic fallback to console-based extraction when REST API returns 403 (Figma Enterprise plan required). " +
-					"When enabled, provides a JavaScript snippet that users run in Figma's plugin console. " +
-					"This is STEP 1 of a two-call workflow. After receiving the snippet, instruct the user to run it, then call this tool again with parseFromConsole=true. " +
-					"Default: true. Set to false only to disable the fallback entirely."
+					"DEPRECATED — has no effect. The console-snippet workflow was removed in the Phase 3 CDP cleanup; the Desktop Bridge plugin now handles all non-REST variable extraction automatically. Kept for parameter compatibility only — safe to ignore."
 				),
 			parseFromConsole: z
 				.boolean()
 				.optional()
 				.default(false)
 				.describe(
-					"Parse variables from console logs after user has executed the snippet. " +
-					"This is STEP 2 of the two-call workflow. Set to true ONLY after: " +
-					"(1) you received a console snippet from the first call, " +
-					"(2) instructed the user to run it in Figma's PLUGIN console (Plugins → Development → Open Console or existing plugin), " +
-					"(3) user confirmed they ran the snippet and saw '✅ Variables data captured!' message. " +
-					"Default: false. Never set to true on the first call."
+					"DEPRECATED — setting this to true now raises an explicit error. The Puppeteer-based console parser no longer exists. Open the Figma Console MCP Desktop Bridge plugin in Figma Desktop and call figma_get_variables() without parseFromConsole; the plugin returns full variable data through the WebSocket bridge."
 				),
 			page: z
 				.number()
@@ -1565,14 +1573,7 @@ export function registerFigmaAPITools(
 				// Check if REST API token is available
 				const hasToken = !!process.env.FIGMA_ACCESS_TOKEN;
 				let restApiSucceeded = false;
-
-				// Detect Desktop Bridge availability early (needed for priority decision)
-				if (ensureInitialized && !getDesktopConnector && !parseFromConsole) {
-					logger.info("Calling ensureInitialized to initialize browser manager (legacy path)");
-					await ensureInitialized();
-				}
-				const browserManager = getBrowserManager?.();
-				const hasDesktopConnection = !!getDesktopConnector || !!browserManager;
+				const hasDesktopConnection = !!getDesktopConnector;
 
 				// PRIORITY LOGIC:
 				// 1. If Desktop Bridge connected → Try Desktop Bridge FIRST (instant, all plans, full Plugin API data)
@@ -1793,7 +1794,7 @@ export function registerFigmaAPITools(
 							const content: any[] = [
 								{
 									type: "text",
-									text: `Variables for file ${fileKey} (${localFormatted.variables.length} variables). Use figma_get_variable_by_id to fetch specific variables:\n\n`,
+									text: `Variables for file ${fileKey} (${localFormatted.variables.length} variables). Call figma_get_variables again with format='filtered' and a namePattern/collection/mode filter to fetch specific variables:\n\n`,
 								},
 							];
 
@@ -1901,21 +1902,12 @@ export function registerFigmaAPITools(
 
 				// PRIMARY: Try Desktop Bridge (instant, all plans, full Plugin API data including aliases)
 				// Also used as fallback when REST API fails (403, timeout, rate limit)
-				if (hasDesktopConnection && !parseFromConsole && !restApiSucceeded) {
+				if (hasDesktopConnection && !parseFromConsole && !restApiSucceeded && getDesktopConnector) {
 					try {
 						logger.info({ fileKey }, "Attempting to get variables via Desktop connection");
 
-						let connector: any;
-						if (getDesktopConnector) {
-							connector = await getDesktopConnector();
-						} else {
-							// Fallback: direct connector (legacy path)
-							const { FigmaDesktopConnector } = await import('./figma-desktop-connector.js');
-							const page = await browserManager.getPage();
-							connector = new FigmaDesktopConnector(page);
-							await connector.initialize();
-						}
-						logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Desktop connector ready");
+						const connector = await getDesktopConnector();
+						logger.info({ transport: connector.getTransportType?.() || 'websocket' }, "Desktop connector ready");
 
 						// When refreshCache is requested, bypass the plugin UI's stale snapshot
 						// and fetch live data directly from the Figma Plugin API
@@ -1925,7 +1917,7 @@ export function registerFigmaAPITools(
 
 						// EXECUTE_CODE responses come back wrapped one level deeper:
 						// `{ success: true, result: { success: true, variables, ... } }`
-						// because handleResult in ui-full.html nests the script return value
+						// because handleResult in ui.html nests the script return value
 						// under `result`. The plugin-UI cache path (GET_VARIABLES_DATA) does
 						// not nest. Unwrap when we detect the EXECUTE_CODE shape so both
 						// paths produce a uniform { success, variables, ... } below. See #68.
@@ -2170,21 +2162,6 @@ export function registerFigmaAPITools(
 							stack: errorStack
 						}, "Desktop connection failed, falling back to other methods");
 
-						// Try to log to browser console if we have access to page
-						try {
-							if (browserManager) {
-								const page = await browserManager.getPage();
-								await page.evaluate((msg: string, stack: string | undefined) => {
-									console.error('[FIGMA_TOOLS] ❌ Desktop connection failed:', msg);
-									if (stack) {
-										console.error('[FIGMA_TOOLS] Stack trace:', stack);
-									}
-								}, errorMessage, errorStack);
-							}
-						} catch (logError) {
-							// Ignore logging errors
-						}
-
 						// Continue to try REST API fallback
 					}
 				}
@@ -2274,63 +2251,20 @@ export function registerFigmaAPITools(
 					}
 				}
 
-				// LAST RESORT: Parse from console logs if requested
+				// LAST RESORT: parseFromConsole was a Puppeteer-era workflow that read
+				// the magic-string output of a console snippet from the browser's
+				// console buffer. After the Phase 3 CDP cleanup there is no longer a
+				// Puppeteer-attached console for the snippet's output to land in, so
+				// the flag has become a no-op. Tell the caller what to do instead.
 				if (parseFromConsole) {
-					const consoleMonitor = getConsoleMonitor?.();
-					if (!consoleMonitor) {
-						throw new Error("Console monitoring not available. Make sure browser is connected to Figma.");
-					}
-
-					logger.info({ fileKey }, "Parsing variables from console logs");
-
-					// Get recent logs
-					const logs = consoleMonitor.getLogs({ count: 100, level: "log" });
-					const varLog = snippetInjector.findVariablesLog(logs);
-
-					if (!varLog) {
-						throw new Error(
-							"No variables found in console logs.\n\n" +
-							"Did you run the snippet in Figma's plugin console? Here's the correct workflow:\n\n" +
-							"1. Call figma_get_variables() without parameters (you may have already done this)\n" +
-							"2. Copy the provided snippet\n" +
-							"3. Open Figma Desktop → Plugins → Development → Open Console\n" +
-							"4. Paste and run the snippet in the PLUGIN console (not browser DevTools)\n" +
-							"5. Wait for '✅ Variables data captured!' confirmation\n" +
-							"6. Then call figma_get_variables({ parseFromConsole: true })\n\n" +
-							"Note: The browser console won't work - you need a plugin console for the figma.variables API."
-						);
-					}
-
-					// Parse variables from log
-					const parsedData = snippetInjector.parseVariablesFromLog(varLog);
-
-					if (!parsedData) {
-						throw new Error("Failed to parse variables from console log");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										fileKey,
-										source: "console_capture",
-										local: {
-											summary: {
-												total_variables: parsedData.variables.length,
-												total_collections: parsedData.variableCollections.length,
-											},
-											collections: parsedData.variableCollections,
-											variables: parsedData.variables,
-										},
-										timestamp: parsedData.timestamp,
-										enriched: false,
-									}
-								),
-							},
-						],
-					};
+					throw identifiedError(
+						"parseFromConsole is no longer supported.\n\n" +
+						"The console-snippet workflow it relied on required a Puppeteer browser " +
+						"connection to Figma Desktop, which was removed in Phase 3 of the cleanup. " +
+						"To extract variables, open the Figma Console MCP Desktop Bridge plugin in " +
+						"Figma Desktop and call figma_get_variables() without parseFromConsole — " +
+						"the plugin returns full variable data through the WebSocket bridge."
+					);
 				}
 
 				// No more fallback options available
@@ -2341,8 +2275,7 @@ export function registerFigmaAPITools(
 					`✗ Desktop Bridge (failed or not available)\n` +
 					`\nTo fix:\n` +
 					`1. If you have FIGMA_ACCESS_TOKEN: Check your token permissions\n` +
-					`2. Install and run the Figma Desktop Bridge plugin\n` +
-					`3. Alternative: Use parseFromConsole=true with console snippet workflow`
+					`2. Install and run the Figma Desktop Bridge plugin and re-run this tool`
 				);
 			} catch (error) {
 				logger.error({ error }, "Failed to get variables");
@@ -2359,12 +2292,9 @@ export function registerFigmaAPITools(
 							api = await getFigmaAPI();
 						} catch (apiError) {
 							const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-							throw new Error(
-								`Cannot retrieve variables or styles. REST API authentication required for both.\n` +
-								`Error: ${errorMessage}\n\n` +
-								`To fix:\n` +
-								`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-								`2. Cloud mode: Authenticate via OAuth`
+							throw restAuthError(
+								"Cannot retrieve variables or styles. REST API authentication required for both.",
+								errorMessage,
 							);
 						}
 						// Use the Styles API directly - much faster than getFile!
@@ -2499,25 +2429,11 @@ export function registerFigmaAPITools(
 				logger.info({ fileKey, nodeId, format, enrich }, "Fetching component data");
 
 				// PRIORITY 1: Try Desktop Bridge plugin UI first (has reliable description field!)
-				if (getDesktopConnector || (getBrowserManager && ensureInitialized)) {
+				if (getDesktopConnector) {
 					try {
 						logger.info({ nodeId }, "Attempting to get component via Desktop Bridge plugin UI");
 
-						let connector: any;
-						if (getDesktopConnector) {
-							connector = await getDesktopConnector();
-						} else {
-							// Fallback: direct connector (legacy path)
-							if (ensureInitialized) await ensureInitialized();
-							const browserManager = getBrowserManager?.();
-							if (!browserManager) {
-								throw new Error("Browser manager not available after initialization");
-							}
-							const { FigmaDesktopConnector } = await import('./figma-desktop-connector.js');
-							const page = await browserManager.getPage();
-							connector = new FigmaDesktopConnector(page);
-							await connector.initialize();
-						}
+						const connector = await getDesktopConnector();
 
 						const desktopResult = await connector.getComponentFromPluginUI(nodeId);
 
@@ -2645,14 +2561,13 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve component data. Both Desktop Bridge and REST API are unavailable.\n` +
-						`Desktop Bridge: ${getDesktopConnector || (getBrowserManager && ensureInitialized) ? 'Failed (see logs above)' : 'Not available (local mode only)'}\n` +
-						`REST API: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable, OR ensure Figma Desktop Bridge plugin is running\n` +
-						`2. Cloud mode: Authenticate via OAuth\n` +
-						`3. Ensure the Desktop Bridge plugin is running in Figma Desktop`
+					const dbStatus = getDesktopConnector
+						? "Failed (see logs above)"
+						: "Not available";
+					throw restAuthError(
+						"Cannot retrieve component data. Both Desktop Bridge and REST API are unavailable.",
+						`Desktop Bridge: ${dbStatus}; REST API: ${errorMessage}`,
+						"Alternatively: open the Figma Desktop Bridge plugin in Figma Desktop to enable the plugin-based fallback.",
 					);
 				}
 
@@ -2814,12 +2729,9 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve styles. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth`
+					throw restAuthError(
+						"Cannot retrieve styles. REST API authentication required.",
+						errorMessage,
 					);
 				}
 
@@ -2987,14 +2899,10 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot render component image. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth\n\n` +
-						`Note: For component screenshots, figma_capture_screenshot may work as an alternative ` +
-						`if the Desktop Bridge plugin is connected.`
+					throw restAuthError(
+						"Cannot render component image. REST API authentication required.",
+						errorMessage,
+						"Note: For component screenshots, figma_capture_screenshot may work as an alternative if the Desktop Bridge plugin is connected.",
 					);
 				}
 
@@ -3138,14 +3046,10 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve component for development. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth\n\n` +
-						`Note: For component metadata, figma_get_component has Desktop Bridge fallback ` +
-						`that works without token (requires the Desktop Bridge plugin to be connected).`
+					throw restAuthError(
+						"Cannot retrieve component for development. REST API authentication required.",
+						errorMessage,
+						"Note: For component metadata, figma_get_component has a Desktop Bridge fallback that works without a token (requires the Desktop Bridge plugin to be connected)."
 					);
 				}
 
@@ -3560,12 +3464,9 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
-					throw new Error(
-						`Cannot retrieve file data for plugin development. REST API authentication required.\n` +
-						`Error: ${errorMessage}\n\n` +
-						`To fix:\n` +
-						`1. Local mode: Set FIGMA_ACCESS_TOKEN environment variable\n` +
-						`2. Cloud mode: Authenticate via OAuth`
+					throw restAuthError(
+						"Cannot retrieve file data for plugin development. REST API authentication required.",
+						errorMessage,
 					);
 				}
 
@@ -3774,40 +3675,6 @@ export function registerFigmaAPITools(
 					}
 				}
 
-				// Legacy CDP fallback (only when no connector factory is available)
-				if (!result && !getDesktopConnector) {
-					const browserManager = getBrowserManager?.();
-					if (!browserManager) {
-						throw new Error(
-							"Desktop Bridge not available. To capture screenshots:\n" +
-							"1. Open your Figma file in Figma Desktop\n" +
-							"2. Install and run the 'Figma Console MCP' plugin\n" +
-							"3. Ensure the plugin shows 'MCP ready' status"
-						);
-					}
-
-					if (ensureInitialized) {
-						await ensureInitialized();
-					}
-
-					const page = await browserManager.getPage();
-					const frames = page.frames();
-
-					for (const frame of frames) {
-						try {
-							const hasFunction = await frame.evaluate('typeof window.captureScreenshot === "function"');
-							if (hasFunction) {
-								result = await frame.evaluate(
-									`window.captureScreenshot(${JSON.stringify(nodeId || '')}, ${JSON.stringify({ format, scale })})`
-								);
-								break;
-							}
-						} catch {
-							continue;
-						}
-					}
-				}
-
 				if (!result) {
 					throw new Error(
 						"Desktop Bridge plugin not found. Ensure the 'Figma Console MCP' plugin is running in Figma Desktop."
@@ -3902,40 +3769,6 @@ export function registerFigmaAPITools(
 					const connector = await getDesktopConnector();
 					logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Instance properties via connector");
 					result = await connector.setInstanceProperties(nodeId, properties);
-				}
-
-				// Legacy CDP fallback (only when no connector factory is available)
-				if (!result && !getDesktopConnector) {
-					const browserManager = getBrowserManager?.();
-					if (!browserManager) {
-						throw new Error(
-							"Desktop Bridge not available. To set instance properties:\n" +
-							"1. Open your Figma file in Figma Desktop\n" +
-							"2. Install and run the 'Figma Console MCP' plugin\n" +
-							"3. Ensure the plugin shows 'MCP ready' status"
-						);
-					}
-
-					if (ensureInitialized) {
-						await ensureInitialized();
-					}
-
-					const page = await browserManager.getPage();
-					const frames = page.frames();
-
-					for (const frame of frames) {
-						try {
-							const hasFunction = await frame.evaluate('typeof window.setInstanceProperties === "function"');
-							if (hasFunction) {
-								result = await frame.evaluate(
-									`window.setInstanceProperties(${JSON.stringify(nodeId)}, ${JSON.stringify(properties)})`
-								);
-								break;
-							}
-						} catch {
-							continue;
-						}
-					}
 				}
 
 				if (!result) {

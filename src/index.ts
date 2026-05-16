@@ -17,7 +17,6 @@ import { BrowserManager, type Env } from "./browser-manager.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
 import { createChildLogger } from "./core/logger.js";
-import { testBrowserRendering } from "./test-browser.js";
 import { FigmaAPI, extractFileKey, formatVariables, formatComponentData } from "./core/figma-api.js";
 import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { registerDesignCodeTools } from "./core/design-code-tools.js";
@@ -27,6 +26,8 @@ import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
+import { registerDiagnoseTool } from "./core/diagnose-tool.js";
+import { wrapServerForIdentity } from "./core/identity.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
 import { registerWriteTools } from "./core/write-tools.js";
@@ -71,10 +72,16 @@ function isFigmaPAT(token: string): boolean {
  * Extends McpAgent to provide Figma-specific debugging tools
  */
 export class FigmaConsoleMCPv3 extends McpAgent {
-	server = new McpServer({
-		name: "Figma Console MCP",
-		version: "1.25.0",
-	});
+	server = (() => {
+		const s = new McpServer({
+			name: "Figma Console MCP",
+			version: "1.26.0",
+		});
+		// Identity wrap — every tool's response and thrown error gets stamped
+		// with our MCP name so cross-MCP attribution is unambiguous.
+		wrapServerForIdentity(s);
+		return s;
+	})();
 
 	private browserManager: BrowserManager | null = null;
 	private consoleMonitor: ConsoleMonitor | null = null;
@@ -375,7 +382,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Tool 1: Get Console Logs
 		this.server.tool(
 			"figma_get_console_logs",
-			"Retrieve console logs from Figma. Captures all plugin console output including [Main], [Swapper], etc. prefixes. Call figma_navigate first to initialize browser monitoring.",
+			"Retrieve console logs from a Cloudflare Browser Rendering session opened with figma_navigate. Captures plugin console output ([Main], [Swapper], etc. prefixes) and page-level logs. NOTE: cloud mode does NOT currently capture logs from a paired Desktop Bridge plugin — for plugin sandbox logs, use Local mode. Call figma_navigate first to open the file and start browser monitoring.",
 			{
 				count: z.number().optional().default(100).describe("Number of recent logs to retrieve"),
 				level: z
@@ -461,7 +468,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 				nodeId: z
 					.string()
 					.optional()
-					.describe("Optional node ID to screenshot. If not provided, uses the currently viewed page/frame from the browser URL."),
+					.describe("Optional node ID to screenshot (e.g., '123:456'). If omitted, uses the node-id query param from the Cloudflare Browser Rendering page's current URL."),
 				scale: z
 					.number()
 					.min(0.01)
@@ -1004,9 +1011,6 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			this.server,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
-			() => this.consoleMonitor || null,
-			() => this.browserManager || null,
-			() => this.ensureInitialized(),
 			undefined, // variablesCache
 			{ isRemoteMode: true },
 			getCloudDesktopConnector,
@@ -1054,6 +1058,16 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		} catch (e) {
 			// Silently skip if axe-core/jsdom not available in Workers environment
 		}
+
+		// Register figma_diagnose for cloud mode. Plugin state isn't directly
+		// observable from here (the paired plugin's WS lives in the relay DO),
+		// so we report mode and let the cross-MCP disclaimer do most of the work.
+		registerDiagnoseTool(this.server, {
+			mode: "cloud",
+			getServerVersion: () => "cloud",
+			getPluginState: () => null,
+			getTokenState: () => ({ hasToken: false }),
+		});
 
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
 		// They require Node.js file system APIs that don't work in Cloudflare Workers
@@ -1339,8 +1353,9 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.25.0",
+				version: "1.26.0",
 			});
+			wrapServerForIdentity(statelessServer);
 
 			// ================================================================
 			// Cloud Write Relay — Pairing Tool (stateless /mcp path)
@@ -1447,9 +1462,6 @@ export default {
 				statelessServer,
 				async () => statelessApi,
 				getCloudFileUrl,
-				() => null, // No console monitor
-				() => null, // No browser manager
-				undefined,  // No ensureInitialized
 				new Map(),  // Fresh variables cache per request
 				{ isRemoteMode: true },
 				getCloudDesktopConnector,
@@ -2131,12 +2143,12 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.25.0",
+					version: "1.26.0",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
 						oauth_legacy: ["/oauth/authorize", "/oauth/callback"],
-						utility: ["/test-browser", "/health"]
+						utility: ["/health"]
 					},
 					oauth_configured: !!env.FIGMA_OAUTH_CLIENT_ID
 				}),
@@ -2144,14 +2156,6 @@ export default {
 					headers: { "Content-Type": "application/json" },
 				},
 			);
-		}
-
-		// Browser Rendering API test endpoint
-		if (url.pathname === "/test-browser") {
-			const results = await testBrowserRendering(env);
-			return new Response(JSON.stringify(results, null, 2), {
-				headers: { "Content-Type": "application/json" },
-			});
 		}
 
 		// Serve favicon
@@ -2187,13 +2191,13 @@ export default {
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Figma Console MCP - The Most Comprehensive MCP Server for Figma</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="Turn your Figma design system into a living API. 100+ tools give AI assistants deep access to design tokens, component specs, variables, and programmatic design creation.">
+	<meta name="description" content="Turn your Figma design system into a living API. 101+ tools give AI assistants deep access to design tokens, component specs, variables, and programmatic design creation.">
 
 	<!-- Open Graph -->
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="https://figma-console-mcp.southleft.com">
 	<meta property="og:title" content="Figma Console MCP - Turn Your Design System Into a Living API">
-	<meta property="og:description" content="The most comprehensive MCP server for Figma. 100+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
+	<meta property="og:description" content="The most comprehensive MCP server for Figma. 101+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
 	<meta property="og:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 	<meta property="og:image:width" content="1200">
 	<meta property="og:image:height" content="630">
@@ -2201,7 +2205,7 @@ export default {
 	<!-- Twitter -->
 	<meta name="twitter:card" content="summary_large_image">
 	<meta name="twitter:title" content="Figma Console MCP - Turn Your Design System Into a Living API">
-	<meta name="twitter:description" content="The most comprehensive MCP server for Figma. 100+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
+	<meta name="twitter:description" content="The most comprehensive MCP server for Figma. 101+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
 	<meta name="twitter:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 
 	<meta name="theme-color" content="#0D9488">
@@ -3088,7 +3092,7 @@ export default {
 			<div class="grid-cell showcase-cell rule-left">
 				<div class="showcase-label">What AI Can Access</div>
 				<div class="showcase-stat">
-					<span class="number">100+</span>
+					<span class="number">101+</span>
 					<span class="label">MCP tools for Figma</span>
 				</div>
 				<div class="capability-list">

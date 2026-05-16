@@ -17,7 +17,7 @@ import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http';
 import type { Server as HttpServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
@@ -30,31 +30,6 @@ try {
   SERVER_VERSION = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8')).version;
 } catch {
   // Non-critical — version will show as 0.0.0
-}
-
-/**
- * Load the full plugin UI HTML content that gets served to the bootloader.
- * Falls back to a minimal error page if the file isn't found.
- */
-function loadPluginUIContent(): string {
-  const candidates = [
-    // Primary: relative to package root (works in both CJS and ESM)
-    join(PACKAGE_ROOT, 'figma-desktop-bridge', 'ui-full.html'),
-    // Fallback: relative to cwd (development / monorepo setups)
-    join(process.cwd(), 'figma-desktop-bridge', 'ui-full.html'),
-  ];
-
-  for (const path of candidates) {
-    try {
-      if (existsSync(path)) {
-        return readFileSync(path, 'utf-8');
-      }
-    } catch {
-      // try next candidate
-    }
-  }
-
-  return '<html><body><p>Plugin UI not found. Please reinstall figma-console-mcp.</p></body></html>';
 }
 
 const logger = createChildLogger({ component: 'websocket-server' });
@@ -158,8 +133,6 @@ export class FigmaWebSocketServer extends EventEmitter {
   private _startedAt = Date.now();
   private consoleBufferSize = 1000;
   private documentChangeBufferSize = 200;
-  /** Cached plugin UI HTML content — loaded once and served to bootloader requests */
-  private _pluginUIContent: string | null = null;
   /** Heartbeat interval for detecting dead connections via ping/pong */
   private _heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -171,7 +144,10 @@ export class FigmaWebSocketServer extends EventEmitter {
 
   /**
    * Handle HTTP requests on the same port as WebSocket.
-   * Serves plugin UI content for the bootloader and health checks.
+   * Serves a JSON `/health` (also at `/`) endpoint with version and connected-file
+   * info. No plugin-UI route exists — the plugin loads its own `ui.html` from disk
+   * via the Figma plugin runtime; the legacy `/plugin/ui` bootloader endpoint was
+   * removed in the Phase 3 cleanup.
    */
   private handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
     // CORS headers for Figma plugin iframe (sandboxed, origin: null)
@@ -186,19 +162,6 @@ export class FigmaWebSocketServer extends EventEmitter {
     }
 
     const url = req.url || '/';
-
-    // Plugin UI endpoint — bootloader redirects here
-    if (url === '/plugin/ui' || url === '/plugin/ui/') {
-      if (!this._pluginUIContent) {
-        this._pluginUIContent = loadPluginUIContent();
-      }
-      res.writeHead(200, {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-      });
-      res.end(this._pluginUIContent);
-      return;
-    }
 
     // Health/version endpoint
     if (url === '/health' || url === '/') {
@@ -392,22 +355,6 @@ export class FigmaWebSocketServer extends EventEmitter {
         pending.reject(new Error(message.error));
       } else {
         pending.resolve(message.result);
-      }
-      return;
-    }
-
-    // Bootloader request: send the full plugin UI HTML
-    if (message.type === 'GET_PLUGIN_UI') {
-      if (!this._pluginUIContent) {
-        this._pluginUIContent = loadPluginUIContent();
-      }
-      try {
-        ws.send(JSON.stringify({
-          type: 'PLUGIN_UI_CONTENT',
-          html: this._pluginUIContent,
-        }));
-      } catch {
-        // Non-critical — bootloader will show error
       }
       return;
     }

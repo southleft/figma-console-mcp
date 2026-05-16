@@ -51,9 +51,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **100+** | **83** | **9** |
+| **Total tools available** | **101** | **93** | **9** |
 
-> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 100+ tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 101 tools with real-time monitoring.
 
 ---
 
@@ -61,7 +61,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 100+ tools including design creation, variable management, and component instantiation.
+**What you get:** All 101 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -126,11 +126,11 @@ If you're not sure where to put the JSON configuration above, here's where each 
 1. Open Figma Desktop normally (no special flags needed) and open a file
 2. Go to **Plugins → Development → Import plugin from manifest...**
 3. Select `~/.figma-console-mcp/plugin/manifest.json` (stable path, auto-created by the MCP server)
-4. Run the plugin in your Figma file — the bootloader finds the MCP server and loads the latest UI automatically
+4. Run the plugin in your Figma file — it scans ports 9223–9232 and connects automatically to your running MCP server
 
-> One-time setup. The plugin uses a bootloader that dynamically loads fresh code from the MCP server — no need to re-import when the server updates.
-
-> **Upgrading from v1.14 or earlier?** Your existing plugin still works, but to get the bootloader benefits (no more re-importing), do one final re-import from `~/.figma-console-mcp/plugin/manifest.json`. The path is created automatically when the MCP server starts. Run `npx figma-console-mcp@latest --print-path` to see it. After this one-time upgrade, you're done forever.
+> **Heads-up on plugin updates.** Figma caches plugin files (`code.js` and `ui.html`) at the application level. When the MCP server publishes a plugin update — typically a `npm update` / new `npx` cache pull — re-import the manifest at `~/.figma-console-mcp/plugin/manifest.json` (Plugins → Manage plugins → re-import) to refresh the cached code. The stable path never changes, so re-importing is a quick one-click step.
+>
+> The MCP server refreshes the files at the stable path on every startup; re-importing in Figma is what makes Figma pick them up.
 
 #### Step 4: Restart Your MCP Client
 
@@ -156,7 +156,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 100+ tools as NPX, plus full source code access.
+**What you get:** Same 101 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -245,7 +245,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 **Best for:** Using Claude.ai, v0, Replit, or Lovable to create and modify Figma designs — no Node.js required.
 
-**What you get:** 83 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
+**What you get:** 93 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
 
 #### Prerequisites
 
@@ -302,7 +302,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **100+** | **83** | **100+** | **9** (read-only) |
+| **Total tools** | **101** | **93** | **101** | **9** (read-only) |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -317,7 +317,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 100+ tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 101 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -370,9 +370,11 @@ When you first use design system tools:
 
 ## 🛠️ Available Tools
 
-### Navigation & Status
-- `figma_navigate` - Open Figma URLs
-- `figma_get_status` - Check connection status
+### Status & Diagnostics
+- `figma_get_status` - Check WebSocket bridge connection and file context
+- `figma_diagnose` - Designer-readable health check + setup guidance
+- `figma_reconnect` - Force reconnect to the Desktop Bridge plugin
+- `figma_navigate` - Switch the active file target among connected plugins (Local), or navigate the cloud headless browser (Remote/Cloud)
 
 ### Console Debugging
 - `figma_get_console_logs` - Retrieve console logs
@@ -651,7 +653,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 100+ tools work through the WebSocket transport
+- All 101 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -693,9 +695,11 @@ When two processes tried to start the MCP server (e.g., Claude Desktop's Chat ta
 
 **Nothing.** Multi-instance support is fully automatic:
 - Each MCP server claims the next available port in the range
-- The bootloader plugin scans all ports and connects to every active server
+- The Desktop Bridge plugin scans all ports and connects to every active server
 - Orphaned processes from closed tabs are automatically cleaned up on startup
-- No re-importing, no manual port management
+- No manual port management — the plugin already scans the whole range
+
+(Re-importing the manifest is only required when the plugin code itself changes — e.g. after a package update. Port-range scanning is already in the shipped plugin.)
 
 ---
 
@@ -788,7 +792,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.23.0 (Stable) - Production-ready with version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 100+ tools, Comments API, and MCP Apps
+**Current Status:** v1.23.0 (Stable) - Production-ready with version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 101 tools, Comments API, and MCP Apps
 
 **Recent Releases:**
 - [x] **v1.17.0** - Figma Slides Support: 15 new tools for managing presentations — slides, transitions, content, reordering, and navigation. Inspired by Toni Haidamous (PR #11).

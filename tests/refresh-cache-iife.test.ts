@@ -110,7 +110,7 @@ describe("#68 refreshCache IIFE regression", () => {
 
 	it("unwrap logic: handles both EXECUTE_CODE-nested and direct GET_VARIABLES_DATA shapes", () => {
 		// Mirrors the unwrap at src/core/figma-tools.ts (post-#68-fix). The plugin's
-		// ui-full.html handleResult nests EXECUTE_CODE returns under `result`, but the
+		// handleResult in ui.html nests EXECUTE_CODE returns under `result`, but the
 		// GET_VARIABLES_DATA path returns the variables shape directly.
 		function unwrapDesktopVariablesResult(desktopResult: any): any {
 			return desktopResult?.result?.variables ? desktopResult.result : desktopResult;

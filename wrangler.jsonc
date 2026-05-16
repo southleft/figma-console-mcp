@@ -71,7 +71,7 @@
 	//
 	// FIGMA_OAUTH_CLIENT_ID: Your Figma OAuth app client ID
 	// FIGMA_OAUTH_CLIENT_SECRET: Your Figma OAuth app client secret
-	// FIGMA_ACCESS_TOKEN: (Optional/Deprecated) Server-wide token for testing
+	// FIGMA_ACCESS_TOKEN: Optional server-wide PAT for testing. Cloud production uses per-user OAuth; local NPX mode reads this env var.
 	//
 	// Note: Secrets are not defined in this file - they must be set via:
 	// wrangler secret put FIGMA_OAUTH_CLIENT_ID

@@ -2,9 +2,9 @@
  * WebSocket Bridge Tests
  *
  * Tests for:
- * - FigmaWebSocketServer: lifecycle, command routing, reconnection
+ * - FigmaWebSocketServer: lifecycle, command routing, reconnection,
+ *   multi-client file identity, console/document/selection/page change buffering
  * - WebSocketConnector: IFigmaConnector implementation, method mapping
- * - Transport detection: CDP vs WebSocket fallback logic
  */
 
 import { FigmaWebSocketServer } from '../src/core/websocket-server';
@@ -986,20 +986,13 @@ describe('FigmaWebSocketServer console capture', () => {
 // ============================================================================
 
 describe('IFigmaConnector interface compliance', () => {
-  test('FigmaDesktopConnector has getTransportType returning cdp', async () => {
-    const mod = await import('../src/core/figma-desktop-connector');
-    expect(mod.FigmaDesktopConnector.prototype.getTransportType).toBeDefined();
-    const result = mod.FigmaDesktopConnector.prototype.getTransportType();
-    expect(result).toBe('cdp');
-  });
-
   test('WebSocketConnector has getTransportType returning websocket', () => {
     const mockServer = { isClientConnected: () => false } as any;
     const connector = new WebSocketConnector(mockServer);
     expect(connector.getTransportType()).toBe('websocket');
   });
 
-  test('Both connectors implement all IFigmaConnector methods', async () => {
+  test('WebSocketConnector implements all IFigmaConnector methods', () => {
     const interfaceMethods = [
       'initialize', 'getTransportType', 'executeInPluginContext',
       'getVariablesFromPluginUI', 'getVariables', 'executeCodeViaUI',
@@ -1016,17 +1009,10 @@ describe('IFigmaConnector interface compliance', () => {
       'captureScreenshot', 'setInstanceProperties', 'clearFrameCache',
     ];
 
-    // Check WebSocketConnector
     const mockServer = { isClientConnected: () => false } as any;
     const wsConnector = new WebSocketConnector(mockServer);
     for (const method of interfaceMethods) {
       expect(typeof (wsConnector as any)[method]).toBe('function');
-    }
-
-    // Check FigmaDesktopConnector prototype
-    const mod = await import('../src/core/figma-desktop-connector');
-    for (const method of interfaceMethods) {
-      expect(typeof mod.FigmaDesktopConnector.prototype[method]).toBe('function');
     }
   });
 });

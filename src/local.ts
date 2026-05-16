@@ -21,8 +21,6 @@ import { fileURLToPath } from "url";
 import { dirname, resolve, join } from "path";
 import { realpathSync, existsSync, readFileSync, mkdirSync, copyFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { LocalBrowserManager } from "./browser/local.js";
-import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
 import { createChildLogger } from "./core/logger.js";
 import {
@@ -39,7 +37,10 @@ import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
-import { FigmaDesktopConnector } from "./core/figma-desktop-connector.js";
+import { registerDiagnoseTool } from "./core/diagnose-tool.js";
+import { registerWriteTools } from "./core/write-tools.js";
+import { wrapServerForIdentity } from "./core/identity.js";
+import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
 import { FigmaWebSocketServer } from "./core/websocket-server.js";
 import { WebSocketConnector } from "./core/websocket-connector.js";
@@ -75,7 +76,7 @@ function setupStablePluginDir(sourcePluginDir: string): string | null {
 		const stableDir = join(homedir(), ".figma-console-mcp", "plugin");
 		mkdirSync(stableDir, { recursive: true });
 
-		const filesToCopy = ["manifest.json", "code.js", "ui.html", "ui-full.html"];
+		const filesToCopy = ["manifest.json", "code.js", "ui.html"];
 		for (const file of filesToCopy) {
 			const src = join(sourcePluginDir, file);
 			const dest = join(stableDir, file);
@@ -106,8 +107,6 @@ function setupStablePluginDir(sourcePluginDir: string): string | null {
  */
 class LocalFigmaConsoleMCP {
 	private server: McpServer;
-	private browserManager: LocalBrowserManager | null = null;
-	private consoleMonitor: ConsoleMonitor | null = null;
 	private figmaAPI: FigmaAPI | null = null;
 	private desktopConnector: IFigmaConnector | null = null;
 	private wsServer: FigmaWebSocketServer | null = null;
@@ -213,6 +212,11 @@ For component-specific design guidance (sizing, proportions, accessibility, etc.
 If Design Systems Assistant MCP is not available, install it from: https://github.com/southleft/design-systems-mcp`,
 			},
 		);
+
+		// Stamp every tool response (and every thrown error) with our MCP identity
+		// so LLMs can attribute output unambiguously when multiple Figma-related
+		// MCPs are connected. Idempotent for already-tagged responses.
+		wrapServerForIdentity(this.server);
 	}
 
 	/**
@@ -243,7 +247,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 * Returns the active WebSocket Desktop Bridge connector.
 	 */
 	private async getDesktopConnector(): Promise<IFigmaConnector> {
-		// Try WebSocket first — instant check, no network timeout delay
 		if (this.wsServer?.isClientConnected()) {
 			try {
 				const wsConnector = new WebSocketConnector(this.wsServer);
@@ -253,29 +256,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				return this.desktopConnector;
 			} catch (wsError) {
 				const errorMsg = wsError instanceof Error ? wsError.message : String(wsError);
-				logger.debug({ error: errorMsg }, "WebSocket connector init failed, trying legacy fallback");
+				logger.debug({ error: errorMsg }, "WebSocket connector init failed");
 			}
-		}
-
-		// Legacy fallback path
-		try {
-			await this.ensureInitialized();
-
-			if (this.browserManager) {
-				// Always get a fresh page reference to handle page navigation/refresh
-				const page = await this.browserManager.getPage();
-
-				// Always recreate the connector with the current page to avoid stale references
-				// This prevents "detached Frame" errors when Figma page is refreshed
-				const cdpConnector = new FigmaDesktopConnector(page);
-				await cdpConnector.initialize();
-				this.desktopConnector = cdpConnector;
-				logger.debug("Desktop connector initialized via legacy fallback with fresh page reference");
-				return this.desktopConnector;
-			}
-		} catch (cdpError) {
-			const errorMsg = cdpError instanceof Error ? cdpError.message : String(cdpError);
-			logger.debug({ error: errorMsg }, "Legacy fallback connection also unavailable");
 		}
 
 		const wsPort = this.wsActualPort || this.wsPreferredPort || DEFAULT_WS_PORT;
@@ -376,11 +358,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 * The synthesized URL is compatible with extractFileKey() and extractFigmaUrlInfo().
 	 */
 	private getCurrentFileUrl(): string | null {
-		// Priority 1: Browser URL (full URL with branch/node info)
-		const browserUrl = this.browserManager?.getCurrentUrl() || null;
-		if (browserUrl) return browserUrl;
-
-		// Priority 2: Synthesize URL from WebSocket file identity
+		// Synthesize the URL from the WebSocket plugin's reported file identity.
+		// (Pre-Phase-3 this also tried a live Puppeteer browser URL; that path is
+		// gone now along with the LocalBrowserManager.)
 		const wsFileInfo = this.wsServer?.getConnectedFileInfo() ?? null;
 		if (wsFileInfo?.fileKey) {
 			const pageIdParam = wsFileInfo.currentPageId
@@ -396,10 +376,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 * Check if Figma Desktop is accessible via WebSocket
 	 */
 	private async checkFigmaDesktop(): Promise<void> {
-		if (!this.config.local) {
-			throw new Error("Local mode configuration missing");
-		}
-
 		// Check WebSocket availability
 		const wsAvailable = this.wsServer?.isClientConnected() ?? false;
 
@@ -439,179 +415,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		}
 	}
 
-	/**
-	 * Auto-connect to Figma Desktop at startup
-	 * Runs in background - never blocks or throws
-	 * Enables "get latest logs" workflow without manual setup
-	 */
-	private autoConnectToFigma(): void {
-		// Fire-and-forget with proper async handling
-		(async () => {
-			try {
-				logger.info(
-					"🔄 Auto-connecting to Figma Desktop for immediate log capture...",
-				);
-				await this.ensureInitialized();
-				logger.info(
-					"✅ Auto-connect successful - console monitoring active. Logs will be captured immediately.",
-				);
-			} catch (error) {
-				// Don't crash - just log that auto-connect didn't work
-				const errorMsg = error instanceof Error ? error.message : String(error);
-				logger.warn(
-					{ error: errorMsg },
-					"⚠️ Auto-connect to Figma Desktop failed - will connect when you use a tool",
-				);
-				// This is fine - the user can still use tools to trigger connection later
-			}
-		})();
-	}
 
-	/**
-	 * Initialize browser and console monitoring
-	 */
-	private async ensureInitialized(): Promise<void> {
-		try {
-			if (!this.browserManager) {
-				logger.info("Initializing LocalBrowserManager");
-
-				if (!this.config.local) {
-					throw new Error("Local mode configuration missing");
-				}
-
-				this.browserManager = new LocalBrowserManager(this.config.local);
-			}
-
-			// Always check connection health (handles computer sleep/reconnects)
-			if (this.browserManager && this.consoleMonitor) {
-				const wasAlive = await this.browserManager.isConnectionAlive();
-				await this.browserManager.ensureConnection();
-
-				// 🆕 NEW: Dynamic page switching for worker migration
-				// Check if we should switch to a page with more workers
-				if (
-					this.browserManager.isRunning() &&
-					this.consoleMonitor.getStatus().isMonitoring
-				) {
-					const browser = (this.browserManager as any).browser;
-
-					if (browser) {
-						try {
-							// Get all Figma pages
-							const pages = await browser.pages();
-							const figmaPages = pages
-								.filter((p: any) => {
-									const url = p.url();
-									return url.includes("figma.com") && !url.includes("devtools");
-								})
-								.map((p: any) => ({
-									page: p,
-									url: p.url(),
-									workerCount: p.workers().length,
-								}));
-
-							// Find current monitored page URL
-							const currentUrl = this.browserManager.getCurrentUrl();
-							const currentPageInfo = figmaPages.find(
-								(p: { page: any; url: string; workerCount: number }) =>
-									p.url === currentUrl,
-							);
-							const currentWorkerCount = currentPageInfo?.workerCount ?? 0;
-
-							// Find best page (most workers)
-							const bestPage = figmaPages
-								.filter(
-									(p: { page: any; url: string; workerCount: number }) =>
-										p.workerCount > 0,
-								)
-								.sort(
-									(
-										a: { page: any; url: string; workerCount: number },
-										b: { page: any; url: string; workerCount: number },
-									) => b.workerCount - a.workerCount,
-								)[0];
-
-							// Switch if:
-							// 1. Current page has 0 workers AND another page has workers
-							// 2. Another page has MORE workers (prevent thrashing with threshold)
-							const shouldSwitch =
-								bestPage &&
-								((currentWorkerCount === 0 && bestPage.workerCount > 0) ||
-									bestPage.workerCount > currentWorkerCount + 1); // +1 threshold to prevent ping-pong
-
-							if (shouldSwitch && bestPage.url !== currentUrl) {
-								logger.info(
-									{
-										oldPage: currentUrl,
-										oldWorkers: currentWorkerCount,
-										newPage: bestPage.url,
-										newWorkers: bestPage.workerCount,
-									},
-									"Switching to page with more workers",
-								);
-
-								// Stop monitoring old page
-								this.consoleMonitor.stopMonitoring();
-
-								// Start monitoring new page
-								await this.consoleMonitor.startMonitoring(bestPage.page);
-
-								// Don't clear logs - preserve history across page switches
-								logger.info("Console monitoring restarted on new page");
-							}
-						} catch (error) {
-							logger.error(
-								{ error },
-								"Failed to check for better pages with workers",
-							);
-							// Don't throw - this is a best-effort optimization
-						}
-					}
-				}
-
-				// If connection was lost and browser is now connected, FORCE restart monitoring
-				// Note: Can't use isConnectionAlive() here because page might not be fetched yet after reconnection
-				// Instead, check if browser is connected using isRunning()
-				if (!wasAlive && this.browserManager.isRunning()) {
-					logger.info(
-						"Connection was lost and recovered - forcing monitoring restart with fresh page",
-					);
-					this.consoleMonitor.stopMonitoring(); // Clear stale state
-					const page = await this.browserManager.getPage();
-					await this.consoleMonitor.startMonitoring(page);
-				} else if (
-					this.browserManager.isRunning() &&
-					!this.consoleMonitor.getStatus().isMonitoring
-				) {
-					// Connection is fine but monitoring stopped for some reason
-					logger.info(
-						"Connection alive but monitoring stopped - restarting console monitoring",
-					);
-					const page = await this.browserManager.getPage();
-					await this.consoleMonitor.startMonitoring(page);
-				}
-			}
-
-			if (!this.consoleMonitor) {
-				logger.info("Initializing ConsoleMonitor");
-				this.consoleMonitor = new ConsoleMonitor(this.config.console);
-
-				// Connect to browser and begin monitoring
-				logger.info("Getting browser page");
-				const page = await this.browserManager.getPage();
-
-				logger.info("Starting console monitoring");
-				await this.consoleMonitor.startMonitoring(page);
-
-				logger.info("Browser and console monitor initialized successfully");
-			}
-		} catch (error) {
-			logger.error({ error }, "Failed to initialize browser/monitor");
-			throw new Error(
-				`Initialization failed: ${error instanceof Error ? error.message : String(error)}`,
-			);
-		}
-	}
 
 	/**
 	 * Register all MCP tools
@@ -641,33 +445,18 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				try {
 					// Try console monitor first, fall back to WebSocket console buffer
 					let logs: import("./core/types/index.js").ConsoleLogEntry[];
-					let status: ReturnType<import("./core/console-monitor.js").ConsoleMonitor["getStatus"]> | ReturnType<NonNullable<typeof this.wsServer>["getConsoleStatus"]>;
-					let source: "cdp" | "websocket" = "cdp";
+					let status: ReturnType<NonNullable<typeof this.wsServer>["getConsoleStatus"]>;
+					let source: "websocket" = "websocket";
 
-					if (this.consoleMonitor?.getStatus().isMonitoring) {
-						// Console monitor is active — use it (captures all page logs)
-						logs = this.consoleMonitor.getLogs({ count, level, since });
-						status = this.consoleMonitor.getStatus();
-					} else if (this.wsServer?.isClientConnected()) {
-						// WebSocket fallback — plugin-captured console logs
+					if (this.wsServer?.isClientConnected()) {
+						// Plugin-captured console logs delivered via WebSocket bridge
 						logs = this.wsServer.getConsoleLogs({ count, level, since });
 						status = this.wsServer.getConsoleStatus();
 						source = "websocket";
 					} else {
-						// Neither available — try to initialize
-						try {
-							await this.ensureInitialized();
-							if (this.consoleMonitor) {
-								logs = this.consoleMonitor.getLogs({ count, level, since });
-								status = this.consoleMonitor.getStatus();
-							} else {
-								throw new Error("Console monitor not initialized");
-							}
-						} catch {
-							throw new Error(
-								"No console monitoring available. Open the Desktop Bridge plugin in Figma for console capture.",
-							);
-						}
+						throw new Error(
+							"No console monitoring available. Open the Desktop Bridge plugin in Figma for console capture.",
+						);
 					}
 
 					const responseData: any = {
@@ -745,7 +534,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					.string()
 					.optional()
 					.describe(
-						"Optional node ID to screenshot. If not provided, uses the currently viewed page/frame from the browser URL.",
+						"Optional node ID to screenshot (e.g., '123:456'). If omitted, uses the node-id from the Desktop Bridge plugin's reported file URL when present. To screenshot what the user is currently looking at on the canvas, prefer figma_capture_screenshot (uses the plugin's exportAsync and reflects the current state).",
 					),
 				scale: z
 					.number()
@@ -901,37 +690,24 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					.describe("Filter by log level"),
 			},
 			async ({ duration, level }) => {
-				// Determine which console source to use
-				const useCDP = this.consoleMonitor?.getStatus().isMonitoring;
-				const useWS = !useCDP && this.wsServer?.isClientConnected();
-
-				if (!useCDP && !useWS) {
+				if (!this.wsServer?.isClientConnected()) {
 					throw new Error(
 						"No console monitoring available. Open the Desktop Bridge plugin in Figma for console capture.",
 					);
 				}
 
 				const startTime = Date.now();
-				const startLogCount = useCDP
-					? this.consoleMonitor!.getStatus().logCount
-					: this.wsServer!.getConsoleStatus().logCount;
+				const startLogCount = this.wsServer.getConsoleStatus().logCount;
 
 				// Wait for the specified duration while collecting logs
 				await new Promise((resolve) => setTimeout(resolve, duration * 1000));
 
-				const watchedLogs = useCDP
-					? this.consoleMonitor!.getLogs({
-							level: level === "all" ? undefined : level,
-							since: startTime,
-						})
-					: this.wsServer!.getConsoleLogs({
-							level: level === "all" ? undefined : level,
-							since: startTime,
-						});
+				const watchedLogs = this.wsServer.getConsoleLogs({
+					level: level === "all" ? undefined : level,
+					since: startTime,
+				});
 
-				const endLogCount = useCDP
-					? this.consoleMonitor!.getStatus().logCount
-					: this.wsServer!.getConsoleStatus().logCount;
+				const endLogCount = this.wsServer.getConsoleStatus().logCount;
 				const newLogsCount = endLogCount - startLogCount;
 
 				const responseData: any = {
@@ -940,19 +716,16 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					startTime: new Date(startTime).toISOString(),
 					endTime: new Date(Date.now()).toISOString(),
 					filter: level,
-					transport: useCDP ? "cdp" : "websocket",
+					transport: "websocket",
 					statistics: {
 						totalLogsInBuffer: endLogCount,
 						logsAddedDuringWatch: newLogsCount,
 						logsMatchingFilter: watchedLogs.length,
 					},
 					logs: watchedLogs,
+					ai_instruction:
+						"Console logs captured via WebSocket Bridge (plugin sandbox only).",
 				};
-
-				if (useWS) {
-					responseData.ai_instruction =
-						"Console logs captured via WebSocket Bridge (plugin sandbox only).";
-				}
 
 				return {
 					content: [
@@ -978,39 +751,23 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 			async ({ clearConsole: clearConsoleBefore }) => {
 				try {
-					let transport: "cdp" | "websocket" = "cdp";
+					let transport: "websocket" = "websocket";
 					let clearedCount = 0;
 					let currentUrl: string | null = null;
 
-					// Try browser reload first
-					if (this.browserManager?.isRunning()) {
-						if (clearConsoleBefore && this.consoleMonitor) {
-							clearedCount = this.consoleMonitor.clear();
-						}
-						await this.browserManager.reload();
-						currentUrl = this.browserManager.getCurrentUrl();
-					} else if (this.wsServer?.isClientConnected()) {
-						// WebSocket fallback: reload the plugin UI iframe
+					// Reload the plugin UI iframe through the WebSocket bridge.
+					if (this.wsServer?.isClientConnected()) {
 						transport = "websocket";
-						if (clearConsoleBefore && this.wsServer) {
+						if (clearConsoleBefore) {
 							clearedCount = this.wsServer.clearConsoleLogs();
 						}
 						await this.wsServer.sendCommand("RELOAD_UI", {}, 10000);
 						// Wait for the UI to reload and WebSocket to reconnect
 						await new Promise((resolve) => setTimeout(resolve, 3000));
 					} else {
-						// Try to initialize browser manager
-						await this.ensureInitialized();
-						if (!this.browserManager) {
-							throw new Error(
-								"No connection available. Open the Desktop Bridge plugin in Figma.",
-							);
-						}
-						if (clearConsoleBefore && this.consoleMonitor) {
-							clearedCount = this.consoleMonitor.clear();
-						}
-						await this.browserManager.reload();
-						currentUrl = this.browserManager.getCurrentUrl();
+						throw new Error(
+							"No connection available. Open the Desktop Bridge plugin in Figma.",
+						);
 					}
 
 					const responseData: any = {
@@ -1070,24 +827,16 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			async () => {
 				try {
 					let clearedCount = 0;
-					let transport: "cdp" | "websocket" = "cdp";
+					let transport: "websocket" = "websocket";
 
-					// Try WebSocket buffer first (non-disruptive)
+					// Clear the WebSocket plugin-side log buffer (non-disruptive)
 					if (this.wsServer?.isClientConnected()) {
 						clearedCount = this.wsServer.clearConsoleLogs();
 						transport = "websocket";
 					} else {
-						// Try browser manager (initialize if needed)
-						if (!this.consoleMonitor) {
-							await this.ensureInitialized();
-						}
-						if (this.consoleMonitor) {
-							clearedCount = this.consoleMonitor.clear();
-						} else {
-							throw new Error(
-								"No console monitoring available. Open the Desktop Bridge plugin in Figma.",
-							);
-						}
+						throw new Error(
+							"No console monitoring available. Open the Desktop Bridge plugin in Figma.",
+						);
 					}
 
 					const responseData: any = {
@@ -1133,10 +882,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 		);
 
-		// Tool 6: Navigate to Figma
+		// Tool 6: Navigate / switch active file
 		this.server.tool(
 			"figma_navigate",
-			"Navigate browser to a Figma URL and start console monitoring. ALWAYS use this first when starting a new debugging session or switching files. Initializes browser connection and begins capturing console logs. Use when user provides a Figma URL or says: 'open this file', 'debug this design', 'switch to'. Returns navigation status and current URL. If the file is already open in a tab, switches to it without reloading.",
+			"Switch the active Figma file target among files that already have the Desktop Bridge plugin running. Local mode is WebSocket-only — this tool does NOT launch a browser or open files. If the requested URL is already the active file, it confirms the connection. If another connected plugin matches the URL, it switches the active target so subsequent tool calls hit that file. If no connected plugin matches, returns guidance for the user to open the Desktop Bridge plugin in the target file. Use figma_list_open_files to see all connected files.",
 			{
 				url: z
 					.string()
@@ -1147,12 +896,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 			async ({ url }) => {
 				try {
-					// Try browser navigation first
-					try {
-						await this.ensureInitialized();
-					} catch {
-						// Browser not available — check if WebSocket is connected
-						if (this.wsServer?.isClientConnected()) {
+					// Phase 3: local mode now talks to Figma exclusively through the
+					// WebSocket Desktop Bridge plugin. Navigation is plugin-side: we
+					// either switch the active file (if the target file already has
+					// the plugin open) or ask the user to open the plugin in the
+					// target file. Cross-file browser navigation via the old CDP
+					// path no longer exists.
+					if (this.wsServer?.isClientConnected()) {
+						{
 							const fileInfo = this.wsServer.getConnectedFileInfo();
 							// Check if the requested URL points to the same file already connected via WebSocket
 							const requestedFileKey = extractFileKey(url);
@@ -1251,68 +1002,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						);
 					}
 
-					if (!this.browserManager) {
-						throw new Error("Browser manager not initialized");
-					}
-
-					// Navigate to the URL (may switch to existing tab)
-					const result = await this.browserManager.navigateToFigma(url);
-
-					if (result.action === 'switched_to_existing') {
-						if (this.consoleMonitor) {
-							this.consoleMonitor.stopMonitoring();
-							await this.consoleMonitor.startMonitoring(result.page);
-						}
-
-						if (this.desktopConnector) {
-							this.desktopConnector.clearFrameCache();
-						}
-
-						const currentUrl = this.browserManager.getCurrentUrl();
-
-						return {
-							content: [
-								{
-									type: "text",
-									text: JSON.stringify(
-										{
-											status: "switched_to_existing",
-											url: currentUrl,
-											timestamp: Date.now(),
-											message:
-												"Switched to existing tab for this Figma file. Console monitoring is active.",
-										},
-									),
-								},
-							],
-						};
-					}
-
-					// Normal navigation
-					if (this.desktopConnector) {
-						this.desktopConnector.clearFrameCache();
-					}
-
-					await new Promise((resolve) => setTimeout(resolve, 2000));
-
-					const currentUrl = this.browserManager.getCurrentUrl();
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										status: "navigated",
-										url: currentUrl,
-										timestamp: Date.now(),
-										message:
-											"Browser navigated to Figma. Console monitoring is active.",
-									},
-								),
-							},
-						],
-					};
+					// If we got here, the WebSocket plugin bridge wasn't connected.
+					// Tell the user how to recover — local mode has no Puppeteer
+					// fallback after the Phase 3 CDP cleanup.
+					throw new Error(
+						"Desktop Bridge plugin is not connected. Open the Figma Console MCP plugin in Figma Desktop and try again.",
+					);
 				} catch (error) {
 					logger.error({ error }, "Failed to navigate to Figma");
 					const errorMessage =
@@ -1351,7 +1046,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					// Check WebSocket availability
 					const wsConnected = this.wsServer?.isClientConnected() ?? false;
 
-					let monitorStatus = this.consoleMonitor?.getStatus() ?? null;
+					// ConsoleMonitor is gone in WS-only local mode — both fields below
+					// (monitorWorkerCount, consoleMonitor) report static zero/null so the
+					// status-shape stays stable for any consumer that parses it.
 					let currentUrl = this.getCurrentFileUrl();
 
 					// Determine active transport
@@ -1445,7 +1142,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										currentFileKey: currentFileKey || undefined,
 										editorType: this.wsServer?.getEditorType() || "figma",
 										monitoredPageUrl: currentUrl,
-										monitorWorkerCount: monitorStatus?.workerCount ?? 0,
+										monitorWorkerCount: 0,
 										transport: {
 											active: activeTransport,
 											websocket: {
@@ -1529,14 +1226,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												? this.wsStartupError?.code === "EADDRINUSE"
 													? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use — most likely multiple Claude Desktop tabs or terminal sessions are running the Figma Console MCP server. Ask the user to close some sessions and restart.`
 													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
-														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected. TELL THE USER: Close and reopen the Desktop Bridge plugin in Figma to reconnect. The plugin's bootloader will automatically scan all ports in the range.`
+														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected. TELL THE USER: Close and reopen the Desktop Bridge plugin in Figma to reconnect. The plugin scans the whole port range (9223–9232) on launch and will pick up this server automatically.`
 														: `No connection to Figma Desktop. Open the Desktop Bridge plugin in Figma to connect.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`
 												: activeTransport === "websocket"
 													? `Connected via WebSocket Bridge to "${currentFileName || "unknown file"}" on port ${this.wsActualPort}. All design tools and console monitoring tools are available. Console logs are captured from the plugin sandbox (code.js). IMPORTANT: Always verify the file name before destructive operations when multiple files have the plugin open.`
 													: "All tools are ready to use.",
 										},
 										pluginPath: this.getPluginPath() || undefined,
-										consoleMonitor: monitorStatus,
+										consoleMonitor: null,
 										initialized: setupValid,
 										timestamp: Date.now(),
 									},
@@ -1582,27 +1279,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					let currentUrl: string | null = null;
 					let fileName: string | null = null;
 
-					// Try browser manager reconnection if it exists
-					if (this.browserManager) {
-						try {
-							await this.browserManager.forceReconnect();
-
-							// Reinitialize console monitor with new page
-							if (this.consoleMonitor) {
-								this.consoleMonitor.stopMonitoring();
-								const page = await this.browserManager.getPage();
-								await this.consoleMonitor.startMonitoring(page);
-							}
-
-							currentUrl = this.getCurrentFileUrl();
-							transport = "websocket";
-						} catch (reconnectError) {
-							logger.debug({ error: reconnectError }, "Browser reconnection failed, checking WebSocket");
-						}
-					}
-
-					// If browser reconnect didn't work, check WebSocket
-					if (transport === "none" && this.wsServer?.isClientConnected()) {
+					// figma_reconnect is informational in WebSocket-only mode — the
+					// plugin handles its own reconnect logic. We just report whether
+					// the bridge is currently connected.
+					if (this.wsServer?.isClientConnected()) {
 						transport = "websocket";
 					}
 
@@ -1872,26 +1552,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			async () => {
 				try {
 					if (!this.wsServer?.isClientConnected()) {
-						// Fall back to browser manager if available
-						if (this.browserManager) {
-							try {
-								await this.ensureInitialized();
-								const currentUrl = this.browserManager.getCurrentUrl();
-								return {
-									content: [{
-										type: "text",
-										text: JSON.stringify({
-											transport: "browser",
-											files: currentUrl ? [{ url: currentUrl, isActive: true }] : [],
-											message: "WebSocket not connected. Open the Desktop Bridge plugin for multi-file support.",
-										}),
-									}],
-								};
-							} catch {
-								// Browser also unavailable
-							}
-						}
-
 						return {
 							content: [{
 								type: "text",
@@ -1940,1160 +1600,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								message: "Failed to list open files",
 							}),
 						}],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// ============================================================================
-		// WRITE OPERATION TOOLS - Figma Design Manipulation
-		// ============================================================================
-
-		// Tool: Execute arbitrary code in Figma plugin context (Power Tool)
-		this.server.tool(
-			"figma_execute",
-			`Execute arbitrary JavaScript in Figma's plugin context with full access to the figma API. Use for complex operations not covered by other tools. Requires Desktop Bridge plugin. CAUTION: Can modify your document.
-
-**COMPONENT INSTANCES:** For instances (node.type === 'INSTANCE'), use figma_set_instance_properties — direct text editing FAILS SILENTLY. Check instance.componentProperties for available props (may have #nodeId suffixes).
-
-**RESULT ANALYSIS:** Check resultAnalysis.warning for silent failures (empty arrays, null returns).
-
-**VALIDATION:** After creating/modifying visuals: screenshot with figma_capture_screenshot, check alignment/spacing/proportions, iterate up to 3x.
-
-**PLACEMENT:** Always create components inside a Section or Frame, never on blank canvas. Use parent.insertChild(0, bg) for z-ordering backgrounds behind content.
-
-**HOUSEKEEPING (MANDATORY):**
-Before creating: screenshot the target page to see existing content and find clear space.
-When creating: place inside a named Section, positioned BELOW or AWAY from existing content. Never overlap.
-After creating: screenshot to verify clean placement and no overlaps.
-On failure/retry: DELETE any partial artifacts (empty frames, orphaned layers, blank pages) before retrying. Use node.remove() to clean up.
-Pages: NEVER create a new page if one with that name already exists — use the existing one. If you created a blank page during a failed attempt, delete it.
-Layers: If your code creates helper frames, placeholder nodes, or intermediate layers that aren't part of the final result, remove them.`,
-			{
-				code: z
-					.string()
-					.describe(
-						"JavaScript code to execute. Has access to the 'figma' global object. " +
-							"Example: 'const rect = figma.createRectangle(); rect.resize(100, 100); return { id: rect.id };'",
-					),
-				timeout: z
-					.number()
-					.optional()
-					.default(5000)
-					.describe(
-						"Execution timeout in milliseconds (default: 5000, max: 30000)",
-					),
-			},
-			async ({ code, timeout }) => {
-				const maxRetries = 2;
-				let lastError: Error | null = null;
-
-				for (let attempt = 0; attempt <= maxRetries; attempt++) {
-					try {
-						const connector = await this.getDesktopConnector();
-						const result = await connector.executeCodeViaUI(
-							code,
-							Math.min(timeout, 30000),
-						);
-
-						// Post-execution audit: detect common housekeeping issues
-						// Runs automatically when the code creates pages, components, or frames
-						const createsContent = /createPage|createComponent|createFrame|createSection|createRectangle|createEllipse/.test(code);
-						let housekeepingWarnings: string[] = [];
-
-						if (createsContent && result.success) {
-							try {
-								const auditResult = await connector.executeCodeViaUI(`
-									var warnings = [];
-									var pages = figma.root.children;
-									// Check for duplicate page names
-									var pageNames = {};
-									for (var i = 0; i < pages.length; i++) {
-										var name = pages[i].name;
-										if (pageNames[name]) pageNames[name]++;
-										else pageNames[name] = 1;
-									}
-									for (var name in pageNames) {
-										if (pageNames[name] > 1) warnings.push('DUPLICATE_PAGE: ' + pageNames[name] + ' pages named "' + name + '" — delete the empty duplicate');
-									}
-									// Check for empty pages (likely from failed attempts)
-									for (var i = 0; i < pages.length; i++) {
-										if (pages[i].children.length === 0 && pages[i].name !== '---') {
-											warnings.push('EMPTY_PAGE: "' + pages[i].name + '" has no content — delete if unintended');
-										}
-									}
-									// Check for nodes placed directly on page (not in section/frame)
-									var currentPage = figma.currentPage;
-									var floatingNodes = 0;
-									for (var i = 0; i < currentPage.children.length; i++) {
-										var child = currentPage.children[i];
-										if (child.type === 'COMPONENT' || child.type === 'FRAME' || child.type === 'RECTANGLE') {
-											if (currentPage.children.length > 1 && child.type !== 'SECTION') floatingNodes++;
-										}
-									}
-									if (floatingNodes > 3) warnings.push('FLOATING_NODES: ' + floatingNodes + ' nodes placed directly on the page canvas — consider grouping inside a Section');
-									return warnings;
-								`, 5000);
-
-								if (auditResult.success && Array.isArray(auditResult.result) && auditResult.result.length > 0) {
-									housekeepingWarnings = auditResult.result;
-								}
-							} catch {
-								// Audit is best-effort — don't fail the main operation
-							}
-						}
-
-						const response: any = {
-							success: result.success,
-							result: result.result,
-							error: result.error,
-							resultAnalysis: result.resultAnalysis,
-							fileContext: result.fileContext,
-							timestamp: Date.now(),
-							...(attempt > 0
-								? { reconnected: true, attempts: attempt + 1 }
-								: {}),
-						};
-
-						if (housekeepingWarnings.length > 0) {
-							response.housekeeping = {
-								warnings: housekeepingWarnings,
-								ai_instruction: "CLEANUP REQUIRED: The warnings above indicate housekeeping issues from your recent operation. Fix these NOW before proceeding — delete empty/duplicate pages, remove orphaned nodes, and move floating content into Sections.",
-							};
-						}
-
-						return {
-							content: [
-								{
-									type: "text",
-									text: JSON.stringify(response),
-								},
-							],
-						};
-					} catch (error) {
-						lastError =
-							error instanceof Error ? error : new Error(String(error));
-						const errorMessage = lastError.message;
-
-						// Check if it's a detached frame error - auto-reconnect
-						if (
-							errorMessage.includes("detached Frame") ||
-							errorMessage.includes("Execution context was destroyed") ||
-							errorMessage.includes("Target closed")
-						) {
-							logger.warn(
-								{ attempt, error: errorMessage },
-								"Detached frame detected, forcing reconnection",
-							);
-
-							// Clear cached connector and force browser reconnection
-							this.desktopConnector = null;
-
-							if (this.browserManager && attempt < maxRetries) {
-								try {
-									await this.browserManager.forceReconnect();
-
-									// Reinitialize console monitor with new page
-									if (this.consoleMonitor) {
-										this.consoleMonitor.stopMonitoring();
-										const page = await this.browserManager.getPage();
-										await this.consoleMonitor.startMonitoring(page);
-									}
-
-									logger.info("Reconnection successful, retrying execution");
-									continue; // Retry the execution
-								} catch (reconnectError) {
-									logger.error(
-										{ error: reconnectError },
-										"Failed to reconnect",
-									);
-								}
-							}
-						}
-
-						// Non-recoverable error or max retries exceeded
-						break;
-					}
-				}
-
-				// All retries failed
-				logger.error(
-					{ error: lastError },
-					"Failed to execute code after retries",
-				);
-				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									error: lastError?.message || "Unknown error",
-									message: "Failed to execute code in Figma plugin context",
-									hint: "Make sure the Desktop Bridge plugin is running in Figma",
-									connectionError: this.buildConnectionError(lastError),
-								},
-							),
-						},
-					],
-					isError: true,
-				};
-			},
-		);
-
-		// Tool: Update a variable's value
-		this.server.tool(
-			"figma_update_variable",
-			"Update a single variable's value. For multiple updates, use figma_batch_update_variables instead (10-50x faster). Use figma_get_variables first for IDs. COLOR: hex '#FF0000', FLOAT: number, STRING: text, BOOLEAN: true/false. Requires Desktop Bridge plugin.",
-			{
-				variableId: z
-					.string()
-					.describe(
-						"The variable ID to update (e.g., 'VariableID:123:456'). Get this from figma_get_variables.",
-					),
-				modeId: z
-					.string()
-					.describe(
-						"The mode ID to update the value in (e.g., '1:0'). Get this from the variable's collection modes.",
-					),
-				value: z
-					.union([z.string(), z.number(), z.boolean()])
-					.describe(
-						"The new value. For COLOR: hex string like '#FF0000'. For FLOAT: number. For STRING: text. For BOOLEAN: true/false.",
-					),
-			},
-			async ({ variableId, modeId, value }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.updateVariable(
-						variableId,
-						modeId,
-						value,
-					);
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Variable "${result.variable.name}" updated successfully`,
-										variable: result.variable,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to update variable");
-					return this.bridgeToolError(error, "Failed to update variable", "Make sure the Desktop Bridge plugin is running and the variable ID is correct");
-				}
-			},
-		);
-
-		// Tool: Create a new variable
-		this.server.tool(
-			"figma_create_variable",
-			"Create a single Figma variable. For multiple variables, use figma_batch_create_variables instead (10-50x faster). Use figma_get_variables first to get collection IDs. Supports COLOR, FLOAT, STRING, BOOLEAN. Requires Desktop Bridge plugin.",
-			{
-				name: z
-					.string()
-					.describe("Name for the new variable (e.g., 'primary-blue')"),
-				collectionId: z
-					.string()
-					.describe(
-						"The collection ID to create the variable in (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
-					),
-				resolvedType: z
-					.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
-					.describe("The variable type: COLOR, FLOAT, STRING, or BOOLEAN"),
-				description: z
-					.string()
-					.optional()
-					.describe("Optional description for the variable"),
-				valuesByMode: z
-					.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
-					.optional()
-					.describe(
-						"Optional initial values by mode ID. Example: { '1:0': '#FF0000', '1:1': '#0000FF' }",
-					),
-			},
-			async ({
-				name,
-				collectionId,
-				resolvedType,
-				description,
-				valuesByMode,
-			}) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.createVariable(
-						name,
-						collectionId,
-						resolvedType,
-						{
-							description,
-							valuesByMode,
-						},
-					);
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Variable "${name}" created successfully`,
-										variable: result.variable,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to create variable");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to create variable",
-										hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Create a new variable collection
-		this.server.tool(
-			"figma_create_variable_collection",
-			"Create an empty variable collection. To create a collection WITH variables and modes in one step, use figma_setup_design_tokens instead. Requires Desktop Bridge plugin.",
-			{
-				name: z
-					.string()
-					.describe("Name for the new collection (e.g., 'Brand Colors')"),
-				initialModeName: z
-					.string()
-					.optional()
-					.describe(
-						"Name for the initial mode (default mode is created automatically). Example: 'Light'",
-					),
-				additionalModes: z
-					.array(z.string())
-					.optional()
-					.describe(
-						"Additional mode names to create. Example: ['Dark', 'High Contrast']",
-					),
-			},
-			async ({ name, initialModeName, additionalModes }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.createVariableCollection(name, {
-						initialModeName,
-						additionalModes,
-					});
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Collection "${name}" created successfully`,
-										collection: result.collection,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to create collection");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to create variable collection",
-										hint: "Make sure the Desktop Bridge plugin is running in Figma",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Delete a variable
-		this.server.tool(
-			"figma_delete_variable",
-			"Delete a Figma variable. WARNING: This is a destructive operation that cannot be undone (except with Figma's undo). Use figma_get_variables first to get variable IDs. Requires the Desktop Bridge plugin to be running.",
-			{
-				variableId: z
-					.string()
-					.describe(
-						"The variable ID to delete (e.g., 'VariableID:123:456'). Get this from figma_get_variables.",
-					),
-			},
-			async ({ variableId }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.deleteVariable(variableId);
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Variable "${result.deleted.name}" deleted successfully`,
-										deleted: result.deleted,
-										timestamp: Date.now(),
-										warning:
-											"This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to delete variable");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to delete variable",
-										hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Delete a variable collection
-		this.server.tool(
-			"figma_delete_variable_collection",
-			"Delete a Figma variable collection and ALL its variables. WARNING: This is a destructive operation that deletes all variables in the collection and cannot be undone (except with Figma's undo). Requires the Desktop Bridge plugin to be running.",
-			{
-				collectionId: z
-					.string()
-					.describe(
-						"The collection ID to delete (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
-					),
-			},
-			async ({ collectionId }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.deleteVariableCollection(collectionId);
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Collection "${result.deleted.name}" and ${result.deleted.variableCount} variables deleted successfully`,
-										deleted: result.deleted,
-										timestamp: Date.now(),
-										warning:
-											"This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to delete collection");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to delete variable collection",
-										hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Rename a variable
-		this.server.tool(
-			"figma_rename_variable",
-			"Rename an existing Figma variable. This updates the variable's name while preserving all its values and settings. Requires the Desktop Bridge plugin to be running.",
-			{
-				variableId: z
-					.string()
-					.describe(
-						"The variable ID to rename (e.g., 'VariableID:123:456'). Get this from figma_get_variables.",
-					),
-				newName: z
-					.string()
-					.describe(
-						"The new name for the variable. Can include slashes for grouping (e.g., 'colors/primary/background').",
-					),
-			},
-			async ({ variableId, newName }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.renameVariable(variableId, newName);
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Variable renamed from "${result.oldName}" to "${result.variable.name}"`,
-										oldName: result.oldName,
-										variable: result.variable,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to rename variable");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to rename variable",
-										hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Add a mode to a collection
-		this.server.tool(
-			"figma_add_mode",
-			"Add a new mode to an existing Figma variable collection. Modes allow variables to have different values for different contexts (e.g., Light/Dark themes, device sizes). Requires the Desktop Bridge plugin to be running.",
-			{
-				collectionId: z
-					.string()
-					.describe(
-						"The collection ID to add the mode to (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
-					),
-				modeName: z
-					.string()
-					.describe(
-						"The name for the new mode (e.g., 'Dark', 'Mobile', 'High Contrast').",
-					),
-			},
-			async ({ collectionId, modeName }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.addMode(collectionId, modeName);
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Mode "${modeName}" added to collection "${result.collection.name}"`,
-										newMode: result.newMode,
-										collection: result.collection,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to add mode");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to add mode to collection",
-										hint: "Make sure the Desktop Bridge plugin is running, the collection ID is correct, and you haven't exceeded Figma's mode limit",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Rename a mode in a collection
-		this.server.tool(
-			"figma_rename_mode",
-			"Rename an existing mode in a Figma variable collection. Requires the Desktop Bridge plugin to be running.",
-			{
-				collectionId: z
-					.string()
-					.describe(
-						"The collection ID containing the mode (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
-					),
-				modeId: z
-					.string()
-					.describe(
-						"The mode ID to rename (e.g., '123:0'). Get this from the collection's modes array in figma_get_variables.",
-					),
-				newName: z
-					.string()
-					.describe(
-						"The new name for the mode (e.g., 'Dark Theme', 'Tablet').",
-					),
-			},
-			async ({ collectionId, modeId, newName }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.renameMode(
-						collectionId,
-						modeId,
-						newName,
-					);
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Mode renamed from "${result.oldName}" to "${newName}"`,
-										oldName: result.oldName,
-										collection: result.collection,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to rename mode");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to rename mode",
-										hint: "Make sure the Desktop Bridge plugin is running, the collection ID and mode ID are correct",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// ============================================================================
-		// BATCH OPERATIONS (Performance-Optimized)
-		// ============================================================================
-		// Execute multiple variable operations in a single roundtrip,
-		// reducing per-operation overhead from ~60-170ms to near-zero.
-		// Use these instead of calling individual tools repeatedly.
-
-		// Tool: Batch create variables
-		this.server.tool(
-			"figma_batch_create_variables",
-			"Create multiple variables in one operation. Use instead of calling figma_create_variable repeatedly — up to 50x faster for bulk operations. Get collection IDs from figma_get_variables first. Requires Desktop Bridge plugin.",
-			{
-				collectionId: z
-					.string()
-					.describe(
-						"Collection ID to create all variables in (e.g., 'VariableCollectionId:123:456')",
-					),
-				variables: z
-					.array(
-						z.object({
-							name: z.string().describe("Variable name (e.g., 'primary-blue')"),
-							resolvedType: z
-								.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
-								.describe("Variable type"),
-							description: z
-								.string()
-								.optional()
-								.describe("Optional description"),
-							valuesByMode: z
-								.record(
-									z.string(),
-									z.union([z.string(), z.number(), z.boolean()]),
-								)
-								.optional()
-								.describe(
-									"Values by mode ID. For COLOR: hex like '#FF0000'. Example: { '1:0': '#FF0000' }",
-								),
-						}),
-					)
-					.min(1)
-					.max(100)
-					.describe("Array of variables to create (1-100)"),
-			},
-			async ({ collectionId, variables }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-
-					const script = `
-const results = [];
-const collectionId = ${JSON.stringify(collectionId)};
-const vars = ${JSON.stringify(variables)};
-
-function hexToRgba(hex) {
-  hex = hex.replace('#', '');
-  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-  return {
-    r: parseInt(hex.substring(0, 2), 16) / 255,
-    g: parseInt(hex.substring(2, 4), 16) / 255,
-    b: parseInt(hex.substring(4, 6), 16) / 255,
-    a: hex.length === 8 ? parseInt(hex.substring(6, 8), 16) / 255 : 1
-  };
-}
-
-const collection = await figma.variables.getVariableCollectionByIdAsync(collectionId);
-if (!collection) return { created: 0, failed: vars.length, results: vars.map(v => ({ success: false, name: v.name, error: 'Collection not found: ' + collectionId })) };
-
-for (const v of vars) {
-  try {
-    const variable = figma.variables.createVariable(v.name, collection, v.resolvedType);
-    if (v.description) variable.description = v.description;
-    if (v.valuesByMode) {
-      for (const [modeId, value] of Object.entries(v.valuesByMode)) {
-        const processed = v.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
-        variable.setValueForMode(modeId, processed);
-      }
-    }
-    results.push({ success: true, name: v.name, id: variable.id });
-  } catch (err) {
-    results.push({ success: false, name: v.name, error: String(err) });
-  }
-}
-
-return {
-  created: results.filter(r => r.success).length,
-  failed: results.filter(r => !r.success).length,
-  results
-};`;
-
-					const timeout = Math.max(5000, variables.length * 200);
-					const result = await connector.executeCodeViaUI(
-						script,
-						Math.min(timeout, 30000),
-					);
-
-					if (result.error) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: JSON.stringify(
-										{
-											error: result.error,
-											message:
-												"Batch create failed during execution",
-											hint: "Check that the collection ID is valid and the Desktop Bridge plugin is running",
-										},
-									),
-								},
-							],
-							isError: true,
-						};
-					}
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Batch created ${result.result?.created ?? 0} variables (${result.result?.failed ?? 0} failed)`,
-										...result.result,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to batch create variables");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error
-												? error.message
-												: String(error),
-										message: "Failed to batch create variables",
-										hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Batch update variables
-		this.server.tool(
-			"figma_batch_update_variables",
-			"Update multiple variable values in one operation. Use instead of calling figma_update_variable repeatedly — up to 50x faster for bulk updates. Get variable/mode IDs from figma_get_variables first. Requires Desktop Bridge plugin.",
-			{
-				updates: z
-					.array(
-						z.object({
-							variableId: z
-								.string()
-								.describe(
-									"Variable ID (e.g., 'VariableID:123:456')",
-								),
-							modeId: z
-								.string()
-								.describe("Mode ID (e.g., '1:0')"),
-							value: z
-								.union([z.string(), z.number(), z.boolean()])
-								.describe(
-									"New value. COLOR: hex like '#FF0000'. FLOAT: number. STRING: text. BOOLEAN: true/false.",
-								),
-						}),
-					)
-					.min(1)
-					.max(100)
-					.describe("Array of updates to apply (1-100)"),
-			},
-			async ({ updates }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-
-					const script = `
-const results = [];
-const updates = ${JSON.stringify(updates)};
-
-function hexToRgba(hex) {
-  hex = hex.replace('#', '');
-  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-  return {
-    r: parseInt(hex.substring(0, 2), 16) / 255,
-    g: parseInt(hex.substring(2, 4), 16) / 255,
-    b: parseInt(hex.substring(4, 6), 16) / 255,
-    a: hex.length === 8 ? parseInt(hex.substring(6, 8), 16) / 255 : 1
-  };
-}
-
-for (const u of updates) {
-  try {
-    const variable = await figma.variables.getVariableByIdAsync(u.variableId);
-    if (!variable) throw new Error('Variable not found: ' + u.variableId);
-    const isColor = variable.resolvedType === 'COLOR';
-    const processed = isColor && typeof u.value === 'string' ? hexToRgba(u.value) : u.value;
-    variable.setValueForMode(u.modeId, processed);
-    results.push({ success: true, variableId: u.variableId, name: variable.name });
-  } catch (err) {
-    results.push({ success: false, variableId: u.variableId, error: String(err) });
-  }
-}
-
-return {
-  updated: results.filter(r => r.success).length,
-  failed: results.filter(r => !r.success).length,
-  results
-};`;
-
-					const timeout = Math.max(5000, updates.length * 150);
-					const result = await connector.executeCodeViaUI(
-						script,
-						Math.min(timeout, 30000),
-					);
-
-					if (result.error) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: JSON.stringify(
-										{
-											error: result.error,
-											message:
-												"Batch update failed during execution",
-											hint: "Check that variable IDs and mode IDs are valid",
-										},
-									),
-								},
-							],
-							isError: true,
-						};
-					}
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Batch updated ${result.result?.updated ?? 0} variables (${result.result?.failed ?? 0} failed)`,
-										...result.result,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to batch update variables");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error
-												? error.message
-												: String(error),
-										message: "Failed to batch update variables",
-										hint: "Make sure the Desktop Bridge plugin is running and variable/mode IDs are correct",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Setup design tokens (collection + modes + variables atomically)
-		this.server.tool(
-			"figma_setup_design_tokens",
-			"Create a complete design token structure in one operation: collection, modes, and all variables. Ideal for importing CSS custom properties or design tokens into Figma. Requires Desktop Bridge plugin.",
-			{
-				collectionName: z
-					.string()
-					.describe("Name for the token collection (e.g., 'Brand Tokens')"),
-				modes: z
-					.array(z.string())
-					.min(1)
-					.max(4)
-					.describe(
-						"Mode names (first becomes default). Example: ['Light', 'Dark']",
-					),
-				tokens: z
-					.array(
-						z.object({
-							name: z
-								.string()
-								.describe("Token name (e.g., 'color/primary')"),
-							resolvedType: z
-								.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
-								.describe("Token type"),
-							description: z
-								.string()
-								.optional()
-								.describe("Optional description"),
-							values: z
-								.record(
-									z.string(),
-									z.union([z.string(), z.number(), z.boolean()]),
-								)
-								.describe(
-									"Values keyed by mode NAME (not ID). Example: { 'Light': '#FFFFFF', 'Dark': '#000000' }",
-								),
-						}),
-					)
-					.min(1)
-					.max(100)
-					.describe("Token definitions (1-100)"),
-			},
-			async ({ collectionName, modes, tokens }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-
-					const script = `
-const collectionName = ${JSON.stringify(collectionName)};
-const modeNames = ${JSON.stringify(modes)};
-const tokenDefs = ${JSON.stringify(tokens)};
-
-function hexToRgba(hex) {
-  hex = hex.replace('#', '');
-  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-  return {
-    r: parseInt(hex.substring(0, 2), 16) / 255,
-    g: parseInt(hex.substring(2, 4), 16) / 255,
-    b: parseInt(hex.substring(4, 6), 16) / 255,
-    a: hex.length === 8 ? parseInt(hex.substring(6, 8), 16) / 255 : 1
-  };
-}
-
-// Step 1: Create collection
-const collection = figma.variables.createVariableCollection(collectionName);
-const modeMap = {};
-
-// Step 2: Set up modes - first mode uses the default mode that was auto-created
-const defaultModeId = collection.modes[0].modeId;
-collection.renameMode(defaultModeId, modeNames[0]);
-modeMap[modeNames[0]] = defaultModeId;
-
-for (let i = 1; i < modeNames.length; i++) {
-  const newModeId = collection.addMode(modeNames[i]);
-  modeMap[modeNames[i]] = newModeId;
-}
-
-// Step 3: Create all variables with values
-const results = [];
-for (const t of tokenDefs) {
-  try {
-    const variable = figma.variables.createVariable(t.name, collection, t.resolvedType);
-    if (t.description) variable.description = t.description;
-    for (const [modeName, value] of Object.entries(t.values)) {
-      const modeId = modeMap[modeName];
-      if (!modeId) { results.push({ success: false, name: t.name, error: 'Unknown mode: ' + modeName }); continue; }
-      const processed = t.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
-      variable.setValueForMode(modeId, processed);
-    }
-    results.push({ success: true, name: t.name, id: variable.id });
-  } catch (err) {
-    results.push({ success: false, name: t.name, error: String(err) });
-  }
-}
-
-return {
-  collectionId: collection.id,
-  collectionName: collectionName,
-  modes: modeMap,
-  created: results.filter(r => r.success).length,
-  failed: results.filter(r => !r.success).length,
-  results
-};`;
-
-					const timeout = Math.max(
-						10000,
-						tokens.length * 200 + modes.length * 500,
-					);
-					const result = await connector.executeCodeViaUI(
-						script,
-						Math.min(timeout, 30000),
-					);
-
-					if (result.error) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: JSON.stringify(
-										{
-											error: result.error,
-											message:
-												"Design token setup failed during execution",
-											hint: "Check the token definitions and ensure the Desktop Bridge plugin is running",
-										},
-									),
-								},
-							],
-							isError: true,
-						};
-					}
-
-					this.invalidateVariablesCache();
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Created collection "${collectionName}" with ${modes.length} mode(s) and ${result.result?.created ?? 0} tokens`,
-										...result.result,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to setup design tokens");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error
-												? error.message
-												: String(error),
-										message: "Failed to setup design tokens",
-										hint: "Make sure the Desktop Bridge plugin is running in Figma",
-									},
-								),
-							},
-						],
 						isError: true,
 					};
 				}
@@ -3247,8 +1753,12 @@ return {
 
 			return { cacheEntry, fileKey, wasLoaded: true };
 		};
+		// ============================================================================
+		// READ-SIDE LIBRARY / DESIGN-SYSTEM TOOLS
+		// (Previously interleaved with write tools in local.ts; restored after the
+		// Phase-2 write-tools dedupe excised them along with the surrounding writes.)
+		// ============================================================================
 
-		// Tool 1: Get Design System Summary (~1000 tokens response)
 		this.server.tool(
 			"figma_get_design_system_summary",
 			"Get a compact overview of the design system. Returns categories, component counts, and token collection names WITHOUT full details. Use this first to understand what's available, then use figma_search_components to find specific components. This tool is optimized for minimal token usage.",
@@ -3990,128 +2500,6 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 		// Tool 5: Instantiate Component
 		this.server.tool(
-			"figma_instantiate_component",
-			`Create an instance of a component from the design system — works with BOTH local and published library components.
-
-**For local components:** Pass BOTH componentKey AND nodeId together. Most local/unpublished components require nodeId.
-**For library components:** Pass just the componentKey from figma_get_library_components or figma_search_components (with libraryFileKey). The component will be imported from the published library automatically.
-
-**CRITICAL: Use VARIANT keys, not COMPONENT_SET keys!**
-When importing from a published library, use the key of a specific variant (type: "COMPONENT"), NOT the parent component set key (type: "COMPONENT_SET"). Component set keys will fail with importComponentByKeyAsync. In figma_get_library_components results, look inside the "variants" array for individual variant keys.
-
-**Font loading:** Library components may use fonts not loaded in the current file. If instantiation fails with a font error, load the required fonts first via figma_execute before retrying (e.g., \`await figma.loadFontAsync({ family: "Geist", style: "Regular" })\`).
-
-**IMPORTANT: Always re-search before instantiating!**
-NodeIds are session-specific and may be stale from previous conversations. ALWAYS search for components at the start of each design session to get current, valid identifiers.
-
-**VISUAL VALIDATION WORKFLOW:**
-After instantiating components, use figma_take_screenshot to verify the result looks correct. Check placement, sizing, and visual balance.`,
-			{
-				componentKey: z
-					.string()
-					.optional()
-					.describe(
-						"The component key from search results. Pass this WITH nodeId for automatic fallback.",
-					),
-				nodeId: z
-					.string()
-					.optional()
-					.describe(
-						"The node ID from search results. ALWAYS pass this alongside componentKey - most local components need it.",
-					),
-				variant: z
-					.record(z.string())
-					.optional()
-					.describe(
-						"Variant properties to set (e.g., { Type: 'Simple', State: 'Active' })",
-					),
-				overrides: z
-					.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
-					.optional()
-					.describe(
-						"Property overrides (e.g., { 'Button Label': 'Click Me' })",
-					),
-				position: z
-					.object({
-						x: z.number(),
-						y: z.number(),
-					})
-					.optional()
-					.describe("Position on canvas (default: 0, 0)"),
-				parentId: z
-					.string()
-					.optional()
-					.describe("Parent node ID to append the instance to"),
-			},
-			async ({
-				componentKey,
-				nodeId,
-				variant,
-				overrides,
-				position,
-				parentId,
-			}) => {
-				try {
-					if (!componentKey && !nodeId) {
-						throw new Error("Either componentKey or nodeId is required");
-					}
-					const connector = await this.getDesktopConnector();
-					const result = await connector.instantiateComponent(
-						componentKey || "",
-						{
-							nodeId,
-							position,
-							overrides,
-							variant,
-							parentId,
-						},
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to instantiate component");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Component instantiated successfully",
-										instance: result.instance,
-										timestamp: Date.now(),
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to instantiate component");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to instantiate component",
-										hint: "Make sure the component key is correct and the Desktop Bridge plugin is running",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// ============================================================================
-		// Tool 6: Get Library Components (Cross-file published library access)
-		// ============================================================================
-		this.server.tool(
 			"figma_get_library_components",
 			`Discover published components from a shared/team library file.
 
@@ -4441,1522 +2829,16 @@ After instantiating components, use figma_take_screenshot to verify the result l
 		// ============================================================================
 
 		// Tool: Set Node Description
-		this.server.tool(
-			"figma_set_description",
-			"Set the description text on a component, component set, or style. Descriptions appear in Dev Mode and help document design intent. Supports plain text and markdown formatting.",
-			{
-				nodeId: z
-					.string()
-					.describe(
-						"The node ID of the component or style to update (e.g., '123:456')",
-					),
-				description: z.string().describe("The plain text description to set"),
-				descriptionMarkdown: z
-					.string()
-					.optional()
-					.describe("Optional rich text description using markdown formatting"),
-			},
-			async ({ nodeId, description, descriptionMarkdown }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.setNodeDescription(
-						nodeId,
-						description,
-						descriptionMarkdown,
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to set description");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Description set successfully",
-										node: result.node,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to set description");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										hint: "Make sure the node supports descriptions (components, component sets, styles)",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Add Component Property
-		this.server.tool(
-			"figma_add_component_property",
-			"Add a new component property to a component or component set. Properties enable dynamic content and behavior in component instances. Supported types: BOOLEAN (toggle), TEXT (string), INSTANCE_SWAP (component swap), VARIANT (variant selection).",
-			{
-				nodeId: z.string().describe("The component or component set node ID"),
-				propertyName: z
-					.string()
-					.describe(
-						"Name for the new property (e.g., 'Show Icon', 'Button Label')",
-					),
-				type: z
-					.enum(["BOOLEAN", "TEXT", "INSTANCE_SWAP", "VARIANT"])
-					.describe(
-						"Property type: BOOLEAN for toggles, TEXT for strings, INSTANCE_SWAP for component swaps, VARIANT for variant selection",
-					),
-				defaultValue: z
-					.union([z.string(), z.number(), z.boolean()])
-					.describe(
-						"Default value for the property. BOOLEAN: true/false, TEXT: string, INSTANCE_SWAP: component key, VARIANT: variant value",
-					),
-			},
-			async ({ nodeId, propertyName, type, defaultValue }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.addComponentProperty(
-						nodeId,
-						propertyName,
-						type,
-						defaultValue,
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to add property");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Component property added",
-										propertyName: result.propertyName,
-										hint: "The property name includes a unique suffix (e.g., 'Show Icon#123:456'). Use the full name for editing/deleting.",
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to add component property");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										hint: "Cannot add properties to variant components. Add to the parent component set instead.",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Edit Component Property
-		this.server.tool(
-			"figma_edit_component_property",
-			"Edit an existing component property. Can change the name, default value, or preferred values (for INSTANCE_SWAP). Use the full property name including the unique suffix.",
-			{
-				nodeId: z.string().describe("The component or component set node ID"),
-				propertyName: z
-					.string()
-					.describe(
-						"The full property name with suffix (e.g., 'Show Icon#123:456')",
-					),
-				newValue: z
-					.object({
-						name: z.string().optional().describe("New name for the property"),
-						defaultValue: z
-							.union([z.string(), z.number(), z.boolean()])
-							.optional()
-							.describe("New default value"),
-						preferredValues: z
-							.array(
-								z.object({
-									type: z
-										.enum(["COMPONENT", "COMPONENT_SET"])
-										.describe("Type of preferred value"),
-									key: z.string().describe("Component or component set key"),
-								}),
-							)
-							.optional()
-							.describe("Preferred values (INSTANCE_SWAP only)"),
-					})
-					.describe("Object with the values to update"),
-			},
-			async ({ nodeId, propertyName, newValue }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.editComponentProperty(
-						nodeId,
-						propertyName,
-						newValue,
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to edit property");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Component property updated",
-										propertyName: result.propertyName,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to edit component property");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Delete Component Property
-		this.server.tool(
-			"figma_delete_component_property",
-			"Delete a component property. Only works with BOOLEAN, TEXT, and INSTANCE_SWAP properties (not VARIANT). This is a destructive operation.",
-			{
-				nodeId: z.string().describe("The component or component set node ID"),
-				propertyName: z
-					.string()
-					.describe(
-						"The full property name with suffix (e.g., 'Show Icon#123:456')",
-					),
-			},
-			async ({ nodeId, propertyName }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.deleteComponentProperty(
-						nodeId,
-						propertyName,
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to delete property");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Component property deleted",
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to delete component property");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										hint: "Cannot delete VARIANT properties. Only BOOLEAN, TEXT, and INSTANCE_SWAP can be deleted.",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// ============================================================================
-		// NEW: Node Manipulation Tools
-		// ============================================================================
-
-		// Tool: Resize Node
-		this.server.tool(
-			"figma_resize_node",
-			"Resize a node to specific dimensions. By default respects child constraints; use withConstraints=false to ignore them.",
-			{
-				nodeId: z.string().describe("The node ID to resize"),
-				width: z.number().describe("New width in pixels"),
-				height: z.number().describe("New height in pixels"),
-				withConstraints: z
-					.boolean()
-					.optional()
-					.default(true)
-					.describe(
-						"Whether to apply child constraints during resize (default: true)",
-					),
-			},
-			async ({ nodeId, width, height, withConstraints }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.resizeNode(
-						nodeId,
-						width,
-						height,
-						withConstraints,
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to resize node");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Node resized to ${width}x${height}`,
-										node: result.node,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to resize node");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Move Node
-		this.server.tool(
-			"figma_move_node",
-			"Move a node to a new position within its parent.",
-			{
-				nodeId: z.string().describe("The node ID to move"),
-				x: z.number().describe("New X position"),
-				y: z.number().describe("New Y position"),
-			},
-			async ({ nodeId, x, y }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.moveNode(nodeId, x, y);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to move node");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Node moved to (${x}, ${y})`,
-										node: result.node,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to move node");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Set Node Fills
-		this.server.tool(
-			"figma_set_fills",
-			"Set the fill colors on a node. Accepts hex color strings (e.g., '#FF0000') or full paint objects.",
-			{
-				nodeId: z.string().describe("The node ID to modify"),
-				fills: z
-					.array(
-						z.object({
-							type: z
-								.literal("SOLID")
-								.describe("Fill type (currently only SOLID supported)"),
-							color: z
-								.string()
-								.describe(
-									"Hex color string (e.g., '#FF0000', '#FF000080' for transparency)",
-								),
-							opacity: z
-								.number()
-								.optional()
-								.describe("Opacity 0-1 (default: 1)"),
-						}),
-					)
-					.describe("Array of fill objects"),
-			},
-			async ({ nodeId, fills }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.setNodeFills(nodeId, fills);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to set fills");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Fills updated",
-										node: result.node,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to set fills");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Set Image Fill on nodes
-		this.server.tool(
-			"figma_set_image_fill",
-			"Set an image fill on one or more Figma nodes. The imageData parameter accepts EITHER a base64-encoded " +
-			"image string (JPEG/PNG) OR an absolute file path starting with / (e.g. /tmp/photo.jpg). " +
-			"When a file path is provided, the server reads the image from disk — this is preferred for large " +
-			"images since it avoids parameter truncation. The image is decoded in the browser bridge and passed " +
-			"as raw bytes to the Figma plugin. Requires Desktop Bridge plugin.",
-			{
-				nodeIds: z.array(z.string()).describe("Array of node IDs to apply the image fill to"),
-				imageData: z.string().describe("Base64-encoded image data OR an absolute file path (starting with /) to a JPEG/PNG file on disk"),
-				scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("How the image fills the node (default: FILL)"),
-			},
-			async ({ nodeIds, imageData, scaleMode }) => {
-				try {
-					// If imageData looks like a file path, read from disk (avoids truncation)
-					let resolvedImageData = imageData;
-					if (imageData.startsWith('/') && existsSync(imageData)) {
-						const imageBuffer = readFileSync(imageData);
-						resolvedImageData = imageBuffer.toString('base64');
-						logger.info({ imagePath: imageData, bytes: imageBuffer.length }, 'Read image from disk');
-					}
-					const connector = await this.getDesktopConnector();
-					const result = await connector.setImageFill(nodeIds, resolvedImageData, scaleMode || "FILL");
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to set image fill");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify({
-									success: true,
-									message: `Image fill applied to ${result.updatedCount || 0} node(s)`,
-									imageHash: result.imageHash,
-									nodes: result.nodes,
-								}),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to set image fill");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify({
-									error: error instanceof Error ? error.message : String(error),
-								}),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Set Node Strokes
-		this.server.tool(
-			"figma_set_strokes",
-			"Set the stroke (border) on a node. Accepts hex color strings and optional stroke weight.",
-			{
-				nodeId: z.string().describe("The node ID to modify"),
-				strokes: z
-					.array(
-						z.object({
-							type: z.literal("SOLID").describe("Stroke type"),
-							color: z.string().describe("Hex color string"),
-							opacity: z.number().optional().describe("Opacity 0-1"),
-						}),
-					)
-					.describe("Array of stroke objects"),
-				strokeWeight: z
-					.number()
-					.optional()
-					.describe("Stroke thickness in pixels"),
-			},
-			async ({ nodeId, strokes, strokeWeight }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.setNodeStrokes(
-						nodeId,
-						strokes,
-						strokeWeight,
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to set strokes");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Strokes updated",
-										node: result.node,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to set strokes");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Clone Node
-		this.server.tool(
-			"figma_clone_node",
-			"Duplicate a node. The clone is placed at a slight offset from the original.",
-			{
-				nodeId: z.string().describe("The node ID to clone"),
-			},
-			async ({ nodeId }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.cloneNode(nodeId);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to clone node");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Node cloned",
-										clonedNode: result.node,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to clone node");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Delete Node
-		this.server.tool(
-			"figma_delete_node",
-			"Delete a node from the canvas. WARNING: This is a destructive operation (can be undone with Figma's undo).",
-			{
-				nodeId: z.string().describe("The node ID to delete"),
-			},
-			async ({ nodeId }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.deleteNode(nodeId);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to delete node");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Node deleted",
-										deleted: result.deleted,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to delete node");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Rename Node
-		this.server.tool(
-			"figma_rename_node",
-			"Rename a node in the layer panel.",
-			{
-				nodeId: z.string().describe("The node ID to rename"),
-				newName: z.string().describe("The new name for the node"),
-			},
-			async ({ nodeId, newName }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.renameNode(nodeId, newName);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to rename node");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Node renamed to "${newName}"`,
-										node: result.node,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to rename node");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Set Text Content
-		this.server.tool(
-			"figma_set_text",
-			"Set the text content of a text node. Optionally adjust font size.",
-			{
-				nodeId: z.string().describe("The text node ID"),
-				text: z.string().describe("The new text content"),
-				fontSize: z.number().optional().describe("Optional font size to set"),
-			},
-			async ({ nodeId, text, fontSize }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.setTextContent(
-						nodeId,
-						text,
-						fontSize ? { fontSize } : undefined,
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to set text");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: "Text content updated",
-										node: result.node,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to set text content");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										hint: "Make sure the node is a TEXT node",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Create Child Node
-		this.server.tool(
-			"figma_create_child",
-			"Create a new child node inside a parent container. Always place inside an existing Section or Frame — never on a bare page. If no suitable parent exists, create a Section first. Clean up any empty or orphaned nodes if the operation fails.",
-			{
-				parentId: z.string().describe("The parent node ID"),
-				nodeType: z
-					.enum(["RECTANGLE", "ELLIPSE", "FRAME", "TEXT", "LINE"])
-					.describe("Type of node to create"),
-				properties: z
-					.object({
-						name: z.string().optional().describe("Name for the new node"),
-						x: z.number().optional().describe("X position within parent"),
-						y: z.number().optional().describe("Y position within parent"),
-						width: z.number().optional().describe("Width (default: 100)"),
-						height: z.number().optional().describe("Height (default: 100)"),
-						fills: z
-							.array(
-								z.object({
-									type: z.literal("SOLID"),
-									color: z.string(),
-								}),
-							)
-							.optional()
-							.describe("Fill colors (hex strings)"),
-						text: z
-							.string()
-							.optional()
-							.describe("Text content (for TEXT nodes only)"),
-					})
-					.optional()
-					.describe("Properties for the new node"),
-			},
-			async ({ parentId, nodeType, properties }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.createChildNode(
-						parentId,
-						nodeType,
-						properties,
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to create node");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										message: `Created ${nodeType} node`,
-										node: result.node,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to create child node");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										hint: "Make sure the parent node supports children (frames, groups, etc.)",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Arrange Component Set (Professional Layout with Native Visualization)
-		// Recreates component set using figma.combineAsVariants() for proper purple dashed frame
-		this.server.tool(
-			"figma_arrange_component_set",
-			`Organize a component set with Figma's native purple dashed visualization. Use after creating variants, adding states (hover/disabled/pressed), or when component sets need cleanup.
-
-Recreates the set using figma.combineAsVariants() for proper Figma integration, applies purple dashed border styling, and arranges variants in a labeled grid (columns = last property like State, rows = other properties like Type+Size). Creates a white container with title, row/column labels, and the component set.`,
-			{
-				componentSetId: z
-					.string()
-					.optional()
-					.describe(
-						"Node ID of the component set to arrange. If not provided, will look for a selected component set.",
-					),
-				componentSetName: z
-					.string()
-					.optional()
-					.describe(
-						"Name of the component set to find. Used if componentSetId not provided.",
-					),
-				options: z
-					.object({
-						gap: z
-							.number()
-							.optional()
-							.default(24)
-							.describe("Gap between grid cells in pixels (default: 24)"),
-						cellPadding: z
-							.number()
-							.optional()
-							.default(20)
-							.describe(
-								"Padding inside each cell around the variant (default: 20)",
-							),
-						columnProperty: z
-							.string()
-							.optional()
-							.describe(
-								"Property to use for columns (default: auto-detect last property, usually 'State')",
-							),
-					})
-					.optional()
-					.describe("Layout options"),
-			},
-			async ({ componentSetId, componentSetName, options }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-
-					// Build the code to execute in Figma
-					const code = `
-// ============================================================================
-// COMPONENT SET ARRANGEMENT WITH PROPER LABELS AND CONTAINER
-// Creates: White container frame → Row labels (left) → Column headers (top) → Component set (center)
-// Uses auto-layout for proper alignment of labels with grid cells
-// ============================================================================
-
-// Configuration
-const config = ${JSON.stringify(options || {})};
-const gap = config.gap ?? 24;
-const cellPadding = config.cellPadding ?? 20;
-const columnProperty = config.columnProperty || null;
-
-// Layout constants
-const LABEL_FONT_SIZE = 12;
-const LABEL_COLOR = { r: 0.4, g: 0.4, b: 0.4 };  // Gray text
-const TITLE_FONT_SIZE = 24;
-const TITLE_COLOR = { r: 0.1, g: 0.1, b: 0.1 };  // Dark text
-const CONTAINER_PADDING = 40;
-const LABEL_GAP = 16;  // Gap between labels and component set
-const COLUMN_HEADER_HEIGHT = 32;
-
-// Find the component set
-let componentSet = null;
-const csId = ${JSON.stringify(componentSetId || null)};
-const csName = ${JSON.stringify(componentSetName || null)};
-
-if (csId) {
-	componentSet = await figma.getNodeByIdAsync(csId);
-} else if (csName) {
-	const allNodes = figma.currentPage.findAll(n => n.type === "COMPONENT_SET" && n.name === csName);
-	componentSet = allNodes[0];
-} else {
-	const selection = figma.currentPage.selection;
-	componentSet = selection.find(n => n.type === "COMPONENT_SET");
-}
-
-if (!componentSet || componentSet.type !== "COMPONENT_SET") {
-	return { error: "Component set not found. Provide componentSetId, componentSetName, or select a component set." };
-}
-
-const page = figma.currentPage;
-const csOriginalX = componentSet.x;
-const csOriginalY = componentSet.y;
-const csOriginalName = componentSet.name;
-
-// Get all variant components
-const variants = componentSet.children.filter(n => n.type === "COMPONENT");
-if (variants.length === 0) {
-	return { error: "No variants found in component set" };
-}
-
-// Parse variant properties from names
-const parseVariantName = (name) => {
-	const props = {};
-	const parts = name.split(", ");
-	for (const part of parts) {
-		const [key, value] = part.split("=");
-		if (key && value) {
-			props[key.trim()] = value.trim();
-		}
-	}
-	return props;
-};
-
-// Collect all properties and their unique values (preserving order)
-const propertyValues = {};
-const propertyOrder = [];
-for (const variant of variants) {
-	const props = parseVariantName(variant.name);
-	for (const [key, value] of Object.entries(props)) {
-		if (!propertyValues[key]) {
-			propertyValues[key] = new Set();
-			propertyOrder.push(key);
-		}
-		propertyValues[key].add(value);
-	}
-}
-for (const key of Object.keys(propertyValues)) {
-	propertyValues[key] = Array.from(propertyValues[key]);
-}
-
-// Determine grid structure: columns = last property (usually State), rows = other properties
-const columnProp = columnProperty || propertyOrder[propertyOrder.length - 1];
-const columnValues = propertyValues[columnProp] || [];
-const rowProps = propertyOrder.filter(p => p !== columnProp);
-
-// Generate all row combinations
-const generateRowCombinations = (props, values) => {
-	if (props.length === 0) return [{}];
-	if (props.length === 1) {
-		return values[props[0]].map(v => ({ [props[0]]: v }));
-	}
-	const result = [];
-	const firstProp = props[0];
-	const restProps = props.slice(1);
-	const restCombos = generateRowCombinations(restProps, values);
-	for (const value of values[firstProp]) {
-		for (const combo of restCombos) {
-			result.push({ [firstProp]: value, ...combo });
-		}
-	}
-	return result;
-};
-const rowCombinations = generateRowCombinations(rowProps, propertyValues);
-
-const totalCols = columnValues.length;
-const totalRows = rowCombinations.length;
-
-// Calculate max variant dimensions
-let maxVariantWidth = 0;
-let maxVariantHeight = 0;
-for (const v of variants) {
-	if (v.width > maxVariantWidth) maxVariantWidth = v.width;
-	if (v.height > maxVariantHeight) maxVariantHeight = v.height;
-}
-
-// Calculate cell dimensions (each cell in the grid)
-const cellWidth = Math.ceil(maxVariantWidth + cellPadding);
-const cellHeight = Math.ceil(maxVariantHeight + cellPadding);
-
-// Calculate component set dimensions
-const edgePadding = 24;  // Padding inside component set
-const csWidth = (totalCols * cellWidth) + ((totalCols - 1) * gap) + (edgePadding * 2);
-const csHeight = (totalRows * cellHeight) + ((totalRows - 1) * gap) + (edgePadding * 2);
-
-// ============================================================================
-// STEP 1: Remove old labels and container frames from previous arrangements
-// ============================================================================
-const oldElements = page.children.filter(n =>
-	(n.type === "TEXT" && (n.name.startsWith("Row: ") || n.name.startsWith("Col: "))) ||
-	(n.type === "FRAME" && (n.name === "Component Container" || n.name === "Row Labels" || n.name === "Column Headers"))
-);
-for (const el of oldElements) {
-	el.remove();
-}
-
-// ============================================================================
-// STEP 2: Clone variants and recreate component set with native visualization
-// ============================================================================
-const clonedVariants = [];
-for (const variant of variants) {
-	const clone = variant.clone();
-	page.appendChild(clone);
-	clonedVariants.push(clone);
-}
-
-// Delete the old component set
-componentSet.remove();
-
-// Recreate using figma.combineAsVariants() for native purple dashed frame
-const newComponentSet = figma.combineAsVariants(clonedVariants, page);
-newComponentSet.name = csOriginalName;
-
-// Apply purple dashed border (Figma's native component set styling)
-newComponentSet.strokes = [{
-	type: 'SOLID',
-	color: { r: 151/255, g: 71/255, b: 255/255 }  // Figma's purple: #9747FF
-}];
-newComponentSet.dashPattern = [10, 5];
-newComponentSet.strokeWeight = 1;
-newComponentSet.strokeAlign = "INSIDE";
-
-// ============================================================================
-// STEP 3: Arrange variants in grid pattern inside component set
-// ============================================================================
-const newVariants = newComponentSet.children.filter(n => n.type === "COMPONENT");
-
-for (const variant of newVariants) {
-	const props = parseVariantName(variant.name);
-	const colValue = props[columnProp];
-	const colIdx = columnValues.indexOf(colValue);
-
-	// Find matching row
-	let rowIdx = -1;
-	for (let i = 0; i < rowCombinations.length; i++) {
-		const combo = rowCombinations[i];
-		let match = true;
-		for (const [key, value] of Object.entries(combo)) {
-			if (props[key] !== value) {
-				match = false;
-				break;
-			}
-		}
-		if (match) {
-			rowIdx = i;
-			break;
-		}
-	}
-
-	if (colIdx >= 0 && rowIdx >= 0) {
-		// Calculate cell position
-		const cellX = edgePadding + colIdx * (cellWidth + gap);
-		const cellY = edgePadding + rowIdx * (cellHeight + gap);
-
-		// Center variant within cell
-		const variantX = Math.round(cellX + (cellWidth - variant.width) / 2);
-		const variantY = Math.round(cellY + (cellHeight - variant.height) / 2);
-
-		variant.x = variantX;
-		variant.y = variantY;
-	}
-}
-
-// Resize component set to fit grid
-newComponentSet.resize(csWidth, csHeight);
-
-// ============================================================================
-// STEP 4: Create white container frame with proper structure
-// ============================================================================
-
-// Load font for labels
-await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
-
-// Create the main container frame (white background)
-const containerFrame = figma.createFrame();
-containerFrame.name = "Component Container";
-containerFrame.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];  // White
-containerFrame.cornerRadius = 8;
-containerFrame.layoutMode = 'VERTICAL';
-containerFrame.primaryAxisSizingMode = 'AUTO';
-containerFrame.counterAxisSizingMode = 'AUTO';
-containerFrame.paddingTop = CONTAINER_PADDING;
-containerFrame.paddingRight = CONTAINER_PADDING;
-containerFrame.paddingBottom = CONTAINER_PADDING;
-containerFrame.paddingLeft = CONTAINER_PADDING;
-containerFrame.itemSpacing = 24;
-
-// Add title
-const titleText = figma.createText();
-titleText.name = "Title";
-titleText.characters = csOriginalName;
-titleText.fontSize = TITLE_FONT_SIZE;
-titleText.fontName = { family: "Inter", style: "Semi Bold" };
-titleText.fills = [{ type: 'SOLID', color: TITLE_COLOR }];
-// Append to parent FIRST, then set layoutSizing
-containerFrame.appendChild(titleText);
-titleText.layoutSizingHorizontal = 'HUG';
-titleText.layoutSizingVertical = 'HUG';
-
-// Create content row (horizontal: row labels + grid column)
-const contentRow = figma.createFrame();
-contentRow.name = "Content Row";
-contentRow.fills = [];  // Transparent
-contentRow.layoutMode = 'HORIZONTAL';
-contentRow.primaryAxisSizingMode = 'AUTO';
-contentRow.counterAxisSizingMode = 'AUTO';
-contentRow.itemSpacing = LABEL_GAP;
-contentRow.counterAxisAlignItems = 'MIN';  // Align to top
-containerFrame.appendChild(contentRow);
-
-// ============================================================================
-// STEP 5: Create row labels column (left side)
-// ============================================================================
-const rowLabelsFrame = figma.createFrame();
-rowLabelsFrame.name = "Row Labels";
-rowLabelsFrame.fills = [];  // Transparent
-rowLabelsFrame.layoutMode = 'VERTICAL';
-rowLabelsFrame.primaryAxisSizingMode = 'AUTO';
-rowLabelsFrame.counterAxisSizingMode = 'AUTO';
-rowLabelsFrame.counterAxisAlignItems = 'MAX';  // Right-align text
-rowLabelsFrame.itemSpacing = 0;  // No spacing - we'll use fixed heights
-
-// Add spacer for column headers alignment
-// Must account for: column header height + gap + component set's internal edgePadding
-const rowLabelSpacer = figma.createFrame();
-rowLabelSpacer.name = "Spacer";
-rowLabelSpacer.fills = [];
-rowLabelSpacer.resize(10, COLUMN_HEADER_HEIGHT + gap + edgePadding);  // Align with first row inside component set
-rowLabelsFrame.appendChild(rowLabelSpacer);
-// IMPORTANT: Set layoutSizing AFTER appendChild (node must be in auto-layout parent first)
-rowLabelSpacer.layoutSizingVertical = 'FIXED';
-
-// Create row labels - each with VERTICAL layout for direct vertical centering
-// Using VERTICAL layout: primaryAxis = vertical, counterAxis = horizontal
-// So primaryAxisAlignItems = 'CENTER' directly controls vertical centering
-for (let i = 0; i < rowCombinations.length; i++) {
-	const combo = rowCombinations[i];
-	const labelText = rowProps.map(p => combo[p]).join(" / ");
-	const isLastRow = (i === rowCombinations.length - 1);
-
-	// Create a frame to hold the label with VERTICAL layout
-	const rowLabelContainer = figma.createFrame();
-	rowLabelContainer.name = "Row: " + labelText;
-	rowLabelContainer.fills = [];
-	rowLabelContainer.layoutMode = 'VERTICAL';  // VERTICAL so primaryAxis controls Y
-	rowLabelContainer.primaryAxisSizingMode = 'FIXED';  // CRITICAL: Don't hug content, maintain fixed height
-	rowLabelContainer.primaryAxisAlignItems = 'CENTER';  // CENTER = vertically centered within fixed height
-	rowLabelContainer.counterAxisAlignItems = 'MAX';  // MAX = right-aligned horizontally
-
-	// Fixed height = cellHeight only (gap handled separately below)
-	rowLabelContainer.resize(10, cellHeight);
-
-	const label = figma.createText();
-	label.characters = labelText;
-	label.fontSize = LABEL_FONT_SIZE;
-	label.fontName = { family: "Inter", style: "Regular" };
-	label.fills = [{ type: 'SOLID', color: LABEL_COLOR }];
-	label.textAlignHorizontal = 'RIGHT';
-	rowLabelContainer.appendChild(label);
-
-	// Append to parent FIRST, then set layoutSizing properties
-	rowLabelsFrame.appendChild(rowLabelContainer);
-	rowLabelContainer.layoutSizingHorizontal = 'HUG';
-	rowLabelContainer.layoutSizingVertical = 'FIXED';
-
-	// Add gap spacer AFTER the row label (except for the last row)
-	// This separates the gap from the centering calculation entirely
-	if (!isLastRow) {
-		const gapSpacer = figma.createFrame();
-		gapSpacer.name = "Row Gap";
-		gapSpacer.fills = [];
-		gapSpacer.resize(1, gap);
-		rowLabelsFrame.appendChild(gapSpacer);
-		// Plain frames can only use FIXED or FILL (not HUG)
-		gapSpacer.layoutSizingHorizontal = 'FIXED';
-		gapSpacer.layoutSizingVertical = 'FIXED';
-	}
-}
-
-contentRow.appendChild(rowLabelsFrame);
-
-// ============================================================================
-// STEP 6: Create grid column (column headers + component set)
-// ============================================================================
-const gridColumn = figma.createFrame();
-gridColumn.name = "Grid Column";
-gridColumn.fills = [];  // Transparent
-gridColumn.layoutMode = 'VERTICAL';
-gridColumn.primaryAxisSizingMode = 'AUTO';
-gridColumn.counterAxisSizingMode = 'AUTO';
-gridColumn.itemSpacing = gap;
-
-// Create column headers row
-const columnHeadersRow = figma.createFrame();
-columnHeadersRow.name = "Column Headers";
-columnHeadersRow.fills = [];
-columnHeadersRow.layoutMode = 'HORIZONTAL';
-columnHeadersRow.resize(csWidth, COLUMN_HEADER_HEIGHT);
-columnHeadersRow.itemSpacing = 0;  // No spacing - we control widths precisely
-columnHeadersRow.paddingLeft = edgePadding;  // Match component set edge padding
-columnHeadersRow.paddingRight = edgePadding;
-
-// Create column header labels - each with width matching cell + gap
-for (let i = 0; i < columnValues.length; i++) {
-	const colValue = columnValues[i];
-	const isLastCol = (i === columnValues.length - 1);
-
-	const colHeaderContainer = figma.createFrame();
-	colHeaderContainer.name = "Col: " + colValue;
-	colHeaderContainer.fills = [];
-	colHeaderContainer.layoutMode = 'HORIZONTAL';
-	colHeaderContainer.primaryAxisAlignItems = 'CENTER';  // Center horizontally
-	colHeaderContainer.counterAxisAlignItems = 'MAX';  // Align to bottom
-
-	// Set width to match cell + gap (except last column)
-	// Use paddingRight to push the gap to the RIGHT of the centered text area
-	const colWidth = isLastCol ? cellWidth : cellWidth + gap;
-	colHeaderContainer.resize(colWidth, COLUMN_HEADER_HEIGHT);
-	if (!isLastCol) {
-		colHeaderContainer.paddingRight = gap;  // Gap goes right, text centers in cellWidth
-	}
-
-	const label = figma.createText();
-	label.characters = colValue;
-	label.fontSize = LABEL_FONT_SIZE;
-	label.fontName = { family: "Inter", style: "Regular" };
-	label.fills = [{ type: 'SOLID', color: LABEL_COLOR }];
-	label.textAlignHorizontal = 'CENTER';
-	colHeaderContainer.appendChild(label);
-
-	// Append to parent FIRST, then set layoutSizing
-	columnHeadersRow.appendChild(colHeaderContainer);
-	colHeaderContainer.layoutSizingHorizontal = 'FIXED';
-	colHeaderContainer.layoutSizingVertical = 'FILL';
-}
-
-// Append to parent FIRST, then set layoutSizing
-gridColumn.appendChild(columnHeadersRow);
-columnHeadersRow.layoutSizingHorizontal = 'FIXED';
-columnHeadersRow.layoutSizingVertical = 'FIXED';
-
-// Create a wrapper frame to hold the component set (since component sets don't work well in auto-layout)
-const componentSetWrapper = figma.createFrame();
-componentSetWrapper.name = "Component Set Wrapper";
-componentSetWrapper.fills = [];
-componentSetWrapper.resize(csWidth, csHeight);
-
-// Move component set inside wrapper (positioned at 0,0)
-componentSetWrapper.appendChild(newComponentSet);
-newComponentSet.x = 0;
-newComponentSet.y = 0;
-
-// Append to parent FIRST, then set layoutSizing
-gridColumn.appendChild(componentSetWrapper);
-componentSetWrapper.layoutSizingHorizontal = 'FIXED';
-componentSetWrapper.layoutSizingVertical = 'FIXED';
-
-contentRow.appendChild(gridColumn);
-
-// Position container at original location
-containerFrame.x = csOriginalX - CONTAINER_PADDING - 120;  // Account for row labels width
-containerFrame.y = csOriginalY - CONTAINER_PADDING - TITLE_FONT_SIZE - 24 - COLUMN_HEADER_HEIGHT - gap;
-
-// Select and zoom to show result
-figma.currentPage.selection = [containerFrame];
-figma.viewport.scrollAndZoomIntoView([containerFrame]);
-
-return {
-	success: true,
-	message: "Component set arranged with proper container, labels, and alignment",
-	containerId: containerFrame.id,
-	componentSetId: newComponentSet.id,
-	componentSetName: newComponentSet.name,
-	grid: {
-		rows: totalRows,
-		columns: totalCols,
-		cellWidth: cellWidth,
-		cellHeight: cellHeight,
-		gap: gap,
-		columnProperty: columnProp,
-		columnValues: columnValues,
-		rowProperties: rowProps,
-		rowLabels: rowCombinations.map(combo => rowProps.map(p => combo[p]).join(" / "))
-	},
-	componentSetSize: { width: csWidth, height: csHeight },
-	variantCount: newVariants.length,
-	structure: {
-		container: "White frame with title, row labels, column headers, and component set",
-		rowLabels: "Vertically aligned with each row's center",
-		columnHeaders: "Horizontally aligned with each column's center"
-	}
-};
-`;
-
-					const result = await connector.executeCodeViaUI(code, 25000);
-
-					if (!result.success) {
-						throw new Error(result.error || "Failed to arrange component set");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										...result.result,
-										hint: result.result?.success
-											? "Component set arranged in a white container frame with properly aligned row and column labels. The purple dashed border is visible. Use figma_capture_screenshot to validate the layout."
-											: undefined,
-									},
-								),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to arrange component set");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										hint: "Make sure the Desktop Bridge plugin is running and a component set exists.",
-									},
-								),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Lint Design for accessibility and quality issues
-		this.server.tool(
-			"figma_lint_design",
-			"Run comprehensive accessibility (WCAG 2.2) and design quality checks on the current page or a specific node tree. " +
-			"WCAG checks (14 rules): color contrast (AA), non-text contrast (1.4.11), color-only differentiation (1.4.1), " +
-			"focus indicators (2.4.7), text sizing, touch targets, line height, letter spacing, paragraph spacing (1.4.12), " +
-			"image alt text (1.1.1), heading hierarchy (1.3.1), reflow/responsive (1.4.10), reading order (1.3.2), and disabled context (4.1.2). " +
-			"Design system checks: hardcoded colors, missing text styles, default names, detached components. " +
-			"Layout checks: missing auto-layout, empty containers. " +
-			"Returns categorized findings with severity levels (critical/warning/info) and WCAG conformance level (a/aa/aaa/best-practice) so teams can filter by target level. " +
-			"Use natural language like 'check my design for accessibility issues' or 'lint this page'. " +
-			"Requires Desktop Bridge plugin.",
-			{
-				nodeId: z.string().optional().describe("Node ID to lint (defaults to current page)"),
-				rules: z.array(z.string()).optional().describe("Rule filter: ['all'] (default), ['wcag'] (13 WCAG rules), ['design-system'], ['layout'], or specific rule IDs like ['wcag-contrast', 'wcag-focus-indicator', 'wcag-disabled-no-context']"),
-				maxDepth: z.number().optional().describe("Maximum tree depth to traverse (default: 10)"),
-				maxFindings: z.number().optional().describe("Maximum findings before stopping (default: 100)"),
-			},
-			async ({ nodeId, rules, maxDepth, maxFindings }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.lintDesign(
-						nodeId,
-						rules || ['all'],
-						maxDepth || 10,
-						maxFindings || 100,
-					);
-
-					if (!result.success) {
-						throw new Error(result.error || "Lint failed");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(result.data || result, null, 2),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to lint design");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify({
-									error: error instanceof Error ? error.message : String(error),
-									hint: "Make sure the Desktop Bridge plugin is running in your Figma file.",
-								}),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
-
-		// Tool: Audit Component Accessibility
-		this.server.tool(
-			"figma_audit_component_accessibility",
-			"Deep accessibility audit for a specific component or component set. Produces a scorecard covering: " +
-			"state coverage (default/hover/focus/disabled/error/active/loading), focus indicator quality and contrast, " +
-			"non-color differentiation (WCAG 1.4.1), target size consistency (WCAG 2.5.8), annotation completeness, " +
-			"and color-blind simulation (protanopia/deuteranopia/tritanopia). Returns per-category scores (0-100) " +
-			"and prioritized recommendations. Use after designing a component to validate accessibility before handoff. " +
-			"Requires Desktop Bridge plugin.",
-			{
-				nodeId: z.string().optional().describe("Node ID of a COMPONENT_SET, COMPONENT, or INSTANCE to audit. Falls back to current selection if omitted."),
-				targetSize: z.number().optional().describe("Minimum touch target size in px (default: 24 per WCAG 2.5.8). Use 44 for iOS or 48 for Android guidelines."),
-			},
-			async ({ nodeId, targetSize }) => {
-				try {
-					const connector = await this.getDesktopConnector();
-					const result = await connector.auditComponentAccessibility(nodeId, targetSize);
-
-					if (!result.success) {
-						throw new Error(result.error || "Audit failed");
-					}
-
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify(result.data || result, null, 2),
-							},
-						],
-					};
-				} catch (error) {
-					logger.error({ error }, "Failed to audit component accessibility");
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify({
-									error: error instanceof Error ? error.message : String(error),
-									hint: "Make sure the Desktop Bridge plugin is running. Provide a COMPONENT_SET nodeId or select one in Figma.",
-								}),
-							},
-						],
-						isError: true,
-					};
-				}
-			},
-		);
+		// Register all write/manipulation tools (figma_execute, variable CRUD, node mutations,
+		// design-token setup, accessibility audits, etc.). Sourced from src/core/write-tools.ts
+		// so local mode and cloud mode share the same 30 implementations — no risk of drift.
+		registerWriteTools(this.server, () => this.getDesktopConnector());
 
 		// Register Figma API tools (Tools 8-11)
 		registerFigmaAPITools(
 			this.server,
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
-			() => this.consoleMonitor || null,
-			() => this.browserManager || null,
-			() => this.ensureInitialized(),
 			this.variablesCache, // Pass cache for efficient variable queries
 			undefined, // options (use default)
 			() => this.getDesktopConnector(), // Transport-aware connector factory
@@ -6009,6 +2891,41 @@ return {
 
 		// Register code-side accessibility scanning (axe-core + JSDOM)
 		registerAccessibilityTools(this.server);
+
+		// Register figma_diagnose — designer-readable health check + cross-MCP disambiguator.
+		// This is the first tool to point a confused user at: it self-identifies the server,
+		// reports plugin/token state in plain language, and explicitly disclaims any
+		// token/OAuth error that may have been emitted by a different Figma-related MCP.
+		registerDiagnoseTool(this.server, {
+			mode: "local",
+			getServerVersion: () => {
+				try {
+					return JSON.parse(
+						readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"),
+					).version;
+				} catch {
+					return "0.0.0";
+				}
+			},
+			getPluginState: () => {
+				if (!this.wsServer) return null;
+				const fileInfo = this.wsServer.getConnectedFileInfo();
+				const connected = this.wsServer.isClientConnected();
+				return {
+					connected,
+					fileName: fileInfo?.fileName,
+					fileKey: fileInfo?.fileKey ?? undefined,
+					currentPage: fileInfo?.currentPage,
+					editorType: fileInfo?.editorType,
+					port: this.wsActualPort ?? undefined,
+					portFallbackFrom: this.wsPreferredPort,
+				};
+			},
+			getTokenState: () => {
+				const hasToken = !!process.env.FIGMA_ACCESS_TOKEN;
+				return { hasToken, source: hasToken ? "env" : undefined };
+			},
+		});
 
 		// Register Annotation tools (read/write design annotations via Desktop Bridge)
 		registerAnnotationTools(
@@ -6526,8 +3443,16 @@ return {
 				this.wsServer.on("fileConnected", (data: { fileKey: string; fileName: string }) => {
 					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin connected via WebSocket");
 				});
+
+				// Plugin disconnect leaves cached variables stale — when the plugin reconnects
+				// after a sleep/wake or network blip, the file may have edits we missed
+				// (no DOCUMENT_CHANGE event was delivered while we were disconnected).
+				// Invalidate the cache for the disconnected file so the next read is fresh.
 				this.wsServer.on("fileDisconnected", (data: { fileKey: string; fileName: string }) => {
 					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin disconnected from WebSocket");
+					if (data.fileKey) {
+						this.variablesCache.delete(data.fileKey);
+					}
 				});
 
 				// Invalidate variable cache when document changes are reported.
@@ -6539,13 +3464,20 @@ return {
 						if (data.fileKey) {
 							// Per-file cache invalidation — only clear the affected file's cache
 							this.variablesCache.delete(data.fileKey);
+							logger.debug(
+								{ fileKey: data.fileKey, changeCount: data.changeCount, hasStyleChanges: data.hasStyleChanges, hasNodeChanges: data.hasNodeChanges },
+								"Variable cache invalidated due to document changes"
+							);
 						} else {
-							this.variablesCache.clear();
+							// Unidentified file (event arrived before FILE_INFO handshake completed).
+							// We don't know which cache entry to invalidate; do nothing rather than
+							// blanket-clear other files' caches. FILE_INFO will arrive shortly and
+							// any subsequent document changes will route correctly.
+							logger.debug(
+								{ changeCount: data.changeCount },
+								"Document change received before file identification — cache untouched"
+							);
 						}
-						logger.debug(
-							{ fileKey: data.fileKey, changeCount: data.changeCount, hasStyleChanges: data.hasStyleChanges, hasNodeChanges: data.hasNodeChanges },
-							"Variable cache invalidated due to document changes"
-						);
 					}
 				});
 			}
@@ -6567,7 +3499,8 @@ return {
 
 			// 🆕 AUTO-CONNECT: Start monitoring immediately if Figma Desktop is available
 			// This enables "get latest logs" workflow without requiring manual setup
-			this.autoConnectToFigma();
+			// In WS-only mode, no auto-connect is needed — the Desktop Bridge plugin
+			// pushes a connection from the Figma side as soon as the user opens it.
 		} catch (error) {
 			logger.error({ error }, "Failed to start MCP server");
 
@@ -6600,14 +3533,6 @@ return {
 
 			if (this.wsServer) {
 				await this.wsServer.stop();
-			}
-
-			if (this.consoleMonitor) {
-				await this.consoleMonitor.stopMonitoring();
-			}
-
-			if (this.browserManager) {
-				await this.browserManager.close();
 			}
 
 			logger.info("MCP server shutdown complete");
@@ -6654,14 +3579,16 @@ if (currentFile === entryFile) {
 			const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 			const sourceDir = resolve(packageRoot, "figma-desktop-bridge");
 
-			// Try to set up stable directory with bootloader files
+			// Try to set up stable directory with the latest plugin files.
 			const stablePath = setupStablePluginDir(sourceDir);
 			if (stablePath && existsSync(stablePath)) {
 				console.log(stablePath);
 				console.error(
-					"\nImport this manifest in Figma once — the bootloader will\n" +
-					"automatically load the latest UI from the MCP server.\n" +
-					"You won't need to re-import when the server updates."
+					"\nImport this manifest in Figma (Plugins → Development →\n" +
+					"Import plugin from manifest). The MCP server refreshes the\n" +
+					"plugin files in this directory on every startup, so after a\n" +
+					"package update, just re-import the manifest in Figma to pick\n" +
+					"up the new code (Figma caches plugin files at the app level).\n"
 				);
 				process.exit(0);
 			}

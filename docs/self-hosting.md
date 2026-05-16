@@ -39,10 +39,14 @@ npm run deploy
 2. **Wrangler CLI** (installed automatically via `npm install`)
    - Cloudflare's deployment tool
 
-3. **Browser Rendering API Access**
+3. **Browser Rendering API Access** (required for cloud-mode console/screenshot/navigate tools)
    - **Free tier:** 10 minutes/day, 3 concurrent browsers
    - **Paid tier:** 10 hours/month, then $0.09/browser hour
    - Automatically available on Workers
+
+4. **Figma OAuth App** (for per-user authentication)
+   - Create one at https://www.figma.com/developers/apps
+   - Set `FIGMA_OAUTH_CLIENT_ID` and `FIGMA_OAUTH_CLIENT_SECRET` as Wrangler secrets
 
 ## Step-by-Step Deployment
 
@@ -133,8 +137,14 @@ curl https://figma-console-mcp.<your-subdomain>.workers.dev/health
 {
   "status": "healthy",
   "service": "Figma Console MCP",
-  "version": "0.1.0",
-  "endpoints": ["/sse", "/mcp", "/test-browser"]
+  "version": "1.25.0",
+  "endpoints": {
+    "mcp": ["/sse", "/mcp"],
+    "oauth_mcp_spec": ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
+    "oauth_legacy": ["/oauth/authorize", "/oauth/callback"],
+    "utility": ["/health"]
+  },
+  "oauth_configured": true
 }
 ```
 
@@ -254,32 +264,22 @@ View analytics in Cloudflare Dashboard:
 
 ### Browser Rendering API
 
-- **Free Tier:**
-  - 10 minutes/day
-  - 3 concurrent browsers
-  - Perfect for personal use
+The cloud-mode console/screenshot/navigate tools launch a headless browser via Cloudflare's Browser Rendering API.
 
-- **Paid Tier:**
-  - 10 hours/month included
-  - Then $0.09/browser hour
-  - Auto-scales
+- **Free Tier:** 10 minutes/day, 3 concurrent browsers
+- **Paid Tier:** 10 hours/month included, then $0.09/browser hour
 
-### Workers
+### Workers + Durable Objects
 
-- **Free Tier:**
-  - 100,000 requests/day
-  - 10ms CPU time per request
-  - More than enough for most users
+The deployment also uses Workers, two Durable Object classes (the MCP session and the plugin relay), and two KV namespaces for OAuth state.
 
-- **Paid Tier ($5/month):**
-  - 10 million requests/month
-  - 50ms CPU time per request
-  - Better for teams
+- **Workers Free Tier:** 100,000 requests/day — fine for personal use.
+- **Workers Paid Tier ($5/month):** 10 million requests/month, plus Durable Objects + KV included.
 
 **Estimated monthly cost for typical usage:**
 - Solo developer: **$0** (free tier)
-- Small team (5 people): **$5-15/month**
-- Medium team (20 people): **$20-50/month**
+- Small team (5 people): **$5–15/month**
+- Medium team (20 people): **$20–50/month**
 
 ---
 
@@ -366,9 +366,14 @@ npx wrangler login
 **Error:** "Browser Rendering not enabled"
 
 1. Go to Cloudflare Dashboard
-2. Workers & Pages � Settings
+2. Workers & Pages → Settings
 3. Enable Browser Rendering
 4. Try deploying again
+
+**Error:** OAuth secrets missing
+
+1. Confirm `wrangler secret list` shows both `FIGMA_OAUTH_CLIENT_ID` and `FIGMA_OAUTH_CLIENT_SECRET`
+2. If missing, set them via `wrangler secret put FIGMA_OAUTH_CLIENT_ID` and re-deploy
 
 ### Browser Launch Fails
 
@@ -379,9 +384,10 @@ npx wrangler tail --format pretty
 ```
 
 **Common issues:**
-- Browser Rendering API quota exceeded � Upgrade plan
-- Timeout too short � Increase `BROWSER_TIMEOUT`
-- Cold start delay � Normal, wait and retry
+- Browser Rendering API quota exceeded → Upgrade plan
+- KV namespace IDs mismatch — verify `wrangler.jsonc` against your account's KV bindings
+- Cold start delay — normal, wait and retry
+- Plugin relay disconnected — Cloud Mode users need to re-pair the Desktop Bridge plugin
 
 ### High Costs
 

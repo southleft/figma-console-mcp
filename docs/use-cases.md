@@ -409,7 +409,7 @@ or
 1. AI generates a 6-character pairing code (valid for 5 minutes)
 2. You enter the code in the Desktop Bridge plugin's Cloud Mode section
 3. The plugin connects to the cloud relay — you're paired
-4. All write tools (43 total) are now available through the cloud
+4. All 93 Cloud Mode tools — including write/create tools — are now available through the cloud relay
 
 **Follow-up prompts:**
 - "Create a card component with an image, title, and description"
@@ -629,7 +629,7 @@ or
 ## 📚 More Examples
 
 See also:
-- [Tool Documentation](tools) - Complete API reference for all 100+ tools
+- [Tool Documentation](tools) - Complete API reference for all 101 tools
 - [Architecture Overview](architecture) - Understanding deployment modes
 - [Example Prompts](../README.md#example-prompts) - Quick prompt examples
 - [Troubleshooting](troubleshooting) - Solutions to common issues

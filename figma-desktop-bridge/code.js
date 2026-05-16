@@ -1,22 +1,23 @@
 // Figma Desktop Bridge - MCP Plugin
-// Bridges Figma API to MCP clients via plugin UI window
-// Supports: Variables, Components, Styles, and more
-// Uses postMessage to communicate with UI, bypassing worker sandbox limitations
-// Puppeteer can access UI iframe's window context to retrieve data
+// Bridges the Figma Plugin API to MCP clients via the plugin's UI iframe.
+// Supports: Variables, Components, Styles, and more.
+// Uses postMessage to communicate with ui.html (bypassing worker sandbox limitations),
+// which then forwards messages to the MCP server over the WebSocket bridge.
 
 // Plugin version — sent in FILE_INFO for server-side version compatibility checks.
 // The server compares this against its own version to detect stale cached plugins.
-var PLUGIN_VERSION = '1.25.0'; // Kept in sync with package.json by scripts/release.sh — see issue #62.
+var PLUGIN_VERSION = '1.26.0'; // Kept in sync with package.json by scripts/release.sh — see issue #62.
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
 // Show minimal UI - compact status indicator
-figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
+figma.showUI(__html__, { width: 180, height: 50, visible: true, themeColors: true });
 
 // ============================================================================
 // CONSOLE CAPTURE — Intercept console.* in the QuickJS sandbox and forward
 // to ui.html via postMessage so the WebSocket bridge can relay them to the MCP
-// server. This enables console monitoring without CDP.
+// server. This is the only console-capture path in local mode (no browser
+// process is involved).
 // ============================================================================
 (function() {
   var levels = ['log', 'info', 'warn', 'error', 'debug'];
@@ -221,59 +222,6 @@ function hexToFigmaRGB(hex) {
 figma.ui.onmessage = async (msg) => {
 
   // ============================================================================
-  // BOOT_LOAD_UI - Bootloader fetched fresh UI HTML from the MCP server.
-  // Replace the bootloader with the full, always-up-to-date plugin UI.
-  // This uses figma.showUI() with the HTML string directly — no redirects,
-  // no cross-origin, no CSP issues.
-  // ============================================================================
-  if (msg.type === 'BOOT_LOAD_UI' && msg.html) {
-    console.log('🌉 [Desktop Bridge] Bootloader delivered fresh UI (' + msg.html.length + ' bytes), loading...');
-    figma.showUI(msg.html, { width: 140, height: 50, visible: true, themeColors: true });
-
-    // Re-send variables data to the fresh UI — the original send went to the
-    // bootloader which discarded it. The fresh UI needs it to show "ready" status.
-    (async function() {
-      try {
-        var variables = await figma.variables.getLocalVariablesAsync();
-        var collections = await figma.variables.getLocalVariableCollectionsAsync();
-        figma.ui.postMessage({
-          type: 'VARIABLES_DATA',
-          data: {
-            success: true,
-            timestamp: Date.now(),
-            fileKey: figma.fileKey || null,
-            variables: variables.map(function(v) { return {
-              id: v.id, name: v.name, key: v.key, resolvedType: v.resolvedType,
-              valuesByMode: v.valuesByMode, variableCollectionId: v.variableCollectionId,
-              scopes: v.scopes, codeSyntax: v.codeSyntax || {}, description: v.description, hiddenFromPublishing: v.hiddenFromPublishing
-            }; }),
-            variableCollections: collections.map(function(c) { return {
-              id: c.id, name: c.name, key: c.key, modes: c.modes,
-              defaultModeId: c.defaultModeId, variableIds: c.variableIds
-            }; })
-          }
-        });
-        console.log('🌉 [Desktop Bridge] Re-sent variables to fresh UI (' + variables.length + ' vars)');
-      } catch (e) {
-        console.log('🌉 [Desktop Bridge] Could not re-send variables:', e.message || e);
-      }
-    })();
-    return;
-  }
-
-  // ============================================================================
-  // BOOT_FALLBACK - Bootloader found an old server that doesn't support the
-  // bootloader protocol. Fall back to reloading the cached __html__ which
-  // contains the full UI (for users who haven't switched to the bootloader yet,
-  // __html__ IS the full UI; for bootloader users, this is a no-op reload).
-  // ============================================================================
-  if (msg.type === 'BOOT_FALLBACK') {
-    console.log('🌉 [Desktop Bridge] Old server detected on port ' + msg.port + ', using cached UI');
-    figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
-    return;
-  }
-
-  // ============================================================================
   // EXECUTE_CODE - Arbitrary code execution (Power Tool)
   // ============================================================================
   if (msg.type === 'EXECUTE_CODE') {
@@ -376,7 +324,7 @@ figma.ui.onmessage = async (msg) => {
       var errorMsg = error && error.message ? error.message : String(error);
       var errorStack = error && error.stack ? error.stack : '';
 
-      // Log error details as strings so they show up properly in Puppeteer
+      // Log error details as strings so they survive intact through the WebSocket bridge into figma_get_console_logs
       console.error('🌉 [Desktop Bridge] Code execution error: [' + errorName + '] ' + errorMsg);
       if (errorStack) {
         console.error('🌉 [Desktop Bridge] Stack:', errorStack);
@@ -3101,7 +3049,7 @@ figma.ui.onmessage = async (msg) => {
       });
       // Short delay to let the response message be sent before reload
       setTimeout(function() {
-        figma.showUI(__html__, { width: 140, height: 50, visible: true, themeColors: true });
+        figma.showUI(__html__, { width: 180, height: 50, visible: true, themeColors: true });
       }, 100);
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);
@@ -6424,4 +6372,4 @@ console.log('🌉 [Desktop Bridge] Ready to handle component requests');
 console.log('🌉 [Desktop Bridge] Plugin will stay open until manually closed');
 
 // Plugin stays open - no auto-close
-// UI iframe remains accessible for Puppeteer to read data from window object
+// UI iframe remains accessible so the in-iframe WebSocket bridge client can keep relaying state to the MCP server
