@@ -412,7 +412,7 @@ How to add this depends on your platform:
 
 4. **Done.** Your AI now has full write access to the open Figma file through the cloud relay.
 
-### What You Can Do (83 Tools)
+### What You Can Do (93 Tools)
 
 - ✅ Create frames, shapes, and components
 - ✅ Edit existing designs (resize, reposition, restyle)
