@@ -90,14 +90,19 @@ auto_count_local() {
 }
 
 auto_count_remote() {
-  # Remote/SSE mode: only read-only REST API tools
+  # Remote/SSE mode (no plugin pairing): the REST-API-backed read tools that
+  # work over OAuth alone, without a paired Desktop Bridge plugin. These all
+  # live in figma-tools.ts. This count gets surfaced as the "N read-only
+  # tools" claim across the docs.
   grep -roh '"figma_[a-z_]*"' \
     "$ROOT/src/core/figma-tools.ts" \
     2>/dev/null | sort -u | wc -l | tr -d ' '
 }
 
 auto_count_cloud() {
-  # Cloud mode: write-tools + figma-tools + design-system-tools + comment-tools + design-code-tools + figjam-tools + slides-tools + annotation-tools + index.ts cloud-specific
+  # Cloud mode (Cloud Mode after pairing): every registrar invoked by src/index.ts
+  # plus index.ts's own direct tool registrations. Mirror this list with the
+  # actual register*() calls in src/index.ts.
   grep -roh '"fig\(ma\|jam\)_[a-z_]*"' \
     "$ROOT/src/core/write-tools.ts" \
     "$ROOT/src/core/figma-tools.ts" \
@@ -107,6 +112,10 @@ auto_count_cloud() {
     "$ROOT/src/core/figjam-tools.ts" \
     "$ROOT/src/core/slides-tools.ts" \
     "$ROOT/src/core/annotation-tools.ts" \
+    "$ROOT/src/core/deep-component-tools.ts" \
+    "$ROOT/src/core/version-tools.ts" \
+    "$ROOT/src/core/accessibility-tools.ts" \
+    "$ROOT/src/core/diagnose-tool.ts" \
     "$ROOT/src/index.ts" \
     2>/dev/null | sort -u | wc -l | tr -d ' '
 }

@@ -5,6 +5,51 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.0] - 2026-05-16
+
+Internal cleanup and clarity release. No new tools, no removed tools, no breaking argument-shape changes. Three things are different for users running multiple Figma-related MCPs side by side and one is different for anyone who'd set up the old CDP debug path.
+
+The headline change is that Local Mode no longer carries the Chrome DevTools Protocol / Puppeteer transport at all — the WebSocket Desktop Bridge plugin is the only Local path. Cloud Mode still uses Cloudflare's Browser Rendering API for `figma_navigate` / `figma_get_console_logs` / `figma_take_screenshot`; that path is unchanged.
+
+The second change is that every tool response now carries an `_mcp: "figma-console-mcp"` field, and every error message is prefixed `[figma-console-mcp]`. This came from a real user case where a misleading "API token expired" message from Figma's official MCP was confused for an error from this server. The identity wrap makes the source of each response unambiguous in any agent transcript that mixes multiple MCPs.
+
+The third change is a new tool, `figma_diagnose` — a designer-readable health check that reports mode, bridge state, PAT presence (without leaking the token), and disambiguation notes when other Figma MCPs are mounted alongside. Use it as the first call when a setup looks broken.
+
+### Added
+
+- **`figma_diagnose`** — single-call health check that returns structured status (mode, bridge connection, file context, transport, PAT state) plus designer-readable guidance. Registered in both Local and Cloud entry points (`src/core/diagnose-tool.ts`).
+- **Plugin status pill** — the Desktop Bridge plugin UI now shows transport-specific state: `Local · ready`, `Cloud · ready`, or `Local + Cloud · ready`, instead of the previous generic `MCP ready`. Falls back to `MCP` when no connection is active. Updated in `figma-desktop-bridge/ui.html`.
+- **MCP identity wrap** — every tool response carries a top-level `_mcp: "figma-console-mcp"` field; every thrown error is prefixed `[figma-console-mcp]`. Idempotent: re-tagging skips already-tagged payloads, preserves `isError`, leaves non-JSON content untouched (`src/core/identity.ts`).
+
+### Changed
+
+- **Local Mode is now WebSocket-only.** The `FigmaDesktopConnector` / Puppeteer / Chrome DevTools Protocol path has been removed entirely from Local Mode. All 101 Local Mode tools route through the WebSocket Desktop Bridge plugin on ports 9223–9232.
+- **`puppeteer-core` and `chrome-remote-interface`** dropped from `dependencies`. Cloud Mode continues to use `@cloudflare/puppeteer` for its Browser Rendering path; that's a separate dependency and is unchanged.
+- **30 write tools deduplicated** — the 30 inline write-tool registrations that were duplicated between `src/local.ts` and `src/core/write-tools.ts` are now defined in `write-tools.ts` only and consumed by both entry points via `registerWriteTools()`. Tool names, argument shapes, and return shapes are unchanged.
+- **`transport` field in console-tool responses** is now always `"websocket"` in Local Mode (was `"cdp" | "websocket"`). Cloud Mode continues to report `"cdp"` for its Browser Rendering path.
+- **`figma_navigate` description** rewritten to match current behavior. In Local Mode it switches the active file target among files that already have the Desktop Bridge plugin running; it does **not** launch a browser. In Cloud/Remote Mode it navigates the Cloudflare-hosted headless browser. Tool name and argument shape are unchanged.
+- **REST auth error messages** rephrased to show only the relevant remediation path. Local-mode errors no longer mention OAuth / pairing codes; Cloud-mode errors no longer mention `FIGMA_ACCESS_TOKEN`.
+- **`variablesCache` invalidation** — the cache now clears on plugin disconnect; previously a stale cache could survive a reconnect and shadow live data. Document-change events with no variable/style payload no longer blanket-clear the cache.
+- **Bootloader scaffolding removed.** `BOOT_LOAD_UI`, `BOOT_FALLBACK`, `GET_PLUGIN_UI`, and the `/plugin/ui` HTTP endpoint were dead code (never functioned at runtime) and have been deleted. The plugin loads `ui.html` directly from disk at plugin-open time — re-import `manifest.json` from `~/.figma-console-mcp/plugin/` after this update to refresh Figma Desktop's cached plugin code.
+- **Documentation scrub** — every stale tool-count claim across `README.md`, `docs/`, `mint.json`, and `SECURITY.md` has been reconciled to the actual current counts (Local 101 / Cloud 93 / Remote 9). The release script's `auto_count_cloud` was extended to cover the four registrar files added since the script was written (`deep-component-tools.ts`, `version-tools.ts`, `accessibility-tools.ts`, `diagnose-tool.ts`), so future releases auto-detect correctly.
+- Plugin `PLUGIN_VERSION` bumped to `1.26.0`. **Re-import the plugin manifest in Figma to pick up the new code.js / ui.html.**
+
+### Removed
+
+- **`FIGMA_DEBUG_HOST` / `FIGMA_DEBUG_PORT`** environment variables are no longer read. They only ever fed the CDP path; anyone who set them in their MCP client config will see them silently ignored. No migration is needed — the plugin auto-discovers the WebSocket server on ports 9223–9232.
+- **`LocalModeConfig.debugHost` / `debugPort`** removed from `src/core/config.ts`.
+- **`useCDP` flag** and `transport: "cdp"` literal removed from Local Mode source. Cloud Mode is unaffected.
+- **`launch-figma-debug.sh` / `launch-figma-debug.ps1`** scripts deleted. They launched Figma with `--remote-debugging-port=9222` to expose CDP — a transport that no longer exists in Local Mode.
+- **`/test-browser` HTTP endpoint** removed from the Cloudflare entry point. No docs referenced it.
+- **`figma_get_variables` `parseFromConsole: true`** path removed. The cache → plugin → REST → styles resolution chain handles every case the old console-snippet workflow served; callers who passed `parseFromConsole: true` will now see an identified error.
+
+### Fixed
+
+- **Race condition in WebSocket grace-period timer** that could keep the Node process alive past `stop()`. Timer is now tracked and cleared in `stop()` and on new connections.
+- **Plugin status pill** correctly reads `activeConnections` via the global getter rather than the IIFE-scoped variable that wasn't reachable at render time.
+- **Cloud-only build** (`npm run build:local`) now succeeds without the pre-existing CDP-related TypeScript errors. The remaining pre-existing errors in `src/apps/*/ui/mcp-app.ts` (DOM types) are unchanged.
+
+
 ## [1.25.0] - 2026-05-13
 
 Description and Dev Mode annotation changes are now first-class citizens in `figma_diff_versions`. v1.23.0 introduced version diffs but Figma's REST API never returns COMPONENT_SET descriptions or annotations in version snapshots — meaning every description edit and every annotation edit was silently invisible to the diff engine. For design-system teams who rely on descriptions and annotations to communicate intent, this was the most important category of change being missed.
@@ -729,6 +774,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.26.0]: https://github.com/southleft/figma-console-mcp/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/southleft/figma-console-mcp/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/southleft/figma-console-mcp/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/southleft/figma-console-mcp/compare/v1.22.4...v1.23.0

@@ -239,7 +239,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 | Question | Figma MCP | Console MCP |
 |---|---|---|
 | *Can it read my designs?* | Yes | Yes |
-| *Can it write to my designs?* | Yes (via `use_figma`) | Yes (101 tools) |
+| *Can it write to my designs?* | Yes (via `use_figma`) | Yes (93 tools) |
 | *Can it manage variables?* | Yes (via code execution) | Yes (11 dedicated tools + batch) |
 | *Can it run arbitrary plugin code?* | No | Yes (`figma_execute`) |
 | *Does it know what I selected?* | No | Yes, in real time |
