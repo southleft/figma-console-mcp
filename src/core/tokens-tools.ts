@@ -335,13 +335,29 @@ async function handleImport(
     mcpVersion: "1.26.0",
   });
 
-  // 6. Compute the diff plan. Phase 1: return the diff structure but don't
-  //    apply mutations — the apply path will be wired into the existing
-  //    figma_setup_design_tokens / figma_batch_create_variables tools in
-  //    Phase 2 so we get retry/batching/rate-limit handling for free.
+  // 6. Compute the diff plan.
   const diff = computeDiffPlan(figmaDoc, merged);
 
   const dryRun = args.dryRun === true || args.strategy === "dry-run";
+
+  // 7. Apply phase: when not dry-run, push toUpdate entries to Figma via
+  //    the plugin's executeCodeViaUI. Create + delete are stubbed for a
+  //    future phase (value updates cover the common designer workflow:
+  //    edit a hex value in JSON, push to Figma).
+  let applyResult: ApplyResult | null = null;
+  if (!dryRun && diff.toUpdate.length > 0) {
+    const collectionModeMap = buildCollectionModeMap(figmaPayload);
+    const updates = buildUpdatePayloads(
+      diff.toUpdate,
+      figmaDoc,
+      merged,
+      collectionModeMap,
+      parseWarnings,
+    );
+    if (updates.length > 0) {
+      applyResult = await applyUpdates(connector, updates);
+    }
+  }
 
   // Slim the diff for the response: full entries blow past LLM context for
   // large design systems. Show counts + a sample of first N entries from
@@ -377,13 +393,33 @@ async function handleImport(
         text: JSON.stringify(
           {
             success: true,
-            mode: dryRun ? "dry-run" : "not-applied-in-phase-1",
-            phase1Note:
-              "Phase 1 returns the diff plan but does not apply mutations. The apply path (calling figma_setup_design_tokens / figma_batch_create_variables for the diff entries) ships in Phase 2. For now, you can call those tools manually with the deltas shown below.",
+            mode: dryRun ? "dry-run" : applyResult ? "applied" : "no-changes",
+            applyNote: dryRun
+              ? "Dry-run only — no Figma mutations performed."
+              : applyResult
+                ? `Applied ${applyResult.applied} value update(s) to Figma. ${applyResult.failed} failed.`
+                : diff.toUpdate.length === 0
+                  ? "Nothing to apply — all tokens already in sync."
+                  : "Updates were detected but skipped (likely all aliases or unresolved values).",
+            toCreatePhase2Note:
+              diff.toCreate.length > 0
+                ? `${diff.toCreate.length} create(s) detected — create-phase mutations ship in a future phase. Use figma_setup_design_tokens / figma_batch_create_variables manually for now.`
+                : undefined,
+            toDeletePhase2Note:
+              diff.toDelete.length > 0
+                ? `${diff.toDelete.length} Figma-only token(s) preserved (merge strategy). Use strategy: "replace" to delete them, or figma_delete_variable manually.`
+                : undefined,
             inputFileCount: inputFiles.length,
             parsedSetCount: merged.sets.length,
             parsedTokenCount: merged.sets.reduce((n, s) => n + s.tokens.length, 0),
             diff: slimDiff,
+            applyResult: applyResult
+              ? {
+                  applied: applyResult.applied,
+                  failed: applyResult.failed,
+                  errors: applyResult.errors.slice(0, 10),
+                }
+              : null,
             warnings: parseWarnings,
           },
           null,
@@ -666,4 +702,286 @@ function deepEqual(a: unknown, b: unknown): boolean {
     if (!deepEqual(aObj[aKeys[i]], bObj[bKeys[i]])) return false;
   }
   return true;
+}
+
+// ============================================================================
+// APPLY PHASE — push code-side changes back to Figma via the plugin
+// ============================================================================
+
+/**
+ * Result of the apply phase. Returned in the tool response so the AI can
+ * report what actually happened to the user.
+ */
+interface ApplyResult {
+  applied: number;
+  failed: number;
+  errors: Array<{ variableId: string; error: string }>;
+}
+
+/**
+ * One variable update to push to Figma. mapping is by modeId (Figma's
+ * native identifier), not mode name, because that's what the Plugin API
+ * needs.
+ */
+interface VariableUpdate {
+  variableId: string;
+  variableName: string;
+  resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN";
+  valuesByMode: Record<string, unknown>; // modeId → Figma-native value
+}
+
+/**
+ * Build a quick lookup of (collectionId, modeName) → modeId from the raw
+ * Figma payload. Needed because our internal model is keyed by mode name
+ * but the Plugin API wants the modeId.
+ */
+function buildCollectionModeMap(
+  payload: { collections: any[]; variables: any[] },
+): Map<string, Map<string, string>> {
+  const out = new Map<string, Map<string, string>>();
+  for (const c of payload.collections) {
+    const modes = new Map<string, string>();
+    for (const m of c.modes ?? []) {
+      modes.set(m.name, m.modeId);
+    }
+    out.set(c.id, modes);
+  }
+  return out;
+}
+
+/**
+ * Convert a TokenValue back to Figma's native value shape. Required for the
+ * Plugin API's setValueForMode call.
+ *
+ *   - color hex string "#RRGGBB(AA)" → { r, g, b, a } floats in [0, 1]
+ *   - FLOAT-typed number → number
+ *   - STRING-typed string → string
+ *   - BOOLEAN → boolean
+ *   - Alias references are unsupported in Phase 2 apply (would need to
+ *     resolve the target variable ID); returns null and the caller skips
+ *     the update.
+ */
+function tokenValueToFigma(
+  value: { literal?: unknown; reference?: string },
+  resolvedType: VariableUpdate["resolvedType"],
+): unknown | null {
+  if (value.reference) {
+    // Future phase: look up the referenced variable's Figma ID and emit
+    // { type: "VARIABLE_ALIAS", id }. For now, skip alias updates so we
+    // don't accidentally wipe a reference with a literal.
+    return null;
+  }
+  if (value.literal === undefined || value.literal === null) return null;
+
+  if (resolvedType === "COLOR" && typeof value.literal === "string") {
+    return hexToRgba(value.literal);
+  }
+  if (resolvedType === "FLOAT") {
+    return typeof value.literal === "number"
+      ? value.literal
+      : Number(value.literal);
+  }
+  if (resolvedType === "BOOLEAN") {
+    return Boolean(value.literal);
+  }
+  // STRING and fallthrough.
+  return typeof value.literal === "string"
+    ? value.literal
+    : String(value.literal);
+}
+
+function hexToRgba(hex: string): {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+} {
+  const cleaned = hex.replace(/^#/, "");
+  let r: number;
+  let g: number;
+  let b: number;
+  let a = 1;
+  if (cleaned.length === 3) {
+    r = parseInt(cleaned[0] + cleaned[0], 16) / 255;
+    g = parseInt(cleaned[1] + cleaned[1], 16) / 255;
+    b = parseInt(cleaned[2] + cleaned[2], 16) / 255;
+  } else if (cleaned.length === 6) {
+    r = parseInt(cleaned.slice(0, 2), 16) / 255;
+    g = parseInt(cleaned.slice(2, 4), 16) / 255;
+    b = parseInt(cleaned.slice(4, 6), 16) / 255;
+  } else if (cleaned.length === 8) {
+    r = parseInt(cleaned.slice(0, 2), 16) / 255;
+    g = parseInt(cleaned.slice(2, 4), 16) / 255;
+    b = parseInt(cleaned.slice(4, 6), 16) / 255;
+    a = parseInt(cleaned.slice(6, 8), 16) / 255;
+  } else {
+    throw new Error(
+      `[figma-console-mcp] Invalid hex color "${hex}" — expected 3, 6, or 8 hex digits.`,
+    );
+  }
+  return { r, g, b, a };
+}
+
+/**
+ * Walk the toUpdate diff entries and translate each into a VariableUpdate.
+ * Tokens that lack a Figma variable ID (never been synced) or have no
+ * resolvable value for any mode get skipped with a warning.
+ */
+function buildUpdatePayloads(
+  toUpdate: Array<{ path: string; before: unknown; after: unknown }>,
+  figmaDoc: TokenDocument,
+  codeDoc: TokenDocument,
+  collectionModeMap: Map<string, Map<string, string>>,
+  warnings: string[],
+): VariableUpdate[] {
+  // Build lookups: setName::tokenPath → (figmaToken, codeToken)
+  const figmaLookup = new Map<string, { token: any; set: any }>();
+  for (const set of figmaDoc.sets) {
+    for (const t of set.tokens) {
+      figmaLookup.set(`${set.name}::${t.path.join(".")}`, { token: t, set });
+    }
+  }
+  const codeLookup = new Map<string, { token: any; set: any }>();
+  for (const set of codeDoc.sets) {
+    for (const t of set.tokens) {
+      codeLookup.set(`${set.name}::${t.path.join(".")}`, { token: t, set });
+    }
+  }
+
+  const updates: VariableUpdate[] = [];
+  for (const entry of toUpdate) {
+    const codeMatch = codeLookup.get(entry.path);
+    const figmaMatch = figmaLookup.get(entry.path);
+    if (!codeMatch || !figmaMatch) continue;
+
+    const figmaToken = figmaMatch.token;
+    const variableId = figmaToken.extensions?.["figma-console-mcp"]?.variableId;
+    const collectionId =
+      figmaToken.extensions?.["figma-console-mcp"]?.collectionId;
+    if (!variableId || !collectionId) {
+      warnings.push(
+        `Cannot update ${entry.path} — missing Figma variable ID in extensions. Run figma_export_tokens first to populate.`,
+      );
+      continue;
+    }
+
+    const modeMap = collectionModeMap.get(collectionId);
+    if (!modeMap) {
+      warnings.push(
+        `Cannot update ${entry.path} — collection ${collectionId} not found in current Figma state.`,
+      );
+      continue;
+    }
+
+    // Map our token type → Figma resolvedType. Both DTCG type names and
+    // Figma names need to align here.
+    const resolvedType = inferFigmaResolvedType(figmaToken.type);
+
+    const valuesByMode: Record<string, unknown> = {};
+    for (const [modeName, value] of Object.entries(codeMatch.token.values)) {
+      const modeId = modeMap.get(modeName);
+      if (!modeId) {
+        warnings.push(
+          `Cannot update ${entry.path} (mode "${modeName}") — modeId not found in Figma collection.`,
+        );
+        continue;
+      }
+      const figmaValue = tokenValueToFigma(value as any, resolvedType);
+      if (figmaValue === null) continue;
+      valuesByMode[modeId] = figmaValue;
+    }
+
+    if (Object.keys(valuesByMode).length === 0) continue;
+
+    updates.push({
+      variableId,
+      variableName: figmaToken.path.join("/"),
+      resolvedType,
+      valuesByMode,
+    });
+  }
+
+  return updates;
+}
+
+/**
+ * Map our internal TokenType to Figma's variable resolvedType. The Plugin API
+ * only has 4 resolved types — collapse our richer set onto them.
+ */
+function inferFigmaResolvedType(
+  type: string,
+): VariableUpdate["resolvedType"] {
+  if (type === "color") return "COLOR";
+  if (type === "boolean") return "BOOLEAN";
+  if (type === "string" || type === "fontFamily") return "STRING";
+  return "FLOAT"; // dimension, number, fontWeight, duration, etc.
+}
+
+/**
+ * Push variable updates to Figma via executeCodeViaUI. The plugin runs the
+ * inline script in its sandbox, calling figma.variables.setValueForMode for
+ * each (variableId, modeId, value) tuple.
+ */
+async function applyUpdates(
+  connector: any,
+  updates: VariableUpdate[],
+): Promise<ApplyResult> {
+  // Serialize the update list into the script payload. JSON.stringify
+  // handles escape correctly even with nested objects (RGBA color values).
+  const payload = JSON.stringify(updates);
+
+  const script = `
+    const updates = ${payload};
+    const results = [];
+    for (const u of updates) {
+      try {
+        const variable = await figma.variables.getVariableByIdAsync(u.variableId);
+        if (!variable) {
+          results.push({ id: u.variableId, success: false, error: "Variable not found in current file" });
+          continue;
+        }
+        let appliedModes = 0;
+        for (const modeId in u.valuesByMode) {
+          variable.setValueForMode(modeId, u.valuesByMode[modeId]);
+          appliedModes++;
+        }
+        results.push({ id: u.variableId, name: variable.name, success: true, appliedModes });
+      } catch (err) {
+        results.push({ id: u.variableId, success: false, error: String(err && err.message || err) });
+      }
+    }
+    return {
+      applied: results.filter(r => r.success).length,
+      failed: results.filter(r => !r.success).length,
+      results,
+    };
+  `;
+
+  const execResult = await connector.executeCodeViaUI(script, 30000);
+
+  if (!execResult?.success) {
+    return {
+      applied: 0,
+      failed: updates.length,
+      errors: [
+        {
+          variableId: "<batch>",
+          error:
+            execResult?.error ??
+            "Plugin executeCodeViaUI returned an error or timed out.",
+        },
+      ],
+    };
+  }
+
+  const inner = execResult.result ?? execResult;
+  const errors = (inner.results ?? [])
+    .filter((r: any) => !r.success)
+    .map((r: any) => ({ variableId: r.id, error: r.error }));
+
+  return {
+    applied: inner.applied ?? 0,
+    failed: inner.failed ?? 0,
+    errors,
+  };
 }
