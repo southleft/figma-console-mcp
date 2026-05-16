@@ -55,7 +55,7 @@ Restart Claude Code (`/mcp` to reconnect) — mcp-remote will open a browser for
 > 3. Select `~/.figma-console-mcp/plugin/manifest.json` (stable path created automatically by the MCP server)
 > 4. Run the plugin in your Figma file — it auto-connects via WebSocket
 >
-> ✅ After a package update, re-import the manifest from the same path to refresh Figma's cached plugin code.
+> ✅ Re-importing the manifest after a package update is **optional**. Most upgrades stay wire-compatible with the previous plugin — you'll still get all functional changes. Re-import only when release notes specifically call for it (typical for plugin-side method additions), or when you want the latest cosmetic touches (status-pill copy, `pluginVersion` reporting).
 
 ### How to Verify Setup is Working
 
@@ -105,7 +105,7 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 **Cause:** Claude Desktop can leave orphaned MCP server processes running after tabs close (known Claude Desktop issue).
 **Fix:** The server automatically detects and terminates orphaned figma-console-mcp processes on startup. If you need to manually clean up, run: `lsof -i :9223-9232 | grep LISTEN` to see what's holding ports.
 
-> **Stable plugin path:** The MCP server automatically copies plugin files to `~/.figma-console-mcp/plugin/` on startup. Import from this path instead of the volatile npx cache path. Re-import after package updates to refresh Figma's cached plugin code.
+> **Stable plugin path:** The MCP server automatically copies plugin files to `~/.figma-console-mcp/plugin/` on startup. Import from this path instead of the volatile npx cache path. Re-importing after a package update is optional — only required when the release notes call for it.
 
 #### Running in Docker
 **Cause:** The WebSocket server binds to `localhost` by default, which is unreachable from the Docker host.
@@ -298,9 +298,10 @@ figma_clear_console()
 - Prevents old logs from mixing with new ones
 - `figma_clear_console()` or `figma_reload_plugin({ clearConsole: true })`
 
-**4. Re-import the Manifest After Updates**
+**4. Re-import the Manifest Only When Needed**
 - Figma Desktop caches plugin files at the application level
-- After a package update, re-import `~/.figma-console-mcp/plugin/manifest.json`
+- Re-importing is **optional for most updates** (wire-compatible upgrades) and only required when the release notes specifically say so (e.g. when the plugin adds new methods)
+- When required: re-import `~/.figma-console-mcp/plugin/manifest.json` (Plugins → Manage plugins → re-import)
 
 **5. Check Error Messages**
 - Errors are prefixed `[figma-console-mcp]` so you can tell them apart from other MCPs

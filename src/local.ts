@@ -3586,9 +3586,14 @@ if (currentFile === entryFile) {
 				console.error(
 					"\nImport this manifest in Figma (Plugins → Development →\n" +
 					"Import plugin from manifest). The MCP server refreshes the\n" +
-					"plugin files in this directory on every startup, so after a\n" +
-					"package update, just re-import the manifest in Figma to pick\n" +
-					"up the new code (Figma caches plugin files at the app level).\n"
+					"plugin files in this directory on every startup.\n" +
+					"\n" +
+					"Re-importing after a package update is OPTIONAL — most\n" +
+					"upgrades stay wire-compatible with the previous plugin.\n" +
+					"Re-import only when release notes call for it, or when you\n" +
+					"want the latest cosmetic touches (status-pill copy, plugin\n" +
+					"version reporting). Figma caches plugin files at the app\n" +
+					"level, so re-importing is what makes Figma pick up changes.\n"
 				);
 				process.exit(0);
 			}

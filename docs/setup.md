@@ -204,7 +204,9 @@ The Desktop Bridge Plugin connects via WebSocket — no special Figma launch fla
 5. **Run the plugin** in your Figma file (Plugins → Development → Figma Desktop Bridge)
 6. The plugin scans ports 9223–9232 on launch, connects to the first available MCP server, and shows `Local · ready` (or `Cloud · ready`, or `Local + Cloud · ready` if you also pair to cloud) in its status pill.
 
-> **Re-import after MCP server updates.** Figma caches plugin files (`code.js` and `ui.html`) at the application level. When the MCP server publishes a plugin update — e.g. after `npm update` or a new `npx` cache pull — re-import the manifest from `~/.figma-console-mcp/plugin/manifest.json` (Plugins → Manage plugins → re-import) to refresh the cached code. The MCP server keeps the stable path in sync with the running build, so re-importing is a quick one-click step.
+> **About plugin updates.** Figma caches plugin files (`code.js` and `ui.html`) at the application level. The MCP server keeps the stable path at `~/.figma-console-mcp/plugin/` in sync with the running build on every startup, but Figma uses its cached copy until you re-import.
+>
+> **Re-importing is _required_ only when the release notes call it out** (typically when the plugin adds a new method the server needs — e.g. v1.22.4 and v1.10.0). For wire-compatible upgrades, re-importing is optional and only refreshes plugin-side cosmetic touches (status-pill copy, `pluginVersion` reporting). When you do re-import: Plugins → Manage plugins → re-import `~/.figma-console-mcp/plugin/manifest.json`.
 
 > **Alternative path:** If `~/.figma-console-mcp/plugin/` doesn't exist yet (first run), you can find the path by running `npx figma-console-mcp@latest --print-path` or checking the `pluginPath` field in `figma_get_status`.
 
@@ -394,7 +396,7 @@ How to add this depends on your platform:
 2. Run the plugin: **Plugins → Development → Figma Desktop Bridge**
 3. You should see the status pill showing the active transport: `Local · ready`, `Cloud · ready`, or `Local + Cloud · ready` (when paired with both)
 
-> **First time?** Import the plugin once: In Figma go to Plugins → Development → Import plugin from manifest → select `~/.figma-console-mcp/plugin/manifest.json`. Re-import after MCP server updates (`npm update` or new `npx` cache pull) to refresh Figma's cached `code.js` and `ui.html` — Figma caches plugin files at the app level.
+> **First time?** Import the plugin once: In Figma go to Plugins → Development → Import plugin from manifest → select `~/.figma-console-mcp/plugin/manifest.json`. After future MCP server updates, re-importing is optional — only required when release notes specifically call for it (e.g. when the plugin adds a new method the server needs). Most upgrades stay wire-compatible with the previous plugin.
 
 ### Step 3: Pair via Cloud Mode (~30 sec)
 

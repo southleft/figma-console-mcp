@@ -128,9 +128,11 @@ If you're not sure where to put the JSON configuration above, here's where each 
 3. Select `~/.figma-console-mcp/plugin/manifest.json` (stable path, auto-created by the MCP server)
 4. Run the plugin in your Figma file — it scans ports 9223–9232 and connects automatically to your running MCP server
 
-> **Heads-up on plugin updates.** Figma caches plugin files (`code.js` and `ui.html`) at the application level. When the MCP server publishes a plugin update — typically a `npm update` / new `npx` cache pull — re-import the manifest at `~/.figma-console-mcp/plugin/manifest.json` (Plugins → Manage plugins → re-import) to refresh the cached code. The stable path never changes, so re-importing is a quick one-click step.
+> **Heads-up on plugin updates.** Figma caches plugin files (`code.js` and `ui.html`) at the application level. The MCP server refreshes the files at `~/.figma-console-mcp/plugin/` on every startup, but Figma keeps using its cached copy until you re-import the manifest.
 >
-> The MCP server refreshes the files at the stable path on every startup; re-importing in Figma is what makes Figma pick them up.
+> **Re-importing is _required_ only when a release notes entry says so** — typically when the plugin adds a new method the server needs (e.g. v1.22.4, v1.10.0). For most upgrades the new server stays wire-compatible with the previous plugin, and re-importing is **optional**: you'll still get every functional change, just not the cosmetic plugin-side touches (status-pill copy, `pluginVersion` reporting).
+>
+> When you do re-import: Plugins → Manage plugins → re-import `~/.figma-console-mcp/plugin/manifest.json`. The stable path never changes, so it's a one-click step.
 
 #### Step 4: Restart Your MCP Client
 
