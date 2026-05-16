@@ -138,6 +138,37 @@ describe("token sync engine", () => {
       expect(ext!.collectionId).toBe("VariableCollectionId:1:5");
     });
 
+    it("preserves the original set name through slugification", () => {
+      // Real-world case: Figma collection named "1. TailwindCSS" gets
+      // slugified to "1-tailwindcss" as the JSON key. Without preserving
+      // the original name, every diff against Figma's actual collection
+      // name mismatches.
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "1. TailwindCSS",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#4085F2" } },
+              },
+            ],
+          },
+        ],
+      };
+      const formatted = formatDtcg(doc, { target: { format: "dtcg" } });
+      // JSON key should be the slug (valid for DTCG consumers).
+      expect(formatted.files[0].content).toContain('"1-tailwindcss"');
+      // But the original name should be stashed for round-trip.
+      expect(formatted.files[0].content).toContain('"originalName": "1. TailwindCSS"');
+
+      const parsed = parseDtcg({ payload: formatted.files[0].content });
+      // After round-trip, set name should match the original, not the slug.
+      expect(parsed.document.sets[0].name).toBe("1. TailwindCSS");
+    });
+
     it("emits one file per mode when splitByMode is true", () => {
       const doc: TokenDocument = {
         sets: [

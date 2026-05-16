@@ -343,6 +343,33 @@ async function handleImport(
 
   const dryRun = args.dryRun === true || args.strategy === "dry-run";
 
+  // Slim the diff for the response: full entries blow past LLM context for
+  // large design systems. Show counts + a sample of first N entries from
+  // each bucket; the caller can re-run with format=detailed if they want
+  // everything.
+  const SAMPLE_LIMIT = 20;
+  const slimDiff = {
+    summary: {
+      toCreate: diff.toCreate.length,
+      toUpdate: diff.toUpdate.length,
+      toDelete: diff.toDelete.length,
+      unchanged: diff.unchanged,
+    },
+    samples: {
+      toCreate: diff.toCreate.slice(0, SAMPLE_LIMIT).map((e) => ({
+        path: e.path,
+        type: e.type,
+      })),
+      toUpdate: diff.toUpdate.slice(0, SAMPLE_LIMIT),
+      toDelete: diff.toDelete.slice(0, SAMPLE_LIMIT),
+    },
+    truncated: {
+      toCreate: diff.toCreate.length > SAMPLE_LIMIT,
+      toUpdate: diff.toUpdate.length > SAMPLE_LIMIT,
+      toDelete: diff.toDelete.length > SAMPLE_LIMIT,
+    },
+  };
+
   return {
     content: [
       {
@@ -356,7 +383,7 @@ async function handleImport(
             inputFileCount: inputFiles.length,
             parsedSetCount: merged.sets.length,
             parsedTokenCount: merged.sets.reduce((n, s) => n + s.tokens.length, 0),
-            diff,
+            diff: slimDiff,
             warnings: parseWarnings,
           },
           null,
@@ -474,8 +501,10 @@ function collectInputFiles(
 
 /**
  * Merge multiple TokenDocuments. Sets with the same name combine their
- * tokens; modes are unioned; document-level metadata uses the first
- * document's values.
+ * tokens; tokens with the same path within a set have their mode-values
+ * merged (so splitByMode files reassemble cleanly into one multi-mode
+ * representation). Modes are unioned. Document-level metadata uses the
+ * first document's values.
  */
 function mergeDocuments(docs: TokenDocument[]): TokenDocument {
   if (docs.length === 0) {
@@ -489,9 +518,39 @@ function mergeDocuments(docs: TokenDocument[]): TokenDocument {
       const existing = setsByName.get(set.name);
       if (!existing) {
         setsByName.set(set.name, { ...set, tokens: [...set.tokens] });
-      } else {
-        existing.modes = [...new Set([...existing.modes, ...set.modes])];
-        existing.tokens.push(...set.tokens);
+        continue;
+      }
+      existing.modes = [...new Set([...existing.modes, ...set.modes])];
+      // Dedupe by path: tokens with the same path merge their values.
+      // Critical for splitByMode output where each file has the same tokens
+      // with a different mode's value, and the import needs to reassemble
+      // them into one multi-mode token instead of triplicating.
+      const byPath = new Map(
+        existing.tokens.map((t) => [t.path.join("/"), t]),
+      );
+      for (const incoming of set.tokens) {
+        const key = incoming.path.join("/");
+        const found = byPath.get(key);
+        if (found) {
+          found.values = { ...found.values, ...incoming.values };
+          // Merge MCP extensions too — newer lastSyncedAt wins, lastSyncedValue
+          // unions across modes.
+          const aExt = found.extensions?.["figma-console-mcp"];
+          const bExt = incoming.extensions?.["figma-console-mcp"];
+          if (aExt || bExt) {
+            const merged = { ...(aExt ?? {}), ...(bExt ?? {}) };
+            if (aExt?.lastSyncedValue || bExt?.lastSyncedValue) {
+              merged.lastSyncedValue = {
+                ...(aExt?.lastSyncedValue ?? {}),
+                ...(bExt?.lastSyncedValue ?? {}),
+              };
+            }
+            found.extensions = { ...(found.extensions ?? {}), "figma-console-mcp": merged };
+          }
+        } else {
+          existing.tokens.push(incoming);
+          byPath.set(key, incoming);
+        }
       }
     }
   }

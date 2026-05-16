@@ -108,22 +108,28 @@ function parseJson(input: ParseInput): unknown {
 }
 
 function extractSet(
-  setName: string,
+  setKey: string,
   setNode: DtcgGroup,
   warnings: string[],
 ): TokenSet {
   const tokens: Token[] = [];
   const modes = new Set<string>();
 
-  // Set-level metadata pulled from $extensions["figma-console-mcp"].
+  // Set-level metadata pulled from $extensions["figma-console-mcp"]. We
+  // recover the original (un-slugified) set name from `originalName` so
+  // round-trip matching works even after slugification.
   const setExt = setNode.$extensions;
   let figmaCollectionId: string | undefined;
+  let originalName: string | undefined;
   if (setExt && typeof setExt === "object") {
     const mcp = (setExt as Record<string, unknown>)[FIGMA_MCP_EXTENSION_KEY];
     if (mcp && typeof mcp === "object") {
       const m = mcp as Record<string, unknown>;
       if (typeof m.figmaCollectionId === "string") {
         figmaCollectionId = m.figmaCollectionId;
+      }
+      if (typeof m.originalName === "string") {
+        originalName = m.originalName;
       }
     }
   }
@@ -132,7 +138,7 @@ function extractSet(
   walkGroup(setNode, [], undefined, tokens, modes, warnings);
 
   return {
-    name: setName,
+    name: originalName ?? setKey,
     description:
       typeof setNode.$description === "string" ? setNode.$description : undefined,
     modes: modes.size > 0 ? [...modes] : ["Default"],

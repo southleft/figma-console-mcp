@@ -187,18 +187,25 @@ function serializeAsDtcg(doc: TokenDocument, warnings: string[]): string {
 
   for (const set of doc.sets) {
     // Each set lives under a top-level group named after the set. Set-level
-    // metadata (Figma collection ID, etc.) goes in that group's $extensions.
+    // metadata (Figma collection ID, original name, etc.) goes in that
+    // group's $extensions so round-trip recovers the original name even
+    // after we slugify it for the JSON key.
     const setKey = setKeyFor(set);
     let setGroup = tree[setKey] as DtcgGroup | undefined;
     if (!setGroup) {
       setGroup = {};
       if (set.description) setGroup.$description = set.description;
+      const mcpMeta: Record<string, unknown> = {};
       if (set.meta?.figmaCollectionId) {
-        setGroup.$extensions = {
-          [FIGMA_MCP_EXTENSION_KEY]: {
-            figmaCollectionId: set.meta.figmaCollectionId,
-          },
-        };
+        mcpMeta.figmaCollectionId = set.meta.figmaCollectionId;
+      }
+      // Always stash the original name when it differs from the slug — this
+      // is what makes diff matching work after round-trip.
+      if (set.name !== setKey) {
+        mcpMeta.originalName = set.name;
+      }
+      if (Object.keys(mcpMeta).length > 0) {
+        setGroup.$extensions = { [FIGMA_MCP_EXTENSION_KEY]: mcpMeta };
       }
       tree[setKey] = setGroup;
     }
