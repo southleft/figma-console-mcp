@@ -602,9 +602,7 @@ function computeDiffPlan(
         type: codeToken.type,
         value: codeToken.values,
       });
-    } else if (
-      JSON.stringify(figmaToken.values) !== JSON.stringify(codeToken.values)
-    ) {
+    } else if (!valuesEqual(figmaToken.values, codeToken.values)) {
       toUpdate.push({
         path: key,
         before: figmaToken.values,
@@ -624,4 +622,48 @@ function computeDiffPlan(
   }
 
   return { toCreate, toUpdate, toDelete, unchanged };
+}
+
+/**
+ * Structural equality for a token's mode-keyed values map. Order-independent
+ * so two tokens that have the same modes with the same values produce a
+ * match regardless of object insertion order.
+ *
+ * Recursive for composite values (typography, shadow) — those have nested
+ * objects too. Aliases are equal when both have the same `reference` string;
+ * literals are equal by deep value comparison.
+ */
+function valuesEqual(
+  a: Record<string, any>,
+  b: Record<string, any>,
+): boolean {
+  const aKeys = Object.keys(a).sort();
+  const bKeys = Object.keys(b).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+    if (!deepEqual(a[aKeys[i]], b[bKeys[i]])) return false;
+  }
+  return true;
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (a === null || b === null) return a === b;
+  if (typeof a !== "object") return a === b;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => deepEqual(v, (b as unknown[])[i]));
+  }
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj).sort();
+  const bKeys = Object.keys(bObj).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+    if (!deepEqual(aObj[aKeys[i]], bObj[bKeys[i]])) return false;
+  }
+  return true;
 }

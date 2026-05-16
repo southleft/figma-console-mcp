@@ -570,6 +570,120 @@ describe("token sync engine", () => {
     });
   });
 
+  describe("CSS variables formatter", () => {
+    // Lazy import to avoid loading on every test file.
+    const lazy = async () =>
+      (await import("../src/core/tokens/formatters/css-vars.js")).formatCssVars;
+
+    it("emits primitive tokens as CSS custom properties under :root", async () => {
+      const formatCssVars = await lazy();
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Primitives",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#4085F2" } },
+              },
+              {
+                path: ["spacing", "md"],
+                type: "dimension",
+                values: { Default: { literal: 16 } },
+              },
+            ],
+          },
+        ],
+      };
+      const result = formatCssVars(doc, { target: { format: "css-vars" } });
+      expect(result.files).toHaveLength(1);
+      const content = result.files[0].content;
+      expect(content).toContain(":root {");
+      expect(content).toContain("--color-primary: #4085F2;");
+      expect(content).toContain("--spacing-md: 16px;");
+    });
+
+    it("renders aliases as var(--other) so cascading works", async () => {
+      const formatCssVars = await lazy();
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Semantic",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "brand"],
+                type: "color",
+                values: {
+                  Default: { reference: "{color.primary}" },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const result = formatCssVars(doc, { target: { format: "css-vars" } });
+      expect(result.files[0].content).toContain(
+        "--color-brand: var(--color-primary);",
+      );
+    });
+
+    it("emits dark mode under .dark selector by convention", async () => {
+      const formatCssVars = await lazy();
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Theme",
+            modes: ["Light", "Dark"],
+            tokens: [
+              {
+                path: ["bg"],
+                type: "color",
+                values: {
+                  Light: { literal: "#FFFFFF" },
+                  Dark: { literal: "#000000" },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const result = formatCssVars(doc, { target: { format: "css-vars" } });
+      const content = result.files[0].content;
+      expect(content).toContain(":root {");
+      expect(content).toContain("--bg: #FFFFFF;");
+      expect(content).toContain(".dark {");
+      expect(content).toContain("--bg: #000000;");
+    });
+
+    it("applies prefix to every token name", async () => {
+      const formatCssVars = await lazy();
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "P",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#4085F2" } },
+              },
+            ],
+          },
+        ],
+      };
+      const result = formatCssVars(doc, {
+        target: { format: "css-vars", prefix: "ds-" },
+      });
+      expect(result.files[0].content).toContain(
+        "--ds-color-primary: #4085F2;",
+      );
+    });
+  });
+
   describe("DTCG group $type inheritance", () => {
     it("inherits type from group ancestor when leaf has no explicit $type", () => {
       const dtcgJson = JSON.stringify({
