@@ -91,8 +91,8 @@ Figma Console MCP can access:
 ### API Endpoints
 All network communication is limited to:
 - `api.figma.com` - Figma's official REST API (HTTPS)
-- `localhost` - Local Desktop Bridge communication
-- `*.workers.dev` - Remote mode only (HTTPS)
+- `localhost:9223–9232` - Local Desktop Bridge WebSocket communication
+- `*.workers.dev` - Remote/Cloud mode only (HTTPS)
 
 ### No External Dependencies at Runtime
 - No third-party analytics services

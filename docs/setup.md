@@ -35,9 +35,9 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | Real-time selection/change tracking | ✅ | ❌ | ❌ |
 | Console log streaming | ✅ | ❌ | ❌ |
 | Requires Node.js | Yes | No | No |
-| **Total tools available** | **100+** | **83** | **9** |
+| **Total tools available** | **101** | **93** | **9** |
 
-> **Bottom line:** Remote mode is **read-only** with 9 tools. Cloud Mode adds **write access** (83 tools) without Node.js. Local (NPX/Git) has **everything** (100+ tools) including real-time monitoring.
+> **Bottom line:** Remote mode is **read-only** with 9 tools. Cloud Mode adds **write access** (93 tools) without Node.js. Local (NPX/Git) has **everything** (101 tools) including real-time monitoring.
 
 ---
 
@@ -91,7 +91,7 @@ New to MCP servers, JSON configs, and terminal commands? These designer-friendly
 
 **Best for:** Anyone who wants full AI-assisted design and development capabilities with automatic updates.
 
-**What you get:** All 100+ tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
+**What you get:** All 101 tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
 
 ### Prerequisites Checklist
 
@@ -202,9 +202,9 @@ The Desktop Bridge Plugin connects via WebSocket — no special Figma launch fla
 3. Navigate to `~/.figma-console-mcp/plugin/manifest.json` and select it
 4. Click **"Open"** — the plugin appears in your Development plugins list
 5. **Run the plugin** in your Figma file (Plugins → Development → Figma Desktop Bridge)
-6. The plugin bootloader scans ports 9223–9232, loads the latest UI from the MCP server, and connects automatically
+6. The plugin scans ports 9223–9232 on launch, connects to the first available MCP server, and shows `Local · ready` (or `Cloud · ready`, or `Local + Cloud · ready` if you also pair to cloud) in its status pill.
 
-> **One-time setup.** The plugin uses a bootloader architecture — Figma caches a thin loader that dynamically fetches the full plugin UI from the MCP server each time it opens. When the MCP server updates, the plugin automatically gets the new code without re-importing.
+> **Re-import after MCP server updates.** Figma caches plugin files (`code.js` and `ui.html`) at the application level. When the MCP server publishes a plugin update — e.g. after `npm update` or a new `npx` cache pull — re-import the manifest from `~/.figma-console-mcp/plugin/manifest.json` (Plugins → Manage plugins → re-import) to refresh the cached code. The MCP server keeps the stable path in sync with the running build, so re-importing is a quick one-click step.
 
 > **Alternative path:** If `~/.figma-console-mcp/plugin/` doesn't exist yet (first run), you can find the path by running `npx figma-console-mcp@latest --print-path` or checking the `pluginPath` field in `figma_get_status`.
 
@@ -217,7 +217,7 @@ Multiple MCP clients (e.g., Claude Desktop Chat + Code tabs, Claude + Cursor) ar
 - Each MCP server claims the next available port in the range 9223–9232
 - The plugin connects to **all** active servers simultaneously
 - Orphaned server processes from closed tabs are automatically detected and terminated on startup
-- No manual port management or re-importing needed
+- No manual port management needed (the plugin scans the whole range automatically)
 
 ### Step 4: Restart Your MCP Client (~1 min)
 
@@ -251,7 +251,7 @@ Create a simple frame with a blue background
 
 **Best for:** Users who want more control over when updates happen, or developers who want to contribute to the project.
 
-**What you get:** Same 100+ tools as NPX. Updates are manual — you pull and rebuild when you're ready.
+**What you get:** Same 101 tools as NPX. Updates are manual — you pull and rebuild when you're ready.
 
 ### Prerequisites
 
@@ -358,7 +358,7 @@ Then restart Claude Desktop.
 
 **Best for:** Claude.ai, v0, Replit, Lovable, and any MCP-capable web platform that needs to create and modify Figma designs.
 
-**What you get:** 83 tools — full write access (create frames, components, variables, edit designs) plus REST API reads, design system extraction, comments, version history, slides, FigJam, and annotations. This is Remote Mode upgraded with the Cloud Write Relay.
+**What you get:** 93 tools — full write access (create frames, components, variables, edit designs) plus REST API reads, design system extraction, comments, version history, slides, FigJam, and annotations. This is Remote Mode upgraded with the Cloud Write Relay.
 
 **What you don't get vs Local:** Real-time selection tracking, document change monitoring, and console log streaming (these require a local WebSocket connection).
 
@@ -392,9 +392,9 @@ How to add this depends on your platform:
 
 1. Open **Figma Desktop** and navigate to your design file
 2. Run the plugin: **Plugins → Development → Figma Desktop Bridge**
-3. You should see the small "MCP ready" indicator
+3. You should see the status pill showing the active transport: `Local · ready`, `Cloud · ready`, or `Local + Cloud · ready` (when paired with both)
 
-> **First time?** Import the plugin once: In Figma go to Plugins → Development → Import plugin from manifest → select `~/.figma-console-mcp/plugin/manifest.json`. This is a one-time step — the bootloader handles all future updates automatically.
+> **First time?** Import the plugin once: In Figma go to Plugins → Development → Import plugin from manifest → select `~/.figma-console-mcp/plugin/manifest.json`. Re-import after MCP server updates (`npm update` or new `npx` cache pull) to refresh Figma's cached `code.js` and `ui.html` — Figma caches plugin files at the app level.
 
 ### Step 3: Pair via Cloud Mode (~30 sec)
 
@@ -653,12 +653,12 @@ For reference, the Codex GUI fields map directly to the [NPX JSON configuration]
 | Tools not appearing in MCP client | Config not loaded | Restart your MCP client completely |
 | "Port 9223 already in use" | Another MCP instance or orphaned process | Server auto-falls back to 9224–9232. Orphaned processes are auto-cleaned on startup (v1.14.0+). |
 | WebSocket unreachable from Docker host | Server bound to localhost | Set `FIGMA_WS_HOST=0.0.0.0` and expose port with `-p 9223:9223` |
-| Plugin shows "MCP scanning" | MCP server not running yet | Start/restart your MCP client so the server starts. The bootloader retries automatically. |
+| Plugin shows "MCP scanning" | MCP server not running yet | Start/restart your MCP client so the server starts. The plugin retries every few seconds. |
 | Plugin shows "No MCP server found" | All retries exhausted | Ensure an MCP client is running. Check for stale processes: `lsof -i :9223-9232 \| grep LISTEN` |
 | NPX using old version | Cached package | Use `figma-console-mcp@latest` explicitly |
 | Cloud pairing code expired | Code is older than 5 minutes | Ask your AI to generate a new pairing code |
 | Cloud connection drops between turns | Relay session ended | Re-pair by asking your AI to reconnect, then enter the new code in the plugin |
-| Cloud Mode toggle not showing | Pre-bootloader plugin version | Re-import manifest from `~/.figma-console-mcp/plugin/manifest.json` (one-time update to bootloader) |
+| Cloud Mode toggle not showing | Stale cached plugin from before Cloud Mode was added | Re-import manifest from `~/.figma-console-mcp/plugin/manifest.json` to refresh Figma's cached plugin code |
 
 ### Node.js Version Issues
 

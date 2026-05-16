@@ -79,7 +79,7 @@ flowchart TB
 - **WebSocket + HTTP** — via Desktop Bridge Plugin on ports 9223–9232. No debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running. Orphaned processes are automatically detected and terminated on startup.
 - The HTTP server on the same port exposes `/health` for liveness checks.
-- All 100+ tools work through the WebSocket transport.
+- All 101 tools work through the WebSocket transport.
 
 **Plugin distribution:**
 - The Desktop Bridge plugin ships as `manifest.json`, `code.js`, and `ui.html` — the full UI (~60 KB) is loaded directly by Figma at plugin-open time (no bootloader fetch).
@@ -104,7 +104,7 @@ flowchart TB
 The main server implements the Model Context Protocol with stdio transport for local mode.
 
 **Key Responsibilities:**
-- Tool registration (100+ tools in Local Mode, 9 in Remote Mode)
+- Tool registration (101 tools in Local Mode, 9 in Remote Mode)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication via WebSocket
@@ -113,7 +113,7 @@ The main server implements the Model Context Protocol with stdio transport for l
 
 | Category | Tools | Transport |
 |----------|-------|-----------|
-| Navigation | `figma_navigate`, `figma_get_status` | WebSocket |
+| Status & Diagnostics | `figma_get_status`, `figma_diagnose`, `figma_reconnect` | WebSocket |
 | Console | `figma_get_console_logs`, `figma_watch_console`, `figma_clear_console` | WebSocket |
 | Screenshots | `figma_take_screenshot`, `figma_capture_screenshot` | WebSocket |
 | Design System | `figma_get_variables`, `figma_get_styles`, `figma_get_component` | REST API |
@@ -162,7 +162,7 @@ The MCP server uses a transport abstraction (`IFigmaConnector` interface) with t
 | Local WebSocket | `WebSocketConnector` | Local | `ws://localhost:9223–9232` |
 | Cloud Relay | `CloudWebSocketConnector` | Remote | Fetch RPC to Durable Object |
 
-(The local `FigmaDesktopConnector` / Puppeteer-CDP path that lived alongside `WebSocketConnector` for a transitional period was removed entirely in Phase 3 of the cleanup branch — all tools now route through the WebSocket plugin bridge.)
+(The local `FigmaDesktopConnector` / Puppeteer-CDP path that lived alongside `WebSocketConnector` for a transitional period was removed in Phase 3 of the cleanup branch — Local Mode now routes every tool through the WebSocket plugin bridge. Cloud Mode still uses Cloudflare's Browser Rendering API for `figma_navigate`, `figma_get_console_logs`, and `figma_take_screenshot`; write/plugin tools route through the Cloud Plugin Relay Durable Object instead.)
 
 #### WebSocket Transport (Local)
 
@@ -199,7 +199,7 @@ Multiple MCP server processes can run simultaneously (e.g., Claude Desktop Chat 
 
 The MCP server checks if a WebSocket client is connected (instant, under 1ms). If connected, commands route through WebSocket. If no client is connected, setup instructions are returned.
 
-All 100+ tools work through the WebSocket transport.
+All 101 tools work through the WebSocket transport.
 
 ---
 
