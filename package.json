@@ -1,7 +1,7 @@
 {
 	"name": "figma-console-mcp",
 	"version": "1.25.0",
-	"description": "MCP server for accessing Figma plugin console logs and screenshots via Cloudflare Workers or local mode",
+	"description": "The most comprehensive MCP server for Figma — design tokens, variables, components, write tools, version history diff, accessibility audits, FigJam, Slides, and more. Local (WebSocket Desktop Bridge plugin) and Cloudflare Workers (paired + remote) modes.",
 	"type": "module",
 	"main": "dist/local.js",
 	"types": "dist/local.d.ts",
@@ -37,15 +37,18 @@
 		"mcp",
 		"figma",
 		"plugin",
-		"console",
-		"debugging",
+		"design-tokens",
+		"design-systems",
+		"variables",
+		"figjam",
+		"slides",
+		"accessibility",
 		"ai",
 		"anthropic",
 		"claude",
-		"cloudflare",
-		"workers"
+		"cloudflare"
 	],
-	"author": "Your Name",
+	"author": "Southleft",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
