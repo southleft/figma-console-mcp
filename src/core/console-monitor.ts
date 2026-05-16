@@ -26,7 +26,7 @@ export class ConsoleMonitor {
 	private logs: ConsoleLogEntry[] = [];
 	private config: ConsoleConfig;
 	private isMonitoring = false;
-	private page: any = null; // Supports both puppeteer-core and @cloudflare/puppeteer
+	private page: any = null; // @cloudflare/puppeteer Page (this class is cloud-mode-only after Phase 3).
 	private workers: Set<WebWorker> = new Set();
 	private lastUrl: string = ''; // Track the last URL to detect real navigations vs hash changes
 
@@ -35,8 +35,8 @@ export class ConsoleMonitor {
 	}
 
 	/**
-	 * Start monitoring console logs on a page
-	 * Accepts any puppeteer Page type (puppeteer-core or @cloudflare/puppeteer)
+	 * Start monitoring console logs on a page.
+	 * Accepts the @cloudflare/puppeteer Page type (cloud mode only).
 	 */
 	async startMonitoring(page: any): Promise<void> {
 		if (this.isMonitoring && this.page === page) {

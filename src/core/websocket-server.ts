@@ -144,7 +144,10 @@ export class FigmaWebSocketServer extends EventEmitter {
 
   /**
    * Handle HTTP requests on the same port as WebSocket.
-   * Serves plugin UI content for the bootloader and health checks.
+   * Serves a JSON `/health` (also at `/`) endpoint with version and connected-file
+   * info. No plugin-UI route exists — the plugin loads its own `ui.html` from disk
+   * via the Figma plugin runtime; the legacy `/plugin/ui` bootloader endpoint was
+   * removed in the Phase 3 cleanup.
    */
   private handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
     // CORS headers for Figma plugin iframe (sandboxed, origin: null)

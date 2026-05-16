@@ -2,9 +2,9 @@
  * WebSocket Bridge Tests
  *
  * Tests for:
- * - FigmaWebSocketServer: lifecycle, command routing, reconnection
+ * - FigmaWebSocketServer: lifecycle, command routing, reconnection,
+ *   multi-client file identity, console/document/selection/page change buffering
  * - WebSocketConnector: IFigmaConnector implementation, method mapping
- * - Transport detection: CDP vs WebSocket fallback logic
  */
 
 import { FigmaWebSocketServer } from '../src/core/websocket-server';

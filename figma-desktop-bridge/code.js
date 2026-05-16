@@ -1,8 +1,8 @@
 // Figma Desktop Bridge - MCP Plugin
-// Bridges Figma API to MCP clients via plugin UI window
-// Supports: Variables, Components, Styles, and more
-// Uses postMessage to communicate with UI, bypassing worker sandbox limitations
-// Puppeteer can access UI iframe's window context to retrieve data
+// Bridges the Figma Plugin API to MCP clients via the plugin's UI iframe.
+// Supports: Variables, Components, Styles, and more.
+// Uses postMessage to communicate with ui.html (bypassing worker sandbox limitations),
+// which then forwards messages to the MCP server over the WebSocket bridge.
 
 // Plugin version — sent in FILE_INFO for server-side version compatibility checks.
 // The server compares this against its own version to detect stale cached plugins.
@@ -16,7 +16,8 @@ figma.showUI(__html__, { width: 180, height: 50, visible: true, themeColors: tru
 // ============================================================================
 // CONSOLE CAPTURE — Intercept console.* in the QuickJS sandbox and forward
 // to ui.html via postMessage so the WebSocket bridge can relay them to the MCP
-// server. This enables console monitoring without CDP.
+// server. This is the only console-capture path in local mode (no browser
+// process is involved).
 // ============================================================================
 (function() {
   var levels = ['log', 'info', 'warn', 'error', 'debug'];
@@ -323,7 +324,7 @@ figma.ui.onmessage = async (msg) => {
       var errorMsg = error && error.message ? error.message : String(error);
       var errorStack = error && error.stack ? error.stack : '';
 
-      // Log error details as strings so they show up properly in Puppeteer
+      // Log error details as strings so they survive intact through the WebSocket bridge into figma_get_console_logs
       console.error('🌉 [Desktop Bridge] Code execution error: [' + errorName + '] ' + errorMsg);
       if (errorStack) {
         console.error('🌉 [Desktop Bridge] Stack:', errorStack);
@@ -6371,4 +6372,4 @@ console.log('🌉 [Desktop Bridge] Ready to handle component requests');
 console.log('🌉 [Desktop Bridge] Plugin will stay open until manually closed');
 
 // Plugin stays open - no auto-close
-// UI iframe remains accessible for Puppeteer to read data from window object
+// UI iframe remains accessible so the in-iframe WebSocket bridge client can keep relaying state to the MCP server

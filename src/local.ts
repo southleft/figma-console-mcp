@@ -1226,7 +1226,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												? this.wsStartupError?.code === "EADDRINUSE"
 													? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use — most likely multiple Claude Desktop tabs or terminal sessions are running the Figma Console MCP server. Ask the user to close some sessions and restart.`
 													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
-														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected. TELL THE USER: Close and reopen the Desktop Bridge plugin in Figma to reconnect. The plugin's bootloader will automatically scan all ports in the range.`
+														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected. TELL THE USER: Close and reopen the Desktop Bridge plugin in Figma to reconnect. The plugin scans the whole port range (9223–9232) on launch and will pick up this server automatically.`
 														: `No connection to Figma Desktop. Open the Desktop Bridge plugin in Figma to connect.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`
 												: activeTransport === "websocket"
 													? `Connected via WebSocket Bridge to "${currentFileName || "unknown file"}" on port ${this.wsActualPort}. All design tools and console monitoring tools are available. Console logs are captured from the plugin sandbox (code.js). IMPORTANT: Always verify the file name before destructive operations when multiple files have the plugin open.`
@@ -3579,14 +3579,16 @@ if (currentFile === entryFile) {
 			const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 			const sourceDir = resolve(packageRoot, "figma-desktop-bridge");
 
-			// Try to set up stable directory with bootloader files
+			// Try to set up stable directory with the latest plugin files.
 			const stablePath = setupStablePluginDir(sourceDir);
 			if (stablePath && existsSync(stablePath)) {
 				console.log(stablePath);
 				console.error(
-					"\nImport this manifest in Figma once — the bootloader will\n" +
-					"automatically load the latest UI from the MCP server.\n" +
-					"You won't need to re-import when the server updates."
+					"\nImport this manifest in Figma (Plugins → Development →\n" +
+					"Import plugin from manifest). The MCP server refreshes the\n" +
+					"plugin files in this directory on every startup, so after a\n" +
+					"package update, just re-import the manifest in Figma to pick\n" +
+					"up the new code (Figma caches plugin files at the app level).\n"
 				);
 				process.exit(0);
 			}

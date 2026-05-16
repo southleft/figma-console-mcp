@@ -217,7 +217,7 @@
 
   <script>
     // ============================================================================
-    // GLOBAL STATE - Data storage for Puppeteer/MCP access
+    // GLOBAL STATE — backing store for the in-iframe WebSocket bridge client
     // ============================================================================
     window.__figmaVariablesData = null;
     window.__figmaVariablesReady = false;
@@ -659,7 +659,8 @@
     };
 
     // ============================================================================
-    // WEBSOCKET BRIDGE CLIENT - Fallback transport when CDP is unavailable
+    // WEBSOCKET BRIDGE CLIENT — primary transport from the plugin sandbox to
+    // the MCP server. Scans port range 9223–9232 for multiple instances.
     // ============================================================================
     (function() {
       // Port range for multi-instance support (matches server's port-discovery.ts)
