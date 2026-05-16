@@ -658,6 +658,44 @@ describe("token sync engine", () => {
       expect(content).toContain("--bg: #000000;");
     });
 
+    it("slugifies path segments with spaces and special chars (regression)", async () => {
+      // CollegeTown variable name "tailwind colors/purple/50" was producing
+      // invalid CSS "--ds-tailwind colors-purple-50" because the space in
+      // the first segment wasn't normalized.
+      const formatCssVars = await lazy();
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "P",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["tailwind colors", "purple", "50"],
+                type: "color",
+                values: { Default: { literal: "#FAF5FF" } },
+              },
+              {
+                path: ["semantic"],
+                type: "color",
+                values: {
+                  Default: { reference: "{tailwind colors.purple.50}" },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const result = formatCssVars(doc, { target: { format: "css-vars" } });
+      const content = result.files[0].content;
+      expect(content).toContain("--tailwind-colors-purple-50: #FAF5FF;");
+      // Alias reference also gets slugified.
+      expect(content).toContain(
+        "--semantic: var(--tailwind-colors-purple-50);",
+      );
+      // No CSS custom property identifier contains a space.
+      expect(content).not.toMatch(/--[\w-]*\s[\w-]*:/);
+    });
+
     it("applies prefix to every token name", async () => {
       const formatCssVars = await lazy();
       const doc: TokenDocument = {

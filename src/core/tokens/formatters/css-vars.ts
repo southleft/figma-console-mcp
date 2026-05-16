@@ -201,12 +201,17 @@ function emitTokenLines(
   out: string[],
   warnings: string[],
 ): void {
-  const cssName = `--${prefix}${token.path.join("-")}`;
+  // Every path segment must be a valid CSS identifier — slugify each to
+  // normalize spaces, dots, and other special characters that show up in
+  // real Figma variable names (e.g. "tailwind colors/purple/50").
+  const cssName = `--${prefix}${pathToCssName(token.path)}`;
 
   if (value.reference) {
-    // Alias → var(--other) so CSS cascading semantics are preserved.
-    const targetPath = value.reference.replace(/^\{|\}$/g, "").replace(/\./g, "-");
-    out.push(`  ${cssName}: var(--${prefix}${targetPath});`);
+    // Alias → var(--other) so CSS cascading semantics are preserved. The
+    // target path goes through the same slugify treatment as the source.
+    const refPath = value.reference.replace(/^\{|\}$/g, "").split(".");
+    const targetCssName = pathToCssName(refPath);
+    out.push(`  ${cssName}: var(--${prefix}${targetCssName});`);
     return;
   }
 
@@ -243,6 +248,19 @@ function emitTokenLines(
 
 function kebab(s: string): string {
   return s.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
+}
+
+/**
+ * Convert a path array to a CSS-safe custom property name. Each segment is
+ * slugified (lowercase, non-alphanumerics → hyphens) before joining.
+ *
+ * Examples:
+ *   ["color", "primary"]                  → "color-primary"
+ *   ["tailwind colors", "purple", "50"]   → "tailwind-colors-purple-50"
+ *   ["UI", "background-default"]          → "ui-background-default"
+ */
+function pathToCssName(path: string[]): string {
+  return path.map((seg) => slugify(seg)).join("-");
 }
 
 /**
