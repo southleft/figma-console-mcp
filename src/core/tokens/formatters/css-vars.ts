@@ -207,9 +207,27 @@ function emitTokenLines(
   const cssName = `--${prefix}${pathToCssName(token.path)}`;
 
   if (value.reference) {
+    // Detect the cross-library alias sentinel ({__library:VariableID:...}).
+    // Emitting var() for these produces broken CSS — the target doesn't
+    // live in this file's variable set. Emit a clear comment that names
+    // the original library variable ID instead, so the user can decide
+    // how to handle it (manual literal, library import, etc.).
+    const bareRef = value.reference.replace(/^\{|\}$/g, "");
+    const libMatch = bareRef.match(/^__library:(.+)$/);
+    if (libMatch || bareRef === "unknown") {
+      const originalId = libMatch ? libMatch[1] : "unknown";
+      warnings.push(
+        `Skipped ${token.path.join(".")} in CSS — references cross-library variable ${originalId}.`,
+      );
+      out.push(
+        `  /* ${cssName}: skipped — cross-library alias to ${originalId} */`,
+      );
+      return;
+    }
+
     // Alias → var(--other) so CSS cascading semantics are preserved. The
     // target path goes through the same slugify treatment as the source.
-    const refPath = value.reference.replace(/^\{|\}$/g, "").split(".");
+    const refPath = bareRef.split(".");
     const targetCssName = pathToCssName(refPath);
     out.push(`  ${cssName}: var(--${prefix}${targetCssName});`);
     return;
@@ -264,18 +282,70 @@ function pathToCssName(path: string[]): string {
 }
 
 /**
- * Render a primitive value as a CSS literal. Numbers gain a "px" suffix when
- * the token type is `dimension`. Strings pass through as-is (assumed to be
- * pre-formatted hex/oklch/rgba etc.).
+ * Render a primitive value as a CSS literal.
+ *   - Numbers gain a "px" suffix when the token type is `dimension`.
+ *   - Color-typed strings pass through (hex, oklch, rgba, hsl).
+ *   - fontFamily-typed strings get quoted (multi-word family names are
+ *     invalid CSS otherwise — e.g. "Geist Mono" must be `"Geist Mono"`).
+ *   - Plain string tokens get quoted too, since CSS treats unquoted
+ *     identifiers as keywords. Strings that look like a CSS color or unit
+ *     stay unquoted.
+ *   - Booleans render as their string form.
  */
 function formatCssValue(value: unknown, type: string): string {
   if (typeof value === "number") {
     if (type === "dimension") return `${value}px`;
     return String(value);
   }
-  if (typeof value === "string") return value;
+  if (typeof value === "string") {
+    // Color-typed values are always pre-formatted CSS color literals.
+    if (type === "color") return value;
+    // fontFamily and plain strings need quoting unless they look like a
+    // CSS-safe identifier with no special characters. Quote conservatively
+    // — over-quoting is fine, under-quoting breaks the cascade.
+    if (type === "fontFamily" || type === "string") {
+      return needsQuoting(value) ? JSON.stringify(value) : value;
+    }
+    // Dimensions and other types: pass through (already formatted upstream).
+    return value;
+  }
   if (typeof value === "boolean") return String(value);
   return JSON.stringify(value);
+}
+
+/**
+ * Returns true if a string value needs to be wrapped in CSS quotes. Multi-word
+ * values, values with special characters, or values that aren't pure
+ * alphanumeric identifiers all need quoting.
+ */
+function needsQuoting(s: string): boolean {
+  // Anything that already has quotes is fine.
+  if (/^["']/.test(s)) return false;
+  // Pure-numeric or unit-bearing values don't need quotes (they're not
+  // identifiers).
+  if (/^[\d.]+([a-z%]+)?$/.test(s)) return false;
+  // CSS keyword identifiers (single word, alphanumerics + hyphen only).
+  if (/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(s)) {
+    // Reserved CSS keywords that shouldn't be quoted (the user may have
+    // legitimately written e.g. "inherit", "currentColor", "transparent").
+    const cssKeywords = new Set([
+      "inherit",
+      "initial",
+      "unset",
+      "revert",
+      "currentColor",
+      "transparent",
+      "none",
+      "auto",
+    ]);
+    if (cssKeywords.has(s)) return false;
+    // Any other single identifier — for font-family this is OK unquoted
+    // ("Inter" works) but it's safer to quote for clarity. Keep unquoted
+    // to match the more common convention.
+    return false;
+  }
+  // Multi-word, special chars, etc. → quote.
+  return true;
 }
 
 function renderShadow(shadow: unknown): string | null {

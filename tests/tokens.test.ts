@@ -658,6 +658,85 @@ describe("token sync engine", () => {
       expect(content).toContain("--bg: #000000;");
     });
 
+    it("emits a comment instead of broken var() for cross-library aliases (regression)", async () => {
+      // CollegeTown round-trip surfaced 70 broken `var(--ds-unknown)` refs.
+      // The converter now stamps `{__library:VariableID:...}` for unresolvable
+      // aliases; the formatter must detect that and emit a comment, not
+      // a real var() reference.
+      const formatCssVars = await lazy();
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Mode",
+            modes: ["Dark"],
+            tokens: [
+              {
+                path: ["base", "chart-1"],
+                type: "color",
+                values: {
+                  Dark: { reference: "{__library:VariableID:4:4975}" },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const result = formatCssVars(doc, {
+        target: { format: "css-vars", prefix: "ds-" },
+      });
+      const content = result.files[0].content;
+      // No broken var() reference.
+      expect(content).not.toContain("var(--ds-unknown)");
+      expect(content).not.toContain("var(--ds---library");
+      // A traceable comment explains the skip.
+      expect(content).toContain(
+        "skipped — cross-library alias to VariableID:4:4975",
+      );
+      // Warning recorded.
+      expect(result.warnings.join("\n")).toContain(
+        "cross-library variable VariableID:4:4975",
+      );
+    });
+
+    it("quotes multi-word fontFamily values (regression)", async () => {
+      // CollegeTown's `font-mono` is "Geist Mono" — two unquoted identifiers
+      // in CSS is invalid. STRING and fontFamily values must be quoted when
+      // they contain spaces or special characters.
+      const formatCssVars = await lazy();
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Theme",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["font", "mono"],
+                type: "fontFamily",
+                values: { Default: { literal: "Geist Mono" } },
+              },
+              {
+                path: ["font", "sans"],
+                type: "fontFamily",
+                values: { Default: { literal: "Inter" } },
+              },
+              {
+                path: ["custom-string"],
+                type: "string",
+                values: { Default: { literal: "MCP created" } },
+              },
+            ],
+          },
+        ],
+      };
+      const result = formatCssVars(doc, { target: { format: "css-vars" } });
+      const content = result.files[0].content;
+      // Multi-word values get quoted.
+      expect(content).toContain('--font-mono: "Geist Mono";');
+      expect(content).toContain('--custom-string: "MCP created";');
+      // Single identifiers stay unquoted (Inter is valid as a bare identifier).
+      expect(content).toContain("--font-sans: Inter;");
+    });
+
     it("slugifies path segments with spaces and special chars (regression)", async () => {
       // CollegeTown variable name "tailwind colors/purple/50" was producing
       // invalid CSS "--ds-tailwind colors-purple-50" because the space in

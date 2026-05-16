@@ -267,10 +267,15 @@ function convertValue(
   if (isVariableAlias(rawValue)) {
     const target = variableById.get(rawValue.id);
     if (!target) {
+      // Cross-library alias — target is in a published library this file
+      // consumes, not in the local variable set. Preserve the original
+      // Figma variable ID in the reference syntax so round-trip can
+      // recover it AND formatters can detect this is unresolvable (vs a
+      // genuine local-path alias).
       warnings.push(
-        `Alias to unknown variable ID ${rawValue.id}; emitting literal "{unknown}".`,
+        `Alias to unknown variable ID ${rawValue.id} (likely a cross-library reference). Original ID preserved in reference for round-trip.`,
       );
-      return { reference: "{unknown}" };
+      return { reference: `{__library:${rawValue.id}}` };
     }
     // The DTCG alias path uses dots: "color.brand.primary".
     const dotPath = target.name.replace(/\//g, ".");
