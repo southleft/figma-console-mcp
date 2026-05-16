@@ -58,7 +58,11 @@ export function parseDtcg(input: ParseInput): ParseResult {
   const root = parseJson(input);
 
   // Document-level $extensions: pull out our MCP metadata if present.
+  // `fileMode` is the critical piece for splitByMode round-trip — when set,
+  // every token in the file represents that mode's value, so we label them
+  // accordingly instead of falling back to "Default".
   const meta: TokenDocument["meta"] = {};
+  let fileMode: string | undefined;
   const rootExt = (root as DtcgGroup).$extensions;
   if (rootExt && typeof rootExt === "object") {
     const mcpMeta = (rootExt as Record<string, unknown>)[FIGMA_MCP_EXTENSION_KEY];
@@ -67,6 +71,7 @@ export function parseDtcg(input: ParseInput): ParseResult {
       if (typeof m.figmaFileKey === "string") meta.figmaFileKey = m.figmaFileKey;
       if (typeof m.exportedAt === "string") meta.exportedAt = m.exportedAt;
       if (typeof m.mcpVersion === "string") meta.mcpVersion = m.mcpVersion;
+      if (typeof m.fileMode === "string") fileMode = m.fileMode;
     }
   }
 
@@ -80,7 +85,7 @@ export function parseDtcg(input: ParseInput): ParseResult {
       );
       continue;
     }
-    sets.push(extractSet(setKey, setNode as DtcgGroup, warnings));
+    sets.push(extractSet(setKey, setNode as DtcgGroup, warnings, fileMode));
   }
 
   return {
@@ -111,6 +116,7 @@ function extractSet(
   setKey: string,
   setNode: DtcgGroup,
   warnings: string[],
+  fileMode?: string,
 ): TokenSet {
   const tokens: Token[] = [];
   const modes = new Set<string>();
@@ -135,7 +141,7 @@ function extractSet(
   }
 
   // Walk the set's tree, collecting tokens.
-  walkGroup(setNode, [], undefined, tokens, modes, warnings);
+  walkGroup(setNode, [], undefined, tokens, modes, warnings, fileMode);
 
   return {
     name: originalName ?? setKey,
@@ -154,6 +160,7 @@ function walkGroup(
   tokens: Token[],
   modes: Set<string>,
   warnings: string[],
+  fileMode?: string,
 ): void {
   // Group-level $type provides inheritance for descendant tokens that lack
   // their own $type, per the DTCG spec.
@@ -178,11 +185,20 @@ function walkGroup(
         value as Record<string, unknown>,
         groupType,
         warnings,
+        fileMode,
       );
       tokens.push(token);
       for (const mode of Object.keys(token.values)) modes.add(mode);
     } else {
-      walkGroup(value as DtcgGroup, childPath, groupType, tokens, modes, warnings);
+      walkGroup(
+        value as DtcgGroup,
+        childPath,
+        groupType,
+        tokens,
+        modes,
+        warnings,
+        fileMode,
+      );
     }
   }
 }
@@ -196,6 +212,7 @@ function extractToken(
   node: Record<string, unknown>,
   inheritedType: TokenType | undefined,
   warnings: string[],
+  fileMode?: string,
 ): Token {
   const rawType = node.$type;
   let type: TokenType;
@@ -225,28 +242,20 @@ function extractToken(
       : undefined;
   const stashedModes = mcpExt?.modes as Record<string, unknown> | undefined;
 
-  // The primary mode is whatever $value carries directly. If the set has
-  // multiple modes, the caller will know which mode this is from context;
-  // we use "Default" as a placeholder, then the calling set-level walker
-  // can rewrite it if needed. For round-trip cleanliness, we treat any
-  // non-stashed file as single-mode "Default".
-  values["Default"] = decodeValue(node.$value);
+  // Decide which mode name to assign to the primary $value.
+  //   1. If the file declares a fileMode (splitByMode output), use that.
+  //   2. Otherwise fall back to "Default" — the parser can't know the
+  //      mode without that hint.
+  // Then absorb any stashedModes (one-file-multi-mode output) verbatim.
+  const primaryMode = fileMode ?? "Default";
+  values[primaryMode] = decodeValue(node.$value);
 
   if (stashedModes) {
-    // The primary mode in a multi-mode stashed file isn't "Default" — it's
-    // the first mode listed in the set. We don't have the set's mode list
-    // here; the formatter writes the primary mode's value as $value with
-    // no annotation, expecting the parser to recover the mode list from
-    // the set's $extensions or from the keys present in the stash. For
-    // Phase 1 we relabel "Default" → the canonical mode list found in
-    // the stash plus an inferred primary.
-
-    // Strategy: keep the primary as "Default" for now, mark the stashed
-    // modes verbatim. The Figma converter rewrites mode names based on
-    // the collection it lives in. End-to-end round-trip works because
-    // the stash + primary recover the full mode set.
     for (const [modeName, modeValue] of Object.entries(stashedModes)) {
-      values[modeName] = decodeValue(modeValue);
+      // Don't overwrite the primary if a stashed entry collides with it.
+      if (modeName !== primaryMode) {
+        values[modeName] = decodeValue(modeValue);
+      }
     }
   }
 

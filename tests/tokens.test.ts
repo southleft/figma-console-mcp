@@ -207,6 +207,51 @@ describe("token sync engine", () => {
       expect(darkContent).toContain('"$value": "#000000"');
     });
 
+    it("splitByMode files round-trip with correct mode labels (regression)", () => {
+      // The CollegeTown failure: splitByMode wrote per-mode files but
+      // the parser labeled every token as "Default", so the merge couldn't
+      // recombine multi-mode values. Verify that exporting splitByMode and
+      // re-parsing both files reassembles the original mode-keyed values.
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Mode",
+            modes: ["Light", "Dark"],
+            tokens: [
+              {
+                path: ["bg"],
+                type: "color",
+                values: {
+                  Light: { literal: "#FFFFFF" },
+                  Dark: { literal: "#000000" },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const formatted = formatDtcg(doc, {
+        target: { format: "dtcg", splitByMode: true },
+      });
+      expect(formatted.files).toHaveLength(2);
+
+      // Each file should declare its fileMode in document-level $extensions.
+      const lightFile = formatted.files.find((f) => f.path.includes("light"))!;
+      const darkFile = formatted.files.find((f) => f.path.includes("dark"))!;
+      expect(lightFile.content).toContain('"fileMode": "Light"');
+      expect(darkFile.content).toContain('"fileMode": "Dark"');
+
+      // Parse both files and verify modes are correctly labeled.
+      const lightParsed = parseDtcg({ payload: lightFile.content });
+      const darkParsed = parseDtcg({ payload: darkFile.content });
+      expect(lightParsed.document.sets[0].tokens[0].values).toEqual({
+        Light: { literal: "#FFFFFF" },
+      });
+      expect(darkParsed.document.sets[0].tokens[0].values).toEqual({
+        Dark: { literal: "#000000" },
+      });
+    });
+
     it("produces stable output across runs (deterministic key ordering)", () => {
       const doc: TokenDocument = {
         sets: [

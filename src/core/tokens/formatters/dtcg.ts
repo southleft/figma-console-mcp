@@ -78,6 +78,7 @@ export function formatDtcg(
           content: serializeAsDtcg(
             { sets: [{ ...set, modes: [mode], tokens: fileTokens }], meta: doc.meta },
             warnings,
+            mode,
           ),
         });
       }
@@ -97,7 +98,7 @@ export function formatDtcg(
         }));
       files.push({
         path: filenameFor(opts, undefined, mode),
-        content: serializeAsDtcg({ sets: fileSets, meta: doc.meta }, warnings),
+        content: serializeAsDtcg({ sets: fileSets, meta: doc.meta }, warnings, mode),
       });
     }
   } else if (splitByCollection) {
@@ -165,24 +166,31 @@ function slugify(s: string): string {
 /**
  * Serialize a TokenDocument as DTCG JSON. Returns a pretty-printed JSON string
  * with stable key order so git diffs stay minimal across runs.
+ *
+ * When `fileMode` is provided (splitByMode output), it's stamped into
+ * document-level $extensions so the parser can recover which mode this
+ * file represents — otherwise the parser sees only `$value` literals and
+ * labels them "Default", which breaks round-trip diffs on multi-mode files.
  */
-function serializeAsDtcg(doc: TokenDocument, warnings: string[]): string {
+function serializeAsDtcg(
+  doc: TokenDocument,
+  warnings: string[],
+  fileMode?: string,
+): string {
   // Build the nested DTCG group tree by walking every token's path and
   // building groups along the way.
   const tree: DtcgGroup = {};
 
   // Document-level $extensions: stash file-level metadata (Figma file key,
-  // export timestamp, MCP version) so round-trip preserves it.
-  if (doc.meta) {
-    const docExtensions: Record<string, unknown> = {};
-    const mcpDocMeta: Record<string, unknown> = {};
-    if (doc.meta.figmaFileKey) mcpDocMeta.figmaFileKey = doc.meta.figmaFileKey;
-    if (doc.meta.exportedAt) mcpDocMeta.exportedAt = doc.meta.exportedAt;
-    if (doc.meta.mcpVersion) mcpDocMeta.mcpVersion = doc.meta.mcpVersion;
-    if (Object.keys(mcpDocMeta).length > 0) {
-      docExtensions[FIGMA_MCP_EXTENSION_KEY] = mcpDocMeta;
-      tree.$extensions = docExtensions;
-    }
+  // export timestamp, MCP version, optionally the file's mode for
+  // splitByMode output) so round-trip preserves it.
+  const mcpDocMeta: Record<string, unknown> = {};
+  if (doc.meta?.figmaFileKey) mcpDocMeta.figmaFileKey = doc.meta.figmaFileKey;
+  if (doc.meta?.exportedAt) mcpDocMeta.exportedAt = doc.meta.exportedAt;
+  if (doc.meta?.mcpVersion) mcpDocMeta.mcpVersion = doc.meta.mcpVersion;
+  if (fileMode) mcpDocMeta.fileMode = fileMode;
+  if (Object.keys(mcpDocMeta).length > 0) {
+    tree.$extensions = { [FIGMA_MCP_EXTENSION_KEY]: mcpDocMeta };
   }
 
   for (const set of doc.sets) {
