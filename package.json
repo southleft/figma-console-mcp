@@ -60,11 +60,9 @@
 		"@modelcontextprotocol/sdk": "^1.26.0",
 		"agents": "^0.7.1",
 		"axe-core": "^4.11.2",
-		"chrome-remote-interface": "^0.33.2",
 		"jsdom": "^29.0.1",
 		"pino": "^9.5.0",
 		"pino-pretty": "^13.0.0",
-		"puppeteer-core": "^23.11.1",
 		"uuid": "^11.0.3",
 		"ws": "^8.19.0",
 		"zod": "^3.25.76"
