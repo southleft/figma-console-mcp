@@ -25,5 +25,5 @@ Before any release, read `.notes/RELEASING.md` and follow all five phases. Run `
 
 - Entry points: `src/local.ts` (local/NPX mode), `src/index.ts` (Cloudflare Workers)
 - Tool registration: `registerXxxTools(server, getFigmaAPI, ...)` pattern in `src/tools/`
-- Desktop Bridge: WebSocket (`src/core/websocket-server.ts`) with CDP fallback
+- Desktop Bridge: WebSocket (`src/core/websocket-server.ts`)
 - Schema compatibility: No `z.any()` — Gemini requires strictly typed Zod schemas

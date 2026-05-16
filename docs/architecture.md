@@ -155,13 +155,14 @@ The MCP server communicates with the Desktop Bridge via WebSocket:
 
 ### Transport Layer
 
-The MCP server uses a transport abstraction (`IFigmaConnector` interface) with three connector implementations:
+The MCP server uses a transport abstraction (`IFigmaConnector` interface) with two connector implementations:
 
 | Connector | Class | Mode | Transport |
 |-----------|-------|------|-----------|
 | Local WebSocket | `WebSocketConnector` | Local | `ws://localhost:9223–9232` |
-| Local Desktop | `FigmaDesktopConnector` | Local | CDP fallback |
 | Cloud Relay | `CloudWebSocketConnector` | Remote | Fetch RPC to Durable Object |
+
+(The local `FigmaDesktopConnector` / Puppeteer-CDP path that lived alongside `WebSocketConnector` for a transitional period was removed entirely in Phase 3 of the cleanup branch — all tools now route through the WebSocket plugin bridge.)
 
 #### WebSocket Transport (Local)
 
