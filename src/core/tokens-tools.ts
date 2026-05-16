@@ -15,7 +15,13 @@
  * stay zero-arg in normal use.
  */
 
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
+import {
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+} from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -208,20 +214,28 @@ async function handleExport(
   }
 
   // 7. If outputPath is set, write to disk. Otherwise return inline.
+  // Output routing: canonical-format files (matching config.source.canonical)
+  // go to source.dir; everything else goes to generated.dir.
   const dryRun = args.strategy === "dry-run";
-  const outputBase = resolveOutputBase(args.outputPath, loaded);
-  let writtenPaths: string[] = [];
+  const writtenPaths: string[] = [];
 
-  if (outputBase && !dryRun) {
+  if (!dryRun) {
     for (const file of allFiles) {
+      const base = resolveOutputBaseForFormat(
+        args.outputPath,
+        loaded,
+        file.format,
+      );
+      if (!base) continue; // No config or outputPath → caller will get content inline.
       const fullPath = isAbsolute(file.path)
         ? file.path
-        : join(outputBase, file.path);
+        : join(base, file.path);
       mkdirSync(dirname(fullPath), { recursive: true });
       writeFileSync(fullPath, file.content, "utf-8");
       writtenPaths.push(fullPath);
     }
   }
+  const outputBase = writtenPaths.length > 0 ? "(multiple)" : null;
 
   return {
     content: [
@@ -390,18 +404,31 @@ function normalizeFigmaPayload(raw: any): {
 }
 
 /**
- * Resolve where to write output files. If outputPath is provided and absolute,
- * use it directly. If relative, resolve against the project root (config dir)
- * or cwd. If no outputPath, return null (caller returns content inline).
+ * Resolve where to write output files for a specific format. Canonical formats
+ * (matching config.source.canonical) go to source.dir; everything else goes
+ * to generated.dir. Caller-supplied outputPath wins over both.
  */
-function resolveOutputBase(
+function resolveOutputBaseForFormat(
   outputPath: string | undefined,
   loaded: ReturnType<typeof loadTokensConfig>,
+  format: string,
 ): string | null {
-  if (!outputPath && !loaded?.config.generated?.dir) return null;
-  const base = outputPath ?? loaded!.config.generated!.dir;
-  if (isAbsolute(base)) return base;
-  return resolve(loaded?.projectRoot ?? process.cwd(), base);
+  // Explicit outputPath always wins.
+  if (outputPath) {
+    return isAbsolute(outputPath)
+      ? outputPath
+      : resolve(loaded?.projectRoot ?? process.cwd(), outputPath);
+  }
+  if (!loaded) return null;
+  // Canonical format goes to source.dir.
+  if (format === loaded.config.source.canonical) {
+    return resolve(loaded.projectRoot, loaded.config.source.dir);
+  }
+  // Otherwise generated.dir.
+  if (loaded.config.generated?.dir) {
+    return resolve(loaded.projectRoot, loaded.config.generated.dir);
+  }
+  return null;
 }
 
 /**
@@ -436,9 +463,6 @@ function collectInputFiles(
   }
   const pattern = loaded.config.source.pattern ?? "*.tokens.json";
   const suffix = pattern.replace(/^\*/, "");
-  // Synchronous readdir to keep this dependency-free.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { readdirSync } = require("node:fs") as typeof import("node:fs");
   const entries = readdirSync(sourceDir);
   return entries
     .filter((e: string) => e.endsWith(suffix))
