@@ -31,6 +31,7 @@ import { wrapServerForIdentity } from "./core/identity.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
 import { registerWriteTools } from "./core/write-tools.js";
+import { registerTokensTools } from "./core/tokens-tools.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
 
@@ -993,6 +994,9 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Register all write/manipulation tools via shared function
 		registerWriteTools(this.server, getCloudDesktopConnector);
 
+		// Register token sync tools — figma_export_tokens and figma_import_tokens.
+		registerTokensTools(this.server, getCloudDesktopConnector);
+
 		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)
 		registerFigJamTools(this.server, getCloudDesktopConnector);
 
@@ -1444,6 +1448,7 @@ export default {
 
 			// Register all write/manipulation tools via shared function
 			registerWriteTools(statelessServer, getCloudDesktopConnector);
+			registerTokensTools(statelessServer, getCloudDesktopConnector);
 
 			// Register FigJam-specific tools
 			registerFigJamTools(statelessServer, getCloudDesktopConnector);
