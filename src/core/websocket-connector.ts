@@ -30,7 +30,7 @@ export class WebSocketConnector implements IFigmaConnector {
     logger.info('WebSocket connector initialized');
   }
 
-  getTransportType(): 'cdp' | 'websocket' {
+  getTransportType(): 'websocket' {
     return 'websocket';
   }
 

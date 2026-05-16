@@ -17,7 +17,6 @@ import { BrowserManager, type Env } from "./browser-manager.js";
 import { ConsoleMonitor } from "./core/console-monitor.js";
 import { getConfig } from "./core/config.js";
 import { createChildLogger } from "./core/logger.js";
-import { testBrowserRendering } from "./test-browser.js";
 import { FigmaAPI, extractFileKey, formatVariables, formatComponentData } from "./core/figma-api.js";
 import { registerFigmaAPITools } from "./core/figma-tools.js";
 import { registerDesignCodeTools } from "./core/design-code-tools.js";
@@ -2149,7 +2148,7 @@ export default {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
 						oauth_legacy: ["/oauth/authorize", "/oauth/callback"],
-						utility: ["/test-browser", "/health"]
+						utility: ["/health"]
 					},
 					oauth_configured: !!env.FIGMA_OAUTH_CLIENT_ID
 				}),
@@ -2157,14 +2156,6 @@ export default {
 					headers: { "Content-Type": "application/json" },
 				},
 			);
-		}
-
-		// Browser Rendering API test endpoint
-		if (url.pathname === "/test-browser") {
-			const results = await testBrowserRendering(env);
-			return new Response(JSON.stringify(results, null, 2), {
-				headers: { "Content-Type": "application/json" },
-			});
 		}
 
 		// Serve favicon

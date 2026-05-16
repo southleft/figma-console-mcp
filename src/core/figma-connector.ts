@@ -8,7 +8,7 @@
 export interface IFigmaConnector {
   // Lifecycle
   initialize(): Promise<void>;
-  getTransportType(): 'cdp' | 'websocket';
+  getTransportType(): 'websocket';
 
   // Core execution
   executeInPluginContext<T = any>(code: string): Promise<T>;

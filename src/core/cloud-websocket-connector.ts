@@ -32,7 +32,7 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 		}
 	}
 
-	getTransportType(): 'cdp' | 'websocket' {
+	getTransportType(): 'websocket' {
 		return 'websocket';
 	}
 
