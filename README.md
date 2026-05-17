@@ -6,21 +6,25 @@
 [![Documentation](https://img.shields.io/badge/docs-docs.figma--console--mcp.southleft.com-0D9488)](https://docs.figma-console-mcp.southleft.com)
 [![Sponsor](https://img.shields.io/badge/Sponsor-southleft-ea4aaa?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/southleft)
 
-> **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, and **debugging**.
+> **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, **debugging**, and **bidirectional token sync**.
 
-> **🆕 Version History & Time-Series Awareness (v1.23.0):** Six new tools turn a Figma file from a static snapshot into a queryable history — list versions, snapshot any past version, diff two versions for component/binding deltas, generate markdown changelogs ready for release notes, and trace exactly when (and by whom) a property or variant was introduced via a binary-search blame walker. Author attribution flows from autosaves, not just labeled releases. [See what's new →](CHANGELOG.md#1230---2026-05-09)
+> **🆕 Bidirectional Token Sync (v1.27.0):** Two new tools — `figma_export_tokens` and `figma_import_tokens` — replace Style Dictionary and Tokens Studio's export pipeline for popular styling methods. Pull every variable across every collection and mode as canonical DTCG JSON + CSS custom properties; edit a hex value in code; push the delta back to Figma. Diff-aware merge produces exactly one API call per changed value, not a full collection rewrite. 103 tools total. [See what's new →](CHANGELOG.md#1270---2026-05-16)
 
 ## What is this?
 
 Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 - **🎨 Design system extraction** - Pull variables, components, and styles
+- **🔁 Bidirectional token sync** - Export Figma variables to DTCG JSON + CSS custom properties; push code-side edits back to Figma. Replaces Style Dictionary and Tokens Studio's export pipeline.
 - **📸 Visual debugging** - Take screenshots for context
 - **✏️ Design creation** - Create UI components, frames, and layouts directly in Figma
 - **🔧 Variable management** - Create, update, rename, and delete design tokens
+- **🕰 Version history & time-series awareness** - List versions, diff snapshots, generate markdown changelogs, trace property/variant introduction via binary-search blame
 - **⚡ Real-time monitoring** - Watch console logs from the Desktop Bridge plugin
 - **📌 FigJam boards** - Create stickies, flowcharts, tables, and code blocks on collaborative boards
+- **🎞️ Slides presentations** - Build and manage Figma Slides decks programmatically
 - **♿ Accessibility scanning** - 14 WCAG design checks with conformance level tagging, component scorecards, axe-core code scanning, design-to-code parity
+- **🛡 Cross-MCP identity** - Every tool response carries `_mcp: "figma-console-mcp"` and errors are prefixed `[figma-console-mcp]` so attribution stays unambiguous in agents running multiple Figma MCPs
 - **☁️ Cloud Write Relay** - Web AI clients (Claude.ai, v0, Replit) can design in Figma via cloud pairing
 - **🔄 Four ways to connect** - Remote SSE, Cloud Mode, NPX, or Local Git
 
@@ -798,27 +802,28 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.23.0 (Stable) - Production-ready with version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 103 tools, Comments API, and MCP Apps
+**Current Status:** v1.27.0 (Stable) - Production-ready with bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **103 tools** (Local) / **95 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
 
 **Recent Releases:**
-- [x] **v1.17.0** - Figma Slides Support: 15 new tools for managing presentations — slides, transitions, content, reordering, and navigation. Inspired by Toni Haidamous (PR #11).
-- [x] **v1.16.0** - FigJam Support: 9 new tools for creating and reading FigJam boards — stickies, flowcharts, tables, code blocks, and connection graphs. Community-contributed by klgral and lukemoderwell.
-- [x] **v1.12.0** - Cloud Write Relay: web AI clients (Claude.ai, v0, Replit, Lovable) can create and modify Figma designs via cloud relay pairing — no Node.js required
-- [x] **v1.11.2** - Screenshot fix: `figma_take_screenshot` works without explicit `nodeId` in WebSocket mode
-- [x] **v1.11.1** - Doc generator fixes: clean markdown tables, Storybook links, property metadata filtering
-- [x] **v1.11.0** - Complete CDP removal, improved multi-file active tracking with focus detection
-- [x] **v1.10.0** - Multi-instance support (dynamic port fallback 9223–9232, multi-connection plugin, instance discovery)
-- [x] **v1.9.0** - Figma Comments tools, improved port conflict detection
-- [x] **v1.8.0** - WebSocket Bridge transport (CDP-free connectivity), real-time selection/document tracking, `figma_get_selection` + `figma_get_design_changes` tools
-- [x] **v1.7.0** - MCP Apps (Token Browser, Design System Dashboard), batch variable operations, design-code parity tools
-- [x] **v1.5.0** - Node manipulation tools, component property management, component set arrangement
-- [x] **v1.3.0** - Design creation via `figma_execute`, variable CRUD operations
+- [x] **v1.27.0** - Bidirectional token sync: `figma_export_tokens` + `figma_import_tokens` replace Style Dictionary and Tokens Studio's export pipeline. Canonical DTCG JSON + CSS custom properties. Diff-aware merge with round-trip ID preservation via `$extensions["figma-console-mcp"]`. Apply phase pushes hex-value edits back to Figma via the plugin bridge. Verified end-to-end against 713-token + 280-token design systems.
+- [x] **v1.26.0** - Internal cleanup + cross-MCP identity: Local-mode CDP/Puppeteer transport removed entirely (WebSocket-only). `figma_diagnose` tool for designer-readable health checks. Every response tagged `_mcp: "figma-console-mcp"`; errors prefixed `[figma-console-mcp]` so attribution is unambiguous when running multiple Figma MCPs. Plugin status pill now reads `Local · ready` / `Cloud · ready` / `Local + Cloud · ready`. Net diff: −7,299 lines, plugin re-import optional.
+- [x] **v1.25.0** - Description + Dev Mode annotation tracking in `figma_diff_versions` via plugin session buffer. Description and annotation edits made during a session now appear in diff output (REST API doesn't return these — bridged through the plugin's `documentchange` listener).
+- [x] **v1.24.0** - Honest scope coverage on version diffs. `scope_coverage` object surfaces what `figma_diff_versions` does and doesn't track; always-on coverage warnings prevent silent invisibility on token-value changes and component-instance placements.
+- [x] **v1.23.0** - Version History & Time-Series Awareness: 6 new tools (list versions, snapshot any past version, diff two versions for component/binding deltas, generate markdown changelogs, trace property/variant introduction via binary-search blame walker). Author attribution flows from autosaves, not just labeled releases.
+- [x] **v1.17.0** - Figma Slides support: 15 tools for managing presentations.
+- [x] **v1.16.0** - FigJam support: 9 tools for creating and reading FigJam boards.
+- [x] **v1.12.0** - Cloud Write Relay: web AI clients can create and modify Figma designs without Node.js.
+- [x] **v1.11.0** - Complete CDP removal, improved multi-file active tracking with focus detection.
+- [x] **v1.10.0** - Multi-instance support (dynamic port fallback 9223–9232, multi-connection plugin, instance discovery).
+- [x] **v1.9.0** - Figma Comments tools, improved port conflict detection.
+- [x] **v1.8.0** - WebSocket Bridge transport (CDP-free connectivity), real-time selection/document tracking.
+- [x] **v1.7.0** - MCP Apps (Token Browser, Design System Dashboard), batch variable operations, design-code parity tools.
 
 **Coming Next:**
+- [ ] **Token sync Phase 2** - Tailwind v4 `@theme`, SCSS, TypeScript module, Style Dictionary v3 source format, `toCreate` apply orchestration, `toDelete` for `replace` strategy, cross-library variable resolution via `getVariableByIdAsync`.
 - [ ] **Component template library** - Common UI pattern generation
 - [ ] **Visual regression testing** - Screenshot diff capabilities
 - [ ] **Design linting** - Automated compliance and accessibility checks
-- [ ] **AI enhancements** - Intelligent component suggestions and auto-layout optimization
 
 **📖 [Full Roadmap](docs/ROADMAP.md)**
 

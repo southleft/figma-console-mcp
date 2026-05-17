@@ -1,14 +1,20 @@
 /**
  * MCP tool registrar for figma_export_tokens and figma_import_tokens.
  *
- * Phase 1 scope:
- *   - figma_export_tokens: working for DTCG output. Other formats return a
- *     helpful "scaffolded but not yet implemented" error.
- *   - figma_import_tokens: working for DTCG input. Other formats return the
- *     same stub error. Computes a diff preview against current Figma state.
- *     Apply mutations are stubbed in Phase 1 (return the diff plan; future
- *     phase wires this into the existing figma_setup_design_tokens /
- *     figma_batch_create_variables tools).
+ * Current scope (v1.27.0):
+ *   - figma_export_tokens: working for DTCG JSON (canonical) and CSS
+ *     custom properties output. Other formats (Tailwind v4, SCSS, TS
+ *     module, Tokens Studio, Style Dictionary v3) are scaffolded and
+ *     return TokenFormatNotImplementedError with a helpful message
+ *     directing users to DTCG.
+ *   - figma_import_tokens: working for DTCG JSON input with full
+ *     diff-aware merge. Apply phase pushes value updates (toUpdate) to
+ *     Figma via the plugin bridge — verified end-to-end against real
+ *     multi-mode design systems. toCreate / toDelete / alias-target
+ *     updates surface in the diff plan but are not yet wired through
+ *     the apply phase (use figma_setup_design_tokens /
+ *     figma_batch_create_variables / figma_delete_variable manually for
+ *     those for now).
  *
  * Both tools auto-discover `tokens.config.json` at the project root and use
  * its source/generated/modes/conflictResolution settings as defaults. They
@@ -49,7 +55,7 @@ const MCP_VERSION = "1.27.0";
 
 const EXPORT_TOOL_DESCRIPTION = `Export Figma variables to design token files in your codebase. Bidirectional with figma_import_tokens — together they replace Style Dictionary and Tokens Studio's export pipeline for the popular styling methods.
 
-CANONICAL OUTPUT IS DTCG JSON (https://tr.designtokens.org/format/). Additional output formats (CSS custom properties, Tailwind v4 @theme, SCSS, TS modules, etc.) are scaffolded in this release — DTCG is the only format fully implemented in Phase 1.
+CANONICAL OUTPUT IS DTCG JSON (https://tr.designtokens.org/format/). CSS custom properties is also fully implemented and produces \`:root\` + \`.dark\` + \`[data-theme=...]\` mode selectors with proper string quoting and composite-token expansion. Remaining formats (Tokens Studio, Tailwind v4 @theme, Tailwind v3 config, SCSS, Less, TypeScript module, JSON flat/nested, Style Dictionary v3) are scaffolded but throw TokenFormatNotImplementedError — convert via DTCG for now or open an issue with your specific styling stack.
 
 ZERO-ARG USAGE: With a tokens.config.json at your project root, just call the tool with no args — it picks up source dir, output formats, modes, prefix, etc. from config. See the response's \`suggestedScaffold\` payload when no config is detected — present it to the user, write the scaffold via your file tools, then call again.
 
@@ -59,7 +65,9 @@ ROUND-TRIP SAFETY: Figma variable IDs are preserved in DTCG \`$extensions["figma
 
 const IMPORT_TOOL_DESCRIPTION = `Push design tokens from your codebase into Figma as variables. Bidirectional with figma_export_tokens.
 
-ACCEPTS: DTCG JSON (canonical, Phase 1 fully supported). Tokens Studio JSON, CSS custom properties, Tailwind v4 @theme, SCSS, and Style Dictionary v3 are scaffolded but return a NotImplementedError in this release — convert to DTCG first via figma_export_tokens or hand-author DTCG. Use \`format: "auto"\` to sniff the input.
+ACCEPTS: DTCG JSON (canonical, fully supported including round-trip metadata preservation). Tokens Studio JSON, CSS custom properties, Tailwind v4 @theme, SCSS, and Style Dictionary v3 are scaffolded but return a NotImplementedError — convert to DTCG first via figma_export_tokens or hand-author DTCG. Use \`format: "auto"\` to sniff the input.
+
+APPLY PHASE: Value updates (toUpdate entries) are pushed to Figma via the plugin bridge in a batched single round-trip — verified end-to-end on multi-mode collections. Partial-success semantics: per-variable errors surface in applyResult.errors[] without failing the batch. toCreate (new variables), toDelete (Figma-only tokens), and alias-target updates are reported in the diff plan but not yet wired through the apply phase — use figma_setup_design_tokens / figma_batch_create_variables / figma_delete_variable manually for those operations, or wait for a future minor version.
 
 DIFF-AWARE: Default \`strategy: "merge"\` diffs against current Figma state and applies only deltas. The hacked-color scenario — designer edits one hex value in their CSS — produces exactly one Figma API update, not a full collection rewrite. Match priority: Figma variable ID (in \`$extensions["figma-console-mcp"].variableId\`), then exact token path, then value fingerprint.
 
@@ -100,7 +108,7 @@ export function registerExportTokensTool(
               type: "text" as const,
               text: JSON.stringify({
                 error: err instanceof Error ? err.message : String(err),
-                hint: "If this is a NotImplementedError for a non-DTCG format, export to 'dtcg' instead — that's the only format fully implemented in Phase 1. The canonical DTCG JSON can be consumed by Style Dictionary v4 or any other DTCG-aware tooling.",
+                hint: "If this is a TokenFormatNotImplementedError for a non-DTCG/non-CSS format, export to 'dtcg' or 'css-vars' instead — those are the fully-implemented formats. The canonical DTCG JSON can be consumed by Style Dictionary v4 or any other DTCG-aware tooling.",
               }),
             },
           ],
@@ -582,7 +590,7 @@ function collectInputFiles(
       "[figma-console-mcp] No payload, files, or tokens.config.json supplied. Pass one of: { payload }, { files }, or have tokens.config.json at the project root.",
     );
   }
-  // Walk the source dir for *.tokens.json files. Phase 1 does a flat scan;
+  // Walk the source dir for *.tokens.json files. Currently a flat scan;
   // the config's source.pattern is honored as a simple glob (just suffix
   // matching for now).
   const sourceDir = resolve(loaded.projectRoot, loaded.config.source.dir);
@@ -666,8 +674,8 @@ function mergeDocuments(docs: TokenDocument[]): TokenDocument {
 
 /**
  * Compute a diff plan between Figma's current state (left) and the code's
- * proposed state (right). Phase 1 returns a structured summary; full apply
- * logic ships in Phase 2.
+ * proposed state (right). Returns a structured diff plan; value-update
+ * mutations are applied via the plugin bridge below.
  */
 function computeDiffPlan(
   figmaDoc: TokenDocument,
@@ -718,7 +726,7 @@ function computeDiffPlan(
 
   for (const key of figmaTokens.keys()) {
     if (!codeTokens.has(key)) {
-      // Phase 1 reports as "would delete if strategy=replace" but defaults to
+      // Reports as "would delete if strategy=replace" but defaults to
       // preserve under merge strategy.
       toDelete.push({ path: key });
     }
@@ -824,16 +832,17 @@ function buildCollectionModeMap(
  *   - FLOAT-typed number → number
  *   - STRING-typed string → string
  *   - BOOLEAN → boolean
- *   - Alias references are unsupported in Phase 2 apply (would need to
- *     resolve the target variable ID); returns null and the caller skips
- *     the update.
+ *   - Alias references are not yet supported in the apply phase (would need
+ *     to resolve the target variable ID); the discriminated return signals
+ *     this case so the caller surfaces a warning rather than silently
+ *     dropping the update.
  */
 function tokenValueToFigma(
   value: { literal?: unknown; reference?: string },
   resolvedType: VariableUpdate["resolvedType"],
 ): { kind: "value"; value: unknown } | { kind: "skip-alias"; reference: string } | { kind: "skip-empty" } {
   if (value.reference) {
-    // Phase 2.5 will resolve the referenced variable's Figma ID and emit
+    // A future minor version will resolve the referenced variable's Figma ID and emit
     // { type: "VARIABLE_ALIAS", id }. For now, skip alias updates so we
     // don't accidentally wipe a reference with a literal — and surface a
     // warning so the user knows the diff plan promised an update that
@@ -956,7 +965,7 @@ function buildUpdatePayloads(
       const conversion = tokenValueToFigma(value as any, resolvedType);
       if (conversion.kind === "skip-alias") {
         warnings.push(
-          `Skipped ${entry.path} (mode "${modeName}") — alias reference "${conversion.reference}" updates are not yet supported in the apply phase (Phase 2.5). To update this token, edit the alias target's value instead, or hard-code a literal hex value in the source file.`,
+          `Skipped ${entry.path} (mode "${modeName}") — alias reference "${conversion.reference}" updates are not yet supported in the apply phase. To update this token, edit the alias target's value instead, or hard-code a literal hex value in the source file.`,
         );
         continue;
       }

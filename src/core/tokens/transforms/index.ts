@@ -7,8 +7,10 @@
  * normalization; DTCG output skips transforms entirely since it preserves the
  * source representation).
  *
- * Phase 1 ships stubs that throw NotImplementedError. The DTCG round-trip
- * doesn't need any transforms because DTCG preserves values as-is.
+ * Currently ships stubs that pass values through unchanged. The DTCG and
+ * CSS variables formatters don't need transforms because they handle their
+ * own value formatting inline. Transforms will be implemented when the
+ * Tailwind v4 / SCSS / TS module formatters land.
  */
 
 import type { Token, TokenValue } from "../types.js";

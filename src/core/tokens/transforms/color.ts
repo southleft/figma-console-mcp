@@ -1,6 +1,8 @@
 /**
  * Color value transforms. Convert between hex, hex8 (with alpha), rgba, oklch,
- * and hsl representations. Phase 1 stub — DTCG output preserves source values.
+ * and hsl representations. Stub — DTCG and CSS-vars output preserve source
+ * values; format-specific transforms will land alongside the Tailwind v4 /
+ * SCSS formatters.
  */
 
 import type { Token, TokenValue } from "../types.js";
@@ -11,7 +13,8 @@ export const colorToFormat: Transform = (
   _token: Token,
   _opts: TransformOptions,
 ) => {
-  // Phase 1: pass through. The DTCG formatter doesn't need transforms — it
-  // preserves source values. Future phases will implement hex↔oklch↔rgba etc.
+  // Pass through. The DTCG and CSS-vars formatters don't need transforms —
+  // they preserve / format source values inline. Hex↔oklch↔rgba etc. will be
+  // implemented when format-specific output requires conversion.
   return value;
 };

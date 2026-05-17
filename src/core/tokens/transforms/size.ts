@@ -1,5 +1,6 @@
 /**
- * Dimension/size value transforms. Convert px ↔ rem ↔ pt ↔ dp. Phase 1 stub.
+ * Dimension/size value transforms. Convert px ↔ rem ↔ pt ↔ dp. Stub —
+ * to be implemented when Tailwind v4 / SCSS / TS formatters ship.
  */
 
 import type { Token, TokenValue } from "../types.js";

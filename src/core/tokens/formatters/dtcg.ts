@@ -18,8 +18,9 @@
  *   3. Composite tokens (typography, shadow, gradient) emit DTCG's
  *      structured $value form. Aliases emit `"$value": "{path.to.target}"`.
  *
- * This formatter is the canonical Phase 1 output — the format every other
- * formatter (in future phases) ultimately derives from.
+ * This formatter is the canonical output — the format every other
+ * formatter (CSS variables today, Tailwind/SCSS/etc. in future minor
+ * versions) ultimately derives from.
  */
 
 import type {
