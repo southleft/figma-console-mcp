@@ -7,7 +7,7 @@ description: "Complete API reference for all 94 MCP tools, including parameters,
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **101 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **93 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **103 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **93 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -21,6 +21,8 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_clear_console` | Clear log buffer | All |
 | **🔍 Debugging** | `figma_take_screenshot` | Capture UI screenshots | All |
 | | `figma_reload_plugin` | Reload current page | All |
+| **🔁 Token Sync** | `figma_export_tokens` | Export Figma variables to DTCG JSON + CSS (replaces Style Dictionary) | Local / Cloud |
+| | `figma_import_tokens` | Push code-side token edits back to Figma (diff-aware merge) | Local / Cloud |
 | **🎨 Design System** | `figma_get_variables` | Extract design tokens/variables | All |
 | | `figma_get_styles` | Get color, text, effect styles | All |
 | | `figma_get_component` | Get component data | All |
@@ -298,6 +300,106 @@ figma_reload_plugin({
 **Returns:**
 - Reload status
 - New page URL (if changed)
+
+---
+
+## 🔁 Token Sync Tools
+
+Bidirectional design token synchronization between Figma variables and your codebase. New in v1.27.0 — replaces Style Dictionary and Tokens Studio's export pipeline for popular styling methods.
+
+The canonical pivot format is **DTCG JSON** (W3C Design Tokens Community Group spec). Additional output formats — CSS custom properties, Tailwind v4 `@theme`, SCSS, TypeScript modules — are scaffolded; CSS custom properties ships in v1.27.0, others arrive in subsequent minor versions.
+
+### `figma_export_tokens`
+
+Export Figma variables to design token files in your codebase. Pulls every variable across every collection and mode, normalizes to the internal token model, and fans out to one or more output formats.
+
+**Usage (zero-arg with `tokens.config.json`):**
+
+```
+figma_export_tokens()
+```
+
+**Usage (explicit format):**
+
+```javascript
+figma_export_tokens({
+  format: "dtcg",
+  outputPath: "src/styles/tokens",
+  splitByMode: true,
+  splitByCollection: true,
+  prefix: "ds-"
+})
+```
+
+**Output formats (Phase 1):**
+
+| Format | Status | Notes |
+|---|---|---|
+| `dtcg` | ✅ Phase 1 | W3C standard. Canonical. Round-trip safe via `$extensions["figma-console-mcp"]`. |
+| `css-vars` | ✅ Phase 1 | `:root { ... }` blocks with mode-aware selectors (`.dark`, `[data-theme="..."]`). |
+| `tokens-studio` | ⏳ Phase 2 | `$themes.json` + per-set files. |
+| `tailwind-v4` | ⏳ Phase 2 | `@theme inline { ... }` block. |
+| `tailwind-v3` | ⏳ Phase 2 | `theme.extend` object. |
+| `scss` | ⏳ Phase 2 | `$var: value;` |
+| `less` | ⏳ Phase 2 | `@var: value;` |
+| `ts-module` | ⏳ Phase 2 | TypeScript exports. |
+| `json-flat` / `json-nested` | ⏳ Phase 2 | Plain JSON for custom build scripts. |
+| `style-dictionary-v3` | ⏳ Phase 2 | Back-compat for existing SD users. |
+
+**Diff-aware merge:** Default `strategy: "merge"` only writes files whose content actually changed. Use `strategy: "dry-run"` to preview without writing. Use `strategy: "replace"` to wipe and rewrite.
+
+**Round-trip safety:** Every exported token carries its Figma `variableId` and `collectionId` in DTCG `$extensions["figma-console-mcp"]`. Renames on either side don't create duplicates — the ID is the primary match key. Also stamps `lastSyncedValue` (per-mode snapshot) and `lastSyncedAt` so two-sided conflicts can be detected on import.
+
+**Cloud Mode:** Omit `configPath` and `outputPath`. The tool returns token content inline in the response; have your AI client write the files via its own Edit/Write tools. File I/O (autodiscovery, automatic writes) is Local Mode only.
+
+**Cross-library aliases:** Variables that reference targets in a published library (not in this file's local variable set) get stamped with `{__library:VariableID:...}` references — the original Figma ID is preserved for round-trip. CSS formatters emit a comment for skipped tokens with the original library variable ID, so you can see exactly what's missing and decide how to handle it.
+
+---
+
+### `figma_import_tokens`
+
+Push code-side token edits back to Figma. Parses any supported source format, diffs against current Figma state, and applies only the deltas via the Plugin API.
+
+**Usage (zero-arg with `tokens.config.json`):**
+
+```
+figma_import_tokens()
+```
+
+**Usage (inline payload):**
+
+```javascript
+figma_import_tokens({
+  format: "dtcg",
+  payload: "{ \"color\": { \"primary\": { \"$type\": \"color\", \"$value\": \"#FF00AA\" } } }",
+  strategy: "dry-run"   // preview first
+})
+```
+
+**Strategies:**
+
+| Strategy | Behavior |
+|---|---|
+| `merge` | Default. Apply only changed values. Preserve Figma-only and code-only tokens unless the conflict-resolution rule says otherwise. |
+| `replace` | Wipe and rewrite. Destructive — requires explicit `replace`, never the default. |
+| `dry-run` | Compute the diff plan, return it, do not mutate Figma. |
+
+**Match priority** (how a code-side token gets paired to a Figma variable):
+
+1. **Figma variable ID** stored in `$extensions["figma-console-mcp"].variableId`. Survives renames.
+2. **Token path** (e.g. `color.primary`). Used when metadata is absent (first sync, hand-authored DTCG).
+3. **Value fingerprint.** Used to detect no-op writes — same hash means no API call.
+
+**Conflict handling:** When both Figma and code changed the same token since the last sync, `onConflict: "ask"` (default) surfaces the conflict and writes nothing. Use `"figma-wins"` / `"code-wins"` to auto-resolve, or `"skip"` to leave conflicts alone and proceed with the rest.
+
+**What gets applied in Phase 1:**
+
+- ✅ `toUpdate` (value changes on existing variables): applied via the plugin's `executeCodeViaUI` → `figma.variables.setValueForMode`. Multi-mode supported. Partial-success semantics — per-variable errors don't fail the batch, results returned in `applyResult.errors[]`.
+- ⏳ `toCreate` (new variables): diff plan returned, apply orchestration ships in a future phase. Use `figma_setup_design_tokens` or `figma_batch_create_variables` manually.
+- ⏳ `toDelete` (Figma-only variables): preserved by default per the `merge` strategy. `figma_delete_variable` available for manual deletion.
+- ⏳ Alias updates (code-side `{color.primary}` references): skipped with a warning explaining the workaround (edit the alias target's value, or hard-code a literal).
+
+**Cloud Mode:** Pass tokens inline via `payload` (single file) or `files` (multi-file). Omit `configPath`. The apply phase works in Cloud Mode because it routes through the paired Desktop Bridge plugin via the Cloud Plugin Relay — transport-agnostic.
 
 ---
 

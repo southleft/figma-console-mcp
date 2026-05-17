@@ -39,6 +39,7 @@ import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { registerWriteTools } from "./core/write-tools.js";
+import { registerTokensTools } from "./core/tokens-tools.js";
 import { wrapServerForIdentity } from "./core/identity.js";
 import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
@@ -2833,6 +2834,12 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// design-token setup, accessibility audits, etc.). Sourced from src/core/write-tools.ts
 		// so local mode and cloud mode share the same 30 implementations — no risk of drift.
 		registerWriteTools(this.server, () => this.getDesktopConnector());
+
+		// Register token sync tools — figma_export_tokens and figma_import_tokens.
+		// Replace Style Dictionary and Tokens Studio's export pipeline for the
+		// popular styling methods (DTCG canonical, plus CSS/Tailwind/SCSS/etc.
+		// as Phase 2+ extensions to a single internal token model).
+		registerTokensTools(this.server, () => this.getDesktopConnector());
 
 		// Register Figma API tools (Tools 8-11)
 		registerFigmaAPITools(

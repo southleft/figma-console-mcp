@@ -28,9 +28,12 @@ Without MCP, AI assistants are limited to what they already know. With MCP, they
 
 ### What it enables:
 
-<Columns cols={3}>
+<Columns cols={2}>
   <Card title="Extract" icon="download">
     Pull design tokens, components, and styles as structured data
+  </Card>
+  <Card title="Sync" icon="arrows-rotate">
+    Bidirectional token sync between Figma and your codebase (DTCG + CSS)
   </Card>
   <Card title="Create" icon="wand-magic-sparkles">
     Build UI components and layouts directly in Figma through conversation
@@ -174,7 +177,7 @@ Figma Console MCP makes this real. Your design system becomes:
 
 ### Recommended: NPX Setup (Full Capabilities)
 
-Get all 101 tools including design creation, variable management, and component instantiation.
+Get all 103 tools including design creation, variable management, and component instantiation.
 
 <Steps>
   <Step title="Get a Figma Token">
@@ -193,7 +196,7 @@ Get all 101 tools including design creation, variable management, and component 
 
 ### Cloud Mode (Web AI Clients)
 
-Using Claude.ai, v0, Replit, or Lovable? Get full write access (93 tools) without installing Node.js.
+Using Claude.ai, v0, Replit, or Lovable? Get full write access (95 tools) without installing Node.js.
 
 <Steps>
   <Step title="Run the Desktop Bridge Plugin">
@@ -286,7 +289,7 @@ Figma Console MCP offers three connection tiers with different capabilities:
 
 | Feature | Local (NPX/Git) | Cloud Mode | Remote (Read-Only) |
 |---------|-----------------|------------|-------------------|
-| **Total tools** | **101** | **93** | **9** |
+| **Total tools** | **103** | **93** | **9** |
 | **Setup** | ~10 minutes | ~5 minutes | ~2 minutes |
 | **Create designs** | ✅ | ✅ | ❌ |
 | **Edit designs** | ✅ | ✅ | ❌ |
@@ -344,7 +347,7 @@ Figma Console MCP offers three connection tiers with different capabilities:
     Real-world examples and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 101 tools
+    Complete reference for 103 tools
   </Card>
 </Columns>
 

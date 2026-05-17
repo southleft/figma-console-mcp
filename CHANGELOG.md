@@ -5,6 +5,41 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.0] - 2026-05-16
+
+Bidirectional design token sync. Two new MCP tools replace Style Dictionary and Tokens Studio's export pipeline for popular styling methods. Designers can now ask their AI to push a hex value edit back to Figma — the diff-aware import produces exactly one Figma API call for that one variable, not a full collection rewrite.
+
+The full pipeline is operational end-to-end: **Figma variables → DTCG JSON + CSS custom properties → edit hex → push to Figma**. Verified against two real design systems with different architectures (CollegeTown's 713-token TailwindCSS-derived setup with multi-mode tokens, and Altitude's 280-token 3-tier + brand-layer architecture). Both round-trip cleanly with `0 toCreate / 0 toUpdate / 0 toDelete` after export.
+
+**Existing users (Local and Cloud Mode) are not impacted by these additions.** No existing tool changed name, schema, or behavior. No new required env vars, dependencies, or plugin protocol changes. Plugin re-import is **not required** — the wire protocol is unchanged.
+
+### Added
+
+- **`figma_export_tokens`** (Local + Cloud Mode) — Pull every variable across every collection and mode, normalize to canonical DTCG JSON (W3C Design Tokens Community Group spec), and fan out to one or more output formats. Phase 1 ships fully working DTCG canonical output + CSS custom properties (Tailwind v4 `@theme`, SCSS, TypeScript modules, etc. are scaffolded — DTCG canonical is the only format whose serializer is implemented; CSS variables is the second). Multi-mode tokens encoded via per-mode files with the file's mode name stamped in `$extensions["figma-console-mcp"].fileMode` for round-trip recovery. Cross-library aliases (variables pointing at published-library targets the local Plugin API doesn't return) preserve the original Figma variable ID in `{__library:VariableID:...}` references — CSS formatters emit a traceable comment instead of broken `var()` references.
+- **`figma_import_tokens`** (Local + Cloud Mode) — Parse any supported source format, diff against current Figma state via ID-first / path-second / value-fingerprint match, and apply only the deltas via the Plugin API. Default `merge` strategy preserves Figma-only and code-only tokens. `dry-run` (the default for the first call after detecting changes) returns a structured diff plan without mutating Figma. Real apply phase wired through `connector.executeCodeViaUI` → `figma.variables.setValueForMode` — verified working against CollegeTown's 3-mode `base/primary` and Altitude's 4-brand `theme/color/background/primary-default`. Partial-success semantics: per-variable errors are surfaced in `applyResult.errors[]` without failing the batch.
+- **`tokens.config.json`** schema — JSON Schema-validated, autodiscovered by walking up from the cwd (same convention as `tsconfig.json`). Drives both tools so subsequent calls are zero-arg. Honors `source.dir`/`source.canonical`, `generated.dir`/`generated.formats[]`, `modes.map`, `conflictResolution`, and `sync` behavior flags.
+- **DTCG `$extensions["figma-console-mcp"]`** vendor metadata block on every exported token: `variableId`, `collectionId`, `lastSyncedValue` (per-mode snapshot for two-sided conflict detection), `lastSyncedAt`. Set-level: `originalName` (so slugified JSON keys round-trip to the original Figma collection name). Document-level: `figmaFileKey`, `exportedAt`, `mcpVersion`.
+- **CSS variables formatter** with mode-aware selectors: `Light` / `Default` → `:root`, `Dark` → `.dark` (matches Tailwind's `darkMode: 'class'` convention), other modes → `[data-theme="<slug>"]`. Composite typography expands into multiple primitive vars. Shadow composites render as standard CSS `box-shadow` strings.
+- **Order-independent diff comparison** in the import tool. Tokens that have the same mode values but different key insertion order (Figma returns collection-defined order, parsed JSON returns alphabetical) no longer surface as false-positive `toUpdate` entries.
+- **Cloud Mode safety guard.** The tools are registered identically in both Local and Cloud Mode entry points but detect their runtime environment via an `isRemoteMode` flag passed at registration. In Cloud Mode (Cloudflare Workers, no local filesystem), `configPath` autodiscovery, `outputPath` disk writes, and config-source file reads throw a structured `[figma-console-mcp]` error pointing the user at the inline-payload workaround — instead of cryptic `ENOENT`/"not implemented" errors. Inline-mode export and import both work in Cloud Mode because the apply phase routes through `executeCodeViaUI` (transport-agnostic).
+- **29 new Jest tests** under `tests/tokens.test.ts` covering: DTCG round-trip (single-mode, multi-mode, alias references, `$extensions` metadata, `splitByMode` recovery, deterministic key ordering, set-name slug round-trip), alias resolver (parse, resolve, cycle detection, unresolvable references), config loader (missing, valid, autodiscover, invalid JSON, schema validation), Figma converter (color, alias chains, collection/mode filtering, group `$type` inheritance), CSS variables formatter (primitives, aliases, dark mode convention, prefix, cross-library skip, multi-word font quoting, path slugification), Cloud Mode registration. Full suite: 1129 passing (was 1100).
+
+### Changed
+
+- **`scripts/release.sh`** extended to bump `MCP_VERSION` in `src/core/tokens-tools.ts` alongside the existing version stamps in `src/index.ts`, `figma-desktop-bridge/code.js`, and `docs/mint.json`. The auto-detected Cloud tool count now correctly includes the two new registrars (95 instead of 93).
+- **`/health` response** now reports v1.27.0.
+- **Plugin `PLUGIN_VERSION`** bumped to `1.27.0`. **Re-importing the plugin manifest is _optional_** — the wire protocol is unchanged from v1.26.0. Re-import only if you want the cosmetic plugin-version reporting in `figma_get_status` / `figma_diagnose` to read `1.27.0` instead of `1.26.0`.
+
+### Deferred to Phase 2
+
+- Remaining output formatters: `tokens-studio`, `tailwind-v4`, `tailwind-v3`, `scss`, `less`, `ts-module`, `json-flat`, `json-nested`, `style-dictionary-v3`. Each scaffolded — the dispatcher routes to the right module — but the serializers throw `TokenFormatNotImplementedError` with a clear message directing users to DTCG.
+- Remaining input parsers: same list as above plus `tailwind-v3-config`. Auto-detection of payload format works end-to-end for DTCG; non-DTCG formats throw with a clear "convert to DTCG first" message.
+- `toCreate` apply phase: diff plan returned but variable-creation orchestration not yet wired (`figma_setup_design_tokens` and `figma_batch_create_variables` remain the manual path for new variables).
+- `toDelete` apply phase: Figma-only tokens preserved by default under `merge`. `replace` strategy + delete-apply ships in a future minor version.
+- Alias updates in the apply phase: code-side `{color.primary}` references skip the update with a warning explaining the workaround. The Phase 2.5 fix needs `VARIABLE_ALIAS` target-ID resolution.
+- Cross-library variable resolution: pulling values for `{__library:VariableID:...}` references via the plugin's `figma.variables.getVariableByIdAsync` (a new bridge command), so cross-library aliases render as actual `var(--target-token)` references instead of skip-comments.
+
+
 ## [1.26.0] - 2026-05-16
 
 Internal cleanup and clarity release. No new tools, no removed tools, no breaking argument-shape changes. Three things are different for users running multiple Figma-related MCPs side by side and one is different for anyone who'd set up the old CDP debug path.
@@ -774,6 +809,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.27.0]: https://github.com/southleft/figma-console-mcp/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/southleft/figma-console-mcp/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/southleft/figma-console-mcp/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/southleft/figma-console-mcp/compare/v1.23.0...v1.24.0

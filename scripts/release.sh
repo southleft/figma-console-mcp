@@ -116,6 +116,7 @@ auto_count_cloud() {
     "$ROOT/src/core/version-tools.ts" \
     "$ROOT/src/core/accessibility-tools.ts" \
     "$ROOT/src/core/diagnose-tool.ts" \
+    "$ROOT/src/core/tokens-tools.ts" \
     "$ROOT/src/index.ts" \
     2>/dev/null | sort -u | wc -l | tr -d ' '
 }
@@ -218,6 +219,15 @@ replace_in_file "$ROOT/src/index.ts" \
   "version: \"[0-9]+\.[0-9]+\.[0-9]+\"" \
   "version: \"$VERSION\"" \
   "all McpServer + health version strings"
+
+# ── 3c. MCP_VERSION sync in src/core/tokens-tools.ts ───
+# The token sync tools stamp this version into DTCG $extensions.mcpVersion
+# on every export so token files record which MCP build produced them.
+echo -e "${BOLD}3c. src/core/tokens-tools.ts MCP_VERSION${NC}"
+replace_in_file "$ROOT/src/core/tokens-tools.ts" \
+  "const MCP_VERSION = \"[0-9]+\.[0-9]+\.[0-9]+\"" \
+  "const MCP_VERSION = \"$VERSION\"" \
+  "MCP_VERSION constant"
 
 # ── 3b. PLUGIN_VERSION sync in figma-desktop-bridge/code.js ──
 # Keeps the in-plugin PLUGIN_VERSION constant aligned with package.json. Without this,

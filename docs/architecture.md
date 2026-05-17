@@ -79,7 +79,7 @@ flowchart TB
 - **WebSocket + HTTP** — via Desktop Bridge Plugin on ports 9223–9232. No debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running. Orphaned processes are automatically detected and terminated on startup.
 - The HTTP server on the same port exposes `/health` for liveness checks.
-- All 101 tools work through the WebSocket transport.
+- All 103 tools work through the WebSocket transport.
 
 **Plugin distribution:**
 - The Desktop Bridge plugin ships as `manifest.json`, `code.js`, and `ui.html` — the full UI (~60 KB) is loaded directly by Figma at plugin-open time (no bootloader fetch).
@@ -104,7 +104,7 @@ flowchart TB
 The main server implements the Model Context Protocol with stdio transport for local mode.
 
 **Key Responsibilities:**
-- Tool registration (101 tools in Local Mode, 9 in Remote Mode)
+- Tool registration (103 tools in Local Mode, 9 in Remote Mode)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication via WebSocket
@@ -119,6 +119,7 @@ The main server implements the Model Context Protocol with stdio transport for l
 | Design System | `figma_get_variables`, `figma_get_styles`, `figma_get_component` | REST API |
 | Design Creation | `figma_execute`, `figma_arrange_component_set` | WebSocket (Plugin) |
 | Variables | `figma_create_variable`, `figma_update_variable`, etc. | WebSocket (Plugin) |
+| Token Sync | `figma_export_tokens`, `figma_import_tokens` | Plugin read + Plugin write |
 | Real-Time | `figma_get_selection`, `figma_get_design_changes` | WebSocket |
 
 ---
@@ -199,7 +200,7 @@ Multiple MCP server processes can run simultaneously (e.g., Claude Desktop Chat 
 
 The MCP server checks if a WebSocket client is connected (instant, under 1ms). If connected, commands route through WebSocket. If no client is connected, setup instructions are returned.
 
-All 101 tools work through the WebSocket transport.
+All 103 tools work through the WebSocket transport.
 
 ---
 

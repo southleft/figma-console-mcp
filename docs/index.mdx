@@ -1,10 +1,10 @@
 ---
 title: "Figma Console MCP"
-description: "Your design system as an API. Connect AI to Figma for extraction, creation, and debugging."
+description: "Your design system as an API. Connect AI to Figma for extraction, creation, debugging, and token sync."
 ---
 
 <Note>
-**New in v1.23.0 — Version History & Time-Series Awareness:** Six new tools turn a Figma file from a static snapshot into a queryable history. List versions, snapshot any past version, diff two versions for component/binding deltas, generate markdown changelogs ready for release notes, and trace when (and by whom) a property or variant was introduced via a binary-search blame walker. 101 tools total. [See what's new →](/tools#-version-history-tools)
+**New in v1.27.0 — Bidirectional Token Sync:** Two new tools — `figma_export_tokens` and `figma_import_tokens` — replace Style Dictionary and Tokens Studio's export pipeline for popular styling methods. Export Figma variables to canonical DTCG JSON + CSS custom properties; edit hex values in code; push the delta back to Figma. Diff-aware merge means a hacked-color edit produces exactly one Figma API call, not a full collection rewrite. 103 tools total. [See what's new →](/tools#-token-sync-tools)
 </Note>
 
 # Your Design System as an API
@@ -13,9 +13,12 @@ Design systems shouldn't be static documents locked in a visual tool. They shoul
 
 Figma Console MCP bridges the gap between design and development—giving AI assistants complete access to your Figma files for extraction, creation, and debugging.
 
-<Columns cols={3}>
+<Columns cols={4}>
   <Card title="Extract" icon="download">
     Variables, styles, and components as structured data
+  </Card>
+  <Card title="Sync" icon="arrows-rotate">
+    Bidirectional token sync between Figma and your codebase
   </Card>
   <Card title="Create" icon="wand-magic-sparkles">
     Design files, FigJam boards, and Slides presentations
@@ -187,12 +190,12 @@ Real component data. Real token values. Real code that uses your actual design s
 
 <Columns cols={3}>
   <Card title="NPX Setup (Recommended)" icon="bolt" href="/setup#-npx-setup-recommended">
-    **Full capabilities — 101 tools**
+    **Full capabilities — 103 tools**
 
     All tools including real-time monitoring. Requires Node.js and a Figma token.
   </Card>
   <Card title="Cloud Mode" icon="cloud-arrow-up" href="/setup#-cloud-mode-web-ai-clients">
-    **Web AI clients — 93 tools**
+    **Web AI clients — 95 tools**
 
     Full write access from Claude.ai, v0, Replit, or Lovable. Pair with a code — no Node.js needed.
   </Card>
@@ -255,7 +258,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Real scenarios and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 101 tools
+    Complete reference for 103 tools
   </Card>
   <Card title="Troubleshooting" icon="circle-question" href="/troubleshooting">
     Common issues and solutions
