@@ -995,7 +995,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		registerWriteTools(this.server, getCloudDesktopConnector);
 
 		// Register token sync tools — figma_export_tokens and figma_import_tokens.
-		registerTokensTools(this.server, getCloudDesktopConnector);
+		registerTokensTools(this.server, getCloudDesktopConnector, { isRemoteMode: true });
 
 		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)
 		registerFigJamTools(this.server, getCloudDesktopConnector);
@@ -1448,7 +1448,7 @@ export default {
 
 			// Register all write/manipulation tools via shared function
 			registerWriteTools(statelessServer, getCloudDesktopConnector);
-			registerTokensTools(statelessServer, getCloudDesktopConnector);
+			registerTokensTools(statelessServer, getCloudDesktopConnector, { isRemoteMode: true });
 
 			// Register FigJam-specific tools
 			registerFigJamTools(statelessServer, getCloudDesktopConnector);

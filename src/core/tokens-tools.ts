@@ -40,6 +40,13 @@ import {
 
 const logger = createChildLogger({ component: "tokens-tools" });
 
+/**
+ * MCP version stamp embedded in DTCG `$extensions["figma-console-mcp"].mcpVersion`
+ * on every exported token document. Kept in sync with package.json by
+ * scripts/release.sh — see step 3 of the release flow.
+ */
+const MCP_VERSION = "1.27.0";
+
 const EXPORT_TOOL_DESCRIPTION = `Export Figma variables to design token files in your codebase. Bidirectional with figma_import_tokens — together they replace Style Dictionary and Tokens Studio's export pipeline for the popular styling methods.
 
 CANONICAL OUTPUT IS DTCG JSON (https://tr.designtokens.org/format/). Additional output formats (CSS custom properties, Tailwind v4 @theme, SCSS, TS modules, etc.) are scaffolded in this release — DTCG is the only format fully implemented in Phase 1.
@@ -60,9 +67,23 @@ CONFLICT HANDLING: When BOTH Figma and code changed the same token since the las
 
 DRY-RUN: Default first call after detecting changes is dry-run for safety. The response includes the full diff plan; user confirms, then call again with \`dryRun: false\` (or \`strategy\` other than dry-run) to apply.`;
 
+export interface RegisterTokensToolsOptions {
+  /**
+   * True when registering in Cloud Mode (Cloudflare Workers). In Cloud Mode
+   * the MCP server has no local filesystem access, so the tools surface a
+   * clear "inline payload required" error instead of letting an fs ENOENT
+   * bubble up cryptically. Export still works with explicit content return;
+   * import still works with inline payload/files. tokens.config.json
+   * autodiscovery, outputPath disk writes, and config-source file reads
+   * are all Local Mode only.
+   */
+  isRemoteMode?: boolean;
+}
+
 export function registerExportTokensTool(
   server: McpServer,
   getDesktopConnector: () => Promise<any>,
+  opts: RegisterTokensToolsOptions = {},
 ): void {
   server.tool(
     "figma_export_tokens",
@@ -70,7 +91,7 @@ export function registerExportTokensTool(
     ExportTokensInputSchema.shape,
     async (args) => {
       try {
-        return await handleExport(args, getDesktopConnector);
+        return await handleExport(args, getDesktopConnector, opts);
       } catch (err) {
         logger.error({ err }, "figma_export_tokens failed");
         return {
@@ -93,6 +114,7 @@ export function registerExportTokensTool(
 export function registerImportTokensTool(
   server: McpServer,
   getDesktopConnector: () => Promise<any>,
+  opts: RegisterTokensToolsOptions = {},
 ): void {
   server.tool(
     "figma_import_tokens",
@@ -100,7 +122,7 @@ export function registerImportTokensTool(
     ImportTokensInputSchema._def.schema.shape,
     async (args) => {
       try {
-        return await handleImport(args, getDesktopConnector);
+        return await handleImport(args, getDesktopConnector, opts);
       } catch (err) {
         logger.error({ err }, "figma_import_tokens failed");
         return {
@@ -126,9 +148,23 @@ export function registerImportTokensTool(
 export function registerTokensTools(
   server: McpServer,
   getDesktopConnector: () => Promise<any>,
+  opts: RegisterTokensToolsOptions = {},
 ): void {
-  registerExportTokensTool(server, getDesktopConnector);
-  registerImportTokensTool(server, getDesktopConnector);
+  registerExportTokensTool(server, getDesktopConnector, opts);
+  registerImportTokensTool(server, getDesktopConnector, opts);
+}
+
+/**
+ * Standardized error for fs-dependent paths called in Cloud Mode.
+ */
+function cloudModeFsError(operation: string): Error {
+  return new Error(
+    `[figma-console-mcp] ${operation} is a Local Mode operation — Cloud Mode (Cloudflare Workers) has no local filesystem access. ` +
+      "Use one of these alternatives:\n" +
+      "  • Export: omit `configPath` and `outputPath` — the tool will return token content inline in the response. Have your AI client write the files via its own Edit/Write tools.\n" +
+      "  • Import: pass token data inline via the `payload` argument (single file) or `files` argument (multi-file). Omit `configPath`.\n" +
+      "For full filesystem support (tokens.config.json autodiscovery, automatic writes to source/generated dirs), run the MCP in Local Mode via NPX.",
+  );
 }
 
 // ============================================================================
@@ -138,9 +174,24 @@ export function registerTokensTools(
 async function handleExport(
   args: any,
   getDesktopConnector: () => Promise<any>,
+  opts: RegisterTokensToolsOptions,
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
-  // 1. Load config (autodiscover or explicit).
-  const loaded = loadTokensConfig({ explicitPath: args.configPath });
+  // Cloud Mode guard. Any filesystem operation needs to bail with a clear
+  // message before the fs call actually throws something cryptic.
+  if (opts.isRemoteMode) {
+    if (args.configPath) {
+      throw cloudModeFsError("`configPath` (tokens.config.json autodiscovery)");
+    }
+    if (args.outputPath) {
+      throw cloudModeFsError("`outputPath` (writing token files to disk)");
+    }
+  }
+
+  // 1. Load config (autodiscover or explicit). Skip entirely in Cloud Mode
+  //    — tokens.config.json lookup requires a filesystem.
+  const loaded = opts.isRemoteMode
+    ? null
+    : loadTokensConfig({ explicitPath: args.configPath });
 
   // 2. Fetch variables from Figma via the desktop connector. The connector's
   //    getVariablesFromPluginUI returns the plugin's cached variable data
@@ -173,7 +224,7 @@ async function handleExport(
     collectionIds: args.collectionIds,
     modes: args.modes,
     stripPrefix: args.prefix,
-    mcpVersion: "1.26.0",
+    mcpVersion: MCP_VERSION,
   });
 
   // 5. Resolve which output formats to emit.
@@ -299,9 +350,25 @@ async function handleExport(
 async function handleImport(
   args: any,
   getDesktopConnector: () => Promise<any>,
+  opts: RegisterTokensToolsOptions,
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+  // Cloud Mode guard: filesystem operations are unavailable. Inline
+  // `payload` / `files` arguments still work and are the supported path.
+  if (opts.isRemoteMode) {
+    if (args.configPath) {
+      throw cloudModeFsError("`configPath` (tokens.config.json autodiscovery)");
+    }
+    if (!args.payload && !args.files) {
+      throw cloudModeFsError(
+        "Implicit source-dir reads (when neither `payload` nor `files` is provided)",
+      );
+    }
+  }
+
   // 1. Load config + resolve where the source payload(s) live.
-  const loaded = loadTokensConfig({ explicitPath: args.configPath });
+  const loaded = opts.isRemoteMode
+    ? null
+    : loadTokensConfig({ explicitPath: args.configPath });
 
   // 2. Collect input payloads.
   const inputFiles = collectInputFiles(args, loaded);
@@ -332,7 +399,7 @@ async function handleImport(
   const figmaPayload = normalizeFigmaPayload(variableData ?? { variables: [], variableCollections: [] });
   const { document: figmaDoc } = convertFigmaVariablesToDocument(figmaPayload, {
     figmaFileKey: fileKey,
-    mcpVersion: "1.26.0",
+    mcpVersion: MCP_VERSION,
   });
 
   // 6. Compute the diff plan.
@@ -764,30 +831,30 @@ function buildCollectionModeMap(
 function tokenValueToFigma(
   value: { literal?: unknown; reference?: string },
   resolvedType: VariableUpdate["resolvedType"],
-): unknown | null {
+): { kind: "value"; value: unknown } | { kind: "skip-alias"; reference: string } | { kind: "skip-empty" } {
   if (value.reference) {
-    // Future phase: look up the referenced variable's Figma ID and emit
+    // Phase 2.5 will resolve the referenced variable's Figma ID and emit
     // { type: "VARIABLE_ALIAS", id }. For now, skip alias updates so we
-    // don't accidentally wipe a reference with a literal.
-    return null;
+    // don't accidentally wipe a reference with a literal — and surface a
+    // warning so the user knows the diff plan promised an update that
+    // didn't actually apply.
+    return { kind: "skip-alias", reference: value.reference };
   }
-  if (value.literal === undefined || value.literal === null) return null;
+  if (value.literal === undefined || value.literal === null) {
+    return { kind: "skip-empty" };
+  }
 
+  let figmaValue: unknown;
   if (resolvedType === "COLOR" && typeof value.literal === "string") {
-    return hexToRgba(value.literal);
+    figmaValue = hexToRgba(value.literal);
+  } else if (resolvedType === "FLOAT") {
+    figmaValue = typeof value.literal === "number" ? value.literal : Number(value.literal);
+  } else if (resolvedType === "BOOLEAN") {
+    figmaValue = Boolean(value.literal);
+  } else {
+    figmaValue = typeof value.literal === "string" ? value.literal : String(value.literal);
   }
-  if (resolvedType === "FLOAT") {
-    return typeof value.literal === "number"
-      ? value.literal
-      : Number(value.literal);
-  }
-  if (resolvedType === "BOOLEAN") {
-    return Boolean(value.literal);
-  }
-  // STRING and fallthrough.
-  return typeof value.literal === "string"
-    ? value.literal
-    : String(value.literal);
+  return { kind: "value", value: figmaValue };
 }
 
 function hexToRgba(hex: string): {
@@ -886,9 +953,15 @@ function buildUpdatePayloads(
         );
         continue;
       }
-      const figmaValue = tokenValueToFigma(value as any, resolvedType);
-      if (figmaValue === null) continue;
-      valuesByMode[modeId] = figmaValue;
+      const conversion = tokenValueToFigma(value as any, resolvedType);
+      if (conversion.kind === "skip-alias") {
+        warnings.push(
+          `Skipped ${entry.path} (mode "${modeName}") — alias reference "${conversion.reference}" updates are not yet supported in the apply phase (Phase 2.5). To update this token, edit the alias target's value instead, or hard-code a literal hex value in the source file.`,
+        );
+        continue;
+      }
+      if (conversion.kind === "skip-empty") continue;
+      valuesByMode[modeId] = conversion.value;
     }
 
     if (Object.keys(valuesByMode).length === 0) continue;
