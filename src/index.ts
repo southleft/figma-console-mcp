@@ -76,7 +76,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 	server = (() => {
 		const s = new McpServer({
 			name: "Figma Console MCP",
-			version: "1.27.0",
+			version: "1.27.1",
 		});
 		// Identity wrap — every tool's response and thrown error gets stamped
 		// with our MCP name so cross-MCP attribution is unambiguous.
@@ -1357,7 +1357,7 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.27.0",
+				version: "1.27.1",
 			});
 			wrapServerForIdentity(statelessServer);
 
@@ -2148,7 +2148,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.27.0",
+					version: "1.27.1",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],

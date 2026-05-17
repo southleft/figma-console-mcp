@@ -802,7 +802,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.27.0 (Stable) - Production-ready with bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **103 tools** (Local) / **95 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
+**Current Status:** v1.27.1 (Stable) - Production-ready with bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **103 tools** (Local) / **95 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
 
 **Recent Releases:**
 - [x] **v1.27.0** - Bidirectional token sync: `figma_export_tokens` + `figma_import_tokens` replace Style Dictionary and Tokens Studio's export pipeline. Canonical DTCG JSON + CSS custom properties. Diff-aware merge with round-trip ID preservation via `$extensions["figma-console-mcp"]`. Apply phase pushes hex-value edits back to Figma via the plugin bridge. Verified end-to-end against 713-token + 280-token design systems.

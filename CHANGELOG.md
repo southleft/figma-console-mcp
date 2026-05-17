@@ -5,6 +5,24 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.1] - 2026-05-16
+
+Documentation patch. No code behavior changes. Catches the stale-content surface that the v1.27.0 release missed — the README's front-page banner still announced v1.23.0 (the previous user-visible release notes), and several tool descriptions / error messages / internal comments still said "Phase 1 ships with DTCG only" even though CSS variables formatter and the apply phase shipped during the v1.27.0 development cycle.
+
+### Changed
+
+- **README.md front-page banner** — was still announcing v1.23.0's "Version History & Time-Series Awareness" callout. Now shows the v1.27.0 token sync headline. The four releases between (v1.24–v1.27) had each shipped without updating the banner; this release sweeps every stale prose claim across README, docs, and source comments.
+- **"What is this?" capability list** in README — added bidirectional token sync (the v1.27.0 headline), version history & time-series awareness, Slides presentations, and cross-MCP identity disambiguation.
+- **Roadmap** — updated to v1.27.0 status, added entries for v1.27.0 / v1.26.0 / v1.25.0 / v1.24.0, trimmed pre-v1.7 entries to keep the list scannable.
+- **AI-facing tool descriptions** for `figma_export_tokens` and `figma_import_tokens` — replaced "Phase 1 ships with DTCG only" with the current accurate scope: DTCG + CSS variables fully implemented, apply phase pushes value updates end-to-end with partial-success semantics, what's still deferred.
+- **User-facing error messages** in the format stub classes — now correctly state that DTCG (parser + formatter) AND CSS variables (formatter only) are the fully-implemented paths.
+- **Internal comments** in `src/core/tokens-tools.ts` and `src/core/tokens/transforms/` — softened "Phase 1 stub" / "Phase 2.5 will resolve" language to current-state descriptions.
+- **Tool count consistency** — residual "93 tools" Cloud Mode references in `docs/mode-comparison.md` / `docs/setup.md` / `docs/tools.md` that the v1.27.0 release script's regex didn't catch are now 95.
+
+### Fixed
+
+- Shell-escape bug in EXPORT_TOOL_DESCRIPTION introduced during the audit pass: unescaped backticks inside the template literal (for `:root`, `.dark` selector examples) caused a TypeScript compile error. Backticks escaped.
+
 ## [1.27.0] - 2026-05-16
 
 Bidirectional design token sync. Two new MCP tools replace Style Dictionary and Tokens Studio's export pipeline for popular styling methods. Designers can now ask their AI to push a hex value edit back to Figma — the diff-aware import produces exactly one Figma API call for that one variable, not a full collection rewrite.
@@ -809,6 +827,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.27.1]: https://github.com/southleft/figma-console-mcp/compare/v1.27.0...v1.27.1
 [1.27.0]: https://github.com/southleft/figma-console-mcp/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/southleft/figma-console-mcp/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/southleft/figma-console-mcp/compare/v1.24.0...v1.25.0
