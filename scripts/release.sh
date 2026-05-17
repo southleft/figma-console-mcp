@@ -116,6 +116,7 @@ auto_count_cloud() {
     "$ROOT/src/core/version-tools.ts" \
     "$ROOT/src/core/accessibility-tools.ts" \
     "$ROOT/src/core/diagnose-tool.ts" \
+    "$ROOT/src/core/tokens-tools.ts" \
     "$ROOT/src/index.ts" \
     2>/dev/null | sort -u | wc -l | tr -d ' '
 }

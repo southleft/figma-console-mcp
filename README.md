@@ -51,9 +51,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **101** | **93** | **9** |
+| **Total tools available** | **103** | **93** | **9** |
 
-> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 101 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 103 tools with real-time monitoring.
 
 ---
 
@@ -61,7 +61,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 101 tools including design creation, variable management, and component instantiation.
+**What you get:** All 103 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -158,7 +158,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 101 tools as NPX, plus full source code access.
+**What you get:** Same 103 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -247,7 +247,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 **Best for:** Using Claude.ai, v0, Replit, or Lovable to create and modify Figma designs — no Node.js required.
 
-**What you get:** 93 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
+**What you get:** 95 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
 
 #### Prerequisites
 
@@ -304,7 +304,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **101** | **93** | **101** | **9** (read-only) |
+| **Total tools** | **103** | **93** | **103** | **9** (read-only) |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -319,7 +319,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 101 tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 103 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -420,6 +420,10 @@ When you first use design system tools:
 ### 🔍 Design-Code Parity (All Modes)
 - `figma_check_design_parity` - Compare Figma component specs against code implementation, producing a scored diff report with actionable fix items
 - `figma_generate_component_doc` - Generate platform-agnostic markdown documentation by merging Figma design data with code-side info
+
+### 🔁 Token Sync (Local Mode + Cloud Mode)
+- `figma_export_tokens` - **Export Figma variables to design token files in your codebase.** Canonical DTCG JSON + CSS custom properties out of the box. Diff-aware merge against existing source files (only writes what changed). `tokens.config.json` autodiscovery means zero-arg calls after first setup. Replaces Style Dictionary and Tokens Studio's export pipeline for popular styling methods.
+- `figma_import_tokens` - **Push code-side token edits back to Figma.** Diff against current Figma state, apply only the deltas. Round-trip safe — Figma variable IDs preserved in DTCG `$extensions["figma-console-mcp"]` so renames on either side don't create duplicates. Dry-run default for safety. In Cloud Mode, pass tokens inline via `payload` or `files` (no local filesystem access).
 
 ### 🔧 Variable Management (Local Mode + Cloud Mode)
 - `figma_create_variable_collection` - Create new variable collections with modes
@@ -655,7 +659,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 101 tools work through the WebSocket transport
+- All 103 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -794,7 +798,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.23.0 (Stable) - Production-ready with version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 101 tools, Comments API, and MCP Apps
+**Current Status:** v1.23.0 (Stable) - Production-ready with version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, 103 tools, Comments API, and MCP Apps
 
 **Recent Releases:**
 - [x] **v1.17.0** - Figma Slides Support: 15 new tools for managing presentations — slides, transitions, content, reordering, and navigation. Inspired by Toni Haidamous (PR #11).
