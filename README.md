@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, **debugging**, and **bidirectional token sync**.
 
-> **🆕 Bidirectional Token Sync (v1.27.0, patched v1.27.1):** Two new tools — `figma_export_tokens` and `figma_import_tokens` — replace Style Dictionary and Tokens Studio's export pipeline for popular styling methods. Pull every variable across every collection and mode as canonical DTCG JSON + CSS custom properties; edit a hex value in code; push the delta back to Figma. Diff-aware merge produces exactly one API call per changed value, not a full collection rewrite. 103 tools total. [See what's new →](CHANGELOG.md#1271---2026-05-16)
+> **🆕 Token Sync — Full Formatter Coverage (v1.28.0):** `figma_export_tokens` now ships **10 fully-implemented output formats**: DTCG JSON (canonical), CSS custom properties, Tailwind v4 `@theme inline`, Tailwind v3 config, SCSS, TypeScript module, JSON (flat + nested), Style Dictionary v3, and Tokens Studio multi-file. Pull Figma variables and emit code in whatever styling flavor your project uses — no Style Dictionary or Tokens Studio install required. Diff-aware merge for round-trip; one Figma API call per changed value, not full rewrites. 103 tools total. [See what's new →](CHANGELOG.md#1280---2026-05-18)
 
 ## What is this?
 
@@ -55,7 +55,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **103** | **93** | **9** |
+| **Total tools available** | **103** | **95** | **9** |
 
 > **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 103 tools with real-time monitoring.
 
@@ -308,7 +308,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **103** | **93** | **103** | **9** (read-only) |
+| **Total tools** | **103** | **95** | **103** | **9** (read-only) |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -802,9 +802,10 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.27.1 (Stable) - Production-ready with bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **103 tools** (Local) / **95 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
+**Current Status:** v1.28.0 (Stable) - Production-ready with 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **103 tools** (Local) / **95 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
 
 **Recent Releases:**
+- [x] **v1.28.0** - Full formatter coverage for `figma_export_tokens`. Seven new output formats: Tailwind v4 `@theme inline`, Tailwind v3 config, SCSS variables, TypeScript module, JSON flat/nested, Style Dictionary v3, Tokens Studio multi-file. Combined with DTCG + CSS variables, ships **10 fully-implemented output formats** with zero third-party build-tool dependencies. Tool description updated, docs/tools.md table all-green. 22 new Jest tests, 1151 total passing.
 - [x] **v1.27.1** - Documentation patch. No code behavior changes. Sweeps stale "Phase 1 ships with DTCG only" claims across tool descriptions, error messages, and internal comments after CSS variables formatter and the apply phase shipped during the v1.27.0 dev cycle. Refreshes README banner + capability bullets + roadmap. Adds `Phase 3.5: Stale-Content Audit` to the release runbook so future releases get a strict pre-publish grep sweep across banners, tool descriptions, error messages, source comments, and tool-count consistency.
 - [x] **v1.27.0** - Bidirectional token sync: `figma_export_tokens` + `figma_import_tokens` replace Style Dictionary and Tokens Studio's export pipeline. Canonical DTCG JSON + CSS custom properties. Diff-aware merge with round-trip ID preservation via `$extensions["figma-console-mcp"]`. Apply phase pushes hex-value edits back to Figma via the plugin bridge. Verified end-to-end against 713-token + 280-token design systems.
 - [x] **v1.26.0** - Internal cleanup + cross-MCP identity: Local-mode CDP/Puppeteer transport removed entirely (WebSocket-only). `figma_diagnose` tool for designer-readable health checks. Every response tagged `_mcp: "figma-console-mcp"`; errors prefixed `[figma-console-mcp]` so attribution is unambiguous when running multiple Figma MCPs. Plugin status pill now reads `Local · ready` / `Cloud · ready` / `Local + Cloud · ready`. Net diff: −7,299 lines, plugin re-import optional.
@@ -821,7 +822,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 - [x] **v1.7.0** - MCP Apps (Token Browser, Design System Dashboard), batch variable operations, design-code parity tools.
 
 **Coming Next:**
-- [ ] **Token sync — additional formatters & parsers** - Tailwind v4 `@theme`, SCSS, TypeScript module, Style Dictionary v3 source format. Plus `toCreate` apply orchestration, `toDelete` for `replace` strategy, and cross-library variable resolution via `getVariableByIdAsync` so cross-library aliases render as real `var(--target)` references instead of comments.
+- [ ] **Token sync — parsers + import-side apply expansion** - Parsers for non-DTCG input (Tokens Studio, CSS vars, Tailwind v4, Tailwind v3 config, SCSS, Style Dictionary v3, JSON flat/nested). Plus `toCreate` apply orchestration, `toDelete` for `replace` strategy, alias-target updates, and cross-library variable resolution via `getVariableByIdAsync` so cross-library aliases render as real `var(--target)` references instead of comments.
 - [ ] **Component template library** - Common UI pattern generation
 - [ ] **Visual regression testing** - Screenshot diff capabilities
 - [ ] **Design linting** - Automated compliance and accessibility checks

@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**Latest: v1.27.1 (docs patch). New in v1.27.0 — Bidirectional Token Sync:** Two new tools — `figma_export_tokens` and `figma_import_tokens` — replace Style Dictionary and Tokens Studio's export pipeline for popular styling methods. Export Figma variables to canonical DTCG JSON + CSS custom properties; edit hex values in code; push the delta back to Figma. Diff-aware merge means a hacked-color edit produces exactly one Figma API call, not a full collection rewrite. 103 tools total. [See what's new →](/tools#-token-sync-tools)
+**New in v1.28.0 — Full Formatter Coverage:** `figma_export_tokens` now ships 10 fully-implemented output formats — DTCG JSON, CSS custom properties, Tailwind v4 `@theme inline`, Tailwind v3 config, SCSS, TypeScript module, JSON flat/nested, Style Dictionary v3, and Tokens Studio. Pull Figma variables, emit code in any popular styling flavor — no third-party build tool install required. 103 tools total. [See what's new →](/tools#-token-sync-tools)
 </Note>
 
 # Your Design System as an API
@@ -190,7 +190,7 @@ Real component data. Real token values. Real code that uses your actual design s
 
 <Columns cols={3}>
   <Card title="NPX Setup (Recommended)" icon="bolt" href="/setup#-npx-setup-recommended">
-    **Full capabilities — 103 tools**
+    **Full capabilities — 95 tools**
 
     All tools including real-time monitoring. Requires Node.js and a Figma token.
   </Card>
@@ -200,7 +200,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Full write access from Claude.ai, v0, Replit, or Lovable. Pair with a code — no Node.js needed.
   </Card>
   <Card title="Remote (Read-Only)" icon="cloud" href="/setup#-remote-mode-read-only-exploration">
-    **Quick exploration — 9 tools**
+    **Quick exploration — 95 tools**
 
     Zero setup, just paste a URL. Read design data and take screenshots.
   </Card>

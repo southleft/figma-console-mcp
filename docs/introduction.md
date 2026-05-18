@@ -212,7 +212,7 @@ Using Claude.ai, v0, Replit, or Lovable? Get full write access (95 tools) withou
 
 ### Remote Mode (Read-Only)
 
-If you just want to explore or evaluate the tool, use Remote Mode. It's read-only (9 tools) but requires zero setup.
+If you just want to explore or evaluate the tool, use Remote Mode. It's read-only (95 tools) but requires zero setup.
 
 <Steps>
   <Step title="Open Claude Desktop Settings">
@@ -289,7 +289,7 @@ Figma Console MCP offers three connection tiers with different capabilities:
 
 | Feature | Local (NPX/Git) | Cloud Mode | Remote (Read-Only) |
 |---------|-----------------|------------|-------------------|
-| **Total tools** | **103** | **93** | **9** |
+| **Total tools** | **103** | **95** | **9** |
 | **Setup** | ~10 minutes | ~5 minutes | ~2 minutes |
 | **Create designs** | ✅ | ✅ | ❌ |
 | **Edit designs** | ✅ | ✅ | ❌ |

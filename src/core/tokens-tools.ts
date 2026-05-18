@@ -51,11 +51,21 @@ const logger = createChildLogger({ component: "tokens-tools" });
  * on every exported token document. Kept in sync with package.json by
  * scripts/release.sh — see step 3 of the release flow.
  */
-const MCP_VERSION = "1.27.1";
+const MCP_VERSION = "1.28.0";
 
 const EXPORT_TOOL_DESCRIPTION = `Export Figma variables to design token files in your codebase. Bidirectional with figma_import_tokens — together they replace Style Dictionary and Tokens Studio's export pipeline for the popular styling methods.
 
-CANONICAL OUTPUT IS DTCG JSON (https://tr.designtokens.org/format/). CSS custom properties is also fully implemented and produces \`:root\` + \`.dark\` + \`[data-theme=...]\` mode selectors with proper string quoting and composite-token expansion. Remaining formats (Tokens Studio, Tailwind v4 @theme, Tailwind v3 config, SCSS, Less, TypeScript module, JSON flat/nested, Style Dictionary v3) are scaffolded but throw TokenFormatNotImplementedError — convert via DTCG for now or open an issue with your specific styling stack.
+FULLY-IMPLEMENTED OUTPUT FORMATS:
+  • dtcg — W3C DTCG JSON. Canonical pivot format. Round-trip safe via \`$extensions["figma-console-mcp"]\`.
+  • css-vars — CSS custom properties with mode-aware selectors (\`:root\`, \`.dark\`, \`[data-theme=...]\`).
+  • tailwind-v4 — Tailwind v4 \`@theme inline\` block. Token-to-namespace mapping (color/*, spacing/*, radius/*, etc.) generates Tailwind utility classes.
+  • tailwind-v3 — \`tailwind.config.js\` theme.extend object grouped under Tailwind's theme keys (colors, spacing, fontFamily, etc.).
+  • scss — \`$var: value;\` declarations. Multi-mode emits a primary variable + a mode-keyed SCSS map for runtime access.
+  • ts-module — \`export const tokens = { ... } as const\` with derived \`Tokens\` type. Multi-mode tokens emit as \`{ Light: ..., Dark: ... }\` objects.
+  • json-flat — flat key-value JSON (\`{"ds-color-primary": "#4085F2"}\`) for custom build scripts.
+  • json-nested — nested object JSON mirroring the token path tree.
+  • style-dictionary-v3 — SD v3 source format with bare \`value\`/\`type\` keys (back-compat for existing SD users).
+  • tokens-studio — Tokens Studio multi-file layout (\`$themes.json\` + \`$metadata.json\` + per-set files). Preserves Figma collection/mode bindings for round-trip with the TS plugin.
 
 ZERO-ARG USAGE: With a tokens.config.json at your project root, just call the tool with no args — it picks up source dir, output formats, modes, prefix, etc. from config. See the response's \`suggestedScaffold\` payload when no config is detected — present it to the user, write the scaffold via your file tools, then call again.
 
