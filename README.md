@@ -821,7 +821,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 - [x] **v1.7.0** - MCP Apps (Token Browser, Design System Dashboard), batch variable operations, design-code parity tools.
 
 **Coming Next:**
-- [ ] **Token sync Phase 2** - Tailwind v4 `@theme`, SCSS, TypeScript module, Style Dictionary v3 source format, `toCreate` apply orchestration, `toDelete` for `replace` strategy, cross-library variable resolution via `getVariableByIdAsync`.
+- [ ] **Token sync — additional formatters & parsers** - Tailwind v4 `@theme`, SCSS, TypeScript module, Style Dictionary v3 source format. Plus `toCreate` apply orchestration, `toDelete` for `replace` strategy, and cross-library variable resolution via `getVariableByIdAsync` so cross-library aliases render as real `var(--target)` references instead of comments.
 - [ ] **Component template library** - Common UI pattern generation
 - [ ] **Visual regression testing** - Screenshot diff capabilities
 - [ ] **Design linting** - Automated compliance and accessibility checks

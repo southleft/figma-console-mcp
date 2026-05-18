@@ -331,20 +331,20 @@ figma_export_tokens({
 })
 ```
 
-**Output formats (Phase 1):**
+**Output formats:**
 
 | Format | Status | Notes |
 |---|---|---|
-| `dtcg` | ✅ Phase 1 | W3C standard. Canonical. Round-trip safe via `$extensions["figma-console-mcp"]`. |
-| `css-vars` | ✅ Phase 1 | `:root { ... }` blocks with mode-aware selectors (`.dark`, `[data-theme="..."]`). |
-| `tokens-studio` | ⏳ Phase 2 | `$themes.json` + per-set files. |
-| `tailwind-v4` | ⏳ Phase 2 | `@theme inline { ... }` block. |
-| `tailwind-v3` | ⏳ Phase 2 | `theme.extend` object. |
-| `scss` | ⏳ Phase 2 | `$var: value;` |
-| `less` | ⏳ Phase 2 | `@var: value;` |
-| `ts-module` | ⏳ Phase 2 | TypeScript exports. |
-| `json-flat` / `json-nested` | ⏳ Phase 2 | Plain JSON for custom build scripts. |
-| `style-dictionary-v3` | ⏳ Phase 2 | Back-compat for existing SD users. |
+| `dtcg` | ✅ Shipped | W3C standard. Canonical. Round-trip safe via `$extensions["figma-console-mcp"]`. |
+| `css-vars` | ✅ Shipped | `:root { ... }` blocks with mode-aware selectors (`.dark`, `[data-theme="..."]`). |
+| `tokens-studio` | ⏳ Planned | `$themes.json` + per-set files. Scaffolded — returns `TokenFormatNotImplementedError`. |
+| `tailwind-v4` | ⏳ Planned | `@theme inline { ... }` block. Scaffolded. |
+| `tailwind-v3` | ⏳ Planned | `theme.extend` object. Scaffolded. |
+| `scss` | ⏳ Planned | `$var: value;` Scaffolded. |
+| `less` | ⏳ Planned | `@var: value;` Scaffolded. |
+| `ts-module` | ⏳ Planned | TypeScript exports. Scaffolded. |
+| `json-flat` / `json-nested` | ⏳ Planned | Plain JSON for custom build scripts. Scaffolded. |
+| `style-dictionary-v3` | ⏳ Planned | Back-compat for existing SD users. Scaffolded. |
 
 **Diff-aware merge:** Default `strategy: "merge"` only writes files whose content actually changed. Use `strategy: "dry-run"` to preview without writing. Use `strategy: "replace"` to wipe and rewrite.
 
@@ -392,10 +392,10 @@ figma_import_tokens({
 
 **Conflict handling:** When both Figma and code changed the same token since the last sync, `onConflict: "ask"` (default) surfaces the conflict and writes nothing. Use `"figma-wins"` / `"code-wins"` to auto-resolve, or `"skip"` to leave conflicts alone and proceed with the rest.
 
-**What gets applied in Phase 1:**
+**What the apply phase actually does today:**
 
 - ✅ `toUpdate` (value changes on existing variables): applied via the plugin's `executeCodeViaUI` → `figma.variables.setValueForMode`. Multi-mode supported. Partial-success semantics — per-variable errors don't fail the batch, results returned in `applyResult.errors[]`.
-- ⏳ `toCreate` (new variables): diff plan returned, apply orchestration ships in a future phase. Use `figma_setup_design_tokens` or `figma_batch_create_variables` manually.
+- ⏳ `toCreate` (new variables): diff plan returned, apply orchestration not yet wired. Use `figma_setup_design_tokens` or `figma_batch_create_variables` manually for now.
 - ⏳ `toDelete` (Figma-only variables): preserved by default per the `merge` strategy. `figma_delete_variable` available for manual deletion.
 - ⏳ Alias updates (code-side `{color.primary}` references): skipped with a warning explaining the workaround (edit the alias target's value, or hard-code a literal).
 
