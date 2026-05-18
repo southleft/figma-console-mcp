@@ -37,7 +37,7 @@ The MCP server has **three execution modes** and **four setup methods**:
 | Mode | Tools Available | Write Access | Needs Node.js | Real-time |
 |------|-----------------|--------------|---------------|-----------|
 | **Local Mode** (NPX or Git) | **103** | Yes | Yes | Yes |
-| **Cloud Mode** (Remote + Relay) | **93** | Yes | No | No |
+| **Cloud Mode** (Remote + Relay) | **95** | Yes | No | No |
 | **Remote Mode** (read-only) | **9** | No | No | No |
 
 > **Bottom line:** Remote mode is read-only (95 tools). Cloud Mode adds write access (95 tools) without Node.js. Local has everything (95 tools) including real-time monitoring.

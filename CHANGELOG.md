@@ -5,6 +5,45 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.0] - 2026-05-18
+
+Full formatter coverage for `figma_export_tokens`. Seven new output formats moved from "scaffolded stub" to "fully implemented," completing the canonical-to-runtime pipeline for every popular styling method we surveyed across the user's design system portfolio. Combined with the existing DTCG JSON + CSS variables formatters, `figma_export_tokens` now ships **10 fully-implemented output formats** with zero third-party build-tool dependencies.
+
+The MCP now replaces Style Dictionary and Tokens Studio's export pipeline end-to-end. Pull Figma variables once, emit code in any styling flavor your project uses.
+
+### Added
+
+- **Tailwind v4 formatter** (`format: "tailwind-v4"`) — emits `@theme inline { ... }` block with Tailwind's namespace conventions baked in. Token-path-to-Tailwind-namespace mapping (`color/*` → `--color-*` which generates `bg-*`/`text-*`/`border-*` utilities; same for `spacing`, `radius`, `font`, `text`, `font-weight`, `tracking`, `leading`, `shadow`). Mode variants emit under `.dark` (Tailwind's class-strategy convention) and `[data-theme="..."]`. Composite typography expands into primitive vars.
+- **Tailwind v3 formatter** (`format: "tailwind-v3"`) — emits `module.exports = { colors: {...}, spacing: {...} }` grouped under Tailwind v3 theme keys. Designed to be spread into `tailwind.config.js`'s `theme.extend`. Heuristic type-to-namespace fallback for tokens whose path doesn't match a known Tailwind theme key.
+- **SCSS formatter** (`format: "scss"`) — `$var: value;` declarations. Multi-mode tokens emit as a primary `$var` plus a `$var--modes` SCSS map keyed by mode name, so consumers can `map-get` for runtime mode access. Composite typography expands; composite shadow renders as a CSS shadow string. Cross-library aliases emit `//` line comments with the original Figma variable ID.
+- **TypeScript module formatter** (`format: "ts-module"`) — `export const tokens = { ... } as const` with derived `type Tokens = typeof tokens`. Multi-mode tokens emit as `{ Light: "...", Dark: "..." }` objects. Custom identifier-prefix support produces camelCased export names (`dsTokens`, `dsTokensType`, etc.). Cross-library aliases emit `null /* TODO: cross-library alias unresolved */` so consumers see what to fill in.
+- **JSON flat formatter** (`format: "json-flat"`) — flat key-value object (`{"ds-color-primary": "#4085F2"}`). Non-primary modes get `--<mode>` suffix on keys. Deterministic alphabetical key ordering. For custom build scripts that don't want the DTCG envelope.
+- **JSON nested formatter** (`format: "json-nested"`) — nested object structure mirroring the token path tree. Multi-mode tokens emit as mode-keyed sub-objects. Alphabetical key ordering at every level.
+- **Style Dictionary v3 formatter** (`format: "style-dictionary-v3"`) — SD v3 bare-key source format (`{value, type, comment}` instead of DTCG's `{$value, $type, $description}`). Back-compat for existing SD users (cbds-components, blocks, czi-edu, eddie-design-system). Maps DTCG type names to SD's conventions (dimension → size/spacing, fontFamily → string, etc.).
+- **Tokens Studio formatter** (`format: "tokens-studio"`) — Tokens Studio for Figma's multi-file layout. Emits per-set token files (e.g. `primitives.json`, `theme/light.json`, `theme/dark.json`) plus `$metadata.json` (token-set order) and `$themes.json` (one theme entry per mode with Figma collection/mode bindings preserved). Enables round-trip with users of the Tokens Studio Figma plugin (notably Altitude).
+- **22 new Jest tests** under `tests/tokens-formatters.test.ts` covering each formatter against primitive tokens, multi-mode tokens, local aliases (resolve), cross-library aliases (skip with traceable marker), and the dispatcher's smoke-test that confirms no `TokenFormatNotImplementedError` for any newly-shipped format. Full suite: 1151 passing (was 1129 in v1.27.1).
+
+### Changed
+
+- **AI-facing tool description** for `figma_export_tokens` now lists all 10 fully-implemented output formats with one-sentence descriptions. Previous "DTCG is the only format fully implemented" language is gone — that claim was already inaccurate at v1.27.0 when CSS variables shipped, and is now wildly out of date.
+- **`docs/tools.md` Output formats table** — every previously-`⏳ Planned` row now shows `✅ Shipped`. Format-specific notes added (Tailwind v4 namespace mapping, SCSS multi-mode map, TS module derived types, Tokens Studio multi-file layout).
+- **`scripts/release.sh`** — extended `MCP_VERSION` stamp updates to cover this release. Cloud Mode tool count regex unchanged (still missed bare `**93**` table cells, fixed manually as part of Phase 3.5 audit).
+- **Stale `93 tools` references** in `README.md`, `docs/setup.md`, `docs/mode-comparison.md`, and `docs/introduction.md` table cells (the release script's regex doesn't catch `| **93** |` patterns) — swept manually as part of Phase 3.5 Block D.
+- **`docs/index.mdx` `<Note>` banner and README banner** — refreshed with the v1.28.0 headline. Anchor links point to `CHANGELOG.md#1280---2026-05-18`.
+- Plugin `PLUGIN_VERSION` bumped to `1.28.0`. **Re-importing the plugin manifest is _optional_** — the wire protocol is unchanged from v1.27.x.
+
+### Deferred to a future release
+
+These items remained out of scope for this release but are tracked in the roadmap:
+
+- **Parsers** for non-DTCG input formats (Tokens Studio, CSS vars, Tailwind v4, Tailwind v3 config, SCSS, Style Dictionary v3, JSON flat/nested). `figma_import_tokens` still accepts DTCG only; convert other formats to DTCG via `figma_export_tokens` first.
+- **`toCreate` apply orchestration** — diff plan returned but variable-creation mutations not yet wired. Use `figma_setup_design_tokens` / `figma_batch_create_variables` manually for now.
+- **`toDelete` apply** for the `replace` strategy — destructive, needs careful UX.
+- **Alias-target updates in the apply phase** — code-side `{color.primary}` references skip the update with a warning; needs target-ID resolution.
+- **Cross-library variable resolution** — `{__library:VariableID:...}` references currently emit skip-comments. Needs a new plugin bridge command (`GET_VARIABLES_BY_ID`).
+
+
+
 ## [1.27.1] - 2026-05-16
 
 Documentation patch. No code behavior changes. Catches the stale-content surface that the v1.27.0 release missed — the README's front-page banner still announced v1.23.0 (the previous user-visible release notes), and several tool descriptions / error messages / internal comments still said "Phase 1 ships with DTCG only" even though CSS variables formatter and the apply phase shipped during the v1.27.0 development cycle.
@@ -827,6 +866,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.28.0]: https://github.com/southleft/figma-console-mcp/compare/v1.27.1...v1.28.0
 [1.27.1]: https://github.com/southleft/figma-console-mcp/compare/v1.27.0...v1.27.1
 [1.27.0]: https://github.com/southleft/figma-console-mcp/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/southleft/figma-console-mcp/compare/v1.25.0...v1.26.0
