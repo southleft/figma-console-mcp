@@ -271,20 +271,44 @@ function pathToTailwindName(path: string[], type: string): string {
     "container",
     "aspect",
   ]);
+  // Aliases that normalize to a canonical namespace.
+  const NORMALIZE: Record<string, string> = {
+    colors: "color",
+    rounded: "radius",
+  };
   const slug = path.map(slugify);
   if (slug.length === 0) return "token";
-  // `colors` → normalize to `color` for Tailwind's singular namespace.
-  if (slug[0] === "colors") slug[0] = "color";
 
-  if (KNOWN.has(slug[0])) return slug.join("-");
+  // First-segment match: easy case, normalize plural → singular and emit.
+  if (KNOWN.has(slug[0])) {
+    const head = NORMALIZE[slug[0]] ?? slug[0];
+    return [head, ...slug.slice(1)].join("-");
+  }
 
-  // Heuristic prepend based on token type.
-  if (type === "color") return ["color", ...slug].join("-");
-  if (type === "dimension" || type === "number") return ["spacing", ...slug].join("-");
-  if (type === "fontFamily") return ["font", ...slug].join("-");
-  if (type === "fontWeight") return ["font-weight", ...slug].join("-");
-  // Otherwise: emit as-is (valid CSS var, just not in a Tailwind namespace).
-  return slug.join("-");
+  // Determine the target Tailwind namespace from token type.
+  const ns =
+    type === "color"
+      ? "color"
+      : type === "dimension" || type === "number"
+        ? "spacing"
+        : type === "fontFamily"
+          ? "font"
+          : type === "fontWeight"
+            ? "font-weight"
+            : null;
+
+  if (!ns) return slug.join("-");
+
+  // Dedup: if the path already contains the target namespace (e.g. a path
+  // like `theme.color.header.background` for a color token would otherwise
+  // produce `color-theme-color-header-background`), strip the duplicate
+  // segment so the result reads cleanly. Match both the canonical name
+  // and any alias that normalizes to it.
+  const dupAliases = new Set([ns, ...Object.entries(NORMALIZE)
+    .filter(([, target]) => target === ns)
+    .map(([alias]) => alias)]);
+  const dedupedTail = slug.filter((s) => !dupAliases.has(s));
+  return [ns, ...dedupedTail].join("-");
 }
 
 function kebab(s: string): string {

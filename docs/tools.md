@@ -333,18 +333,18 @@ figma_export_tokens({
 
 **Output formats:**
 
-| Format | Status | Notes |
-|---|---|---|
-| `dtcg` | ✅ Shipped | W3C standard. Canonical. Round-trip safe via `$extensions["figma-console-mcp"]`. |
-| `css-vars` | ✅ Shipped | `:root { ... }` blocks with mode-aware selectors (`.dark`, `[data-theme="..."]`). |
-| `tailwind-v4` | ✅ Shipped | `@theme inline { ... }` block. Token-to-namespace mapping generates Tailwind utility classes (`bg-primary`, `text-foreground`, etc.). |
-| `tailwind-v3` | ✅ Shipped | `module.exports = { colors: ... }` grouped under Tailwind theme keys. Spread into `tailwind.config.js`'s `theme.extend`. |
-| `scss` | ✅ Shipped | `$var: value;` declarations. Multi-mode emits a primary variable + a mode-keyed SCSS map. |
-| `ts-module` | ✅ Shipped | `export const tokens = { ... } as const` with derived `Tokens` type. Multi-mode emits as `{ Light, Dark }` objects. |
-| `json-flat` | ✅ Shipped | Flat key-value JSON (`{"ds-color-primary": "#4085F2"}`). Non-primary modes get `--<mode>` suffix. |
-| `json-nested` | ✅ Shipped | Nested object JSON mirroring the token path tree. Multi-mode emits mode-keyed objects. |
-| `style-dictionary-v3` | ✅ Shipped | SD v3 bare `value`/`type` source format. Back-compat for existing Style Dictionary v3 users. |
-| `tokens-studio` | ✅ Shipped | Tokens Studio multi-file layout (`$themes.json` + `$metadata.json` + per-set files). Preserves Figma collection/mode bindings for plugin round-trip. |
+| Format | Notes |
+|---|---|
+| `dtcg` | W3C Design Tokens Community Group standard JSON. Canonical pivot format. Round-trip safe via `$extensions["figma-console-mcp"]` (Figma variable IDs preserved across sync). |
+| `css-vars` | CSS custom properties. `:root { ... }` blocks with mode-aware selectors (`.dark`, `[data-theme="..."]`). Composite typography expands to primitive vars. |
+| `tailwind-v4` | Tailwind v4 `@theme inline { ... }` block. Token-to-namespace mapping generates utility classes (`bg-primary`, `text-foreground`, `rounded-lg`, etc.). |
+| `tailwind-v3` | `module.exports = { colors: ... }` grouped under Tailwind v3 theme keys (`colors`, `spacing`, `fontFamily`, `borderRadius`). Spread into `tailwind.config.js`'s `theme.extend`. |
+| `scss` | `$var: value;` SCSS variables. Multi-mode tokens emit a primary `$var` plus a `$var--modes` SCSS map for runtime `map-get` access. |
+| `ts-module` | `export const tokens = { ... } as const` with derived `type Tokens = typeof tokens`. Multi-mode tokens emit as `{ Light: ..., Dark: ... }` objects. |
+| `json-flat` | Flat key-value JSON (`{"ds-color-primary": "#4085F2"}`). Non-primary modes get a `--<mode>` suffix on keys. For custom build scripts. |
+| `json-nested` | Nested object JSON mirroring the token path tree. Multi-mode tokens emit as mode-keyed sub-objects. Alphabetical key ordering. |
+| `style-dictionary-v3` | Style Dictionary v3 bare-key source format (`{value, type, comment}` — no `$` prefix). Back-compat for existing SD users. |
+| `tokens-studio` | Tokens Studio for Figma's multi-file layout: `$themes.json` + `$metadata.json` + per-set files (e.g. `theme/light.json`, `theme/dark.json`). Preserves Figma collection/mode bindings for round-trip with the TS plugin. |
 
 **Diff-aware merge:** Default `strategy: "merge"` only writes files whose content actually changed. Use `strategy: "dry-run"` to preview without writing. Use `strategy: "replace"` to wipe and rewrite.
 

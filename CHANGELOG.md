@@ -5,6 +5,22 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.1] - 2026-05-18
+
+Patch release that surfaced from live-fire testing the v1.28.0 formatters against real multi-tier Figma libraries (Altitude Design System, lib-NEF-v5). Four bugs that produced garbage output for alias-heavy semantic-token sets, now fixed and covered by tests.
+
+### Fixed
+
+- **Tailwind v3 formatter — alias-only sets produced empty `module.exports`.** Sets where every token aliases a primitive (e.g. an Altitude `tier-2-theme` semantic layer pointing at `tier-1` brand colors) previously emitted a bare `{}` because the formatter skipped any token with a reference. The formatter now resolves alias chains to their literal target value at export time using a document-wide token index that spans every set, so semantic-layer sets emit the full namespaced color/spacing/etc. tree.
+- **TypeScript module formatter — emitted `"{alias.path}"` strings as literal values.** Tokens with alias references were written into `tokens.ts` as `Light: "{color.brand.red.500}"` — useless at runtime since TypeScript has no resolution layer. Now resolves alias chains the same way Tailwind v3 does. Cross-library references stay as `null /* TODO: cross-library alias unresolved */` since those genuinely can't be resolved without the source library file.
+- **JSON-flat and JSON-nested formatters — same alias-as-string bug.** `tier-2-theme.tokens.nested.json` would emit `{"Dark": "{color.brand.red.500}", "Light": "{color.brand.red.500}"}` instead of hex values. Now resolves to literals, with the same cross-library-skip path as the TS/Tailwind formatters.
+- **Tailwind v4 formatter — namespace prefix doubled when token path already contained the namespace segment.** A token at `theme.color.header.background` (color type) produced `--color-theme-color-header-background` because the heuristic blindly prepended `color-` without checking whether the path already named the namespace. Now dedups the segment so the same path emits `--color-theme-header-background`. Affects any design system that includes the namespace word inside the variable path (common in tier-2 semantic layers).
+
+### Added
+
+- `resolveAliasChain` helper in `src/core/tokens/alias-resolver.ts` — the safer counterpart of `resolveReference` that returns `null` on cross-library or unresolvable references instead of throwing. Used by the four formatters above; available via the public token API for plugin authors building their own formatters.
+
+
 ## [1.28.0] - 2026-05-18
 
 Full formatter coverage for `figma_export_tokens`. Seven new output formats moved from "scaffolded stub" to "fully implemented," completing the canonical-to-runtime pipeline for every popular styling method we surveyed across the user's design system portfolio. Combined with the existing DTCG JSON + CSS variables formatters, `figma_export_tokens` now ships **10 fully-implemented output formats** with zero third-party build-tool dependencies.
@@ -866,6 +882,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.28.1]: https://github.com/southleft/figma-console-mcp/compare/v1.28.0...v1.28.1
 [1.28.0]: https://github.com/southleft/figma-console-mcp/compare/v1.27.1...v1.28.0
 [1.27.1]: https://github.com/southleft/figma-console-mcp/compare/v1.27.0...v1.27.1
 [1.27.0]: https://github.com/southleft/figma-console-mcp/compare/v1.26.0...v1.27.0

@@ -33,6 +33,7 @@
  */
 
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
+import { buildTokenIndex, resolveAliasChain } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 export function formatTailwindV3(
@@ -43,18 +44,25 @@ export function formatTailwindV3(
   const files: FormatResult["files"] = [];
 
   const splitByCollection = opts.target.splitByCollection ?? false;
+  // Tailwind v3 config is consumed by Tailwind's build step, which needs
+  // literal values — no runtime alias resolution. Build a full-document
+  // token index so we can resolve alias chains at export time. Even when
+  // splitByCollection writes one file per set, aliases may target tokens
+  // in OTHER sets (e.g. semantic → primitives) so the index must span
+  // every set, not just the file's own.
+  const tokenIndex = buildTokenIndex(doc);
 
   if (splitByCollection) {
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set),
-        content: renderConfigFile([set], opts, warnings),
+        content: renderConfigFile([set], opts, tokenIndex, warnings),
       });
     }
   } else {
     files.push({
       path: filenameFor(opts),
-      content: renderConfigFile(doc.sets, opts, warnings),
+      content: renderConfigFile(doc.sets, opts, tokenIndex, warnings),
     });
   }
 
@@ -87,6 +95,7 @@ interface TwTree {
 function renderConfigFile(
   sets: TokenSet[],
   opts: FormatOptions,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const lines: string[] = [];
@@ -107,7 +116,7 @@ function renderConfigFile(
     for (const token of set.tokens) {
       const value = token.values[primaryMode];
       if (!value) continue;
-      const formattedValue = formatTokenValue(value, token, warnings);
+      const formattedValue = formatTokenValue(value, token, primaryMode, tokenIndex, warnings);
       if (formattedValue === null) continue;
       const { namespace, subPath } = mapToNamespace(token);
       if (!namespaces[namespace]) namespaces[namespace] = {};
@@ -215,37 +224,44 @@ function renderTree(tree: TwTree, indent: number): string {
 
 /**
  * Format a token value as a JavaScript literal (quoted string for most
- * things). Returns null if the value can't be represented.
+ * things). Resolves alias chains to their literal target value via the
+ * document-wide token index — Tailwind v3 config is read at Tailwind's
+ * build time and needs concrete values (no runtime cascade).
+ *
+ * Returns null only for cross-library aliases or genuinely empty values,
+ * after emitting a warning explaining what got skipped.
  */
 function formatTokenValue(
   value: TokenValue,
   token: Token,
+  mode: string,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string | null {
+  let effective: TokenValue | null = value;
   if (value.reference) {
-    const bare = value.reference.replace(/^\{|\}$/g, "");
-    if (bare.startsWith("__library:") || bare === "unknown") {
+    effective = resolveAliasChain(value, mode, tokenIndex);
+    if (!effective) {
+      const bare = value.reference.replace(/^\{|\}$/g, "");
+      const reason = bare.startsWith("__library:") || bare === "unknown"
+        ? "cross-library alias"
+        : "alias target not found in any set";
       warnings.push(
-        `Skipped ${token.path.join(".")} in Tailwind v3 — cross-library alias.`,
+        `Skipped ${token.path.join(".")} in Tailwind v3 — ${reason}: ${value.reference}.`,
       );
       return null;
     }
-    // Local alias: in v3 these resolve to literal references via JS,
-    // but we don't have the target's value at this stage. Emit as a
-    // string marker the user can replace, or skip with a warning.
-    warnings.push(
-      `Token ${token.path.join(".")} is an alias to {${bare}} — Tailwind v3 needs literal values, alias not resolved at export time.`,
-    );
+  }
+  if (!effective || effective.literal === undefined || effective.literal === null) {
     return null;
   }
-  if (value.literal === undefined || value.literal === null) return null;
 
-  if (typeof value.literal === "number") {
-    if (token.type === "dimension") return JSON.stringify(`${value.literal}px`);
-    return String(value.literal);
+  if (typeof effective.literal === "number") {
+    if (token.type === "dimension") return JSON.stringify(`${effective.literal}px`);
+    return String(effective.literal);
   }
-  if (typeof value.literal === "string") return JSON.stringify(value.literal);
-  if (typeof value.literal === "boolean") return String(value.literal);
+  if (typeof effective.literal === "string") return JSON.stringify(effective.literal);
+  if (typeof effective.literal === "boolean") return String(effective.literal);
   // Composite: emit as JSON object literal
-  return JSON.stringify(value.literal);
+  return JSON.stringify(effective.literal);
 }

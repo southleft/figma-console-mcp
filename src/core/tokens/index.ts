@@ -69,6 +69,7 @@ export {
 export {
   buildTokenIndex,
   resolveReference,
+  resolveAliasChain,
   validateAliases,
   formatDtcgReference,
   parseDtcgReference,

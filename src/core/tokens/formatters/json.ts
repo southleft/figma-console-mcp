@@ -32,6 +32,7 @@
  */
 
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
+import { buildTokenIndex, resolveAliasChain } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 export function formatJsonFlat(
@@ -43,18 +44,21 @@ export function formatJsonFlat(
 
   const splitByCollection = opts.target.splitByCollection ?? false;
   const prefix = opts.target.prefix ?? "";
+  // Plain JSON has no native alias mechanism — resolve aliases to their
+  // literal target so consumers get usable values, not opaque `{ref}` strings.
+  const tokenIndex = buildTokenIndex(doc);
 
   if (splitByCollection) {
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set, "flat"),
-        content: renderFlat([set], prefix, warnings),
+        content: renderFlat([set], prefix, tokenIndex, warnings),
       });
     }
   } else {
     files.push({
       path: filenameFor(opts, undefined, "flat"),
-      content: renderFlat(doc.sets, prefix, warnings),
+      content: renderFlat(doc.sets, prefix, tokenIndex, warnings),
     });
   }
 
@@ -69,18 +73,19 @@ export function formatJsonNested(
   const files: FormatResult["files"] = [];
 
   const splitByCollection = opts.target.splitByCollection ?? false;
+  const tokenIndex = buildTokenIndex(doc);
 
   if (splitByCollection) {
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set, "nested"),
-        content: renderNested([set], warnings),
+        content: renderNested([set], tokenIndex, warnings),
       });
     }
   } else {
     files.push({
       path: filenameFor(opts, undefined, "nested"),
-      content: renderNested(doc.sets, warnings),
+      content: renderNested(doc.sets, tokenIndex, warnings),
     });
   }
 
@@ -110,6 +115,7 @@ function slugify(s: string): string {
 function renderFlat(
   sets: TokenSet[],
   prefix: string,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const out: Record<string, unknown> = {};
@@ -123,7 +129,7 @@ function renderFlat(
           modeName === primaryMode
             ? baseName
             : `${baseName}--${slugify(modeName)}`;
-        const resolved = resolveValue(value, token, warnings);
+        const resolved = resolveValue(value, token, modeName, tokenIndex, warnings);
         if (resolved !== undefined) out[key] = resolved;
       }
     }
@@ -136,7 +142,11 @@ function renderFlat(
   return JSON.stringify(sorted, null, 2) + "\n";
 }
 
-function renderNested(sets: TokenSet[], warnings: string[]): string {
+function renderNested(
+  sets: TokenSet[],
+  tokenIndex: Map<string, Token>,
+  warnings: string[],
+): string {
   const out: Record<string, unknown> = {};
 
   for (const set of sets) {
@@ -159,14 +169,14 @@ function renderNested(sets: TokenSet[], warnings: string[]): string {
       if (isMultiMode) {
         const modeValues: Record<string, unknown> = {};
         for (const [modeName, value] of Object.entries(token.values)) {
-          const resolved = resolveValue(value, token, warnings);
+          const resolved = resolveValue(value, token, modeName, tokenIndex, warnings);
           if (resolved !== undefined) modeValues[modeName] = resolved;
         }
         cursor[leafKey] = modeValues;
       } else {
-        const onlyValue = Object.values(token.values)[0];
+        const [onlyModeName, onlyValue] = Object.entries(token.values)[0] ?? [];
         if (onlyValue) {
-          const resolved = resolveValue(onlyValue, token, warnings);
+          const resolved = resolveValue(onlyValue, token, onlyModeName, tokenIndex, warnings);
           if (resolved !== undefined) cursor[leafKey] = resolved;
         }
       }
@@ -183,25 +193,32 @@ function pickPrimaryMode(modes: string[]): string {
 function resolveValue(
   value: TokenValue,
   token: Token,
+  mode: string,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): unknown {
+  let effective: TokenValue | null = value;
   if (value.reference) {
-    const bare = value.reference.replace(/^\{|\}$/g, "");
-    if (bare.startsWith("__library:") || bare === "unknown") {
+    effective = resolveAliasChain(value, mode, tokenIndex);
+    if (!effective) {
+      const bare = value.reference.replace(/^\{|\}$/g, "");
+      const reason = bare.startsWith("__library:") || bare === "unknown"
+        ? "cross-library alias"
+        : "alias target not found";
       warnings.push(
-        `Skipped ${token.path.join(".")} in JSON — cross-library alias unresolved.`,
+        `Skipped ${token.path.join(".")} in JSON — ${reason}: ${value.reference}.`,
       );
       return null;
     }
-    // Local alias: emit as the reference path. Caller can resolve.
-    return `{${bare}}`;
   }
-  if (value.literal === undefined || value.literal === null) return undefined;
-  if (typeof value.literal === "number") {
-    if (token.type === "dimension") return `${value.literal}px`;
-    return value.literal;
+  if (!effective || effective.literal === undefined || effective.literal === null) {
+    return undefined;
   }
-  return value.literal as unknown;
+  if (typeof effective.literal === "number") {
+    if (token.type === "dimension") return `${effective.literal}px`;
+    return effective.literal;
+  }
+  return effective.literal as unknown;
 }
 
 function sortKeys<T>(obj: T): T {

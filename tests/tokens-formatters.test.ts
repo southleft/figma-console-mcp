@@ -175,11 +175,16 @@ describe("Tailwind v3 formatter", () => {
     expect(content).toContain('md: "16px"');
   });
 
-  it("skips alias-referenced tokens (v3 needs literals)", () => {
+  it("resolves alias chains to literal values; warns on unresolvable refs", () => {
     const r = formatTailwindV3(ALIAS_DOC, {
       target: { format: "tailwind-v3" },
     });
-    expect(r.warnings.join("\n")).toContain("alias to {color.primary}");
+    const warnings = r.warnings.join("\n");
+    // {color.primary} target doesn't exist in ALIAS_DOC → unresolved warning.
+    expect(warnings).toContain("alias target not found");
+    expect(warnings).toContain("{color.primary}");
+    // Cross-library refs always skip regardless of resolution capability.
+    expect(warnings).toContain("cross-library alias");
   });
 });
 

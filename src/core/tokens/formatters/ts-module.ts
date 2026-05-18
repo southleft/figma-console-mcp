@@ -31,6 +31,7 @@
  */
 
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
+import { buildTokenIndex, resolveAliasChain } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 export function formatTsModule(
@@ -43,20 +44,26 @@ export function formatTsModule(
   const splitByCollection = opts.target.splitByCollection ?? false;
   // splitByMode doesn't make conceptual sense for a TypeScript module
   // (the value is held in-memory at runtime, not selected by CSS cascade).
-  // If the user requested it, we honor it as "split modes into separate
-  // exports inside the same file" rather than separate files.
+
+  // TypeScript modules can't natively express alias references — runtime
+  // code reading tokens.color.X gets a string at runtime, no resolution
+  // logic. Build a document-wide token index so aliases resolve to their
+  // literal target at export time. The index spans every set even when
+  // splitByCollection writes single-set files, because aliases often
+  // cross set boundaries (semantic → primitives).
+  const tokenIndex = buildTokenIndex(doc);
 
   if (splitByCollection) {
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set),
-        content: renderTsFile([set], opts, warnings),
+        content: renderTsFile([set], opts, tokenIndex, warnings),
       });
     }
   } else {
     files.push({
       path: filenameFor(opts),
-      content: renderTsFile(doc.sets, opts, warnings),
+      content: renderTsFile(doc.sets, opts, tokenIndex, warnings),
     });
   }
 
@@ -101,6 +108,7 @@ interface TokenLeaf {
 function renderTsFile(
   sets: TokenSet[],
   opts: FormatOptions,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const prefix = opts.target.prefix ?? "";
@@ -121,7 +129,7 @@ function renderTsFile(
 
   for (const set of sets) {
     for (const token of set.tokens) {
-      writeTokenIntoTree(tree, token, set, warnings);
+      writeTokenIntoTree(tree, token, set, tokenIndex, warnings);
     }
   }
 
@@ -137,6 +145,7 @@ function writeTokenIntoTree(
   tree: TokenTree,
   token: Token,
   set: TokenSet,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): void {
   let cursor: TokenTree = tree;
@@ -155,22 +164,23 @@ function writeTokenIntoTree(
 
   const resolvedValues: Record<string, unknown> = {};
   for (const [modeName, value] of Object.entries(token.values)) {
+    let effective: TokenValue | null = value;
     if (value.reference) {
-      const bare = value.reference.replace(/^\{|\}$/g, "");
-      if (bare.startsWith("__library:") || bare === "unknown") {
+      effective = resolveAliasChain(value, modeName, tokenIndex);
+      if (!effective) {
+        const bare = value.reference.replace(/^\{|\}$/g, "");
+        const reason = bare.startsWith("__library:") || bare === "unknown"
+          ? "cross-library alias"
+          : "alias target not found";
         warnings.push(
-          `Skipped ${token.path.join(".")} (mode "${modeName}") in TS module — cross-library alias.`,
+          `Skipped ${token.path.join(".")} (mode "${modeName}") in TS module — ${reason}: ${value.reference}.`,
         );
         resolvedValues[modeName] = null;
         continue;
       }
-      // Local alias: emit the dot-path as a special marker string.
-      // Future enhancement: actually resolve to the target's literal.
-      resolvedValues[modeName] = `{${bare}}`;
-      continue;
     }
-    if (value.literal === undefined || value.literal === null) continue;
-    resolvedValues[modeName] = formatLiteral(value.literal, token.type);
+    if (!effective || effective.literal === undefined || effective.literal === null) continue;
+    resolvedValues[modeName] = formatLiteral(effective.literal, token.type);
   }
 
   cursor[leafKey] = {

@@ -79,6 +79,47 @@ export function resolveReference(
 }
 
 /**
+ * Resolve an alias chain to its final literal value, walking through
+ * intermediate alias hops. Returns the final TokenValue (with `literal` set
+ * if resolution succeeded) or `null` if the chain ends at a cross-library
+ * reference / unresolvable target / cycle.
+ *
+ * Used by formatters that can't natively express alias references in their
+ * output (Tailwind v3, TypeScript modules, plain JSON) — those need literal
+ * values at export time.
+ *
+ * Safer counterpart of `resolveReference` because it swallows errors
+ * (unresolvable / cycle) into `null` rather than throwing; formatters can
+ * then emit a comment or skip the token instead of failing the whole export.
+ */
+export function resolveAliasChain(
+  value: TokenValue,
+  mode: string,
+  index: Map<string, Token>,
+): TokenValue | null {
+  if (!value.reference) return value;
+
+  // Cross-library aliases are not resolvable — formatters should skip with a comment.
+  const bare = value.reference.replace(/^\{|\}$/g, "");
+  if (bare.startsWith("__library:") || bare === "unknown") return null;
+
+  try {
+    const resolved = resolveReference(value.reference, mode, index);
+    // resolveReference throws on cycles / unresolvable, so a returned value
+    // is either a literal or another reference. If still a reference,
+    // recurse (defensive — resolveReference already chases chains, but the
+    // top-level call may return a value with `reference` if mode-fallback
+    // routes through an aliased entry).
+    if (resolved.reference) {
+      return resolveAliasChain(resolved, mode, index);
+    }
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Validate every alias in the document. Returns a list of error messages —
  * empty array means all aliases resolve cleanly.
  */
