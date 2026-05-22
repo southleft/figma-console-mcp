@@ -77,6 +77,31 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
+# ── npm auth precheck ───────────────────────────────────
+# Granular access tokens cap at 90 days. If the token in ~/.npmrc has
+# expired, every downstream step still runs successfully and we only
+# discover the problem at Phase 5 (`npm publish`) — by which point
+# version bumps, CHANGELOG scaffolding, and the GitHub Release have
+# already happened and need manual cleanup.
+#
+# Fail fast: in non-dry-run mode, verify `npm whoami` resolves before
+# touching any files. Skip the check on --dry-run so previews stay cheap.
+if [[ "$DRY_RUN" == false ]]; then
+  if ! NPM_USER=$(npm whoami 2>/dev/null); then
+    echo -e "${RED}Error: npm authentication failed${NC}"
+    echo ""
+    echo "  ${BOLD}npm whoami${NC} returned 401 — the token in ~/.npmrc is expired or revoked."
+    echo ""
+    echo "  Granular access tokens expire every 90 days (npm's cap)."
+    echo "  Renew at: ${CYAN}https://www.npmjs.com/settings/~/tokens${NC}"
+    echo "  See ${CYAN}.notes/RELEASING.md → Known Issues → npm token rotation${NC} for the full recipe."
+    echo ""
+    echo "  Re-run this script after refreshing the token. No files have been modified yet."
+    exit 1
+  fi
+  echo -e "${CYAN}npm auth:${NC} ${BOLD}$NPM_USER${NC} (verified)"
+fi
+
 # ── Resolve paths ───────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
