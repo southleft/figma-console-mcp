@@ -21,7 +21,7 @@ The short answer: **approach** and **audience**. The Figma MCP is a task-driven 
   <Card title="Figma Console MCP" icon="terminal">
     **Made by Southleft** — A design system management platform. 94 dedicated tools for reading, writing, managing tokens, analyzing parity, and bridging the gap between designers and developers.
 
-    103 tools. Plugin API + REST API. Open source (MIT).
+    106 tools. Plugin API + REST API. Open source (MIT).
   </Card>
 </Columns>
 
@@ -275,7 +275,7 @@ Both tools are better together. Use the one that fits your workflow, or use both
 
 <Columns cols={2}>
   <Card title="Set Up Figma Console MCP" icon="rocket" href="/setup">
-    Full 103 tool access in ~10 minutes. Manage your design system with AI.
+    Full 106 tool access in ~10 minutes. Manage your design system with AI.
   </Card>
   <Card title="Set Up Figma MCP (Official)" icon="figma" href="https://developers.figma.com/docs/figma-mcp-server/">
     Figma's official documentation for their MCP server.

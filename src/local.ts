@@ -36,6 +36,7 @@ import { registerVersionTools } from "./core/version-tools.js";
 import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
+import { registerLibraryTools, registerLibraryVariableTools } from "./core/library-tools.js";
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { registerWriteTools } from "./core/write-tools.js";
@@ -2895,6 +2896,13 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			() => this.getCurrentFileUrl(),
 			this.variablesCache,
 		);
+
+		// Register Library Tools (key-based component inspection across shared libraries)
+		registerLibraryTools(this.server, () => this.getFigmaAPI());
+
+		// Register Library Variable Tools (Plugin-API based — list + import variables
+		// from subscribed team libraries; works on every Figma plan, no Enterprise needed)
+		registerLibraryVariableTools(this.server, () => this.getDesktopConnector());
 
 		// Register code-side accessibility scanning (axe-core + JSDOM)
 		registerAccessibilityTools(this.server);

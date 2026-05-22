@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, **debugging**, and **bidirectional token sync**.
 
-> **🆕 Token Sync — Full Formatter Coverage (v1.28.0, patched v1.28.1):** `figma_export_tokens` now ships **10 fully-implemented output formats**: DTCG JSON (canonical), CSS custom properties, Tailwind v4 `@theme inline`, Tailwind v3 config, SCSS, TypeScript module, JSON (flat + nested), Style Dictionary v3, and Tokens Studio multi-file. Pull Figma variables and emit code in whatever styling flavor your project uses — no Style Dictionary or Tokens Studio install required. Diff-aware merge for round-trip; one Figma API call per changed value, not full rewrites. v1.28.1 fixes four alias-resolution bugs found in live-fire testing against multi-tier semantic-token design systems. 103 tools total. [See what's new →](CHANGELOG.md#1281---2026-05-18)
+> **🆕 Shared Library Inspection (v1.29.0):** Three new tools fill the gap between "I see a component key in search results" and "I can actually use it." `figma_get_library_component_by_key` resolves any component key to full property definitions + variant keys + visual specs — without needing the source library file's URL. `figma_get_library_variables` lists every variable from your subscribed libraries (no Enterprise plan required — uses the Plugin API path that works on Pro and Org). `figma_import_library_variable` brings a library token into the current file so it can be bound to nodes alongside the file's own variables. Works on every Figma plan. 106 tools total. [See what's new →](CHANGELOG.md#1290---2026-05-22)
 
 ## What is this?
 
@@ -55,9 +55,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **103** | **95** | **9** |
+| **Total tools available** | **106** | **95** | **9** |
 
-> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 103 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 106 tools with real-time monitoring.
 
 ---
 
@@ -65,7 +65,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 103 tools including design creation, variable management, and component instantiation.
+**What you get:** All 106 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -162,7 +162,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 103 tools as NPX, plus full source code access.
+**What you get:** Same 106 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -308,7 +308,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **103** | **95** | **103** | **9** (read-only) |
+| **Total tools** | **106** | **95** | **106** | **9** (read-only) |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -323,7 +323,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 103 tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 106 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -400,6 +400,12 @@ When you first use design system tools:
 - `figma_get_styles` - Color, text, effect styles
 - `figma_get_file_data` - Full file structure
 - `figma_get_file_for_plugin` - Optimized file data
+
+### 📚 Shared Library Inspection
+- `figma_get_library_component_by_key` - **Resolve any component key to full properties + variants + visual specs** — without needing the source library file's URL. Works for both COMPONENT_SET and standalone COMPONENT keys. Adaptive compression at >500KB.
+- `figma_get_library_components` - Discover all components in a library file (requires library file URL/key)
+- `figma_get_library_variables` - List every variable from team libraries the current file has subscribed. **Works on every Figma plan** — uses the Plugin API path, not the Enterprise-only REST endpoint. Filter by `libraryName`, `collectionName`, or `resolvedType`.
+- `figma_import_library_variable` - Import a library variable into the current file. Returns a local `id` ready to pass to `figma_set_fills` / `figma_update_variable` / any variable-binding tool.
 
 ### ☁️ Cloud Relay
 - `figma_pair_plugin` - Generate a pairing code to connect a Desktop Bridge plugin via the cloud relay
@@ -663,7 +669,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 103 tools work through the WebSocket transport
+- All 106 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -802,9 +808,10 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.28.1 (Stable) - Production-ready with 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **103 tools** (Local) / **95 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
+**Current Status:** v1.29.0 (Stable) - Production-ready with shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **106 tools** (Local) / **95 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
 
 **Recent Releases:**
+- [x] **v1.29.0** - Shared library inspection: three new tools close the gap between "I have a component key" and "I can actually use it." `figma_get_library_component_by_key` resolves any 40-char component key to full `componentPropertyDefinitions` + variants (with their published keys) + per-variant visual specs — without needing the source library file's URL. `figma_get_library_variables` lists library tokens via Plugin API (works on every Figma plan; the REST equivalent is Enterprise-only). `figma_import_library_variable` imports a library token to the current file so it can be bound to nodes. 27 new tests, 1178 total passing. Plugin re-import optional.
 - [x] **v1.28.1** - Bug fix patch surfacing from live-fire testing of the v1.28.0 formatters against multi-tier semantic-token design systems. Fixes: Tailwind v3 emitted empty `module.exports` for alias-only sets (now resolves alias chains to literal values); TypeScript module + JSON flat + JSON nested formatters emitted `"{alias.path}"` strings as literal values (now resolves); Tailwind v4 namespace-prefix doubling (`--color-theme-color-X` is now `--color-theme-X`). Adds `resolveAliasChain` public helper. 1151 tests still passing.
 - [x] **v1.28.0** - Full formatter coverage for `figma_export_tokens`. Seven new output formats: Tailwind v4 `@theme inline`, Tailwind v3 config, SCSS variables, TypeScript module, JSON flat/nested, Style Dictionary v3, Tokens Studio multi-file. Combined with DTCG + CSS variables, ships **10 fully-implemented output formats** with zero third-party build-tool dependencies. Tool description updated, docs/tools.md table all-green. 22 new Jest tests, 1151 total passing.
 - [x] **v1.27.1** - Documentation patch. No code behavior changes. Sweeps stale "Phase 1 ships with DTCG only" claims across tool descriptions, error messages, and internal comments after CSS variables formatter and the apply phase shipped during the v1.27.0 dev cycle. Refreshes README banner + capability bullets + roadmap. Adds `Phase 3.5: Stale-Content Audit` to the release runbook so future releases get a strict pre-publish grep sweep across banners, tool descriptions, error messages, source comments, and tool-count consistency.

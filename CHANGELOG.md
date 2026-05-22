@@ -5,6 +5,33 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.0] - 2026-05-22
+
+Shared-library inspection upgrade. Three new tools fill the gap between "I see a component key from search results" and "I can actually use it" — without forcing the user to find the source library file's URL, switch to a different file, or pay for Figma Enterprise to read library variables. The MCP now answers "what properties does this library component expose?" and "what design tokens does this library publish?" in a single tool call, then lets you import those tokens into the current file so they bind to nodes alongside the file's own variables.
+
+Combined with the existing `figma_instantiate_component`, the end-to-end workflow now is: discover (`search_design_system` / `figma_get_library_components`) → inspect (`figma_get_library_component_by_key`) → instantiate (`figma_instantiate_component`) → inspect tokens (`figma_get_library_variables`) → import + bind (`figma_import_library_variable` → existing variable-binding tools). No file-URL hunting, no Enterprise plan required.
+
+### Added
+
+- **`figma_get_library_component_by_key`** — given only a 40-char component key (the kind returned by `figma_search_components`, `figma_get_library_components`, or the official Figma MCP's `search_design_system`), resolves it via Figma REST API `/v1/component_sets/{key}` → on 404 falls back to `/v1/components/{key}` → returns `componentPropertyDefinitions`, every variant with its published key + node id + per-variant `visualSpec` (fills, strokes, padding, typography), and the source `fileKey` + `nodeId`. Auto-detects COMPONENT_SET vs standalone COMPONENT. For component sets, also fetches the source file's `/components` list in parallel to map each variant node to its published variant key — without that mapping, downstream `figma_instantiate_component` calls can't pick a specific variant. Adaptive compression strips per-variant `visualSpec`s when the response exceeds 500KB (e.g. a 42-variant button at full visual-spec verbosity). Works on **all Figma plans** — no Enterprise plan required.
+- **`figma_get_library_variables`** — lists every variable from team libraries the current file has subscribed, via Plugin API `figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync()` + `getVariablesInLibraryCollectionAsync()` through the Desktop Bridge. Returns collections grouped by library with each variable's key, name, and resolvedType (COLOR / FLOAT / STRING / BOOLEAN). Server-side filters: `libraryName` and `collectionName` (case-insensitive substring), `resolvedType` (exact match — auto-prunes empty collections). Works on **all Figma plans** — the REST API's `/v1/files/{key}/variables/local` endpoint is Enterprise-only, but the Plugin API path this tool uses works on Pro and Org as well.
+- **`figma_import_library_variable`** — imports a single variable from a subscribed library into the current file via Plugin API `figma.variables.importVariableByKeyAsync(key)`. Returns the imported variable's local `id`, which can be passed to `figma_set_fills` / `figma_update_variable` / any existing variable-binding tool to reference the library token from nodes in the current file. Idempotent — calling twice returns the same local id. Specific hint when the library isn't subscribed by the current file (the Plugin API rejects with a generic message; this tool detects the pattern and tells you to subscribe via Figma UI > Assets panel > Libraries).
+- **`FigmaAPI.getComponentByKey(key)`** and **`FigmaAPI.getComponentSetByKey(key)`** — public methods on the REST client. Hit `/v1/components/{key}` and `/v1/component_sets/{key}` respectively. Return Figma's `PublishedComponent` / `PublishedComponentSet` shape wrapped in `{ status, error, meta }`. Available for use by other tools and third-party callers of the FigmaAPI class.
+- **`extractVisualSpec`** is now exported from `src/core/design-system-tools.ts` — previously file-local. Other tools (including `figma_get_library_component_by_key`) can reuse the same fill/stroke/effect/padding/typography extractor that powers `figma_get_design_system_kit`, avoiding duplication.
+- **`src/core/library-tools.ts`** — new module hosting the three tools above. Exports `registerLibraryTools(server, getFigmaAPI)` (REST-based inspection) and `registerLibraryVariableTools(server, getDesktopConnector)` (Plugin-API variable access). Registered in both `src/local.ts` (NPX/Local Git mode) and `src/index.ts` (Durable Object stateful path + stateless HTTP path) — so all three tools are available across local and cloud transports, unlike the older `figma_get_library_components` which is local-only.
+- **27 new Jest tests** under `tests/library-tools.test.ts` covering: COMPONENT_SET resolution + variant key matching, standalone COMPONENT fallback on 404, error paths (both endpoints 404, 403/Forbidden, 429 rate-limited, non-404 errors that should NOT fall through), format=`summary` skip, `includeVisualSpecs=false` skip, adaptive >500KB compression, Plugin-API filters (libraryName / collectionName / resolvedType), `__error` sentinel parsing, connector failures, JSON-stringify escape of injected variable keys, and contract assertions (`_mcp` identity tag, `isError` propagation). Full suite: 1178 passing (was 1151 in v1.28.1).
+
+### Changed
+
+- **AI-facing tool descriptions** for the three new tools explicitly call out which Figma plans they work on. Library variables in particular have historically been gated behind Enterprise via the REST API; the description for `figma_get_library_variables` makes clear the Plugin API path bypasses that restriction.
+- Plugin `PLUGIN_VERSION` bumped to `1.29.0`. **Re-importing the plugin manifest is _optional_** — none of the three new tools modify `figma-desktop-bridge/code.js`. The Plugin API variable tools route through the existing `executeCodeViaUI` handler that has shipped since v1.8.0.
+
+### Deferred to a future release
+
+- **Bind imported library variable to a node in a single tool call** — currently a two-step flow (`figma_import_library_variable` → returns local id → pass to `figma_set_fills` with `boundVariables`). A combined `figma_bind_library_variable_to_node` would be ergonomic but adds surface area without enabling anything new; revisit if real-world usage shows the two-step is friction.
+- **List published variables from a specific library by `libraryKey` (lk-…)** — `figma_get_library_variables` lists everything subscribed by the current file. There's no Plugin API surface to query an arbitrary library by its `lk-` key without first subscribing it (subscription is UI-only). Documented as a limitation; users who need this should subscribe the library in Figma first.
+
+
 ## [1.28.1] - 2026-05-18
 
 Patch release that surfaced from live-fire testing the v1.28.0 formatters against real multi-tier Figma libraries (Altitude Design System, lib-NEF-v5). Four bugs that produced garbage output for alias-heavy semantic-token sets, now fixed and covered by tests.
@@ -882,6 +909,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.29.0]: https://github.com/southleft/figma-console-mcp/compare/v1.28.1...v1.29.0
 [1.28.1]: https://github.com/southleft/figma-console-mcp/compare/v1.28.0...v1.28.1
 [1.28.0]: https://github.com/southleft/figma-console-mcp/compare/v1.27.1...v1.28.0
 [1.27.1]: https://github.com/southleft/figma-console-mcp/compare/v1.27.0...v1.27.1

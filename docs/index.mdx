@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.28.0 (patched v1.28.1) — Full Formatter Coverage:** `figma_export_tokens` now ships 10 fully-implemented output formats — DTCG JSON, CSS custom properties, Tailwind v4 `@theme inline`, Tailwind v3 config, SCSS, TypeScript module, JSON flat/nested, Style Dictionary v3, and Tokens Studio. Pull Figma variables, emit code in any popular styling flavor — no third-party build tool install required. v1.28.1 fixes four alias-resolution bugs found in live-fire testing against multi-tier semantic-token design systems. 103 tools total. [See what's new →](/tools#-token-sync-tools)
+**New in v1.29.0 — Shared Library Inspection:** Three new tools close the gap between "I have a component key from search results" and "I can actually use it." `figma_get_library_component_by_key` resolves any 40-char component key to full property definitions + variant keys + visual specs — no library file URL needed. `figma_get_library_variables` lists every variable from your subscribed team libraries via the Plugin API path (works on every Figma plan — the REST equivalent is Enterprise-only). `figma_import_library_variable` imports a library token into the current file so it can be bound to nodes. 106 tools total. [See what's new →](/tools#figma_get_library_component_by_key)
 </Note>
 
 # Your Design System as an API
@@ -121,6 +121,15 @@ Real component data. Real token values. Real code that uses your actual design s
     - `figma_get_styles` — Color, text, and effect styles
     - `figma_get_component` — Component metadata or reconstruction spec
     - `figma_get_design_system_summary` — Overview of entire system
+  </Accordion>
+
+  <Accordion title="Shared Library Inspection" icon="book">
+    Inspect components and variables from team libraries the current file has subscribed — without needing the library file's URL or an Enterprise plan.
+
+    - `figma_get_library_component_by_key` — **Resolve any component key to full props + variants + visual specs.** Tries `/v1/component_sets/{key}` then falls back to `/v1/components/{key}`. Returns `componentPropertyDefinitions`, every variant with its published key, and per-variant visual specs.
+    - `figma_get_library_components` — Discover all components in a library file (requires the library file URL/key)
+    - `figma_get_library_variables` — **List library tokens.** Plugin API path works on every Figma plan; filter by `libraryName`, `collectionName`, or `resolvedType`.
+    - `figma_import_library_variable` — Import a library variable into the current file. Returns a local `id` ready for `figma_set_fills` or any variable-binding tool.
   </Accordion>
 
   <Accordion title="Plugin Debugging" icon="terminal">
@@ -258,7 +267,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Real scenarios and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 103 tools
+    Complete reference for 106 tools
   </Card>
   <Card title="Troubleshooting" icon="circle-question" href="/troubleshooting">
     Common issues and solutions

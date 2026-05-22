@@ -51,7 +51,7 @@ const logger = createChildLogger({ component: "tokens-tools" });
  * on every exported token document. Kept in sync with package.json by
  * scripts/release.sh — see step 3 of the release flow.
  */
-const MCP_VERSION = "1.28.1";
+const MCP_VERSION = "1.29.0";
 
 const EXPORT_TOOL_DESCRIPTION = `Export Figma variables to design token files in your codebase. Bidirectional with figma_import_tokens — together they replace Style Dictionary and Tokens Studio's export pipeline for the popular styling methods.
 

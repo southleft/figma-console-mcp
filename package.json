@@ -1,6 +1,6 @@
 {
 	"name": "figma-console-mcp",
-	"version": "1.28.1",
+	"version": "1.29.0",
 	"description": "The most comprehensive MCP server for Figma — design tokens, variables, components, write tools, version history diff, accessibility audits, FigJam, Slides, and more. Local (WebSocket Desktop Bridge plugin) and Cloudflare Workers (paired + remote) modes.",
 	"type": "module",
 	"main": "dist/local.js",

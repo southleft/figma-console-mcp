@@ -7,7 +7,7 @@ description: "Complete API reference for all 94 MCP tools, including parameters,
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **103 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **95 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **106 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **95 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -38,8 +38,11 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_set_description` | Add component descriptions | Local / Cloud |
 | **🧩 Components** | `figma_search_components` | Find components by name (local + library) | Local / Cloud |
 | | `figma_get_library_components` | Discover components from published libraries | Local |
+| | `figma_get_library_component_by_key` | **Resolve any component key to full props + variants + visual specs** — no library URL needed | Local / Cloud |
 | | `figma_get_component_details` | Get component details | Local / Cloud |
 | | `figma_instantiate_component` | Create component instance (local + library) | Local / Cloud |
+| **📚 Shared Library Variables** | `figma_get_library_variables` | List variables from subscribed libraries (no Enterprise plan needed) | Local / Cloud |
+| | `figma_import_library_variable` | Import a library variable into the current file | Local / Cloud |
 | | `figma_add_component_property` | Add component property | Local / Cloud |
 | | `figma_edit_component_property` | Edit component property | Local / Cloud |
 | | `figma_delete_component_property` | Remove component property | Local / Cloud |
@@ -1273,6 +1276,145 @@ figma_get_library_components({
 3. Call `figma_instantiate_component` with that `componentKey` — the component is imported from the published library automatically
 
 **Note:** Requires `FIGMA_ACCESS_TOKEN` environment variable. Local mode only.
+
+---
+
+### `figma_get_library_component_by_key`
+
+Resolve a single library component to its full property definitions, variants, and visual specs — using **only the component key**, with no need to first find the source library file's URL.
+
+This is the missing link between "I see a component key in search results" (from `figma_search_components`, `figma_get_library_components`, or the official Figma MCP's `search_design_system`) and "I'm ready to instantiate a specific variant."
+
+**When to Use:**
+- You have a component key (40-char hex) from any search tool and want to inspect what properties / variants it exposes before instantiating
+- You need each variant's published key so `figma_instantiate_component` can target a specific one
+- You want per-variant visual specs (fills, strokes, padding, typography) for code-generation fidelity
+
+**How It Works:**
+1. Tries Figma REST `/v1/component_sets/{key}` first (most common case — buttons, inputs, anything with variants)
+2. On 404, falls back to `/v1/components/{key}` (standalone components)
+3. Extracts `file_key` + `node_id` from the response
+4. Fetches the node at `depth=2` to read `componentPropertyDefinitions` and the variant subtree
+5. For COMPONENT_SETs, also fetches the source file's `/components` list **in parallel** so each variant child node can be mapped to its published variant key
+
+**Usage:**
+```javascript
+// Resolve a component set by key
+figma_get_library_component_by_key({
+  componentKey: "806826503bbd2ab15d0ff77d076a9406a5a83197"
+})
+
+// Summary mode — properties and variant names only (no visual specs)
+figma_get_library_component_by_key({
+  componentKey: "806826503bbd2ab15d0ff77d076a9406a5a83197",
+  format: "summary"
+})
+
+// Skip visual specs entirely (faster, smaller response)
+figma_get_library_component_by_key({
+  componentKey: "806826503bbd2ab15d0ff77d076a9406a5a83197",
+  includeVisualSpecs: false
+})
+```
+
+**Parameters:**
+- `componentKey` (required): The 40-char hex component key from search results. Works for both COMPONENT_SET and standalone COMPONENT keys.
+- `includeVisualSpecs` (optional, default `true`): Include per-variant fills/strokes/padding/typography. Auto-stripped if the response would exceed 500KB.
+- `format` (optional, `"full"` | `"summary"`, default `"full"`): `summary` omits per-variant visual specs. Auto-downgrades on large responses.
+
+**Returns:**
+- `resolvedAs`: `"COMPONENT_SET"` or `"COMPONENT"`
+- `fileKey` + `nodeId`: source file + node id
+- `name`, `description`, `thumbnail_url`, `containing_frame`, `user`, `created_at`, `updated_at`
+- `properties`: `componentPropertyDefinitions` (VARIANT / BOOLEAN / TEXT / INSTANCE_SWAP)
+- `variants[]`: each with `name`, `nodeId`, `key` (the value to pass to `figma_instantiate_component`), and optional `visualSpec`
+- `visualSpec`: root-level fills/strokes/effects/padding/typography
+- `bounds`: width × height of the component set
+- `compression` (only when stripped): `{ originalSizeKB, finalSizeKB, strippedVisualSpecs: true }`
+- `warnings[]`: non-fatal issues (e.g. variant-key resolution skipped)
+
+**Plan requirements:** Works on **all Figma plans**. Requires `FIGMA_ACCESS_TOKEN` with `library_assets:read` + `files:read` scopes.
+
+---
+
+### `figma_get_library_variables`
+
+List every variable from team libraries the current file has subscribed. Uses the **Plugin API path** (`figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync()` + `getVariablesInLibraryCollectionAsync()`), which works on every Figma plan — unlike the REST `/v1/files/{key}/variables/local` endpoint which is Enterprise-only.
+
+**When to Use:**
+- Inventory what design tokens (colors, spacing, typography sizes) are available from your subscribed libraries
+- Find the `key` of a specific library variable so you can import it
+- Build a design system overview that includes shared tokens (not just file-local ones)
+
+**Usage:**
+```javascript
+// Everything subscribed
+figma_get_library_variables()
+
+// Filter by library name (case-insensitive substring)
+figma_get_library_variables({ libraryName: "Northright" })
+
+// Filter to only color tokens from a specific collection
+figma_get_library_variables({
+  libraryName: "Altitude",
+  collectionName: "Colors",
+  resolvedType: "COLOR"
+})
+```
+
+**Parameters:**
+- `libraryName` (optional): Case-insensitive substring filter on the source library's name
+- `collectionName` (optional): Case-insensitive substring filter on the collection name within a library
+- `resolvedType` (optional, `"COLOR" | "FLOAT" | "STRING" | "BOOLEAN"`): Filter to a single token type. Auto-prunes empty collections after filtering.
+
+**Returns:**
+- `summary`: `{ totalCollections, totalVariables }`
+- `filters`: echoed back so you can verify
+- `collections[]`: `[{ libraryName, collectionKey, collectionName, variableCount, variables: [{ key, name, resolvedType }] }]`
+
+**Plan requirements:** Works on **all Figma plans**. Requires the Desktop Bridge plugin to be running. Only libraries the user has explicitly enabled in the current file appear (subscribing libraries is UI-only — the Plugin API cannot subscribe libraries for you).
+
+---
+
+### `figma_import_library_variable`
+
+Import a single variable from a subscribed library into the current file. After import, the variable becomes locally addressable by its returned `id` and can be passed to any tool that binds variables to nodes (`figma_set_fills`, `figma_update_variable`, etc.). Idempotent — calling twice returns the same local id.
+
+**When to Use:**
+- After `figma_get_library_variables`, you've picked a token and want to use it in the current file
+- You're building a composition that mixes file-local variables with library tokens
+
+**Usage:**
+```javascript
+// Step 1: find the variable
+const list = await figma_get_library_variables({
+  libraryName: "Northright",
+  resolvedType: "COLOR"
+});
+
+// Step 2: import it
+const result = await figma_import_library_variable({
+  variableKey: list.collections[0].variables[0].key
+});
+
+// Step 3: use the returned id to bind it to a node
+await figma_set_fills({
+  nodeId: "...",
+  fills: [{ type: "SOLID", boundVariables: { color: { type: "VARIABLE_ALIAS", id: result.imported.id } } }]
+});
+```
+
+**Parameters:**
+- `variableKey` (required): The variable's library key from `figma_get_library_variables` (the `collections[].variables[].key` field — distinct from the local `id` you'll get back).
+
+**Returns:**
+- `imported`: `{ id, key, name, resolvedType, description, variableCollectionId, remote }`
+- `usage.bind`: a hint string showing how to use the returned `id` with binding tools
+
+**Errors:**
+- If the source library isn't subscribed by the current file, returns a specific hint pointing to **Figma > Assets panel > Libraries**. The Plugin API rejects with a generic message; this tool detects the pattern and explains it.
+
+**Plan requirements:** Works on **all Figma plans**. Requires the Desktop Bridge plugin.
 
 ---
 

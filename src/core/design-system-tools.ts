@@ -149,7 +149,7 @@ function rgbaToHex(color: { r: number; g: number; b: number; a?: number }): stri
  * Extract a compact visual specification from a Figma node.
  * Captures the essential CSS-equivalent properties an AI needs to reproduce the component.
  */
-function extractVisualSpec(node: any): VisualSpec | undefined {
+export function extractVisualSpec(node: any): VisualSpec | undefined {
 	if (!node) return undefined;
 
 	const spec: VisualSpec = {};

@@ -306,6 +306,27 @@ export class FigmaAPI {
     return this.request(`/files/${fileKey}/component_sets`);
   }
 
+  /**
+   * GET /v1/components/:key
+   * Get metadata for a single published component by its key.
+   * Returns { status, error, meta: PublishedComponent } where meta includes
+   * file_key, node_id, name, description, containing_frame, user, etc.
+   * Use this to resolve a componentKey (from search results) to its source file.
+   */
+  async getComponentByKey(key: string): Promise<any> {
+    return this.request(`/components/${key}`);
+  }
+
+  /**
+   * GET /v1/component_sets/:key
+   * Get metadata for a single published component set (variant container) by its key.
+   * Returns { status, error, meta: PublishedComponentSet } with the same fields
+   * as getComponentByKey. The node_id points to the parent COMPONENT_SET node.
+   */
+  async getComponentSetByKey(key: string): Promise<any> {
+    return this.request(`/component_sets/${key}`);
+  }
+
 	/**
 	 * GET /v1/images/:file_key
 	 * Renders images for specified nodes
