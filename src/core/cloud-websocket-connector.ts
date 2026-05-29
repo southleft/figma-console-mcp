@@ -199,6 +199,7 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 	): Promise<any> {
 		const params: any = { nodeId, propertyName, propertyType: type, defaultValue };
 		if (options?.preferredValues) params.preferredValues = options.preferredValues;
+		if (options?.description) params.description = options.description;
 		return this.sendCommand('ADD_COMPONENT_PROPERTY', params);
 	}
 
@@ -247,6 +248,35 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 		}
 		const timeout = Math.min(120000, Math.max(30000, variantCount * 1200)) + 5000;
 		return this.sendCommand('CREATE_COMPONENT_SET', params, timeout);
+	}
+
+	// ============================================================================
+	// Slot operations
+	// ============================================================================
+
+	async createSlot(nodeId: string, options?: { name?: string; width?: number; height?: number; layoutMode?: string }): Promise<any> {
+		return this.sendCommand('CREATE_SLOT', { nodeId, ...options });
+	}
+
+	async getSlots(nodeId: string): Promise<any> {
+		return this.sendCommand('GET_SLOTS', { nodeId });
+	}
+
+	async appendToSlot(params: {
+		slotId?: string;
+		instanceId?: string;
+		slotName?: string;
+		sourceNodeId?: string;
+		nodeType?: string;
+		properties?: Record<string, string | number>;
+		clone?: boolean;
+		clearExisting?: boolean;
+	}): Promise<any> {
+		return this.sendCommand('APPEND_TO_SLOT', params);
+	}
+
+	async resetSlot(params: { slotId?: string; instanceId?: string; slotName?: string }): Promise<any> {
+		return this.sendCommand('RESET_SLOT', params);
 	}
 
 	// ============================================================================

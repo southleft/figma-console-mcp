@@ -246,6 +246,7 @@ export class WebSocketConnector implements IFigmaConnector {
   ): Promise<any> {
     const params: any = { nodeId, propertyName, propertyType: type, defaultValue };
     if (options?.preferredValues) params.preferredValues = options.preferredValues;
+    if (options?.description) params.description = options.description;
     return this.wsServer.sendCommand('ADD_COMPONENT_PROPERTY', params);
   }
 
@@ -289,6 +290,35 @@ export class WebSocketConnector implements IFigmaConnector {
       params,
       componentSetTimeoutMs(params),
     );
+  }
+
+  // ============================================================================
+  // Slot operations
+  // ============================================================================
+
+  async createSlot(nodeId: string, options?: { name?: string; width?: number; height?: number; layoutMode?: string }): Promise<any> {
+    return this.wsServer.sendCommand('CREATE_SLOT', { nodeId, ...options });
+  }
+
+  async getSlots(nodeId: string): Promise<any> {
+    return this.wsServer.sendCommand('GET_SLOTS', { nodeId });
+  }
+
+  async appendToSlot(params: {
+    slotId?: string;
+    instanceId?: string;
+    slotName?: string;
+    sourceNodeId?: string;
+    nodeType?: string;
+    properties?: Record<string, string | number>;
+    clone?: boolean;
+    clearExisting?: boolean;
+  }): Promise<any> {
+    return this.wsServer.sendCommand('APPEND_TO_SLOT', params);
+  }
+
+  async resetSlot(params: { slotId?: string; instanceId?: string; slotName?: string }): Promise<any> {
+    return this.wsServer.sendCommand('RESET_SLOT', params);
   }
 
   // ============================================================================

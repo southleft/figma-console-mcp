@@ -74,7 +74,7 @@ export interface ComponentVariant {
 
 export interface ComponentProperty {
 	name: string;
-	type: 'TEXT' | 'BOOLEAN' | 'INSTANCE_SWAP' | 'VARIANT';
+	type: 'TEXT' | 'BOOLEAN' | 'INSTANCE_SWAP' | 'VARIANT' | 'SLOT';
 	defaultValue?: string | boolean;
 	options?: string[];  // For INSTANCE_SWAP, available component keys
 }

@@ -64,6 +64,7 @@ import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import { registerDesignSystemDashboardApp } from "./apps/design-system-dashboard/server.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
+import { registerSlotTools } from "./core/slot-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -3156,6 +3157,11 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 		// Register Figma Slides tools (slide management, transitions, content)
 		registerSlidesTools(
+			this.server,
+			() => this.getDesktopConnector(),
+		);
+
+		registerSlotTools(
 			this.server,
 			() => this.getDesktopConnector(),
 		);

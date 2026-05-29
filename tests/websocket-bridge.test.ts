@@ -1081,6 +1081,7 @@ describe('IFigmaConnector interface compliance', () => {
       'deleteVariableCollection', 'getComponentFromPluginUI',
       'getLocalComponents', 'setNodeDescription', 'addComponentProperty',
       'editComponentProperty', 'deleteComponentProperty',
+      'createSlot', 'getSlots', 'appendToSlot', 'resetSlot',
       'instantiateComponent', 'resizeNode', 'moveNode',
       'setNodeFills', 'setNodeStrokes', 'setNodeOpacity',
       'setNodeCornerRadius', 'cloneNode', 'deleteNode',
