@@ -11,7 +11,7 @@ var PLUGIN_VERSION = '1.28.1'; // Kept in sync with package.json by scripts/rele
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
 // Show minimal UI - compact status indicator
-figma.showUI(__html__, { width: 180, height: 50, visible: true, themeColors: true });
+figma.showUI(__html__, { width: 240, height: 40, visible: true, themeColors: true });
 
 // ============================================================================
 // CONSOLE CAPTURE — Intercept console.* in the QuickJS sandbox and forward
@@ -3049,7 +3049,7 @@ figma.ui.onmessage = async (msg) => {
       });
       // Short delay to let the response message be sent before reload
       setTimeout(function() {
-        figma.showUI(__html__, { width: 180, height: 50, visible: true, themeColors: true });
+        figma.showUI(__html__, { width: 240, height: 40, visible: true, themeColors: true });
       }, 100);
     } catch (error) {
       var errorMsg = error && error.message ? error.message : String(error);

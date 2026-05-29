@@ -1,0 +1,2 @@
+# ui-full.html is always a mirror of ui.html — never accept upstream's version
+figma-desktop-bridge/ui-full.html merge=ours
