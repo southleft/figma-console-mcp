@@ -439,14 +439,39 @@
       }).catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
-    // Add a component property (BOOLEAN, TEXT, INSTANCE_SWAP, VARIANT)
+    // Add a component property (BOOLEAN, TEXT, INSTANCE_SWAP, VARIANT, SLOT)
     // Note: We use 'propertyType' instead of 'type' to avoid collision with message type field
     window.addComponentProperty = (nodeId, propertyName, type, defaultValue, options) => {
       var params = { nodeId: nodeId, propertyName: propertyName, propertyType: type, defaultValue: defaultValue };
       if (options) {
         if (options.preferredValues) params.preferredValues = options.preferredValues;
+        if (options.description) params.description = options.description;
       }
       return window.sendPluginCommand('ADD_COMPONENT_PROPERTY', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    // ============================================================================
+    // SLOT OPERATIONS
+    // ============================================================================
+
+    window.createSlot = (nodeId, options) => {
+      return window.sendPluginCommand('CREATE_SLOT', Object.assign({ nodeId: nodeId }, options || {}))
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.getSlots = (nodeId) => {
+      return window.sendPluginCommand('GET_SLOTS', { nodeId: nodeId })
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.appendToSlot = (params) => {
+      return window.sendPluginCommand('APPEND_TO_SLOT', params)
+        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    };
+
+    window.resetSlot = (params) => {
+      return window.sendPluginCommand('RESET_SLOT', params)
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 
@@ -701,6 +726,10 @@
         'ADD_COMPONENT_PROPERTY': function(params) { return window.addComponentProperty(params.nodeId, params.propertyName, params.propertyType, params.defaultValue, params); },
         'EDIT_COMPONENT_PROPERTY': function(params) { return window.editComponentProperty(params.nodeId, params.propertyName, params.newValue); },
         'DELETE_COMPONENT_PROPERTY': function(params) { return window.deleteComponentProperty(params.nodeId, params.propertyName); },
+        'CREATE_SLOT': function(params) { return window.createSlot(params.nodeId, params); },
+        'GET_SLOTS': function(params) { return window.getSlots(params.nodeId); },
+        'APPEND_TO_SLOT': function(params) { return window.appendToSlot(params); },
+        'RESET_SLOT': function(params) { return window.resetSlot(params); },
         'RESIZE_NODE': function(params) { return window.resizeNode(params.nodeId, params.width, params.height, params.withConstraints); },
         'MOVE_NODE': function(params) { return window.moveNode(params.nodeId, params.x, params.y); },
         'SET_NODE_FILLS': function(params) { return window.setNodeFills(params.nodeId, params.fills); },
@@ -1369,6 +1398,18 @@
           break;
         case 'DELETE_COMPONENT_PROPERTY_RESULT':
           handleResult('DELETE_COMPONENT_PROPERTY', null);
+          break;
+        case 'CREATE_SLOT_RESULT':
+          handleResult('CREATE_SLOT', 'slot');
+          break;
+        case 'GET_SLOTS_RESULT':
+          handleResult('GET_SLOTS', null);
+          break;
+        case 'APPEND_TO_SLOT_RESULT':
+          handleResult('APPEND_TO_SLOT', 'appendedNode');
+          break;
+        case 'RESET_SLOT_RESULT':
+          handleResult('RESET_SLOT', 'slot');
           break;
 
         // NEW: Node manipulation operations

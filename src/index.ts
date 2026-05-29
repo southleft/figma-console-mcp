@@ -35,6 +35,7 @@ import { registerWriteTools } from "./core/write-tools.js";
 import { registerTokensTools } from "./core/tokens-tools.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
+import { registerSlotTools } from "./core/slot-tools.js";
 
 // Re-export PluginRelayDO so Cloudflare Workers can bind it as a Durable Object
 export { PluginRelayDO } from "./core/cloud-websocket-relay.js";
@@ -1010,6 +1011,8 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Register Figma Slides tools (slide management, transitions, content)
 		registerSlidesTools(this.server, getCloudDesktopConnector);
 
+		registerSlotTools(this.server, getCloudDesktopConnector);
+
 		// Register Figma API tools (Tools 8-14)
 		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
 		registerFigmaAPITools(
@@ -1469,6 +1472,8 @@ export default {
 
 			// Register Figma Slides tools
 			registerSlidesTools(statelessServer, getCloudDesktopConnector);
+
+			registerSlotTools(statelessServer, getCloudDesktopConnector);
 
 			// Register REST API tools with the authenticated Figma API
 			registerFigmaAPITools(
