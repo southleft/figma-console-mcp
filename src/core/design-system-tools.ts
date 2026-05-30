@@ -563,7 +563,9 @@ export function registerDesignSystemTools(
 		"Includes component visual specs (exact colors, padding, typography, layout), rendered screenshots, " +
 		"token values per mode (light/dark), and resolved style values. " +
 		"Use this instead of calling individual tools to avoid context window overflow. " +
-		"Ideal for AI code generation — use visualSpec for pixel-accurate reproduction.",
+		"Ideal for AI code generation — use visualSpec for pixel-accurate reproduction. " +
+		"Tokens/variables are read through the connected Desktop Bridge or cloud relay and work on ANY Figma plan — no Enterprise required. " +
+		"If a tokens fetch ever reports the Variables REST API is plan-limited (403), the bridge/relay is the plan-independent path: ensure it's connected and retry rather than abandoning variables.",
 		{
 			fileKey: z
 				.string()
