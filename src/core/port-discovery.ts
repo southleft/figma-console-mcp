@@ -41,8 +41,11 @@ export const PORT_RANGE_SIZE = 10;
 /** Prefix for port advertisement files in /tmp */
 const PORT_FILE_PREFIX = 'figma-console-mcp-';
 
-/** Directory for port advertisement files */
-const PORT_FILE_DIR = tmpdir();
+/** Directory for port advertisement files.
+ * Use /tmp on macOS/Linux so the Figma plugin (which hardcodes /tmp) can
+ * discover port files even when os.tmpdir() returns /var/folders/... on macOS.
+ */
+const PORT_FILE_DIR = process.platform === 'win32' ? tmpdir() : '/tmp';
 
 /** Maximum age before a port file without heartbeat is considered stale (4 hours) */
 export const MAX_PORT_FILE_AGE_MS = 4 * 60 * 60 * 1000;

@@ -69,10 +69,18 @@ describe('Port Discovery Module', () => {
   });
 
   describe('getPortFilePath', () => {
-    it('should return a path in the temp directory', () => {
+    it('should return a path in /tmp on non-Windows (or tmpdir on Windows)', () => {
       const path = getPortFilePath(9223);
-      expect(path).toContain(tmpdir());
+      const expectedDir = process.platform === 'win32' ? tmpdir() : '/tmp';
+      expect(path).toContain(expectedDir);
       expect(path).toContain('figma-console-mcp-9223.json');
+    });
+
+    it('should use /tmp so the Figma plugin can discover port files on macOS', () => {
+      if (process.platform !== 'win32') {
+        const path = getPortFilePath(9223);
+        expect(path.startsWith('/tmp/')).toBe(true);
+      }
     });
 
     it('should include the port number in the filename', () => {
