@@ -5,6 +5,19 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.1] - 2026-05-30
+
+Bug-fix patch: design-system token extraction now works on any Figma plan.
+
+### Fixed
+
+- **`figma_get_design_system_kit` no longer returns a 403 on its token/variable section for non-Enterprise users.** The kit fetched variables directly through the Enterprise-only Variables REST API (`getLocalVariables`) with no Desktop Bridge fallback — and wasn't even passed a bridge connector. So Starter/Pro/Org users (the majority) hit `403 "Limited by Figma plan"` *even when the Desktop Bridge or cloud relay was connected*, and AI clients would conclude variables were inaccessible and fall back to other sources (e.g. an uploaded `styles.css`). Variable resolution is now **bridge-first** via a shared `resolveFormattedVariables` helper that mirrors `figma_get_variables`' resolution order: the Desktop Bridge / cloud relay reads variables via the Plugin API on **any** plan, and the REST Variables API is used only as a fallback when no bridge is connected. When the bridge is absent *and* REST returns 403, the error now explicitly points the caller at the bridge / Cloud Mode and tells it to retry, instead of reading as a dead end.
+
+### Changed
+
+- **`figma_get_design_system_kit` description** now states that tokens/variables are read through the connected Desktop Bridge or cloud relay and work on any Figma plan (no Enterprise required), and that a Variables-REST 403 means "connect the bridge and retry" — so AI clients don't treat it as "variables unavailable."
+
+
 ## [1.29.0] - 2026-05-22
 
 Shared-library inspection upgrade. Three new tools fill the gap between "I see a component key from search results" and "I can actually use it" — without forcing the user to find the source library file's URL, switch to a different file, or pay for Figma Enterprise to read library variables. The MCP now answers "what properties does this library component expose?" and "what design tokens does this library publish?" in a single tool call, then lets you import those tokens into the current file so they bind to nodes alongside the file's own variables.
@@ -909,6 +922,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.29.1]: https://github.com/southleft/figma-console-mcp/compare/v1.29.0...v1.29.1
 [1.29.0]: https://github.com/southleft/figma-console-mcp/compare/v1.28.1...v1.29.0
 [1.28.1]: https://github.com/southleft/figma-console-mcp/compare/v1.28.0...v1.28.1
 [1.28.0]: https://github.com/southleft/figma-console-mcp/compare/v1.27.1...v1.28.0
