@@ -320,10 +320,6 @@
       height: 11px;
     }
 
-    .sub-toolbar-spacer {
-      flex: 1;
-    }
-
     /* ===== Row: info panel ===== */
     .info-panel {
       flex-direction: row;
@@ -532,12 +528,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-        </svg>
-      </button>
-      <div class="sub-toolbar-spacer"></div>
-      <button class="icon-btn icon-btn--borderless" id="theme-toggle" onclick="toggleTheme()" title="Switch to light theme" aria-label="Switch to light theme">
-        <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
         </svg>
       </button>
     </div>
@@ -1712,37 +1702,25 @@
       btn.setAttribute('aria-label', on ? 'Remove error filter' : 'Filter errors only');
     }
 
-    // Resolve effective theme: manual override wins, else OS preference.
-    // Icon shows CURRENT state; tooltip describes what clicking does next.
+    // Follow Figma's theme. With themeColors:true, Figma adds a "figma-light" /
+    // "figma-dark" class to <html> and updates it live when the user switches
+    // themes. We mirror that onto body[data-theme] so the status/log color
+    // tokens track Figma. Falls back to OS preference if the class is absent.
     function applyTheme() {
-      var manual = document.body.getAttribute('data-theme-override');
-      var os = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-      var effective = manual || os;
-      document.body.setAttribute('data-theme', effective);
-
-      var btn = document.getElementById('theme-toggle');
-      var icon = document.getElementById('theme-icon');
-      if (!btn || !icon) return;
-      if (effective === 'dark') {
-        // In dark mode — show sun (tap to switch TO light)
-        icon.innerHTML = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
-        btn.title = 'Switch to light theme';
-        btn.setAttribute('aria-label', 'Switch to light theme');
-      } else {
-        // In light mode — show moon (tap to switch TO dark)
-        icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
-        btn.title = 'Switch to dark theme';
-        btn.setAttribute('aria-label', 'Switch to dark theme');
-      }
-    }
-
-    function toggleTheme() {
-      var current = document.body.getAttribute('data-theme');
-      document.body.setAttribute('data-theme-override', current === 'dark' ? 'light' : 'dark');
-      applyTheme();
+      var root = document.documentElement;
+      var theme;
+      if (root.classList.contains('figma-light')) theme = 'light';
+      else if (root.classList.contains('figma-dark')) theme = 'dark';
+      else theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+      document.body.setAttribute('data-theme', theme);
     }
 
     applyTheme();
+    // React to live Figma theme switches (class changes on <html>).
+    if (window.MutationObserver) {
+      new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    }
+    // Fallback path: only relevant when no Figma theme class is present.
     if (window.matchMedia) {
       window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
     }
