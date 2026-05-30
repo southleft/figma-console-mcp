@@ -1054,6 +1054,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
 			{ isRemoteMode: true },
+			getCloudDesktopConnector, // bridge-first variable resolution (works on any plan)
 		);
 
 		// Register Library Tools (key-based component inspection across shared libraries)
@@ -1507,6 +1508,7 @@ export default {
 				getCloudFileUrl,
 				new Map(), // Fresh variables cache per request
 				{ isRemoteMode: true },
+				getCloudDesktopConnector, // bridge-first variable resolution (works on any plan)
 			);
 
 			registerLibraryTools(statelessServer, async () => statelessApi);

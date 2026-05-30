@@ -10,7 +10,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { FigmaAPI } from "./figma-api.js";
-import { extractFileKey, formatVariables, formatComponentData } from "./figma-api.js";
+import { extractFileKey, formatComponentData } from "./figma-api.js";
+import { resolveFormattedVariables } from "./variable-resolver.js";
 import { createChildLogger } from "./logger.js";
 
 const logger = createChildLogger({ component: "design-system-tools" });
@@ -553,6 +554,7 @@ export function registerDesignSystemTools(
 	getCurrentUrl: () => string | null,
 	variablesCache?: Map<string, { data: any; timestamp: number }>,
 	options?: { isRemoteMode?: boolean },
+	getDesktopConnector?: () => Promise<any>,
 ): void {
 	server.tool(
 		"figma_get_design_system_kit",
@@ -634,32 +636,37 @@ export function registerDesignSystemTools(
 						logger.info({ fileKey: resolvedFileKey }, "Fetching design tokens");
 
 						// Check cache first
-						let variablesData: any = null;
 						const cacheKey = `vars:${resolvedFileKey}`;
+						let formatted:
+							| { collections: any[]; variables: any[]; summary: any }
+							| null = null;
 
 						if (variablesCache) {
 							const cached = variablesCache.get(cacheKey);
 							if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
-								variablesData = cached.data;
+								formatted = cached.data;
 								logger.info("Using cached variables data");
 							}
 						}
 
-						if (!variablesData) {
-							variablesData = await withTimeout(
-								api.getLocalVariables(resolvedFileKey),
-								30000,
-								"getLocalVariables",
-							);
+						if (!formatted) {
+							// Bridge-first: the Desktop Bridge / cloud relay reads variables on
+							// ANY plan via the Plugin API. The Enterprise-only REST Variables API
+							// is the fallback, used only when no bridge is connected — so most
+							// users (non-Enterprise) no longer dead-end on a 403 here.
+							formatted = await resolveFormattedVariables({
+								getDesktopConnector,
+								getFigmaAPI,
+								fileKey: resolvedFileKey,
+							});
 							if (variablesCache) {
 								variablesCache.set(cacheKey, {
-									data: variablesData,
+									data: formatted,
 									timestamp: Date.now(),
 								});
 							}
 						}
 
-						const formatted = formatVariables(variablesData);
 						const collections = groupVariablesByCollection(formatted);
 
 						kit.tokens = {
