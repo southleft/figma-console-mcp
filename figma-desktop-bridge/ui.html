@@ -1272,6 +1272,14 @@
       // After connecting, disconnect-triggered retries have their own limit.
       var initialScanAttempts = 0;
       var MAX_INITIAL_SCANS = 3;
+      // Set true only when the user clicks Pause. Suppresses the background
+      // watchdog so a deliberate pause is not undone automatically.
+      var userPaused = false;
+      // Watchdog cadence: how often to re-probe for an MCP server while we have
+      // ZERO connections. Runs only during genuine downtime and stops the moment
+      // a server connects, so the unavoidable connection-refused console noise is
+      // bounded to periods when nothing is connected anyway.
+      var BACKGROUND_RESCAN_MS = 12000;
 
       function wsScanAndConnect() {
         if (isScanning) return;
@@ -1324,13 +1332,21 @@
                 isScanning = false;
                 // Retry with backoff if no servers found, up to MAX_INITIAL_SCANS
                 if (!foundAny && activeConnections.length === 0) {
-                  initialScanAttempts++;
+                  // Fast burst on load: a couple of quick retries with backoff.
+                  // Once the burst exhausts we STOP re-arming here — the background
+                  // watchdog (BACKGROUND_RESCAN_MS) takes over and keeps probing
+                  // slowly, so a server that starts AFTER the plugin still connects
+                  // without a restart. The guard also prevents watchdog-triggered
+                  // scans from incrementing the counter or logging on every cycle.
                   if (initialScanAttempts < MAX_INITIAL_SCANS) {
-                    var delay = 3000 * initialScanAttempts; // 3s, 6s
-                    console.log('[MCP Bridge] No servers found, retry ' + initialScanAttempts + '/' + MAX_INITIAL_SCANS + ' in ' + (delay/1000) + 's');
-                    setTimeout(wsScanAndConnect, delay);
-                  } else {
-                    console.log('[MCP Bridge] No MCP servers found after ' + MAX_INITIAL_SCANS + ' scans. Restart plugin to retry.');
+                    initialScanAttempts++;
+                    if (initialScanAttempts < MAX_INITIAL_SCANS) {
+                      var delay = 3000 * initialScanAttempts; // 3s, 6s
+                      console.log('[MCP Bridge] No servers found, retry ' + initialScanAttempts + '/' + MAX_INITIAL_SCANS + ' in ' + (delay/1000) + 's');
+                      setTimeout(wsScanAndConnect, delay);
+                    } else {
+                      console.log('[MCP Bridge] No MCP server yet — watchdog will keep probing every ' + (BACKGROUND_RESCAN_MS/1000) + 's until one appears (no restart needed).');
+                    }
                   }
                 }
               }
@@ -1529,13 +1545,35 @@
         isScanning = false;
         initialScanAttempts = 0;
         wsReconnectAttempts = 0;
+        // Deliberate user pause — keep the watchdog quiet until Resume/Reconnect.
+        userPaused = true;
       };
 
       window.__wsScanAndConnect = wsScanAndConnect;
 
-      // Single scan on load — no periodic rescanning to avoid console spam.
-      // If no server found, retries up to MAX_INITIAL_SCANS times then stops.
-      // On disconnect, retries the specific port up to 5 times then stops.
+      // Manual (re)connect from the UI: clear any pause, refresh the retry budget
+      // so the user gets the responsive fast burst again, then scan.
+      window.__wsManualScan = function() {
+        userPaused = false;
+        initialScanAttempts = 0;
+        wsScanAndConnect();
+      };
+
+      window.__wsIsPaused = function() { return userPaused; };
+      window.__wsIsScanning = function() { return isScanning; };
+
+      // Background watchdog — the fix for "plugin opened before the MCP client
+      // started." While we hold zero connections and the user hasn't paused,
+      // keep probing at a slow cadence. A late-starting server is picked up
+      // automatically; the probing stops the instant a connection succeeds.
+      setInterval(function() {
+        if (userPaused || isScanning) return;
+        if (activeConnections.length > 0) return;
+        wsScanAndConnect();
+      }, BACKGROUND_RESCAN_MS);
+
+      // Initial scan on load (fast burst). Thereafter the watchdog above keeps
+      // probing while disconnected, and disconnect-triggered retries handle drops.
       wsScanAndConnect();
     })();
 
@@ -2000,6 +2038,7 @@
       if (!_ctaBtn) return;
       if (state === 'on')        { _ctaBtn.textContent = 'Pause';       _ctaBtn.disabled = false; }
       else if (state === 'paused')   { _ctaBtn.textContent = 'Resume';      _ctaBtn.disabled = false; }
+      else if (state === 'reconnect'){ _ctaBtn.textContent = 'Reconnect';   _ctaBtn.disabled = false; }
       else if (state === 'scanning') { _ctaBtn.textContent = 'In progress'; _ctaBtn.disabled = true; }
     }
 
@@ -2012,11 +2051,12 @@
         setCtaState('paused');
         updateStatus('disconnected', false, false);
         logWithHistory('Paused', 'warn');
-      } else if (label === 'Resume') {
+      } else if (label === 'Resume' || label === 'Reconnect') {
         setCtaState('scanning');
         updateStatus('connecting', false, false);
-        logWithHistory('Resuming, scanning ports 9223-9232', 'info');
-        if (typeof window.__wsScanAndConnect === 'function') window.__wsScanAndConnect();
+        logWithHistory((label === 'Reconnect' ? 'Reconnecting' : 'Resuming') + ', scanning ports 9223-9232', 'info');
+        if (typeof window.__wsManualScan === 'function') window.__wsManualScan();
+        else if (typeof window.__wsScanAndConnect === 'function') window.__wsScanAndConnect();
         // Watch for connection success or scan timeout.
         var attempts = 0;
         var poller = setInterval(function() {
@@ -2036,9 +2076,31 @@
       }
     }
 
-    // Periodic refresh of server count and info panel (cheap, <1ms).
+    // Keep the CTA button honest about the real connection state. The status
+    // dot is driven by Figma-side data (variables loaded); this reconciles the
+    // button with the actual number of live MCP server connections so a
+    // never-connected or dropped plugin shows a clickable "Reconnect" instead
+    // of a misleading "Pause". Skips while a scan is mid-flight (button disabled
+    // or __wsIsScanning) to avoid fighting the transient state set on click.
+    function reconcileCta() {
+      ensureLogRefs();
+      if (!_ctaBtn || _ctaBtn.disabled) return;
+      if (typeof window.__wsIsScanning === 'function' && window.__wsIsScanning()) return;
+      var n = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections().length : 0;
+      var paused = (typeof window.__wsIsPaused === 'function') ? window.__wsIsPaused() : false;
+      if (paused) {
+        if (_ctaBtn.textContent !== 'Resume') setCtaState('paused');
+      } else if (n > 0) {
+        if (_ctaBtn.textContent !== 'Pause') setCtaState('on');
+      } else {
+        if (_ctaBtn.textContent !== 'Reconnect') setCtaState('reconnect');
+      }
+    }
+
+    // Periodic refresh of server count, info panel, and CTA state (cheap, <1ms).
     setInterval(function() {
       updateServerCount();
+      reconcileCta();
       // Only refresh info if the panel is visible (cheap gate).
       var info = document.getElementById('info-panel');
       if (info && info.classList.contains('visible')) updateInfoPanel();
