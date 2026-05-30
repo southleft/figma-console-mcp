@@ -52,6 +52,7 @@ import {
 	advertisePort,
 	unadvertisePort,
 	registerPortCleanup,
+	startPeriodicReaper,
 	discoverActiveInstances,
 	cleanupStalePortFiles,
 	cleanupOrphanedProcesses,
@@ -117,6 +118,8 @@ class LocalFigmaConsoleMCP {
 	private wsActualPort: number | null = null;
 	/** The preferred port requested (from env var or default) */
 	private wsPreferredPort: number = DEFAULT_WS_PORT;
+	/** Stops the periodic background reaper (set once the WS port is bound) */
+	private wsReaperStop: (() => void) | null = null;
 	/** Heartbeat timer that refreshes port file to prove this server is active */
 	private wsHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	private config = getConfig();
@@ -3497,6 +3500,13 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 				});
 			}
 
+			// Periodically reap orphaned/zombie servers for the whole run, not just
+			// at startup, so the port range stays clean over long sessions. Runs
+			// only when the WS bridge actually bound a port. Unref'd internally.
+			if (this.wsActualPort !== null && !this.wsReaperStop) {
+				this.wsReaperStop = startPeriodicReaper(this.wsPreferredPort);
+			}
+
 			// Check if Figma Desktop is accessible (non-blocking, just for logging)
 			logger.info("Checking Figma Desktop accessibility...");
 			await this.checkFigmaDesktop();
@@ -3541,6 +3551,12 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 				this.wsHeartbeatTimer = null;
 			}
 
+			// Stop the periodic reaper
+			if (this.wsReaperStop) {
+				this.wsReaperStop();
+				this.wsReaperStop = null;
+			}
+
 			// Clean up port advertisement before stopping the server
 			if (this.wsActualPort) {
 				unadvertisePort(this.wsActualPort);
@@ -3563,16 +3579,31 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 async function main() {
 	const server = new LocalFigmaConsoleMCP();
 
-	// Handle graceful shutdown
-	process.on("SIGINT", async () => {
-		await server.shutdown();
-		process.exit(0);
-	});
+	// Handle graceful shutdown. A hard backstop guarantees the process exits even
+	// if shutdown() hangs (e.g. an HTTP/WebSocket close that blocks on a lingering
+	// connection). Without this, the SIGTERM listener suppresses Node's default
+	// terminate-on-SIGTERM and the process zombifies — holding its port forever.
+	const SHUTDOWN_TIMEOUT_MS = 5000;
+	let shuttingDown = false;
+	const gracefulExit = async (code: number) => {
+		if (shuttingDown) return;
+		shuttingDown = true;
+		const backstop = setTimeout(() => {
+			logger.error(`Shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms — forcing exit`);
+			process.exit(code);
+		}, SHUTDOWN_TIMEOUT_MS);
+		backstop.unref();
+		try {
+			await server.shutdown();
+		} catch (error) {
+			logger.error({ error }, "Error during shutdown");
+		}
+		clearTimeout(backstop);
+		process.exit(code);
+	};
 
-	process.on("SIGTERM", async () => {
-		await server.shutdown();
-		process.exit(0);
-	});
+	process.on("SIGINT", () => { void gracefulExit(0); });
+	process.on("SIGTERM", () => { void gracefulExit(0); });
 
 	// Start the server
 	await server.start();
