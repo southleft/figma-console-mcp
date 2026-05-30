@@ -349,17 +349,6 @@
       align-items: center;
     }
 
-    .info-eye {
-      width: 24px;
-      height: 24px;
-      flex-shrink: 0;
-    }
-
-    .info-eye svg {
-      width: 11px;
-      height: 11px;
-    }
-
     .info-row-label {
       color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
       flex-shrink: 0;
@@ -370,10 +359,6 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-
-    .info-row-value.masked {
-      filter: blur(6px);
     }
 
     /* ===== Row: log panel ===== */
@@ -559,16 +544,9 @@
 
     <!-- Info panel (shown when Info active) -->
     <div class="row info-panel" id="info-panel">
-      <button class="icon-btn icon-btn--borderless info-eye" id="info-eye" onclick="toggleInfoMask()" title="Show filename and page" aria-label="Show filename and page" aria-pressed="false">
-        <svg id="info-eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-          <circle cx="12" cy="12" r="3"/>
-          <line x1="1" y1="1" x2="23" y2="23"/>
-        </svg>
-      </button>
       <div class="info-rows">
-        <div class="info-row"><span class="info-row-label">File:</span><span class="info-row-value masked" id="info-file" aria-hidden="true">—</span></div>
-        <div class="info-row"><span class="info-row-label">Page:</span><span class="info-row-value masked" id="info-page" aria-hidden="true">—</span></div>
+        <div class="info-row"><span class="info-row-label">File:</span><span class="info-row-value" id="info-file">—</span></div>
+        <div class="info-row"><span class="info-row-label">Page:</span><span class="info-row-value" id="info-page">—</span></div>
       </div>
     </div>
 
@@ -1769,27 +1747,6 @@
       window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
     }
 
-    function toggleInfoMask() {
-      var fileEl = document.getElementById('info-file');
-      var pageEl = document.getElementById('info-page');
-      var iconEl = document.getElementById('info-eye-icon');
-      var btn = document.getElementById('info-eye');
-      var masked = fileEl.classList.toggle('masked'); // true if mask was added
-      pageEl.classList.toggle('masked', masked);
-      // Hide blurred content from screen readers (it's illegible to them anyway).
-      fileEl.setAttribute('aria-hidden', masked ? 'true' : 'false');
-      pageEl.setAttribute('aria-hidden', masked ? 'true' : 'false');
-      btn.setAttribute('aria-pressed', masked ? 'false' : 'true');
-      if (masked) {
-        iconEl.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="1" y1="1" x2="23" y2="23"/>';
-        btn.title = 'Show filename and page';
-        btn.setAttribute('aria-label', 'Show filename and page');
-      } else {
-        iconEl.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
-        btn.title = 'Hide filename and page';
-        btn.setAttribute('aria-label', 'Hide filename and page');
-      }
-    }
 
     // ============================================================================
     // STAGE 2 — LOG PANEL, INFO PANEL, CONNECTION, CLIPBOARD EXPORT
