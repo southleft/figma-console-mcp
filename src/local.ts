@@ -2898,6 +2898,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
 			this.variablesCache,
+			undefined, // options (use default)
+			() => this.getDesktopConnector(), // bridge-first variable resolution (works on any plan)
 		);
 
 		// Register Library Tools (key-based component inspection across shared libraries)
