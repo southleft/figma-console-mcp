@@ -4,9 +4,10 @@
  * stale file cleanup, zombie detection, heartbeat, and multi-instance discovery.
  */
 
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { spawn } from 'child_process';
 import { WebSocketServer as WSServer } from 'ws';
 import {
   DEFAULT_WS_PORT,
@@ -15,6 +16,9 @@ import {
   HEARTBEAT_STALE_MS,
   HEARTBEAT_INTERVAL_MS,
   EVICTION_MIN_AGE_MS,
+  TERMINATE_GRACE_MS,
+  ORPHAN_MIN_AGE_MS,
+  REAP_INTERVAL_MS,
   getPortRange,
   getPortFilePath,
   advertisePort,
@@ -22,6 +26,8 @@ import {
   readPortFile,
   discoverActiveInstances,
   cleanupStalePortFiles,
+  cleanupOrphanedProcesses,
+  startPeriodicReaper,
   evictOldestInstance,
   refreshPortAdvertisement,
   isStaleInstance,
@@ -362,6 +368,14 @@ describe('Port Discovery Module', () => {
       expect(HEARTBEAT_STALE_MS).toBe(5 * 60 * 1000);
       expect(MAX_PORT_FILE_AGE_MS).toBe(4 * 60 * 60 * 1000);
     });
+
+    it('should export reaper/termination constants with safe values', () => {
+      expect(TERMINATE_GRACE_MS).toBeGreaterThan(0);
+      // Orphan age guard must comfortably exceed the bind→advertise window.
+      expect(ORPHAN_MIN_AGE_MS).toBeGreaterThanOrEqual(30_000);
+      // Periodic reaper should run on a much longer cadence than the heartbeat.
+      expect(REAP_INTERVAL_MS).toBeGreaterThan(HEARTBEAT_INTERVAL_MS);
+    });
   });
 
   describe('evictOldestInstance', () => {
@@ -545,4 +559,100 @@ describe('Port Range Fallback Integration', () => {
 
     expect(boundPort).toBe(preferredPort + 2);
   });
+});
+
+describe('startPeriodicReaper', () => {
+  it('returns an idempotent stop function', () => {
+    const stop = startPeriodicReaper(TEST_PORT_BASE);
+    expect(typeof stop).toBe('function');
+    expect(() => { stop(); stop(); }).not.toThrow();
+  });
+
+  it('starts and stops without leaving a live handle', (done) => {
+    // The interval is unref'd internally; this just confirms the lifecycle is clean.
+    const stop = startPeriodicReaper(TEST_PORT_BASE);
+    setImmediate(() => { stop(); done(); });
+  });
+});
+
+describe('cleanupOrphanedProcesses — SIGKILL escalation (integration)', () => {
+  const runIf = process.platform === 'win32' ? it.skip : it;
+
+  const isAlive = (pid: number): boolean => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+  const portListening = (port: number): Promise<boolean> => new Promise((resolve) => {
+    const sock = require('net').connect({ port, host: '127.0.0.1' });
+    sock.once('connect', () => { sock.destroy(); resolve(true); });
+    sock.once('error', () => { resolve(false); });
+  });
+  const waitFor = async (pred: () => boolean | Promise<boolean>, timeoutMs: number): Promise<boolean> => {
+    const end = Date.now() + timeoutMs;
+    while (Date.now() < end) {
+      if (await pred()) return true;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return false;
+  };
+
+  // Spawn an orphan-shaped helper: binds a port in the range, has no port file,
+  // and (optionally) ignores SIGTERM — the exact zombie shape seen in production.
+  // Filename contains 'local.js' so the cleanup kill-predicate recognises it.
+  const spawnOrphan = async (port: number, ignoreSigterm: boolean) => {
+    const dir = mkdtempSync(join(tmpdir(), 'fcm-orphan-'));
+    const file = join(dir, 'local.js');
+    writeFileSync(
+      file,
+      `const net = require('net');\n` +
+      (ignoreSigterm ? `process.on('SIGTERM', () => {}); // ignore SIGTERM — the bug\n` : '') +
+      `net.createServer().listen(${port}, '127.0.0.1');\n` +
+      `setInterval(() => {}, 1000);\n`,
+    );
+    const child = spawn(process.execPath, [file], { stdio: 'ignore' });
+    const exit: { code: number | null; signal: string | null } = { code: null, signal: null };
+    child.on('exit', (code, signal) => { exit.code = code; exit.signal = signal; });
+    const ok = await waitFor(() => portListening(port), 5000);
+    return { child, dir, exit, listening: ok };
+  };
+
+  runIf('SIGKILL-escalates and reaps an orphan that ignores SIGTERM', async () => {
+    const port = TEST_PORT_BASE + 7; // within getPortRange(TEST_PORT_BASE)
+    const { child, dir, exit, listening } = await spawnOrphan(port, true);
+    try {
+      expect(listening).toBe(true);
+      expect(existsSync(getPortFilePath(port))).toBe(false); // it's an orphan
+      // Sanity: it really does survive a plain SIGTERM.
+      process.kill(child.pid!, 'SIGTERM');
+      await new Promise((r) => setTimeout(r, 300));
+      expect(isAlive(child.pid!)).toBe(true);
+
+      // Reap (age guard off — the child is brand new in this test).
+      cleanupOrphanedProcesses(TEST_PORT_BASE, { minAgeMs: 0 });
+
+      // Escalation must have force-killed it: exit signal is SIGKILL.
+      // (We assert the kill outcome, not the returned count: a test-spawned child
+      // becomes an unreaped zombie momentarily, unlike a real reparented orphan.)
+      expect(await waitFor(() => exit.signal !== null, 3000)).toBe(true);
+      expect(exit.signal).toBe('SIGKILL');
+    } finally {
+      try { child.kill('SIGKILL'); } catch { /* ignore */ }
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  }, 20000);
+
+  runIf('spares a brand-new orphan when the age guard is active', async () => {
+    const port = TEST_PORT_BASE + 8;
+    const { child, dir, listening } = await spawnOrphan(port, false);
+    try {
+      expect(listening).toBe(true);
+      // Default guard (ORPHAN_MIN_AGE_MS) protects a process this young — it
+      // could be a sibling mid-startup that hasn't advertised its port yet.
+      cleanupOrphanedProcesses(TEST_PORT_BASE);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(isAlive(child.pid!)).toBe(true);
+    } finally {
+      try { child.kill('SIGKILL'); } catch { /* ignore */ }
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  }, 20000);
 });
