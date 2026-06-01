@@ -46,6 +46,21 @@ export interface IFigmaConnector {
   deleteComponentProperty(nodeId: string, propertyName: string): Promise<any>;
   instantiateComponent(componentKey: string, options?: any): Promise<any>;
 
+  // Slot operations (Figma Slots open beta)
+  createSlot(nodeId: string, options?: { name?: string; width?: number; height?: number; layoutMode?: string }): Promise<any>;
+  getSlots(nodeId: string): Promise<any>;
+  appendToSlot(params: {
+    slotId?: string;
+    instanceId?: string;
+    slotName?: string;
+    sourceNodeId?: string;
+    nodeType?: string;
+    properties?: Record<string, string | number>;
+    clone?: boolean;
+    clearExisting?: boolean;
+  }): Promise<any>;
+  resetSlot(params: { slotId?: string; instanceId?: string; slotName?: string }): Promise<any>;
+
   // Node manipulation
   resizeNode(nodeId: string, width: number, height: number, withConstraints?: boolean): Promise<any>;
   moveNode(nodeId: string, x: number, y: number): Promise<any>;

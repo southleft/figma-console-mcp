@@ -3743,7 +3743,7 @@ export function registerFigmaAPITools(
 	// This is the correct way to update TEXT/BOOLEAN/VARIANT properties on component instances
 	server.tool(
 		"figma_set_instance_properties",
-		"Update component properties on a component instance. IMPORTANT: Use this tool instead of trying to edit text nodes directly when working with component instances. Components often expose TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties that control their content. Direct text node editing may fail silently if the component uses properties. This tool handles the #nodeId suffix pattern automatically. Requires Desktop Bridge connection.",
+		"Update component properties on a component instance. IMPORTANT: Use this tool instead of trying to edit text nodes directly when working with component instances. Components often expose TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties that control their content. SLOT properties CANNOT be set here — use figma_append_to_slot to populate slot content. Direct text node editing may fail silently if the component uses properties. This tool handles the #nodeId suffix pattern automatically. Requires Desktop Bridge connection.",
 		{
 			nodeId: z
 				.string()
