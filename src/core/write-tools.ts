@@ -1257,33 +1257,57 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Tool: Add Component Property
 	server.tool(
 		"figma_add_component_property",
-		"Add a new component property to a component or component set. Properties enable dynamic content and behavior in component instances. Supported types: BOOLEAN (toggle), TEXT (string), INSTANCE_SWAP (component swap), VARIANT (variant selection).",
+		"Add a new component property to a component or component set. Properties enable dynamic content and behavior in component instances. Supported types: BOOLEAN (toggle), TEXT (string), INSTANCE_SWAP (component swap), VARIANT (variant selection), SLOT (freeform slot — prefer figma_create_slot for new slots).",
 		{
 			nodeId: z.string().describe("The component or component set node ID"),
 			propertyName: z
 				.string()
 				.describe(
-					"Name for the new property (e.g., 'Show Icon', 'Button Label')",
+					"Name for the new property (e.g., 'Show Icon', 'Button Label', 'Content')",
 				),
 			type: z
-				.enum(["BOOLEAN", "TEXT", "INSTANCE_SWAP", "VARIANT"])
+				.enum(["BOOLEAN", "TEXT", "INSTANCE_SWAP", "VARIANT", "SLOT"])
 				.describe(
-					"Property type: BOOLEAN for toggles, TEXT for strings, INSTANCE_SWAP for component swaps, VARIANT for variant selection",
+					"Property type: BOOLEAN for toggles, TEXT for strings, INSTANCE_SWAP for component swaps, VARIANT for variant selection, SLOT for freeform slot areas",
 				),
 			defaultValue: z
 				.union([z.string(), z.number(), z.boolean()])
+				.optional()
 				.describe(
-					"Default value for the property. BOOLEAN: true/false, TEXT: string, INSTANCE_SWAP: component key, VARIANT: variant value",
+					"Default value. Required for BOOLEAN/TEXT/INSTANCE_SWAP. Omit for VARIANT/SLOT.",
 				),
+			description: z
+				.string()
+				.optional()
+				.describe("Property description (SLOT properties only)"),
+			preferredValues: z
+				.array(
+					z.object({
+						type: z.enum(["COMPONENT", "COMPONENT_SET"]),
+						key: z.string(),
+					}),
+				)
+				.optional()
+				.describe("Preferred components (INSTANCE_SWAP and SLOT only)"),
 		},
-		async ({ nodeId, propertyName, type, defaultValue }) => {
+		async ({ nodeId, propertyName, type, defaultValue, description, preferredValues }) => {
 			try {
 				const connector = await getDesktopConnector();
+				const options: Record<string, unknown> = {};
+				if (description) options.description = description;
+				if (preferredValues) options.preferredValues = preferredValues;
+
+				const resolvedDefault =
+					type === "SLOT" || type === "VARIANT"
+						? ""
+						: defaultValue ?? (type === "BOOLEAN" ? false : "");
+
 				const result = await connector.addComponentProperty(
 					nodeId,
 					propertyName,
 					type,
-					defaultValue,
+					resolvedDefault,
+					Object.keys(options).length > 0 ? options : undefined,
 				);
 
 				if (!result.success) {
@@ -1408,7 +1432,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Tool: Delete Component Property
 	server.tool(
 		"figma_delete_component_property",
-		"Delete a component property. Only works with BOOLEAN, TEXT, and INSTANCE_SWAP properties (not VARIANT). This is a destructive operation.",
+		"Delete a component property. Works with BOOLEAN, TEXT, INSTANCE_SWAP, and SLOT properties (not VARIANT). This is a destructive operation.",
 		{
 			nodeId: z.string().describe("The component or component set node ID"),
 			propertyName: z
@@ -1452,7 +1476,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 								{
 									error:
 										error instanceof Error ? error.message : String(error),
-									hint: "Cannot delete VARIANT properties. Only BOOLEAN, TEXT, and INSTANCE_SWAP can be deleted.",
+									hint: "Cannot delete VARIANT properties. BOOLEAN, TEXT, INSTANCE_SWAP, and SLOT can be deleted.",
 								},
 							),
 						},
