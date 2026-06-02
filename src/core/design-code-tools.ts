@@ -1627,30 +1627,21 @@ async function detectAtomicLevel(
 	fileKey: string,
 	nodeId: string,
 	setNodeId: string | null,
-	componentMeta: any,
-	allComponentsMeta: any[] | null,
+	_componentMeta?: any,
+	_allComponentsMeta?: any[] | null,
 ): Promise<string | null> {
 	try {
-		const targetIds = new Set([nodeId, setNodeId].filter(Boolean) as string[]);
-		const pageIdOf = (cf: any): string | null => cf?.pageId || cf?.page_id || null;
+		const targetId = setNodeId || nodeId;
 
-		// Resolve the page the component (or its set) lives on, from published metadata.
-		let pageId = pageIdOf(componentMeta?.containing_frame);
-		if (!pageId) {
-			// COMPONENT_SET nodes aren't in /components — look in /component_sets.
-			try {
-				const sets = (await api.getComponentSets(fileKey))?.meta?.component_sets || [];
-				pageId = pageIdOf(sets.find((s: any) => targetIds.has(s.node_id))?.containing_frame);
-			} catch {}
-		}
-		if (!pageId && allComponentsMeta) {
-			pageId = pageIdOf(allComponentsMeta.find((c: any) => targetIds.has(c.node_id))?.containing_frame);
-		}
-		if (!pageId) return null;
-
-		// Ordered page list (depth 1 returns canvas/page nodes only).
-		const pages: any[] = (await api.getFile(fileKey, { depth: 1 }))?.document?.children || [];
-		const idx = pages.findIndex((p) => p.id === pageId);
+		// Resolve the page the component lives on — independent of library-publish
+		// status (published `containing_frame` metadata is empty for many files).
+		// Requesting the file with `ids` returns every page in document order, but
+		// prunes each page's children to only the path reaching the requested node,
+		// so the single page whose subtree still contains the node is its home page.
+		const pages: any[] = (await api.getFile(fileKey, { ids: [targetId] }))?.document?.children || [];
+		const contains = (n: any): boolean =>
+			n?.id === targetId || (Array.isArray(n?.children) && n.children.some(contains));
+		const idx = pages.findIndex((p) => contains(p));
 		if (idx < 0) return null;
 
 		// Walk back to the nearest atomic-design divider page.
