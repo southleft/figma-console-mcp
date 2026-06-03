@@ -271,6 +271,7 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 			if (options.fontSize) params.fontSize = options.fontSize;
 			if (options.fontWeight) params.fontWeight = options.fontWeight;
 			if (options.fontFamily) params.fontFamily = options.fontFamily;
+			if (options.fontStyle) params.fontStyle = options.fontStyle;
 		}
 		return this.sendCommand('SET_TEXT_CONTENT', params);
 	}

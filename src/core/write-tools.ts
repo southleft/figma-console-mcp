@@ -1156,8 +1156,14 @@ After instantiating components, use figma_take_screenshot to verify the result l
 							text: JSON.stringify(
 								{
 									success: true,
-									message: "Component instantiated successfully",
+									message:
+										result.warnings && result.warnings.length
+											? "Component instantiated, but some overrides did not apply (see warnings)"
+											: "Component instantiated successfully",
 									instance: result.instance,
+									...(result.warnings && result.warnings.length
+										? { warnings: result.warnings }
+										: {}),
 									timestamp: Date.now(),
 								},
 							),
@@ -1586,7 +1592,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Tool: Set Node Fills
 	server.tool(
 		"figma_set_fills",
-		"Set the fill colors on a node. Accepts hex color strings (e.g., '#FF0000') or full paint objects.",
+		"Set the fill colors on a node. Accepts hex color strings (e.g., '#FF0000'). To bind a fill to a design token / color variable, pass that fill's variableId — the variable drives the color and this works on any Figma plan via the bridge (no raw figma_execute needed).",
 		{
 			nodeId: z.string().describe("The node ID to modify"),
 			fills: z
@@ -1597,13 +1603,20 @@ After instantiating components, use figma_take_screenshot to verify the result l
 							.describe("Fill type (currently only SOLID supported)"),
 						color: z
 							.string()
+							.optional()
 							.describe(
-								"Hex color string (e.g., '#FF0000', '#FF000080' for transparency)",
+								"Hex color string (e.g., '#FF0000', '#FF000080' for transparency). Optional when variableId is provided.",
 							),
 						opacity: z
 							.number()
 							.optional()
 							.describe("Opacity 0-1 (default: 1)"),
+						variableId: z
+							.string()
+							.optional()
+							.describe(
+								"Bind this fill's color to a Figma variable by id (e.g. 'VariableID:1:23' from figma_get_variables). When set, the variable drives the color. Import library variables first via figma_import_library_variable.",
+							),
 					}),
 				)
 				.describe("Array of fill objects"),
@@ -1704,15 +1717,24 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Tool: Set Node Strokes
 	server.tool(
 		"figma_set_strokes",
-		"Set the stroke (border) on a node. Accepts hex color strings and optional stroke weight.",
+		"Set the stroke (border) on a node. Accepts hex color strings and optional stroke weight. To bind a stroke to a design token / color variable, pass that stroke's variableId — works on any Figma plan via the bridge.",
 		{
 			nodeId: z.string().describe("The node ID to modify"),
 			strokes: z
 				.array(
 					z.object({
 						type: z.literal("SOLID").describe("Stroke type"),
-						color: z.string().describe("Hex color string"),
+						color: z
+							.string()
+							.optional()
+							.describe("Hex color string. Optional when variableId is provided."),
 						opacity: z.number().optional().describe("Opacity 0-1"),
+						variableId: z
+							.string()
+							.optional()
+							.describe(
+								"Bind this stroke's color to a Figma variable by id (e.g. 'VariableID:1:23' from figma_get_variables). When set, the variable drives the color.",
+							),
 					}),
 				)
 				.describe("Array of stroke objects"),
@@ -1922,19 +1944,31 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Tool: Set Text Content
 	server.tool(
 		"figma_set_text",
-		"Set the text content of a text node. Optionally adjust font size.",
+		"Set the text content of a text node. Optionally adjust font size and the font family/style. Font style names are space-sensitive ('Semi Bold', not 'SemiBold'), but this tool auto-corrects common no-space variants and falls back gracefully — so you don't need raw figma_execute to change typography.",
 		{
 			nodeId: z.string().describe("The text node ID"),
 			text: z.string().describe("The new text content"),
 			fontSize: z.number().optional().describe("Optional font size to set"),
+			fontFamily: z
+				.string()
+				.optional()
+				.describe("Optional font family to apply (e.g., 'Inter')"),
+			fontStyle: z
+				.string()
+				.optional()
+				.describe(
+					"Optional font style/weight to apply (e.g., 'Bold', 'Semi Bold'). No-space variants like 'SemiBold' are auto-corrected.",
+				),
 		},
-		async ({ nodeId, text, fontSize }) => {
+		async ({ nodeId, text, fontSize, fontFamily, fontStyle }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.setTextContent(
 					nodeId,
 					text,
-					fontSize ? { fontSize } : undefined,
+					fontSize || fontFamily || fontStyle
+						? { fontSize, fontFamily, fontStyle }
+						: undefined,
 				);
 
 				if (!result.success) {

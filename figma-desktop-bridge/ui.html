@@ -538,6 +538,7 @@
         if (options.fontSize) params.fontSize = options.fontSize;
         if (options.fontWeight) params.fontWeight = options.fontWeight;
         if (options.fontFamily) params.fontFamily = options.fontFamily;
+        if (options.fontStyle) params.fontStyle = options.fontStyle;
       }
       return window.sendPluginCommand('SET_TEXT_CONTENT', params)
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
@@ -1280,6 +1281,7 @@
             if (msg.data !== undefined) result.data = msg.data;
             if (msg.oldName !== undefined) result.oldName = msg.oldName;
             if (msg.instance !== undefined) result.instance = msg.instance;
+            if (msg.warnings !== undefined) result.warnings = msg.warnings;
             request.resolve(result);
           } else {
             request.resolve({ success: false, error: msg.error || 'Unknown error' });
