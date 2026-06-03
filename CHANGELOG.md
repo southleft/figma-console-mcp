@@ -5,6 +5,18 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.2] - 2026-06-02
+
+Bug-fix patch: `figma_generate_component_doc` now renders Figma component descriptions faithfully and reliably tags each component's atomic-design level.
+
+### Fixed
+
+- **Component descriptions render their sections instead of leaking heading markup.** Figma component descriptions that used single `#` headings (e.g. `# Usage Guidelines`, `# Accessibility Requirements`) were only parsed at the `##`/`###` levels, so those sections leaked into the output as literal `- # Heading` list items instead of becoming real document sections. The parser now recognizes single-`#` headings as well, so Usage Guidelines, Implementation Considerations, Accessibility Requirements, and Content Configuration render as proper sections.
+- **Frontmatter `description` no longer truncates mid-sentence.** The generated frontmatter took its `description` by splitting on the bare word "Accessibility", which cut the summary off mid-sentence whenever that word appeared. It now takes the first sentence up to the first heading or blank line.
+- **Figma URL no longer contains a doubled `?node-id=`.** When the connected file's URL already carried a `?node-id=<page>` query param, the target node id was appended without stripping the existing one, producing a malformed URL with two `node-id` params. The existing param is now stripped before the target node is appended.
+- **Atomic-design `level` is detected without relying on published-library metadata.** Auto-detection of a component's atomic level (atom / molecule / organism / template) first depended on the published `containing_frame.pageId` from `/components` + `/component_sets`, but many real files — including ones whose components have publish keys — return an empty `/component_sets` list over REST, so no `level` was emitted. Detection now resolves the home page directly via a single `ids=<node>` file request (which returns every page in document order, pruned to the path reaching the node) and walks back to the nearest `ATOMS`/`MOLECULES`/`ORGANISMS`/`TEMPLATES` divider — emitting `level:` frontmatter plus a matching tag, with no dependency on library publishing.
+
+
 ## [1.29.1] - 2026-05-30
 
 Bug-fix patch: design-system token extraction now works on any Figma plan.
@@ -922,6 +934,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.29.2]: https://github.com/southleft/figma-console-mcp/compare/v1.29.1...v1.29.2
 [1.29.1]: https://github.com/southleft/figma-console-mcp/compare/v1.29.0...v1.29.1
 [1.29.0]: https://github.com/southleft/figma-console-mcp/compare/v1.28.1...v1.29.0
 [1.28.1]: https://github.com/southleft/figma-console-mcp/compare/v1.28.0...v1.28.1
