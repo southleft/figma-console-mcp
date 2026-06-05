@@ -50,6 +50,20 @@ export const MAX_PORT_FILE_AGE_MS = 4 * 60 * 60 * 1000;
 /** Maximum time since last heartbeat before a process is considered stale (5 minutes) */
 export const HEARTBEAT_STALE_MS = 5 * 60 * 1000;
 
+/** Grace period after SIGTERM before escalating to SIGKILL (ms) */
+export const TERMINATE_GRACE_MS = 400;
+
+/**
+ * Minimum process age before an orphan may be reaped (ms). Protects a sibling
+ * server that is mid-startup — it has bound a port but not yet written its
+ * advertisement file, so it would otherwise look like an orphan. By the time a
+ * real server is this old it has advertised and is in the known-PID set.
+ */
+export const ORPHAN_MIN_AGE_MS = 60 * 1000;
+
+/** Interval for the periodic background reaper (ms) */
+export const REAP_INTERVAL_MS = 5 * 60 * 1000;
+
 /** Minimum age before an instance can be evicted as last resort (2 minutes) */
 export const EVICTION_MIN_AGE_MS = 2 * 60 * 1000;
 
@@ -184,19 +198,81 @@ export function isStaleInstance(data: PortFileData): boolean {
 }
 
 /**
- * Attempt to terminate a process by PID.
- * Uses SIGTERM for graceful shutdown. On Windows, this calls TerminateProcess
- * which is immediate and cannot be caught.
- *
- * @returns true if the signal was sent successfully, false if the process was already gone
+ * Block the current thread for `ms` milliseconds (synchronous).
+ * Used between SIGTERM and SIGKILL so terminateProcess can stay synchronous
+ * (its callers — cleanup functions — are synchronous and use execSync).
  */
-function terminateProcess(pid: number): boolean {
+function sleepSyncMs(ms: number): void {
+  if (ms <= 0) return;
+  try {
+    // Cross-platform, no child process. SharedArrayBuffer/Atomics are standard in Node 18+.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { /* best-effort spin fallback */ }
+  }
+}
+
+/**
+ * Elapsed time since a process started, in milliseconds. Returns null if it
+ * cannot be determined (process gone, or `ps` unavailable/unparseable).
+ */
+function getProcessAgeMs(pid: number): number | null {
+  if (process.platform === 'win32') return null;
+  try {
+    const { execSync } = require('child_process');
+    // `etime` (formatted elapsed time) is portable across macOS and Linux;
+    // `etimes` (seconds) is Linux-only — macOS ps rejects it. Format is
+    // [[DD-]HH:]MM:SS, e.g. "05:51", "55:27", "01:13:31", "09-14:15:41".
+    const out = execSync(`ps -p ${pid} -o etime= 2>/dev/null`, {
+      encoding: 'utf-8',
+      timeout: 2000,
+    }).trim();
+    const m = out.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+    if (!m) return null;
+    const days = parseInt(m[1] || '0', 10);
+    const hours = parseInt(m[2] || '0', 10);
+    const mins = parseInt(m[3], 10);
+    const secs = parseInt(m[4], 10);
+    return ((((days * 24 + hours) * 60 + mins) * 60) + secs) * 1000;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Terminate a process by PID, escalating to SIGKILL if it ignores SIGTERM.
+ *
+ * A hung MCP server can catch SIGTERM (its shutdown handler runs) yet never
+ * reach process.exit() — e.g. when graceful WebSocket/HTTP close blocks on a
+ * lingering connection. SIGTERM alone then leaves a zombie holding its port
+ * (often with its advertisement file already removed by the handler). We send
+ * SIGTERM, wait briefly, and force-kill with SIGKILL if it is still alive.
+ *
+ * @returns true if the process is confirmed gone afterwards, false if it survived.
+ */
+function terminateProcess(pid: number, graceMs: number = TERMINATE_GRACE_MS): boolean {
+  // SIGTERM first — give the process a chance to shut down gracefully.
   try {
     process.kill(pid, 'SIGTERM');
-    return true;
   } catch {
-    return false; // Process may have already exited
+    return true; // already gone — nothing to terminate
   }
+
+  // Windows: SIGTERM maps to TerminateProcess (immediate, uncatchable).
+  if (process.platform === 'win32') return !isProcessAlive(pid);
+
+  // POSIX: let the graceful handler run, then force-kill if it ignored SIGTERM.
+  sleepSyncMs(graceMs);
+  if (!isProcessAlive(pid)) return true;
+
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    return true; // exited between the check and the kill
+  }
+  sleepSyncMs(Math.min(graceMs, 200));
+  return !isProcessAlive(pid);
 }
 
 /**
@@ -301,10 +377,14 @@ export function cleanupStalePortFiles(): number {
  * Call AFTER cleanupStalePortFiles() — that handles the port-file-based cleanup first,
  * then this catches any remaining ghosts.
  */
-export function cleanupOrphanedProcesses(preferredPort: number = DEFAULT_WS_PORT): number {
+export function cleanupOrphanedProcesses(
+  preferredPort: number = DEFAULT_WS_PORT,
+  options: { minAgeMs?: number } = {},
+): number {
   // Only supported on macOS/Linux (lsof)
   if (process.platform === 'win32') return 0;
 
+  const minAgeMs = options.minAgeMs ?? ORPHAN_MIN_AGE_MS;
   let cleaned = 0;
   const myPid = process.pid;
   const ports = getPortRange(preferredPort);
@@ -341,12 +421,26 @@ export function cleanupOrphanedProcesses(preferredPort: number = DEFAULT_WS_PORT
           }).trim();
 
           if (cmdline.includes('figma-console-mcp') || cmdline.includes('figma_console_mcp') || cmdline.includes('local.js')) {
+            // Don't reap a sibling that is still starting up (bound a port but
+            // hasn't advertised yet). Real orphans are far older than this.
+            const ageMs = getProcessAgeMs(pid);
+            if (minAgeMs > 0 && ageMs !== null && ageMs < minAgeMs) {
+              continue;
+            }
+
             logger.info(
               { port, pid, command: cmdline.substring(0, 120) },
               'Terminating orphaned MCP server (no port file, holding port)',
             );
-            terminateProcess(pid);
-            cleaned++;
+            // terminateProcess escalates SIGTERM -> SIGKILL. Only count it as
+            // cleaned when the process is confirmed gone, so the log reflects
+            // reality (the old code counted attempts and reported success even
+            // when a SIGTERM-ignoring zombie survived).
+            if (terminateProcess(pid)) {
+              cleaned++;
+            } else {
+              logger.warn({ port, pid }, 'Failed to terminate orphaned MCP server (survived SIGKILL)');
+            }
           }
         } catch {
           // Can't read process info — skip to be safe
@@ -480,4 +574,33 @@ export function registerPortCleanup(port: number): void {
   // Prepend our cleanup — it runs first, then existing handlers take over
   process.prependListener('SIGINT', cleanup);
   process.prependListener('SIGTERM', cleanup);
+}
+
+/**
+ * Start a periodic background reaper that re-runs the cleanup passes while this
+ * server is alive. Startup-only reaping leaves orphans to accumulate between
+ * launches (a sibling client that closes without its server exiting cleanly
+ * keeps holding a port until the *next* server starts). Periodic reaping keeps
+ * the range clean continuously.
+ *
+ * Safe against live siblings: they hold fresh advertisement files (heartbeat
+ * every 30s) so they are in the known-PID set and skipped, and the age guard in
+ * cleanupOrphanedProcesses protects mid-startup siblings.
+ *
+ * The interval is unref'd so it never keeps the process alive on its own.
+ *
+ * @returns a stop function that clears the interval.
+ */
+export function startPeriodicReaper(preferredPort: number = DEFAULT_WS_PORT): () => void {
+  const tick = () => {
+    try {
+      cleanupStalePortFiles();
+      cleanupOrphanedProcesses(preferredPort);
+    } catch (error) {
+      logger.warn({ error }, 'Periodic reaper tick failed');
+    }
+  };
+  const interval = setInterval(tick, REAP_INTERVAL_MS);
+  if (typeof interval.unref === 'function') interval.unref();
+  return () => clearInterval(interval);
 }

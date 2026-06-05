@@ -70,7 +70,7 @@ cd figma-desktop-bridge
 
 1. **Open your Figma file** with variables and/or components
 2. **Run the plugin:** Right-click → Plugins → Development → Figma Desktop Bridge
-3. **Wait for confirmation:** Plugin UI will show "✓ Desktop Bridge active"
+3. **Wait for confirmation:** the status strip turns green and shows `READY`
 
 The plugin will:
 - Fetch all local variables and collections on startup
@@ -101,6 +101,46 @@ figma_get_component({
 ```
 
 **Important:** Keep the plugin running while querying. Variables are pre-loaded, but component data is fetched on-demand when requested.
+
+## Plugin Interface
+
+The plugin is a compact, collapsible status panel designed to stay out of the way of the canvas. It opens as a small strip and expands only when you ask it to.
+
+### Status strip (always visible)
+
+- **Status** — a coloured dot + label (`READY`, `CONNECTING`, disconnected) showing whether the bridge is live.
+- **Pause / Reconnect** — the action button:
+  - `Pause` (when connected) — disconnects and stops auto-reconnect until you resume.
+  - `Reconnect` (when not connected) — runs a fresh port scan and connects on the spot, with no need to close and reopen the plugin.
+- **Cloud icon** — opens cloud pairing (see [Cloud Mode](#cloud-mode)).
+- **`+` / `−`** — expand/collapse the options and panels.
+
+### Options (under `+`)
+
+- **Info** — shows the connected **File** and **Page**, confirming which file the bridge is bound to (useful when several MCP servers or files are in play).
+- **Log** — opens the activity log (below).
+- **`N server(s)` badge** — how many MCP servers the plugin is currently connected to. A surprisingly high count is a useful signal that stale/zombie server instances are lingering (see [Multi-Instance Support](#multi-instance-support-v1100)).
+
+### Activity log
+
+The log tells the story of what the AI did, rather than listing raw API traffic:
+
+- Each entry is a human-readable label taken from a leading `// comment` in executed code (e.g. `// Apply drop shadow` → "Apply drop shadow"), a recognised Figma API call, or a `<Code>` prefix for unrecognised raw JS.
+- Errors are shown in red and prefixed `[!]`.
+- Consecutive duplicate actions collapse to one line with a `×N` repeat count.
+- The ⚠ control filters to errors only; the copy button exports the full session log as plain text (handy for bug reports and demos).
+
+The log records actions as they happen while the panel is in memory — it reflects activity since the plugin connected.
+
+### Theme
+
+The plugin follows Figma's light/dark theme automatically — there is no separate theme control to manage.
+
+### Connection & auto-reconnect
+
+- On launch the plugin scans ports 9223–9232 and connects to every MCP server it finds.
+- If no server is running yet (for example, you opened the plugin before starting your AI client), a background watchdog keeps probing while disconnected and connects automatically as soon as a server appears — **no plugin restart needed**. The `Reconnect` button forces an immediate retry.
+- On the server side, stale/zombie MCP instances that would otherwise squat the port range are reaped automatically (SIGTERM, escalating to SIGKILL), so a freshly launched server can claim its preferred port instead of being pushed onto a fallback the plugin then has to chase.
 
 ## Cloud Mode
 
@@ -197,8 +237,9 @@ Click the **Disconnect** button in the Cloud Mode section, or close the plugin. 
 - Verify the MCP server is running (it starts the WebSocket server on port 9223)
 - Check that the plugin is open in Figma — the WebSocket client is in the plugin UI
 - Check the browser console (Plugins > Development > Open Console) for `[MCP Bridge] WebSocket connected to port 9223`
+- **You usually don't need to restart the plugin.** If you opened it before starting the MCP server, the background watchdog reconnects automatically within ~12s once a server appears; the `Reconnect` button forces it immediately. The status strip and the `N server(s)` badge reflect the live connection state.
 - As of v1.10.0, multiple MCP servers can run simultaneously on different ports (9223–9232). If tools aren't working on a fallback port, re-import the plugin manifest to enable multi-port scanning.
-- **Custom ports:** As of v1.10.0, the plugin scans ports 9223–9232 automatically. The `FIGMA_WS_PORT` env var sets the preferred starting port. Multi-instance support works out of the box within this range.
+- **Custom ports:** the plugin scans ports 9223–9232 automatically. The `FIGMA_WS_PORT` env var sets the preferred starting port. Multi-instance support works out of the box within this range.
 
 ### Empty or outdated data
 - Plugin fetches variables on load - rerun plugin after making variable changes
@@ -230,6 +271,17 @@ The Desktop Bridge plugin supports connecting to **multiple MCP server instances
 2. The plugin scans **all 10 ports** on startup and connects to every active server
 3. All events (selection changes, document changes, variables, console logs) are **broadcast to every connected server**
 4. Each server instance independently receives real-time data from Figma
+
+### Automatic cleanup of stale servers
+
+When an AI client closes, its MCP server should exit. If a server's shutdown hangs (e.g. a network close blocks), it can be left behind as a **zombie** still holding a port — and enough zombies exhaust the 9223–9232 range, forcing new servers onto fallback ports the plugin then connects to instead of the one your client is using. This is the classic *"server running but no plugin connected — restart the plugin"* symptom.
+
+The server guards against this on two fronts:
+
+- **On shutdown**, a hard backstop forces the process to exit even if graceful close hangs, so zombies aren't created in the first place.
+- **On startup and periodically**, each server reaps orphaned instances that hold a port without a live advertisement file — escalating from `SIGTERM` to `SIGKILL` so a process that ignores `SIGTERM` is still cleared.
+
+The `N server(s)` badge in the plugin is a quick health check: if it's higher than the number of AI clients you actually have open, stale instances are present (and will be reaped on the next server launch).
 
 ### Important: One-Time Plugin Update
 
