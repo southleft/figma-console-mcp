@@ -5,6 +5,31 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.31.0] - 2026-06-05
+
+Fixes the most-reported reliability problem with the Desktop Bridge: the connection between your MCP client and Figma dropping, and staying down until you close the plugin, restart Claude Code, or manually hunt and kill ports. The root cause was never a flaky network — it was **zombie MCP server processes** squatting the WebSocket port range (9223–9232) after a bad shutdown, so each fresh server was bumped to a port with no plugin attached. This release makes those zombies impossible to create and reaps any that already exist, and pairs it with a plugin that reconnects itself instead of needing a restart.
+
+**Plugin re-import required:** this release redesigns the Desktop Bridge plugin UI (`ui.html`) and updates `code.js`. Re-import the plugin in Figma Desktop after updating — **Plugins → Development → Import plugin from manifest…** → `~/.figma-console-mcp/plugin/manifest.json`. Figma caches plugin files at the application level, so an MCP-client restart alone will not pick up the new UI.
+
+### Added
+
+- **Self-healing zombie reaper.** The server now force-kills stale MCP processes that ignore a graceful shutdown. The old reaper sent only `SIGTERM` and counted success the instant the signal was *sent* — but a server hung on a lingering keep-alive connection catches `SIGTERM`, never reaches `process.exit`, and keeps its port. `terminateProcess` now escalates `SIGTERM` → grace period → `SIGKILL` and counts only confirmed deaths, so a hung zombie can no longer survive a reap.
+- **Periodic background reaper.** Long-lived servers now sweep the port range every 5 minutes (`startPeriodicReaper`, timer `unref`'d so it never keeps the process alive), so zombies are cleared continuously — not only at the next startup. An `ORPHAN_MIN_AGE_MS` (60s) age guard spares mid-startup sibling servers.
+- **Plugin auto-reconnect watchdog.** While the Desktop Bridge holds zero connections and you haven't paused it, it re-probes the port range every 12s and attaches automatically the instant a server appears — so a plugin opened before the MCP client started (or after a drop) connects on its own, with no restart. Probing stops the moment a connection succeeds.
+- **Context-aware connection button.** The plugin's primary button now reflects state: **Pause** when connected, **Resume** when you've paused it, and **Reconnect** when a connection drops unexpectedly — a one-click instant retry instead of reopening the plugin.
+- **Live server-count badge** in the plugin log header (`N server(s)`), which doubles as a zombie diagnostic: more servers than you expect means stale processes are present.
+
+### Changed
+
+- **Shutdown can no longer hang into a zombie.** The local-mode `SIGINT`/`SIGTERM` handlers previously did `await server.shutdown()` *before* `process.exit()`; if a WebSocket/HTTP close blocked on a lingering connection, the process stayed alive with its port file already removed — an invisible orphan. A 5-second hard backstop timer (`unref`'d) now forces exit even if shutdown hangs.
+- **Desktop Bridge UI redesign (v0.2.1):** clearer log intelligence, the server-count badge, and Pause/Resume rescan controls. The manual **theme toggle** was removed — the plugin now follows the Figma app theme directly. The **file/page name mask toggle** was removed (it implied a privacy guarantee it didn't provide).
+- **macOS-safe process-age detection.** Orphan-age checks use the portable `ps -o etime` (the Linux-only `-o etimes` is rejected by macOS `ps`).
+
+### Fixed
+
+- **"Not connected until I restart the plugin / Claude Code / kill ports."** The headline fix above. Diagnosed live from a machine carrying 8 stale `dist/local.js` servers (3–9 days old) holding ports 9223–9231; the SIGKILL escalation + shutdown backstop + periodic reaper together eliminate both the creation and the persistence of these zombies. Covered by integration tests that spawn a real `SIGTERM`-ignoring process and assert the reaper still kills it.
+
+
 ## [1.30.0] - 2026-06-02
 
 Closes a set of Figma Plugin API gaps that previously forced callers into raw `figma_execute` code for common design-system operations — binding color variables to fills, changing typography, and overriding text on component instances. These are the failure modes that made people reach for external "how to drive the Console MCP" cheat-sheets; the structured tools now handle them directly, on any Figma plan, via the Desktop Bridge.
@@ -956,6 +981,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.31.0]: https://github.com/southleft/figma-console-mcp/compare/v1.30.0...v1.31.0
 [1.30.0]: https://github.com/southleft/figma-console-mcp/compare/v1.29.2...v1.30.0
 [1.29.2]: https://github.com/southleft/figma-console-mcp/compare/v1.29.1...v1.29.2
 [1.29.1]: https://github.com/southleft/figma-console-mcp/compare/v1.29.0...v1.29.1

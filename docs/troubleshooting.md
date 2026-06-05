@@ -5,6 +5,46 @@ description: "Solutions to common issues including browser connection, console l
 
 # Troubleshooting Guide
 
+## Connection Drops or "Not Connected"? Start Here
+
+> **This is the most common issue, and as of v1.31.0 it is fixed at the source.** If the bridge keeps dropping and only comes back when you close the plugin, restart your MCP client, or kill ports by hand, you were hitting **zombie MCP server processes** squatting the WebSocket port range (9223–9232) after a bad shutdown. Each fresh server got bumped to a port with no plugin attached, so status read "not connected." v1.31.0 makes those zombies impossible to create and reaps any that already exist — and the plugin now reconnects itself.
+
+### Step 1 — Update and re-import the plugin (required, one time)
+
+The fix lives in **both** the server and the redesigned Desktop Bridge plugin, so you need both halves:
+
+1. **Update the package** so your MCP client launches v1.31.0+ (NPX users get it automatically on next launch; pinned versions should bump to `figma-console-mcp@1.31.0` or later).
+2. **Re-import the plugin** — Figma caches plugin files at the application level, so restarting your MCP client alone will *not* pick up the new plugin UI:
+   - Figma Desktop → **Plugins → Development → Import plugin from manifest…**
+   - Select `~/.figma-console-mcp/plugin/manifest.json` (the stable path the server maintains automatically)
+3. Run the Desktop Bridge plugin in your file. It auto-connects.
+
+> **You only have to do this once.** After you're on v1.31.0+, future updates go back to *not* needing a re-import unless a release explicitly says so.
+
+### Step 2 — Let it reconnect itself (no more restart ritual)
+
+Once you're on v1.31.0+, you should rarely touch the connection again. Three things now keep it alive automatically:
+
+- **Server-side self-healing.** Stale/zombie MCP servers are force-killed (`SIGTERM` → `SIGKILL`) on startup *and* swept every 5 minutes, so the port range stays clean. A hung shutdown can no longer leave an orphan behind.
+- **Auto-reconnect watchdog.** If the plugin ever shows disconnected, it re-probes every ~12 seconds and reattaches the instant a server is available — **no restart needed**, even if you opened the plugin before your MCP client started.
+- **One-click Reconnect.** The plugin's main button becomes **Reconnect** when a connection drops unexpectedly (and **Pause/Resume** when connected). Click it for an instant retry instead of reopening the plugin.
+
+To confirm state at any time, ask your AI to run `figma_get_status` (or `figma_diagnose`). The plugin's log header also shows a live **`N server(s)`** badge — if that number is higher than the number of MCP clients you're running, you have stale processes (and the reaper will clear them).
+
+### Last resort — manually clear leftover zombies (rarely needed)
+
+You should only need this **once, right after upgrading**, to clear pre-v1.31.0 zombies that were already running before the new reaper existed (it cleans up on the *next* server start, but old processes from before the upgrade may still be holding ports). After that, the automatic reaper handles it.
+
+```bash
+# Kill any stale Figma Console MCP servers, then clear their port-advertisement files
+pkill -f figma-console-mcp
+rm -f "${TMPDIR:-/tmp}"/figma-console-mcp-*.json /tmp/figma-console-mcp-*.json
+```
+
+Then reload the Desktop Bridge plugin in Figma — the watchdog reconnects to the clean server. (Port files live in the OS temp dir, which on macOS is `$TMPDIR` → `/var/folders/…`, not `/tmp`, so both paths are listed.) To inspect what's holding the range without killing anything: `lsof -i :9223-9232 | grep LISTEN`.
+
+---
+
 ## Common Issues and Solutions
 
 ### Issue: Claude Code OAuth Completes But Connection Fails
@@ -95,15 +135,15 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 
 #### Plugin Shows "MCP scanning" or "Retry"
 **Cause:** The MCP server is not running yet, or all ports 9223–9232 are occupied.
-**Fix:** Start your MCP client (Claude Code, Cursor, etc.) so the MCP server process starts. If you have many stale processes holding ports, restart Claude Desktop to clear them — the next MCP server startup will clean up any remaining orphans automatically.
+**Fix:** Start your MCP client (Claude Code, Cursor, etc.) so the MCP server process starts. On v1.31.0+ the plugin's watchdog keeps probing and connects on its own the moment a server appears — you don't need to restart anything. If ports are jammed by stale processes from *before* you upgraded, see [Start Here → Last resort](#last-resort--manually-clear-leftover-zombies-rarely-needed); going forward the server's reaper clears orphans on startup and every 5 minutes automatically.
 
 #### Plugin Shows "No MCP server found"
 **Cause:** The plugin scanned every port in 9223–9232 and got no response.
 **Fix:** Make sure an MCP client is running with figma-console-mcp configured. Check `figma_get_status` from your AI client.
 
 #### Orphaned MCP Processes Filling Port Range
-**Cause:** Claude Desktop can leave orphaned MCP server processes running after tabs close (known Claude Desktop issue).
-**Fix:** The server automatically detects and terminates orphaned figma-console-mcp processes on startup. If you need to manually clean up, run: `lsof -i :9223-9232 | grep LISTEN` to see what's holding ports.
+**Cause:** MCP clients can leave orphaned MCP server processes running after tabs/windows close (a known Claude Desktop issue, and the original root cause of the recurring "not connected until restart" reports).
+**Fix (v1.31.0+):** The server now force-kills orphans it finds — escalating `SIGTERM` → `SIGKILL` so even a hung process that ignores a graceful shutdown is cleared — on startup *and* on a 5-minute background sweep. A shutdown backstop also prevents a server from zombifying in the first place. In normal use you should never need to intervene. To inspect (not kill) what's holding ports: `lsof -i :9223-9232 | grep LISTEN`. To force-clear leftovers from before you upgraded, see [Start Here → Last resort](#last-resort--manually-clear-leftover-zombies-rarely-needed).
 
 > **Stable plugin path:** The MCP server automatically copies plugin files to `~/.figma-console-mcp/plugin/` on startup. Import from this path instead of the volatile npx cache path. Re-importing after a package update is optional — only required when the release notes call for it.
 

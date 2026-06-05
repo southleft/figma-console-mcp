@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.30.0 — Native variable binding & typography:** The structured write tools now cover the operations that used to require raw `figma_execute`. `figma_set_fills` / `figma_set_strokes` bind a fill or stroke to a color variable via a new `variableId` param (works on every Figma plan through the bridge — no Enterprise Variables API). `figma_set_text` adds `fontFamily` / `fontStyle` with space-insensitive normalization (`SemiBold` → `Semi Bold`) and graceful fallback. `figma_instantiate_component` pre-loads instance fonts before text overrides (no more silently-skipped overrides) and reports failed overrides in a `warnings` array. **Plugin re-import required** — the bridge files changed. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1300---2026-06-02)
+**New in v1.31.0 — The "not connected until restart" bug is fixed:** If your Desktop Bridge connection kept dropping and only recovered when you closed the plugin, restarted your MCP client, or killed ports by hand — that was **zombie MCP processes** squatting the WebSocket port range. v1.31.0 force-kills them (`SIGTERM` → `SIGKILL`), sweeps the range every 5 minutes, and adds a backstop so a server can't zombify on shutdown. The plugin now reconnects itself (auto-reconnect watchdog + one-click **Reconnect** button) instead of needing a restart. **Update and re-import the plugin once** to get the fix — then see [Troubleshooting → Start Here](/troubleshooting#connection-drops-or-not-connected-start-here). [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1310---2026-06-05)
 </Note>
 
 # Your Design System as an API
