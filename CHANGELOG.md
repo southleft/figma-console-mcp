@@ -5,6 +5,40 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.0] - 2026-06-02
+
+Closes a set of Figma Plugin API gaps that previously forced callers into raw `figma_execute` code for common design-system operations — binding color variables to fills, changing typography, and overriding text on component instances. These are the failure modes that made people reach for external "how to drive the Console MCP" cheat-sheets; the structured tools now handle them directly, on any Figma plan, via the Desktop Bridge.
+
+**Plugin re-import required:** this release changes the Desktop Bridge plugin files (`code.js` and `ui.html`). Re-import the plugin in Figma Desktop after updating — Figma caches plugin files, so an MCP restart alone is not enough.
+
+### Added
+
+- **`figma_set_fills` and `figma_set_strokes` can now bind a fill/stroke to a Figma variable.** Each fill/stroke object accepts an optional `variableId` (e.g. `"VariableID:1:23"` from `figma_get_variables`). The plugin builds the solid paint and attaches the binding via `figma.variables.setBoundVariableForPaint(paint, 'color', variable)` — the paint-level binding that the Plugin API requires (you cannot bind `fills` at the node level). Works on **any Figma plan** through the bridge; no raw `figma_execute` and no Enterprise Variables REST API needed. Import library variables first via `figma_import_library_variable`. An unknown `variableId` now returns a clear, actionable error instead of silently producing a flat color.
+- **`figma_set_text` can now change the font family and style**, via new optional `fontFamily` and `fontStyle` params. Figma font-style names are space-sensitive (`"Semi Bold"`, not `"SemiBold"`), which silently produced wrong typography before. The tool now normalizes common no-space variants (`"SemiBold"` → `"Semi Bold"`, `"ExtraBold"` → `"Extra Bold"`), tries the value as-is first (for families that legitimately use no-space names), and falls back to `Regular` if the requested weight genuinely doesn't exist — so typography no longer requires raw `figma_execute`.
+
+### Changed
+
+- **`figma_set_fills` / `figma_set_strokes`: `color` is now optional** when `variableId` is provided (the bound variable drives the color). Existing hex-only calls are unaffected.
+
+### Fixed
+
+- **`figma_instantiate_component` no longer fails silently when overriding text.** The handler applied text-property overrides via `setProperties()` without first loading the instance's text fonts — which throws in `documentAccess: "dynamic-page"` mode (any instance whose text uses a non-Regular weight, e.g. Semi Bold). The font load was missing, the throw was swallowed as a `console.warn`, and the call returned `success` with the override quietly not applied. The handler now pre-loads every font used by the instance's text nodes (once, up front — avoiding the per-node loop that also caused timeouts) before applying overrides, and collects any override/variant failures into a `warnings[]` array returned in the result, so a bad override key (or any other failure) is surfaced instead of hidden.
+- **Mixed-font text nodes no longer crash `figma_set_text`.** The old path called `figma.loadFontAsync(node.fontName)`, which throws when `fontName` is `figma.mixed`. It now loads every font actually used across the node's character ranges.
+- **Plugin bridge relay (`ui.html`) was dropping newly-added message fields.** The relay reconstructs command messages field-by-field rather than forwarding them whole, and the inbound `setTextContent` relay only copied `fontSize`/`fontWeight`/`fontFamily` (so `fontStyle` was silently lost), while the outbound `handleResult` only copied a fixed set of fields (so instantiate `warnings` never reached the caller). Both now forward the new fields. (Nested payloads like a fill's `variableId` were already forwarded because arrays pass through whole.)
+
+
+## [1.29.2] - 2026-06-02
+
+Bug-fix patch: `figma_generate_component_doc` now renders Figma component descriptions faithfully and reliably tags each component's atomic-design level.
+
+### Fixed
+
+- **Component descriptions render their sections instead of leaking heading markup.** Figma component descriptions that used single `#` headings (e.g. `# Usage Guidelines`, `# Accessibility Requirements`) were only parsed at the `##`/`###` levels, so those sections leaked into the output as literal `- # Heading` list items instead of becoming real document sections. The parser now recognizes single-`#` headings as well, so Usage Guidelines, Implementation Considerations, Accessibility Requirements, and Content Configuration render as proper sections.
+- **Frontmatter `description` no longer truncates mid-sentence.** The generated frontmatter took its `description` by splitting on the bare word "Accessibility", which cut the summary off mid-sentence whenever that word appeared. It now takes the first sentence up to the first heading or blank line.
+- **Figma URL no longer contains a doubled `?node-id=`.** When the connected file's URL already carried a `?node-id=<page>` query param, the target node id was appended without stripping the existing one, producing a malformed URL with two `node-id` params. The existing param is now stripped before the target node is appended.
+- **Atomic-design `level` is detected without relying on published-library metadata.** Auto-detection of a component's atomic level (atom / molecule / organism / template) first depended on the published `containing_frame.pageId` from `/components` + `/component_sets`, but many real files — including ones whose components have publish keys — return an empty `/component_sets` list over REST, so no `level` was emitted. Detection now resolves the home page directly via a single `ids=<node>` file request (which returns every page in document order, pruned to the path reaching the node) and walks back to the nearest `ATOMS`/`MOLECULES`/`ORGANISMS`/`TEMPLATES` divider — emitting `level:` frontmatter plus a matching tag, with no dependency on library publishing.
+
+
 ## [1.29.1] - 2026-05-30
 
 Bug-fix patch: design-system token extraction now works on any Figma plan.
@@ -922,6 +956,8 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.30.0]: https://github.com/southleft/figma-console-mcp/compare/v1.29.2...v1.30.0
+[1.29.2]: https://github.com/southleft/figma-console-mcp/compare/v1.29.1...v1.29.2
 [1.29.1]: https://github.com/southleft/figma-console-mcp/compare/v1.29.0...v1.29.1
 [1.29.0]: https://github.com/southleft/figma-console-mcp/compare/v1.28.1...v1.29.0
 [1.28.1]: https://github.com/southleft/figma-console-mcp/compare/v1.28.0...v1.28.1

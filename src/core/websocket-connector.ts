@@ -277,6 +277,7 @@ export class WebSocketConnector implements IFigmaConnector {
       if (options.fontSize) params.fontSize = options.fontSize;
       if (options.fontWeight) params.fontWeight = options.fontWeight;
       if (options.fontFamily) params.fontFamily = options.fontFamily;
+      if (options.fontStyle) params.fontStyle = options.fontStyle;
     }
     return this.wsServer.sendCommand('SET_TEXT_CONTENT', params);
   }

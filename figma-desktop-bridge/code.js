@@ -6,7 +6,7 @@
 
 // Plugin version — sent in FILE_INFO for server-side version compatibility checks.
 // The server compares this against its own version to detect stale cached plugins.
-var PLUGIN_VERSION = '1.29.1'; // Kept in sync with package.json by scripts/release.sh — see issue #62.
+var PLUGIN_VERSION = '1.30.0'; // Kept in sync with package.json by scripts/release.sh — see issue #62.
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
@@ -216,6 +216,80 @@ function hexToFigmaRGB(hex) {
   }
 
   return { r: r, g: g, b: b, a: a };
+}
+
+// Build the ordered list of font-style names to try for a requested style.
+// Figma style names are exact and space-sensitive: Inter's semibold is
+// "Semi Bold" (with a space), not "SemiBold". We try the value as-is first
+// (some families legitimately use no-space names), then a space-normalized
+// variant, then a space-collapsed variant.
+function normalizeFontStyleVariants(style) {
+  var variants = [];
+  function push(v) { if (v && variants.indexOf(v) === -1) variants.push(v); }
+  push(style);
+  push(String(style).replace(/([a-z])([A-Z])/g, '$1 $2')); // "SemiBold" -> "Semi Bold"
+  push(String(style).replace(/\s+/g, ''));                   // "Semi Bold" -> "SemiBold"
+  return variants;
+}
+
+// Load a font, tolerating common style-name variants. A wrong style name
+// otherwise fails (often silently), leaving wrong typography with no error.
+// Falls back to "Regular" so a bad weight degrades gracefully, and throws a
+// clear, actionable error only if nothing loads.
+async function loadFontWithFallback(family, requestedStyle) {
+  var style = requestedStyle || 'Regular';
+  var attempts = normalizeFontStyleVariants(style);
+  for (var i = 0; i < attempts.length; i++) {
+    try {
+      var fontName = { family: family, style: attempts[i] };
+      await figma.loadFontAsync(fontName);
+      return fontName;
+    } catch (e) { /* try next variant */ }
+  }
+  try {
+    var fallback = { family: family, style: 'Regular' };
+    await figma.loadFontAsync(fallback);
+    return fallback;
+  } catch (e) {
+    throw new Error('Could not load font "' + family + ' ' + style + '". Tried: ' +
+      attempts.join(', ') + ', Regular. Check the family name and that the weight exists ' +
+      '(Figma styles are space-sensitive, e.g. "Semi Bold" not "SemiBold").');
+  }
+}
+
+// Pre-load every font used by a node's text descendants in ONE pass. Mutating
+// a text node in dynamic-page mode throws unless its font is loaded first;
+// loading per-node in a loop is also what causes timeouts at scale.
+async function loadFontsForNode(node) {
+  if (!node) return;
+  var textNodes = [];
+  if (node.type === 'TEXT') {
+    textNodes = [node];
+  } else if (typeof node.findAllWithCriteria === 'function') {
+    try { textNodes = node.findAllWithCriteria({ types: ['TEXT'] }); }
+    catch (e) { textNodes = []; }
+  } else if (typeof node.findAll === 'function') {
+    textNodes = node.findAll(function(n) { return n.type === 'TEXT'; });
+  }
+  var seen = {};
+  var fonts = [];
+  for (var i = 0; i < textNodes.length; i++) {
+    var tn = textNodes[i];
+    var names = [];
+    if (tn.fontName === figma.mixed) {
+      try { names = tn.getRangeAllFontNames(0, tn.characters.length); }
+      catch (e) { names = []; }
+    } else if (tn.fontName) {
+      names = [tn.fontName];
+    }
+    for (var j = 0; j < names.length; j++) {
+      var key = names[j].family + '||' + names[j].style;
+      if (!seen[key]) { seen[key] = true; fonts.push(names[j]); }
+    }
+  }
+  for (var k = 0; k < fonts.length; k++) {
+    try { await figma.loadFontAsync(fonts[k]); } catch (e) { /* skip unavailable */ }
+  }
 }
 
 // Listen for requests from UI (e.g., component data requests, write operations)
@@ -1748,6 +1822,15 @@ figma.ui.onmessage = async (msg) => {
         instance.resize(msg.size.width, msg.size.height);
       }
 
+      // Pre-load fonts for the instance's text nodes BEFORE applying overrides.
+      // Text-property overrides mutate text content, which throws in dynamic-page
+      // mode unless the font is already loaded. Loading once up front also avoids
+      // the per-node timeouts seen when fonts are loaded inside a loop.
+      await loadFontsForNode(instance);
+
+      // Track failures so they surface in the result instead of failing silently.
+      var overrideWarnings = [];
+
       // Apply property overrides
       if (msg.overrides) {
         for (var propName in msg.overrides) {
@@ -1755,7 +1838,9 @@ figma.ui.onmessage = async (msg) => {
             try {
               instance.setProperties({ [propName]: msg.overrides[propName] });
             } catch (propError) {
-              console.warn('🌉 [Desktop Bridge] Could not set property ' + propName + ':', propError.message);
+              var pMsg = propError && propError.message ? propError.message : String(propError);
+              console.warn('🌉 [Desktop Bridge] Could not set property ' + propName + ':', pMsg);
+              overrideWarnings.push('override "' + propName + '" failed: ' + pMsg);
             }
           }
         }
@@ -1766,7 +1851,9 @@ figma.ui.onmessage = async (msg) => {
         try {
           instance.setProperties(msg.variant);
         } catch (variantError) {
-          console.warn('🌉 [Desktop Bridge] Could not set variant:', variantError.message);
+          var vMsg = variantError && variantError.message ? variantError.message : String(variantError);
+          console.warn('🌉 [Desktop Bridge] Could not set variant:', vMsg);
+          overrideWarnings.push('variant selection failed: ' + vMsg);
         }
       }
 
@@ -1791,7 +1878,8 @@ figma.ui.onmessage = async (msg) => {
           y: instance.y,
           width: instance.width,
           height: instance.height
-        }
+        },
+        warnings: overrideWarnings.length ? overrideWarnings : undefined
       });
 
     } catch (error) {
@@ -2320,19 +2408,32 @@ figma.ui.onmessage = async (msg) => {
         throw new Error('Node type ' + node.type + ' does not support fills');
       }
 
-      // Process fills - convert hex colors if needed
-      var processedFills = msg.fills.map(function(fill) {
-        if (fill.type === 'SOLID' && typeof fill.color === 'string') {
-          // Convert hex to RGB
-          var rgb = hexToFigmaRGB(fill.color);
-          return {
+      // Process fills - convert hex colors, and optionally bind a color variable.
+      // Color variables bind at the PAINT level (not the node level), so we build
+      // the solid paint then attach the binding via setBoundVariableForPaint.
+      var processedFills = [];
+      for (var fi = 0; fi < msg.fills.length; fi++) {
+        var fill = msg.fills[fi];
+        if (fill.type === 'SOLID') {
+          var baseHex = typeof fill.color === 'string' ? fill.color : '#000000';
+          var rgb = hexToFigmaRGB(baseHex);
+          var paint = {
             type: 'SOLID',
             color: { r: rgb.r, g: rgb.g, b: rgb.b },
             opacity: rgb.a !== undefined ? rgb.a : (fill.opacity !== undefined ? fill.opacity : 1)
           };
+          if (fill.variableId) {
+            var fillVar = await figma.variables.getVariableByIdAsync(fill.variableId);
+            if (!fillVar) {
+              throw new Error('Fill variable not found: "' + fill.variableId + '". Pass a local variable id from figma_get_variables (e.g. "VariableID:1:23"). Library variables must be imported first via figma_import_library_variable.');
+            }
+            paint = figma.variables.setBoundVariableForPaint(paint, 'color', fillVar);
+          }
+          processedFills.push(paint);
+        } else {
+          processedFills.push(fill);
         }
-        return fill;
-      });
+      }
 
       node.fills = processedFills;
 
@@ -2431,18 +2532,31 @@ figma.ui.onmessage = async (msg) => {
         throw new Error('Node type ' + node.type + ' does not support strokes');
       }
 
-      // Process strokes - convert hex colors if needed
-      var processedStrokes = msg.strokes.map(function(stroke) {
-        if (stroke.type === 'SOLID' && typeof stroke.color === 'string') {
-          var rgb = hexToFigmaRGB(stroke.color);
-          return {
+      // Process strokes - convert hex colors, and optionally bind a color variable
+      // (paint-level binding, same as fills).
+      var processedStrokes = [];
+      for (var sti = 0; sti < msg.strokes.length; sti++) {
+        var stroke = msg.strokes[sti];
+        if (stroke.type === 'SOLID') {
+          var sBaseHex = typeof stroke.color === 'string' ? stroke.color : '#000000';
+          var srgb = hexToFigmaRGB(sBaseHex);
+          var spaint = {
             type: 'SOLID',
-            color: { r: rgb.r, g: rgb.g, b: rgb.b },
-            opacity: rgb.a !== undefined ? rgb.a : (stroke.opacity !== undefined ? stroke.opacity : 1)
+            color: { r: srgb.r, g: srgb.g, b: srgb.b },
+            opacity: srgb.a !== undefined ? srgb.a : (stroke.opacity !== undefined ? stroke.opacity : 1)
           };
+          if (stroke.variableId) {
+            var strokeVar = await figma.variables.getVariableByIdAsync(stroke.variableId);
+            if (!strokeVar) {
+              throw new Error('Stroke variable not found: "' + stroke.variableId + '". Pass a local variable id from figma_get_variables. Library variables must be imported first via figma_import_library_variable.');
+            }
+            spaint = figma.variables.setBoundVariableForPaint(spaint, 'color', strokeVar);
+          }
+          processedStrokes.push(spaint);
+        } else {
+          processedStrokes.push(stroke);
         }
-        return stroke;
-      });
+      }
 
       node.strokes = processedStrokes;
 
@@ -2677,10 +2791,25 @@ figma.ui.onmessage = async (msg) => {
         throw new Error('Node must be a TEXT node. Got: ' + node.type);
       }
 
-      // Load the font first
-      await figma.loadFontAsync(node.fontName);
-
-      node.characters = msg.text;
+      // Load the font(s) first — mutating text in dynamic-page mode requires it.
+      // If the caller requested a new family/style, load that (tolerating
+      // "SemiBold" vs "Semi Bold"); otherwise load the node's existing font(s),
+      // which also handles mixed-font nodes that the old single loadFontAsync
+      // call would have crashed on.
+      if (msg.fontFamily || msg.fontStyle) {
+        var currentFont = (node.fontName && node.fontName !== figma.mixed)
+          ? node.fontName
+          : { family: 'Inter', style: 'Regular' };
+        var targetFamily = msg.fontFamily || currentFont.family;
+        var targetStyle = msg.fontStyle || currentFont.style;
+        await loadFontsForNode(node); // existing runs, so setting characters is safe
+        var loadedFont = await loadFontWithFallback(targetFamily, targetStyle);
+        node.characters = msg.text;
+        node.fontName = loadedFont;
+      } else {
+        await loadFontsForNode(node);
+        node.characters = msg.text;
+      }
 
       // Apply font properties if specified
       if (msg.fontSize) {
@@ -6131,8 +6260,8 @@ figma.ui.onmessage = async (msg) => {
       var textNode = figma.createText();
       var fontFamily = msg.fontFamily || 'Inter';
       var fontStyle = msg.fontStyle || 'Regular';
-      await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
-      textNode.fontName = { family: fontFamily, style: fontStyle };
+      var slideFont = await loadFontWithFallback(fontFamily, fontStyle);
+      textNode.fontName = slideFont;
       textNode.characters = msg.text || '';
       textNode.fontSize = msg.fontSize || 24;
       textNode.x = typeof msg.x === 'number' ? msg.x : 100;

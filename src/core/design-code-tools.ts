@@ -230,7 +230,7 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 		const trimmed = line.trim();
 
 		// Detect section headers: bold text (**Header**), markdown headers (## Header), or plain text exact matches
-		const markdownHeaderMatch = trimmed.match(/^(?:\*\*|###?\s*)(.+?)(?:\*\*)?$/);
+		const markdownHeaderMatch = trimmed.match(/^(?:\*\*|#{1,6}\s*)(.+?)(?:\*\*)?$/);
 		const headerText = markdownHeaderMatch ? markdownHeaderMatch[1].trim().replace(/\*\*/g, "") : null;
 
 		// Check if this is a Figma per-property documentation block (e.g., "Show Left Icon: True – Purpose")
@@ -1615,6 +1615,54 @@ function buildParityInstruction(
 // Documentation Section Generators
 // ============================================================================
 
+/**
+ * Detect the atomic-design level (atom | molecule | organism | template) of a component
+ * by finding its Figma page and walking the ordered page list back to the nearest
+ * section-divider page (e.g. "ATOMS", "MOLECULES", "ORGANISMS"). Returns null when the
+ * file doesn't use atomic-design page sections or the page can't be resolved — callers
+ * then simply omit the `level` frontmatter. Best-effort and never throws.
+ */
+async function detectAtomicLevel(
+	api: any,
+	fileKey: string,
+	nodeId: string,
+	setNodeId: string | null,
+	_componentMeta?: any,
+	_allComponentsMeta?: any[] | null,
+): Promise<string | null> {
+	try {
+		const targetId = setNodeId || nodeId;
+
+		// Resolve the page the component lives on — independent of library-publish
+		// status (published `containing_frame` metadata is empty for many files).
+		// Requesting the file with `ids` returns every page in document order, but
+		// prunes each page's children to only the path reaching the requested node,
+		// so the single page whose subtree still contains the node is its home page.
+		const pages: any[] = (await api.getFile(fileKey, { ids: [targetId] }))?.document?.children || [];
+		const contains = (n: any): boolean =>
+			n?.id === targetId || (Array.isArray(n?.children) && n.children.some(contains));
+		const idx = pages.findIndex((p) => contains(p));
+		if (idx < 0) return null;
+
+		// Walk back to the nearest atomic-design divider page.
+		const LEVELS: Array<[string, string]> = [
+			["ATOM", "atom"],
+			["MOLECULE", "molecule"],
+			["ORGANISM", "organism"],
+			["TEMPLATE", "template"],
+		];
+		for (let i = idx; i >= 0; i--) {
+			const stripped = (pages[i]?.name || "").toUpperCase().replace(/[^A-Z]/g, "");
+			for (const [marker, level] of LEVELS) {
+				if (stripped.startsWith(marker)) return level;
+			}
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
 function generateFrontmatter(
 	componentName: string,
 	description: string,
@@ -1623,6 +1671,7 @@ function generateFrontmatter(
 	fileUrl: string,
 	codeInfo?: CodeDocInfo,
 	canonicalSource?: "figma" | "code" | "reconciled",
+	level?: string | null,
 ): string {
 	const status = codeInfo?.changelog?.[0]
 		? "stable"
@@ -1631,16 +1680,18 @@ function generateFrontmatter(
 			: "stable";
 	const version = codeInfo?.changelog?.[0]?.version || "1.0.0";
 	const tags = [componentName.toLowerCase()];
+	if (level) tags.push(level);
 	if (node.type === "COMPONENT_SET") tags.push("variants");
 	if (node.componentPropertyDefinitions) tags.push("configurable");
 
 	const lines = [
 		"---",
 		`title: ${componentName}`,
-		`description: ${(description.split(/(?:When to Use|When NOT to Use|Variants|Content Requirements|Accessibility)/i)[0] || description).replace(/\n/g, " ").replace(/\s+/g, " ").trim() || `${componentName} component`}`,
+		`description: ${((description.split(/\n\s*\n|\n#{1,6}\s|\n\*\*/)[0] || description).replace(/\n/g, " ").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/)[0] || `${componentName} component`)}`,
 		`status: ${status}`,
 		`version: ${version}`,
 		`category: components`,
+		...(level ? [`level: ${level}`] : []),
 		`tags: [${tags.join(", ")}]`,
 		`figma: ${fileUrl}`,
 	];
@@ -3005,7 +3056,9 @@ export function registerDesignCodeTools(
 						logger.warn("Desktop Bridge fetch failed, proceeding without bridge-sourced data");
 					}
 				}
-				const fileUrl_ = `${url}?node-id=${nodeId.replace(":", "-")}`;
+				// Strip any existing query (e.g. the connected file's ?node-id=<page>) before
+				// appending the target node, otherwise the URL ends up with a doubled ?node-id=.
+				const fileUrl_ = `${url.split("?")[0]}?node-id=${nodeId.replace(":", "-")}`;
 
 				// Parse the component description for structured content
 				const parsedDesc = parseComponentDescription(description);
@@ -3040,7 +3093,8 @@ export function registerDesignCodeTools(
 				const includedSections: string[] = [];
 
 				if (includeFrontmatter) {
-					parts.push(generateFrontmatter(componentName, description, node, componentMeta, fileUrl_, codeInfo, canonicalSource));
+					const atomicLevel = await detectAtomicLevel(api, fileKey, nodeId, setInfo.setNodeId, componentMeta, allComponentsMeta);
+					parts.push(generateFrontmatter(componentName, description, node, componentMeta, fileUrl_, codeInfo, canonicalSource, atomicLevel));
 					parts.push("");
 				}
 
