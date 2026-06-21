@@ -5,6 +5,28 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.0] - 2026-06-20
+
+Corrects an accessibility-audit false positive reported by Isabella (a11y collaborator): `figma_lint_design` flagged any text with line height below 1.5× as an accessibility issue, firing on hundreds of components. That misreads **WCAG 1.4.12 Text Spacing**, which requires content to *support* a user overriding line/letter/word/paragraph spacing without loss of content — not that designs must *ship* at 1.5×. A sub-1.5 line height is not a conformance failure. This release scopes the readability hints to where they actually apply, separates them from genuine WCAG conformance, and adds the real 1.4.12 check on the code side where it belongs.
+
+**Plugin re-import required to pick up the new audit behavior:** the lint rules run inside the Desktop Bridge plugin (`code.js`), which Figma caches at the application level. Re-import after updating — **Plugins → Development → Import plugin from manifest…** → `~/.figma-console-mcp/plugin/manifest.json`. Nothing breaks if you don't (the old rules keep running, no errors), but the noise reduction only lands after re-import. The bridge protocol is unchanged, so an un-updated plugin stays fully compatible.
+
+### Added
+
+- **`best-practice` rule group in `figma_lint_design`.** Readability hints — minimum text size, line height, letter spacing, paragraph spacing — are now their own opt-in group. Request them with `rules: ['best-practice']` (or `['all']`). This keeps `rules: ['wcag']` returning genuine WCAG conformance criteria only (10 rules), so a compliance audit is not diluted by non-normative suggestions.
+- **Code-side text-spacing advisory in `figma_scan_code_accessibility`.** A new `text-spacing-support` finding flags typography locked to fixed `px` units (px line-height / px font-size) and points to unitless line-height and rem/em sizing. This is where WCAG 1.4.12 (Text Spacing) and 1.4.4 (Resize Text) are actually verifiable — from the code, not from a design's spacing value — exactly the distinction Isabella raised.
+
+### Changed
+
+- **Line/paragraph spacing checks are scoped to multi-line text.** `wcag-line-height` now only flags text that wraps to 2+ lines (or has explicit line breaks); `wcag-paragraph-spacing` only flags text with 2+ paragraphs. Single-line labels, buttons, inputs, and headings — where line spacing has no readability effect — are exempt. This removes the bulk of the false positives on component libraries.
+- **Readability hints decoupled from the `wcag` group.** `wcag-text-size`, `wcag-line-height`, `wcag-letter-spacing`, and `wcag-paragraph-spacing` moved out of the `wcag` conformance group into `best-practice`. The default audit is now `['wcag', 'design-system', 'layout']` (was `['all']`), so best-practice hints no longer appear unless requested. No tools were removed and the `rules` argument shape is unchanged — passing `['wcag']` still works, it just returns conformance criteria only.
+- **Rule descriptions reworded** to state plainly that sub-1.5 line height, sub-2× paragraph spacing, and negative letter spacing are readability best practices — not WCAG 1.4.12 failures — and that 1.4.12 is verified in code.
+
+### Fixed
+
+- **`figma_lint_design` no longer red-flags line height below 1.5× as an accessibility failure.** It previously fired on every text node under the threshold — including single-line text where line spacing is irrelevant — surfacing hundreds of spurious findings on a large component library. Reported by Isabella.
+
+
 ## [1.31.0] - 2026-06-05
 
 Fixes the most-reported reliability problem with the Desktop Bridge: the connection between your MCP client and Figma dropping, and staying down until you close the plugin, restart Claude Code, or manually hunt and kill ports. The root cause was never a flaky network — it was **zombie MCP server processes** squatting the WebSocket port range (9223–9232) after a bad shutdown, so each fresh server was bumped to a port with no plugin attached. This release makes those zombies impossible to create and reaps any that already exist, and pairs it with a plugin that reconnects itself instead of needing a restart.
@@ -981,6 +1003,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.32.0]: https://github.com/southleft/figma-console-mcp/compare/v1.31.0...v1.32.0
 [1.31.0]: https://github.com/southleft/figma-console-mcp/compare/v1.30.0...v1.31.0
 [1.30.0]: https://github.com/southleft/figma-console-mcp/compare/v1.29.2...v1.30.0
 [1.29.2]: https://github.com/southleft/figma-console-mcp/compare/v1.29.1...v1.29.2
