@@ -962,8 +962,8 @@
     window.deepGetComponent = (nodeId, depth) => {
       return window.sendPluginCommand('DEEP_GET_COMPONENT', {
         nodeId: nodeId,
-        depth: depth || 10
-      }, 30000)
+        depth: (depth === undefined || depth === null) ? 10 : depth
+      }, (typeof depth === 'number' && depth <= 0) ? 120000 : 30000)
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
 

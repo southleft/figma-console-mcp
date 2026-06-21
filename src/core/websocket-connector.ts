@@ -189,7 +189,9 @@ export class WebSocketConnector implements IFigmaConnector {
   }
 
   async deepGetComponent(nodeId: string, depth?: number): Promise<any> {
-    return this.wsServer.sendCommand('DEEP_GET_COMPONENT', { nodeId, depth: depth || 10 }, 30000);
+    const unlimited = typeof depth === "number" && depth <= 0;
+    const sentDepth = (depth === undefined || depth === null) ? 10 : depth;
+    return this.wsServer.sendCommand('DEEP_GET_COMPONENT', { nodeId, depth: sentDepth }, unlimited ? 120000 : 30000);
   }
 
   async analyzeComponentSet(nodeId: string): Promise<any> {
