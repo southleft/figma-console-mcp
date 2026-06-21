@@ -272,6 +272,55 @@ function formatAxeResults(axeResults: any): any {
 	};
 }
 
+/**
+ * Heuristic WCAG 1.4.12 (Text Spacing) / 1.4.4 (Resize Text) signal for CODE.
+ *
+ * This is where text-spacing override support actually belongs: 1.4.12 is about whether
+ * content survives a USER overriding line/letter/word/paragraph spacing — it cannot be
+ * proven from a design's spacing value, only from the code. axe-core can't evaluate it
+ * (it needs layout), but the common, checkable risk indicator is fixed-px typography:
+ * line-height/font-size locked in px don't respond to spacing overrides or text-only zoom,
+ * whereas unitless line-height and rem/em sizing do. Surfaces fixed-px usage as an advisory
+ * (info) finding so teams verify reflow — without red-flagging sub-1.5 line heights, which
+ * are not failures.
+ */
+function scanTextSpacingSupport(html: string): Record<string, any> | null {
+	// Collect CSS from <style> blocks and inline style="" attributes
+	let css = "";
+	const styleBlocks = html.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) || [];
+	for (const block of styleBlocks) css += block.replace(/<\/?style[^>]*>/gi, "") + "\n";
+	const inlineStyles = html.match(/style=["']([^"']*)["']/gi) || [];
+	for (const s of inlineStyles) css += s.replace(/^style=["']|["']$/gi, "") + ";\n";
+
+	if (!css.trim()) return null;
+
+	// line-height: <n>px  → won't grow when a user overrides text spacing (1.4.12 risk)
+	const pxLineHeights = css.match(/line-height\s*:\s*[\d.]+px/gi) || [];
+	// font-size: <n>px → won't scale on text-only zoom / 200% resize (1.4.4 risk)
+	const pxFontSizes = css.match(/font-size\s*:\s*[\d.]+px/gi) || [];
+
+	if (pxLineHeights.length === 0 && pxFontSizes.length === 0) return null;
+
+	const samples = [
+		...pxLineHeights.slice(0, 5).map((m) => m.trim()),
+		...pxFontSizes.slice(0, 5).map((m) => m.trim()),
+	];
+
+	return {
+		rule: "text-spacing-support",
+		severity: "info",
+		count: pxLineHeights.length + pxFontSizes.length,
+		description:
+			`Typography uses fixed px units (${pxLineHeights.length} px line-height, ${pxFontSizes.length} px font-size). ` +
+			"This is where WCAG 1.4.12 (Text Spacing) and 1.4.4 (Resize Text) are actually verified — not on the design side. " +
+			"Prefer unitless line-height (e.g. line-height: 1.4) and rem/em font sizes so user spacing overrides and text-only zoom do not clip or overlap content. " +
+			"Advisory only: a sub-1.5 line height is NOT a failure — confirm content still reflows when the 1.4.12 text-spacing overrides are applied.",
+		wcagTags: ["wcag22aa", "wcag1412", "wcag144"],
+		helpUrl: "https://www.w3.org/WAI/WCAG22/Understanding/text-spacing.html",
+		samples,
+	};
+}
+
 export function registerAccessibilityTools(
 	server: McpServer,
 ): void {
@@ -281,6 +330,7 @@ export function registerAccessibilityTools(
 		"Runs structural/semantic checks via JSDOM: ARIA attributes, roles, labels, alt text, " +
 		"form labels, heading order, landmarks, semantic HTML, tabindex, duplicate IDs, lang attribute, and ~50 more rules. " +
 		"Visual checks (color contrast, focus visibility) are disabled in this mode — use figma_lint_design for visual a11y on the design side. " +
+		"Also surfaces a WCAG 1.4.12 (Text Spacing) / 1.4.4 (Resize Text) advisory when typography is locked to fixed px units — the code side is where text-spacing override support is actually verified (a sub-1.5 line height in a design is not itself a failure). " +
 		"Together, these two tools provide full-spectrum accessibility coverage across design and code. " +
 		"Pass component HTML directly or use with figma_check_design_parity for design-to-code a11y comparison. " +
 		"No Figma connection required — this is a standalone code analysis tool.",
@@ -305,6 +355,15 @@ export function registerAccessibilityTools(
 				});
 
 				const formatted = formatAxeResults(axeResults);
+
+				// Supplementary WCAG 1.4.12 / 1.4.4 advisory — axe can't see layout/overrides,
+				// and this (not the design side) is where text-spacing support is verifiable.
+				const textSpacing = scanTextSpacingSupport(html);
+				if (textSpacing) {
+					formatted.categories.push(textSpacing);
+					formatted.summary.info += textSpacing.count;
+					formatted.summary.total += textSpacing.count;
+				}
 
 				// Optionally strip pass/incomplete counts to save tokens
 				if (!includePassingRules) {

@@ -79,13 +79,18 @@ describe('figma_lint_design', () => {
 			'no-autolayout', 'empty-container',
 		];
 
+		// 'wcag' group = genuine WCAG conformance criteria only. Readability "best practice"
+		// checks (text size, line/letter/paragraph spacing) were decoupled into their own
+		// opt-in group so a conformance audit (rules: ['wcag']) is not polluted by them.
+		// WCAG 1.4.12 Text Spacing is a "support user overrides" criterion, not a requirement
+		// to ship specific spacing values — a sub-1.5 line height is not a conformance failure.
 		const WCAG_RULES = [
-			'wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height',
+			'wcag-contrast', 'wcag-target-size',
 			'wcag-non-text-contrast', 'wcag-color-only', 'wcag-focus-indicator',
-			'wcag-letter-spacing', 'wcag-paragraph-spacing', 'wcag-image-alt',
-			'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
+			'wcag-image-alt', 'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
 			'wcag-disabled-no-context',
 		];
+		const BEST_PRACTICE_RULES = ['wcag-text-size', 'wcag-line-height', 'wcag-letter-spacing', 'wcag-paragraph-spacing'];
 		const DESIGN_SYSTEM_RULES = ['hardcoded-color', 'no-text-style', 'default-name', 'detached-component', 'token-misuse'];
 		const LAYOUT_RULES = ['no-autolayout', 'empty-container'];
 
@@ -93,8 +98,20 @@ describe('figma_lint_design', () => {
 			expect(ALL_RULES).toHaveLength(21);
 		});
 
-		it('should have 14 WCAG rules', () => {
-			expect(WCAG_RULES).toHaveLength(14);
+		it('should have 10 WCAG conformance rules (best-practice hints decoupled)', () => {
+			expect(WCAG_RULES).toHaveLength(10);
+		});
+
+		it('should have 4 best-practice readability rules', () => {
+			expect(BEST_PRACTICE_RULES).toHaveLength(4);
+		});
+
+		it('should not place best-practice readability hints in the WCAG conformance group', () => {
+			// These are the rules Isabella correctly flagged as non-normative under 1.4.12.
+			['wcag-line-height', 'wcag-paragraph-spacing', 'wcag-letter-spacing', 'wcag-text-size'].forEach(rule => {
+				expect(WCAG_RULES).not.toContain(rule);
+				expect(BEST_PRACTICE_RULES).toContain(rule);
+			});
 		});
 
 		it('should have 5 design system rules', () => {
@@ -106,17 +123,16 @@ describe('figma_lint_design', () => {
 		});
 
 		it('should cover all rules across groups', () => {
-			const combined = [...WCAG_RULES, ...DESIGN_SYSTEM_RULES, ...LAYOUT_RULES];
+			const combined = [...WCAG_RULES, ...BEST_PRACTICE_RULES, ...DESIGN_SYSTEM_RULES, ...LAYOUT_RULES];
 			expect(combined.sort()).toEqual(ALL_RULES.sort());
 		});
 
-		it('should have 9 new WCAG rules from Phase 1', () => {
-			const newRules = [
+		it('should keep the 7 structural Phase 1 rules in the WCAG conformance group', () => {
+			const structuralPhase1 = [
 				'wcag-non-text-contrast', 'wcag-color-only', 'wcag-focus-indicator',
-				'wcag-letter-spacing', 'wcag-paragraph-spacing', 'wcag-image-alt',
-				'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
+				'wcag-image-alt', 'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
 			];
-			newRules.forEach(rule => {
+			structuralPhase1.forEach(rule => {
 				expect(WCAG_RULES).toContain(rule);
 			});
 		});
@@ -734,6 +750,46 @@ describe('figma_lint_design', () => {
 			const paragraphSpacing = 0;
 			expect(paragraphSpacing).toBe(0);
 			// Should NOT trigger — 0 means default/auto
+		});
+	});
+
+	describe('line/paragraph spacing scoping (multi-line guard)', () => {
+		// Mirror of textRendersMultipleLines / textHasMultipleParagraphs in code.js.
+		// Spacing only affects readability on text that actually wraps/breaks, so
+		// single-line labels, buttons and headings must be exempt (no false positives).
+		const LINE_SEP = String.fromCharCode(0x2028); // shift-enter line break in Figma
+		function textRendersMultipleLines(node: any, effectiveLh: number | null): boolean {
+			const chars = typeof node.characters === 'string' ? node.characters : '';
+			if (chars.indexOf('\n') !== -1 || chars.indexOf(LINE_SEP) !== -1) return true;
+			if (node.textAutoResize === 'WIDTH_AND_HEIGHT') return false;
+			if (effectiveLh && typeof node.height === 'number' && node.height > 0) {
+				return node.height / effectiveLh >= 1.6;
+			}
+			return false;
+		}
+		function textHasMultipleParagraphs(node: any): boolean {
+			const chars = typeof node.characters === 'string' ? node.characters : '';
+			return chars.indexOf('\n') !== -1;
+		}
+
+		it('exempts a single-line label from the line-height check', () => {
+			const node = { characters: 'Submit', textAutoResize: 'WIDTH_AND_HEIGHT', height: 20 };
+			expect(textRendersMultipleLines(node, 18)).toBe(false);
+		});
+
+		it('flags wrapped body text taller than ~2 lines', () => {
+			const node = { characters: 'A long paragraph that wraps', textAutoResize: 'HEIGHT', height: 60 };
+			expect(textRendersMultipleLines(node, 20)).toBe(true); // 60/20 = 3 lines
+		});
+
+		it('flags text with an explicit line break regardless of height', () => {
+			const node = { characters: 'Line one' + LINE_SEP + 'Line two', textAutoResize: 'WIDTH_AND_HEIGHT', height: 20 };
+			expect(textRendersMultipleLines(node, 18)).toBe(true);
+		});
+
+		it('only checks paragraph spacing when 2+ paragraphs exist', () => {
+			expect(textHasMultipleParagraphs({ characters: 'one paragraph' })).toBe(false);
+			expect(textHasMultipleParagraphs({ characters: 'para one\npara two' })).toBe(true);
 		});
 	});
 

@@ -3360,6 +3360,34 @@ figma.ui.onmessage = async (msg) => {
         return false;
       }
 
+      // Line/paragraph SPACING only affects readability when text actually renders on
+      // 2+ lines (or 2+ paragraphs). Single-line labels, buttons, inputs and headings
+      // gain nothing from a 1.5 line height, so flagging them is false-positive noise.
+      // (WCAG 1.4.12 conformance is a code concern — whether spacing overrides break
+      // layout — not something a design's spacing value can prove. These stay best-practice.)
+      function textRendersMultipleLines(node, effectiveLh) {
+        try {
+          var chars = (typeof node.characters === 'string') ? node.characters : '';
+          // \n = paragraph break; U+2028 = line break (shift-enter) within a Figma paragraph
+          var LINE_SEP = String.fromCharCode(0x2028);
+          if (chars.indexOf(String.fromCharCode(10)) !== -1 || chars.indexOf(LINE_SEP) !== -1) return true;
+          // WIDTH_AND_HEIGHT auto-resize grows horizontally and never wraps on its own
+          if (node.textAutoResize === 'WIDTH_AND_HEIGHT') return false;
+          if (effectiveLh && typeof node.height === 'number' && node.height > 0) {
+            return (node.height / effectiveLh) >= 1.6; // ≈ 2+ rendered lines
+          }
+        } catch (e) { /* mixed/slot — treat as single line */ }
+        return false;
+      }
+
+      function textHasMultipleParagraphs(node) {
+        try {
+          var chars = (typeof node.characters === 'string') ? node.characters : '';
+          return chars.indexOf('\n') !== -1; // \n = paragraph separator in Figma text
+        } catch (e) { /* ignore */ }
+        return false;
+      }
+
       // ---- Rule configuration ----
       var allRuleIds = [
         'wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height',
@@ -3373,12 +3401,22 @@ figma.ui.onmessage = async (msg) => {
 
       var ruleGroups = {
         'all': allRuleIds,
+        // 'wcag' = genuine WCAG conformance criteria only. Readability "best practice"
+        // checks (text size, line/letter/paragraph spacing) live in 'best-practice' so a
+        // conformance audit (rules: ['wcag']) is not polluted by non-normative hints.
+        // In particular, WCAG 1.4.12 Text Spacing is a "support user overrides without
+        // breaking" criterion — NOT a requirement to ship specific spacing values — so a
+        // sub-1.5 line height is not a conformance failure (see 'best-practice' below).
         'wcag': [
-          'wcag-contrast', 'wcag-text-size', 'wcag-target-size', 'wcag-line-height',
+          'wcag-contrast', 'wcag-target-size',
           'wcag-non-text-contrast', 'wcag-color-only', 'wcag-focus-indicator',
-          'wcag-letter-spacing', 'wcag-paragraph-spacing', 'wcag-image-alt',
-          'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
+          'wcag-image-alt', 'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
           'wcag-disabled-no-context'
+        ],
+        // Readability best practices — useful hints, NOT WCAG conformance failures.
+        // Opt in with rules: ['best-practice'] (or ['all']); excluded from the default set.
+        'best-practice': [
+          'wcag-text-size', 'wcag-line-height', 'wcag-letter-spacing', 'wcag-paragraph-spacing'
         ],
         'design-system': ['hardcoded-color', 'no-text-style', 'default-name', 'detached-component', 'token-misuse'],
         'layout': ['no-autolayout', 'empty-container']
@@ -3437,12 +3475,12 @@ figma.ui.onmessage = async (msg) => {
         'wcag-contrast': 'Text does not meet WCAG AA contrast ratio (4.5:1 normal, 3:1 large text ≥24px or ≥18.5px bold). Best practice: always target 4.5:1, especially in dark mode.',
         'wcag-text-size': 'Text size is below 12px — readability best practice. Note: WCAG 1.4.4 requires supporting 200% text-only zoom (use rem/em units), not a specific minimum size.',
         'wcag-target-size': 'Interactive element is smaller than 24x24px minimum target size (WCAG 2.5.8)',
-        'wcag-line-height': 'Line height is below 1.5x font size — best practice for readability. Note: WCAG 1.4.12 requires that content does not break when users override spacing to 1.5x, not that designs must use 1.5x by default.',
+        'wcag-line-height': 'Multi-line body text has line height below 1.5x font size — a readability best practice (only flagged on text that wraps to 2+ lines; single-line labels, buttons and headings are exempt). NOT a WCAG failure: 1.4.12 requires content to survive a user overriding line height to 1.5x without loss of content, which is verified in code, not by the default value in the design.',
         'wcag-non-text-contrast': 'UI component or graphical object does not meet 3:1 contrast ratio against adjacent color. Also applies to borders and chart elements against adjacent elements (WCAG 1.4.11)',
         'wcag-color-only': 'Information is conveyed only through color change (e.g., error state uses red border without an error message or icon). Color can supplement but must not be the sole indicator (WCAG 1.4.1)',
         'wcag-focus-indicator': 'Interactive component is missing a focus/focused variant or the focus indicator is insufficient. A visible focus state is critical — without it, keyboard users cannot navigate the interface (WCAG 2.4.7)',
-        'wcag-letter-spacing': 'Negative letter spacing actively harms readability. WCAG 1.4.12 requires content to support user-overridden spacing without breaking.',
-        'wcag-paragraph-spacing': 'Paragraph spacing is below 2x font size — best practice. WCAG 1.4.12 requires content to support user-overridden spacing to 2x without loss of content, not that designs must use 2x by default.',
+        'wcag-letter-spacing': 'Negative letter spacing (tighter than default) harms readability — a best-practice hint, not a WCAG failure. WCAG 1.4.12 is about supporting user-overridden spacing without loss of content (verified in code), not the default tracking in the design.',
+        'wcag-paragraph-spacing': 'Multi-paragraph text has paragraph spacing below 2x font size — a readability best practice (only flagged when a text node has 2+ paragraphs). NOT a WCAG failure: 1.4.12 requires content to survive a user overriding paragraph spacing to 2x without loss of content, verified in code, not by the default value in the design.',
         'wcag-image-alt': 'Image or image fill has no description annotation for alternative text. All images need alt text; decorative images should be explicitly marked as decorative. Graphs and charts also need long descriptions (e.g., a data table) (WCAG 1.1.1)',
         'wcag-heading-hierarchy': 'Heading levels skip a level (e.g., H1 followed by H3). Use H1 through H6 sequentially without skipping levels (WCAG 1.3.1)',
         'wcag-reflow': 'Frame uses fixed positioning without auto-layout. Content must support 400% zoom on 1280px viewport (equivalent to 320px minimum width) without horizontal scrolling or loss of content (WCAG 1.4.10)',
@@ -3550,7 +3588,10 @@ figma.ui.onmessage = async (msg) => {
       // (checked after tree walk per-frame)
 
       // ---- Resolve active rules ----
-      var requestedRules = msg.rules || ['all'];
+      // Default audit = real WCAG conformance + design-system + layout. Best-practice
+      // readability hints are opt-in (rules: ['best-practice'] or ['all']) so component
+      // library audits aren't flooded with non-normative spacing/size noise.
+      var requestedRules = msg.rules || ['wcag', 'design-system', 'layout'];
       var activeRuleSet = {};
       for (var ri = 0; ri < requestedRules.length; ri++) {
         var ruleOrGroup = requestedRules[ri];
@@ -3737,7 +3778,7 @@ figma.ui.onmessage = async (msg) => {
                 effectiveLh = fs * (lh.value / 100);
               }
             }
-            if (effectiveLh !== null && effectiveLh < 1.5 * fs) {
+            if (effectiveLh !== null && effectiveLh < 1.5 * fs && textRendersMultipleLines(node, effectiveLh)) {
               if (totalFindings < maxFindings) {
                 findings['wcag-line-height'].push({
                   id: nodeId,
@@ -3940,7 +3981,7 @@ figma.ui.onmessage = async (msg) => {
             var psFs = node.fontSize;
             if (typeof ps === 'number' && typeof psFs === 'number' && ps > 0) {
               var requiredPs = 2 * psFs;
-              if (ps < requiredPs) {
+              if (ps < requiredPs && textHasMultipleParagraphs(node)) {
                 if (totalFindings < maxFindings) {
                   findings['wcag-paragraph-spacing'].push({
                     id: nodeId,

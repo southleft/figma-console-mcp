@@ -2626,17 +2626,20 @@ return {
 	server.tool(
 		"figma_lint_design",
 		"Run comprehensive accessibility (WCAG 2.2) and design quality checks on the current page or a specific node tree. " +
-		"WCAG checks (14 rules): color contrast (AA), non-text contrast (1.4.11), color-only differentiation (1.4.1), " +
-		"focus indicators (2.4.7), text sizing, touch targets, line height, letter spacing, paragraph spacing (1.4.12), " +
-		"image alt text (1.1.1), heading hierarchy (1.3.1), reflow/responsive (1.4.10), reading order (1.3.2), and disabled context (4.1.2). " +
+		"WCAG conformance checks (10 rules): color contrast (AA), non-text contrast (1.4.11), color-only differentiation (1.4.1), " +
+		"focus indicators (2.4.7), touch targets (2.5.8), image alt text (1.1.1), heading hierarchy (1.3.1), " +
+		"reflow/responsive (1.4.10), reading order (1.3.2), and disabled context (4.1.2). " +
+		"Best-practice readability hints (opt-in via rules: ['best-practice'] or ['all']): text sizing, line height, letter spacing, paragraph spacing. " +
+		"Note: line/paragraph spacing below 1.5x/2x is NOT a WCAG 1.4.12 failure — 1.4.12 requires supporting user spacing overrides without breaking (a code concern, see figma_scan_code_accessibility), not specific design values — so these are non-normative hints scoped to multi-line text only. " +
 		"Design system checks: hardcoded colors, missing text styles, default names, detached components. " +
 		"Layout checks: missing auto-layout, empty containers. " +
+		"Default audit runs WCAG + design-system + layout (best-practice hints excluded). " +
 		"Returns categorized findings with severity levels (critical/warning/info) and WCAG conformance level (a/aa/aaa/best-practice) so teams can filter by target level. " +
 		"Use natural language like 'check my design for accessibility issues' or 'lint this page'. " +
 		"Requires Desktop Bridge plugin.",
 		{
 			nodeId: z.string().optional().describe("Node ID to lint (defaults to current page)"),
-			rules: z.array(z.string()).optional().describe("Rule filter: ['all'] (default), ['wcag'] (13 WCAG rules), ['design-system'], ['layout'], or specific rule IDs like ['wcag-contrast', 'wcag-focus-indicator', 'wcag-disabled-no-context']"),
+			rules: z.array(z.string()).optional().describe("Rule filter. Default (omitted) = ['wcag','design-system','layout'] — real WCAG conformance plus quality checks, with best-practice hints excluded. Groups: ['wcag'] (10 conformance rules), ['best-practice'] (text-size, line-height, letter-spacing, paragraph-spacing), ['all'] (everything incl. best-practice), ['design-system'], ['layout']. Or specific rule IDs like ['wcag-contrast', 'wcag-focus-indicator', 'wcag-disabled-no-context']."),
 			maxDepth: z.number().optional().describe("Maximum tree depth to traverse (default: 10)"),
 			maxFindings: z.number().optional().describe("Maximum findings before stopping (default: 100)"),
 		},
@@ -2645,7 +2648,7 @@ return {
 				const connector = await getDesktopConnector();
 				const result = await connector.lintDesign(
 					nodeId,
-					rules || ['all'],
+					rules || ['wcag', 'design-system', 'layout'],
 					maxDepth || 10,
 					maxFindings || 100,
 				);
