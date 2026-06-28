@@ -176,6 +176,70 @@ function serializeCollection(c) {
   };
 }
 
+// Helper to extract a component's SLOT contract (Figma slots, GA June 2026).
+// A slot is part of a component's public API: a named region that accepts freeform
+// content, optionally constrained to preferred component values, with min/max limit
+// violations surfaced on the slot node. Only non-variant COMPONENT and COMPONENT_SET
+// nodes expose componentPropertyDefinitions — reading them on a variant throws, which
+// is why older traversal code caught the error and skipped slot sublayers entirely.
+function extractSlots(node) {
+  function canReadDefs(n) {
+    if (n.type === 'COMPONENT_SET') return true;
+    if (n.type === 'COMPONENT') return !(n.parent && n.parent.type === 'COMPONENT_SET');
+    return false;
+  }
+  if (!canReadDefs(node)) return [];
+  var defs;
+  try { defs = node.componentPropertyDefinitions; } catch (e) { return []; }
+  if (!defs) return [];
+  var byProp = {};
+  for (var k in defs) {
+    if (defs[k] && defs[k].type === 'SLOT') {
+      byProp[k] = {
+        propertyName: k,
+        description: defs[k].description || null,
+        preferredValues: (defs[k].preferredValues || []).slice(),
+        slotNodeIds: [],
+        slotNames: [],
+        limitViolations: []
+      };
+    }
+  }
+  if (Object.keys(byProp).length === 0) return [];
+  // Link each SLOT child node (which carries limitViolations) back to its property
+  // via componentPropertyReferences.slotContentId. A COMPONENT_SET has one SLOT node
+  // per variant pointing at the same property, so results are grouped by property.
+  var slotNodes = [];
+  try { slotNodes = node.findAllWithCriteria({ types: ['SLOT'] }); }
+  catch (e) {
+    try { slotNodes = node.findAll(function(n) { return n.type === 'SLOT'; }); } catch (e2) { slotNodes = []; }
+  }
+  for (var i = 0; i < slotNodes.length; i++) {
+    var sn = slotNodes[i];
+    var refs = sn.componentPropertyReferences || {};
+    var pk = refs.slotContentId;
+    var entry = (pk && byProp[pk]) ? byProp[pk] : null;
+    if (!entry) {
+      entry = byProp[pk || sn.id] = { propertyName: pk || null, description: null, preferredValues: [], slotNodeIds: [], slotNames: [], limitViolations: [] };
+    }
+    entry.slotNodeIds.push(sn.id);
+    if (entry.slotNames.indexOf(sn.name) === -1) entry.slotNames.push(sn.name);
+    var lv = sn.limitViolations || [];
+    for (var j = 0; j < lv.length; j++) { if (entry.limitViolations.indexOf(lv[j]) === -1) entry.limitViolations.push(lv[j]); }
+  }
+  return Object.keys(byProp).map(function(key) {
+    var e = byProp[key];
+    return {
+      name: e.slotNames[0] || e.propertyName,
+      propertyName: e.propertyName,
+      description: e.description,
+      preferredValues: e.preferredValues,
+      instanceCount: e.slotNodeIds.length,
+      limitViolations: e.limitViolations
+    };
+  });
+}
+
 // Helper to convert hex color to Figma RGB (0-1 range)
 function hexToFigmaRGB(hex) {
   // Remove # if present
@@ -1189,9 +1253,10 @@ figma.ui.onmessage = async (msg) => {
         variantCount: variants.length,
         variantAxes: variantAxes,
         componentProps: componentProps,
+        slots: extractSlots(node),
         stateMachine: stateMachine,
         variants: variantDiffs,
-        ai_instruction: 'Use cssMapping to implement interaction states. diffFromDefault shows only what changes per state — apply these as CSS pseudo-class or attribute overrides. componentProps maps to React/Vue component props (BOOLEAN → boolean prop, TEXT → string prop, INSTANCE_SWAP → ReactNode/slot prop).'
+        ai_instruction: 'Use cssMapping to implement interaction states. diffFromDefault shows only what changes per state — apply these as CSS pseudo-class or attribute overrides. componentProps maps to React/Vue component props (BOOLEAN → boolean prop, TEXT → string prop, INSTANCE_SWAP → ReactNode/slot prop). slots lists Figma SLOT properties — implement each as a named slot / children prop (React: {children} or a named ReactNode prop; Web Components: <slot name>); preferredValues lists the components a slot accepts, and limitViolations flags content that breaks the slot\'s min/max rules.'
       };
 
       console.log('🌉 [Desktop Bridge] Component set analysis complete. ' + variants.length + ' variants, ' + Object.keys(stateMachine.cssMapping).length + ' CSS mappings');
@@ -1395,6 +1460,10 @@ figma.ui.onmessage = async (msg) => {
           try {
             if (n.componentPropertyDefinitions) props.componentPropertyDefinitions = n.componentPropertyDefinitions;
           } catch (e) {}
+          try {
+            var devSlots = extractSlots(n);
+            if (devSlots.length) props.slots = devSlots;
+          } catch (e) {}
           if (n.type === 'COMPONENT' && n.variantProperties) {
             props.variantProperties = n.variantProperties;
           }
@@ -1515,6 +1584,9 @@ figma.ui.onmessage = async (msg) => {
           }
         }
 
+        var compSlots = extractSlots(node);
+        if (compSlots.length) data.slots = compSlots;
+
         return data;
       }
 
@@ -1589,7 +1661,8 @@ figma.ui.onmessage = async (msg) => {
               type: propDef.type,
               defaultValue: propDef.defaultValue
             };
-          }) : []
+          }) : [],
+          slots: extractSlots(node)
         };
       }
 
