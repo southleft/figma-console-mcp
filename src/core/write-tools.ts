@@ -107,7 +107,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 	// Tool: Update a variable's value
 	server.tool(
 		"figma_update_variable",
-		"Update a single variable's value. For multiple updates, use figma_batch_update_variables instead (10-50x faster). Use figma_get_variables first for IDs. COLOR: hex '#FF0000', FLOAT: number, STRING: text, BOOLEAN: true/false. Requires Desktop Bridge plugin.",
+		"Update a single variable's value and/or its description. Pass modeId+value to change the value in a mode; pass description to set the 'How to use this variable' text shown in the Variables panel (and exported as DTCG $description). At least one of {modeId+value} or {description} is required. For many value updates at once, use figma_batch_update_variables (10-50x faster). Use figma_get_variables first for IDs. COLOR: hex '#FF0000', FLOAT: number, STRING: text, BOOLEAN: true/false. Requires Desktop Bridge plugin.",
 		{
 			variableId: z
 				.string()
@@ -116,23 +116,62 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 				),
 			modeId: z
 				.string()
+				.optional()
 				.describe(
-					"The mode ID to update the value in (e.g., '1:0'). Get this from the variable's collection modes.",
+					"The mode ID to update the value in (e.g., '1:0'). Required when updating a value. Get this from the variable's collection modes.",
 				),
 			value: z
 				.union([z.string(), z.number(), z.boolean()])
+				.optional()
 				.describe(
-					"The new value. For COLOR: hex string like '#FF0000'. For FLOAT: number. For STRING: text. For BOOLEAN: true/false.",
+					"The new value (requires modeId). For COLOR: hex string like '#FF0000'. For FLOAT: number. For STRING: text. For BOOLEAN: true/false.",
+				),
+			description: z
+				.string()
+				.optional()
+				.describe(
+					"Set the variable's description (the 'How to use this variable' field; exported as DTCG $description). Pass an empty string to clear it.",
 				),
 		},
-		async ({ variableId, modeId, value }) => {
+		async ({ variableId, modeId, value, description }) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.updateVariable(
-					variableId,
-					modeId,
-					value,
-				);
+
+				const hasValueUpdate = modeId !== undefined && value !== undefined;
+				const hasDescriptionUpdate = description !== undefined;
+
+				if ((modeId !== undefined) !== (value !== undefined)) {
+					throw new Error(
+						"Both modeId and value are required together to update a value.",
+					);
+				}
+				if (!hasValueUpdate && !hasDescriptionUpdate) {
+					throw new Error(
+						"Nothing to update: provide modeId+value to change the value, and/or description to set the description.",
+					);
+				}
+
+				let variable: any;
+				const updated: string[] = [];
+
+				if (hasValueUpdate) {
+					const result = await connector.updateVariable(
+						variableId,
+						modeId as string,
+						value,
+					);
+					variable = result.variable;
+					updated.push("value");
+				}
+
+				if (hasDescriptionUpdate) {
+					const result = await connector.setVariableDescription(
+						variableId,
+						description as string,
+					);
+					variable = result.variable || variable;
+					updated.push("description");
+				}
 
 				return {
 					content: [
@@ -141,8 +180,8 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 							text: JSON.stringify(
 								{
 									success: true,
-									message: `Variable "${result.variable.name}" updated successfully`,
-									variable: result.variable,
+									message: `Variable "${variable?.name ?? variableId}" updated successfully (${updated.join(" + ")})`,
+									variable,
 									timestamp: Date.now(),
 								},
 							),
