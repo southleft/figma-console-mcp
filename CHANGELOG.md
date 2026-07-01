@@ -5,6 +5,16 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.1] - 2026-06-30
+
+Fixes a bug in `figma_generate_component_doc` where **color** tokens were documented as raw hex values (and the "Figma Variable" column rendered `—`) even though the component's fills and strokes were bound to variables — while spacing tokens documented correctly. Reported by Robin Di Capua, who noticed the generated Markdown listed hardcoded color values while the same tokens surfaced by name when queried through the Company Docs MCP. It looked intermittent, which is why it went unnoticed: any component doc that had been hand-curated with a Color token section showed names, masking that the generator never produced them.
+
+### Fixed
+
+- **`figma_generate_component_doc` now resolves color variable names in the States, Color Tokens, and Spacing tables.** The generator extracted the correct bound-variable IDs from each paint but the id→name lookup map was built incorrectly — it read `.id`/`.name` off enrichment entries whose keys are actually `variableId`/`variableName`, so every lookup missed and colors fell back to hex. On top of that, variable *names* were only ever sourced from the Enterprise-only REST `/variables/local` endpoint (HTTP 403 on all other plans), so even a correct map would have been empty. The doc generator now resolves names through the Desktop Bridge (Plugin API `getLocalVariablesAsync`), which works on every Figma plan, and threads that map through the color and spacing sections alike. Spacing tokens that previously showed a raw `VariableID:…` now render their friendly name (e.g. `spacing/1`).
+- **Token parity cross-referencing no longer silently no-ops.** The same key mismatch (`.name` vs `variableName`) left `figma_generate_component_doc`'s design-vs-code token comparison reading `undefined` for every design token; it now reads the resolved names and skips unresolved entries defensively.
+
+
 ## [1.32.0] - 2026-06-20
 
 Corrects an accessibility-audit false positive reported by Isabella (a11y collaborator): `figma_lint_design` flagged any text with line height below 1.5× as an accessibility issue, firing on hundreds of components. That misreads **WCAG 1.4.12 Text Spacing**, which requires content to *support* a user overriding line/letter/word/paragraph spacing without loss of content — not that designs must *ship* at 1.5×. A sub-1.5 line height is not a conformance failure. This release scopes the readability hints to where they actually apply, separates them from genuine WCAG conformance, and adds the real 1.4.12 check on the code side where it belongs.
@@ -1003,6 +1013,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.32.1]: https://github.com/southleft/figma-console-mcp/compare/v1.32.0...v1.32.1
 [1.32.0]: https://github.com/southleft/figma-console-mcp/compare/v1.31.0...v1.32.0
 [1.31.0]: https://github.com/southleft/figma-console-mcp/compare/v1.30.0...v1.31.0
 [1.30.0]: https://github.com/southleft/figma-console-mcp/compare/v1.29.2...v1.30.0

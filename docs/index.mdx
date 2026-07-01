@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.32.0 — Accessibility auditing now matches WCAG, not folklore:** `figma_lint_design` no longer red-flags line height below 1.5× as an accessibility failure. **WCAG 1.4.12 Text Spacing** only requires that content *support* a user overriding text spacing without loss — not that designs *ship* at 1.5× — so a sub-1.5 line height is not a conformance failure. Line/paragraph-spacing checks are now scoped to multi-line text (single-line labels and buttons are exempt), readability hints are split into an opt-in `best-practice` group so `rules: ['wcag']` stays pure conformance, and the real 1.4.12 check now lives on the code side in `figma_scan_code_accessibility`. **Re-import the plugin once** to pick up the new audit behavior. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1320---2026-06-20)
+**New in v1.32.1 — Component docs now name your color tokens:** `figma_generate_component_doc` was documenting colors as raw hex (with a `—` in the Figma Variable column) even when fills and strokes were bound to variables — while spacing tokens documented correctly. It now resolves color **and** spacing variable names through the Desktop Bridge (Plugin API, so it works on every Figma plan — not just Enterprise), and the States, Color Tokens, and Spacing tables all render real token names like `color/content/default` and `spacing/1`. Thanks to Robin Di Capua for catching it. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1321---2026-06-30)
 </Note>
 
 # Your Design System as an API

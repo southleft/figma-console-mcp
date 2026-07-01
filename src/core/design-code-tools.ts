@@ -597,7 +597,7 @@ function buildAnatomyLines(
 /**
  * Collect spacing tokens with their bound variable names.
  */
-function collectSpacingTokens(node: any): Array<{
+function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new Map()): Array<{
 	property: string;
 	value: number;
 	variableName?: string;
@@ -619,7 +619,12 @@ function collectSpacingTokens(node: any): Array<{
 		const value = node[key];
 		if (value !== undefined && value !== null) {
 			const varBinding = boundVars[key];
-			const varName = varBinding?.id || varBinding?.name;
+			// Bound spacing variables expose their id as boundVariables[key].id.
+			// Resolve it to a friendly token name (e.g. `spacing/1`) when the caller
+			// supplied a name map; fall back to the raw id so the binding stays visible.
+			const varId: string | undefined =
+				typeof varBinding?.id === "string" ? varBinding.id : undefined;
+			const varName = varId ? varNameMap.get(varId) || varId : undefined;
 			tokens.push({
 				property: label,
 				value,
@@ -1015,21 +1020,27 @@ function compareTokens(
 		}
 	}
 
-	// Cross-reference design variables with code tokens
+	// Cross-reference design variables with code tokens.
+	// enrichment entries key off variableName (NOT name); reading `.name` here left
+	// every comparison undefined (and would throw on .toLowerCase()). Use variableName
+	// and skip any entries that never resolved to a real token name.
 	if (enrichedData.variables_used && ct.usedTokens) {
-		const designTokenNames = enrichedData.variables_used.map((v) => v.name.toLowerCase());
+		const designTokens = (enrichedData.variables_used as any[])
+			.map((v) => v.variableName)
+			.filter((n): n is string => typeof n === "string" && n.length > 0);
+		const designTokenNames = designTokens.map((n) => n.toLowerCase());
 		const codeTokenNames = ct.usedTokens.map((t) => t.toLowerCase());
 
-		for (const designToken of enrichedData.variables_used) {
-			const normalizedName = designToken.name.toLowerCase();
+		for (const tokenName of designTokens) {
+			const normalizedName = tokenName.toLowerCase();
 			if (!codeTokenNames.some((ct) => ct.includes(normalizedName) || normalizedName.includes(ct))) {
 				discrepancies.push({
 					category: "tokens",
-					property: `token:${designToken.name}`,
+					property: `token:${tokenName}`,
 					severity: "minor",
-					designValue: designToken.name,
+					designValue: tokenName,
 					codeValue: null,
-					message: `Design uses token "${designToken.name}" but code doesn't reference it`,
+					message: `Design uses token "${tokenName}" but code doesn't reference it`,
 					suggestion: `Add token reference in code`,
 				});
 			}
@@ -1979,14 +1990,18 @@ function generateVisualSpecsSection(
 	node: any,
 	enrichedData: EnrichedComponent | null,
 	variantData?: VariantColorData[],
+	varNameMap: Map<string, string> = new Map(),
 ): string {
 	const lines = ["", "## Token Specification", ""];
 
-	// Build variable name lookup from enrichment data
-	const varNameMap = new Map<string, string>();
+	// Fill any gaps in the caller-supplied name map from enrichment data.
+	// enrichment entries key off variableId/variableName (NOT id/name), and only
+	// carry a useful name when it actually resolved (not the raw VariableID).
 	if (enrichedData?.variables_used) {
-		for (const v of enrichedData.variables_used) {
-			varNameMap.set(v.id, v.name);
+		for (const v of enrichedData.variables_used as any[]) {
+			if (v.variableId && v.variableName && v.variableName !== v.variableId && !varNameMap.has(v.variableId)) {
+				varNameMap.set(v.variableId, v.variableName);
+			}
 		}
 	}
 
@@ -2055,7 +2070,7 @@ function generateVisualSpecsSection(
 
 	// Spacing tokens with variable names
 	const visualNode = resolveVisualNode(node);
-	const spacingTokens = collectSpacingTokens(visualNode);
+	const spacingTokens = collectSpacingTokens(visualNode, varNameMap);
 	if (spacingTokens.length > 0) {
 		lines.push("### Spacing Tokens");
 		lines.push("");
@@ -3016,11 +3031,39 @@ export function registerDesignCodeTools(
 					}
 				}
 
-				// Build variable name lookup for per-variant color collection
+				// Build variable name lookup (id → token name) for per-variant color
+				// AND spacing collection. Two sources, in order of authority:
+				//   1. Desktop Bridge local variables (Plugin API getLocalVariablesAsync) —
+				//      works on EVERY Figma plan and is the only reliable id→name source.
+				//      The REST /files/:key/variables/local endpoint is Enterprise-only
+				//      (returns 403 on all other plans), so enrichment's variable map is
+				//      almost always empty and bound colors would otherwise render as raw
+				//      hex / raw VariableIDs.
+				//   2. Enrichment variables_used — fallback for non-bridge (Cloud/Remote)
+				//      paths. NOTE: entries key off variableId/variableName (NOT id/name),
+				//      and their name is only useful when it actually resolved to a token
+				//      name (not the raw VariableID).
 				const varNameMap = new Map<string, string>();
 				if (enrichedData?.variables_used) {
-					for (const v of enrichedData.variables_used) {
-						varNameMap.set(v.id, v.name);
+					for (const v of enrichedData.variables_used as any[]) {
+						if (v.variableId && v.variableName && v.variableName !== v.variableId) {
+							varNameMap.set(v.variableId, v.variableName);
+						}
+					}
+				}
+				if (getDesktopConnector) {
+					try {
+						const connector = await getDesktopConnector();
+						const varsResult = await connector.getVariables();
+						const varList = varsResult?.variables || varsResult?.result?.variables;
+						if (Array.isArray(varList)) {
+							for (const v of varList) {
+								if (v?.id && v?.name) varNameMap.set(v.id, v.name);
+							}
+							logger.info({ count: varList.length }, "Resolved variable names via Desktop Bridge for docs");
+						}
+					} catch {
+						logger.warn("Could not load bridge variables for doc token names — colors may fall back to hex");
 					}
 				}
 
@@ -3120,7 +3163,7 @@ export function registerDesignCodeTools(
 				}
 
 				if (s.visualSpecs) {
-					parts.push(generateVisualSpecsSection(nodeForVisual, enrichedData, variantData));
+					parts.push(generateVisualSpecsSection(nodeForVisual, enrichedData, variantData, varNameMap));
 					includedSections.push("visualSpecs");
 				}
 
