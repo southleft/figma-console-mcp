@@ -206,12 +206,54 @@ describe("Figma API Tools", () => {
 				includePublished: false,
 				verbosity: "summary",
 				enrich: false,
+				format: "full",
 			});
 
 			const parsed = parseResult(result);
 			expect(parsed.data).toBeDefined();
 			expect(parsed.data.variables).toBeDefined();
 			expect(parsed.data.variableCollections).toBeDefined();
+		});
+
+		it("defaults to summary format when no format or intent params are passed", async () => {
+			const tool = server._getTool("figma_get_variables");
+			const result = await tool.handler({
+				includePublished: false,
+				verbosity: "standard",
+				enrich: false,
+			});
+
+			const parsed = parseResult(result);
+			expect(parsed.format).toBe("summary");
+			// Summary shape: overview + names, not the full variable objects
+			expect(parsed.data.overview).toBeDefined();
+			expect(parsed.data.variable_names).toBeDefined();
+			expect(parsed.data.variables).toBeUndefined();
+		});
+
+		it("infers format='full' when enrichment-style params are passed without format", async () => {
+			const tool = server._getTool("figma_get_variables");
+			const result = await tool.handler({
+				includePublished: false,
+				verbosity: "standard",
+				resolveAliases: true,
+			});
+
+			const parsed = parseResult(result);
+			expect(parsed.format).toBe("full");
+			expect(parsed.data.variables).toBeDefined();
+		});
+
+		it("infers format='filtered' when filter params are passed without format", async () => {
+			const tool = server._getTool("figma_get_variables");
+			const result = await tool.handler({
+				includePublished: false,
+				verbosity: "standard",
+				namePattern: "primary",
+			});
+
+			const parsed = parseResult(result);
+			expect(parsed.format).toBe("filtered");
 		});
 	});
 
