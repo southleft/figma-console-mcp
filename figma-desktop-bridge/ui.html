@@ -66,6 +66,10 @@
       align-items: center;
       gap: 5px;
       margin-right: 3px;
+      /* Take the free space so long status sentences ellipsize gracefully
+         instead of pushing the CTA/icons off the 240px canvas. */
+      flex: 1;
+      min-width: 0;
     }
 
     .status-indicator {
@@ -90,18 +94,27 @@
       background: var(--color-error);
     }
 
+    /* Deliberate user pause — static grey dot, NOT the pulsing loading
+       animation, so a pause never reads as "trying to connect". */
+    .status-indicator.paused {
+      background: var(--color-idle);
+    }
+
     @keyframes pulse {
       0%, 100% { opacity: 0.4; }
       50% { opacity: 1; }
     }
 
     #status-state {
-      font-weight: 700;
+      font-weight: 600;
       font-size: 10px;
       letter-spacing: -0.2px;
-      text-transform: uppercase;
       font-stretch: 75%;
       color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.6));
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
     }
 
     .status-indicator.active + #status-state {
@@ -134,8 +147,24 @@
       background: var(--figma-color-bg-secondary, #383838);
     }
 
-    .row-top-spacer {
-      flex: 1;
+    /* ===== Status meta line — connection count + proof of life ===== */
+    .status-meta {
+      display: none; /* toggled to flex from JS when there's something to show */
+      align-items: center;
+      gap: 8px;
+      padding-left: 17px; /* aligns with the pill text (4px row offset + 8px dot + 5px gap) */
+      font-size: 9px;
+      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
+      white-space: nowrap;
+    }
+
+    /* Visible recovery instruction for the ERROR state */
+    .status-error-hint {
+      display: none; /* shown from JS while in the error state */
+      padding-left: 17px;
+      font-size: 10px;
+      line-height: 1.4;
+      color: var(--color-error);
     }
 
     .icon-btn {
@@ -320,41 +349,22 @@
       height: 11px;
     }
 
-    /* ===== Row: info panel ===== */
-    .info-panel {
-      flex-direction: row;
+    /* ===== Row: plugin update banner ===== */
+    .update-banner {
       align-items: center;
-      gap: 8px;
-      padding: 4px 0;
+      gap: 6px;
+      padding: 4px 6px;
+      background: var(--figma-color-bg-secondary, #383838);
+      border: 1px solid var(--figma-color-border, #4a4a4a);
+      border-radius: 3px;
       font-size: 10px;
-      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.7));
+      line-height: 1.4;
+      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
     }
 
-    .info-rows {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
+    .update-banner span {
       flex: 1;
       min-width: 0;
-    }
-
-    .info-row {
-      display: flex;
-      gap: 6px;
-      overflow: hidden;
-      align-items: center;
-    }
-
-    .info-row-label {
-      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
-      flex-shrink: 0;
-    }
-
-    .info-row-value {
-      color: var(--figma-color-text, rgba(255, 255, 255, 0.9));
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     /* ===== Row: log panel ===== */
@@ -367,16 +377,6 @@
       background: var(--figma-color-bg, #1e1e1e);
     }
 
-    .log-header {
-      display: flex;
-      justify-content: flex-end;
-      padding: 3px 6px;
-      font-size: 9px;
-      color: var(--figma-color-text-secondary, rgba(255, 255, 255, 0.5));
-      background: var(--figma-color-bg-secondary, #383838);
-      border-bottom: 1px solid var(--figma-color-border, #4a4a4a);
-    }
-
     .log-entries {
       max-height: 160px;
       overflow-y: auto;
@@ -384,10 +384,6 @@
       font-family: 'SF Mono', 'Menlo', Consolas, monospace;
       font-size: 10px;
       line-height: 1.4;
-    }
-
-    .log-entries.errors-only .log-entry:not(.error) {
-      display: none;
     }
 
     .log-entry {
@@ -470,16 +466,31 @@
     <div class="row-top">
       <div class="status-pill">
         <div class="status-indicator loading" id="status-dot" aria-hidden="true"></div>
-        <span id="status-state" role="status" aria-live="polite">Connecting</span>
+        <span id="status-state" role="status" aria-live="polite">Looking for your AI app…</span>
       </div>
-      <button class="cta-btn" id="cta-btn" onclick="toggleLocalConnection()">Pause</button>
-      <div class="row-top-spacer"></div>
+      <!-- CTA starts hidden; the first state reconcile shows it with an honest label -->
+      <button class="cta-btn" id="cta-btn" onclick="toggleLocalConnection()" style="display:none">Pause</button>
       <button class="icon-btn" id="cloud-icon" onclick="toggleCloudPair()" title="Cloud pairing" aria-label="Cloud pairing" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
         </svg>
       </button>
       <button class="icon-btn" id="expand-btn" onclick="toggleSubToolbar()" title="Show options" aria-label="Show options" aria-expanded="false">+</button>
+    </div>
+
+    <!-- Status meta — connection count + proof of life (shown when connected) -->
+    <div class="status-meta" id="status-meta">
+      <span id="status-conn-count"></span>
+      <span id="status-last-action"></span>
+    </div>
+
+    <!-- Visible recovery instruction, shown only in the error state -->
+    <div class="status-error-hint" id="status-error-hint">Close this window and reopen the plugin.</div>
+
+    <!-- Plugin update banner (shown when the server reports a newer plugin) -->
+    <div class="row update-banner" id="update-banner">
+      <span>Plugin update available — re-import it in Figma (Plugins → Development → Import from manifest).</span>
+      <button class="icon-btn icon-btn--borderless" onclick="dismissUpdateBanner()" title="Dismiss" aria-label="Dismiss update notice">×</button>
     </div>
 
     <!-- Cloud pairing (shown when cloud icon active) -->
@@ -502,29 +513,14 @@
 
     <!-- Sub-toolbar (shown when [+] active) -->
     <div class="row sub-toolbar" id="sub-toolbar">
-      <button class="sub-btn" id="info-toggle" onclick="toggleInfo()" aria-expanded="false" aria-controls="info-panel">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <circle cx="12" cy="12" r="10"/>
-          <line x1="12" y1="16" x2="12" y2="12"/>
-          <line x1="12" y1="8" x2="12.01" y2="8"/>
-        </svg>
-        Info
-      </button>
       <button class="sub-btn" id="log-toggle" onclick="toggleLog()" aria-expanded="false" aria-controls="log-panel">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
           <circle cx="12" cy="12" r="3"/>
         </svg>
-        Log
+        Activity
       </button>
-      <button class="icon-btn" id="errors-toggle" onclick="toggleErrorsOnly()" title="Filter errors only" aria-label="Filter errors only" aria-pressed="false" style="display:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/>
-          <line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-      </button>
-      <button class="icon-btn" id="copy-log-btn" onclick="copyLogToClipboard()" title="Copy log to clipboard" aria-label="Copy log to clipboard" style="display:none">
+      <button class="icon-btn" id="copy-log-btn" onclick="copyLogToClipboard()" title="Copy activity to clipboard" aria-label="Copy activity to clipboard" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -532,19 +528,8 @@
       </button>
     </div>
 
-    <!-- Info panel (shown when Info active) -->
-    <div class="row info-panel" id="info-panel">
-      <div class="info-rows">
-        <div class="info-row"><span class="info-row-label">File:</span><span class="info-row-value" id="info-file">—</span></div>
-        <div class="info-row"><span class="info-row-label">Page:</span><span class="info-row-value" id="info-page">—</span></div>
-      </div>
-    </div>
-
-    <!-- Log panel (shown when Show log active) -->
+    <!-- Activity panel (shown when Activity active) -->
     <div class="row log-panel" id="log-panel">
-      <div class="log-header">
-        <span id="log-servers">0 server(s)</span>
-      </div>
       <div class="log-entries" id="log-entries"></div>
     </div>
   </div>
@@ -561,67 +546,98 @@
 
     let requestIdCounter = 0;
 
-    // Status pill state — captured here so we can re-render whenever the
-    // mode (local port count, cloud paired) changes without losing the
-    // ready/connecting/error state set by the data layer.
-    let _currentStatusState = 'connecting';
-    let _currentStatusActive = false;
-    let _currentStatusError = false;
+    // Status inputs owned by the message handler at the bottom of this file.
+    // bridgeError flips true on a code.js ERROR message; a later successful
+    // VARIABLES_DATA clears it (the plugin recovered).
+    var bridgeError = false;
 
-    // Compute the mode label shown in place of the static "MCP" prefix.
-    // Returns "Local", "Cloud", "Local + Cloud", or "" (unknown — falls back
-    // to the original "MCP" label so the pill always says something).
-    // Lets users see at a glance which transport is carrying their session,
-    // so a confused user doesn't have to guess whether they're talking to
-    // the local server, the cloud relay, or both. Port numbers are omitted
-    // here to keep the pill compact — figma_diagnose exposes the port when
-    // it's actually needed.
-    //
-    // NOTE: `activeConnections` is declared inside the connection-pool IIFE
-    // below (around line ~617), so it is NOT in scope from this top-level
-    // function. The IIFE exposes `window.__wsGetActiveConnections()` for
-    // exactly this reason — calling that getter is what makes the pill
-    // update once the pool reports a live connection.
-    function renderModeText() {
-      try {
-        var getConns = window.__wsGetActiveConnections;
-        var conns = typeof getConns === 'function' ? (getConns() || []) : [];
-        var localUp = conns.some(function(c) {
-          return c && c.ws && c.ws.readyState === 1 && c.port !== 'cloud';
-        });
-        var cloudUp = conns.some(function(c) {
-          return c && c.ws && c.ws.readyState === 1 && c.port === 'cloud';
-        });
-        if (localUp && cloudUp) return 'Local + Cloud';
-        if (localUp) return 'Local';
-        if (cloudUp) return 'Cloud';
-        return '';
-      } catch (e) {
-        return '';
-      }
-    }
-
-    function refreshStatus() {
+    // Single source of truth for the status pill. Derives the rendered state
+    // from actual facts instead of trusting one-off events:
+    //   - live WS connections (local + cloud) from the connection pool
+    //   - userPaused (pool exposes __wsIsPaused)
+    //   - scanning/discovery activity (__wsIsScanning / __wsIsDiscoveryActive)
+    //   - bridgeError (ERROR message from code.js)
+    // window.__figmaVariablesReady is also an input (set by VARIABLES_DATA);
+    // it no longer drives the pill green on its own — a Figma-side data event
+    // says nothing about whether an AI app is actually connected.
+    function deriveAndRenderStatus() {
       var dot = document.getElementById('status-dot');
       var stateText = document.getElementById('status-state');
-      var labelEl = document.querySelector('.status-text .label');
       if (!dot || !stateText) return;
-      dot.className = 'status-indicator ' + (_currentStatusError ? 'error' : (_currentStatusActive ? 'active' : 'loading'));
-      var mode = renderModeText();
-      // Replace the static "MCP" label with the live mode label (Local / Cloud
-      // / Local + Cloud). Fall back to "MCP" when nothing is connected yet so
-      // the pill still has a visible label during initial scan.
-      if (labelEl) labelEl.textContent = mode || 'MCP';
-      stateText.textContent = _currentStatusState;
+
+      var conns = (typeof window.__wsGetActiveConnections === 'function') ? (window.__wsGetActiveConnections() || []) : [];
+      var live = 0;
+      for (var i = 0; i < conns.length; i++) {
+        if (conns[i] && conns[i].ws && conns[i].ws.readyState === 1) live++;
+      }
+      var paused = (typeof window.__wsIsPaused === 'function') ? window.__wsIsPaused() : false;
+      var scanning = (typeof window.__wsIsScanning === 'function' && window.__wsIsScanning()) ||
+                     (typeof window.__wsIsDiscoveryActive === 'function' && window.__wsIsDiscoveryActive());
+
+      var dotClass, text;
+      if (bridgeError) {
+        dotClass = 'error';
+        text = 'Something broke';
+      } else if (paused) {
+        dotClass = 'paused';
+        text = 'Paused — AI can\'t make changes';
+      } else if (live >= 1) {
+        dotClass = 'active';
+        text = 'Connected — AI can work in this file';
+      } else if (scanning) {
+        dotClass = 'loading';
+        text = 'Looking for your AI app…';
+      } else {
+        // Defensive fallback: discovery is always on unless paused, so this
+        // only renders if the discovery loop is somehow disabled.
+        dotClass = '';
+        text = 'Not connected';
+      }
+      dot.className = 'status-indicator' + (dotClass ? ' ' + dotClass : '');
+      stateText.textContent = text;
+      stateText.title = text; // full sentence survives ellipsis truncation
+
+      var hint = document.getElementById('status-error-hint');
+      if (hint) hint.style.display = bridgeError ? 'block' : 'none';
+
+      renderStatusMeta(live);
     }
 
-    // UI update helper — preserves the latest state and re-renders, picking
-    // up any mode-text changes (local/cloud connect/disconnect).
-    function updateStatus(state, isActive, isError) {
-      _currentStatusState = state;
-      _currentStatusActive = isActive;
-      _currentStatusError = isError;
-      refreshStatus();
+    // Small always-visible line under the pill: "Connected to N AI app(s)"
+    // plus proof of life ("Last action: Xs ago"). Hidden entirely when there
+    // is nothing to show (zero connections).
+    function renderStatusMeta(liveCount) {
+      var meta = document.getElementById('status-meta');
+      var countEl = document.getElementById('status-conn-count');
+      var lastEl = document.getElementById('status-last-action');
+      if (!meta || !countEl || !lastEl) return;
+      var anything = false;
+      if (liveCount >= 1) {
+        countEl.textContent = 'Connected to ' + liveCount + ' AI app' + (liveCount === 1 ? '' : 's');
+        countEl.style.display = '';
+        anything = true;
+      } else {
+        countEl.textContent = '';
+        countEl.style.display = 'none';
+      }
+      if (liveCount >= 1 && _lastActionAt) {
+        lastEl.textContent = 'Last action: ' + formatAgo(Date.now() - _lastActionAt);
+        lastEl.style.display = '';
+        anything = true;
+      } else {
+        lastEl.textContent = '';
+        lastEl.style.display = 'none';
+      }
+      meta.style.display = anything ? 'flex' : 'none';
+    }
+
+    function formatAgo(ms) {
+      var s = Math.max(0, Math.floor(ms / 1000));
+      if (s < 60) return s + 's ago';
+      var m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ago';
+      var h = Math.floor(m / 60);
+      return h + 'h ago';
     }
 
     // ============================================================================
@@ -1004,11 +1020,7 @@
 
       // Multi-connection state: plugin connects to ALL active MCP servers
       // so that every Claude tab/CLI instance gets Figma access.
-      var activeConnections = []; // Array of { port, ws }
-      var wsReconnectDelay = 500;
-      var wsMaxReconnectDelay = 5000;
-      var wsReconnectAttempts = 0;
-      var wsMaxReconnectAttempts = 50;
+      var activeConnections = []; // Array of { port, ws, serverVersion?, serverInfo? }
       var isScanning = false;
 
       // Backward-compat: ws and wsConnected reflect "at least one connection"
@@ -1187,6 +1199,9 @@
       function removeConnection(port) {
         activeConnections = activeConnections.filter(function(c) { return c.port !== port; });
         updateCompatState();
+        // Re-pace the health discovery loop: dropping to zero connections
+        // switches it to the fast (3s) cadence immediately.
+        scheduleDiscovery();
       }
 
       /**
@@ -1204,9 +1219,9 @@
           ws = null;
           wsPort = null;
         }
-        // refreshStatus is defined in the outer scope (top-level script block).
-        // Guarded for the unlikely case it's invoked before that script runs.
-        if (typeof refreshStatus === 'function') refreshStatus();
+        // deriveAndRenderStatus is defined in the outer scope (same script tag,
+        // hoisted). Guarded for the unlikely case it's invoked before then.
+        if (typeof deriveAndRenderStatus === 'function') deriveAndRenderStatus();
       }
 
       /**
@@ -1241,14 +1256,9 @@
       // After connecting, disconnect-triggered retries have their own limit.
       var initialScanAttempts = 0;
       var MAX_INITIAL_SCANS = 3;
-      // Set true only when the user clicks Pause. Suppresses the background
-      // watchdog so a deliberate pause is not undone automatically.
+      // Set true only when the user clicks Pause. Suppresses the health
+      // discovery loop so a deliberate pause is not undone automatically.
       var userPaused = false;
-      // Watchdog cadence: how often to re-probe for an MCP server while we have
-      // ZERO connections. Runs only during genuine downtime and stops the moment
-      // a server connects, so the unavoidable connection-refused console noise is
-      // bounded to periods when nothing is connected anyway.
-      var BACKGROUND_RESCAN_MS = 12000;
 
       function wsScanAndConnect() {
         if (isScanning) return;
@@ -1285,8 +1295,6 @@
               pending--;
               if (pending <= 0) {
                 isScanning = false;
-                wsReconnectDelay = 500;
-                wsReconnectAttempts = 0;
               }
             };
 
@@ -1302,11 +1310,11 @@
                 // Retry with backoff if no servers found, up to MAX_INITIAL_SCANS
                 if (!foundAny && activeConnections.length === 0) {
                   // Fast burst on load: a couple of quick retries with backoff.
-                  // Once the burst exhausts we STOP re-arming here — the background
-                  // watchdog (BACKGROUND_RESCAN_MS) takes over and keeps probing
-                  // slowly, so a server that starts AFTER the plugin still connects
-                  // without a restart. The guard also prevents watchdog-triggered
-                  // scans from incrementing the counter or logging on every cycle.
+                  // Once the burst exhausts we STOP re-arming here — the HTTP
+                  // /health discovery loop takes over and keeps probing quietly
+                  // (fetch to a closed port rejects catchably, no console spam),
+                  // so a server that starts AFTER the plugin still connects
+                  // without a restart.
                   if (initialScanAttempts < MAX_INITIAL_SCANS) {
                     initialScanAttempts++;
                     if (initialScanAttempts < MAX_INITIAL_SCANS) {
@@ -1314,7 +1322,7 @@
                       console.log('[MCP Bridge] No servers found, retry ' + initialScanAttempts + '/' + MAX_INITIAL_SCANS + ' in ' + (delay/1000) + 's');
                       setTimeout(wsScanAndConnect, delay);
                     } else {
-                      console.log('[MCP Bridge] No MCP server yet — watchdog will keep probing every ' + (BACKGROUND_RESCAN_MS/1000) + 's until one appears (no restart needed).');
+                      console.log('[MCP Bridge] No MCP server yet — health discovery keeps probing every ' + (DISCOVERY_IDLE_MS/1000) + 's until one appears (no restart needed).');
                     }
                   }
                 }
@@ -1328,10 +1336,18 @@
 
       /**
        * Reconnect a specific port that disconnected.
-       * Tries the same port first (server may have just restarted),
-       * then does a full rescan to pick up any new servers.
+       * Tries the same port once (server may have just restarted); anything
+       * slower is picked up by the /health discovery loop.
        */
       function wsReconnectPort(port) {
+        if (port === 'cloud') {
+          // The cloud connection is a wss:// relay, not a localhost port —
+          // 'ws://localhost:cloud' is an invalid URL. Re-dial through the
+          // cloud code (correct URL + its own bounded retry/give-up).
+          if (typeof window.__cloudReconnect === 'function') window.__cloudReconnect();
+          return;
+        }
+        if (userPaused || isPortConnected(port)) return;
         try {
           var testWs = new WebSocket('ws://localhost:' + port);
           var timeout = setTimeout(function() {
@@ -1351,7 +1367,39 @@
             clearTimeout(timeout);
           };
         } catch (e) {
-          // Port gone — no further scanning to avoid console spam
+          // Port gone — the discovery loop will find it if it comes back
+        }
+      }
+
+      /**
+       * Connect directly to a port the /health probe just verified is OUR
+       * server. Same attach path as the scan, plus the server version the
+       * probe reported (stored on the connection for display/diagnostics).
+       */
+      function wsConnectToPort(port, serverVersion) {
+        if (userPaused || isPortConnected(port)) return;
+        try {
+          var testWs = new WebSocket('ws://localhost:' + port);
+          var timeout = setTimeout(function() {
+            if (testWs.readyState !== 1) testWs.close();
+          }, 3000);
+
+          testWs.onopen = function() {
+            clearTimeout(timeout);
+            var conn = { port: port, ws: testWs };
+            if (serverVersion) conn.serverVersion = serverVersion;
+            activeConnections.push(conn);
+            updateCompatState();
+            console.log('[MCP Bridge] WebSocket connected to port ' + port + (serverVersion ? ' (server v' + serverVersion + ')' : '') + ' (' + activeConnections.length + ' server(s) total)');
+            attachWsHandlers(testWs, port);
+            initializeConnection(testWs, port);
+          };
+
+          testWs.onerror = function() {
+            clearTimeout(timeout);
+          };
+        } catch (e) {
+          // ignore — next discovery pass will retry
         }
       }
 
@@ -1367,7 +1415,16 @@
             if (message.type === 'SERVER_HELLO' && message.data) {
               console.log('[MCP Bridge] Connected to server on port ' + message.data.port + ' (PID: ' + message.data.pid + ', v' + message.data.serverVersion + ')');
               var conn = activeConnections.find(function(c) { return c.ws === activeWs; });
-              if (conn) conn.serverInfo = message.data;
+              if (conn) {
+                conn.serverInfo = message.data;
+                if (message.data.serverVersion) conn.serverVersion = message.data.serverVersion;
+              }
+              return;
+            }
+
+            // Server says the installed plugin is older than it expects.
+            if (message.type === 'PLUGIN_UPDATE_AVAILABLE') {
+              if (typeof showUpdateBanner === 'function') showUpdateBanner();
               return;
             }
 
@@ -1415,12 +1472,10 @@
             return;
           }
 
-          // Retry the specific port with limited attempts (no full rescan)
-          wsReconnectAttempts++;
-          if (wsReconnectAttempts <= 5) {
-            var delay = Math.min(1000 * wsReconnectAttempts, 5000);
-            setTimeout(function() { wsReconnectPort(port); }, delay);
-          }
+          // One immediate same-port retry covers fast same-port server
+          // restarts; anything slower is picked up by the /health discovery
+          // loop, so the old capped retry-with-backoff dance is gone.
+          setTimeout(function() { wsReconnectPort(port); }, 1000);
         };
 
         activeWs.onerror = function() {
@@ -1513,8 +1568,7 @@
         // Reset scan state so a future Resume gets a clean retry budget.
         isScanning = false;
         initialScanAttempts = 0;
-        wsReconnectAttempts = 0;
-        // Deliberate user pause — keep the watchdog quiet until Resume/Reconnect.
+        // Deliberate user pause — keep discovery quiet until Resume.
         userPaused = true;
       };
 
@@ -1530,20 +1584,92 @@
 
       window.__wsIsPaused = function() { return userPaused; };
       window.__wsIsScanning = function() { return isScanning; };
+      // The health discovery loop is armed whenever the user hasn't paused —
+      // used by the status pill to show "Looking for your AI app…" honestly.
+      window.__wsIsDiscoveryActive = function() { return !userPaused; };
 
-      // Background watchdog — the fix for "plugin opened before the MCP client
-      // started." While we hold zero connections and the user hasn't paused,
-      // keep probing at a slow cadence. A late-starting server is picked up
-      // automatically; the probing stops the instant a connection succeeds.
-      setInterval(function() {
-        if (userPaused || isScanning) return;
-        if (activeConnections.length > 0) return;
-        wsScanAndConnect();
-      }, BACKGROUND_RESCAN_MS);
+      // ======================================================================
+      // HTTP /health DISCOVERY LOOP — replaces the old zero-connection-gated
+      // WS watchdog. fetch() to a closed port rejects catchably with NO
+      // console spam (unlike new WebSocket()), so this can run always-on:
+      //   - every 3s while zero connections (fast attach after server start)
+      //   - every 10s while connected (catches a restarted instance among
+      //     live ones — previously a permanent dead end)
+      // A port only gets a WS dial after its /health response matches OUR
+      // server's payload shape ({status:'ok', version, clients, ...}).
+      // ======================================================================
+      var HEALTH_TIMEOUT_MS = 1500;
+      var DISCOVERY_IDLE_MS = 3000;    // cadence with zero connections
+      var DISCOVERY_STEADY_MS = 10000; // cadence with >=1 connection
+      var discoveryTimer = null;
+      var discoveryInFlight = false;
 
-      // Initial scan on load (fast burst). Thereafter the watchdog above keeps
-      // probing while disconnected, and disconnect-triggered retries handle drops.
+      function liveConnectionCount() {
+        var n = 0;
+        for (var i = 0; i < activeConnections.length; i++) {
+          if (activeConnections[i].ws.readyState === 1) n++;
+        }
+        return n;
+      }
+
+      function isOurHealthPayload(json) {
+        // Shape served by websocket-server.ts handleHttpRequest()
+        return !!(json && json.status === 'ok' && typeof json.version === 'string' && json.clients !== undefined);
+      }
+
+      function probePortHealth(port) {
+        var opts = {};
+        try {
+          if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+            opts.signal = AbortSignal.timeout(HEALTH_TIMEOUT_MS);
+          }
+        } catch (e) { /* AbortSignal unavailable — fetch just runs untimed */ }
+        return fetch('http://localhost:' + port + '/health', opts)
+          .then(function(res) {
+            if (!res.ok) return null;
+            return res.json().then(function(json) {
+              return isOurHealthPayload(json) ? { port: port, version: json.version } : null;
+            });
+          })
+          .catch(function() { return null; }); // closed port / timeout / non-JSON — all quiet
+      }
+
+      function scheduleDiscovery() {
+        if (discoveryTimer) clearTimeout(discoveryTimer);
+        var delay = liveConnectionCount() > 0 ? DISCOVERY_STEADY_MS : DISCOVERY_IDLE_MS;
+        discoveryTimer = setTimeout(runDiscoveryPass, delay);
+      }
+
+      function runDiscoveryPass() {
+        if (discoveryInFlight) { scheduleDiscovery(); return; }
+        if (userPaused) { scheduleDiscovery(); return; } // never auto-connect while paused
+        var candidates = [];
+        for (var p = WS_PORT_RANGE_START; p <= WS_PORT_RANGE_END; p++) {
+          if (!isPortConnected(p)) candidates.push(p);
+        }
+        if (candidates.length === 0) { scheduleDiscovery(); return; }
+        discoveryInFlight = true;
+        Promise.all(candidates.map(probePortHealth))
+          .then(function(results) {
+            for (var i = 0; i < results.length; i++) {
+              var hit = results[i];
+              if (hit && !userPaused && !isPortConnected(hit.port)) {
+                wsConnectToPort(hit.port, hit.version);
+              }
+            }
+          })
+          .catch(function() { /* individual probes already swallow errors */ })
+          .then(function() {
+            discoveryInFlight = false;
+            scheduleDiscovery();
+          });
+      }
+
+      // Initial scan on load (fast WS burst for instant attach). The discovery
+      // loop then keeps probing forever: fast while disconnected, slow while
+      // connected. Disconnect-triggered same-port retries handle quick drops.
       wsScanAndConnect();
+      scheduleDiscovery();
     })();
 
     // ============================================================================
@@ -1551,6 +1677,11 @@
     // ============================================================================
     var cloudWs = null;
     var CLOUD_RELAY_HOST = 'wss://figma-console-mcp.southleft.com';
+    var _lastCloudCode = null;              // most recent code that successfully paired
+    var _cloudUserDisconnected = false;     // user clicked Disconnect — suppress auto re-dial
+    var _cloudWasConnectedBeforePause = false; // restore cloud on Resume after Pause
+    var _cloudRetryCount = 0;               // bounded auto-reconnect budget
+    var CLOUD_MAX_RETRIES = 5;
 
     // ============================================================================
     // 3-STAGE UI TOGGLES
@@ -1661,46 +1792,19 @@
       var nowOpen = toggleRow('sub-toolbar', 'expand-btn');
       document.getElementById('expand-btn').textContent = nowOpen ? '−' : '+';
       if (!nowOpen) {
-        // Collapse Info + Log if sub-toolbar closes
-        var info = document.getElementById('info-panel');
+        // Collapse the Activity panel if sub-toolbar closes
         var log = document.getElementById('log-panel');
-        if (info.classList.contains('visible')) toggleInfo();
         if (log.classList.contains('visible')) toggleLog();
       }
-    }
-
-    function toggleInfo() {
-      var opening = !document.getElementById('info-panel').classList.contains('visible');
-      if (opening && document.getElementById('log-panel').classList.contains('visible')) {
-        // Close log first so only one panel is open at a time.
-        toggleLog();
-      }
-      toggleRow('info-panel', 'info-toggle');
     }
 
     function toggleLog() {
       var logVisible = document.getElementById('log-panel').classList.contains('visible');
       var opening = !logVisible;
-      if (opening && document.getElementById('info-panel').classList.contains('visible')) {
-        // Close info first so only one panel is open at a time.
-        toggleRow('info-panel', 'info-toggle');
-      }
       toggleRow('log-panel', 'log-toggle');
-      // Reveal Errors + Copy buttons only when log panel is open
-      document.getElementById('errors-toggle').style.display = opening ? '' : 'none';
+      // Reveal the Copy button only when the Activity panel is open
       document.getElementById('copy-log-btn').style.display = opening ? '' : 'none';
       autoResize();
-    }
-
-    function toggleErrorsOnly() {
-      var btn = document.getElementById('errors-toggle');
-      var entries = document.getElementById('log-entries');
-      var on = !btn.classList.contains('active');
-      btn.classList.toggle('active', on);
-      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-      entries.classList.toggle('errors-only', on);
-      btn.setAttribute('title', on ? 'Remove error filter' : 'Filter errors only');
-      btn.setAttribute('aria-label', on ? 'Remove error filter' : 'Filter errors only');
     }
 
     // Follow Figma's theme. With themeColors:true, Figma adds a "figma-light" /
@@ -1735,6 +1839,9 @@
     var logHistory = [];
     var logEntriesEl = null;
     var _ctaBtn = null;
+    // Timestamp of the most recent command sent through the bridge (the same
+    // event that appends to logHistory) — drives "Last action: Xs ago".
+    var _lastActionAt = null;
 
     function ensureLogRefs() {
       if (!logEntriesEl) logEntriesEl = document.getElementById('log-entries');
@@ -1809,7 +1916,7 @@
       try { ok = document.execCommand('copy'); } catch (e) {}
       document.body.removeChild(ta);
       if (ok) {
-        logWithHistory('Copied to pasteboard (' + logHistory.length + ' entries)', 'success');
+        logWithHistory('Copied to clipboard (' + logHistory.length + ' entries)', 'success');
       } else {
         logWithHistory('Copy failed - clipboard not available', 'error');
       }
@@ -1901,6 +2008,7 @@
       var durEntry = null;
       var histIdx = -1;
       if (summary) {
+        _lastActionAt = Date.now();
         logWithHistory(summary, 'info');
         histIdx = logHistory.length - 1;
         ensureLogRefs();
@@ -1942,40 +2050,42 @@
       );
     };
 
-    // Populate Info panel from GET_FILE_INFO response.
-    function updateInfoPanel() {
-      _origSendPluginCommand('GET_FILE_INFO', {}).then(function(result) {
-        var info = (result && result.fileInfo) || result || {};
-        var fileEl = document.getElementById('info-file');
-        var pageEl = document.getElementById('info-page');
-        if (fileEl && info.fileName) fileEl.textContent = info.fileName;
-        if (pageEl && info.currentPage) pageEl.textContent = info.currentPage;
-        // Version is TJ's hardcoded PLUGIN_VERSION; not displayed to avoid confusion
-        // with the npm package version. Still kept in memory for audit export.
-        if (info.pluginVersion) {
-          PLUGIN_VERSION = 'v' + info.pluginVersion;
-        }
-      }).catch(function() { /* ignore */ });
-    }
-
-    // Update "N server(s)" count in log header.
-    function updateServerCount() {
-      var n = 0;
-      if (typeof window.__wsGetActiveConnections === 'function') {
-        n = window.__wsGetActiveConnections().length;
+    // Plugin update banner — shown when the server pushes
+    // PLUGIN_UPDATE_AVAILABLE over the WebSocket. Dismiss sticks for the
+    // session so repeated pushes don't nag.
+    var _updateBannerDismissed = false;
+    function showUpdateBanner() {
+      if (_updateBannerDismissed) return;
+      var b = document.getElementById('update-banner');
+      if (b && !b.classList.contains('visible')) {
+        b.classList.add('visible');
+        autoResize();
       }
-      var el = document.getElementById('log-servers');
-      if (el) el.textContent = n + ' server(s)';
+    }
+    function dismissUpdateBanner() {
+      _updateBannerDismissed = true;
+      var b = document.getElementById('update-banner');
+      if (b && b.classList.contains('visible')) {
+        b.classList.remove('visible');
+        autoResize();
+      }
     }
 
-    // Real TURN ON / TURN OFF: toggles the local WebSocket bridge.
+    // True while a cloud relay connection is live in the shared pool.
+    function hasLiveCloudConnection() {
+      var conns = (typeof window.__wsGetActiveConnections === 'function') ? (window.__wsGetActiveConnections() || []) : [];
+      return conns.some(function(c) { return c && c.port === 'cloud' && c.ws && c.ws.readyState === 1; });
+    }
+
+    // Real Pause / Resume: toggles the local WebSocket bridge.
     function setCtaState(state) {
       ensureLogRefs();
       if (!_ctaBtn) return;
-      if (state === 'on')        { _ctaBtn.textContent = 'Pause';       _ctaBtn.disabled = false; }
-      else if (state === 'paused')   { _ctaBtn.textContent = 'Resume';      _ctaBtn.disabled = false; }
-      else if (state === 'reconnect'){ _ctaBtn.textContent = 'Reconnect';   _ctaBtn.disabled = false; }
-      else if (state === 'scanning') { _ctaBtn.textContent = 'In progress'; _ctaBtn.disabled = true; }
+      _ctaBtn.style.display = ''; // markup starts it hidden until first honest state
+      if (state === 'on')            { _ctaBtn.textContent = 'Pause';        _ctaBtn.disabled = false; }
+      else if (state === 'paused')   { _ctaBtn.textContent = 'Resume';       _ctaBtn.disabled = false; }
+      else if (state === 'reconnect'){ _ctaBtn.textContent = 'Try again';    _ctaBtn.disabled = false; }
+      else if (state === 'scanning') { _ctaBtn.textContent = 'Connecting…';  _ctaBtn.disabled = true; }
     }
 
     function toggleLocalConnection() {
@@ -1983,16 +2093,27 @@
       if (!_ctaBtn) return;
       var label = _ctaBtn.textContent;
       if (label === 'Pause') {
+        // Remember a live cloud connection so Resume can restore it.
+        _cloudWasConnectedBeforePause = hasLiveCloudConnection();
         if (typeof window.__wsDisconnectAll === 'function') window.__wsDisconnectAll();
         setCtaState('paused');
-        updateStatus('disconnected', false, false);
+        deriveAndRenderStatus();
         logWithHistory('Paused', 'warn');
-      } else if (label === 'Resume' || label === 'Reconnect') {
+      } else if (label === 'Resume' || label === 'Try again') {
         setCtaState('scanning');
-        updateStatus('connecting', false, false);
-        logWithHistory((label === 'Reconnect' ? 'Reconnecting' : 'Resuming') + ', scanning ports 9223-9232', 'info');
+        logWithHistory('Looking for your AI app…', 'info');
         if (typeof window.__wsManualScan === 'function') window.__wsManualScan();
         else if (typeof window.__wsScanAndConnect === 'function') window.__wsScanAndConnect();
+        // Re-establish the cloud connection if one existed before Pause
+        // (the scan above only covers localhost ports).
+        if (_cloudWasConnectedBeforePause) {
+          _cloudWasConnectedBeforePause = false;
+          if (_lastCloudCode && !_cloudUserDisconnected) {
+            _cloudRetryCount = 0;
+            cloudDial(_lastCloudCode, true);
+          }
+        }
+        deriveAndRenderStatus();
         // Watch for connection success or scan timeout.
         var attempts = 0;
         var poller = setInterval(function() {
@@ -2001,26 +2122,25 @@
           if (n > 0) {
             clearInterval(poller);
             setCtaState('on');
-            updateStatus('ready', true, false);
+            deriveAndRenderStatus();
           } else if (attempts > 20) { // ~10s max
             clearInterval(poller);
-            setCtaState('paused');
-            updateStatus('error', false, true);
-            logWithHistory('Resume failed - no MCP server found', 'error');
+            setCtaState('reconnect');
+            deriveAndRenderStatus();
+            logWithHistory('Couldn\'t find your AI app. Open Claude (or your AI assistant), then press Try again.', 'error');
           }
         }, 500);
       }
     }
 
-    // Keep the CTA button honest about the real connection state. The status
-    // dot is driven by Figma-side data (variables loaded); this reconciles the
-    // button with the actual number of live MCP server connections so a
-    // never-connected or dropped plugin shows a clickable "Reconnect" instead
-    // of a misleading "Pause". Skips while a scan is mid-flight (button disabled
-    // or __wsIsScanning) to avoid fighting the transient state set on click.
+    // Keep the CTA button honest about the real connection state: a
+    // never-connected or dropped plugin shows a clickable "Try again" instead
+    // of a misleading "Pause". Skips while a scan is mid-flight (button
+    // disabled or __wsIsScanning) to avoid fighting the transient click state.
     function reconcileCta() {
       ensureLogRefs();
-      if (!_ctaBtn || _ctaBtn.disabled) return;
+      if (!_ctaBtn) return;
+      if (_ctaBtn.disabled) return;
       if (typeof window.__wsIsScanning === 'function' && window.__wsIsScanning()) return;
       var n = (typeof window.__wsGetActiveConnections === 'function') ? window.__wsGetActiveConnections().length : 0;
       var paused = (typeof window.__wsIsPaused === 'function') ? window.__wsIsPaused() : false;
@@ -2029,21 +2149,29 @@
       } else if (n > 0) {
         if (_ctaBtn.textContent !== 'Pause') setCtaState('on');
       } else {
-        if (_ctaBtn.textContent !== 'Reconnect') setCtaState('reconnect');
+        if (_ctaBtn.textContent !== 'Try again') setCtaState('reconnect');
       }
+      // First reconcile also unhides the button with its honest label.
+      if (_ctaBtn.style.display === 'none') _ctaBtn.style.display = '';
     }
 
-    // Periodic refresh of server count, info panel, and CTA state (cheap, <1ms).
+    // Periodic reconcile of CTA + status pill/meta (cheap, <1ms). Also
+    // refreshes "Last action: Xs ago" via renderStatusMeta inside
+    // deriveAndRenderStatus.
     setInterval(function() {
-      updateServerCount();
       reconcileCta();
-      // Only refresh info if the panel is visible (cheap gate).
-      var info = document.getElementById('info-panel');
-      if (info && info.classList.contains('visible')) updateInfoPanel();
+      deriveAndRenderStatus();
     }, 2000);
 
-    // One-shot on first ready.
-    setTimeout(function() { updateServerCount(); updateInfoPanel(); }, 500);
+    // One-shot on first ready: render honest initial state and capture the
+    // plugin's own version (used in the Activity export header) without
+    // logging a command line — hence the unwrapped sender. The version is
+    // read from the GET_FILE_INFO_RESULT handler below.
+    setTimeout(function() {
+      reconcileCta();
+      deriveAndRenderStatus();
+      _origSendPluginCommand('GET_FILE_INFO', {}).catch(function() { /* ignore */ });
+    }, 500);
 
     // Size the plugin window to fit content on first paint.
     requestAnimationFrame(autoResize);
@@ -2063,36 +2191,34 @@
       cloudWs = null;
     }
 
-    function cloudConnect() {
-      var codeInput = document.getElementById('cloud-code');
+    // Shared dialer used by manual Connect, auto-reconnect after a drop,
+    // restored-config auto-connect, and Resume-after-Pause. `isAuto` softens
+    // the error UX for background attempts and arms the bounded retry chain.
+    function cloudDial(code, isAuto) {
       var btn = document.getElementById('cloud-btn');
       var statusEl = document.getElementById('cloud-status');
-      var code = (codeInput.value || '').trim().toUpperCase();
 
-      if (!code || code.length < 4) {
-        statusEl.textContent = 'Enter pairing code';
-        statusEl.className = 'cloud-status error';
-        return;
-      }
-
-      btn.disabled = true;
-      statusEl.textContent = 'Connecting...';
-      statusEl.className = 'cloud-status';
-
-      // Close existing cloud connection if any
+      // Close existing cloud connection if any (manual reason suppresses
+      // the pool's same-port retry for the old socket).
       if (cloudWs && cloudWs.readyState <= 1) {
-        cloudWs.close();
+        try { cloudWs.close(1000, 'Manual disconnect'); } catch (e) {}
       }
+
+      if (btn) btn.disabled = true;
+      if (statusEl) { statusEl.textContent = 'Connecting...'; statusEl.className = 'cloud-status'; }
 
       try {
+        var opened = false;
+        var sawError = false;
         cloudWs = new WebSocket(CLOUD_RELAY_HOST + '/ws/pair?code=' + code);
 
         cloudWs.onopen = function() {
-          statusEl.textContent = 'Connected to cloud relay';
-          statusEl.className = 'cloud-status connected';
-          btn.disabled = false;
-          btn.textContent = 'Disconnect';
-          btn.onclick = cloudDisconnect;
+          opened = true;
+          _lastCloudCode = code;
+          _cloudUserDisconnected = false;
+          _cloudRetryCount = 0;
+          if (statusEl) { statusEl.textContent = 'Connected via cloud'; statusEl.className = 'cloud-status connected'; }
+          if (btn) { btn.disabled = false; btn.textContent = 'Disconnect'; btn.onclick = cloudDisconnect; }
 
           // Add to the shared connection pool (uses same handlers as localhost).
           // Pass resetCloudUI as disconnect callback — attachWsHandlers overwrites
@@ -2109,27 +2235,75 @@
         };
 
         cloudWs.onerror = function() {
-          statusEl.textContent = 'Connection failed — check code';
-          statusEl.className = 'cloud-status error';
-          btn.disabled = false;
+          sawError = true;
+          if (statusEl && !isAuto) {
+            statusEl.textContent = 'That code didn\'t work. Ask Claude for a fresh pairing code and try again.';
+            statusEl.className = 'cloud-status error';
+          }
+          if (btn) btn.disabled = false;
         };
 
         // Note: onclose here handles pre-connection close (e.g., bad code).
         // After onopen, attachWsHandlers overwrites this — resetCloudUI callback
         // handles post-connection close instead.
         cloudWs.onclose = function(event) {
-          resetCloudUI();
+          if (!opened && sawError && !isAuto) {
+            // Keep the visible error message (onclose fires right after
+            // onerror and would otherwise clobber it); restore the button.
+            if (btn) { btn.disabled = false; btn.textContent = 'Connect'; btn.onclick = cloudConnect; }
+            cloudWs = null;
+          } else {
+            resetCloudUI();
+          }
+          // Auto attempt that never opened → keep trying within the budget.
+          if (isAuto && !opened) scheduleCloudRetry();
         };
       } catch (e) {
-        statusEl.textContent = 'Failed: ' + e.message;
-        statusEl.className = 'cloud-status error';
-        btn.disabled = false;
+        if (statusEl) { statusEl.textContent = 'Failed: ' + e.message; statusEl.className = 'cloud-status error'; }
+        if (btn) btn.disabled = false;
       }
     }
 
+    // Bounded auto-reconnect with backoff. Gives up after CLOUD_MAX_RETRIES,
+    // never fires while paused or after a deliberate user Disconnect.
+    function scheduleCloudRetry() {
+      if (_cloudUserDisconnected || !_lastCloudCode) return;
+      if (typeof window.__wsIsPaused === 'function' && window.__wsIsPaused()) return;
+      if (_cloudRetryCount >= CLOUD_MAX_RETRIES) return;
+      _cloudRetryCount++;
+      setTimeout(function() {
+        if (_cloudUserDisconnected || hasLiveCloudConnection()) return;
+        if (typeof window.__wsIsPaused === 'function' && window.__wsIsPaused()) return;
+        cloudDial(_lastCloudCode, true);
+      }, Math.min(2000 * _cloudRetryCount, 10000));
+    }
+
+    // Called by the connection pool when the pooled cloud connection drops —
+    // re-dials the actual relay URL instead of 'ws://localhost:cloud'.
+    window.__cloudReconnect = function() {
+      scheduleCloudRetry();
+    };
+
+    function cloudConnect() {
+      var codeInput = document.getElementById('cloud-code');
+      var statusEl = document.getElementById('cloud-status');
+      var code = (codeInput.value || '').trim().toUpperCase();
+
+      if (!code || code.length < 4) {
+        statusEl.textContent = 'Enter pairing code';
+        statusEl.className = 'cloud-status error';
+        return;
+      }
+
+      _cloudUserDisconnected = false;
+      _cloudRetryCount = 0;
+      cloudDial(code, false);
+    }
+
     function cloudDisconnect() {
+      _cloudUserDisconnected = true; // deliberate — suppress auto re-dial
       if (cloudWs) {
-        cloudWs.close();
+        try { cloudWs.close(1000, 'Manual disconnect'); } catch (e) {}
       }
       // Reset UI immediately — don't rely on onclose (may be overwritten)
       resetCloudUI();
@@ -2169,7 +2343,10 @@
         case 'VARIABLES_DATA':
           window.__figmaVariablesData = msg.data;
           window.__figmaVariablesReady = true;
-          updateStatus('ready', true, false);
+          // A Figma-side data event says nothing about the WS connection —
+          // record the fact and let the derived state decide the pill.
+          bridgeError = false;
+          deriveAndRenderStatus();
           console.log('[MCP Bridge] Active - ' + (msg.data.variables?.length || 0) + ' vars');
           // Forward to WebSocket client if connected
           if (window.__wsForwardVariables) window.__wsForwardVariables(msg.data);
@@ -2188,7 +2365,8 @@
 
         case 'ERROR':
           window.__figmaVariablesReady = false;
-          updateStatus('error', false, true);
+          bridgeError = true; // pill shows "Something broke" + reopen hint
+          deriveAndRenderStatus();
           console.error('[MCP Bridge] Error:', msg.error);
           break;
 
@@ -2383,7 +2561,29 @@
 
         // File info
         case 'GET_FILE_INFO_RESULT':
+          // Capture the plugin's own version for the Activity export header
+          // (moved here from the deleted Info panel so any GET_FILE_INFO
+          // response keeps it fresh, regardless of who asked).
+          var fileInfo = msg.fileInfo || msg.data;
+          if (fileInfo && fileInfo.pluginVersion) {
+            PLUGIN_VERSION = 'v' + fileInfo.pluginVersion;
+          }
           handleResult('GET_FILE_INFO', 'fileInfo');
+          break;
+
+        // Cloud config restored from clientStorage by code.js — auto-fill the
+        // pairing input and reconnect without making the user re-pair.
+        case 'CLOUD_CONFIG_RESTORED':
+          if (msg.config && msg.config.code && !_cloudUserDisconnected) {
+            var restoredCode = String(msg.config.code).trim().toUpperCase();
+            var restoredInput = document.getElementById('cloud-code');
+            if (restoredInput) restoredInput.value = restoredCode;
+            if (restoredCode.length >= 4 && !hasLiveCloudConnection()) {
+              _lastCloudCode = restoredCode;
+              _cloudRetryCount = 0;
+              cloudDial(restoredCode, true);
+            }
+          }
           break;
 
         // Plugin UI reload

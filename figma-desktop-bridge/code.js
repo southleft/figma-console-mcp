@@ -148,6 +148,23 @@ var __stickyColors = {
   }
 })();
 
+// Restore persisted cloud pairing config (stored via STORE_CLOUD_CONFIG) and
+// push it to the UI so cloud users don't lose their pairing on plugin reopen.
+// Fire-and-forget: never blocks the FILE_INFO/VARIABLES_DATA pushes above.
+(function() {
+  figma.clientStorage.getAsync('cloudConfig')
+    .then(function(stored) {
+      // Skip if nothing stored or the shape is unusable (e.g., cleared config)
+      if (!stored || !stored.code) return;
+      figma.ui.postMessage({ type: 'CLOUD_CONFIG_RESTORED', config: stored });
+      console.log('🌉 [Desktop Bridge] Restored cloud config from clientStorage');
+    })
+    .catch(function(error) {
+      // clientStorage can throw — non-critical, just log
+      console.warn('🌉 [Desktop Bridge] Could not restore cloud config:', error && error.message ? error.message : String(error));
+    });
+})();
+
 // Helper function to serialize a variable for response
 function serializeVariable(v) {
   return {

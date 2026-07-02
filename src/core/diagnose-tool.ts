@@ -26,6 +26,8 @@ export interface DiagnoseToolOptions {
 		editorType?: string;
 		port?: number;
 		portFallbackFrom?: number;
+		pluginVersion?: string | null;
+		pluginUpdateAvailable?: boolean;
 	} | null;
 	/** Snapshot of REST API auth state (best-effort) */
 	getTokenState?: () => {
@@ -58,6 +60,11 @@ function buildReport(opts: DiagnoseToolOptions): string {
 		}
 		if (plugin.editorType && plugin.editorType !== "figma") {
 			lines.push(`- Editor type: ${plugin.editorType}.`);
+		}
+		if (plugin.pluginUpdateAvailable) {
+			lines.push(
+				`- ⚠️ **Plugin update available**: the imported plugin${plugin.pluginVersion ? ` (v${plugin.pluginVersion})` : " (version unknown — very old)"} is older than this server (v${opts.getServerVersion()}). Figma caches plugin files, so re-import it: Figma Desktop → Plugins → Development → Import plugin from manifest → select manifest.json. Until then, recently added or fixed plugin features may silently misbehave.`,
+			);
 		}
 	} else {
 		lines.push(`- ⚠️ Desktop Bridge plugin not connected${plugin.port ? ` (server is listening on port ${plugin.port})` : ""}.`);

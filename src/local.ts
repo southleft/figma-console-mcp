@@ -1268,6 +1268,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 													fileKey: wsFileInfo.fileKey,
 													currentPage: wsFileInfo.currentPage,
 													connectedAt: new Date(wsFileInfo.connectedAt).toISOString(),
+													pluginVersion: wsFileInfo.pluginVersion ?? undefined,
+													pluginUpdateAvailable: wsFileInfo.pluginUpdateAvailable || undefined,
 												} : undefined,
 												connectedFiles: (() => {
 													const files = this.wsServer?.getConnectedFiles();
@@ -1279,6 +1281,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 														editorType: f.editorType || 'figma',
 														isActive: f.isActive,
 														connectedAt: new Date(f.connectedAt).toISOString(),
+														pluginVersion: f.pluginVersion ?? undefined,
+														pluginUpdateAvailable: f.pluginUpdateAvailable || undefined,
 													}));
 												})(),
 												currentSelection: (() => {
@@ -1380,13 +1384,44 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					}
 
 					const connector = await this.getDesktopConnector();
-					const fileInfo = await connector.executeCodeViaUI(
-						"return { fileName: figma.root.name, fileKey: figma.fileKey }",
-						5000,
+					const probe = async () =>
+						connector.executeCodeViaUI(
+							"return { fileName: figma.root.name, fileKey: figma.fileKey }",
+							5000,
+						);
+
+					let fileInfo = await probe().catch(
+						() => ({ success: false, result: null }) as any,
 					);
+					let selfHealed = false;
+
+					if (!fileInfo.success) {
+						// Sandbox-dead / wedged-relay state: attempt self-healing by
+						// reloading the plugin iframe (RELOAD_UI re-runs figma.showUI,
+						// which triggers a fresh port scan and reconnection). This only
+						// works when the message relay is still partially functional —
+						// if code.js itself is dead, the command times out and we fall
+						// through to the honest error below.
+						try {
+							logger.info(
+								"Reconnect probe failed — attempting RELOAD_UI self-heal",
+							);
+							await this.wsServer.sendCommand("RELOAD_UI", {}, 5000);
+							// Give the fresh iframe time to rescan and re-identify
+							await new Promise((resolve) => setTimeout(resolve, 4000));
+							fileInfo = await probe().catch(
+								() => ({ success: false, result: null }) as any,
+							);
+							selfHealed = fileInfo.success;
+						} catch {
+							// RELOAD_UI itself failed — the sandbox is truly unreachable
+						}
+					}
+
 					if (!fileInfo.success) {
 						const probeErr = new Error(
-							"Desktop Bridge socket is open but the plugin sandbox is not responding to commands. " +
+							"Desktop Bridge socket is open but the plugin is not responding to commands " +
+							"(automatic plugin reload was attempted and did not help). " +
 							"Close and reopen the Figma Console MCP plugin in Figma Desktop (Plugins → Development → Figma Console MCP)."
 						);
 						(probeErr as any).connectionError = this.buildConnectionError(probeErr);
@@ -1403,9 +1438,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										status: "connected",
 										transport: "websocket",
 										probeVerified: true,
+										selfHealed: selfHealed || undefined,
 										fileName,
 										timestamp: Date.now(),
-										message: `Connection verified via live roundtrip. Connected to: "${fileName || "(unnamed file)"}"`,
+										message: selfHealed
+											? `Plugin was unresponsive; automatically reloaded it and verified the connection. Connected to: "${fileName || "(unnamed file)"}"`
+											: `Connection verified via live roundtrip. Connected to: "${fileName || "(unnamed file)"}"`,
 									},
 								),
 							},
@@ -3076,6 +3114,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					editorType: fileInfo?.editorType,
 					port: this.wsActualPort ?? undefined,
 					portFallbackFrom: this.wsPreferredPort,
+					pluginVersion: fileInfo?.pluginVersion,
+					pluginUpdateAvailable: fileInfo?.pluginUpdateAvailable,
 				};
 			},
 			getTokenState: () => {
