@@ -18,18 +18,38 @@ export interface FigmaAPIConfig {
 
 /**
  * Extract file key from Figma URL
+ * Branch-aware: for branch URLs (/design/KEY/branch/BRANCHKEY/Name) returns the
+ * BRANCH key — the branch is its own file in the REST API, and returning the
+ * main key would silently target the wrong file (comments/diffs/file-data).
  * @example https://www.figma.com/design/abc123/My-File -> abc123
+ * @example https://www.figma.com/design/abc123/branch/xyz789/My-File -> xyz789
  */
 export function extractFileKey(url: string): string | null {
   try {
     const urlObj = new URL(url);
-    // Match patterns like /design/FILE_KEY or /file/FILE_KEY
-    const match = urlObj.pathname.match(/\/(design|file)\/([a-zA-Z0-9]+)/);
+    // Branch URLs: /design/FILE_KEY/branch/BRANCH_KEY — the branch key is the
+    // effective file key for all REST API calls.
+    const branchMatch = urlObj.pathname.match(/\/(design|file|board|slides)\/[a-zA-Z0-9]+\/branch\/([a-zA-Z0-9]+)/);
+    if (branchMatch) {
+      return branchMatch[2];
+    }
+    // Match patterns like /design/FILE_KEY, /file/FILE_KEY, /board/FILE_KEY (FigJam), /slides/FILE_KEY
+    const match = urlObj.pathname.match(/\/(design|file|board|slides)\/([a-zA-Z0-9]+)/);
     return match ? match[2] : null;
   } catch (error) {
     logger.error({ error, url }, 'Failed to extract file key from URL');
     return null;
   }
+}
+
+/**
+ * Normalize a node ID to Figma's canonical colon form.
+ * URLs use dashes ("695-313") but the REST API keys response maps by colon
+ * form ("695:313") — indexing a response with a dashed ID silently returns
+ * undefined, which reads as "node may not exist".
+ */
+export function normalizeNodeId(nodeId: string): string {
+  return nodeId.replace(/-/g, ':');
 }
 
 /**
@@ -58,7 +78,7 @@ export function extractFigmaUrlInfo(url: string): FigmaUrlInfo | null {
     const urlObj = new URL(url);
 
     // First try: Path-based branch format /design/{fileKey}/branch/{branchKey}/{fileName}
-    const branchPathMatch = urlObj.pathname.match(/\/(design|file)\/([a-zA-Z0-9]+)\/branch\/([a-zA-Z0-9]+)/);
+    const branchPathMatch = urlObj.pathname.match(/\/(design|file|board|slides)\/([a-zA-Z0-9]+)\/branch\/([a-zA-Z0-9]+)/);
     if (branchPathMatch) {
       const fileKey = branchPathMatch[2];
       const branchId = branchPathMatch[3];
@@ -69,7 +89,7 @@ export function extractFigmaUrlInfo(url: string): FigmaUrlInfo | null {
     }
 
     // Second try: Standard format /design/{fileKey}/{fileName} with optional ?branch-id=
-    const standardMatch = urlObj.pathname.match(/\/(design|file)\/([a-zA-Z0-9]+)/);
+    const standardMatch = urlObj.pathname.match(/\/(design|file|board|slides)\/([a-zA-Z0-9]+)/);
     if (!standardMatch) return null;
 
     const fileKey = standardMatch[2];
@@ -142,10 +162,35 @@ export class FigmaAPI {
       headers['X-Figma-Token'] = this.accessToken;
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    // Up to 3 total attempts on 429 (rate limit), honoring Retry-After when
+    // present (seconds), else exponential backoff (1s, 2s). Delays here run
+    // inside the request promise — callers wrapping with withTimeout() still
+    // get their race-based rejection if the overall wait exceeds their budget.
+    const MAX_ATTEMPTS = 3;
+    let response: Response;
+    for (let attempt = 1; ; attempt++) {
+      response = await fetch(url, {
+        ...options,
+        headers,
+      });
+
+      if (response.status !== 429 || attempt >= MAX_ATTEMPTS) {
+        break;
+      }
+
+      const retryAfterHeader = response.headers.get('retry-after');
+      const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+      // Cap Retry-After waits at 30s so a pathological header can't hang callers.
+      const delayMs =
+        Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? Math.min(retryAfterSeconds, 30) * 1000
+          : attempt * 1000; // 1s after attempt 1, 2s after attempt 2
+      logger.warn(
+        { url, attempt, delayMs, retryAfterHeader },
+        'Figma API rate limited (429), retrying'
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -153,7 +198,32 @@ export class FigmaAPI {
         { status: response.status, statusText: response.statusText, body: errorText },
         'Figma API request failed'
       );
-      throw new Error(`Figma API error (${response.status}): ${errorText}`);
+
+      // The `Figma API error (<status>):` prefix is LOAD-BEARING — downstream
+      // tool handlers branch on errorMessage.includes("403") etc. Keep it
+      // verbatim at the start of the message; only APPEND guidance after it.
+      let message = `Figma API error (${response.status}): ${errorText}`;
+
+      // Token-auth failures (expired/invalid token) get actionable guidance.
+      // Plan-gate 403s (e.g. Variables API on non-Enterprise) do NOT match the
+      // token pattern and must not be flagged as auth errors.
+      const isAuthError =
+        (response.status === 401 || response.status === 403) &&
+        /invalid token|token expired|unauthorized/i.test(errorText);
+
+      if (isAuthError) {
+        message +=
+          ' — Your Figma access token is expired or invalid. Generate a new personal access token at figma.com → Settings → Security → Personal access tokens, then update FIGMA_ACCESS_TOKEN in your MCP config. If Figma Desktop is open with the Desktop Bridge plugin running, most tools work without any REST token.';
+      } else if (response.status === 429) {
+        message += ' Rate limited by Figma — wait a moment and retry.';
+      }
+
+      const err = new Error(message);
+      (err as any).status = response.status;
+      if (isAuthError) {
+        (err as any).isAuthError = true;
+      }
+      throw err;
     }
 
     const data = await response.json();
@@ -190,53 +260,6 @@ export class FigmaAPI {
   }
 
   /**
-   * Resolve a branch key from a branch ID
-   * If branchId is provided, fetches branch data and returns the branch's unique key
-   * Otherwise returns the main file key unchanged
-   * @param fileKey The main file key from the URL
-   * @param branchId Optional branch ID from URL query param (branch-id)
-   * @returns The effective file key to use for API calls (branch key if on branch, otherwise fileKey)
-   */
-  async getBranchKey(fileKey: string, branchId?: string): Promise<string> {
-    if (!branchId) {
-      return fileKey;
-    }
-
-    try {
-      logger.info({ fileKey, branchId }, 'Resolving branch key');
-      const fileData = await this.getFile(fileKey, { branch_data: true });
-      const branches = fileData.branches || [];
-
-      // Try to find branch by key (branchId might already be the key)
-      // or by matching other identifiers
-      const branch = branches.find((b: { key?: string; name?: string }) =>
-        b.key === branchId || b.name === branchId
-      );
-
-      if (branch?.key) {
-        logger.info({ fileKey, branchId, branchKey: branch.key, branchName: branch.name }, 'Resolved branch key');
-        return branch.key;
-      }
-
-      // If branchId looks like a file key (alphanumeric), it might already be the branch key
-      // In this case, return it directly as it may be usable
-      if (/^[a-zA-Z0-9]+$/.test(branchId)) {
-        logger.info({ fileKey, branchId }, 'Branch ID appears to be a key, using directly');
-        return branchId;
-      }
-
-      logger.warn(
-        { fileKey, branchId, availableBranches: branches.map((b: { key?: string; name?: string }) => ({ key: b.key, name: b.name })) },
-        'Branch not found in file, using main file key'
-      );
-      return fileKey;
-    } catch (error) {
-      logger.error({ error, fileKey, branchId }, 'Failed to resolve branch key, using main file key');
-      return fileKey;
-    }
-  }
-
-  /**
    * GET /v1/files/:file_key/variables/local
    * Get local variables (design tokens) from a file
    */
@@ -261,6 +284,11 @@ export class FigmaAPI {
   /**
    * GET /v1/files/:file_key/nodes
    * Get specific nodes by ID
+   *
+   * Node IDs are normalized to Figma's colon form ("695-313" -> "695:313")
+   * before the request, and the response map is aliased back under any
+   * dashed IDs the caller passed — Figma keys the response by colon-format
+   * IDs, so without the alias a dashed lookup silently returns undefined.
    */
   async getNodes(fileKey: string, nodeIds: string[], options?: {
     version?: string;
@@ -270,8 +298,10 @@ export class FigmaAPI {
   }): Promise<any> {
     let endpoint = `/files/${fileKey}/nodes`;
 
+    const normalizedIds = nodeIds.map((id) => normalizeNodeId(id));
+
     const params = new URLSearchParams();
-    params.append('ids', nodeIds.join(','));
+    params.append('ids', normalizedIds.join(','));
     if (options?.version) params.append('version', options.version);
     if (options?.depth !== undefined) params.append('depth', options.depth.toString());
     if (options?.geometry) params.append('geometry', options.geometry);
@@ -279,7 +309,21 @@ export class FigmaAPI {
 
     endpoint += `?${params.toString()}`;
 
-    return this.request(endpoint);
+    const response = await this.request(endpoint);
+
+    // Defensive aliasing: let callers index response.nodes by the ID form
+    // they originally passed (dashed), not just Figma's colon form.
+    if (response?.nodes) {
+      for (let i = 0; i < nodeIds.length; i++) {
+        const original = nodeIds[i];
+        const normalized = normalizedIds[i];
+        if (original !== normalized && response.nodes[normalized] !== undefined && response.nodes[original] === undefined) {
+          response.nodes[original] = response.nodes[normalized];
+        }
+      }
+    }
+
+    return response;
   }
 
   /**
@@ -350,8 +394,12 @@ export class FigmaAPI {
 	): Promise<{ images: Record<string, string | null> }> {
 		const params = new URLSearchParams();
 
-		// Handle single or multiple node IDs
-		const ids = Array.isArray(nodeIds) ? nodeIds.join(',') : nodeIds;
+		// Handle single or multiple node IDs. Normalize to Figma's colon form
+		// ("695-313" -> "695:313") — the response map is keyed by colon IDs, so
+		// a dashed request ID would otherwise never match its own result.
+		const originalIds = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
+		const normalizedIds = originalIds.map((id) => normalizeNodeId(id));
+		const ids = normalizedIds.join(',');
 		params.append('ids', ids);
 
 		// Add optional parameters
@@ -372,7 +420,21 @@ export class FigmaAPI {
 
 		logger.info({ fileKey, ids, options }, 'Rendering images');
 
-		return this.request(endpoint);
+		const response = await this.request(endpoint);
+
+		// Defensive aliasing: callers may index the images map by the dashed
+		// ID they passed. Figma keys it by colon-format ID — alias both forms.
+		if (response?.images) {
+			for (let i = 0; i < originalIds.length; i++) {
+				const original = originalIds[i];
+				const normalized = normalizedIds[i];
+				if (original !== normalized && response.images[normalized] !== undefined && response.images[original] === undefined) {
+					response.images[original] = response.images[normalized];
+				}
+			}
+		}
+
+		return response;
 	}
 
   /**
@@ -467,16 +529,21 @@ export class FigmaAPI {
     const [localResult, publishedResult] = await Promise.all([
       this.getLocalVariables(fileKey).catch((err) => {
         const errorMsg = err instanceof Error ? err.message : String(err);
+        logger.warn({ fileKey, error: errorMsg }, 'getLocalVariables failed; returning empty fallback');
         return { error: errorMsg, variables: {}, variableCollections: {} };
       }),
       this.getPublishedVariables(fileKey).catch((err) => {
         const errorMsg = err instanceof Error ? err.message : String(err);
+        logger.warn({ fileKey, error: errorMsg }, 'getPublishedVariables failed; returning empty fallback');
         return { error: errorMsg, variables: {} };
       }),
     ]);
 
+    // Fallback shape must match the success path (already-unwrapped meta):
+    // { variables, variableCollections } — NOT { meta: {...} } — so consumers
+    // like formatVariables() see a consistent shape either way.
     return {
-      local: 'error' in localResult ? { meta: { variables: {}, variableCollections: {} } } : localResult,
+      local: 'error' in localResult ? { variables: {}, variableCollections: {} } : localResult,
       published: 'error' in publishedResult ? { variables: {} } : publishedResult,
       ...(('error' in localResult) && { localError: localResult.error }),
       ...(('error' in publishedResult) && { publishedError: publishedResult.error }),
@@ -485,10 +552,13 @@ export class FigmaAPI {
 
   /**
    * Helper: Get component metadata with properties
+   * Normalizes dashed node IDs ("695-313") to colon form ("695:313") so the
+   * response-map lookup matches Figma's colon-keyed response.
    */
   async getComponentData(fileKey: string, nodeId: string, depth = 4): Promise<any> {
-    const response = await this.getNodes(fileKey, [nodeId], { depth });
-    return response.nodes?.[nodeId];
+    const normalizedId = normalizeNodeId(nodeId);
+    const response = await this.getNodes(fileKey, [normalizedId], { depth });
+    return response.nodes?.[normalizedId] ?? response.nodes?.[nodeId];
   }
 
   /**

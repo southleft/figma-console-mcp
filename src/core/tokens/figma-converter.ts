@@ -19,6 +19,7 @@ import type {
   TokenType,
   TokenValue,
 } from "./types.js";
+import { slugifySetName } from "./alias-resolver.js";
 
 /**
  * Shape of Figma's variable collection as returned by formatVariables(). We
@@ -37,7 +38,7 @@ interface FigmaVariable {
   id: string;
   name: string; // Slash-separated, e.g. "color/primary"
   key?: string;
-  resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN";
+  resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN" | "TIMING" | "EASING";
   variableCollectionId: string;
   description?: string;
   scopes?: string[];
@@ -48,11 +49,23 @@ interface FigmaVariable {
   valuesByMode: Record<string, FigmaValue>;
 }
 
+/**
+ * Config-2026 EASING variable value shape. `bezierValues` is present for
+ * bezier-based easings; spring easings carry `springValues` instead (and no
+ * usable bezier).
+ */
+interface FigmaEasingValue {
+  easingType?: string;
+  bezierValues?: { p1x: number; p1y: number; p2x: number; p2y: number };
+  springValues?: { mass?: number; stiffness?: number; damping?: number };
+}
+
 type FigmaValue =
   | { r: number; g: number; b: number; a?: number } // COLOR
-  | number // FLOAT
+  | number // FLOAT, TIMING (seconds)
   | string // STRING
   | boolean // BOOLEAN
+  | FigmaEasingValue // EASING
   | VariableAlias;
 
 interface VariableAlias {
@@ -98,13 +111,28 @@ export function convertFigmaVariablesToDocument(
   const variableById = new Map<string, FigmaVariable>();
   for (const v of payload.variables) variableById.set(v.id, v);
 
+  // Collection name lookup — alias references must carry the owning set so
+  // same-path tokens across collections don't misresolve (and so emitted
+  // DTCG references point at the actual set group in the output tree).
+  // Built over ALL collections (not just the filtered ones) because an
+  // alias can target a variable in a collection outside the export scope.
+  const collectionNameById = new Map<string, string>();
+  for (const c of payload.collections) collectionNameById.set(c.id, c.name);
+
   // Filter collections per scope.
   const wantedCollections = opts.collectionIds?.length
     ? payload.collections.filter((c) => opts.collectionIds!.includes(c.id))
     : payload.collections;
 
   const sets: TokenSet[] = wantedCollections.map((collection) =>
-    convertCollection(collection, payload.variables, variableById, opts, warnings),
+    convertCollection(
+      collection,
+      payload.variables,
+      variableById,
+      collectionNameById,
+      opts,
+      warnings,
+    ),
   );
 
   return {
@@ -126,6 +154,7 @@ function convertCollection(
   collection: FigmaCollection,
   allVariables: FigmaVariable[],
   variableById: Map<string, FigmaVariable>,
+  collectionNameById: Map<string, string>,
   opts: ConvertOptions,
   warnings: string[],
 ): TokenSet {
@@ -142,7 +171,14 @@ function convertCollection(
   );
 
   const tokens: Token[] = collectionVars.map((variable) =>
-    convertVariable(variable, wantedModes, variableById, opts, warnings),
+    convertVariable(
+      variable,
+      wantedModes,
+      variableById,
+      collectionNameById,
+      opts,
+      warnings,
+    ),
   );
 
   return {
@@ -155,27 +191,53 @@ function convertCollection(
   };
 }
 
+/**
+ * Derive a variable's token path from its Figma name. Strips the configured
+ * prefix, splits on "/", and for TIMING/EASING variables drops the trailing
+ * type segment Figma appends to Config-2026 motion variables (e.g.
+ * "motion/duration/quick/Timing" → ["motion", "duration", "quick"]).
+ */
+function variableTokenPath(
+  variable: FigmaVariable,
+  opts: ConvertOptions,
+): { path: string[]; strippedTypeSuffix: boolean } {
+  let name = variable.name;
+  if (opts.stripPrefix && name.startsWith(opts.stripPrefix)) {
+    name = name.slice(opts.stripPrefix.length);
+  }
+  const segments = name.split("/").filter(Boolean);
+  let strippedTypeSuffix = false;
+  if (
+    (variable.resolvedType === "TIMING" || variable.resolvedType === "EASING") &&
+    segments.length > 1 &&
+    /^(timing|easing)$/i.test(segments[segments.length - 1])
+  ) {
+    segments.pop();
+    strippedTypeSuffix = true;
+  }
+  return { path: segments, strippedTypeSuffix };
+}
+
 function convertVariable(
   variable: FigmaVariable,
   wantedModes: Array<{ modeId: string; name: string }>,
   variableById: Map<string, FigmaVariable>,
+  collectionNameById: Map<string, string>,
   opts: ConvertOptions,
   warnings: string[],
 ): Token {
   // Derive the hierarchical path from the Figma variable name. Figma uses
   // slashes to indicate grouping: "color/brand/primary" → ["color", "brand", "primary"].
-  let name = variable.name;
-  if (opts.stripPrefix && name.startsWith(opts.stripPrefix)) {
-    name = name.slice(opts.stripPrefix.length);
-  }
-  const path = name.split("/").filter(Boolean);
+  const { path, strippedTypeSuffix } = variableTokenPath(variable, opts);
 
   // Map resolvedType to TokenType.
   const type = mapResolvedType(variable.resolvedType, variable.name, warnings);
 
   // Convert each (mode → value) pair to our TokenValue shape, filtered by
-  // the wanted modes.
+  // the wanted modes. Spring easings can't be expressed in DTCG — their
+  // parameters get stashed per-mode in the token's extensions.
   const values: Record<string, TokenValue> = {};
+  const springByMode: Record<string, unknown> = {};
   for (const mode of wantedModes) {
     const rawValue = variable.valuesByMode[mode.modeId];
     if (rawValue === undefined) {
@@ -186,9 +248,15 @@ function convertVariable(
     }
     values[mode.name] = convertValue(
       rawValue,
-      variable.resolvedType,
+      variable,
+      mode.name,
       variableById,
+      collectionNameById,
+      opts,
       warnings,
+      (spring) => {
+        springByMode[mode.name] = spring;
+      },
     );
   }
 
@@ -201,6 +269,16 @@ function convertVariable(
       "figma-console-mcp": {
         variableId: variable.id,
         collectionId: variable.variableCollectionId,
+        // The Figma-native type is what import needs to decide writability
+        // — TIMING/EASING variables cannot be written via the Plugin API,
+        // and FLOAT variables whose token type is "duration" (name-inferred)
+        // must NOT be mistaken for TIMING.
+        figmaResolvedType: variable.resolvedType,
+        // Preserve the original variable name when the token path dropped
+        // the trailing "Timing"/"Easing" segment, so round-trip can
+        // reconstruct it.
+        ...(strippedTypeSuffix ? { figmaName: variable.name } : {}),
+        ...(Object.keys(springByMode).length > 0 ? { spring: springByMode } : {}),
         lastSyncedAt: new Date().toISOString(),
         // We snapshot the synced value so future merge calls can detect
         // two-sided conflicts.
@@ -229,6 +307,12 @@ function mapResolvedType(
       return inferStringType(variableName);
     case "BOOLEAN":
       return "boolean";
+    case "TIMING":
+      // Config-2026 motion duration variables — plain numbers in SECONDS.
+      return "duration";
+    case "EASING":
+      // Config-2026 easing variables — bezier (or spring) curve objects.
+      return "cubicBezier";
     default: {
       const _exhaustive: never = resolvedType;
       warnings.push(
@@ -259,10 +343,16 @@ function inferStringType(variableName: string): TokenType {
 
 function convertValue(
   rawValue: FigmaValue,
-  resolvedType: FigmaVariable["resolvedType"],
+  variable: FigmaVariable,
+  modeName: string,
   variableById: Map<string, FigmaVariable>,
+  collectionNameById: Map<string, string>,
+  opts: ConvertOptions,
   warnings: string[],
+  onSpring: (spring: Record<string, unknown>) => void,
 ): TokenValue {
+  const resolvedType = variable.resolvedType;
+
   // Alias references: convert variable ID → path-based reference for DTCG.
   if (isVariableAlias(rawValue)) {
     const target = variableById.get(rawValue.id);
@@ -277,9 +367,25 @@ function convertValue(
       );
       return { reference: `{__library:${rawValue.id}}` };
     }
-    // The DTCG alias path uses dots: "color.brand.primary".
-    const dotPath = target.name.replace(/\//g, ".");
-    return { reference: `{${dotPath}}` };
+    // The DTCG alias path uses dots, QUALIFIED by the target's set group
+    // (`{<set-slug>.color.brand.primary}`). The set qualifier does two
+    // jobs: (1) same-path tokens in different collections resolve to the
+    // right target instead of "whichever set was indexed last", and
+    // (2) the emitted DTCG reference points at the actual location in the
+    // output tree (tokens nest under the slugified set group), so
+    // external DTCG tools like Style Dictionary v4 can resolve it.
+    const targetPath = variableTokenPath(target, opts).path;
+    const dotPath = targetPath.join(".");
+    const targetCollectionName = collectionNameById.get(
+      target.variableCollectionId,
+    );
+    if (!targetCollectionName) {
+      warnings.push(
+        `Alias target "${target.name}" belongs to unknown collection ${target.variableCollectionId} — emitting an unqualified reference.`,
+      );
+      return { reference: `{${dotPath}}` };
+    }
+    return { reference: `{${slugifySetName(targetCollectionName)}.${dotPath}}` };
   }
 
   // Literal values per type.
@@ -295,6 +401,49 @@ function convertValue(
   }
   if (resolvedType === "BOOLEAN") {
     return { literal: Boolean(rawValue) };
+  }
+  if (resolvedType === "TIMING") {
+    // Figma TIMING values are plain numbers in SECONDS. DTCG duration uses
+    // the structured `{ value, unit }` form — emit milliseconds.
+    if (typeof rawValue === "number") {
+      return { literal: { value: rawValue * 1000, unit: "ms" } };
+    }
+    warnings.push(
+      `TIMING value for "${variable.name}" (mode "${modeName}") isn't a number: ${JSON.stringify(rawValue)} — emitting as string.`,
+    );
+    return { literal: String(rawValue) };
+  }
+  if (resolvedType === "EASING") {
+    const easing = rawValue as FigmaEasingValue;
+    const b = easing?.bezierValues;
+    if (
+      b &&
+      typeof b.p1x === "number" &&
+      typeof b.p1y === "number" &&
+      typeof b.p2x === "number" &&
+      typeof b.p2y === "number"
+    ) {
+      // DTCG cubicBezier: [p1x, p1y, p2x, p2y].
+      return { literal: [b.p1x, b.p1y, b.p2x, b.p2y] };
+    }
+    if (easing && typeof easing === "object" && easing.springValues) {
+      // Spring easings have no bezier representation — DTCG cannot express
+      // springs. Emit a standard "ease" bezier as a usable approximation
+      // and preserve the spring parameters in the token's
+      // figma-console-mcp extensions for round-trip.
+      warnings.push(
+        `EASING variable "${variable.name}" (mode "${modeName}") is a spring (${easing.easingType ?? "unknown type"}) — DTCG cannot represent springs. Emitted a fallback cubicBezier; spring parameters preserved in $extensions["figma-console-mcp"].spring.`,
+      );
+      onSpring({
+        easingType: easing.easingType,
+        springValues: easing.springValues,
+      });
+      return { literal: [0.25, 0.1, 0.25, 1.0] };
+    }
+    warnings.push(
+      `EASING value for "${variable.name}" (mode "${modeName}") has no usable bezierValues or springValues: ${JSON.stringify(rawValue)} — emitting as string.`,
+    );
+    return { literal: String(rawValue) };
   }
   // STRING and fallthrough.
   return { literal: typeof rawValue === "string" ? rawValue : String(rawValue) };

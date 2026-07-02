@@ -73,6 +73,8 @@ export {
   validateAliases,
   formatDtcgReference,
   parseDtcgReference,
+  referenceTargetPath,
+  slugifySetName,
 } from "./alias-resolver.js";
 
 export {

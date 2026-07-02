@@ -86,13 +86,19 @@ export class StyleValueResolver {
 	}
 
 	/**
-	 * Resolve a variable's value, handling alias chains
+	 * Resolve a variable's value, handling alias chains.
+	 *
+	 * `modeId` selects which mode's value to resolve; omitted, it falls back
+	 * to the variable's first mode (legacy behavior for callers that don't
+	 * care about modes). The cache is keyed per (variable, mode) so
+	 * multi-mode variables don't all resolve to the first mode's value.
 	 */
 	async resolveVariableValue(
 		variable: any,
 		allVariables: Map<string, any>,
 		maxDepth = 10,
 		currentDepth = 0,
+		modeId?: string,
 	): Promise<any> {
 		if (currentDepth >= maxDepth) {
 			this.logger.warn({
@@ -101,23 +107,28 @@ export class StyleValueResolver {
 			return null;
 		}
 
-		const cacheKey = `var:${variable.id}`;
+		// Pick the mode to resolve: the requested modeId when this variable
+		// has a value for it, otherwise the first available mode (alias
+		// targets in other collections have different modeIds).
+		const modes = Object.keys(variable.valuesByMode || {});
+		if (modes.length === 0) {
+			return null;
+		}
+		const effectiveMode =
+			modeId !== undefined && variable.valuesByMode[modeId] !== undefined
+				? modeId
+				: modes[0];
+
+		const cacheKey = `var:${variable.id}:${effectiveMode}`;
 		if (this.variableCache.has(cacheKey)) {
 			return this.variableCache.get(cacheKey);
 		}
 
 		try {
-			// Get the value for the default mode (or first available mode)
-			const modes = Object.keys(variable.valuesByMode || {});
-			if (modes.length === 0) {
-				return null;
-			}
-
-			const defaultMode = modes[0]; // TODO: Support mode selection
-			const value = variable.valuesByMode[defaultMode];
+			const value = variable.valuesByMode[effectiveMode];
 
 			// Check if this is an alias (reference to another variable)
-			if (typeof value === "object" && value.type === "VARIABLE_ALIAS") {
+			if (value !== null && typeof value === "object" && value.type === "VARIABLE_ALIAS") {
 				const targetVariable = allVariables.get(value.id);
 				if (!targetVariable) {
 					this.logger.warn({
@@ -127,12 +138,14 @@ export class StyleValueResolver {
 					return null;
 				}
 
-				// Recursively resolve the alias
+				// Recursively resolve the alias, carrying the requested modeId
+				// through so same-collection targets resolve the same mode.
 				const resolvedValue = await this.resolveVariableValue(
 					targetVariable,
 					allVariables,
 					maxDepth,
 					currentDepth + 1,
+					modeId,
 				);
 				this.variableCache.set(cacheKey, resolvedValue);
 				return resolvedValue;
@@ -158,7 +171,9 @@ export class StyleValueResolver {
 	 * Format a variable value based on its type
 	 */
 	private formatVariableValue(value: any, type: string): any {
-		if (!value) return null;
+		// Guard only null/undefined — 0, false, and "" are legitimate
+		// variable values (opacity 0, boolean flags off, empty strings).
+		if (value === null || value === undefined) return null;
 
 		switch (type) {
 			case "COLOR":
@@ -184,10 +199,19 @@ export class StyleValueResolver {
 		}
 
 		if (color.r !== undefined && color.g !== undefined && color.b !== undefined) {
-			const r = Math.round(color.r * 255);
-			const g = Math.round(color.g * 255);
-			const b = Math.round(color.b * 255);
-			return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`.toUpperCase();
+			const clampByte = (f: number) =>
+				Math.max(0, Math.min(255, Math.round(f * 255)));
+			const toHex = (byte: number) => byte.toString(16).padStart(2, "0");
+			const r = clampByte(color.r);
+			const g = clampByte(color.g);
+			const b = clampByte(color.b);
+			let hex = `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+			// Preserve alpha: append the alpha byte for semi-transparent colors
+			// (mirrors rgbaToHex in tokens/figma-converter.ts).
+			if (color.a !== undefined && color.a < 1) {
+				hex += toHex(clampByte(color.a));
+			}
+			return hex.toUpperCase();
 		}
 
 		return null;

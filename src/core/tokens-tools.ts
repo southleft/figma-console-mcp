@@ -839,18 +839,26 @@ function buildCollectionModeMap(
  * Plugin API's setValueForMode call.
  *
  *   - color hex string "#RRGGBB(AA)" → { r, g, b, a } floats in [0, 1]
- *   - FLOAT-typed number → number
+ *   - FLOAT-typed number → number ("16px"-style strings and DTCG
+ *     { value, unit } objects are parsed to their numeric part; anything
+ *     that still comes out NaN is skipped rather than pushed to Figma)
  *   - STRING-typed string → string
  *   - BOOLEAN → boolean
  *   - Alias references are not yet supported in the apply phase (would need
  *     to resolve the target variable ID); the discriminated return signals
  *     this case so the caller surfaces a warning rather than silently
  *     dropping the update.
+ *
+ * Exported for test coverage of the value-conversion edge cases.
  */
-function tokenValueToFigma(
+export function tokenValueToFigma(
   value: { literal?: unknown; reference?: string },
   resolvedType: VariableUpdate["resolvedType"],
-): { kind: "value"; value: unknown } | { kind: "skip-alias"; reference: string } | { kind: "skip-empty" } {
+):
+  | { kind: "value"; value: unknown }
+  | { kind: "skip-alias"; reference: string }
+  | { kind: "skip-empty" }
+  | { kind: "skip-invalid"; reason: string } {
   if (value.reference) {
     // A future minor version will resolve the referenced variable's Figma ID and emit
     // { type: "VARIABLE_ALIAS", id }. For now, skip alias updates so we
@@ -867,13 +875,48 @@ function tokenValueToFigma(
   if (resolvedType === "COLOR" && typeof value.literal === "string") {
     figmaValue = hexToRgba(value.literal);
   } else if (resolvedType === "FLOAT") {
-    figmaValue = typeof value.literal === "number" ? value.literal : Number(value.literal);
+    const parsed = parseNumericLiteral(value.literal);
+    if (Number.isNaN(parsed)) {
+      // Never push NaN into setValueForMode — skip with a reason instead.
+      return {
+        kind: "skip-invalid",
+        reason: `cannot convert ${JSON.stringify(value.literal)} to a number for a FLOAT variable`,
+      };
+    }
+    figmaValue = parsed;
   } else if (resolvedType === "BOOLEAN") {
     figmaValue = Boolean(value.literal);
   } else {
     figmaValue = typeof value.literal === "string" ? value.literal : String(value.literal);
   }
   return { kind: "value", value: figmaValue };
+}
+
+/**
+ * Parse a token literal into a number for FLOAT variables. Handles:
+ *   - plain numbers → as-is
+ *   - unit-bearing dimension strings ("16px", "1.5rem", "-4pt") → numeric part
+ *   - DTCG dimension/duration objects ({ value: 16, unit: "px" }) → value
+ * Anything unparseable returns NaN — callers must skip (never push NaN
+ * into setValueForMode).
+ */
+function parseNumericLiteral(literal: unknown): number {
+  if (typeof literal === "number") return literal;
+  if (typeof literal === "string") {
+    const match = literal
+      .trim()
+      .match(/^(-?(?:\d+\.?\d*|\.\d+))\s*(px|rem|em|pt|dp|ms|s|%)?$/i);
+    if (match) return Number(match[1]);
+    return Number(literal);
+  }
+  if (
+    literal !== null &&
+    typeof literal === "object" &&
+    "value" in (literal as Record<string, unknown>)
+  ) {
+    return parseNumericLiteral((literal as Record<string, unknown>).value);
+  }
+  return Number(literal);
 }
 
 function hexToRgba(hex: string): {
@@ -959,9 +1002,31 @@ function buildUpdatePayloads(
       continue;
     }
 
-    // Map our token type → Figma resolvedType. Both DTCG type names and
-    // Figma names need to align here.
-    const resolvedType = inferFigmaResolvedType(figmaToken.type);
+    // Map our token type → Figma resolvedType. Prefer the actual
+    // Figma-native type recorded at export time
+    // (extensions.figmaResolvedType) — critical so FLOAT variables whose
+    // token type was name-inferred as "duration" keep writing as FLOAT,
+    // while true TIMING/EASING variables are recognized. Fall back to
+    // inferring from the DTCG type when the extension is absent.
+    const recordedType =
+      figmaToken.extensions?.["figma-console-mcp"]?.figmaResolvedType;
+    const figmaNativeType: string =
+      typeof recordedType === "string"
+        ? recordedType
+        : inferFigmaResolvedType(figmaToken.type);
+
+    if (figmaNativeType === "TIMING" || figmaNativeType === "EASING") {
+      // The Figma Plugin API cannot create or setValueForMode on
+      // TIMING/EASING variables — only BOOLEAN/COLOR/FLOAT/STRING are
+      // writable. Sending these would be rejected (or worse); skip loudly.
+      warnings.push(
+        `Skipped ${entry.path} — Figma Plugin API cannot write ${
+          figmaNativeType === "TIMING" ? "Timing" : "Easing"
+        } variables (only BOOLEAN/COLOR/FLOAT/STRING are writable). Update this variable in the Figma UI instead.`,
+      );
+      continue;
+    }
+    const resolvedType = figmaNativeType as VariableUpdate["resolvedType"];
 
     const valuesByMode: Record<string, unknown> = {};
     for (const [modeName, value] of Object.entries(codeMatch.token.values)) {
@@ -976,6 +1041,12 @@ function buildUpdatePayloads(
       if (conversion.kind === "skip-alias") {
         warnings.push(
           `Skipped ${entry.path} (mode "${modeName}") — alias reference "${conversion.reference}" updates are not yet supported in the apply phase. To update this token, edit the alias target's value instead, or hard-code a literal hex value in the source file.`,
+        );
+        continue;
+      }
+      if (conversion.kind === "skip-invalid") {
+        warnings.push(
+          `Skipped ${entry.path} (mode "${modeName}") — ${conversion.reason}.`,
         );
         continue;
       }
@@ -997,16 +1068,25 @@ function buildUpdatePayloads(
 }
 
 /**
- * Map our internal TokenType to Figma's variable resolvedType. The Plugin API
- * only has 4 resolved types — collapse our richer set onto them.
+ * Map our internal TokenType to Figma's variable resolvedType.
+ *
+ * duration/cubicBezier map to the Config-2026 TIMING/EASING variable types
+ * — but note the Figma Plugin API CANNOT create or setValueForMode on
+ * TIMING/EASING variables (only BOOLEAN/COLOR/FLOAT/STRING are writable),
+ * so callers must skip those with a warning instead of pushing them.
+ * buildUpdatePayloads prefers the extension-recorded figmaResolvedType over
+ * this inference, so FLOAT variables whose token type was name-inferred as
+ * "duration" still write correctly as FLOAT.
  */
 function inferFigmaResolvedType(
   type: string,
-): VariableUpdate["resolvedType"] {
+): VariableUpdate["resolvedType"] | "TIMING" | "EASING" {
   if (type === "color") return "COLOR";
   if (type === "boolean") return "BOOLEAN";
   if (type === "string" || type === "fontFamily") return "STRING";
-  return "FLOAT"; // dimension, number, fontWeight, duration, etc.
+  if (type === "duration") return "TIMING";
+  if (type === "cubicBezier") return "EASING";
+  return "FLOAT"; // dimension, number, fontWeight, etc.
 }
 
 /**

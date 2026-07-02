@@ -22,6 +22,7 @@
  */
 
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
+import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 export function formatScss(
@@ -30,6 +31,10 @@ export function formatScss(
 ): FormatResult {
   const warnings: string[] = [];
   const files: FormatResult["files"] = [];
+
+  // Whole-document index so set-qualified alias references resolve to the
+  // target token's own path when generating $variable names.
+  const tokenIndex = buildTokenIndex(doc, warnings);
 
   const splitByMode = opts.target.splitByMode ?? false;
   const splitByCollection = opts.target.splitByCollection ?? false;
@@ -40,7 +45,7 @@ export function formatScss(
       for (const mode of set.modes) {
         files.push({
           path: filenameFor(opts, set, mode),
-          content: renderSingleMode([set], mode, prefix, warnings),
+          content: renderSingleMode([set], mode, prefix, tokenIndex, warnings),
         });
       }
     }
@@ -51,20 +56,20 @@ export function formatScss(
       const sets = doc.sets.filter((s) => s.modes.includes(mode));
       files.push({
         path: filenameFor(opts, undefined, mode),
-        content: renderSingleMode(sets, mode, prefix, warnings),
+        content: renderSingleMode(sets, mode, prefix, tokenIndex, warnings),
       });
     }
   } else if (splitByCollection) {
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set),
-        content: renderAllModes([set], prefix, warnings),
+        content: renderAllModes([set], prefix, tokenIndex, warnings),
       });
     }
   } else {
     files.push({
       path: filenameFor(opts),
-      content: renderAllModes(doc.sets, prefix, warnings),
+      content: renderAllModes(doc.sets, prefix, tokenIndex, warnings),
     });
   }
 
@@ -100,6 +105,7 @@ function renderSingleMode(
   sets: TokenSet[],
   mode: string,
   prefix: string,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const lines: string[] = [];
@@ -112,7 +118,7 @@ function renderSingleMode(
     for (const token of set.tokens) {
       const value = token.values[mode];
       if (!value) continue;
-      emitSassLines(token, value, prefix, lines, warnings);
+      emitSassLines(token, value, prefix, tokenIndex, lines, warnings);
     }
     lines.push("");
   }
@@ -122,6 +128,7 @@ function renderSingleMode(
 function renderAllModes(
   sets: TokenSet[],
   prefix: string,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const lines: string[] = [];
@@ -138,7 +145,7 @@ function renderAllModes(
     for (const token of set.tokens) {
       // Primary value as the bare variable.
       const primary = token.values[primaryMode];
-      if (primary) emitSassLines(token, primary, prefix, lines, warnings);
+      if (primary) emitSassLines(token, primary, prefix, tokenIndex, lines, warnings);
 
       // Other modes as a map: $ds-color-primary--modes: ("Dark": #..., "Vibrant": #...)
       if (isMultiMode) {
@@ -147,7 +154,7 @@ function renderAllModes(
         for (const mode of otherModes) {
           const v = token.values[mode];
           if (!v) continue;
-          const formatted = scssValueFor(v, token, prefix, warnings);
+          const formatted = scssValueFor(v, token, prefix, tokenIndex, warnings);
           if (formatted !== null) {
             entries.push(`  "${mode}": ${formatted}`);
           }
@@ -173,6 +180,7 @@ function emitSassLines(
   token: Token,
   value: TokenValue,
   prefix: string,
+  tokenIndex: Map<string, Token>,
   out: string[],
   warnings: string[],
 ): void {
@@ -191,7 +199,8 @@ function emitSassLines(
       );
       return;
     }
-    const refPath = bareRef.split(".");
+    // Resolve set-qualified references to the target token's own path.
+    const refPath = referenceTargetPath(value.reference, tokenIndex);
     out.push(`${sassName}: ${varName(refPath, prefix)};`);
     return;
   }
@@ -225,12 +234,14 @@ function scssValueFor(
   value: TokenValue,
   token: Token,
   prefix: string,
+  tokenIndex: Map<string, Token>,
   _warnings: string[],
 ): string | null {
   if (value.reference) {
     const bareRef = value.reference.replace(/^\{|\}$/g, "");
     if (bareRef.startsWith("__library:") || bareRef === "unknown") return null;
-    return varName(bareRef.split("."), prefix);
+    // Resolve set-qualified references to the target token's own path.
+    return varName(referenceTargetPath(value.reference, tokenIndex), prefix);
   }
   if (value.literal === undefined || value.literal === null) return null;
   return formatScssLiteral(value.literal, token.type);

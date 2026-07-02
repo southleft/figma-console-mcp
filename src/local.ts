@@ -111,7 +111,6 @@ function setupStablePluginDir(sourcePluginDir: string): string | null {
 class LocalFigmaConsoleMCP {
 	private server: McpServer;
 	private figmaAPI: FigmaAPI | null = null;
-	private desktopConnector: IFigmaConnector | null = null;
 	private wsServer: FigmaWebSocketServer | null = null;
 	private wsStartupError: { code: string; port: number } | null = null;
 	/** The port the WebSocket server actually bound to (may differ from preferred if fallback occurred) */
@@ -256,9 +255,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			try {
 				const wsConnector = new WebSocketConnector(this.wsServer);
 				await wsConnector.initialize();
-				this.desktopConnector = wsConnector;
 				logger.debug("Desktop connector initialized via WebSocket bridge");
-				return this.desktopConnector;
+				return wsConnector;
 			} catch (wsError) {
 				const errorMsg = wsError instanceof Error ? wsError.message : String(wsError);
 				logger.debug({ error: errorMsg }, "WebSocket connector init failed");
@@ -529,11 +527,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 		);
 
-		// Tool 2: Take Screenshot (using Figma REST API)
+		// Tool 2: Take Screenshot (Desktop Bridge first, REST API fallback)
+		// Bridge-first: the plugin's exportAsync works on any Figma plan with no REST
+		// token, and reflects the current runtime state (no cloud-sync lag).
 		// Note: For screenshots of specific components, use figma_get_component_image instead
 		this.server.tool(
 			"figma_take_screenshot",
-			`Export an image of the current Figma page or specific node via REST API. Returns an image URL (valid 30 days). Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image.`,
+			`Export an image of the current Figma page or specific node. Uses the Desktop Bridge plugin (exportAsync) when connected — works on any plan, no REST token needed, reflects current runtime state. Falls back to the Figma REST API when the bridge is unavailable or for PDF format. Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image.`,
 			{
 				nodeId: z
 					.string()
@@ -555,6 +555,90 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					.describe("Image format (default: png)"),
 			},
 			async ({ nodeId, scale, format }) => {
+				// Callers routinely paste URL-format ids (123-456); both the Plugin
+				// API and REST response maps use colon format (123:456).
+				nodeId = nodeId?.replace(/-/g, ":");
+				// Bridge-first: exportAsync via the Desktop Bridge works on any plan
+				// (no REST token) and reflects the current runtime state. PDF is the
+				// only format exportAsync can't produce, so it goes straight to REST.
+				if (format !== "pdf" && this.wsServer?.isClientConnected()) {
+					try {
+						const connector = await this.getDesktopConnector();
+
+						// Resolve the target node the same way the REST path does;
+						// empty string means the plugin captures the current page.
+						let bridgeNodeId = nodeId || "";
+						if (!bridgeNodeId) {
+							const currentUrl = this.getCurrentFileUrl();
+							const nodeIdParam = currentUrl
+								? new URL(currentUrl).searchParams.get("node-id")
+								: null;
+							if (nodeIdParam) {
+								bridgeNodeId = nodeIdParam.replace(/-/g, ":");
+							}
+						}
+
+						const bridgeFormat =
+							format === "jpg" ? "JPG" : format === "svg" ? "SVG" : "PNG";
+						// exportAsync scale floor is 0.5 (REST allows 0.01)
+						const bridgeScale = Math.min(Math.max(scale, 0.5), 4);
+
+						logger.info(
+							{ nodeId: bridgeNodeId, format: bridgeFormat, scale: bridgeScale },
+							"Capturing screenshot via Desktop Bridge (bridge-first)",
+						);
+
+						let result = await connector.captureScreenshot(bridgeNodeId, {
+							format: bridgeFormat,
+							scale: bridgeScale,
+						});
+						if (
+							result &&
+							typeof result.success === "undefined" &&
+							result.image
+						) {
+							result = { success: true, image: result };
+						}
+
+						if (!result?.success || !result.image?.base64) {
+							throw new Error(result?.error || "Bridge screenshot returned no image");
+						}
+
+						const bridgeMimeType =
+							bridgeFormat === "JPG"
+								? "image/jpeg"
+								: bridgeFormat === "SVG"
+									? "image/svg+xml"
+									: "image/png";
+
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: JSON.stringify({
+										nodeId: result.image.node?.id || bridgeNodeId || null,
+										scale: result.image.scale,
+										format,
+										byteLength: result.image.byteLength,
+										source: "desktop_bridge",
+										note: "Screenshot captured via the Desktop Bridge plugin (current runtime state, no REST token required). The image is included below for visual analysis.",
+									}),
+								},
+								{
+									type: "image" as const,
+									data: result.image.base64,
+									mimeType: bridgeMimeType,
+								},
+							],
+						};
+					} catch (bridgeError) {
+						logger.warn(
+							{ error: bridgeError },
+							"Desktop Bridge screenshot failed, falling back to REST API",
+						);
+					}
+				}
+
 				try {
 					const api = await this.getFigmaAPI();
 
@@ -659,6 +743,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					logger.error({ error }, "Failed to capture screenshot");
 					const errorMessage =
 						error instanceof Error ? error.message : String(error);
+					const isAuthError =
+						errorMessage.includes("403") ||
+						errorMessage.toLowerCase().includes("token expired") ||
+						errorMessage.toLowerCase().includes("invalid token");
 					return {
 						content: [
 							{
@@ -667,7 +755,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									{
 										error: errorMessage,
 										message: "Failed to capture screenshot via Figma API",
-										hint: "Make sure you've called figma_navigate to open a file, or provide a valid nodeId parameter",
+										hint: isAuthError
+											? "Your FIGMA_ACCESS_TOKEN is expired or invalid. Generate a new personal access token at figma.com → Settings → Security → Personal access tokens, then update FIGMA_ACCESS_TOKEN in your MCP config. Alternatively, open the Desktop Bridge plugin in Figma Desktop — screenshots work through the bridge without any REST token."
+											: "Make sure you've called figma_navigate to open a file, or provide a valid nodeId parameter. Tip: with the Desktop Bridge plugin open, screenshots don't need a REST token at all.",
 									},
 								),
 							},
@@ -1277,40 +1367,32 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			{},
 			async () => {
 				try {
-					// Clear cached desktop connector to force fresh detection
-					this.desktopConnector = null;
-
-					let transport: string = "none";
-					let currentUrl: string | null = null;
-					let fileName: string | null = null;
-
 					// figma_reconnect is informational in WebSocket-only mode — the
-					// plugin handles its own reconnect logic. We just report whether
-					// the bridge is currently connected.
-					if (this.wsServer?.isClientConnected()) {
-						transport = "websocket";
-					}
-
-					if (transport === "none") {
+					// plugin handles its own reconnect logic. A TCP-open socket is not
+					// proof of health (the plugin sandbox can be dead while ui.html
+					// still pongs), so a live roundtrip through the sandbox is the
+					// success criterion here.
+					if (!this.wsServer?.isClientConnected()) {
 						throw new Error(
 							"Cannot connect to Figma Desktop.\n\n" +
 							"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge)."
 						);
 					}
 
-					// Try to get the file name via whichever transport connected
-					try {
-						const connector = await this.getDesktopConnector();
-						const fileInfo = await connector.executeCodeViaUI(
-							"return { fileName: figma.root.name, fileKey: figma.fileKey }",
-							5000,
+					const connector = await this.getDesktopConnector();
+					const fileInfo = await connector.executeCodeViaUI(
+						"return { fileName: figma.root.name, fileKey: figma.fileKey }",
+						5000,
+					);
+					if (!fileInfo.success) {
+						const probeErr = new Error(
+							"Desktop Bridge socket is open but the plugin sandbox is not responding to commands. " +
+							"Close and reopen the Figma Console MCP plugin in Figma Desktop (Plugins → Development → Figma Console MCP)."
 						);
-						if (fileInfo.success && fileInfo.result) {
-							fileName = fileInfo.result.fileName;
-						}
-					} catch {
-						// Non-critical - just for context
+						(probeErr as any).connectionError = this.buildConnectionError(probeErr);
+						throw probeErr;
 					}
+					const fileName: string | null = fileInfo.result?.fileName || null;
 
 					return {
 						content: [
@@ -1318,16 +1400,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								type: "text",
 								text: JSON.stringify(
 									{
-										status: "reconnected",
-										transport,
-										currentUrl,
-										fileName:
-											fileName ||
-											"(unknown - Desktop Bridge may need to be restarted)",
+										status: "connected",
+										transport: "websocket",
+										probeVerified: true,
+										fileName,
 										timestamp: Date.now(),
-										message: fileName
-											? `Successfully reconnected via ${transport.toUpperCase()}. Now connected to: "${fileName}"`
-											: `Successfully reconnected to Figma Desktop via ${transport.toUpperCase()}.`,
+										message: `Connection verified via live roundtrip. Connected to: "${fileName || "(unnamed file)"}"`,
 									},
 								),
 							},
@@ -1623,6 +1701,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			cacheEntry: any;
 			fileKey: string;
 			wasLoaded: boolean;
+			warning?: string;
 		}> => {
 			const {
 				DesignSystemManifestCache,
@@ -1632,7 +1711,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 			const cache = DesignSystemManifestCache.getInstance();
 			const currentUrl = this.getCurrentFileUrl();
-			const fileKeyMatch = currentUrl?.match(/\/(file|design)\/([a-zA-Z0-9]+)/);
+			const fileKeyMatch = currentUrl?.match(
+				/\/(file|design|board|slides)\/([a-zA-Z0-9]+)/,
+			);
 			const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
 
 			// Check cache first
@@ -1693,9 +1774,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			}
 
 			// Get components
+			// Maps are keyed by component key (unique) rather than name — same-named
+			// components on different pages would silently overwrite each other.
 			let rawComponents:
 				| { components: any[]; componentSets: any[] }
 				| undefined;
+			let componentsFetchError: string | null = null;
 			try {
 				const componentsResult = await connector.getLocalComponents();
 				if (componentsResult.success && componentsResult.data) {
@@ -1704,7 +1788,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						componentSets: componentsResult.data.componentSets || [],
 					};
 					for (const comp of rawComponents.components) {
-						manifest.components[comp.name] = {
+						manifest.components[comp.key || comp.nodeId] = {
 							key: comp.key,
 							nodeId: comp.nodeId,
 							name: comp.name,
@@ -1713,7 +1797,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						};
 					}
 					for (const compSet of rawComponents.componentSets) {
-						manifest.componentSets[compSet.name] = {
+						manifest.componentSets[compSet.key || compSet.nodeId] = {
 							key: compSet.key,
 							nodeId: compSet.nodeId,
 							name: compSet.name,
@@ -1731,8 +1815,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								})) || [],
 						};
 					}
+				} else {
+					componentsFetchError =
+						componentsResult?.error || "getLocalComponents returned no data";
 				}
 			} catch (error) {
+				componentsFetchError =
+					error instanceof Error ? error.message : String(error);
 				logger.warn({ error }, "Could not fetch components during auto-load");
 			}
 
@@ -1752,11 +1841,29 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				componentCategories: [],
 			};
 
-			// Cache the result
-			cache.set(fileKey, manifest, rawComponents);
-			cacheEntry = cache.get(fileKey);
+			// Cache the result — but never cache a manifest built from a FAILED
+			// components fetch: serving an empty manifest as "cached" for the full
+			// TTL is exactly the "search returns 0 components" poisoning bug.
+			if (!componentsFetchError) {
+				cache.set(fileKey, manifest, rawComponents);
+				cacheEntry = cache.get(fileKey);
+			} else {
+				cacheEntry = {
+					manifest,
+					timestamp: Date.now(),
+					fileKey,
+					rawComponents,
+				};
+			}
 
-			return { cacheEntry, fileKey, wasLoaded: true };
+			return {
+				cacheEntry,
+				fileKey,
+				wasLoaded: true,
+				warning: componentsFetchError
+					? `Components fetch failed (${componentsFetchError}) — results may be incomplete and were NOT cached; retry after checking the Desktop Bridge plugin.`
+					: undefined,
+			};
 		};
 		// ============================================================================
 		// READ-SIDE LIBRARY / DESIGN-SYSTEM TOOLS
@@ -1789,7 +1896,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					const cache = DesignSystemManifestCache.getInstance();
 					const currentUrl = this.getCurrentFileUrl();
 					const fileKeyMatch = currentUrl?.match(
-						/\/(file|design)\/([a-zA-Z0-9]+)/,
+						/\/(file|design|board|slides)\/([a-zA-Z0-9]+)/,
 					);
 					const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
 
@@ -1877,9 +1984,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					}
 
 					// Get components (can be slow for large files)
+					// Keyed by component key (unique) — name keys drop same-named
+					// components on other pages.
 					let rawComponents:
 						| { components: any[]; componentSets: any[] }
 						| undefined;
+					let componentsFetchError: string | null = null;
 					try {
 						const componentsResult = await connector.getLocalComponents();
 						if (componentsResult.success && componentsResult.data) {
@@ -1888,7 +1998,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								componentSets: componentsResult.data.componentSets || [],
 							};
 							for (const comp of rawComponents.components) {
-								manifest.components[comp.name] = {
+								manifest.components[comp.key || comp.nodeId] = {
 									key: comp.key,
 									nodeId: comp.nodeId,
 									name: comp.name,
@@ -1897,7 +2007,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								};
 							}
 							for (const compSet of rawComponents.componentSets) {
-								manifest.componentSets[compSet.name] = {
+								manifest.componentSets[compSet.key || compSet.nodeId] = {
 									key: compSet.key,
 									nodeId: compSet.nodeId,
 									name: compSet.name,
@@ -1915,8 +2025,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										})) || [],
 								};
 							}
+						} else {
+							componentsFetchError =
+								componentsResult?.error || "getLocalComponents returned no data";
 						}
 					} catch (error) {
+						componentsFetchError =
+							error instanceof Error ? error.message : String(error);
 						logger.warn({ error }, "Could not fetch components");
 					}
 
@@ -1936,8 +2051,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						componentCategories: [],
 					};
 
-					// Cache the result
-					cache.set(fileKey, manifest, rawComponents);
+					// Cache the result — never cache a manifest built from a failed
+					// components fetch (would serve empty results for the full TTL).
+					if (!componentsFetchError) {
+						cache.set(fileKey, manifest, rawComponents);
+					}
 
 					const categories = getCategories(manifest);
 					const tokenSummary = getTokenSummary(manifest);
@@ -1958,6 +2076,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											componentSets: manifest.summary.totalComponentSets,
 											tokens: manifest.summary.totalTokens,
 										},
+										warnings: componentsFetchError
+											? [
+												`Components fetch failed (${componentsFetchError}) — component data is incomplete and was NOT cached. Check the Desktop Bridge plugin and retry.`,
+											]
+											: undefined,
 										hint: "Use figma_search_components to find specific components by name or category.",
 									},
 								),
@@ -2141,10 +2264,20 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						const effectiveLimit = Math.min(limit || 10, 25);
 						const effectiveOffset = offset || 0;
 						const total = results.length;
-						const paginatedResults = results.slice(
-							effectiveOffset,
-							effectiveOffset + effectiveLimit,
-						);
+						const paginatedResults = results
+							.slice(effectiveOffset, effectiveOffset + effectiveLimit)
+							// Search hits only need a teaser — some design systems carry
+							// multi-KB doc blocks per component, which multiplies across
+							// a result page. figma_get_component_details returns full text.
+							.map((item: any) =>
+								item.description && item.description.length > 200
+									? {
+										...item,
+										description: `${item.description.slice(0, 200)}…`,
+										descriptionTruncated: true,
+									}
+									: item,
+							);
 
 						return {
 							content: [
@@ -2176,7 +2309,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					);
 
 					// Auto-load design system cache if needed (no error returned to user)
-					const { cacheEntry } = await ensureDesignSystemCache();
+					const { cacheEntry, warning: cacheWarning } =
+						await ensureDesignSystemCache();
 					if (!cacheEntry) {
 						return {
 							content: [
@@ -2213,6 +2347,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 										query: query || "(all)",
 										category: category || "(all)",
 										results: results.results,
+										warnings: cacheWarning ? [cacheWarning] : undefined,
 										pagination: {
 											offset: offset || 0,
 											limit: effectiveLimit,
@@ -2302,13 +2437,15 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					let component: any = null;
 					let isComponentSet = false;
 
-					// Check component sets first (they have variants)
-					for (const [name, compSet] of Object.entries(
+					// Check component sets first (they have variants).
+					// Maps are keyed by component key; match names via the entry's
+					// own name field, not the map key.
+					for (const compSet of Object.values(
 						cacheEntry.manifest.componentSets,
-					) as [string, any][]) {
+					) as any[]) {
 						if (
 							(componentKey && compSet.key === componentKey) ||
-							(componentName && name === componentName)
+							(componentName && compSet.name === componentName)
 						) {
 							component = compSet;
 							isComponentSet = true;
@@ -2318,12 +2455,12 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 					// Check standalone components
 					if (!component) {
-						for (const [name, comp] of Object.entries(
+						for (const comp of Object.values(
 							cacheEntry.manifest.components,
-						) as [string, any][]) {
+						) as any[]) {
 							if (
 								(componentKey && comp.key === componentKey) ||
-								(componentName && name === componentName)
+								(componentName && comp.name === componentName)
 							) {
 								component = comp;
 								break;
@@ -3361,6 +3498,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 			const portsToTry = getPortRange(this.wsPreferredPort);
 			let boundPort: number | null = null;
+			// Distinguish "every port was in use" from "bind failed for another
+			// reason" — eviction must only fire for genuine port exhaustion, and
+			// figma_get_status must report the real error code.
+			let lastNonPortError: { code: string; message: string } | null = null;
 
 			for (const port of portsToTry) {
 				try {
@@ -3410,13 +3551,19 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						{ error: errorMsg, port },
 						"Failed to start WebSocket bridge server",
 					);
+					lastNonPortError = {
+						code: errorCode || "UNKNOWN",
+						message: errorMsg,
+					};
 					this.wsServer = null;
 					break;
 				}
 			}
 
-			// Phase 3: If all ports exhausted, try evicting the oldest instance and retry ONCE
-			if (!boundPort && evictOldestInstance(this.wsPreferredPort)) {
+			// Phase 3: If all ports exhausted, try evicting the oldest instance and
+			// retry ONCE. Only for genuine EADDRINUSE exhaustion — killing a healthy
+			// sibling can't fix an EACCES/EADDRNOTAVAIL bind failure.
+			if (!boundPort && !lastNonPortError && evictOldestInstance(this.wsPreferredPort)) {
 				for (const port of portsToTry) {
 					try {
 						this.wsServer = new FigmaWebSocketServer({ port, host: wsHost });
@@ -3448,13 +3595,17 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 			if (!boundPort) {
 				this.wsStartupError = {
-					code: "EADDRINUSE",
+					code: lastNonPortError?.code ?? "EADDRINUSE",
 					port: this.wsPreferredPort,
 				};
 				const rangeEnd = this.wsPreferredPort + portsToTry.length - 1;
 				logger.warn(
-					{ portRange: `${this.wsPreferredPort}-${rangeEnd}` },
-					"All WebSocket ports in range are in use — running without WebSocket transport",
+					lastNonPortError
+						? { error: lastNonPortError }
+						: { portRange: `${this.wsPreferredPort}-${rangeEnd}` },
+					lastNonPortError
+						? "WebSocket bridge failed to start (non-port error) — running without WebSocket transport"
+						: "All WebSocket ports in range are in use — running without WebSocket transport",
 				);
 			}
 
@@ -3472,6 +3623,13 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin disconnected from WebSocket");
 					if (data.fileKey) {
 						this.variablesCache.delete(data.fileKey);
+						// design-system-tools.ts stores token data under a prefixed key
+						this.variablesCache.delete(`vars:${data.fileKey}`);
+						void import("./core/design-system-manifest.js").then(
+							({ DesignSystemManifestCache }) => {
+								DesignSystemManifestCache.getInstance().invalidate(data.fileKey);
+							},
+						).catch(() => {});
 					}
 				});
 
@@ -3482,8 +3640,17 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 				this.wsServer.on("documentChange", (data: any) => {
 					if (data.hasStyleChanges || data.hasNodeChanges) {
 						if (data.fileKey) {
-							// Per-file cache invalidation — only clear the affected file's cache
+							// Per-file cache invalidation — only clear the affected file's cache.
+							// Also clear the design-system-tools token entry (prefixed key)
+							// and the component manifest, so searches see new components
+							// and the design-system kit sees edited variables.
 							this.variablesCache.delete(data.fileKey);
+							this.variablesCache.delete(`vars:${data.fileKey}`);
+							void import("./core/design-system-manifest.js").then(
+								({ DesignSystemManifestCache }) => {
+									DesignSystemManifestCache.getInstance().invalidate(data.fileKey);
+								},
+							).catch(() => {});
 							logger.debug(
 								{ fileKey: data.fileKey, changeCount: data.changeCount, hasStyleChanges: data.hasStyleChanges, hasNodeChanges: data.hasNodeChanges },
 								"Variable cache invalidated due to document changes"

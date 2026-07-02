@@ -220,7 +220,7 @@ function serializeAsDtcg(
     }
 
     for (const token of set.tokens) {
-      writeTokenIntoTree(setGroup, token, set.modes, warnings);
+      writeTokenIntoTree(setGroup, token, set.modes, warnings, fileMode);
     }
   }
 
@@ -240,26 +240,74 @@ function setKeyFor(set: TokenSet): string {
 /**
  * Insert a token into the DTCG group tree at the right nested path.
  * Creates intermediate groups as needed.
+ *
+ * Leaf/group name conflicts (a variable named "color" alongside
+ * "color/primary") are kept — the leaf is emitted under the reserved "@"
+ * key inside the group, flagged with `leafRemap: true` in its
+ * figma-console-mcp $extensions so the parser can restore the original
+ * name on round-trip. A warning names both sides of the conflict.
  */
 function writeTokenIntoTree(
   root: DtcgGroup,
   token: Token,
   setModes: string[],
   warnings: string[],
+  fileMode?: string,
 ): void {
   let cursor: DtcgGroup = root;
   for (let i = 0; i < token.path.length - 1; i++) {
     const segment = token.path[i];
-    let next = cursor[segment] as DtcgGroup | undefined;
-    if (!next || isToken(next)) {
+    let next = cursor[segment] as DtcgGroup | DtcgToken | undefined;
+    if (next && isToken(next)) {
+      // A leaf token already occupies this segment and we need a group
+      // here. Keep both: demote the existing leaf to the reserved "@" key
+      // inside the new group.
+      const conflictPath = token.path.slice(0, i + 1).join("/");
+      warnings.push(
+        `Name conflict: "${conflictPath}" is both a token and a group (needed by "${token.path.join("/")}"). Kept both — the leaf token "${conflictPath}" was emitted under "${conflictPath}/@" and round-trips back to its original name.`,
+      );
+      const group: DtcgGroup = { "@": markLeafRemap(next) };
+      cursor[segment] = group;
+      next = group;
+    } else if (!next) {
       next = {};
       cursor[segment] = next;
     }
-    cursor = next;
+    cursor = next as DtcgGroup;
   }
 
   const leafKey = token.path[token.path.length - 1];
-  cursor[leafKey] = renderToken(token, setModes, warnings);
+  const rendered = renderToken(token, setModes, warnings, fileMode);
+  const existing = cursor[leafKey];
+  if (
+    existing &&
+    typeof existing === "object" &&
+    !isToken(existing as DtcgGroup | DtcgToken)
+  ) {
+    // A group already exists at this name (some other token nests under
+    // it). Keep both: emit this leaf under the reserved "@" key.
+    const conflictPath = token.path.join("/");
+    warnings.push(
+      `Name conflict: token "${conflictPath}" collides with the group "${conflictPath}" (created by tokens nested under it). Kept both — the leaf was emitted under "${conflictPath}/@" and round-trips back to its original name.`,
+    );
+    (existing as DtcgGroup)["@"] = markLeafRemap(rendered);
+    return;
+  }
+  cursor[leafKey] = rendered;
+}
+
+/**
+ * Flag a rendered leaf token as remapped under the reserved "@" key so the
+ * parser can strip that synthetic path segment on round-trip.
+ */
+function markLeafRemap(tok: DtcgToken): DtcgToken {
+  const existing =
+    (tok.$extensions?.[FIGMA_MCP_EXTENSION_KEY] as
+      | Record<string, unknown>
+      | undefined) ?? {};
+  tok.$extensions ??= {};
+  tok.$extensions[FIGMA_MCP_EXTENSION_KEY] = { ...existing, leafRemap: true };
+  return tok;
 }
 
 function isToken(node: DtcgGroup | DtcgToken): node is DtcgToken {
@@ -270,14 +318,19 @@ function isToken(node: DtcgGroup | DtcgToken): node is DtcgToken {
  * Convert an internal Token to its DTCG-encoded leaf form.
  *
  * Single-mode token: emits `{ $value, $type, ... }`.
- * Multi-mode token: emits one extension stash with all mode values, because
- * vanilla DTCG doesn't have a native multi-mode encoding. Callers who want
- * one-file-per-mode should set splitByMode at the formatter level.
+ * Multi-mode token: emits the primary mode as `$value` and stashes BOTH the
+ * primary mode's name (`primaryMode`) and the remaining mode values
+ * (`modes`) under `$extensions["figma-console-mcp"]`, because vanilla DTCG
+ * doesn't have a native multi-mode encoding. The parser reads the same keys
+ * back, so a Light/Dark collection round-trips losslessly even without
+ * splitByMode. Callers who want one-file-per-mode should set splitByMode at
+ * the formatter level.
  */
 function renderToken(
   token: Token,
   setModes: string[],
   warnings: string[],
+  fileMode?: string,
 ): DtcgToken {
   const result: DtcgToken = {
     $value: "" as string | number | boolean | object,
@@ -288,22 +341,17 @@ function renderToken(
   const modeKeys = Object.keys(token.values);
   const isSingleMode = modeKeys.length === 1;
 
-  if (isSingleMode) {
-    const onlyValue = token.values[modeKeys[0]];
-    result.$value = encodeValue(onlyValue, token, warnings);
-  } else {
-    // Multi-mode in a single file: pick the first mode as the canonical
-    // $value, stash the rest in $extensions for round-trip.
-    const primaryMode = setModes[0] in token.values ? setModes[0] : modeKeys[0];
-    result.$value = encodeValue(token.values[primaryMode], token, warnings);
+  // Pick the primary mode: the set's first mode when the token has a value
+  // for it, otherwise the token's first mode.
+  const primaryMode =
+    setModes[0] in token.values ? setModes[0] : modeKeys[0];
+  result.$value = encodeValue(token.values[primaryMode], token, warnings);
 
-    const otherModes: Record<string, unknown> = {};
+  const otherModes: Record<string, unknown> = {};
+  if (!isSingleMode) {
     for (const m of modeKeys) {
       if (m === primaryMode) continue;
       otherModes[m] = encodeValue(token.values[m], token, warnings);
-    }
-    if (Object.keys(otherModes).length > 0) {
-      mergeExtension(result, "modes", otherModes);
     }
   }
 
@@ -318,14 +366,40 @@ function renderToken(
     }
   }
 
+  // Mode round-trip metadata goes under OUR extension key (merged on top of
+  // any preserved figma-console-mcp payload so variableId etc. survive):
+  //   - `primaryMode` whenever the parser couldn't otherwise recover the
+  //     primary mode's name (i.e. it isn't covered by the file-level
+  //     fileMode stamp and isn't the "Default" fallback).
+  //   - `modes` with every non-primary mode's value for multi-mode tokens.
+  const needsPrimaryStash = primaryMode !== (fileMode ?? "Default");
+  const hasOtherModes = Object.keys(otherModes).length > 0;
+  if (needsPrimaryStash || hasOtherModes) {
+    const existing =
+      (result.$extensions?.[FIGMA_MCP_EXTENSION_KEY] as
+        | Record<string, unknown>
+        | undefined) ?? {};
+    mergeExtension(result, FIGMA_MCP_EXTENSION_KEY, {
+      ...existing,
+      primaryMode,
+      ...(hasOtherModes ? { modes: otherModes } : {}),
+    });
+  }
+
   return result;
 }
 
 function encodeValue(
-  value: TokenValue,
+  value: TokenValue | undefined,
   token: Token,
   warnings: string[],
 ): string | number | boolean | object {
+  if (!value) {
+    warnings.push(
+      `Token ${token.path.join(".")} has no mode values — emitting empty string.`,
+    );
+    return "";
+  }
   if (value.reference) {
     return formatDtcgReference(value.reference.replace(/^\{|\}$/g, "").split("."));
   }

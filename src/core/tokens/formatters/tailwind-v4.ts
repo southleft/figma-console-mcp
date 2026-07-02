@@ -37,6 +37,7 @@
  */
 
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
+import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 export function formatTailwindV4(
@@ -45,6 +46,10 @@ export function formatTailwindV4(
 ): FormatResult {
   const warnings: string[] = [];
   const files: FormatResult["files"] = [];
+
+  // Whole-document index so set-qualified alias references resolve to the
+  // target token's own path when generating var(--...) names.
+  const tokenIndex = buildTokenIndex(doc, warnings);
 
   const splitByMode = opts.target.splitByMode ?? false;
   const splitByCollection = opts.target.splitByCollection ?? false;
@@ -59,6 +64,7 @@ export function formatTailwindV4(
             doc.sets.filter((s) => s.name === set.name),
             [mode],
             prefix,
+            tokenIndex,
             warnings,
           ),
         });
@@ -70,14 +76,14 @@ export function formatTailwindV4(
     for (const mode of allModes) {
       files.push({
         path: filenameFor(opts, undefined, mode),
-        content: renderTailwindFile(doc.sets, [mode], prefix, warnings),
+        content: renderTailwindFile(doc.sets, [mode], prefix, tokenIndex, warnings),
       });
     }
   } else if (splitByCollection) {
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set),
-        content: renderTailwindFile([set], set.modes, prefix, warnings),
+        content: renderTailwindFile([set], set.modes, prefix, tokenIndex, warnings),
       });
     }
   } else {
@@ -86,7 +92,7 @@ export function formatTailwindV4(
     for (const set of doc.sets) for (const m of set.modes) allModes.add(m);
     files.push({
       path: filenameFor(opts),
-      content: renderTailwindFile(doc.sets, [...allModes], prefix, warnings),
+      content: renderTailwindFile(doc.sets, [...allModes], prefix, tokenIndex, warnings),
     });
   }
 
@@ -125,6 +131,7 @@ function renderTailwindFile(
   sets: TokenSet[],
   modes: string[],
   prefix: string,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const lines: string[] = [];
@@ -142,7 +149,7 @@ function renderTailwindFile(
     for (const token of set.tokens) {
       const value = token.values[primaryMode];
       if (!value) continue;
-      emitTailwindTokenLines(token, value, prefix, lines, warnings);
+      emitTailwindTokenLines(token, value, prefix, tokenIndex, lines, warnings);
     }
   }
   lines.push("}");
@@ -157,7 +164,7 @@ function renderTailwindFile(
       for (const token of set.tokens) {
         const value = token.values[mode];
         if (!value) continue;
-        emitTailwindTokenLines(token, value, prefix, lines, warnings);
+        emitTailwindTokenLines(token, value, prefix, tokenIndex, lines, warnings);
       }
     }
     lines.push("}");
@@ -181,6 +188,7 @@ function emitTailwindTokenLines(
   token: Token,
   value: TokenValue,
   prefix: string,
+  tokenIndex: Map<string, Token>,
   out: string[],
   warnings: string[],
 ): void {
@@ -201,7 +209,8 @@ function emitTailwindTokenLines(
       return;
     }
     // Local alias → var() reference using the same namespace mapping.
-    const refPath = bareRef.split(".");
+    // Resolve set-qualified references to the target token's own path.
+    const refPath = referenceTargetPath(value.reference, tokenIndex);
     const targetName = pathToTailwindName(refPath, token.type);
     out.push(`  ${cssName}: var(--${prefix}${targetName});`);
     return;

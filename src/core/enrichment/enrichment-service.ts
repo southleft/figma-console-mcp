@@ -142,24 +142,32 @@ export class EnrichmentService {
 					...variable,
 				};
 
-				// Resolve values for all modes
+				// Resolve values for all modes — each mode must resolve ITS OWN
+				// value, so the modeId is threaded through the resolver (which
+				// also keys its cache per mode).
 				if (options.include_exports !== false) {
 					const resolved_values: Record<string, any> = {};
-					for (const [modeId, value] of Object.entries(
-						variable.valuesByMode || {},
-					)) {
+					for (const modeId of Object.keys(variable.valuesByMode || {})) {
 						const resolvedValue = await this.styleResolver.resolveVariableValue(
 							variable,
 							variablesMap,
 							options.max_depth,
+							0,
+							modeId,
 						);
 						resolved_values[modeId] = resolvedValue;
 					}
 					enriched.resolved_values = resolved_values;
 
-					// Generate export formats using first mode
+					// Generate export formats using first mode. Guard only against
+					// null/undefined — legitimate falsy values (0, false, "") must
+					// still produce export formats.
 					const firstModeValue = Object.values(resolved_values)[0];
-					if (firstModeValue && options.export_formats) {
+					if (
+						firstModeValue !== null &&
+						firstModeValue !== undefined &&
+						options.export_formats
+					) {
 						enriched.export_formats = this.styleResolver.generateExportFormats(
 							variable.name,
 							firstModeValue,

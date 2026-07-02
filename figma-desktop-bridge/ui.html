@@ -2154,6 +2154,8 @@
             if (msg.oldName !== undefined) result.oldName = msg.oldName;
             if (msg.instance !== undefined) result.instance = msg.instance;
             if (msg.warnings !== undefined) result.warnings = msg.warnings;
+            if (msg.updatedCount !== undefined) result.updatedCount = msg.updatedCount;
+            if (msg.nodes !== undefined) result.nodes = msg.nodes;
             request.resolve(result);
           } else {
             request.resolve({ success: false, error: msg.error || 'Unknown error' });

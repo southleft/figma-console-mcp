@@ -178,7 +178,15 @@ function walkGroup(
       continue;
     }
 
-    const childPath = [...path, key];
+    // Reserved "@" key: the formatter emits a leaf under "@" when its name
+    // collided with a group of the same name (leaf/group conflict). The
+    // `leafRemap` flag in our extension marks it; strip the synthetic "@"
+    // segment so the token gets its original path back.
+    const isRemappedLeaf =
+      key === "@" &&
+      isLeafToken(value as DtcgGroup) &&
+      hasLeafRemapFlag(value as Record<string, unknown>);
+    const childPath = isRemappedLeaf ? [...path] : [...path, key];
     if (isLeafToken(value as DtcgGroup)) {
       const token = extractToken(
         childPath,
@@ -205,6 +213,18 @@ function walkGroup(
 
 function isLeafToken(node: DtcgGroup): boolean {
   return "$value" in node;
+}
+
+/**
+ * True when a leaf node carries the `leafRemap` marker our formatter sets
+ * on tokens emitted under the reserved "@" key (leaf/group name conflicts).
+ */
+function hasLeafRemapFlag(node: Record<string, unknown>): boolean {
+  const ext = node.$extensions;
+  if (!ext || typeof ext !== "object") return false;
+  const mcp = (ext as Record<string, unknown>)[FIGMA_MCP_EXTENSION_KEY];
+  if (!mcp || typeof mcp !== "object") return false;
+  return (mcp as Record<string, unknown>).leafRemap === true;
 }
 
 function extractToken(
@@ -241,13 +261,17 @@ function extractToken(
           | undefined)
       : undefined;
   const stashedModes = mcpExt?.modes as Record<string, unknown> | undefined;
+  const stashedPrimaryMode =
+    typeof mcpExt?.primaryMode === "string" ? mcpExt.primaryMode : undefined;
 
   // Decide which mode name to assign to the primary $value.
   //   1. If the file declares a fileMode (splitByMode output), use that.
-  //   2. Otherwise fall back to "Default" — the parser can't know the
-  //      mode without that hint.
+  //   2. Otherwise use the token-level `primaryMode` our formatter stashes
+  //      in $extensions["figma-console-mcp"] (one-file-multi-mode output).
+  //   3. Otherwise fall back to "Default" — the parser can't know the
+  //      mode without a hint.
   // Then absorb any stashedModes (one-file-multi-mode output) verbatim.
-  const primaryMode = fileMode ?? "Default";
+  const primaryMode = fileMode ?? stashedPrimaryMode ?? "Default";
   values[primaryMode] = decodeValue(node.$value);
 
   if (stashedModes) {
@@ -269,9 +293,13 @@ function extractToken(
         payload &&
         typeof payload === "object"
       ) {
-        // Strip the "modes" we already absorbed into values.
+        // Strip transient round-trip markers we already absorbed:
+        // "modes"/"primaryMode" were folded into `values`, "leafRemap"
+        // was consumed when the "@" path segment got stripped.
         const cleaned: Record<string, unknown> = { ...(payload as object) };
         delete cleaned.modes;
+        delete cleaned.primaryMode;
+        delete cleaned.leafRemap;
         if (Object.keys(cleaned).length > 0) {
           (extensions as Record<string, unknown>)[vendor] = cleaned;
         }

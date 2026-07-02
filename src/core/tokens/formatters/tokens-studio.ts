@@ -41,6 +41,7 @@
 
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
 import { FIGMA_MCP_EXTENSION_KEY } from "../types.js";
+import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 export function formatTokensStudio(
@@ -49,6 +50,10 @@ export function formatTokensStudio(
 ): FormatResult {
   const warnings: string[] = [];
   const files: FormatResult["files"] = [];
+
+  // Whole-document index so set-qualified alias references resolve to the
+  // target token's own path (Tokens Studio references are set-relative).
+  const tokenIndex = buildTokenIndex(doc, warnings);
 
   // Track which (setName, mode) → filename pairs exist so $metadata + $themes
   // can reference them.
@@ -64,7 +69,7 @@ export function formatTokensStudio(
 
       files.push({
         path: filename,
-        content: renderSetFile(set, mode, warnings),
+        content: renderSetFile(set, mode, tokenIndex, warnings),
       });
     }
   }
@@ -103,6 +108,7 @@ function slugify(s: string): string {
 function renderSetFile(
   set: TokenSet,
   mode: string,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const tree: Record<string, unknown> = {};
@@ -111,7 +117,7 @@ function renderSetFile(
     const value = token.values[mode];
     if (!value) continue;
 
-    const tsValue = tsValueFor(value, token, warnings);
+    const tsValue = tsValueFor(value, token, tokenIndex, warnings);
     if (tsValue === undefined) continue;
 
     // Walk path creating nested groups.
@@ -239,6 +245,7 @@ function tsTypeFor(token: Token): string {
 function tsValueFor(
   value: TokenValue,
   token: Token,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): unknown {
   if (value.reference) {
@@ -249,7 +256,9 @@ function tsValueFor(
       );
       return undefined;
     }
-    return `{${bare}}`;
+    // Tokens Studio references are token-path based (no set qualifier) —
+    // resolve set-qualified references to the target token's own path.
+    return `{${referenceTargetPath(value.reference, tokenIndex).join(".")}}`;
   }
   if (value.literal === undefined || value.literal === null) return undefined;
   if (typeof value.literal === "number" && token.type === "dimension") {

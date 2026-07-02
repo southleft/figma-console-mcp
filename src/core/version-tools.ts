@@ -838,7 +838,11 @@ export function registerVersionTools(
 					after: cursor,
 				});
 			} catch (e) {
-				logger.warn({ err: e }, "Author enrichment lookup failed; continuing without it");
+				// Degrading to null metadata IS surfaced to callers (formatter shows
+				// "metadata not available") — just make sure the underlying reason
+				// lands in the log for debugging.
+				const reason = e instanceof Error ? e.message : String(e);
+				logger.warn({ err: e, reason, page }, "Author enrichment lookup failed; continuing without it");
 				break;
 			}
 			const versions = response?.versions || [];
@@ -1171,6 +1175,17 @@ export function registerVersionTools(
 				cacheHits += candidates.cacheHits;
 				const versions = candidates.versions; // newest-first, all OLDER than start
 
+				// If the version listing itself failed and NOTHING was collected, the
+				// binary search would run over an empty range and confidently report
+				// "introduced at start_version" when nothing was actually searched.
+				// Fail loudly instead of returning a wrong answer.
+				if (candidates.listFetchFailed && versions.length === 0) {
+					return errorResponse(
+						"version_list_unavailable",
+						`version list unavailable: ${candidates.listFetchError ?? "unknown error"} — cannot attribute the change because no version history could be fetched to search. Retry, or check that your token has the file_versions:read scope ('Versions' Read on a PAT).`,
+					);
+				}
+
 				// Step 3: Binary search for the LARGEST index (oldest version) where target exists.
 				// Existence is assumed monotonic: if target exists at an OLDER version (larger
 				// index), it must also exist at all NEWER versions up to start. We search for
@@ -1266,6 +1281,16 @@ export function registerVersionTools(
 					}
 				}
 
+				// Version listing failed partway through — the candidate list is
+				// truncated, so the searched range may not cover the true
+				// introduction point. Surface the gap and downgrade confidence.
+				if (candidates.listFetchFailed) {
+					certainty = downgradeCertainty(certainty);
+					notes.push(
+						`Version listing failed partway through the blame walk (${candidates.listFetchError ?? "unknown error"}); only ${versions.length} version(s) were collected and searched. The true introduction point may lie outside the searched range, so attribution_certainty was downgraded one level.`,
+					);
+				}
+
 				notes.push(
 					"Binary search assumes the target's existence is monotonic (added once, never removed). If the target was added, removed, then re-added, this tool may report a different introduction point than the original.",
 				);
@@ -1328,11 +1353,17 @@ export function registerVersionTools(
 		}>;
 		apiCalls: number;
 		cacheHits: number;
+		/** True if a getFileVersions page fetch failed — the candidate list may be empty or truncated. */
+		listFetchFailed: boolean;
+		/** Underlying failure reason when listFetchFailed is true. */
+		listFetchError?: string;
 	}> => {
 		const collected: Array<any> = [];
 		let cursor: string | undefined;
 		let apiCalls = 0;
 		const cacheHits = 0; // version-list pagination is not snapshot-cached
+		let listFetchFailed = false;
+		let listFetchError: string | undefined;
 		// Once we hit start_version's id in the list, switch to "collecting older" mode
 		let foundStart = isCurrentSentinel(startVer);
 		const MAX_PAGES = 10; // 10 × 50 = 500 versions hard cap on scan
@@ -1345,7 +1376,12 @@ export function registerVersionTools(
 				});
 				apiCalls++;
 			} catch (e) {
-				logger.warn({ err: e }, "Version list fetch failed during blame walk");
+				listFetchFailed = true;
+				listFetchError = e instanceof Error ? e.message : String(e);
+				logger.warn(
+					{ err: e, reason: listFetchError, page },
+					"Version list fetch failed during blame walk",
+				);
 				break;
 			}
 			const versions = response?.versions || [];
@@ -1366,8 +1402,28 @@ export function registerVersionTools(
 			if (!last?.id || last.id === cursor) break;
 			cursor = last.id;
 		}
-		return { versions: collected, apiCalls, cacheHits };
+		return { versions: collected, apiCalls, cacheHits, listFetchFailed, listFetchError };
 	};
+}
+
+/**
+ * Downgrade an attribution_certainty value one confidence level when the
+ * searched version range is known to be incomplete (truncated version listing).
+ * "exact" and "system_attributed" both mean "found the introducing version"
+ * and downgrade to "exists_at_lookback_horizon" (the true introduction may lie
+ * outside the searched range); the horizon case downgrades to
+ * "metadata_unavailable", which is already the floor.
+ */
+function downgradeCertainty(certainty: string): string {
+	switch (certainty) {
+		case "exact":
+		case "system_attributed":
+			return "exists_at_lookback_horizon";
+		case "exists_at_lookback_horizon":
+			return "metadata_unavailable";
+		default:
+			return certainty;
+	}
 }
 
 // Returns true if the target is present in the given node tree.

@@ -285,6 +285,7 @@ export interface ComponentSearchResult {
 	nodeId: string;
 	type: 'component' | 'componentSet';
 	description?: string;
+	descriptionTruncated?: boolean;
 	category?: string;
 	variantCount?: number;
 	defaultSize?: { width: number; height: number };
@@ -305,13 +306,14 @@ export function searchComponents(
 
 	const allResults: ComponentSearchResult[] = [];
 
-	// Search component sets first (they're typically the main design system components)
-	for (const [name, compSet] of Object.entries(manifest.componentSets)) {
-		const nameLower = name.toLowerCase();
+	// Search component sets first (they're typically the main design system components).
+	// Manifest maps are keyed by component key — always read names from the entry.
+	for (const compSet of Object.values(manifest.componentSets)) {
+		const nameLower = compSet.name.toLowerCase();
 		const descLower = compSet.description?.toLowerCase() || '';
 
 		const matchesQuery = !query || nameLower.includes(queryLower) || descLower.includes(queryLower);
-		const matchesCategory = !categoryLower || inferCategory(name).toLowerCase().includes(categoryLower);
+		const matchesCategory = !categoryLower || inferCategory(compSet.name).toLowerCase().includes(categoryLower);
 
 		if (matchesQuery && matchesCategory) {
 			allResults.push({
@@ -320,19 +322,19 @@ export function searchComponents(
 				nodeId: compSet.nodeId,
 				type: 'componentSet',
 				description: compSet.description,
-				category: inferCategory(name),
+				category: inferCategory(compSet.name),
 				variantCount: compSet.variants?.length || 0,
 			});
 		}
 	}
 
 	// Then search standalone components
-	for (const [name, comp] of Object.entries(manifest.components)) {
-		const nameLower = name.toLowerCase();
+	for (const comp of Object.values(manifest.components)) {
+		const nameLower = comp.name.toLowerCase();
 		const descLower = comp.description?.toLowerCase() || '';
 
 		const matchesQuery = !query || nameLower.includes(queryLower) || descLower.includes(queryLower);
-		const matchesCategory = !categoryLower || inferCategory(name).toLowerCase().includes(categoryLower);
+		const matchesCategory = !categoryLower || inferCategory(comp.name).toLowerCase().includes(categoryLower);
 
 		if (matchesQuery && matchesCategory) {
 			allResults.push({
@@ -341,14 +343,20 @@ export function searchComponents(
 				nodeId: comp.nodeId,
 				type: 'component',
 				description: comp.description,
-				category: inferCategory(name),
+				category: inferCategory(comp.name),
 				defaultSize: comp.defaultSize,
 			});
 		}
 	}
 
 	const total = allResults.length;
-	const paginatedResults = allResults.slice(offset, offset + limit);
+	// Truncate long doc blocks in search hits — full text is available via
+	// figma_get_component_details.
+	const paginatedResults = allResults.slice(offset, offset + limit).map((r) =>
+		r.description && r.description.length > 200
+			? { ...r, description: `${r.description.slice(0, 200)}…`, descriptionTruncated: true }
+			: r,
+	);
 	const hasMore = offset + limit < total;
 
 	return { results: paginatedResults, total, hasMore };
@@ -368,15 +376,15 @@ function inferCategory(name: string): string {
 export function getCategories(manifest: DesignSystemManifest): { name: string; componentCount: number; componentSetCount: number }[] {
 	const categories = new Map<string, { componentCount: number; componentSetCount: number }>();
 
-	for (const name of Object.keys(manifest.componentSets)) {
-		const cat = inferCategory(name);
+	for (const compSet of Object.values(manifest.componentSets)) {
+		const cat = inferCategory(compSet.name);
 		const existing = categories.get(cat) || { componentCount: 0, componentSetCount: 0 };
 		existing.componentSetCount++;
 		categories.set(cat, existing);
 	}
 
-	for (const name of Object.keys(manifest.components)) {
-		const cat = inferCategory(name);
+	for (const comp of Object.values(manifest.components)) {
+		const cat = inferCategory(comp.name);
 		const existing = categories.get(cat) || { componentCount: 0, componentSetCount: 0 };
 		existing.componentCount++;
 		categories.set(cat, existing);

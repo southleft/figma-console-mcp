@@ -41,6 +41,7 @@
  */
 
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
+import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 export function formatStyleDictionaryV3(
@@ -50,6 +51,10 @@ export function formatStyleDictionaryV3(
   const warnings: string[] = [];
   const files: FormatResult["files"] = [];
 
+  // Whole-document index so set-qualified alias references resolve to the
+  // target token's own path (SD v3 trees are path-based, no set groups).
+  const tokenIndex = buildTokenIndex(doc, warnings);
+
   const splitByMode = opts.target.splitByMode ?? false;
   const splitByCollection = opts.target.splitByCollection ?? false;
 
@@ -58,7 +63,7 @@ export function formatStyleDictionaryV3(
       for (const mode of set.modes) {
         files.push({
           path: filenameFor(opts, set, mode),
-          content: renderSdJson([set], [mode], warnings),
+          content: renderSdJson([set], [mode], tokenIndex, warnings),
         });
       }
     }
@@ -69,14 +74,14 @@ export function formatStyleDictionaryV3(
       const sets = doc.sets.filter((s) => s.modes.includes(mode));
       files.push({
         path: filenameFor(opts, undefined, mode),
-        content: renderSdJson(sets, [mode], warnings),
+        content: renderSdJson(sets, [mode], tokenIndex, warnings),
       });
     }
   } else if (splitByCollection) {
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set),
-        content: renderSdJson([set], set.modes, warnings),
+        content: renderSdJson([set], set.modes, tokenIndex, warnings),
       });
     }
   } else {
@@ -84,7 +89,7 @@ export function formatStyleDictionaryV3(
     for (const set of doc.sets) for (const m of set.modes) allModes.add(m);
     files.push({
       path: filenameFor(opts),
-      content: renderSdJson(doc.sets, [...allModes], warnings),
+      content: renderSdJson(doc.sets, [...allModes], tokenIndex, warnings),
     });
   }
 
@@ -135,6 +140,7 @@ function sdTypeFor(token: Token): string {
 function renderSdJson(
   sets: TokenSet[],
   modes: string[],
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const tree: Record<string, unknown> = {};
@@ -155,7 +161,7 @@ function renderSdJson(
         : usableModes[0];
       const tokenValue = token.values[valueMode];
 
-      const sdValue = sdValueFor(tokenValue, token, warnings);
+      const sdValue = sdValueFor(tokenValue, token, tokenIndex, warnings);
       if (sdValue === undefined) continue;
 
       // Walk the path, creating nested groups.
@@ -187,6 +193,7 @@ function pickPrimaryMode(modes: string[]): string {
 function sdValueFor(
   value: TokenValue,
   token: Token,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): unknown {
   if (value.reference) {
@@ -197,8 +204,10 @@ function sdValueFor(
       );
       return undefined;
     }
-    // SD v3 uses the same `{path.to.token}` alias syntax as DTCG.
-    return `{${bare}}`;
+    // SD v3 uses the same `{path.to.token}` alias syntax as DTCG, but its
+    // tree has no set groups — resolve set-qualified references to the
+    // target token's own path.
+    return `{${referenceTargetPath(value.reference, tokenIndex).join(".")}}`;
   }
   if (value.literal === undefined || value.literal === null) return undefined;
 

@@ -164,26 +164,33 @@ function adaptiveResponse(
 		};
 	}
 
-	// Determine compression level and message
+	// Determine compression level and message. The "AUTO-COMPRESSED" wording is
+	// only truthful when a compressionCallback actually runs — without one the
+	// full payload is returned and the banner must say so instead of claiming
+	// a reduction that never happened.
 	let compressionLevel: "info" | "warning" | "critical" | "emergency" = "info";
 	let aiInstruction = "";
 	let shouldCompress = false;
+	const canCompress = !!options.compressionCallback;
 
 	if (sizeKB > RESPONSE_SIZE_THRESHOLDS.MAX_SIZE_KB) {
 		compressionLevel = "emergency";
 		shouldCompress = true;
-		aiInstruction =
-			`⚠️ RESPONSE AUTO-COMPRESSED: The ${options.toolName} response was automatically reduced because the full response would be ${sizeKB.toFixed(0)}KB, which would exhaust Claude Desktop's context window.\n\n`;
+		aiInstruction = canCompress
+			? `⚠️ RESPONSE AUTO-COMPRESSED: The ${options.toolName} response was automatically reduced because the full response would be ${sizeKB.toFixed(0)}KB, which would exhaust Claude Desktop's context window.\n\n`
+			: `⚠️ LARGE RESPONSE: The ${options.toolName} response is ${sizeKB.toFixed(0)}KB and may exhaust the context window. Retry with filters or pagination to reduce it.\n\n`;
 	} else if (sizeKB > RESPONSE_SIZE_THRESHOLDS.CRITICAL_SIZE_KB) {
 		compressionLevel = "critical";
 		shouldCompress = true;
-		aiInstruction =
-			`⚠️ RESPONSE AUTO-COMPRESSED: The ${options.toolName} response was automatically reduced because it would be ${sizeKB.toFixed(0)}KB, risking context window exhaustion.\n\n`;
+		aiInstruction = canCompress
+			? `⚠️ RESPONSE AUTO-COMPRESSED: The ${options.toolName} response was automatically reduced because it would be ${sizeKB.toFixed(0)}KB, risking context window exhaustion.\n\n`
+			: `⚠️ LARGE RESPONSE: The ${options.toolName} response is ${sizeKB.toFixed(0)}KB, risking context window exhaustion. Retry with filters or pagination to reduce it.\n\n`;
 	} else if (sizeKB > RESPONSE_SIZE_THRESHOLDS.WARNING_SIZE_KB) {
 		compressionLevel = "warning";
 		shouldCompress = true;
-		aiInstruction =
-			`ℹ️ RESPONSE OPTIMIZED: The ${options.toolName} response was automatically reduced because it would be ${sizeKB.toFixed(0)}KB.\n\n`;
+		aiInstruction = canCompress
+			? `ℹ️ RESPONSE OPTIMIZED: The ${options.toolName} response was automatically reduced because it would be ${sizeKB.toFixed(0)}KB.\n\n`
+			: `ℹ️ LARGE RESPONSE: The ${options.toolName} response is ${sizeKB.toFixed(0)}KB. Filters or pagination can reduce it.\n\n`;
 	}
 
 	// Map compression level to verbosity level
@@ -995,13 +1002,19 @@ export function registerFigmaAPITools(
 				return adaptiveResponse(finalResponse, {
 					toolName: "figma_get_file_data",
 					compressionCallback: (adjustedLevel: string) => {
-						// Re-apply node filtering with lower verbosity
-						const level = adjustedLevel as "summary" | "standard" | "full";
+						// Re-apply node filtering with lower verbosity. "inventory"
+						// (the emergency tier) isn't a filterNode level — clamp it to
+						// "summary", the strongest filter, instead of letting it fall
+						// through filterNode's default branch which returns the RAW
+						// node (that ballooned "compressed" responses). Always
+						// re-filter, even when the caller asked for verbosity='full' —
+						// an emergency downgrade must never echo the raw document.
+						const level = (
+							adjustedLevel === "standard" ? "standard" : "summary"
+						) as "summary" | "standard";
 						const refiltered = {
 							...finalResponse,
-							document: verbosity !== "full"
-								? filterNode(fileData.document, level)
-								: fileData.document,
+							document: filterNode(fileData.document, level),
 							verbosity: level,
 						};
 						return refiltered;
@@ -1605,6 +1618,35 @@ export function registerFigmaAPITools(
 							? formatVariables(published)
 							: null;
 
+						// Cache the FULL dataset in the Desktop-connection shape BEFORE
+						// any format/verbosity/pagination mutation. The cache reader
+						// expects { variables, variableCollections }; caching the
+						// stripped, paginated page (the old behavior) poisoned every
+						// follow-up filtered/summary call for the whole TTL window.
+						// Variable objects are shallow-copied so downstream verbosity
+						// stripping can't reach into the cached entries.
+						if (variablesCache) {
+							evictOldestCacheEntry(variablesCache);
+							variablesCache.set(fileKey, {
+								data: {
+									fileKey,
+									source: "rest_api",
+									timestamp: Date.now(),
+									variables: (localFormatted.variables || []).map(
+										(v: any) => ({ ...v }),
+									),
+									variableCollections: (localFormatted.collections || []).map(
+										(c: any) => ({ ...c }),
+									),
+								},
+								timestamp: Date.now(),
+							});
+							logger.info(
+								{ fileKey, variableCount: localFormatted.variables?.length },
+								"Cached full REST API variables dataset",
+							);
+						}
+
 						// DEBUG: Check if valuesByMode exists before filtering
 						if (localFormatted.variables[0]) {
 							logger.info(
@@ -1717,32 +1759,8 @@ export function registerFigmaAPITools(
 						}
 
 
-						// Cache the successful REST API response
-						const dataForCache = {
-							fileKey,
-							local: {
-								summary: localFormatted.summary,
-								collections: localFormatted.collections,
-								variables: localFormatted.variables,
-							},
-							...(includePublished &&
-								publishedFormatted && {
-									published: {
-										summary: publishedFormatted.summary,
-										collections: publishedFormatted.collections,
-										variables: publishedFormatted.variables,
-									},
-								}),
-							verbosity: verbosity || "standard",
-							enriched: enrich || false,
-							timestamp: Date.now(),
-							source: "rest_api",
-						};
-
-						if (variablesCache) {
-							variablesCache.set(fileKey, { data: dataForCache, timestamp: Date.now() });
-							logger.info({ fileKey }, "Cached REST API variables");
-						}
+						// (Cache write happens above, pre-mutation — the response below
+						// is built from the filtered/paginated working copies.)
 
 						// Apply alias resolution if requested (REST API format has local.variables)
 						if (resolveAliases && localFormatted.variables?.length > 0) {
@@ -2182,6 +2200,22 @@ export function registerFigmaAPITools(
 							let localFormatted = formatVariables(local);
 							let publishedFormatted = includePublished ? formatVariables(published) : null;
 
+							// Cache the FULL dataset pre-mutation in the Desktop shape
+							// (same poisoning fix as the primary REST path above).
+							if (variablesCache) {
+								evictOldestCacheEntry(variablesCache);
+								variablesCache.set(fileKey, {
+									data: {
+										fileKey,
+										source: "rest_api",
+										timestamp: Date.now(),
+										variables: (localFormatted.variables || []).map((v: any) => ({ ...v })),
+										variableCollections: (localFormatted.collections || []).map((c: any) => ({ ...c })),
+									},
+									timestamp: Date.now(),
+								});
+							}
+
 							// Apply filters
 							if (format === 'filtered') {
 								const filteredLocal = applyFilters(
@@ -2200,20 +2234,6 @@ export function registerFigmaAPITools(
 									verbosity
 								);
 								localFormatted = { ...localFormatted, collections: verbosityFiltered.variableCollections, variables: verbosityFiltered.variables };
-							}
-
-							// Cache
-							const dataForCache = {
-								fileKey,
-								local: { summary: localFormatted.summary, collections: localFormatted.collections, variables: localFormatted.variables },
-								...(includePublished && publishedFormatted && { published: { summary: publishedFormatted.summary, collections: publishedFormatted.collections, variables: publishedFormatted.variables } }),
-								verbosity: verbosity || "standard",
-								enriched: enrich || false,
-								timestamp: Date.now(),
-								source: "rest_api",
-							};
-							if (variablesCache) {
-								variablesCache.set(fileKey, { data: dataForCache, timestamp: Date.now() });
 							}
 
 							// Apply alias resolution
@@ -2282,6 +2302,28 @@ export function registerFigmaAPITools(
 				const errorMessage =
 					error instanceof Error ? error.message : String(error);
 
+				// A 403 here has two very different causes: an expired/invalid token
+				// (isAuthError, set centrally by FigmaAPI.request) or the Variables
+				// API's Enterprise plan gate. Only the latter should be diagnosed as
+				// "requires Enterprise" — telling a user with a dead token to buy
+				// Enterprise is actively wrong.
+				const isTokenError = (error as any)?.isAuthError === true;
+				if (isTokenError) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									error: errorMessage,
+									message: "Failed to retrieve Figma variables — REST token is expired or invalid",
+									hint: "Generate a new personal access token at figma.com → Settings → Security → Personal access tokens and update FIGMA_ACCESS_TOKEN. Or open the Desktop Bridge plugin in Figma Desktop — variables work on any plan without a REST token.",
+								}),
+							},
+						],
+						isError: true,
+					};
+				}
+
 				// FIXED: Jump directly to Styles API (fast) instead of full file data (slow)
 				if (errorMessage.includes("403")) {
 					try {
@@ -2348,12 +2390,13 @@ export function registerFigmaAPITools(
 												"The file structure may not contain extractable styles",
 												"There may be a network or authentication issue"
 											],
-											suggestion: "Please ensure the file is accessible and try again, or check if your token has the necessary permissions.",
+											suggestion: "Please ensure the file is accessible and try again, or check if your token has the necessary permissions. With the Desktop Bridge plugin open in Figma Desktop, variables work on any plan without a REST token.",
 											technical: styleError instanceof Error ? styleError.message : String(styleError)
 										}
 									),
 								},
 							],
+							isError: true,
 						};
 					}
 				}
@@ -2368,8 +2411,8 @@ export function registerFigmaAPITools(
 									error: errorMessage,
 									message: "Failed to retrieve Figma variables",
 									hint: errorMessage.includes("403")
-										? "Variables API requires Enterprise plan. Set useConsoleFallback=true for alternative method."
-										: "Make sure FIGMA_ACCESS_TOKEN is configured and has appropriate permissions",
+										? "The Variables REST API requires an Enterprise plan. Open the Desktop Bridge plugin in Figma Desktop instead — variables work on any plan through the bridge."
+										: "Make sure FIGMA_ACCESS_TOKEN is configured and has appropriate permissions, or open the Desktop Bridge plugin in Figma Desktop",
 								}
 							),
 						},
@@ -2825,14 +2868,17 @@ export function registerFigmaAPITools(
 				return adaptiveResponse(finalResponse, {
 					toolName: "figma_get_styles",
 					compressionCallback: (adjustedLevel: string) => {
-						// Re-apply style filtering with lower verbosity
-						const level = adjustedLevel as "summary" | "standard" | "full";
-						const refilteredStyles = verbosity !== "full"
-							? styles.map((style: any) => filterStyle(style, level))
-							: styles;
+						// Re-apply style filtering with lower verbosity. Clamp the
+						// emergency "inventory" tier to "summary" (filterStyle has no
+						// inventory branch) and always re-filter — even for
+						// verbosity='full' callers — so compression can never echo
+						// the unfiltered payload.
+						const level = (
+							adjustedLevel === "standard" ? "standard" : "summary"
+						) as "summary" | "standard";
 						return {
 							...finalResponse,
-							styles: refilteredStyles,
+							styles: styles.map((style: any) => filterStyle(style, level)),
 							verbosity: level,
 						};
 					},
@@ -2894,6 +2940,9 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, nodeId, scale, format }) => {
 			try {
+				// Accept URL-format ids (123-456); the REST response maps key by
+				// colon format (123:456).
+				nodeId = nodeId.replace(/-/g, ":");
 				let api;
 				try {
 					api = await getFigmaAPI();
@@ -3788,8 +3837,14 @@ export function registerFigmaAPITools(
 							text: JSON.stringify({
 								success: true,
 								instance: result.instance,
+								// Plugin-side warnings (e.g. property names that didn't
+								// match anything) — without these a partial apply looks
+								// like a full success.
+								warnings: result.warnings?.length ? result.warnings : undefined,
 								metadata: {
-									note: "Instance properties updated successfully. Use figma_capture_screenshot to verify visual changes.",
+									note: result.warnings?.length
+										? "Some properties were applied, but see warnings — not every requested property matched. Use figma_capture_screenshot to verify visual changes."
+										: "Instance properties updated successfully. Use figma_capture_screenshot to verify visual changes.",
 								},
 							}),
 						},

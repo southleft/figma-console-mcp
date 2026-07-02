@@ -94,6 +94,7 @@ export interface TokenValue {
     | string
     | number
     | boolean
+    | number[] // cubicBezier: [p1x, p1y, p2x, p2y]
     | TypographyValue
     | ShadowValue
     | ShadowValue[]
@@ -118,6 +119,33 @@ export interface FigmaMcpExtensions {
   variableId?: string;
   /** Figma collection ID. Used to route the variable to the right collection. */
   collectionId?: string;
+  /**
+   * Figma's native resolvedType for the source variable (COLOR / FLOAT /
+   * STRING / BOOLEAN / TIMING / EASING). Import uses this to know the true
+   * write type — critically, TIMING and EASING variables are read-only via
+   * the Plugin API and must never be sent to setValueForMode.
+   */
+  figmaResolvedType?: string;
+  /**
+   * The original Figma variable name when it differs from the token path
+   * (e.g. TIMING/EASING variables carry a trailing "/Timing" or "/Easing"
+   * segment that we strip from the token path). Preserved for round-trip.
+   */
+  figmaName?: string;
+  /**
+   * Spring easing parameters per mode (mass/stiffness/damping) for EASING
+   * variables whose value can't be represented as a DTCG cubicBezier.
+   */
+  spring?: Record<string, unknown>;
+  /**
+   * Formatter/parser round-trip markers (transient — written into DTCG
+   * output by the formatter, absorbed and stripped by the parser):
+   * `primaryMode` records which mode name the token's `$value` represents;
+   * `leafRemap` marks a leaf emitted under the reserved "@" key because its
+   * name collided with a group of the same name.
+   */
+  primaryMode?: string;
+  leafRemap?: boolean;
   /**
    * The value(s) that were synced to/from Figma the last time this tool ran.
    * Used to detect true two-sided conflicts: if BOTH the current Figma value

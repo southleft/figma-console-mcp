@@ -421,7 +421,12 @@ describe("Library Component Access", () => {
 
 		it("should return null for invalid URLs", () => {
 			expect(extractFileKey("not-a-url")).toBeNull();
-			expect(extractFileKey("https://www.figma.com/board/abc123/file")).toBeNull();
+			expect(extractFileKey("https://www.figma.com/profile/abc123")).toBeNull();
+		});
+
+		it("should extract file keys from FigJam and Slides URLs", () => {
+			expect(extractFileKey("https://www.figma.com/board/abc123/Retro")).toBe("abc123");
+			expect(extractFileKey("https://www.figma.com/slides/xyz789/Q3-Review")).toBe("xyz789");
 		});
 	});
 

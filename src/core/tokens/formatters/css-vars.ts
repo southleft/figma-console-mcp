@@ -20,6 +20,7 @@
  */
 
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
+import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 export function formatCssVars(
@@ -28,6 +29,11 @@ export function formatCssVars(
 ): FormatResult {
   const warnings: string[] = [];
   const files: FormatResult["files"] = [];
+
+  // Index over the WHOLE document (not per-file subsets) so set-qualified
+  // alias references ({set-slug.path}) resolve to their target token's own
+  // path when generating var(--...) names.
+  const tokenIndex = buildTokenIndex(doc, warnings);
 
   const splitByMode = opts.target.splitByMode ?? false;
   const splitByCollection = opts.target.splitByCollection ?? false;
@@ -44,6 +50,7 @@ export function formatCssVars(
             mode,
             selectorFor(mode),
             prefix,
+            tokenIndex,
             warnings,
           ),
         });
@@ -62,6 +69,7 @@ export function formatCssVars(
           mode,
           selectorFor(mode),
           prefix,
+          tokenIndex,
           warnings,
         ),
       });
@@ -71,14 +79,14 @@ export function formatCssVars(
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set),
-        content: renderMultiSelector([set], prefix, warnings),
+        content: renderMultiSelector([set], prefix, tokenIndex, warnings),
       });
     }
   } else {
     // Single file with everything.
     files.push({
       path: filenameFor(opts),
-      content: renderMultiSelector(doc.sets, prefix, warnings),
+      content: renderMultiSelector(doc.sets, prefix, tokenIndex, warnings),
     });
   }
 
@@ -133,6 +141,7 @@ function renderSingleSelector(
   mode: string,
   selector: string,
   prefix: string,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const lines: string[] = [];
@@ -142,7 +151,7 @@ function renderSingleSelector(
     for (const token of set.tokens) {
       const value = token.values[mode];
       if (!value) continue;
-      emitTokenLines(token, value, prefix, lines, warnings);
+      emitTokenLines(token, value, prefix, tokenIndex, lines, warnings);
     }
   }
   lines.push(`}`);
@@ -157,6 +166,7 @@ function renderSingleSelector(
 function renderMultiSelector(
   sets: TokenSet[],
   prefix: string,
+  tokenIndex: Map<string, Token>,
   warnings: string[],
 ): string {
   const lines: string[] = [];
@@ -179,7 +189,7 @@ function renderMultiSelector(
       for (const token of set.tokens) {
         const value = token.values[mode];
         if (!value) continue;
-        emitTokenLines(token, value, prefix, lines, warnings);
+        emitTokenLines(token, value, prefix, tokenIndex, lines, warnings);
       }
     }
     lines.push(`}`);
@@ -198,6 +208,7 @@ function emitTokenLines(
   token: Token,
   value: TokenValue,
   prefix: string,
+  tokenIndex: Map<string, Token>,
   out: string[],
   warnings: string[],
 ): void {
@@ -225,9 +236,13 @@ function emitTokenLines(
       return;
     }
 
-    // Alias → var(--other) so CSS cascading semantics are preserved. The
-    // target path goes through the same slugify treatment as the source.
-    const refPath = bareRef.split(".");
+    // Alias → var(--other) so CSS cascading semantics are preserved.
+    // Resolve set-qualified references ({set-slug.path}) to the target
+    // token's own path via the index (the target's declaration is named
+    // from its path, without the set qualifier); bare/unresolvable refs
+    // fall back to the raw reference path. Either way the segments go
+    // through the same slugify treatment as the source.
+    const refPath = referenceTargetPath(value.reference, tokenIndex);
     const targetCssName = pathToCssName(refPath);
     out.push(`  ${cssName}: var(--${prefix}${targetCssName});`);
     return;

@@ -2140,7 +2140,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 		"figma_arrange_component_set",
 		`Organize a component set with Figma's native purple dashed visualization. Use after creating variants, adding states (hover/disabled/pressed), or when component sets need cleanup.
 
-Recreates the set using figma.combineAsVariants() for proper Figma integration, applies purple dashed border styling, and arranges variants in a labeled grid (columns = last property like State, rows = other properties like Type+Size). Creates a white container with title, row/column labels, and the component set.`,
+Recreates the set using figma.combineAsVariants() for proper Figma integration, applies purple dashed border styling, and arranges variants in a labeled grid (columns = last property like State, rows = other properties like Type+Size). Creates a white container with title, row/column labels, and the component set.
+
+WARNING: This tool DESTROYS and RECREATES the component set (clone variants, remove the old set, combineAsVariants). Any placed instances of the old set would become orphaned "deleted component" restorable instances, so the tool ABORTS if it detects instances of any variant. Do not use on component sets with placed instances — arrange those manually in Figma.`,
 		{
 			componentSetId: z
 				.string()
@@ -2233,6 +2235,44 @@ const csOriginalName = componentSet.name;
 const variants = componentSet.children.filter(n => n.type === "COMPONENT");
 if (variants.length === 0) {
 	return { error: "No variants found in component set" };
+}
+
+// ============================================================================
+// SAFETY CHECK: abort if any variant has placed instances.
+// This tool recreates the set (remove + combineAsVariants), which would turn
+// every existing instance into an orphaned "deleted component" restorable.
+// ============================================================================
+let placedInstanceCount = 0;
+let needsPageScanFallback = false;
+for (const variant of variants) {
+	try {
+		if (typeof variant.getInstancesAsync === "function") {
+			const variantInstances = await variant.getInstancesAsync();
+			placedInstanceCount += variantInstances.length;
+		} else if (Array.isArray(variant.instances)) {
+			placedInstanceCount += variant.instances.length;
+		} else {
+			needsPageScanFallback = true;
+		}
+	} catch (e) {
+		needsPageScanFallback = true;
+	}
+}
+if (needsPageScanFallback) {
+	// Best-effort fallback: scan the current page for instances of these variants
+	const variantIds = new Set(variants.map(v => v.id));
+	const pageInstances = figma.currentPage.findAll(n => n.type === "INSTANCE");
+	for (const inst of pageInstances) {
+		try {
+			const mainComp = await inst.getMainComponentAsync();
+			if (mainComp && variantIds.has(mainComp.id)) {
+				placedInstanceCount++;
+			}
+		} catch (e) { /* ignore unreadable instances */ }
+	}
+}
+if (placedInstanceCount > 0) {
+	return { error: "Aborted: this component set has " + placedInstanceCount + " placed instance(s). figma_arrange_component_set recreates the set (remove + combineAsVariants), which would orphan every existing instance as a 'deleted component' restorable. Arrange this set manually in Figma, or only use this tool on sets with no placed instances." };
 }
 
 // Parse variant properties from names

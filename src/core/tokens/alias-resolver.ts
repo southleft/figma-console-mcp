@@ -15,18 +15,85 @@
 import type { Token, TokenDocument, TokenValue } from "./types.js";
 
 /**
- * Build a lookup map from dot-path strings (e.g. "color.primary") to Token
- * objects. Used as the index for resolveAliases().
+ * Slugify a set/collection name into the key used for the top-level set
+ * group in DTCG output AND the set-qualifier prefix in alias references
+ * (`{<set-slug>.<path.to.token>}`). Must stay in sync with the DTCG
+ * formatter's group keys so emitted references resolve inside the file.
  */
-export function buildTokenIndex(doc: TokenDocument): Map<string, Token> {
+export function slugifySetName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Build a lookup map for alias resolution. Every token is indexed under its
+ * set-qualified key (`<set-slug>.<dot.path>` — the same shape the converter
+ * emits in references), and additionally under its bare dot-path
+ * (`color.primary`) when that bare path is unambiguous across sets.
+ *
+ * When two collections both contain the same bare path (e.g. two collections
+ * each defining `color/primary`), the bare key is NOT indexed — resolving a
+ * bare reference to "whichever set was indexed last" is exactly the
+ * cross-collection misresolution bug this guards against. Callers that pass
+ * a `warnings` array get one warning per ambiguous bare path.
+ */
+export function buildTokenIndex(
+  doc: TokenDocument,
+  warnings?: string[],
+): Map<string, Token> {
   const index = new Map<string, Token>();
+  // barePath → owning entries, used to detect cross-set ambiguity.
+  const bareOwners = new Map<string, Array<{ setName: string; token: Token }>>();
+
   for (const set of doc.sets) {
+    const setKey = slugifySetName(set.name);
     for (const token of set.tokens) {
-      const key = token.path.join(".");
-      index.set(key, token);
+      const bare = token.path.join(".");
+      index.set(`${setKey}.${bare}`, token);
+      const owners = bareOwners.get(bare) ?? [];
+      owners.push({ setName: set.name, token });
+      bareOwners.set(bare, owners);
     }
   }
+
+  // Bare-path fallback: only when a path exists in exactly one set, and only
+  // when it doesn't shadow a set-qualified key that's already indexed.
+  for (const [bare, owners] of bareOwners) {
+    if (owners.length === 1) {
+      if (!index.has(bare)) index.set(bare, owners[0].token);
+    } else if (warnings) {
+      warnings.push(
+        `Token path "${bare}" exists in multiple collections (${owners
+          .map((o) => `"${o.setName}"`)
+          .join(", ")}) — bare alias references to it are ambiguous and will not resolve. Use a set-qualified reference like {${slugifySetName(owners[0].setName)}.${bare}}.`,
+      );
+    }
+  }
+
   return index;
+}
+
+/**
+ * Resolve a reference to the path segments of its TARGET token — for
+ * formatters that name-ify aliases (CSS `var(--...)`, SCSS `$...`,
+ * Tokens Studio / SD v3 `{...}` refs). Set-qualified references
+ * (`{set-slug.path.to.token}`) resolve to the target token's own path
+ * (WITHOUT the set qualifier), matching how those formatters name the
+ * target's declaration. Falls back to the raw reference path when the
+ * target isn't in the index (e.g. hand-written bare refs to tokens that
+ * weren't exported).
+ */
+export function referenceTargetPath(
+  reference: string,
+  index: Map<string, Token>,
+): string[] {
+  const bare = reference.replace(/^\{|\}$/g, "");
+  const target = index.get(bare);
+  if (target) return target.path;
+  return bare.split(".");
 }
 
 /**

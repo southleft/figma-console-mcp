@@ -18,6 +18,11 @@
  *     3. Age ceiling — startedAt older than 4 hours with no heartbeat (pre-v1.12 compat)
  *   Zombie processes are terminated with SIGTERM to free their ports.
  *
+ *   Cleanup exists in two flavors: synchronous (startup path, before the stdio
+ *   transport serves requests — blocking is acceptable there) and async
+ *   (periodic reaper — must never block the event loop, or in-flight MCP tool
+ *   calls freeze while lsof/ps/curl run).
+ *
  * Data flow:
  *   Server binds port → writes /tmp/figma-console-mcp-{port}.json
  *   Server heartbeat → refreshes lastSeen every 30s
@@ -28,7 +33,11 @@
 import { writeFileSync, readFileSync, unlinkSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { createChildLogger } from './logger.js';
+
+const execFileAsync = promisify(execFile);
 
 const logger = createChildLogger({ component: 'port-discovery' });
 
@@ -198,9 +207,81 @@ export function isStaleInstance(data: PortFileData): boolean {
 }
 
 /**
+ * Extra staleness margin required before a live-but-stale instance becomes
+ * kill-eligible: it must have missed at least 2 further heartbeats PAST the
+ * stale threshold. After a laptop sleeps, every instance's lastSeen is old
+ * simultaneously — this margin gives freshly-woken siblings time to refresh
+ * their advertisement files before any reaper considers killing them.
+ */
+export const KILL_ELIGIBLE_EXTRA_STALE_MS = 2 * HEARTBEAT_INTERVAL_MS;
+
+/**
+ * Whether a stale instance has been stale long enough to be kill-eligible.
+ * Pre-v1.12 files (no lastSeen) already use the conservative 4-hour age
+ * ceiling, so plain staleness is sufficient there.
+ */
+function isKillEligible(data: PortFileData): boolean {
+  if (!data.lastSeen) return isStaleInstance(data);
+  const lastSeenAge = Date.now() - new Date(data.lastSeen).getTime();
+  return lastSeenAge > HEARTBEAT_STALE_MS + KILL_ELIGIBLE_EXTRA_STALE_MS;
+}
+
+/** curl arguments for the /health liveness probe against a sibling's port. */
+function healthProbeArgs(port: number): string[] {
+  return ['-s', '-o', '/dev/null', '-m', '1', `http://127.0.0.1:${port}/health`];
+}
+
+/**
+ * Liveness probe against a sibling server's HTTP `/health` endpoint (the
+ * WebSocket server serves it on the same port). Synchronous via curl —
+ * startup-path only; the periodic reaper uses probeServerHealthAsync.
+ *
+ * @returns true  — server responded (alive, do NOT kill)
+ *          false — probe ran and failed (nothing responding on the port)
+ *          null  — inconclusive (curl missing / probe ambiguous — do NOT kill)
+ */
+function probeServerHealth(port: number): boolean | null {
+  try {
+    const { execSync } = require('child_process');
+    execSync(`curl ${healthProbeArgs(port).join(' ')}`, {
+      timeout: 3000,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch (error: any) {
+    // 127 (POSIX shell) / 9009 (Windows cmd) = curl not found — inconclusive
+    if (error?.status === 127 || error?.status === 9009) return null;
+    // execSync-level timeout (signal set, no exit status) — inconclusive
+    if (error?.signal) return null;
+    // curl ran and exited non-zero (connection refused, curl -m timeout, …)
+    if (typeof error?.status === 'number') return false;
+    return null; // unknown failure — err on the side of NOT killing
+  }
+}
+
+/**
+ * Async variant of probeServerHealth for the periodic reaper — identical
+ * verdict semantics, but never blocks the event loop (execFile, no shell).
+ */
+async function probeServerHealthAsync(port: number): Promise<boolean | null> {
+  try {
+    await execFileAsync('curl', healthProbeArgs(port), { timeout: 3000 });
+    return true;
+  } catch (error: any) {
+    // curl binary not found (no shell, so ENOENT instead of exit 127) — inconclusive
+    if (error?.code === 'ENOENT') return null;
+    // execFile-level timeout (process killed by signal) — inconclusive
+    if (error?.killed || error?.signal) return null;
+    // curl ran and exited non-zero (connection refused, curl -m timeout, …)
+    if (typeof error?.code === 'number') return false;
+    return null; // unknown failure — err on the side of NOT killing
+  }
+}
+
+/**
  * Block the current thread for `ms` milliseconds (synchronous).
  * Used between SIGTERM and SIGKILL so terminateProcess can stay synchronous
- * (its callers — cleanup functions — are synchronous and use execSync).
+ * (its callers — the startup-path cleanup functions — are synchronous).
  */
 function sleepSyncMs(ms: number): void {
   if (ms <= 0) return;
@@ -214,6 +295,34 @@ function sleepSyncMs(ms: number): void {
 }
 
 /**
+ * Non-blocking sleep for the async reaper path. The timer is unref'd so an
+ * in-flight reaper wait never keeps the process alive on its own.
+ */
+function sleepMs(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    if (typeof timer.unref === 'function') timer.unref();
+  });
+}
+
+/**
+ * Parse `ps -o etime=` output into milliseconds.
+ * `etime` (formatted elapsed time) is portable across macOS and Linux;
+ * `etimes` (seconds) is Linux-only — macOS ps rejects it. Format is
+ * [[DD-]HH:]MM:SS, e.g. "05:51", "55:27", "01:13:31", "09-14:15:41".
+ */
+function parseEtimeMs(out: string): number | null {
+  const m = out.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+  if (!m) return null;
+  const days = parseInt(m[1] || '0', 10);
+  const hours = parseInt(m[2] || '0', 10);
+  const mins = parseInt(m[3], 10);
+  const secs = parseInt(m[4], 10);
+  return ((((days * 24 + hours) * 60 + mins) * 60) + secs) * 1000;
+}
+
+/**
  * Elapsed time since a process started, in milliseconds. Returns null if it
  * cannot be determined (process gone, or `ps` unavailable/unparseable).
  */
@@ -221,20 +330,24 @@ function getProcessAgeMs(pid: number): number | null {
   if (process.platform === 'win32') return null;
   try {
     const { execSync } = require('child_process');
-    // `etime` (formatted elapsed time) is portable across macOS and Linux;
-    // `etimes` (seconds) is Linux-only — macOS ps rejects it. Format is
-    // [[DD-]HH:]MM:SS, e.g. "05:51", "55:27", "01:13:31", "09-14:15:41".
     const out = execSync(`ps -p ${pid} -o etime= 2>/dev/null`, {
       encoding: 'utf-8',
       timeout: 2000,
-    }).trim();
-    const m = out.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
-    if (!m) return null;
-    const days = parseInt(m[1] || '0', 10);
-    const hours = parseInt(m[2] || '0', 10);
-    const mins = parseInt(m[3], 10);
-    const secs = parseInt(m[4], 10);
-    return ((((days * 24 + hours) * 60 + mins) * 60) + secs) * 1000;
+    });
+    return parseEtimeMs(out);
+  } catch {
+    return null;
+  }
+}
+
+/** Async variant of getProcessAgeMs for the periodic reaper. */
+async function getProcessAgeMsAsync(pid: number): Promise<number | null> {
+  if (process.platform === 'win32') return null;
+  try {
+    const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'etime='], {
+      timeout: 2000,
+    });
+    return parseEtimeMs(stdout);
   } catch {
     return null;
   }
@@ -272,6 +385,37 @@ function terminateProcess(pid: number, graceMs: number = TERMINATE_GRACE_MS): bo
     return true; // exited between the check and the kill
   }
   sleepSyncMs(Math.min(graceMs, 200));
+  return !isProcessAlive(pid);
+}
+
+/**
+ * Async variant of terminateProcess for the periodic reaper — identical
+ * SIGTERM→SIGKILL escalation, but the grace waits yield the event loop
+ * instead of blocking it.
+ *
+ * @returns true if the process is confirmed gone afterwards, false if it survived.
+ */
+async function terminateProcessAsync(pid: number, graceMs: number = TERMINATE_GRACE_MS): Promise<boolean> {
+  // SIGTERM first — give the process a chance to shut down gracefully.
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    return true; // already gone — nothing to terminate
+  }
+
+  // Windows: SIGTERM maps to TerminateProcess (immediate, uncatchable).
+  if (process.platform === 'win32') return !isProcessAlive(pid);
+
+  // POSIX: let the graceful handler run, then force-kill if it ignored SIGTERM.
+  await sleepMs(graceMs);
+  if (!isProcessAlive(pid)) return true;
+
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    return true; // exited between the check and the kill
+  }
+  await sleepMs(Math.min(graceMs, 200));
   return !isProcessAlive(pid);
 }
 
@@ -345,14 +489,101 @@ export function cleanupStalePortFiles(): number {
             cleaned++;
             logger.debug({ port: data.port, pid: data.pid }, 'Cleaned up stale port file (dead process)');
           } else if (data.pid !== process.pid && isStaleInstance(data)) {
-            // Live PID but stale — zombie process, terminate it to free the port
-            logger.info(
-              { port: data.port, pid: data.pid, startedAt: data.startedAt, lastSeen: data.lastSeen },
-              'Detected zombie MCP process — sending SIGTERM to free port',
-            );
-            terminateProcess(data.pid);
-            try { unlinkSync(filePath); } catch { /* best-effort */ }
+            // Live PID but stale heartbeat. Staleness alone is NOT proof of
+            // death — after the machine sleeps longer than HEARTBEAT_STALE_MS,
+            // ALL instances look stale at once and whichever reaper ticks first
+            // would kill healthy siblings. Verify actual deadness before
+            // terminating: extra staleness margin + failed liveness probe.
+            if (!isKillEligible(data)) {
+              logger.debug(
+                { port: data.port, pid: data.pid, lastSeen: data.lastSeen },
+                'Stale instance within kill-eligibility margin — skipping',
+              );
+            } else {
+              const health = probeServerHealth(data.port);
+              if (health !== false) {
+                logger.debug(
+                  { port: data.port, pid: data.pid, probe: health === true ? 'responding' : 'inconclusive' },
+                  'Stale-looking instance not confirmed dead by liveness probe — skipping kill',
+                );
+              } else {
+                logger.info(
+                  { port: data.port, pid: data.pid, startedAt: data.startedAt, lastSeen: data.lastSeen },
+                  'Detected zombie MCP process (stale heartbeat, health probe failed) — sending SIGTERM to free port',
+                );
+                terminateProcess(data.pid);
+                try { unlinkSync(filePath); } catch { /* best-effort */ }
+                cleaned++;
+              }
+            }
+          }
+        } catch {
+          // Corrupt file — remove it
+          try { unlinkSync(filePath); cleaned++; } catch { /* ignore */ }
+        }
+      }
+    }
+  } catch {
+    // Can't read /tmp — unusual but not fatal
+  }
+
+  return cleaned;
+}
+
+/**
+ * Async variant of cleanupStalePortFiles for the periodic reaper.
+ *
+ * Same detection layers and kill-safety gates as the sync version (dead PID →
+ * delete file; live-but-stale → kill-eligibility margin + failed liveness
+ * probe before terminating; corrupt → delete file), but the probe and the
+ * SIGTERM→SIGKILL grace waits are non-blocking so a slow pass never stalls
+ * the stdio MCP transport.
+ */
+export async function cleanupStalePortFilesAsync(): Promise<number> {
+  let cleaned = 0;
+
+  try {
+    const files = readdirSync(PORT_FILE_DIR);
+    for (const file of files) {
+      if (file.startsWith(PORT_FILE_PREFIX) && file.endsWith('.json')) {
+        const filePath = join(PORT_FILE_DIR, file);
+        try {
+          const raw = readFileSync(filePath, 'utf-8');
+          const data: PortFileData = JSON.parse(raw);
+
+          if (!isProcessAlive(data.pid)) {
+            // Dead PID — just clean up the file
+            unlinkSync(filePath);
             cleaned++;
+            logger.debug({ port: data.port, pid: data.pid }, 'Cleaned up stale port file (dead process)');
+          } else if (data.pid !== process.pid && isStaleInstance(data)) {
+            // Live PID but stale heartbeat. Staleness alone is NOT proof of
+            // death — after the machine sleeps longer than HEARTBEAT_STALE_MS,
+            // ALL instances look stale at once and whichever reaper ticks first
+            // would kill healthy siblings. Verify actual deadness before
+            // terminating: extra staleness margin + failed liveness probe.
+            if (!isKillEligible(data)) {
+              logger.debug(
+                { port: data.port, pid: data.pid, lastSeen: data.lastSeen },
+                'Stale instance within kill-eligibility margin — skipping',
+              );
+            } else {
+              const health = await probeServerHealthAsync(data.port);
+              if (health !== false) {
+                logger.debug(
+                  { port: data.port, pid: data.pid, probe: health === true ? 'responding' : 'inconclusive' },
+                  'Stale-looking instance not confirmed dead by liveness probe — skipping kill',
+                );
+              } else {
+                logger.info(
+                  { port: data.port, pid: data.pid, startedAt: data.startedAt, lastSeen: data.lastSeen },
+                  'Detected zombie MCP process (stale heartbeat, health probe failed) — sending SIGTERM to free port',
+                );
+                await terminateProcessAsync(data.pid);
+                try { unlinkSync(filePath); } catch { /* best-effort */ }
+                cleaned++;
+              }
+            }
           }
         } catch {
           // Corrupt file — remove it
@@ -420,7 +651,7 @@ export function cleanupOrphanedProcesses(
             timeout: 2000,
           }).trim();
 
-          if (cmdline.includes('figma-console-mcp') || cmdline.includes('figma_console_mcp') || cmdline.includes('local.js')) {
+          if (isMcpServerCommand(cmdline)) {
             // Don't reap a sibling that is still starting up (bound a port but
             // hasn't advertised yet). Real orphans are far older than this.
             const ageMs = getProcessAgeMs(pid);
@@ -457,6 +688,127 @@ export function cleanupOrphanedProcesses(
       const { execSync } = require('child_process');
       execSync('sleep 0.5', { timeout: 2000 });
     } catch { /* non-critical */ }
+    logger.info({ cleaned }, `Cleaned up ${cleaned} orphaned MCP server process(es)`);
+  }
+
+  return cleaned;
+}
+
+/** Whether a process command line identifies a figma-console-mcp server. */
+function isMcpServerCommand(cmdline: string): boolean {
+  return cmdline.includes('figma-console-mcp') || cmdline.includes('figma_console_mcp') || cmdline.includes('local.js');
+}
+
+/**
+ * List PIDs listening on ports in the range via a single batched lsof call.
+ * Returns a map of pid → first listening port seen (for logging). The sync
+ * startup path runs lsof once per port; batching matters here because the
+ * periodic reaper must not hold the event loop across 10 sequential calls.
+ */
+async function listListeningPidsAsync(ports: number[]): Promise<Map<number, number>> {
+  const pidToPort = new Map<number, number>();
+  const low = ports[0];
+  const high = ports[ports.length - 1];
+
+  let stdout = '';
+  try {
+    ({ stdout } = await execFileAsync(
+      'lsof',
+      ['-nP', `-iTCP:${low}-${high}`, '-sTCP:LISTEN', '-Fpn'],
+      { timeout: 5000 },
+    ));
+  } catch (error: any) {
+    // lsof exits 1 when nothing matches; any partial output is still usable
+    stdout = typeof error?.stdout === 'string' ? error.stdout : '';
+  }
+
+  // -F output: `p<pid>` starts a process group, `n<host:port>` lines follow
+  let currentPid: number | null = null;
+  for (const line of stdout.split('\n')) {
+    if (line.startsWith('p')) {
+      const pid = parseInt(line.slice(1), 10);
+      currentPid = Number.isFinite(pid) ? pid : null;
+    } else if (line.startsWith('n') && currentPid !== null) {
+      const m = line.match(/:(\d+)(?:\s|$)/);
+      if (!m) continue;
+      const port = parseInt(m[1], 10);
+      if (ports.includes(port) && !pidToPort.has(currentPid)) {
+        pidToPort.set(currentPid, port);
+      }
+    }
+  }
+
+  return pidToPort;
+}
+
+/**
+ * Async variant of cleanupOrphanedProcesses for the periodic reaper.
+ *
+ * Same safety guards as the sync version (known-PID skip, MCP command-line
+ * check, ORPHAN_MIN_AGE_MS age guard, confirmed-kill counting), but all child
+ * processes run via async execFile and the lsof scan is a single batched call
+ * over the port range — a slow tick no longer freezes in-flight tool calls on
+ * the stdio transport.
+ */
+export async function cleanupOrphanedProcessesAsync(
+  preferredPort: number = DEFAULT_WS_PORT,
+  options: { minAgeMs?: number } = {},
+): Promise<number> {
+  // Only supported on macOS/Linux (lsof)
+  if (process.platform === 'win32') return 0;
+
+  const minAgeMs = options.minAgeMs ?? ORPHAN_MIN_AGE_MS;
+  let cleaned = 0;
+  const myPid = process.pid;
+  const ports = getPortRange(preferredPort);
+
+  // Collect PIDs that have valid port files (known-good servers)
+  const knownPids = new Set<number>();
+  for (const port of ports) {
+    const data = readPortFile(port);
+    if (data) knownPids.add(data.pid);
+  }
+  knownPids.add(myPid); // Never kill ourselves
+
+  const pidToPort = await listListeningPidsAsync(ports);
+
+  for (const [pid, port] of pidToPort) {
+    if (knownPids.has(pid)) continue; // Skip known-good servers
+
+    // Verify this is actually a figma-console-mcp process before killing
+    try {
+      const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'command='], {
+        timeout: 2000,
+      });
+      const cmdline = stdout.trim();
+
+      if (isMcpServerCommand(cmdline)) {
+        // Don't reap a sibling that is still starting up (bound a port but
+        // hasn't advertised yet). Real orphans are far older than this.
+        const ageMs = await getProcessAgeMsAsync(pid);
+        if (minAgeMs > 0 && ageMs !== null && ageMs < minAgeMs) {
+          continue;
+        }
+
+        logger.info(
+          { port, pid, command: cmdline.substring(0, 120) },
+          'Terminating orphaned MCP server (no port file, holding port)',
+        );
+        // Only count confirmed kills, matching the sync path.
+        if (await terminateProcessAsync(pid)) {
+          cleaned++;
+        } else {
+          logger.warn({ port, pid }, 'Failed to terminate orphaned MCP server (survived SIGKILL)');
+        }
+      }
+    } catch {
+      // Can't read process info — skip to be safe
+    }
+  }
+
+  if (cleaned > 0) {
+    // Give terminated processes a moment to release their ports
+    await sleepMs(500);
     logger.info({ cleaned }, `Cleaned up ${cleaned} orphaned MCP server process(es)`);
   }
 
@@ -566,12 +918,8 @@ export function registerPortCleanup(port: number): void {
 
   process.on('exit', cleanup);
 
-  // Re-register SIGINT/SIGTERM to ensure cleanup runs before the
-  // existing handlers in local.ts main() call process.exit()
-  const originalSigintListeners = process.listeners('SIGINT');
-  const originalSigtermListeners = process.listeners('SIGTERM');
-
-  // Prepend our cleanup — it runs first, then existing handlers take over
+  // Prepend our cleanup — it runs first before the existing SIGINT/SIGTERM
+  // handlers in local.ts main() call process.exit()
   process.prependListener('SIGINT', cleanup);
   process.prependListener('SIGTERM', cleanup);
 }
@@ -587,20 +935,45 @@ export function registerPortCleanup(port: number): void {
  * every 30s) so they are in the known-PID set and skipped, and the age guard in
  * cleanupOrphanedProcesses protects mid-startup siblings.
  *
+ * The tick runs the fully-async cleanup variants — the sync ones issue
+ * blocking lsof/ps/curl calls (seconds each under load), which would stall
+ * the stdio MCP transport and freeze in-flight tool calls. Only the startup
+ * path (before the transport is serving requests) uses the sync variants.
+ *
  * The interval is unref'd so it never keeps the process alive on its own.
  *
  * @returns a stop function that clears the interval.
  */
 export function startPeriodicReaper(preferredPort: number = DEFAULT_WS_PORT): () => void {
-  const tick = () => {
+  let running = false;
+  let stopped = false;
+
+  const tick = async (): Promise<void> => {
+    if (running) return; // previous tick still in flight — skip this one
+    running = true;
     try {
-      cleanupStalePortFiles();
-      cleanupOrphanedProcesses(preferredPort);
+      // Refresh our OWN advertisement first so sibling reapers see us fresh.
+      // Post-sleep, every instance's lastSeen is stale simultaneously — the
+      // first reaper to tick must not look like a zombie to the others.
+      // refreshPortAdvertisement is a no-op for files owned by other PIDs,
+      // so scanning the whole range only touches our own file.
+      for (const port of getPortRange(preferredPort)) {
+        refreshPortAdvertisement(port);
+      }
+      await cleanupStalePortFilesAsync();
+      if (stopped) return;
+      await cleanupOrphanedProcessesAsync(preferredPort);
     } catch (error) {
       logger.warn({ error }, 'Periodic reaper tick failed');
+    } finally {
+      running = false;
     }
   };
-  const interval = setInterval(tick, REAP_INTERVAL_MS);
+
+  const interval = setInterval(() => { void tick(); }, REAP_INTERVAL_MS);
   if (typeof interval.unref === 'function') interval.unref();
-  return () => clearInterval(interval);
+  return () => {
+    stopped = true;
+    clearInterval(interval);
+  };
 }

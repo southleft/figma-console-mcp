@@ -252,6 +252,123 @@ describe("token sync engine", () => {
       });
     });
 
+    it("round-trips a multi-mode collection losslessly WITHOUT splitByMode (regression)", () => {
+      // FIX: the formatter wrote non-primary mode values under
+      // $extensions.modes, but the parser only read
+      // $extensions["figma-console-mcp"].modes AND relabeled the primary
+      // $value as "Default" — so a Light/Dark collection exported to a
+      // single DTCG file lost every mode on re-import.
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Theme",
+            modes: ["Light", "Dark"],
+            tokens: [
+              {
+                path: ["color", "bg"],
+                type: "color",
+                values: {
+                  Light: { literal: "#FFFFFF" },
+                  Dark: { literal: "#000000" },
+                },
+                extensions: {
+                  "figma-console-mcp": {
+                    variableId: "VariableID:9:1",
+                    collectionId: "VariableCollectionId:9:0",
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const formatted = formatDtcg(doc, { target: { format: "dtcg" } });
+      expect(formatted.files).toHaveLength(1);
+      const content = formatted.files[0].content;
+      // Both the primary mode NAME and the other modes live under the
+      // figma-console-mcp extension key.
+      expect(content).toContain('"primaryMode": "Light"');
+      const json = JSON.parse(content);
+      const tokenNode = json.theme.color.bg;
+      expect(tokenNode.$extensions["figma-console-mcp"].primaryMode).toBe(
+        "Light",
+      );
+      expect(tokenNode.$extensions["figma-console-mcp"].modes).toEqual({
+        Dark: "#000000",
+      });
+
+      const parsed = parseDtcg({ payload: content });
+      const token = parsed.document.sets[0].tokens[0];
+      // Full lossless round-trip of mode-keyed values — no "Default" label.
+      expect(token.values).toEqual({
+        Light: { literal: "#FFFFFF" },
+        Dark: { literal: "#000000" },
+      });
+      expect(parsed.document.sets[0].modes.sort()).toEqual(["Dark", "Light"]);
+      // Round-trip metadata markers are absorbed, not leaked into extensions.
+      const ext = token.extensions?.["figma-console-mcp"] as any;
+      expect(ext.variableId).toBe("VariableID:9:1");
+      expect(ext.modes).toBeUndefined();
+      expect(ext.primaryMode).toBeUndefined();
+    });
+
+    it("keeps both tokens when a leaf and a group share a name (regression)", () => {
+      // FIX: variable "color" coexisting with "color/primary" — one
+      // silently overwrote the other. The leaf now nests under the
+      // reserved "@" key and round-trips back to its original name.
+      const mkDoc = (order: "leaf-first" | "group-first"): TokenDocument => {
+        const leaf = {
+          path: ["color"],
+          type: "color" as const,
+          values: { Default: { literal: "#FF0000" } },
+        };
+        const nested = {
+          path: ["color", "primary"],
+          type: "color" as const,
+          values: { Default: { literal: "#00FF00" } },
+        };
+        return {
+          sets: [
+            {
+              name: "P",
+              modes: ["Default"],
+              tokens: order === "leaf-first" ? [leaf, nested] : [nested, leaf],
+            },
+          ],
+        };
+      };
+
+      for (const order of ["leaf-first", "group-first"] as const) {
+        const formatted = formatDtcg(mkDoc(order), {
+          target: { format: "dtcg" },
+        });
+        // A warning names the conflict.
+        expect(
+          formatted.warnings.some((w) => /Name conflict/.test(w) && w.includes("color")),
+        ).toBe(true);
+
+        const json = JSON.parse(formatted.files[0].content);
+        // Both survive: the leaf under "@", the nested token at its path.
+        expect(json.p.color["@"].$value).toBe("#FF0000");
+        expect(json.p.color.primary.$value).toBe("#00FF00");
+
+        const parsed = parseDtcg({ payload: formatted.files[0].content });
+        const paths = parsed.document.sets[0].tokens
+          .map((t) => t.path.join("/"))
+          .sort();
+        expect(paths).toEqual(["color", "color/primary"]);
+        const leafToken = parsed.document.sets[0].tokens.find(
+          (t) => t.path.join("/") === "color",
+        )!;
+        expect(leafToken.values.Default.literal).toBe("#FF0000");
+        // The remap marker is internal — it must not leak into extensions.
+        expect(
+          (leafToken.extensions?.["figma-console-mcp"] as any)?.leafRemap,
+        ).toBeUndefined();
+      }
+    });
+
     it("produces stable output across runs (deterministic key ordering)", () => {
       const doc: TokenDocument = {
         sets: [
@@ -351,6 +468,93 @@ describe("token sync engine", () => {
       expect(() => resolveReference("{a}", "Default", index)).toThrow(
         /cycle/i,
       );
+    });
+
+    it("disambiguates same-path tokens across collections (regression)", () => {
+      // FIX: buildTokenIndex keyed by bare path only, so two collections
+      // both containing color/primary collided and aliases resolved to
+      // whichever set was indexed LAST.
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Brand A",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#AAAAAA" } },
+              },
+            ],
+          },
+          {
+            name: "Brand B",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#BBBBBB" } },
+              },
+            ],
+          },
+        ],
+      };
+      const warnings: string[] = [];
+      const index = buildTokenIndex(doc, warnings);
+
+      // Set-qualified references resolve to the RIGHT collection's token —
+      // including the one that was indexed first.
+      expect(
+        resolveReference("{brand-a.color.primary}", "Default", index).literal,
+      ).toBe("#AAAAAA");
+      expect(
+        resolveReference("{brand-b.color.primary}", "Default", index).literal,
+      ).toBe("#BBBBBB");
+
+      // The bare path is ambiguous: it must NOT silently resolve to either.
+      expect(() =>
+        resolveReference("{color.primary}", "Default", index),
+      ).toThrow(/Unresolvable/i);
+
+      // And the ambiguity is surfaced as a warning naming both collections.
+      expect(
+        warnings.some(
+          (w) =>
+            w.includes("color.primary") &&
+            w.includes("Brand A") &&
+            w.includes("Brand B"),
+        ),
+      ).toBe(true);
+    });
+
+    it("still resolves bare references when the path is unambiguous", () => {
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Primitives",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#4085F2" } },
+              },
+            ],
+          },
+        ],
+      };
+      const warnings: string[] = [];
+      const index = buildTokenIndex(doc, warnings);
+      expect(warnings).toEqual([]);
+      // Bare (hand-written / external DTCG) and set-qualified both work.
+      expect(
+        resolveReference("{color.primary}", "Default", index).literal,
+      ).toBe("#4085F2");
+      expect(
+        resolveReference("{primitives.color.primary}", "Default", index)
+          .literal,
+      ).toBe("#4085F2");
     });
 
     it("reports unresolvable references", () => {
@@ -516,7 +720,190 @@ describe("token sync engine", () => {
         (t) => t.path.join("/") === "color/brand",
       );
       expect(brand).toBeDefined();
-      expect(brand!.values.Default.reference).toBe("{color.primary}");
+      // References are set-qualified ({<set-slug>.<path>}) so same-path
+      // tokens in other collections can't misresolve, and so the emitted
+      // DTCG reference points at the actual set group in the output tree.
+      expect(brand!.values.Default.reference).toBe("{semantic.color.primary}");
+    });
+
+    it("records the owning collection on alias references so same-path tokens don't misresolve", () => {
+      // Two collections each define color/primary; a semantic token aliases
+      // the FIRST collection's variable. The reference must carry the
+      // target's set so resolution can't land on the other collection.
+      const payload = {
+        collections: [
+          {
+            id: "c1",
+            name: "Brand A",
+            modes: [{ modeId: "m1", name: "Default" }],
+            variableIds: ["v1"],
+          },
+          {
+            id: "c2",
+            name: "Brand B",
+            modes: [{ modeId: "m2", name: "Default" }],
+            variableIds: ["v2", "v3"],
+          },
+        ],
+        variables: [
+          {
+            id: "v1",
+            name: "color/primary",
+            resolvedType: "COLOR" as const,
+            variableCollectionId: "c1",
+            valuesByMode: { m1: { r: 2 / 3, g: 2 / 3, b: 2 / 3, a: 1 } },
+          },
+          {
+            id: "v2",
+            name: "color/primary",
+            resolvedType: "COLOR" as const,
+            variableCollectionId: "c2",
+            valuesByMode: { m2: { r: 0, g: 0, b: 0, a: 1 } },
+          },
+          {
+            id: "v3",
+            name: "color/accent",
+            resolvedType: "COLOR" as const,
+            variableCollectionId: "c2",
+            valuesByMode: { m2: { type: "VARIABLE_ALIAS" as const, id: "v1" } },
+          },
+        ],
+      };
+
+      const { document } = convertFigmaVariablesToDocument(payload);
+      const accent = document.sets
+        .find((s) => s.name === "Brand B")!
+        .tokens.find((t) => t.path.join("/") === "color/accent")!;
+      // Qualified by Brand A's slug — NOT ambiguous, NOT Brand B's token.
+      expect(accent.values.Default.reference).toBe("{brand-a.color.primary}");
+
+      const index = buildTokenIndex(document);
+      const resolved = resolveReference(
+        accent.values.Default.reference!,
+        "Default",
+        index,
+      );
+      expect(resolved.literal).toBe("#AAAAAA");
+    });
+
+    it("exports TIMING variables as DTCG duration tokens (seconds → ms)", () => {
+      const payload = {
+        collections: [
+          {
+            id: "c1",
+            name: "Motion",
+            modes: [{ modeId: "m1", name: "Default" }],
+            variableIds: ["v1"],
+          },
+        ],
+        variables: [
+          {
+            id: "v1",
+            name: "motion/duration/quick/Timing",
+            resolvedType: "TIMING" as const,
+            variableCollectionId: "c1",
+            // Figma TIMING values are plain numbers in SECONDS.
+            valuesByMode: { m1: 0.3 },
+          },
+        ],
+      };
+
+      const { document, warnings } = convertFigmaVariablesToDocument(
+        payload as any,
+      );
+      expect(warnings).toEqual([]);
+      const token = document.sets[0].tokens[0];
+      // Trailing "Timing" name segment stripped from the path…
+      expect(token.path).toEqual(["motion", "duration", "quick"]);
+      expect(token.type).toBe("duration");
+      // …DTCG duration form, in milliseconds.
+      expect(token.values.Default.literal).toEqual({ value: 300, unit: "ms" });
+      // Original name + native type preserved for round-trip / import gating.
+      const ext = token.extensions?.["figma-console-mcp"] as any;
+      expect(ext.figmaName).toBe("motion/duration/quick/Timing");
+      expect(ext.figmaResolvedType).toBe("TIMING");
+    });
+
+    it("exports bezier EASING variables as DTCG cubicBezier tokens", () => {
+      const payload = {
+        collections: [
+          {
+            id: "c1",
+            name: "Motion",
+            modes: [{ modeId: "m1", name: "Default" }],
+            variableIds: ["v1"],
+          },
+        ],
+        variables: [
+          {
+            id: "v1",
+            name: "motion/easing/standard/Easing",
+            resolvedType: "EASING" as const,
+            variableCollectionId: "c1",
+            valuesByMode: {
+              m1: {
+                easingType: "CUSTOM_CUBIC_BEZIER",
+                bezierValues: { p1x: 0.4, p1y: 0, p2x: 0.2, p2y: 1 },
+              },
+            },
+          },
+        ],
+      };
+
+      const { document, warnings } = convertFigmaVariablesToDocument(
+        payload as any,
+      );
+      expect(warnings).toEqual([]);
+      const token = document.sets[0].tokens[0];
+      expect(token.path).toEqual(["motion", "easing", "standard"]);
+      expect(token.type).toBe("cubicBezier");
+      // NOT "[object Object]" — the DTCG [p1x, p1y, p2x, p2y] array.
+      expect(token.values.Default.literal).toEqual([0.4, 0, 0.2, 1]);
+      const ext = token.extensions?.["figma-console-mcp"] as any;
+      expect(ext.figmaResolvedType).toBe("EASING");
+    });
+
+    it("preserves spring EASING parameters in extensions with a warning (DTCG can't express springs)", () => {
+      const payload = {
+        collections: [
+          {
+            id: "c1",
+            name: "Motion",
+            modes: [{ modeId: "m1", name: "Default" }],
+            variableIds: ["v1"],
+          },
+        ],
+        variables: [
+          {
+            id: "v1",
+            name: "motion/easing/bouncy/Easing",
+            resolvedType: "EASING" as const,
+            variableCollectionId: "c1",
+            valuesByMode: {
+              m1: {
+                easingType: "SPRING",
+                springValues: { mass: 1, stiffness: 100, damping: 15 },
+              },
+            },
+          },
+        ],
+      };
+
+      const { document, warnings } = convertFigmaVariablesToDocument(
+        payload as any,
+      );
+      expect(warnings.some((w) => /spring/i.test(w))).toBe(true);
+      const token = document.sets[0].tokens[0];
+      expect(token.type).toBe("cubicBezier");
+      // Usable fallback bezier as the $value…
+      expect(Array.isArray(token.values.Default.literal)).toBe(true);
+      // …with the spring parameters preserved per mode in our extension.
+      const ext = token.extensions?.["figma-console-mcp"] as any;
+      expect(ext.spring.Default.springValues).toEqual({
+        mass: 1,
+        stiffness: 100,
+        damping: 15,
+      });
     });
 
     it("filters by collection ID and modes", () => {
@@ -775,6 +1162,49 @@ describe("token sync engine", () => {
       expect(content).not.toMatch(/--[\w-]*\s[\w-]*:/);
     });
 
+    it("resolves set-qualified alias references to the target's own var name (regression)", async () => {
+      // FIX: references now carry the slugified set-group key
+      // ({primitives.color.primary}) so external DTCG tools can resolve
+      // them — but CSS var names are derived from the token path WITHOUT
+      // the set, so the formatter must resolve the reference to the target
+      // token instead of slugifying the raw reference path.
+      const formatCssVars = await lazy();
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Primitives",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#4085F2" } },
+              },
+            ],
+          },
+          {
+            name: "Semantic",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "brand"],
+                type: "color",
+                values: {
+                  Default: { reference: "{primitives.color.primary}" },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const result = formatCssVars(doc, { target: { format: "css-vars" } });
+      const content = result.files[0].content;
+      expect(content).toContain("--color-primary: #4085F2;");
+      // The target's declaration name — NOT var(--primitives-color-primary).
+      expect(content).toContain("--color-brand: var(--color-primary);");
+      expect(content).not.toContain("--primitives-color-primary");
+    });
+
     it("applies prefix to every token name", async () => {
       const formatCssVars = await lazy();
       const doc: TokenDocument = {
@@ -814,6 +1244,53 @@ describe("token sync engine", () => {
       expect(parsed.warnings).toEqual([]);
       expect(parsed.document.sets[0].tokens.every((t) => t.type === "color"))
         .toBe(true);
+    });
+  });
+
+  describe("apply-phase value conversion (tokenValueToFigma)", () => {
+    const load = async () =>
+      (await import("../src/core/tokens-tools.js")).tokenValueToFigma;
+
+    it("parses unit-bearing dimension strings instead of pushing NaN (regression)", async () => {
+      const tokenValueToFigma = await load();
+      expect(tokenValueToFigma({ literal: "16px" }, "FLOAT")).toEqual({
+        kind: "value",
+        value: 16,
+      });
+      expect(tokenValueToFigma({ literal: "1.5rem" }, "FLOAT")).toEqual({
+        kind: "value",
+        value: 1.5,
+      });
+      expect(tokenValueToFigma({ literal: "-4pt" }, "FLOAT")).toEqual({
+        kind: "value",
+        value: -4,
+      });
+    });
+
+    it("parses DTCG { value, unit } objects for FLOAT variables", async () => {
+      const tokenValueToFigma = await load();
+      expect(
+        tokenValueToFigma({ literal: { value: 300, unit: "ms" } }, "FLOAT"),
+      ).toEqual({ kind: "value", value: 300 });
+    });
+
+    it("skips unparseable FLOAT values with skip-invalid instead of NaN", async () => {
+      const tokenValueToFigma = await load();
+      const result = tokenValueToFigma({ literal: "not-a-number" }, "FLOAT");
+      expect(result.kind).toBe("skip-invalid");
+      const objResult = tokenValueToFigma(
+        { literal: { unit: "ms" } },
+        "FLOAT",
+      );
+      expect(objResult.kind).toBe("skip-invalid");
+    });
+
+    it("keeps legitimate falsy values (0) as writable FLOAT updates", async () => {
+      const tokenValueToFigma = await load();
+      expect(tokenValueToFigma({ literal: 0 }, "FLOAT")).toEqual({
+        kind: "value",
+        value: 0,
+      });
     });
   });
 
