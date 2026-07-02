@@ -826,7 +826,7 @@ describe("Design System Kit Tool", () => {
 			expect(bannerSet.variants[0].visualSpec.cornerRadius).toBe(5);
 		});
 
-		it("attaches visual specs to individual variants", async () => {
+		it("attaches full visual spec to the base variant and delta-encodes siblings", async () => {
 			const tool = server._getTool("figma_get_design_system_kit");
 			const result = await tool.handler({
 				include: ["components"],
@@ -838,16 +838,42 @@ describe("Design System Kit Tool", () => {
 			const buttonSet = data.components.items.find((c: any) => c.name === "Button" && c.variants);
 
 			expect(buttonSet.variants).toHaveLength(2);
-			// First variant (comp-1)
+			// Base variant (comp-1) carries the full spec
 			const v1 = buttonSet.variants.find((v: any) => v.id === "comp-1");
 			expect(v1.visualSpec).toBeDefined();
 			expect(v1.visualSpec.fills[0].color).toBe("#0066FF");
 			expect(v1.visualSpec.cornerRadius).toBe(8);
+			expect(v1.visualSpecDelta).toBeUndefined();
 
-			// Second variant (comp-2)
+			// Sibling variant (comp-2) carries only the properties that differ
 			const v2 = buttonSet.variants.find((v: any) => v.id === "comp-2");
-			expect(v2.visualSpec).toBeDefined();
-			expect(v2.visualSpec.fills[0].color).toBe("#0033CC");
+			expect(v2.visualSpec).toBeUndefined();
+			expect(v2.visualSpecDelta).toBeDefined();
+			expect(v2.visualSpecDelta.fills[0].color).toBe("#0033CC");
+			// Identical properties are not repeated in the delta
+			expect(v2.visualSpecDelta.cornerRadius).toBeUndefined();
+			expect(v2.visualSpecDelta.layout).toBeUndefined();
+		});
+
+		it("omits visualSpecDelta entirely for variants identical to the base", async () => {
+			const tool = server._getTool("figma_get_design_system_kit");
+			const result = await tool.handler({
+				include: ["components"],
+				format: "full",
+				includeImages: false,
+			});
+
+			const data = JSON.parse(result.content[0].text);
+			// Banner's two variants have identical fills and cornerRadius in the mock
+			const bannerSet = data.components.items.find((c: any) => c.name === "Banner");
+
+			const base = bannerSet.variants[0];
+			expect(base.visualSpec).toBeDefined();
+			expect(base.visualSpec.fills[0].color).toBe("#262E38");
+
+			const sibling = bannerSet.variants[1];
+			expect(sibling.visualSpec).toBeUndefined();
+			expect(sibling.visualSpecDelta).toBeUndefined();
 		});
 	});
 

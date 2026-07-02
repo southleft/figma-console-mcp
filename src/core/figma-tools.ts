@@ -1051,7 +1051,7 @@ export function registerFigmaAPITools(
 	 */
 	server.tool(
 		"figma_get_variables",
-		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Supports filtering by collection/mode/name and verbosity control to prevent token exhaustion. Resolution order: Desktop Bridge plugin (works on any plan) → Variables REST API (Enterprise only) → Styles API as a partial fallback. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
+		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Returns a compact summary by default — pass format='full' for the complete dataset or format='filtered' with collection/namePattern/mode filters for specific variables. Supports verbosity control to prevent token exhaustion. Resolution order: Desktop Bridge plugin (works on any plan) → Variables REST API (Enterprise only) → Styles API as a partial fallback. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
 		{
 			fileUrl: z
 				.string()
@@ -1097,10 +1097,10 @@ export function registerFigmaAPITools(
 			format: z
 				.enum(["summary", "filtered", "full"])
 				.optional()
-				.default("full")
 				.describe(
 					"Response format: 'summary' (~2K tokens with overview and names only), 'filtered' (apply collection/name/mode filters), 'full' (complete dataset from cache or fetch). " +
-					"Summary is recommended for initial exploration. Full format returns all data but may be auto-summarized if >25K tokens. Default: full"
+					"Default: summary (token-efficient). When format is omitted, filter params (collection/namePattern/mode) auto-select 'filtered', and enrichment/export/resolveAliases/returnAsLinks params auto-select 'full'. " +
+					"Full format returns all data but may be auto-summarized if >25K tokens."
 				),
 			collection: z
 				.string()
@@ -1185,6 +1185,29 @@ export function registerFigmaAPITools(
 			pageSize,
 			resolveAliases
 		}) => {
+			// Smart format default (token efficiency): when the caller doesn't pick a
+			// format, use the cheapest one their other parameters allow. Explicit
+			// format callers are unaffected. Only parameters without schema defaults
+			// (or defaulting to false) can signal intent — verbosity, includePublished,
+			// and page/pageSize are always populated by their defaults.
+			if (!format) {
+				if (collection || namePattern || mode) {
+					format = "filtered";
+				} else if (
+					enrich ||
+					include_usage ||
+					include_dependencies ||
+					include_exports ||
+					(export_formats && export_formats.length > 0) ||
+					resolveAliases ||
+					returnAsLinks
+				) {
+					format = "full";
+				} else {
+					format = "summary";
+				}
+			}
+
 			// Extract fileKey and optional branchId outside try block so they're available in catch block
 			const url = fileUrl || getCurrentUrl();
 			if (!url) {
@@ -1604,6 +1627,32 @@ export function registerFigmaAPITools(
 						let publishedFormatted = includePublished
 							? formatVariables(published)
 							: null;
+
+						// Honor format='summary' on the REST path (historically only the
+						// cache and Desktop Bridge paths summarized)
+						if (format === 'summary') {
+							const summary = generateSummary({
+								fileKey,
+								timestamp: Date.now(),
+								source: 'rest_api',
+								variables: localFormatted.variables,
+								variableCollections: localFormatted.collections,
+							});
+							logger.info({ fileKey, estimatedTokens: estimateTokens(summary) }, 'Generated summary from REST API data');
+							return {
+								content: [
+									{
+										type: "text",
+										text: JSON.stringify({
+											fileKey,
+											source: "rest_api",
+											format: "summary",
+											data: summary,
+										}),
+									},
+								],
+							};
+						}
 
 						// DEBUG: Check if valuesByMode exists before filtering
 						if (localFormatted.variables[0]) {
@@ -2181,6 +2230,31 @@ export function registerFigmaAPITools(
 						if (!localError && local) {
 							let localFormatted = formatVariables(local);
 							let publishedFormatted = includePublished ? formatVariables(published) : null;
+
+							// Honor format='summary' on the REST fallback path too
+							if (format === 'summary') {
+								const summary = generateSummary({
+									fileKey,
+									timestamp: Date.now(),
+									source: 'rest_api',
+									variables: localFormatted.variables,
+									variableCollections: localFormatted.collections,
+								});
+								logger.info({ fileKey, estimatedTokens: estimateTokens(summary) }, 'Generated summary from REST API fallback data');
+								return {
+									content: [
+										{
+											type: "text",
+											text: JSON.stringify({
+												fileKey,
+												source: "rest_api",
+												format: "summary",
+												data: summary,
+											}),
+										},
+									],
+								};
+							}
 
 							// Apply filters
 							if (format === 'filtered') {

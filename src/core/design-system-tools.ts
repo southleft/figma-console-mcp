@@ -66,7 +66,7 @@ interface ComponentSpec {
 	name: string;
 	description?: string;
 	properties?: Record<string, any>;
-	variants?: Array<{ name: string; id: string; visualSpec?: VisualSpec }>;
+	variants?: Array<{ name: string; id: string; visualSpec?: VisualSpec; visualSpecDelta?: Record<string, any> }>;
 	bounds?: { width: number; height: number };
 	imageUrl?: string;
 	visualSpec?: VisualSpec;
@@ -246,37 +246,37 @@ export function extractVisualSpec(node: any): VisualSpec | undefined {
 }
 
 /**
- * Extract visual specs from a component node and its first-level children.
- * Returns a compact representation of the component's visual appearance.
+ * Delta-encode variant visual specs against the first variant that has one.
+ * Variants in a set share most visual properties, so repeating the full spec
+ * on every variant inflates the payload ~30x for large sets. The base variant
+ * keeps its full visualSpec; every other variant gets a visualSpecDelta with
+ * only the top-level properties that differ from the base (null means the
+ * property exists on the base but not on this variant). Variants identical to
+ * the base carry neither field.
  */
-function extractComponentVisualData(node: any): {
-	visualSpec?: VisualSpec;
-	childSpecs?: Array<{ name: string; type: string; visualSpec?: VisualSpec; characters?: string }>;
-} {
-	if (!node) return {};
+function deltaEncodeVariantSpecs(
+	variants: Array<{ name: string; id: string; visualSpec?: VisualSpec; visualSpecDelta?: Record<string, any> }>,
+): void {
+	const base = variants.find((v) => v.visualSpec);
+	if (!base) return;
+	const baseSpec = base.visualSpec as Record<string, any>;
 
-	const result: any = {};
+	for (const variant of variants) {
+		if (variant === base || !variant.visualSpec) continue;
+		const spec = variant.visualSpec as Record<string, any>;
+		const delta: Record<string, any> = {};
 
-	const rootSpec = extractVisualSpec(node);
-	if (rootSpec) result.visualSpec = rootSpec;
-
-	// Extract first-level children specs (the structural elements)
-	if (node.children && Array.isArray(node.children)) {
-		const childSpecs: any[] = [];
-		for (const child of node.children) {
-			const childInfo: any = {
-				name: child.name,
-				type: child.type,
-			};
-			const childVisual = extractVisualSpec(child);
-			if (childVisual) childInfo.visualSpec = childVisual;
-			if (child.characters) childInfo.characters = child.characters;
-			childSpecs.push(childInfo);
+		for (const key of new Set([...Object.keys(baseSpec), ...Object.keys(spec)])) {
+			if (!(key in spec)) {
+				delta[key] = null;
+			} else if (!(key in baseSpec) || JSON.stringify(spec[key]) !== JSON.stringify(baseSpec[key])) {
+				delta[key] = spec[key];
+			}
 		}
-		if (childSpecs.length > 0) result.childSpecs = childSpecs;
-	}
 
-	return result;
+		delete variant.visualSpec;
+		if (Object.keys(delta).length > 0) variant.visualSpecDelta = delta;
+	}
 }
 
 /**
@@ -564,6 +564,7 @@ export function registerDesignSystemTools(
 		"token values per mode (light/dark), and resolved style values. " +
 		"Use this instead of calling individual tools to avoid context window overflow. " +
 		"Ideal for AI code generation — use visualSpec for pixel-accurate reproduction. " +
+		"Variant specs are delta-encoded: the base variant carries the full visualSpec, siblings carry visualSpecDelta with only the properties that differ. " +
 		"Tokens/variables are read through the connected Desktop Bridge or cloud relay and work on ANY Figma plan — no Enterprise required. " +
 		"If a tokens fetch ever reports the Variables REST API is plan-limited (403), the bridge/relay is the plan-independent path: ensure it's connected and retry rather than abandoning variables.",
 		{
@@ -767,7 +768,7 @@ export function registerDesignSystemTools(
 									c.containing_frame?.containingComponentSet?.nodeId === set.node_id
 								)
 								.map((c: any) => {
-									const entry: { name: string; id: string; visualSpec?: VisualSpec } = { name: c.name, id: c.node_id };
+									const entry: { name: string; id: string; visualSpec?: VisualSpec; visualSpecDelta?: Record<string, any> } = { name: c.name, id: c.node_id };
 									// Attach visual spec from depth-2 children of the set node
 									if (setNode?.children) {
 										const variantNode = setNode.children.find((ch: any) => ch.id === c.node_id);
@@ -780,6 +781,9 @@ export function registerDesignSystemTools(
 								});
 
 							if (variants.length > 0) {
+								// Variants share most visual properties — keep the full spec on
+								// the base variant only and encode the rest as deltas
+								deltaEncodeVariantSpecs(variants);
 								spec.variants = variants;
 							}
 
@@ -793,11 +797,11 @@ export function registerDesignSystemTools(
 								};
 							}
 
-							// Extract visual spec from the set node (root + children)
+							// Extract visual spec from the set node itself
 							if (setNode) {
-								const visualData = extractComponentVisualData(setNode);
-								if (visualData.visualSpec) {
-									spec.visualSpec = visualData.visualSpec;
+								const setSpec = extractVisualSpec(setNode);
+								if (setSpec) {
+									spec.visualSpec = setSpec;
 								}
 							}
 
@@ -824,11 +828,11 @@ export function registerDesignSystemTools(
 								};
 							}
 
-							// Extract visual spec from the component node (root + children)
+							// Extract visual spec from the component node
 							if (node) {
-								const visualData = extractComponentVisualData(node);
-								if (visualData.visualSpec) {
-									spec.visualSpec = visualData.visualSpec;
+								const nodeSpec = extractVisualSpec(node);
+								if (nodeSpec) {
+									spec.visualSpec = nodeSpec;
 								}
 							}
 
@@ -961,6 +965,10 @@ export function registerDesignSystemTools(
 					"   - layout.itemSpacing → gap\n" +
 					"   - layout.primaryAxisAlign → justify-content, counterAxisAlign → align-items\n" +
 					"   - typography → font-family, font-size, font-weight, line-height, letter-spacing\n" +
+					"   - Variant specs are delta-encoded: one base variant carries the full visualSpec; " +
+					"sibling variants carry 'visualSpecDelta' with ONLY the properties that differ from the base " +
+					"(null = property absent on this variant). Merge base visualSpec + visualSpecDelta to get a " +
+					"variant's full spec. A variant with neither field is visually identical to the base.\n" +
 					"3. Do NOT add decorative elements (colored borders, accents, dividers, gradients) " +
 					"unless they appear in the visualSpec data.\n" +
 					"4. Use 'imageUrl' screenshots as the visual ground truth. If the screenshot " +
