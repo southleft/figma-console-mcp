@@ -2135,12 +2135,13 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// ============================================================================
 
 	// Tool: Arrange Component Set (Professional Layout with Native Visualization)
-	// Recreates component set using figma.combineAsVariants() for proper purple dashed frame
+	// Rearranges variants IN PLACE (sets x/y on existing children) so the component
+	// set's identity is preserved and placed instances are unaffected
 	server.tool(
 		"figma_arrange_component_set",
 		`Organize a component set with Figma's native purple dashed visualization. Use after creating variants, adding states (hover/disabled/pressed), or when component sets need cleanup.
 
-Recreates the set using figma.combineAsVariants() for proper Figma integration, applies purple dashed border styling, and arranges variants in a labeled grid (columns = last property like State, rows = other properties like Type+Size). Creates a white container with title, row/column labels, and the component set.`,
+Non-destructive: rearranges the existing variants in place (grid positions on the existing set's children), so the component set keeps its node ID and all placed instances remain intact. Arranges variants in a labeled grid (columns = last property like State, rows = other properties like Type+Size) and wraps the set in a white container with title, row/column labels. Safe to run on component sets with placed instances, and safe to re-run.`,
 		{
 			componentSetId: z
 				.string()
@@ -2188,6 +2189,8 @@ Recreates the set using figma.combineAsVariants() for proper Figma integration, 
 // COMPONENT SET ARRANGEMENT WITH PROPER LABELS AND CONTAINER
 // Creates: White container frame -> Row labels (left) -> Column headers (top) -> Component set (center)
 // Uses auto-layout for proper alignment of labels with grid cells
+// NON-DESTRUCTIVE: variants are repositioned in place on the existing set, so
+// the set's node ID is preserved and placed instances are unaffected.
 // ============================================================================
 
 // Configuration
@@ -2225,8 +2228,10 @@ if (!componentSet || componentSet.type !== "COMPONENT_SET") {
 }
 
 const page = figma.currentPage;
-const csOriginalX = componentSet.x;
-const csOriginalY = componentSet.y;
+// Absolute page coordinates — the set may be nested inside a previous
+// arrangement container, so relative x/y would be wrong for placement
+const csAbsX = componentSet.absoluteTransform[0][2];
+const csAbsY = componentSet.absoluteTransform[1][2];
 const csOriginalName = componentSet.name;
 
 // Get all variant components
@@ -2312,46 +2317,50 @@ const csHeight = (totalRows * cellHeight) + ((totalRows - 1) * gap) + (edgePaddi
 // ============================================================================
 // STEP 1: Remove old labels and container frames from previous arrangements
 // ============================================================================
-const oldElements = page.children.filter(n =>
+const isOldArrangementElement = (n) =>
 	(n.type === "TEXT" && (n.name.startsWith("Row: ") || n.name.startsWith("Col: "))) ||
-	(n.type === "FRAME" && (n.name === "Component Container" || n.name === "Row Labels" || n.name === "Column Headers"))
-);
+	(n.type === "FRAME" && (n.name === "Component Container" || n.name === "Row Labels" || n.name === "Column Headers"));
+
+// If the set lives inside a previous arrangement container (re-run case),
+// pull it out to the page first so cleanup can't delete it
+let ancestor = componentSet.parent;
+while (ancestor && ancestor.type !== "PAGE") {
+	if (isOldArrangementElement(ancestor)) {
+		page.appendChild(componentSet);
+		break;
+	}
+	ancestor = ancestor.parent;
+}
+
+const oldElements = page.children.filter(isOldArrangementElement);
 for (const el of oldElements) {
 	el.remove();
 }
 
 // ============================================================================
-// STEP 2: Clone variants and recreate component set with native visualization
+// STEP 2: Prepare the EXISTING component set for manual grid positioning.
+// No clone/remove/combineAsVariants — the set keeps its node ID, so all
+// placed instances survive.
 // ============================================================================
-const clonedVariants = [];
-for (const variant of variants) {
-	const clone = variant.clone();
-	page.appendChild(clone);
-	clonedVariants.push(clone);
+
+// Auto-layout would ignore manual x/y on children — disable it if present
+if ("layoutMode" in componentSet && componentSet.layoutMode !== "NONE") {
+	componentSet.layoutMode = "NONE";
 }
 
-// Delete the old component set
-componentSet.remove();
-
-// Recreate using figma.combineAsVariants() for native purple dashed frame
-const newComponentSet = figma.combineAsVariants(clonedVariants, page);
-newComponentSet.name = csOriginalName;
-
 // Apply purple dashed border (Figma's native component set styling)
-newComponentSet.strokes = [{
+componentSet.strokes = [{
 	type: 'SOLID',
 	color: { r: 151/255, g: 71/255, b: 255/255 }  // Figma's purple: #9747FF
 }];
-newComponentSet.dashPattern = [10, 5];
-newComponentSet.strokeWeight = 1;
-newComponentSet.strokeAlign = "INSIDE";
+componentSet.dashPattern = [10, 5];
+componentSet.strokeWeight = 1;
+componentSet.strokeAlign = "INSIDE";
 
 // ============================================================================
-// STEP 3: Arrange variants in grid pattern inside component set
+// STEP 3: Arrange variants in grid pattern inside component set (in place)
 // ============================================================================
-const newVariants = newComponentSet.children.filter(n => n.type === "COMPONENT");
-
-for (const variant of newVariants) {
+for (const variant of variants) {
 	const props = parseVariantName(variant.name);
 	const colValue = props[columnProp];
 	const colIdx = columnValues.indexOf(colValue);
@@ -2388,7 +2397,7 @@ for (const variant of newVariants) {
 }
 
 // Resize component set to fit grid
-newComponentSet.resize(csWidth, csHeight);
+componentSet.resize(csWidth, csHeight);
 
 // ============================================================================
 // STEP 4: Create white container frame with proper structure
@@ -2572,10 +2581,11 @@ componentSetWrapper.name = "Component Set Wrapper";
 componentSetWrapper.fills = [];
 componentSetWrapper.resize(csWidth, csHeight);
 
-// Move component set inside wrapper (positioned at 0,0)
-componentSetWrapper.appendChild(newComponentSet);
-newComponentSet.x = 0;
-newComponentSet.y = 0;
+// Move the existing component set inside wrapper (reparenting preserves the
+// node ID — placed instances are unaffected)
+componentSetWrapper.appendChild(componentSet);
+componentSet.x = 0;
+componentSet.y = 0;
 
 // Append to parent FIRST, then set layoutSizing
 gridColumn.appendChild(componentSetWrapper);
@@ -2585,8 +2595,8 @@ componentSetWrapper.layoutSizingVertical = 'FIXED';
 contentRow.appendChild(gridColumn);
 
 // Position container at original location
-containerFrame.x = csOriginalX - CONTAINER_PADDING - 120;  // Account for row labels width
-containerFrame.y = csOriginalY - CONTAINER_PADDING - TITLE_FONT_SIZE - 24 - COLUMN_HEADER_HEIGHT - gap;
+containerFrame.x = csAbsX - CONTAINER_PADDING - 120;  // Account for row labels width
+containerFrame.y = csAbsY - CONTAINER_PADDING - TITLE_FONT_SIZE - 24 - COLUMN_HEADER_HEIGHT - gap;
 
 // Select and zoom to show result
 figma.currentPage.selection = [containerFrame];
@@ -2594,10 +2604,10 @@ figma.viewport.scrollAndZoomIntoView([containerFrame]);
 
 return {
 	success: true,
-	message: "Component set arranged with proper container, labels, and alignment",
+	message: "Component set arranged in place with proper container, labels, and alignment. Set identity preserved — placed instances unaffected.",
 	containerId: containerFrame.id,
-	componentSetId: newComponentSet.id,
-	componentSetName: newComponentSet.name,
+	componentSetId: componentSet.id,
+	componentSetName: componentSet.name,
 	grid: {
 		rows: totalRows,
 		columns: totalCols,
@@ -2610,7 +2620,7 @@ return {
 		rowLabels: rowCombinations.map(combo => rowProps.map(p => combo[p]).join(" / "))
 	},
 	componentSetSize: { width: csWidth, height: csHeight },
-	variantCount: newVariants.length,
+	variantCount: variants.length,
 	structure: {
 		container: "White frame with title, row labels, column headers, and component set",
 		rowLabels: "Vertically aligned with each row's center",
@@ -2633,7 +2643,7 @@ return {
 								{
 									...result.result,
 									hint: result.result?.success
-										? "Component set arranged in a white container frame with properly aligned row and column labels. The purple dashed border is visible. Use figma_capture_screenshot to validate the layout."
+										? "Component set arranged in place (same node ID, placed instances unaffected) inside a white container frame with properly aligned row and column labels. The purple dashed border is visible. Use figma_capture_screenshot to validate the layout."
 										: undefined,
 								},
 							),
