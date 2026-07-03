@@ -939,7 +939,7 @@ return {
 	// Tool: Setup design tokens (collection + modes + variables atomically)
 	server.tool(
 		"figma_setup_design_tokens",
-		"Create a complete design token structure in one operation: collection, modes, and all variables. Ideal for importing CSS custom properties or design tokens into Figma. Requires Desktop Bridge plugin.",
+		"Create a complete design token structure in one operation: collection, modes, and all variables. Ideal for importing CSS custom properties or design tokens into Figma. Values may be literals OR DTCG-style brace references ('{color.blue.600}', or set-qualified '{primitives.color.blue.600}') that resolve to variable ALIASES — first against variables created in this same call, then against existing local variables. Unresolvable references skip that value with a per-item warning (the rest of the batch still applies), so semantic collections referencing primitives no longer need raw figma_execute. Requires Desktop Bridge plugin.",
 		{
 			collectionName: z
 				.string()
@@ -970,7 +970,7 @@ return {
 								z.union([z.string(), z.number(), z.boolean()]),
 							)
 							.describe(
-								"Values keyed by mode NAME (not ID). Example: { 'Light': '#FFFFFF', 'Dark': '#000000' }",
+								"Values keyed by mode NAME (not ID). Example: { 'Light': '#FFFFFF', 'Dark': '#000000' }. A string value wrapped in braces is an ALIAS reference resolved to another variable: '{color.blue.600}' matches variable name 'color/blue/600' — first among variables created in THIS call, then existing local variables (exact match, then case-insensitive). Set-qualified references ('{primitives.color.blue.600}') strip the leading collection name. Unresolvable references skip that value and surface in the response's warnings[].",
 							),
 					}),
 				)
@@ -1012,21 +1012,103 @@ for (let i = 1; i < modeNames.length; i++) {
   modeMap[modeNames[i]] = newModeId;
 }
 
-// Step 3: Create all variables with values
+// Step 3: Create all variables FIRST (values apply in a second pass so
+// brace-reference values can alias variables created later in this call).
 const results = [];
+const warnings = [];
+const createdByName = {};      // exact name -> variable (this call)
+const createdByLower = {};     // lowercased name -> variable (this call)
+const createdDefs = [];        // { def, variable } for the value pass
 for (const t of tokenDefs) {
   try {
     const variable = figma.variables.createVariable(t.name, collection, t.resolvedType);
     if (t.description) variable.description = t.description;
-    for (const [modeName, value] of Object.entries(t.values)) {
-      const modeId = modeMap[modeName];
-      if (!modeId) { results.push({ success: false, name: t.name, error: 'Unknown mode: ' + modeName }); continue; }
-      const processed = t.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
-      variable.setValueForMode(modeId, processed);
-    }
+    createdByName[t.name] = variable;
+    createdByLower[t.name.toLowerCase()] = variable;
+    createdDefs.push({ def: t, variable: variable });
     results.push({ success: true, name: t.name, id: variable.id });
   } catch (err) {
     results.push({ success: false, name: t.name, error: String(err) });
+  }
+}
+
+// Reference resolution: '{color.blue.600}' -> variable named 'color/blue/600'.
+// Priority: created-in-this-call (exact, then case-insensitive; optionally
+// set-qualified by THIS collection's name), then existing local variables
+// (exact, then case-insensitive; optionally set-qualified by an existing
+// collection's name).
+function isReference(value) {
+  return typeof value === 'string' && /^\\{[^{}]+\\}$/.test(value.trim());
+}
+let existingVars = null;
+let existingCollections = null;
+async function ensureExistingLoaded() {
+  if (existingVars === null) {
+    existingVars = await figma.variables.getLocalVariablesAsync();
+    existingCollections = await figma.variables.getLocalVariableCollectionsAsync();
+  }
+}
+function findCreated(name) {
+  return createdByName[name] || createdByLower[name.toLowerCase()] || null;
+}
+async function resolveReference(raw) {
+  const inner = raw.trim().slice(1, -1);
+  const segments = inner.split('.').filter(function (s) { return s.length > 0; });
+  if (segments.length === 0) return null;
+  const fullName = segments.join('/');
+
+  // 1. Variables created in THIS call.
+  let match = findCreated(fullName);
+  if (match) return match;
+  if (segments.length > 1 && segments[0].toLowerCase() === collectionName.toLowerCase()) {
+    match = findCreated(segments.slice(1).join('/'));
+    if (match) return match;
+  }
+
+  // 2. Existing local variables.
+  await ensureExistingLoaded();
+  match = existingVars.find(function (v) { return v.name === fullName; });
+  if (match) return match;
+  const lowerName = fullName.toLowerCase();
+  match = existingVars.find(function (v) { return v.name.toLowerCase() === lowerName; });
+  if (match) return match;
+  // 2b. Set-qualified: first segment names an existing collection.
+  if (segments.length > 1) {
+    const restName = segments.slice(1).join('/');
+    const restLower = restName.toLowerCase();
+    const setLower = segments[0].toLowerCase();
+    for (const c of existingCollections) {
+      if (c.name.toLowerCase() !== setLower) continue;
+      let m = existingVars.find(function (v) { return v.variableCollectionId === c.id && v.name === restName; });
+      if (!m) m = existingVars.find(function (v) { return v.variableCollectionId === c.id && v.name.toLowerCase() === restLower; });
+      if (m) return m;
+    }
+  }
+  return null;
+}
+
+// Step 4: Apply values — literals directly, brace references as aliases.
+for (const entry of createdDefs) {
+  const t = entry.def;
+  const variable = entry.variable;
+  for (const [modeName, value] of Object.entries(t.values)) {
+    const modeId = modeMap[modeName];
+    if (!modeId) { results.push({ success: false, name: t.name, error: 'Unknown mode: ' + modeName }); continue; }
+    try {
+      if (isReference(value)) {
+        const target = await resolveReference(value);
+        if (!target) {
+          warnings.push('Unresolvable reference ' + value + ' for token "' + t.name + '" (mode "' + modeName + '") — no matching variable in this call or the local file. Value skipped.');
+          continue;
+        }
+        variable.setValueForMode(modeId, figma.variables.createVariableAlias(target));
+      } else {
+        const processed = t.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
+        variable.setValueForMode(modeId, processed);
+      }
+    } catch (err) {
+      results.push({ success: false, name: t.name, error: 'mode "' + modeName + '": ' + String(err) });
+    }
   }
 }
 
@@ -1036,7 +1118,8 @@ return {
   modes: modeMap,
   created: results.filter(r => r.success).length,
   failed: results.filter(r => !r.success).length,
-  results
+  results,
+  warnings
 };`;
 
 				const timeout = Math.max(

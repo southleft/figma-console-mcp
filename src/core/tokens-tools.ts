@@ -82,13 +82,13 @@ MERGE STRATEGY: Default \`strategy: "merge"\` only writes tokens that actually c
 
 DTCG DIALECT (\`dtcgDialect\`, applies to dtcg/json-flat/json-nested outputs): legacy (default): hex-string colors, maximum compatibility (Style Dictionary v4, Tokens Studio). 2025: DTCG 2025.10 object colors/dimensions (Style Dictionary v5+). figma_import_tokens accepts BOTH dialects regardless of this setting.
 
-ROUND-TRIP SAFETY: Figma variable IDs are preserved in DTCG \`$extensions["figma-console-mcp"]\` so renames on either side don't create duplicates. The same metadata enables non-destructive incremental sync via figma_import_tokens.`;
+ROUND-TRIP SAFETY: Figma variable IDs are preserved in DTCG \`$extensions["figma-console-mcp"]\` so renames on either side don't create duplicates. The same metadata enables non-destructive incremental sync via figma_import_tokens. Variable scopes (when non-default) and per-platform codeSyntax (when set) are stashed there too and round-trip through import.`;
 
 const IMPORT_TOOL_DESCRIPTION = `Push design tokens from your codebase into Figma as variables. Bidirectional with figma_export_tokens.
 
 ACCEPTS: DTCG JSON (canonical, fully supported including round-trip metadata preservation). Tokens Studio JSON, CSS custom properties, Tailwind v4 @theme, SCSS, and Style Dictionary v3 are scaffolded but return a NotImplementedError — convert to DTCG first via figma_export_tokens or hand-author DTCG. Use \`format: "auto"\` to sniff the input.
 
-APPLY PHASE (full bidirectional sync): toCreate entries create missing collections (with the token file's full mode list) and missing variables in one batched plugin round-trip — literal values first, alias values in a second pass so aliases between newly-created variables resolve. toUpdate entries push value updates in a batched round-trip, INCLUDING alias-target updates: when a token's value is a reference, it's written as a Figma variable alias if the reference resolves to an existing or just-created variable (unresolvable references skip with a warning). toDelete entries are STRICTLY gated behind \`strategy: "replace"\` — in replace mode, Figma variables absent from the token file are permanently deleted (a loud warning lists the count); merge (default) preserves them and only reports. TIMING/EASING variables cannot be created or written via the Plugin API and are skipped with a warning. Partial-success semantics: per-item errors surface in applyResult.errors[] without failing the batch.
+APPLY PHASE (full bidirectional sync): toCreate entries create missing collections (with the token file's full mode list) and missing variables in one batched plugin round-trip — literal values first, alias values in a second pass so aliases between newly-created variables resolve. toUpdate entries push value updates in a batched round-trip, INCLUDING alias-target updates: when a token's value is a reference, it's written as a Figma variable alias if the reference resolves to an existing or just-created variable (unresolvable references skip with a warning). toDelete entries are STRICTLY gated behind \`strategy: "replace"\` — in replace mode, Figma variables absent from the token file are permanently deleted (a loud warning lists the count); merge (default) preserves them and only reports. TIMING/EASING variables cannot be created or written via the Plugin API and are skipped with a warning. Variable scopes and per-platform codeSyntax (from \`$extensions["figma-console-mcp"].scopes/.codeSyntax\`) are diffed and applied too — absent fields mean "no opinion" (Figma-side metadata is preserved), an explicit value is authoritative. Partial-success semantics: per-item errors surface in applyResult.errors[] without failing the batch.
 
 DIFF-AWARE: Default \`strategy: "merge"\` diffs against current Figma state and applies only deltas. The hacked-color scenario — designer edits one hex value in their CSS — produces exactly one Figma API update, not a full collection rewrite. Match priority: Figma variable ID (in \`$extensions["figma-console-mcp"].variableId\`), then exact token path, then value fingerprint.
 
@@ -806,7 +806,18 @@ export function computeDiffPlan(
   codeDoc: TokenDocument,
 ): {
   toCreate: Array<{ path: string; type: string; value: unknown }>;
-  toUpdate: Array<{ path: string; before: unknown; after: unknown }>;
+  toUpdate: Array<{
+    path: string;
+    before: unknown;
+    after: unknown;
+    /**
+     * Present when variable metadata (scopes/codeSyntax) changed. Absent for
+     * plain value-only updates (the historical entry shape). `values: false`
+     * tells the apply phase to skip setValueForMode entirely and only write
+     * the metadata.
+     */
+    changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
+  }>;
   toDelete: Array<{ path: string }>;
   unchanged: number;
 } {
@@ -825,7 +836,12 @@ export function computeDiffPlan(
   }
 
   const toCreate: Array<{ path: string; type: string; value: unknown }> = [];
-  const toUpdate: Array<{ path: string; before: unknown; after: unknown }> = [];
+  const toUpdate: Array<{
+    path: string;
+    before: unknown;
+    after: unknown;
+    changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
+  }> = [];
   const toDelete: Array<{ path: string }> = [];
   let unchanged = 0;
 
@@ -837,14 +853,37 @@ export function computeDiffPlan(
         type: codeToken.type,
         value: codeToken.values,
       });
-    } else if (!valuesEqual(figmaToken.values, codeToken.values)) {
-      toUpdate.push({
-        path: key,
-        // Figma-side values carry the transient rawColor floats — strip
-        // them so diff samples in the tool response stay shaped as before.
-        before: stripRawColorFromValues(figmaToken.values),
-        after: codeToken.values,
-      });
+      continue;
+    }
+
+    const valuesChanged = !valuesEqual(figmaToken.values, codeToken.values);
+    const meta = diffVariableMeta(figmaToken, codeToken);
+
+    if (valuesChanged || meta.scopesChanged || meta.codeSyntaxChanged) {
+      if (valuesChanged && !meta.scopesChanged && !meta.codeSyntaxChanged) {
+        // Value-only update — historical entry shape, no `changes` field, so
+        // pre-existing consumers/tests see exactly what they always saw.
+        toUpdate.push({
+          path: key,
+          // Figma-side values carry the transient rawColor floats — strip
+          // them so diff samples in the tool response stay shaped as before.
+          before: stripRawColorFromValues(figmaToken.values),
+          after: codeToken.values,
+        });
+      } else {
+        toUpdate.push({
+          path: key,
+          before: valuesChanged
+            ? stripRawColorFromValues(figmaToken.values)
+            : meta.before,
+          after: valuesChanged ? codeToken.values : meta.after,
+          changes: {
+            values: valuesChanged,
+            scopes: meta.scopesChanged,
+            codeSyntax: meta.codeSyntaxChanged,
+          },
+        });
+      }
     } else {
       unchanged++;
     }
@@ -917,6 +956,74 @@ function deepEqual(a: unknown, b: unknown): boolean {
     if (!deepEqual(aObj[aKeys[i]], bObj[bKeys[i]])) return false;
   }
   return true;
+}
+
+/**
+ * Compare variable metadata (scopes + codeSyntax) between the Figma-side and
+ * code-side tokens.
+ *
+ * Semantics (deliberately merge-friendly):
+ *   - Code-side ABSENT field = "no opinion" — never a change, so token files
+ *     that predate this feature (or hand-authored files without extensions)
+ *     can't silently reset Figma-side scopes/codeSyntax.
+ *   - Scopes compare order-insensitively; []/["ALL_SCOPES"]/absent all
+ *     normalize to the default (export omits the default, so a round-trip of
+ *     an ALL_SCOPES variable is absent on both sides → unchanged).
+ *   - codeSyntax compares by deep equality ({} counts as an explicit "clear
+ *     every platform" opinion; absent counts as no opinion).
+ */
+function diffVariableMeta(
+  figmaToken: any,
+  codeToken: any,
+): {
+  scopesChanged: boolean;
+  codeSyntaxChanged: boolean;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+} {
+  const figmaExt = figmaToken.extensions?.["figma-console-mcp"] ?? {};
+  const codeExt = codeToken.extensions?.["figma-console-mcp"] ?? {};
+
+  let scopesChanged = false;
+  if (Array.isArray(codeExt.scopes)) {
+    const codeScopes = normalizeScopesForComparison(codeExt.scopes);
+    const figmaScopes = normalizeScopesForComparison(figmaExt.scopes);
+    scopesChanged = !deepEqual(codeScopes, figmaScopes);
+  }
+
+  let codeSyntaxChanged = false;
+  if (
+    codeExt.codeSyntax !== undefined &&
+    codeExt.codeSyntax !== null &&
+    typeof codeExt.codeSyntax === "object" &&
+    !Array.isArray(codeExt.codeSyntax)
+  ) {
+    codeSyntaxChanged = !deepEqual(codeExt.codeSyntax, figmaExt.codeSyntax ?? {});
+  }
+
+  const before: Record<string, unknown> = {};
+  const after: Record<string, unknown> = {};
+  if (scopesChanged) {
+    before.scopes = figmaExt.scopes ?? ["ALL_SCOPES"];
+    after.scopes = codeExt.scopes;
+  }
+  if (codeSyntaxChanged) {
+    before.codeSyntax = figmaExt.codeSyntax ?? {};
+    after.codeSyntax = codeExt.codeSyntax;
+  }
+  return { scopesChanged, codeSyntaxChanged, before, after };
+}
+
+/**
+ * Normalize a scopes array to a sorted, default-collapsed form: absent,
+ * empty, and ["ALL_SCOPES"] all mean "the default scoping" in Figma.
+ */
+function normalizeScopesForComparison(scopes: unknown): string[] {
+  if (!Array.isArray(scopes) || scopes.length === 0) return ["ALL_SCOPES"];
+  const cleaned = scopes.filter((s): s is string => typeof s === "string");
+  if (cleaned.length === 0) return ["ALL_SCOPES"];
+  if (cleaned.length === 1 && cleaned[0] === "ALL_SCOPES") return ["ALL_SCOPES"];
+  return [...cleaned].sort();
 }
 
 // ============================================================================
@@ -1028,6 +1135,14 @@ interface VariableUpdate {
   variableName: string;
   resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN";
   valuesByMode: Record<string, unknown>; // modeId → Figma-native value
+  /** Full replacement scopes array (`variable.scopes = [...]`). */
+  scopes?: string[];
+  /**
+   * Per-platform code syntax ops: `set` maps platform → value
+   * (setVariableCodeSyntax), `remove` lists platforms to clear
+   * (removeVariableCodeSyntax).
+   */
+  codeSyntax?: { set?: Record<string, string>; remove?: string[] };
 }
 
 /**
@@ -1250,7 +1365,12 @@ function hexToRgba(hex: string): {
  * resolvable value for any mode get skipped with a warning.
  */
 function buildUpdatePayloads(
-  toUpdate: Array<{ path: string; before: unknown; after: unknown }>,
+  toUpdate: Array<{
+    path: string;
+    before: unknown;
+    after: unknown;
+    changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
+  }>,
   figmaDoc: TokenDocument,
   codeDoc: TokenDocument,
   collectionModeMap: Map<string, Map<string, string>>,
@@ -1322,8 +1442,16 @@ function buildUpdatePayloads(
     }
     const resolvedType = figmaNativeType as VariableUpdate["resolvedType"];
 
+    // Value updates apply unless the diff explicitly flagged this entry as
+    // metadata-only (changes.values === false) — re-pushing unchanged values
+    // would be wasteful and could trip alias-resolution warnings.
+    const wantValues = !entry.changes || entry.changes.values;
+
     const valuesByMode: Record<string, unknown> = {};
-    for (const [modeName, value] of Object.entries(codeMatch.token.values)) {
+    const valueEntries = wantValues
+      ? Object.entries(codeMatch.token.values)
+      : [];
+    for (const [modeName, value] of valueEntries) {
       const modeId = modeMap.get(modeName);
       if (!modeId) {
         warnings.push(
@@ -1356,13 +1484,55 @@ function buildUpdatePayloads(
       valuesByMode[modeId] = conversion.value;
     }
 
-    if (Object.keys(valuesByMode).length === 0) continue;
+    // Metadata ops (scopes / codeSyntax) — flagged by the diff phase.
+    let scopes: string[] | undefined;
+    if (entry.changes?.scopes) {
+      const codeScopes =
+        codeMatch.token.extensions?.["figma-console-mcp"]?.scopes;
+      if (Array.isArray(codeScopes) && codeScopes.length > 0) {
+        scopes = codeScopes;
+      } else {
+        // Explicit empty/["ALL_SCOPES"] normalizes to the Figma default.
+        scopes = ["ALL_SCOPES"];
+      }
+    }
+
+    let codeSyntaxOps: VariableUpdate["codeSyntax"];
+    if (entry.changes?.codeSyntax) {
+      const codeCS: Record<string, string> =
+        codeMatch.token.extensions?.["figma-console-mcp"]?.codeSyntax ?? {};
+      const figmaCS: Record<string, string> =
+        figmaToken.extensions?.["figma-console-mcp"]?.codeSyntax ?? {};
+      const toSet: Record<string, string> = {};
+      for (const [platform, value] of Object.entries(codeCS)) {
+        if (typeof value === "string" && figmaCS[platform] !== value) {
+          toSet[platform] = value;
+        }
+      }
+      const toRemove = Object.keys(figmaCS).filter((p) => !(p in codeCS));
+      if (Object.keys(toSet).length > 0 || toRemove.length > 0) {
+        codeSyntaxOps = {
+          ...(Object.keys(toSet).length > 0 ? { set: toSet } : {}),
+          ...(toRemove.length > 0 ? { remove: toRemove } : {}),
+        };
+      }
+    }
+
+    if (
+      Object.keys(valuesByMode).length === 0 &&
+      scopes === undefined &&
+      codeSyntaxOps === undefined
+    ) {
+      continue;
+    }
 
     updates.push({
       variableId,
       variableName: figmaToken.path.join("/"),
       resolvedType,
       valuesByMode,
+      ...(scopes !== undefined ? { scopes } : {}),
+      ...(codeSyntaxOps !== undefined ? { codeSyntax: codeSyntaxOps } : {}),
     });
   }
 
@@ -1418,6 +1588,24 @@ async function applyUpdates(
         for (const modeId in u.valuesByMode) {
           variable.setValueForMode(modeId, u.valuesByMode[modeId]);
           appliedModes++;
+        }
+        // Metadata writes — scopes replace wholesale; codeSyntax applies
+        // per-platform sets then removals (removeVariableCodeSyntax is the
+        // Plugin API's deletion primitive).
+        if (u.scopes) {
+          variable.scopes = u.scopes;
+        }
+        if (u.codeSyntax) {
+          if (u.codeSyntax.set) {
+            for (const platform in u.codeSyntax.set) {
+              variable.setVariableCodeSyntax(platform, u.codeSyntax.set[platform]);
+            }
+          }
+          if (u.codeSyntax.remove) {
+            for (const platform of u.codeSyntax.remove) {
+              variable.removeVariableCodeSyntax(platform);
+            }
+          }
         }
         results.push({ id: u.variableId, name: variable.name, success: true, appliedModes });
       } catch (err) {
@@ -1490,6 +1678,10 @@ interface CreateVariableDef {
   resolvedType: VariableUpdate["resolvedType"];
   description?: string;
   values: CreateValueEntry[];
+  /** Non-default scopes to apply at creation (from token $extensions). */
+  scopes?: string[];
+  /** Per-platform code syntax to apply at creation (from token $extensions). */
+  codeSyntax?: Record<string, string>;
 }
 
 /**
@@ -1651,12 +1843,33 @@ export function buildCreatePlan(
       values.push({ ...modeKeying, kind: "literal", value: conversion.value });
     }
 
+    // Stashed variable metadata rides along to creation. Scopes: only
+    // meaningful (non-default) arrays; codeSyntax: only non-empty maps.
+    const ext = token.extensions?.["figma-console-mcp"] ?? {};
+    const createScopes =
+      Array.isArray(ext.scopes) &&
+      ext.scopes.length > 0 &&
+      !(ext.scopes.length === 1 && ext.scopes[0] === "ALL_SCOPES")
+        ? ext.scopes.filter((s: unknown): s is string => typeof s === "string")
+        : undefined;
+    const createCodeSyntax =
+      ext.codeSyntax &&
+      typeof ext.codeSyntax === "object" &&
+      !Array.isArray(ext.codeSyntax) &&
+      Object.keys(ext.codeSyntax).length > 0
+        ? (ext.codeSyntax as Record<string, string>)
+        : undefined;
+
     const def: CreateVariableDef = {
       key: entry.path,
       name: token.path.join("/"),
       resolvedType,
       ...(token.description ? { description: token.description } : {}),
       values,
+      ...(createScopes && createScopes.length > 0
+        ? { scopes: createScopes }
+        : {}),
+      ...(createCodeSyntax ? { codeSyntax: createCodeSyntax } : {}),
     };
 
     if (existingCollection) {
@@ -1733,6 +1946,18 @@ async function applyCreates(
         createdIds[def.key] = variable.id;
         let appliedModes = 0;
         const valueErrors = [];
+        // Variable metadata (scopes / per-platform code syntax) — failures
+        // are per-item value errors, never batch failures.
+        if (def.scopes) {
+          try { variable.scopes = def.scopes; }
+          catch (err) { valueErrors.push('scopes: ' + String(err && err.message || err)); }
+        }
+        if (def.codeSyntax) {
+          for (const platform in def.codeSyntax) {
+            try { variable.setVariableCodeSyntax(platform, def.codeSyntax[platform]); }
+            catch (err) { valueErrors.push('codeSyntax ' + platform + ': ' + String(err && err.message || err)); }
+          }
+        }
         for (const val of def.values) {
           const modeId = val.modeId || (modeMap ? modeMap[val.modeName] : null);
           if (!modeId) { valueErrors.push('unknown mode: ' + (val.modeName || val.modeId)); continue; }

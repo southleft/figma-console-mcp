@@ -535,4 +535,274 @@ describe("Write Tools", () => {
 			expect(script).toBeDefined();
 		});
 	});
+
+	// ========================================================================
+	// figma_setup_design_tokens — alias reference values
+	//
+	// The generated bridge script is executed for real against a fake
+	// `figma.variables` sandbox, so reference resolution (same-call, existing
+	// local, set-qualified, unresolvable) is tested behaviorally rather than
+	// by string-matching the script.
+	// ========================================================================
+
+	describe("figma_setup_design_tokens alias references", () => {
+		interface FakeVariable {
+			id: string;
+			name: string;
+			resolvedType: string;
+			variableCollectionId: string;
+			description: string;
+			valuesByMode: Record<string, unknown>;
+			setValueForMode(modeId: string, value: unknown): void;
+		}
+
+		function makeSandbox(env: {
+			existingVars?: Array<Partial<FakeVariable>>;
+			existingCollections?: Array<{ id: string; name: string }>;
+		} = {}) {
+			let varCounter = 0;
+			const createdVariables: FakeVariable[] = [];
+			const existingVars: FakeVariable[] = (env.existingVars ?? []).map(
+				(v) =>
+					({
+						description: "",
+						valuesByMode: {},
+						setValueForMode(modeId: string, value: unknown) {
+							this.valuesByMode[modeId] = value;
+						},
+						...v,
+					}) as FakeVariable,
+			);
+			const figma = {
+				variables: {
+					createVariableCollection: (name: string) => {
+						const collection = {
+							id: "VariableCollectionId:fake:1",
+							name,
+							modes: [{ modeId: "m0", name: "Mode 1" }],
+							renameMode(modeId: string, newName: string) {
+								const m = collection.modes.find((x) => x.modeId === modeId);
+								if (m) m.name = newName;
+							},
+							addMode(newName: string) {
+								const modeId = `m${collection.modes.length}`;
+								collection.modes.push({ modeId, name: newName });
+								return modeId;
+							},
+						};
+						return collection;
+					},
+					createVariable: (name: string, _collection: any, type: string) => {
+						const variable: FakeVariable = {
+							id: `VariableID:fake:${++varCounter}`,
+							name,
+							resolvedType: type,
+							variableCollectionId: "VariableCollectionId:fake:1",
+							description: "",
+							valuesByMode: {},
+							setValueForMode(modeId: string, value: unknown) {
+								this.valuesByMode[modeId] = value;
+							},
+						};
+						createdVariables.push(variable);
+						return variable;
+					},
+					createVariableAlias: (variable: { id: string }) => ({
+						type: "VARIABLE_ALIAS",
+						id: variable.id,
+					}),
+					getLocalVariablesAsync: async () => [
+						...existingVars,
+						...createdVariables,
+					],
+					getLocalVariableCollectionsAsync: async () =>
+						env.existingCollections ?? [],
+				},
+			};
+			return { figma, createdVariables };
+		}
+
+		/** Register the tool with a connector that ACTUALLY runs the script. */
+		function setupWithSandbox(sandbox: ReturnType<typeof makeSandbox>) {
+			const localServer = createMockServer();
+			const connector = {
+				executeCodeViaUI: jest.fn(async (script: string) => {
+					const fn = new Function(
+						"figma",
+						`"use strict"; return (async () => {\n${script}\n})();`,
+					);
+					return { success: true, result: await fn(sandbox.figma) };
+				}),
+			};
+			registerWriteTools(localServer as any, async () => connector as any);
+			return { tool: localServer._getTool("figma_setup_design_tokens") };
+		}
+
+		function findVar(sandbox: ReturnType<typeof makeSandbox>, name: string) {
+			const v = sandbox.createdVariables.find((x) => x.name === name);
+			expect(v).toBeDefined();
+			return v!;
+		}
+
+		it("resolves a reference to a variable created in the SAME call (forward reference)", async () => {
+			const sandbox = makeSandbox();
+			const { tool } = setupWithSandbox(sandbox);
+			const result = await tool.handler({
+				collectionName: "Semantic",
+				modes: ["Default"],
+				tokens: [
+					// Alias declared BEFORE its target — proves the two-pass apply.
+					{
+						name: "color/primary",
+						resolvedType: "COLOR",
+						values: { Default: "{color.blue.600}" },
+					},
+					{
+						name: "color/blue/600",
+						resolvedType: "COLOR",
+						values: { Default: "#2563EB" },
+					},
+				],
+			});
+
+			const parsed = parseResult(result);
+			expect(parsed.success).toBe(true);
+			expect(parsed.created).toBe(2);
+			expect(parsed.warnings).toEqual([]);
+
+			const target = findVar(sandbox, "color/blue/600");
+			expect(findVar(sandbox, "color/primary").valuesByMode.m0).toEqual({
+				type: "VARIABLE_ALIAS",
+				id: target.id,
+			});
+		});
+
+		it("resolves references to EXISTING local variables, including set-qualified form", async () => {
+			const sandbox = makeSandbox({
+				existingVars: [
+					{
+						id: "VariableID:existing:1",
+						name: "color/base",
+						resolvedType: "COLOR",
+						variableCollectionId: "VC:prims",
+					},
+				],
+				existingCollections: [{ id: "VC:prims", name: "Primitives" }],
+			});
+			const { tool } = setupWithSandbox(sandbox);
+			const result = await tool.handler({
+				collectionName: "Semantic",
+				modes: ["Default"],
+				tokens: [
+					{
+						name: "color/bg",
+						resolvedType: "COLOR",
+						values: { Default: "{color.base}" },
+					},
+					{
+						// Set-qualified: leading "primitives" segment names the
+						// existing collection (case-insensitively).
+						name: "color/fg",
+						resolvedType: "COLOR",
+						values: { Default: "{primitives.color.base}" },
+					},
+				],
+			});
+
+			const parsed = parseResult(result);
+			expect(parsed.warnings).toEqual([]);
+			expect(findVar(sandbox, "color/bg").valuesByMode.m0).toEqual({
+				type: "VARIABLE_ALIAS",
+				id: "VariableID:existing:1",
+			});
+			expect(findVar(sandbox, "color/fg").valuesByMode.m0).toEqual({
+				type: "VARIABLE_ALIAS",
+				id: "VariableID:existing:1",
+			});
+		});
+
+		it("skips unresolvable references with a per-item warning without failing the batch", async () => {
+			const sandbox = makeSandbox();
+			const { tool } = setupWithSandbox(sandbox);
+			const result = await tool.handler({
+				collectionName: "Semantic",
+				modes: ["Default"],
+				tokens: [
+					{
+						name: "color/ghost",
+						resolvedType: "COLOR",
+						values: { Default: "{nowhere.to.be.found}" },
+					},
+					{
+						name: "color/solid",
+						resolvedType: "COLOR",
+						values: { Default: "#FF0000" },
+					},
+				],
+			});
+
+			const parsed = parseResult(result);
+			expect(parsed.success).toBe(true);
+			// Both variables are created; only the ghost VALUE is skipped.
+			expect(parsed.created).toBe(2);
+			expect(parsed.warnings).toHaveLength(1);
+			expect(parsed.warnings[0]).toContain("{nowhere.to.be.found}");
+			expect(parsed.warnings[0]).toContain("color/ghost");
+
+			expect(findVar(sandbox, "color/ghost").valuesByMode).toEqual({});
+			expect(findVar(sandbox, "color/solid").valuesByMode.m0).toEqual({
+				r: 1,
+				g: 0,
+				b: 0,
+				a: 1,
+			});
+		});
+
+		it("handles mixed literal + alias values across multiple modes", async () => {
+			const sandbox = makeSandbox();
+			const { tool } = setupWithSandbox(sandbox);
+			const result = await tool.handler({
+				collectionName: "Theme",
+				modes: ["Light", "Dark"],
+				tokens: [
+					{
+						name: "color/white",
+						resolvedType: "COLOR",
+						values: { Light: "#FFFFFF", Dark: "#FFFFFF" },
+					},
+					{
+						name: "color/surface",
+						resolvedType: "COLOR",
+						// Light literal, Dark alias — mixed within ONE token.
+						values: { Light: "#F5F5F5", Dark: "{color.white}" },
+					},
+					{
+						name: "spacing/md",
+						resolvedType: "FLOAT",
+						values: { Light: 16, Dark: 16 },
+					},
+				],
+			});
+
+			const parsed = parseResult(result);
+			expect(parsed.created).toBe(3);
+			expect(parsed.failed).toBe(0);
+			expect(parsed.warnings).toEqual([]);
+
+			const white = findVar(sandbox, "color/white");
+			const surface = findVar(sandbox, "color/surface");
+			// Light = m0 (renamed default), Dark = m1 (added).
+			expect(surface.valuesByMode.m0).toEqual({
+				r: 0xf5 / 255,
+				g: 0xf5 / 255,
+				b: 0xf5 / 255,
+				a: 1,
+			});
+			expect(surface.valuesByMode.m1).toEqual({
+				type: "VARIABLE_ALIAS",
+				id: white.id,
+			});
+			expect(findVar(sandbox, "spacing/md").valuesByMode.m0).toBe(16);
+		});
+	});
 });

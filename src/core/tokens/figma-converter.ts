@@ -43,6 +43,8 @@ interface FigmaVariable {
   variableCollectionId: string;
   description?: string;
   scopes?: string[];
+  /** Per-platform code syntax (WEB / ANDROID / iOS → string). */
+  codeSyntax?: Record<string, string>;
   /**
    * Per-mode values. Each value is either a literal or a `{ type: "VARIABLE_ALIAS", id }`
    * pointing at another variable.
@@ -280,6 +282,16 @@ function convertVariable(
         // reconstruct it.
         ...(strippedTypeSuffix ? { figmaName: variable.name } : {}),
         ...(Object.keys(springByMode).length > 0 ? { spring: springByMode } : {}),
+        // Scopes: stash only when NON-default. ["ALL_SCOPES"] (Figma's
+        // default) and empty/absent arrays are omitted so pre-existing
+        // exports stay byte-identical. codeSyntax: stash only when
+        // non-empty, same reasoning.
+        ...(hasNonDefaultScopes(variable.scopes)
+          ? { scopes: [...variable.scopes!] }
+          : {}),
+        ...(variable.codeSyntax && Object.keys(variable.codeSyntax).length > 0
+          ? { codeSyntax: { ...variable.codeSyntax } }
+          : {}),
         lastSyncedAt: new Date().toISOString(),
         // We snapshot the synced value so future merge calls can detect
         // two-sided conflicts. rawColor is transient render-time data and
@@ -289,6 +301,15 @@ function convertVariable(
       },
     },
   };
+}
+
+/**
+ * True when a variable's scopes array is meaningfully restrictive — i.e.
+ * present, non-empty, and not just the default ["ALL_SCOPES"].
+ */
+function hasNonDefaultScopes(scopes: string[] | undefined): boolean {
+  if (!Array.isArray(scopes) || scopes.length === 0) return false;
+  return !(scopes.length === 1 && scopes[0] === "ALL_SCOPES");
 }
 
 function mapResolvedType(
