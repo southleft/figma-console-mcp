@@ -19,8 +19,8 @@
  *      structured $value form. Aliases emit `"$value": "{path.to.target}"`.
  *
  * This formatter is the canonical output — the format every other
- * formatter (CSS variables today, Tailwind/SCSS/etc. in future minor
- * versions) ultimately derives from.
+ * formatter (CSS variables, Tailwind v4/v3, SCSS, TS module, JSON
+ * flat/nested, Style Dictionary v3, Tokens Studio) ultimately derives from.
  */
 
 import type {

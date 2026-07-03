@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.33.0 (patched v1.33.1 — security sweep; v1.33.2 — the re-import banner now only fires when plugin files actually changed) — Self-healing connection + 33-fix audit:** The Desktop Bridge status pill now derives from live connection state (it used to glow green with zero MCP servers connected), `/health` auto-discovery reconnects restarted servers automatically, and a version handshake banners the plugin when it needs a re-import. Underneath: a 33-fix full-codebase audit — lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes. **Re-import the plugin manifest** to pick it up — the new handshake makes it the last one you have to discover on your own. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1330---2026-07-02)
+**New in v1.34.0 — Bidirectional Token Sync v2 + DTCG 2025.10:** `figma_import_tokens` now applies the *whole* diff plan — creates, renames, alias re-targeting, and replace-gated deletes — for a true code→Figma round-trip. Exports speak DTCG 2025.10 on request (opt-in; the legacy default stays byte-identical), variable scopes/codeSyntax round-trip, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and the new `figma_create_component_set` builds a full variant set from an axes matrix in one call. **Plugin re-import required** (`code.js` + `ui.html` changed). [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1340---2026-07-03)
 </Note>
 
 # Your Design System as an API
@@ -144,9 +144,18 @@ Real component data. Real token values. Real code that uses your actual design s
     Execute Figma Plugin API code directly. Build, modify, and organize components programmatically.
 
     - `figma_execute` — Run any Plugin API code
+    - `figma_create_component_set` — Build a full variant set from an axes matrix (or combine existing components) in one call — variant keys returned, ready to instantiate
     - `figma_arrange_component_set` — Organize variants with labels
     - `figma_create_variable` — Add design tokens
     - Plus 20+ node manipulation tools
+  </Accordion>
+
+  <Accordion title="Token Sync" icon="arrows-rotate">
+    Bidirectional design token synchronization — a full code⇄Figma round-trip that replaces Style Dictionary and Tokens Studio's export pipeline.
+
+    - `figma_export_tokens` — Export variables to DTCG JSON (legacy hex or DTCG 2025.10 object dialect via `dtcgDialect`), CSS custom properties, Tailwind v4/v3, SCSS, TypeScript, JSON, Style Dictionary v3, or Tokens Studio. Round-trip safe via `$extensions["figma-console-mcp"]`; scopes and codeSyntax metadata included.
+    - `figma_import_tokens` — Push code-side edits back with a **full apply phase**: value updates, creates for missing collections/variables, renames matched by variable ID, real `VARIABLE_ALIAS` writes, and deletes gated strictly behind `strategy: "replace"`. Accepts both DTCG dialects; dry-run previews.
+    - `figma_setup_design_tokens` — Bootstrap a collection + modes + variables atomically, with alias values via DTCG brace references (`"{color.blue.600}"`)
   </Accordion>
 
   <Accordion title="Visual Context" icon="image">
@@ -199,12 +208,12 @@ Real component data. Real token values. Real code that uses your actual design s
 
 <Columns cols={3}>
   <Card title="NPX Setup (Recommended)" icon="bolt" href="/setup#-npx-setup-recommended">
-    **Full capabilities — 106 tools**
+    **Full capabilities — 107 tools**
 
     All tools including real-time monitoring. Requires Node.js and a Figma token.
   </Card>
   <Card title="Cloud Mode" icon="cloud-arrow-up" href="/setup#-cloud-mode-web-ai-clients">
-    **Web AI clients — 95 tools**
+    **Web AI clients — 96 tools**
 
     Full write access from Claude.ai, v0, Replit, or Lovable. Pair with a code — no Node.js needed.
   </Card>
@@ -267,7 +276,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Real scenarios and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 106 tools
+    Complete reference for 107 tools
   </Card>
   <Card title="Troubleshooting" icon="circle-question" href="/troubleshooting">
     Common issues and solutions

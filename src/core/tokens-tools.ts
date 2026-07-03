@@ -61,7 +61,7 @@ const logger = createChildLogger({ component: "tokens-tools" });
  * on every exported token document. Kept in sync with package.json by
  * scripts/release.sh — see step 3 of the release flow.
  */
-const MCP_VERSION = "1.33.2";
+const MCP_VERSION = "1.34.0";
 
 const EXPORT_TOOL_DESCRIPTION = `Export Figma variables to design token files in your codebase. Bidirectional with figma_import_tokens — together they replace Style Dictionary and Tokens Studio's export pipeline for the popular styling methods.
 
@@ -1294,10 +1294,12 @@ function buildCollectionModeMap(
  *     that still comes out NaN is skipped rather than pushed to Figma)
  *   - STRING-typed string → string
  *   - BOOLEAN → boolean
- *   - Alias references are not yet supported in the apply phase (would need
- *     to resolve the target variable ID); the discriminated return signals
- *     this case so the caller surfaces a warning rather than silently
- *     dropping the update.
+ *   - Alias references return `skip-alias` so the CALLER resolves them —
+ *     both apply paths pass the reference through their alias-ID resolver
+ *     (just-created variable → live snapshot → pending in batch → recorded
+ *     $extensions ID) and write { type: "VARIABLE_ALIAS", id }. Only when
+ *     the resolver comes up empty does the reference stay skipped, with a
+ *     warning rather than a silent drop.
  *
  * Exported for test coverage of the value-conversion edge cases.
  */
@@ -1310,11 +1312,12 @@ export function tokenValueToFigma(
   | { kind: "skip-empty" }
   | { kind: "skip-invalid"; reason: string } {
   if (value.reference) {
-    // A future minor version will resolve the referenced variable's Figma ID and emit
-    // { type: "VARIABLE_ALIAS", id }. For now, skip alias updates so we
-    // don't accidentally wipe a reference with a literal — and surface a
-    // warning so the user knows the diff plan promised an update that
-    // didn't actually apply.
+    // References aren't converted here — the caller resolves them to a
+    // Figma variable ID via its alias-ID resolver and writes a real
+    // { type: "VARIABLE_ALIAS", id } payload. Returning skip-alias hands
+    // the reference back for that resolution; if the resolver can't find
+    // a target, the caller surfaces a warning instead of silently wiping
+    // the reference with a literal.
     return { kind: "skip-alias", reference: value.reference };
   }
   if (value.literal === undefined || value.literal === null) {

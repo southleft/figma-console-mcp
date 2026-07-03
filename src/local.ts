@@ -3026,8 +3026,9 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 		// Register token sync tools — figma_export_tokens and figma_import_tokens.
 		// Replace Style Dictionary and Tokens Studio's export pipeline for the
-		// popular styling methods (DTCG canonical, plus CSS/Tailwind/SCSS/etc.
-		// as Phase 2+ extensions to a single internal token model).
+		// popular styling methods (DTCG canonical — legacy + 2025.10 dialects —
+		// plus CSS/Tailwind/SCSS/TS/JSON/Style Dictionary/Tokens Studio, all
+		// derived from a single internal token model).
 		registerTokensTools(this.server, () => this.getDesktopConnector());
 
 		// Register Figma API tools (Tools 8-11)
@@ -3541,9 +3542,9 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			this.wsPreferredPort = parseInt(process.env.FIGMA_WS_PORT || String(DEFAULT_WS_PORT), 10);
 
 			// Clean up stale/orphaned MCP server instances before trying to bind.
-			// Phase 1: Remove stale port files and terminate zombie processes that have port files
+			// Step 1: Remove stale port files and terminate zombie processes that have port files
 			cleanupStalePortFiles();
-			// Phase 2: Deep scan for orphaned processes holding ports WITHOUT port files
+			// Step 2: Deep scan for orphaned processes holding ports WITHOUT port files
 			// (e.g., old instances from before port file tracking, or files already cleaned up)
 			cleanupOrphanedProcesses(this.wsPreferredPort);
 

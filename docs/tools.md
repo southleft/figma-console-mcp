@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 94 MCP tools, including parameters, return values, and usage examples."
+description: "Complete API reference for all 107 MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **106 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **95 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **107 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **96 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -34,6 +34,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_get_design_system_summary` | Overview of design system | Local / Cloud |
 | | `figma_get_token_values` | Get variable values by mode | Local / Cloud |
 | **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local / Cloud |
+| | `figma_create_component_set` | **Create a component set with variants in one call** — axes matrix or existing components | Local / Cloud |
 | | `figma_arrange_component_set` | Organize variants with labels | Local / Cloud |
 | | `figma_set_description` | Add component descriptions | Local / Cloud |
 | **🧩 Components** | `figma_search_components` | Find components by name (local + library) | Local / Cloud |
@@ -308,9 +309,9 @@ figma_reload_plugin({
 
 ## 🔁 Token Sync Tools
 
-Bidirectional design token synchronization between Figma variables and your codebase. New in v1.27.0 — replaces Style Dictionary and Tokens Studio's export pipeline for popular styling methods.
+Bidirectional design token synchronization between Figma variables and your codebase — replaces Style Dictionary and Tokens Studio's export pipeline for popular styling methods.
 
-The canonical pivot format is **DTCG JSON** (W3C Design Tokens Community Group spec). Additional output formats — CSS custom properties, Tailwind v4 `@theme`, SCSS, TypeScript modules — are scaffolded; CSS custom properties ships in v1.27.0, others arrive in subsequent minor versions.
+The canonical pivot format is **DTCG JSON** (W3C Design Tokens Community Group spec), in your choice of dialect: the legacy hex-string form (default) or the DTCG 2025.10 object form. All ten output formats listed below are fully implemented. Import applies the complete diff plan back to Figma — value updates, creates, renames, alias writes, and (under `replace`) deletes.
 
 ### `figma_export_tokens`
 
@@ -338,7 +339,7 @@ figma_export_tokens({
 
 | Format | Notes |
 |---|---|
-| `dtcg` | W3C Design Tokens Community Group standard JSON. Canonical pivot format. Round-trip safe via `$extensions["figma-console-mcp"]` (Figma variable IDs preserved across sync). |
+| `dtcg` | W3C Design Tokens Community Group standard JSON. Canonical pivot format. Round-trip safe via `$extensions["figma-console-mcp"]` (Figma variable IDs preserved across sync). Dialect selectable via `dtcgDialect` (see below). |
 | `css-vars` | CSS custom properties. `:root { ... }` blocks with mode-aware selectors (`.dark`, `[data-theme="..."]`). Composite typography expands to primitive vars. |
 | `tailwind-v4` | Tailwind v4 `@theme inline { ... }` block. Token-to-namespace mapping generates utility classes (`bg-primary`, `text-foreground`, `rounded-lg`, etc.). |
 | `tailwind-v3` | `module.exports = { colors: ... }` grouped under Tailwind v3 theme keys (`colors`, `spacing`, `fontFamily`, `borderRadius`). Spread into `tailwind.config.js`'s `theme.extend`. |
@@ -349,9 +350,18 @@ figma_export_tokens({
 | `style-dictionary-v3` | Style Dictionary v3 bare-key source format (`{value, type, comment}` — no `$` prefix). Back-compat for existing SD users. |
 | `tokens-studio` | Tokens Studio for Figma's multi-file layout: `$themes.json` + `$metadata.json` + per-set files (e.g. `theme/light.json`, `theme/dark.json`). Preserves Figma collection/mode bindings for round-trip with the TS plugin. |
 
+**DTCG dialect (`dtcgDialect`):**
+
+| Value | Behavior |
+|---|---|
+| `"legacy"` (default) | Hex-string colors (`"#4085F2"`), bare-number dimensions. Byte-identical to prior releases — maximum compatibility with Style Dictionary v4 and Tokens Studio. |
+| `"2025"` | DTCG 2025.10 object forms: colors as `{ colorSpace: "srgb", components, alpha, hex }` (built from Figma's full-precision floats, not re-derived from quantized hex) and dimensions as `{ value, unit: "px" }`. For Style Dictionary v5+ and other 2025.10-aware toolchains. |
+
+Import accepts **both** dialects unconditionally — no flag needed on `figma_import_tokens`, and mixed-dialect token files diff correctly (object colors compare equal to their hex equivalents, `{ value: 16, unit: "px" }` equals `16`).
+
 **Diff-aware merge:** Default `strategy: "merge"` only writes files whose content actually changed. Use `strategy: "dry-run"` to preview without writing. Use `strategy: "replace"` to wipe and rewrite.
 
-**Round-trip safety:** Every exported token carries its Figma `variableId` and `collectionId` in DTCG `$extensions["figma-console-mcp"]`. Renames on either side don't create duplicates — the ID is the primary match key. Also stamps `lastSyncedValue` (per-mode snapshot) and `lastSyncedAt` so two-sided conflicts can be detected on import.
+**Round-trip safety:** Every exported token carries its Figma `variableId` and `collectionId` in DTCG `$extensions["figma-console-mcp"]`. Renames on either side don't create duplicates — the ID is the primary match key. Also stamps `lastSyncedValue` (per-mode snapshot) and `lastSyncedAt` so two-sided conflicts can be detected on import, plus variable `scopes` (omitted when default) and per-platform `codeSyntax` so metadata survives the round-trip.
 
 **Cloud Mode:** Omit `configPath` and `outputPath`. The tool returns token content inline in the response; have your AI client write the files via its own Edit/Write tools. File I/O (autodiscovery, automatic writes) is Local Mode only.
 
@@ -395,12 +405,14 @@ figma_import_tokens({
 
 **Conflict handling:** When both Figma and code changed the same token since the last sync, `onConflict: "ask"` (default) surfaces the conflict and writes nothing. Use `"figma-wins"` / `"code-wins"` to auto-resolve, or `"skip"` to leave conflicts alone and proceed with the rest.
 
-**What the apply phase actually does today:**
+**What the apply phase does:**
 
-- ✅ `toUpdate` (value changes on existing variables): applied via the plugin's `executeCodeViaUI` → `figma.variables.setValueForMode`. Multi-mode supported. Partial-success semantics — per-variable errors don't fail the batch, results returned in `applyResult.errors[]`.
-- ⏳ `toCreate` (new variables): diff plan returned, apply orchestration not yet wired. Use `figma_setup_design_tokens` or `figma_batch_create_variables` manually for now.
-- ⏳ `toDelete` (Figma-only variables): preserved by default per the `merge` strategy. `figma_delete_variable` available for manual deletion.
-- ⏳ Alias updates (code-side `{color.primary}` references): skipped with a warning explaining the workaround (edit the alias target's value, or hard-code a literal).
+- ✅ `toUpdate` (value changes on existing variables): applied via the plugin bridge (`figma.variables.setValueForMode`). Multi-mode supported. Renames matched by round-trip variable ID apply as name changes on the existing variable — a token-path rename never becomes a create+delete pair. `scopes` and `codeSyntax` metadata changes apply too (a code-side absent field means "no opinion" and never resets Figma metadata).
+- ✅ `toCreate` (new variables and collections): missing collections are created with their full mode lists; missing variables are created with inferred or round-trip-recorded types, values set across all modes in dependency order — literal values first, alias values in a second pass so their targets exist. TIMING/EASING tokens are skipped with a clear warning (the Plugin API cannot create those types).
+- ✅ Alias updates (code-side `{color.primary}` references): written as real `{ type: "VARIABLE_ALIAS", id }` values. Resolver priority: just-created variable → live Figma snapshot → pending in this batch → recorded `$extensions` variable ID. Unresolvable references are skipped with a warning.
+- ✅ `toDelete` (Figma-only variables): applied **only** under `strategy: "replace"`, and announced loudly in the response. The default `merge` strategy reports them without deleting.
+
+Partial-success semantics throughout — per-variable errors don't fail the batch; results are returned in `applyResult.errors[]`.
 
 **Cloud Mode:** Pass tokens inline via `payload` (single file) or `files` (multi-file). Omit `configPath`. The apply phase works in Cloud Mode because it routes through the paired Desktop Bridge plugin via the Cloud Plugin Relay — transport-agnostic.
 
@@ -1147,6 +1159,12 @@ figma_setup_design_tokens({
       name: "spacing/page",
       resolvedType: "FLOAT",
       values: { "Light": 24, "Dark": 24 }
+    },
+    {
+      name: "color/action/primary",
+      resolvedType: "COLOR",
+      // Alias values: DTCG brace references resolve to real variable aliases
+      values: { "Light": "{color.background}", "Dark": "{color.background}" }
     }
   ]
 })
@@ -1159,7 +1177,9 @@ figma_setup_design_tokens({
   - `name` (required): Token name (use `/` for grouping)
   - `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, or `"BOOLEAN"`
   - `description` (optional): Token description
-  - `values` (required): Object mapping **mode names** (not IDs) to values
+  - `values` (required): Object mapping **mode names** (not IDs) to values. A value can be a literal **or a DTCG brace reference** (`"{color.blue.600}"`, set-qualified forms like `"{primitives.color.blue.600}"` too) — resolved via `createVariableAlias` against both variables created in the same call and variables that already exist in the file.
+
+**Alias resolution:** creation runs in two passes — all variables are created first, then values are applied — so **forward references within one call resolve** (a semantic token can reference a primitive defined later in the same `tokens` array). Unresolvable references warn per-item without failing the batch. Semantic collections no longer require raw `figma_execute` scripting.
 
 **Returns:**
 ```json
@@ -1467,6 +1487,67 @@ figma_instantiate_component({
 
 **Returns:**
 - Created instance with node ID
+
+---
+
+### `figma_create_component_set`
+
+Create a component set with variants in one declarative call — replaces hand-written `figma_execute` + `figma.combineAsVariants()` scripts.
+
+**When to Use:**
+- Building a component's full variant matrix (states × sizes × …) from a single base component
+- Combining existing loose components into a proper component set
+- Any time you'd otherwise script `combineAsVariants` by hand
+
+**Two modes:**
+
+1. **Generate from a base component** — pass `baseComponentId` + `properties` (the variant axes matrix). The base is cloned for every combination of the axes, each variant named `Prop=Value` comma-joined (e.g. `State=hover, Size=sm`), then combined into a set. The base component itself becomes the **first variant** (same node ID), so existing instances of the base survive as instances of that variant.
+2. **Combine existing components** — pass `componentIds`, optionally with `variantProperties` (aligned 1:1 by index) to rename each component to `Prop=Value` form before combining. Property names and values must not contain `=` or `,`. On any pre-combine failure, a unified rollback restores the components' original names.
+
+**Usage (axes matrix):**
+```javascript
+figma_create_component_set({
+  baseComponentId: "123:456",
+  properties: {
+    State: ["default", "hover", "disabled"],
+    Size: ["sm", "lg"]
+  },                              // → 6 variants: State=default, Size=sm … State=disabled, Size=lg
+  name: "Button",
+  autoArrange: true               // labeled grid inside a white container
+})
+```
+
+**Usage (combine existing components):**
+```javascript
+figma_create_component_set({
+  componentIds: ["123:1", "123:2", "123:3"],
+  variantProperties: [
+    { State: "default" },
+    { State: "hover" },
+    { State: "disabled" }
+  ],
+  name: "Button"
+})
+```
+
+**Parameters:**
+- `baseComponentId` (optional): Node ID of an existing COMPONENT to use as the base. Mutually exclusive with `componentIds`.
+- `properties` (required with `baseComponentId`): Variant property axes — `{ State: ["default", "hover"], Size: ["sm", "lg"] }`. Max 100 combinations.
+- `componentIds` (optional): Node IDs of existing COMPONENT nodes to combine. Components already inside a component set are rejected.
+- `variantProperties` (optional, only with `componentIds`): One property map per component, aligned by index. Without it, existing names are kept (names lacking `=` become `Property 1=<name>`).
+- `name` (optional): Name for the component set (defaults to Figma's derived name)
+- `parentId` (optional): Container frame/section to create the set in (defaults to current page)
+- `position` (optional): `{ x, y }` position within the parent
+- `autoArrange` (optional, default `false`): Lay the new set out as a labeled grid (columns = last property, rows = other properties) inside a white container — same in-place layout as `figma_arrange_component_set`
+- `arrangeOptions` (optional): `gap`, `cellPadding`, `columnProperty` — used when `autoArrange` is true
+
+**Naming convention:** Figma derives the variant property definitions from the `Prop=Value` names; they live on the **SET** (`componentPropertyDefinitions`), not on individual variants.
+
+**Size guidance:** hard cap **100 variants**. The timeout auto-scales with variant count (~1.2s/variant, 30s floor / 2min cap) at every hop, but above **~40 variants** the single-pass clone+combine gets slow and the response carries a warning — prefer splitting large matrices into multiple sets (e.g. one set per Size).
+
+**Returns:**
+- The component set's `id`, `name`, and key
+- Each variant's `name`, `nodeId`, and **`key`** — instantiate with a *variant's* key via `figma_instantiate_component`, not the set's key
 
 ---
 

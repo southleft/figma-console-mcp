@@ -8,16 +8,16 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, **debugging**, and **bidirectional token sync**.
 
-> **🆕 Self-healing connection + 33-fix audit (v1.33.0, patched v1.33.1 — security dependency sweep):** The Desktop Bridge now tells the truth and heals itself — the status pill derives from live connection state (it used to glow green with zero MCP servers connected), `/health` auto-discovery reconnects restarted servers without the manual ritual, and a version handshake banners the plugin when it needs a re-import. Underneath: a 33-fix full-codebase audit — lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes. **Re-import the plugin manifest one more time** — the new handshake makes it the last one you have to discover on your own. [See what's new →](CHANGELOG.md#1330---2026-07-02)
+> **🆕 Bidirectional Token Sync v2 + DTCG 2025.10 (v1.34.0):** `figma_import_tokens` now applies the *whole* diff plan — creates, renames, alias re-targeting, and replace-gated deletes — for a true code→Figma round-trip; exports speak DTCG 2025.10 on request (opt-in, legacy default byte-identical); scopes/codeSyntax round-trip; `figma_setup_design_tokens` accepts alias values; and the new `figma_create_component_set` builds a full variant set from an axes matrix in one call. **Plugin re-import required** (`code.js` + `ui.html` changed). [See what's new →](CHANGELOG.md#1340---2026-07-03)
 
 ## What is this?
 
 Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 - **🎨 Design system extraction** - Pull variables, components, and styles
-- **🔁 Bidirectional token sync** - Export Figma variables to DTCG JSON + CSS custom properties; push code-side edits back to Figma. Replaces Style Dictionary and Tokens Studio's export pipeline.
+- **🔁 Bidirectional token sync** - Export Figma variables to DTCG JSON (legacy or 2025.10 dialect) + 9 more formats; push code-side edits back to Figma with full apply — creates, renames, alias re-targeting, and replace-gated deletes. Replaces Style Dictionary and Tokens Studio's export pipeline.
 - **📸 Visual debugging** - Take screenshots for context
-- **✏️ Design creation** - Create UI components, frames, and layouts directly in Figma
+- **✏️ Design creation** - Create UI components, frames, and layouts directly in Figma — including one-call component-set creation from a variant axes matrix
 - **🔧 Variable management** - Create, update, rename, and delete design tokens
 - **🕰 Version history & time-series awareness** - List versions, diff snapshots, generate markdown changelogs, trace property/variant introduction via binary-search blame
 - **⚡ Real-time monitoring** - Watch console logs from the Desktop Bridge plugin
@@ -55,9 +55,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **106** | **95** | **9** |
+| **Total tools available** | **107** | **96** | **9** |
 
-> **Bottom line:** Remote SSE is **read-only** with ~38% of the tools. **Cloud Mode** unlocks write access from web AI clients without Node.js. NPX/Local Git gives the full 106 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (96 tools) from web AI clients without Node.js. NPX/Local Git gives the full 107 tools with real-time monitoring.
 
 ---
 
@@ -65,7 +65,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 106 tools including design creation, variable management, and component instantiation.
+**What you get:** All 107 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -162,7 +162,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 106 tools as NPX, plus full source code access.
+**What you get:** Same 107 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -251,7 +251,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 **Best for:** Using Claude.ai, v0, Replit, or Lovable to create and modify Figma designs — no Node.js required.
 
-**What you get:** 95 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
+**What you get:** 96 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
 
 #### Prerequisites
 
@@ -308,7 +308,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **106** | **95** | **106** | **9** (read-only) |
+| **Total tools** | **107** | **96** | **107** | **9** (read-only) |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -323,7 +323,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 106 tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 107 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -415,6 +415,10 @@ When you first use design system tools:
   - Create frames, shapes, text, components
   - Apply auto-layout, styles, effects
   - Build complete UI mockups programmatically
+- `figma_create_component_set` - **Create a component set with variants in one declarative call**
+  - Generate every variant combination from an axes matrix (e.g. `{ State: ["default", "hover", "disabled"], Size: ["sm", "lg"] }` → 6 variants) off a base component, or combine existing components
+  - `Prop=Value` variant naming, `combineAsVariants` under the hood, optional auto-arranged labeled grid
+  - Returns each variant's key, ready for `figma_instantiate_component`
 - `figma_arrange_component_set` - **Organize variants into professional component sets**
   - Convert multiple component variants into a proper Figma component set
   - Applies native purple dashed border visualization automatically
@@ -432,8 +436,8 @@ When you first use design system tools:
 - `figma_generate_component_doc` - Generate platform-agnostic markdown documentation by merging Figma design data with code-side info
 
 ### 🔁 Token Sync (Local Mode + Cloud Mode)
-- `figma_export_tokens` - **Export Figma variables to design token files in your codebase.** Canonical DTCG JSON + CSS custom properties out of the box. Diff-aware merge against existing source files (only writes what changed). `tokens.config.json` autodiscovery means zero-arg calls after first setup. Replaces Style Dictionary and Tokens Studio's export pipeline for popular styling methods.
-- `figma_import_tokens` - **Push code-side token edits back to Figma.** Diff against current Figma state, apply only the deltas. Round-trip safe — Figma variable IDs preserved in DTCG `$extensions["figma-console-mcp"]` so renames on either side don't create duplicates. Dry-run default for safety. In Cloud Mode, pass tokens inline via `payload` or `files` (no local filesystem access).
+- `figma_export_tokens` - **Export Figma variables to design token files in your codebase.** Canonical DTCG JSON (legacy hex dialect by default, or DTCG 2025.10 object colors/dimensions via `dtcgDialect: "2025"`) plus CSS, Tailwind v4/v3, SCSS, TS, JSON, Style Dictionary, and Tokens Studio formats. Diff-aware merge against existing source files (only writes what changed). `tokens.config.json` autodiscovery means zero-arg calls after first setup. Scopes and codeSyntax metadata round-trip via `$extensions`. Replaces Style Dictionary and Tokens Studio's export pipeline for popular styling methods.
+- `figma_import_tokens` - **Push code-side token edits back to Figma with a full apply phase.** Diffs against current Figma state, then applies value updates, **creates** missing collections/variables, applies **renames**, writes real **alias** (`VARIABLE_ALIAS`) references, and — only under `strategy: "replace"` — deletes Figma-only variables. Round-trip safe — Figma variable IDs preserved in DTCG `$extensions["figma-console-mcp"]` so renames on either side don't create duplicates. Accepts both DTCG dialects. Dry-run strategy for safe previews. In Cloud Mode, pass tokens inline via `payload` or `files` (no local filesystem access).
 
 ### 🔧 Variable Management (Local Mode + Cloud Mode)
 - `figma_create_variable_collection` - Create new variable collections with modes
@@ -446,7 +450,7 @@ When you first use design system tools:
 - `figma_rename_mode` - Rename existing modes
 - `figma_batch_create_variables` - Create up to 100 variables in one call (10-50x faster)
 - `figma_batch_update_variables` - Update up to 100 variable values in one call
-- `figma_setup_design_tokens` - Create complete token system (collection + modes + variables) atomically
+- `figma_setup_design_tokens` - Create complete token system (collection + modes + variables) atomically — values accept DTCG brace references (`"{color.blue.600}"`) that resolve to real variable aliases
 
 ### 📌 FigJam Board Tools (Local Mode + Cloud Mode)
 - `figjam_create_sticky` - Create a sticky note with color options
@@ -669,7 +673,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 106 tools work through the WebSocket transport
+- All 107 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -808,9 +812,10 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.33.2 (Stable) - Production-ready. Latest: version-handshake fix — the plugin's "update available" banner now compares against the plugin files the server actually ships, so server-only releases no longer nag you to re-import an already-current plugin. On top of the v1.33.1 security dependency sweep (all runtime + critical alerts resolved via in-range bumps; zero API changes) and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect, version handshake with in-plugin re-import banner) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **106 tools** (Local) / **95 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
+**Current Status:** v1.34.0 (Stable) - Production-ready. Latest: Bidirectional Token Sync v2 + DTCG 2025.10 — `figma_import_tokens` now applies the complete diff plan (creates missing collections/variables, applies renames, writes real `VARIABLE_ALIAS` references, and deletes only under explicit `replace`), `figma_export_tokens` speaks the DTCG 2025.10 dialect on request (legacy default byte-identical), variable scopes/codeSyntax round-trip via `$extensions`, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and the new `figma_create_component_set` builds a full variant set from an axes matrix in one call. On top of the v1.33.x line: version-handshake fix (re-import banner only fires when plugin files actually changed), security dependency sweep, and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **107 tools** (Local) / **96 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
 
 **Recent Releases:**
+- [x] **v1.34.0** - Bidirectional Token Sync v2 + DTCG 2025.10. `figma_import_tokens` now applies the *complete* diff plan: missing collections and variables are created (with modes, inferred/recorded types, and values set in dependency order — aliases in a second pass), token-path renames route to the update phase by round-trip variable ID (no more create+delete pairs that would permanently destroy the original under `replace`), reference values write real `{ type: "VARIABLE_ALIAS", id }` payloads via a four-tier resolver, and deletes are strictly gated behind `strategy: "replace"`. `figma_export_tokens` gains `dtcgDialect: "2025"` (object-form colors from full-precision floats, object dimensions) while the legacy default stays byte-identical; import accepts both dialects unconditionally with dialect-insensitive diff normalization. Variable `scopes` + `codeSyntax` round-trip through `$extensions["figma-console-mcp"]`. `figma_setup_design_tokens` accepts DTCG brace references (`"{color.blue.600}"`) that resolve to real aliases, including forward references. New tool `figma_create_component_set` builds a variant set from an axes matrix (or combines existing components) with `Prop=Value` naming, optional auto-arranged grid, and variant keys in the response — with count-scaled timeouts and rollback on failure. **Plugin re-import required** (`code.js` + `ui.html` changed — the component-set handler and relay). 183 tests across the token/write-tools suites.
 - [x] **v1.33.2** - Version-handshake false-positive fix. The v1.33.0 handshake compared the plugin's reported version against the server's *package* version, so server-only releases (like the v1.33.1 dependency sweep) flagged every up-to-date plugin as stale and pushed the re-import banner for files that hadn't changed. The server now compares against the `PLUGIN_VERSION` embedded in the `figma-desktop-bridge/code.js` it ships — exactly what a re-import would install — and `PLUGIN_VERSION` itself now means "last release in which plugin files changed" (release tooling bumps it only when `figma-desktop-bridge/` actually changed since the last tag). `figma_get_status` gains `transport.websocket.bundledPluginVersion`; `figma_diagnose` blames the right version. No new tools, **no plugin re-import required** (one-time exception: if you re-imported at v1.33.1, the banner appears once more — clear it with one final re-import). 1245 tests passing (9 new).
 - [x] **v1.33.1** - Security dependency sweep. All runtime and critical npm audit alerts resolved via in-range bumps (`ws` 8.21.0, `hono` 4.12.27, `undici` 7.28.0, `handlebars` 4.7.9 — the lone critical, dev-only — plus `lodash`, `path-to-regexp`, `basic-ftp`, `fast-uri`, `vite`). `wrangler` deliberately held at 4.72.0 because newer versions require Node ≥22; the only residual audit findings are inside wrangler/miniflare's dev-time toolchain, which never ships in the npm package or Worker bundle. Supersedes dependabot PRs #81/#82/#84. No code changes, no API changes, no plugin re-import. 1236 tests passing unchanged.
 - [x] **v1.33.0** - Connection UX overhaul + full-codebase audit. The plugin's status pill now derives from live connection state instead of Figma's variables loading (it used to glow green with zero MCP servers connected); HTTP `/health` auto-discovery reconnects restarted servers automatically (including one-dead-among-live, previously a permanent dead end); a version handshake banners the plugin UI when a re-import is needed and surfaces the mismatch in `figma_get_status`/`figma_diagnose`; cloud pairing config survives plugin reopen and its status line is derived + labeled (no more orphaned "Disconnected" under a green pill); all plugin copy is designer-language. The audit fixed 33 verified issues: lossless DTCG multi-mode round-trips, set-qualified cross-collection aliases, TIMING/EASING mapped to DTCG `duration`/`cubicBezier`, two cache-poisoning bugs (the "search returns 0 components" reports), a CSWSH origin bypass (`startsWith` → exact match), post-sleep reaper kill-safety (plus a shell-free `/health` probe with `os.devNull` so Windows curl can't false-negative a healthy sibling), branch-URL correctness across REST tools, and bridge-first `figma_take_screenshot`. `figma_arrange_component_set` now rearranges variants in place so placed instances survive. No new tools; **plugin re-import required** (`code.js` + `ui.html` changed — and the new handshake makes this the last one you have to discover on your own). 1236 tests passing (33 new).
@@ -839,7 +844,8 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 - [x] **v1.7.0** - MCP Apps (Token Browser, Design System Dashboard), batch variable operations, design-code parity tools.
 
 **Coming Next:**
-- [ ] **Token sync — parsers + import-side apply expansion** - Parsers for non-DTCG input (Tokens Studio, CSS vars, Tailwind v4, Tailwind v3 config, SCSS, Style Dictionary v3, JSON flat/nested). Plus `toCreate` apply orchestration, `toDelete` for `replace` strategy, alias-target updates, and cross-library variable resolution via `getVariableByIdAsync` so cross-library aliases render as real `var(--target)` references instead of comments.
+- [ ] **Token sync — non-DTCG input parsers** - Parsers for non-DTCG input (Tokens Studio, CSS vars, Tailwind v4, Tailwind v3 config, SCSS, Style Dictionary v3, JSON flat/nested) so `figma_import_tokens` can ingest the same formats it exports. (The import-side apply expansion — creates, replace-gated deletes, alias-target updates — shipped in v1.34.0.)
+- [ ] **Cross-library variable resolution** - Resolve cross-library aliases via `getVariableByIdAsync` so they render as real `var(--target)` references in exports instead of comments.
 - [ ] **Component template library** - Common UI pattern generation
 - [ ] **Visual regression testing** - Screenshot diff capabilities
 
