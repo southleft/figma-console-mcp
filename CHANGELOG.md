@@ -5,6 +5,16 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.2] - 2026-07-03
+
+Fixes the false "plugin update available" banner introduced by the v1.33.0 version handshake. No new tools, and no plugin re-import required — this release exists so you *stop* being asked to re-import.
+
+### Fixed
+
+- **Version handshake false positive on server-only releases.** The FILE_INFO handshake compared the plugin's reported version against the server's *package* version with strict `!==`, so a deps-only release like v1.33.1 flagged every up-to-date plugin as stale and pushed the re-import banner — even though re-importing would install byte-identical files. The server now parses the `PLUGIN_VERSION` constant out of the `figma-desktop-bridge/code.js` it actually ships and compares against that (i.e., the version a re-import would install). `figma_get_status` reports the new `transport.websocket.bundledPluginVersion` field, and `figma_diagnose` attributes a mismatch to the bundled plugin files rather than the server version. If parsing ever fails, the handshake falls back to the previous behavior.
+- **`PLUGIN_VERSION` semantics redefined.** The in-plugin constant now means "last release in which plugin files changed" and may intentionally lag `package.json` (it must never exceed it — enforced by tests). `scripts/release.sh` bumps it only when `figma-desktop-bridge/` actually changed since the last release tag, using `git diff -I` to ignore the constant line itself and comment-only edits so a prior bump can't masquerade as a plugin change. The constant was reverted from 1.33.1 to 1.33.0 because the only plugin diff in v1.33.1 *was* the version stamp. One-time caveat: if you already re-imported at v1.33.1, the banner shows once more; re-import once and it stays quiet. 1245 tests passing (9 new, including an end-to-end handshake regression for the exact 1.33.0-plugin/1.33.1-server pairing).
+
+
 ## [1.33.1] - 2026-07-02
 
 Security-focused dependency sweep, same-day follow-up to v1.33.0. No code changes, no API changes, no plugin behavior changes. Nothing breaks on an un-updated plugin — but note the v1.33.0 version handshake will show the plugin's update banner (the version stamp moved to 1.33.1); re-import when convenient to clear it.
@@ -1059,6 +1069,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.33.2]: https://github.com/southleft/figma-console-mcp/compare/v1.33.1...v1.33.2
 [1.33.1]: https://github.com/southleft/figma-console-mcp/compare/v1.33.0...v1.33.1
 [1.33.0]: https://github.com/southleft/figma-console-mcp/compare/v1.32.1...v1.33.0
 [1.32.1]: https://github.com/southleft/figma-console-mcp/compare/v1.32.0...v1.32.1
