@@ -65,6 +65,20 @@ function createMockConnector(overrides: Record<string, jest.Mock> = {}) {
 		renameNode: jest.fn().mockResolvedValue({ success: true, node: { id: "n1", name: "new" } }),
 		setTextContent: jest.fn().mockResolvedValue({ success: true, node: { id: "n1" } }),
 		createChildNode: jest.fn().mockResolvedValue({ success: true, child: { id: "n3" } }),
+		createComponentSet: jest.fn().mockResolvedValue({
+			success: true,
+			data: {
+				componentSet: { id: "99:1", name: "Button", key: "setkey", x: 0, y: 0, width: 400, height: 300, parentId: "0:1" },
+				variantCount: 2,
+				variants: [
+					{ id: "99:2", name: "State=default", key: "vkey1" },
+					{ id: "99:3", name: "State=hover", key: "vkey2" },
+				],
+				propertyDefinitions: {
+					State: { type: "VARIANT", defaultValue: "default", variantOptions: ["default", "hover"] },
+				},
+			},
+		}),
 		lintDesign: jest.fn().mockResolvedValue({
 			success: true,
 			data: { rootNodeId: "0:1", nodesScanned: 10, categories: [], summary: { total: 0 } },
@@ -95,8 +109,8 @@ describe("Write Tools", () => {
 	// Registration
 	// ========================================================================
 
-	it("registers all 30 write tools", () => {
-		expect(server.tool).toHaveBeenCalledTimes(30);
+	it("registers all 31 write tools", () => {
+		expect(server.tool).toHaveBeenCalledTimes(31);
 	});
 
 	// ========================================================================
@@ -337,6 +351,165 @@ describe("Write Tools", () => {
 				expect(parsed.error).toBeDefined();
 				expect(typeof parsed.error).toBe("string");
 			}
+		});
+	});
+
+	// ========================================================================
+	// Create component set
+	// ========================================================================
+
+	describe("figma_create_component_set", () => {
+		it("forwards base-component mode params to the connector", async () => {
+			const tool = server._getTool("figma_create_component_set");
+			await tool.handler({
+				baseComponentId: "1:1",
+				properties: { State: ["default", "hover"], Size: ["sm", "lg"] },
+				name: "Button",
+				parentId: "0:5",
+				position: { x: 100, y: 200 },
+			});
+
+			expect(mockConnector.createComponentSet).toHaveBeenCalledWith({
+				baseComponentId: "1:1",
+				properties: { State: ["default", "hover"], Size: ["sm", "lg"] },
+				componentIds: undefined,
+				variantProperties: undefined,
+				name: "Button",
+				parentId: "0:5",
+				position: { x: 100, y: 200 },
+			});
+		});
+
+		it("forwards combine-existing mode params to the connector", async () => {
+			const tool = server._getTool("figma_create_component_set");
+			await tool.handler({
+				componentIds: ["1:1", "1:2"],
+				variantProperties: [{ State: "default" }, { State: "hover" }],
+			});
+
+			const params = mockConnector.createComponentSet.mock.calls[0][0];
+			expect(params.componentIds).toEqual(["1:1", "1:2"]);
+			expect(params.variantProperties).toEqual([
+				{ State: "default" },
+				{ State: "hover" },
+			]);
+		});
+
+		it("errors when neither baseComponentId nor componentIds is provided", async () => {
+			const tool = server._getTool("figma_create_component_set");
+			const result = await tool.handler({});
+
+			expect(result.isError).toBe(true);
+			const parsed = parseResult(result);
+			expect(parsed.error).toContain("baseComponentId");
+			expect(mockConnector.createComponentSet).not.toHaveBeenCalled();
+		});
+
+		it("errors when both modes are passed at once", async () => {
+			const tool = server._getTool("figma_create_component_set");
+			const result = await tool.handler({
+				baseComponentId: "1:1",
+				properties: { State: ["default"] },
+				componentIds: ["1:2"],
+			});
+
+			expect(result.isError).toBe(true);
+			const parsed = parseResult(result);
+			expect(parsed.error).toContain("mutually exclusive");
+		});
+
+		it("errors when baseComponentId is passed without properties", async () => {
+			const tool = server._getTool("figma_create_component_set");
+			const result = await tool.handler({ baseComponentId: "1:1" });
+
+			expect(result.isError).toBe(true);
+			const parsed = parseResult(result);
+			expect(parsed.error).toContain("properties");
+		});
+
+		it("returns variant keys and property definitions from the bridge", async () => {
+			const tool = server._getTool("figma_create_component_set");
+			const result = await tool.handler({
+				baseComponentId: "1:1",
+				properties: { State: ["default", "hover"] },
+			});
+			const parsed = parseResult(result);
+
+			expect(parsed.success).toBe(true);
+			expect(parsed.componentSet.id).toBe("99:1");
+			expect(parsed.variants).toHaveLength(2);
+			expect(parsed.variants[0].key).toBe("vkey1");
+			expect(parsed.propertyDefinitions.State.variantOptions).toEqual([
+				"default",
+				"hover",
+			]);
+			expect(parsed.hint).toContain("VARIANT");
+		});
+
+		it("throws when connector returns success:false", async () => {
+			mockConnector.createComponentSet.mockResolvedValue({
+				success: false,
+				error: "Base component is already a variant inside component set",
+			});
+			const tool = server._getTool("figma_create_component_set");
+			const result = await tool.handler({
+				baseComponentId: "1:1",
+				properties: { State: ["default"] },
+			});
+
+			expect(result.isError).toBe(true);
+			const parsed = parseResult(result);
+			expect(parsed.error).toContain("already a variant");
+		});
+
+		it("does not run arrange code by default", async () => {
+			const tool = server._getTool("figma_create_component_set");
+			await tool.handler({
+				baseComponentId: "1:1",
+				properties: { State: ["default"] },
+			});
+
+			expect(mockConnector.executeCodeViaUI).not.toHaveBeenCalled();
+		});
+
+		it("runs the arrange script against the new set when autoArrange is true", async () => {
+			mockConnector.executeCodeViaUI.mockResolvedValue({
+				success: true,
+				result: { success: true, containerId: "77:1", grid: { rows: 1, columns: 2 } },
+			});
+			const tool = server._getTool("figma_create_component_set");
+			const result = await tool.handler({
+				baseComponentId: "1:1",
+				properties: { State: ["default", "hover"] },
+				autoArrange: true,
+			});
+
+			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledTimes(1);
+			const script = mockConnector.executeCodeViaUI.mock.calls[0][0];
+			expect(script).toContain("99:1"); // arranges the set the bridge just created
+
+			const parsed = parseResult(result);
+			expect(parsed.arrange.arranged).toBe(true);
+			expect(parsed.arrange.containerId).toBe("77:1");
+		});
+
+		it("reports arrange failure as a warning while creation still succeeds", async () => {
+			mockConnector.executeCodeViaUI.mockResolvedValue({
+				success: true,
+				result: { error: "Component set not found" },
+			});
+			const tool = server._getTool("figma_create_component_set");
+			const result = await tool.handler({
+				baseComponentId: "1:1",
+				properties: { State: ["default"] },
+				autoArrange: true,
+			});
+
+			expect(result.isError).toBeUndefined();
+			const parsed = parseResult(result);
+			expect(parsed.success).toBe(true);
+			expect(parsed.arrange.arranged).toBe(false);
+			expect(parsed.arrange.error).toContain("not found");
 		});
 	});
 

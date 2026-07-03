@@ -1043,6 +1043,11 @@
         'CREATE_VARIABLE_COLLECTION': function(params) { return window.createVariableCollection(params.name, params); },
         'GET_LOCAL_COMPONENTS': function() { return window.getLocalComponents(); },
         'INSTANTIATE_COMPONENT': function(params) { return window.instantiateComponent(params.componentKey, params); },
+        // Component set creation — forward params wholesale; result payload rides in msg.data
+        'CREATE_COMPONENT_SET': function(params) {
+          return window.sendPluginCommand('CREATE_COMPONENT_SET', params, 30000)
+            .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+        },
         'GET_COMPONENT': function(params) { return window.requestComponentData(params.nodeId); },
         'SET_NODE_DESCRIPTION': function(params) { return window.setNodeDescription(params.nodeId, params.description, params.descriptionMarkdown); },
         'ADD_COMPONENT_PROPERTY': function(params) { return window.addComponentProperty(params.nodeId, params.propertyName, params.propertyType, params.defaultValue, params); },
@@ -2460,6 +2465,11 @@
           break;
         case 'INSTANTIATE_COMPONENT_RESULT':
           handleResult('INSTANTIATE_COMPONENT', 'instance');
+          break;
+        // Component set creation (payload flows via msg.data — already on the
+        // handleResult whitelist, so no new top-level fields to forward)
+        case 'CREATE_COMPONENT_SET_RESULT':
+          handleResult('CREATE_COMPONENT_SET', null);
           break;
 
         // NEW: Component property operations
