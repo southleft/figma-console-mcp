@@ -8,13 +8,18 @@
  *     return TokenFormatNotImplementedError with a helpful message
  *     directing users to DTCG.
  *   - figma_import_tokens: working for DTCG JSON input with full
- *     diff-aware merge. Apply phase pushes value updates (toUpdate) to
- *     Figma via the plugin bridge — verified end-to-end against real
- *     multi-mode design systems. toCreate / toDelete / alias-target
- *     updates surface in the diff plan but are not yet wired through
- *     the apply phase (use figma_setup_design_tokens /
- *     figma_batch_create_variables / figma_delete_variable manually for
- *     those for now).
+ *     diff-aware merge and a complete apply phase:
+ *       • toUpdate — value updates batched via the plugin bridge,
+ *         including alias-target updates ({ type: "VARIABLE_ALIAS", id })
+ *         when the reference resolves to an existing or just-created
+ *         variable.
+ *       • toCreate — missing collections (created with the token file's
+ *         full mode list) and missing variables in one batched script;
+ *         literal values first, alias values in a second pass so
+ *         within-batch alias targets exist. TIMING/EASING cannot be
+ *         created via the Plugin API and are skipped with a warning.
+ *       • toDelete — STRICTLY gated behind strategy: "replace". Merge
+ *         (default) preserves Figma-only variables and only reports them.
  *
  * Both tools auto-discover `tokens.config.json` at the project root and use
  * its source/generated/modes/conflictResolution settings as defaults. They
@@ -34,6 +39,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { createChildLogger } from "./logger.js";
 import {
+  buildTokenLookup,
+  canonicalizeTokenValueForComparison,
+  clamp01,
   convertFigmaVariablesToDocument,
   ExportTokensInputSchema,
   ImportTokensInputSchema,
@@ -41,6 +49,7 @@ import {
   loadTokensConfig,
   parse as parseTokenPayload,
   resolveOutputTargets,
+  stripRawColorFromValues,
   type TokenDocument,
 } from "./tokens/index.js";
 
@@ -71,13 +80,15 @@ ZERO-ARG USAGE: With a tokens.config.json at your project root, just call the to
 
 MERGE STRATEGY: Default \`strategy: "merge"\` only writes tokens that actually changed in Figma since the last sync. Use \`dry-run\` to preview what would change. Use \`replace\` to wipe and rewrite (rare; for resetting drift).
 
+DTCG DIALECT (\`dtcgDialect\`, applies to dtcg/json-flat/json-nested outputs): legacy (default): hex-string colors, maximum compatibility (Style Dictionary v4, Tokens Studio). 2025: DTCG 2025.10 object colors/dimensions (Style Dictionary v5+). figma_import_tokens accepts BOTH dialects regardless of this setting.
+
 ROUND-TRIP SAFETY: Figma variable IDs are preserved in DTCG \`$extensions["figma-console-mcp"]\` so renames on either side don't create duplicates. The same metadata enables non-destructive incremental sync via figma_import_tokens.`;
 
 const IMPORT_TOOL_DESCRIPTION = `Push design tokens from your codebase into Figma as variables. Bidirectional with figma_export_tokens.
 
 ACCEPTS: DTCG JSON (canonical, fully supported including round-trip metadata preservation). Tokens Studio JSON, CSS custom properties, Tailwind v4 @theme, SCSS, and Style Dictionary v3 are scaffolded but return a NotImplementedError — convert to DTCG first via figma_export_tokens or hand-author DTCG. Use \`format: "auto"\` to sniff the input.
 
-APPLY PHASE: Value updates (toUpdate entries) are pushed to Figma via the plugin bridge in a batched single round-trip — verified end-to-end on multi-mode collections. Partial-success semantics: per-variable errors surface in applyResult.errors[] without failing the batch. toCreate (new variables), toDelete (Figma-only tokens), and alias-target updates are reported in the diff plan but not yet wired through the apply phase — use figma_setup_design_tokens / figma_batch_create_variables / figma_delete_variable manually for those operations, or wait for a future minor version.
+APPLY PHASE (full bidirectional sync): toCreate entries create missing collections (with the token file's full mode list) and missing variables in one batched plugin round-trip — literal values first, alias values in a second pass so aliases between newly-created variables resolve. toUpdate entries push value updates in a batched round-trip, INCLUDING alias-target updates: when a token's value is a reference, it's written as a Figma variable alias if the reference resolves to an existing or just-created variable (unresolvable references skip with a warning). toDelete entries are STRICTLY gated behind \`strategy: "replace"\` — in replace mode, Figma variables absent from the token file are permanently deleted (a loud warning lists the count); merge (default) preserves them and only reports. TIMING/EASING variables cannot be created or written via the Plugin API and are skipped with a warning. Partial-success semantics: per-item errors surface in applyResult.errors[] without failing the batch.
 
 DIFF-AWARE: Default \`strategy: "merge"\` diffs against current Figma state and applies only deltas. The hacked-color scenario — designer edits one hex value in their CSS — produces exactly one Figma API update, not a full collection rewrite. Match priority: Figma variable ID (in \`$extensions["figma-console-mcp"].variableId\`), then exact token path, then value fingerprint.
 
@@ -261,6 +272,7 @@ async function handleExport(
           splitByCollection: args.splitByCollection ?? target.splitByCollection,
           prefix: args.prefix ?? target.prefix,
           resolveAliases: args.resolveAliases ?? target.resolveAliases,
+          dtcgDialect: args.dtcgDialect ?? target.dtcgDialect,
           transforms: {
             colorFormat: args.colorFormat ?? target.transforms?.colorFormat,
             sizeUnit: args.sizeUnit ?? target.transforms?.sizeUnit,
@@ -424,24 +436,105 @@ async function handleImport(
   const diff = computeDiffPlan(figmaDoc, merged);
 
   const dryRun = args.dryRun === true || args.strategy === "dry-run";
+  const strategy: "merge" | "replace" =
+    args.strategy === "replace" ? "replace" : "merge";
 
-  // 7. Apply phase: when not dry-run, push toUpdate entries to Figma via
-  //    the plugin's executeCodeViaUI. Create + delete are stubbed for a
-  //    future phase (value updates cover the common designer workflow:
-  //    edit a hex value in JSON, push to Figma).
+  // 7. Apply phase: when not dry-run, mutate Figma via the plugin bridge in
+  //    three ordered sub-phases. Order matters: creates run FIRST so that
+  //    alias-target updates in the update phase can point at just-created
+  //    variables; deletes run LAST (and only under strategy "replace").
   let applyResult: ApplyResult | null = null;
-  if (!dryRun && diff.toUpdate.length > 0) {
+  let deleteWarning: string | undefined;
+  if (!dryRun) {
+    const acc: ApplyResult = {
+      applied: 0,
+      created: 0,
+      createdCollections: 0,
+      deleted: 0,
+      failed: 0,
+      errors: [],
+    };
+    let anyPhaseRan = false;
+
     const collectionModeMap = buildCollectionModeMap(figmaPayload);
-    const updates = buildUpdatePayloads(
-      diff.toUpdate,
+    const toCreateKeys = new Set(diff.toCreate.map((e) => e.path));
+    // Mutable map the alias resolver closes over — populated by the create
+    // phase so later alias resolutions see freshly-created variable IDs.
+    const createdIdByKey = new Map<string, string>();
+    const resolveAliasId = makeAliasIdResolver(
       figmaDoc,
       merged,
-      collectionModeMap,
-      parseWarnings,
+      toCreateKeys,
+      createdIdByKey,
     );
-    if (updates.length > 0) {
-      applyResult = await applyUpdates(connector, updates);
+
+    // 7a. CREATE phase — missing collections (with the token file's full
+    //     mode list) and missing variables. Literal values are set at
+    //     creation; alias values apply in a second in-script pass after ALL
+    //     variables exist, so aliases among created variables resolve.
+    if (diff.toCreate.length > 0) {
+      const createPlan = buildCreatePlan(
+        diff.toCreate,
+        merged,
+        figmaPayload,
+        resolveAliasId,
+        parseWarnings,
+      );
+      if (
+        createPlan.newCollections.length > 0 ||
+        createPlan.existingCollections.length > 0
+      ) {
+        anyPhaseRan = true;
+        const createResult = await applyCreates(connector, createPlan);
+        acc.created += createResult.created;
+        acc.createdCollections += createResult.createdCollections;
+        acc.failed += createResult.failed;
+        acc.errors.push(...createResult.errors);
+        for (const [key, id] of createResult.createdIdByKey) {
+          createdIdByKey.set(key, id);
+        }
+      }
     }
+
+    // 7b. UPDATE phase — value updates including alias-target updates
+    //     (references resolved to { type: "VARIABLE_ALIAS", id }).
+    if (diff.toUpdate.length > 0) {
+      const updates = buildUpdatePayloads(
+        diff.toUpdate,
+        figmaDoc,
+        merged,
+        collectionModeMap,
+        parseWarnings,
+        resolveAliasId,
+      );
+      if (updates.length > 0) {
+        anyPhaseRan = true;
+        const updateResult = await applyUpdates(connector, updates);
+        acc.applied += updateResult.applied;
+        acc.failed += updateResult.failed;
+        acc.errors.push(...updateResult.errors);
+      }
+    }
+
+    // 7c. DELETE phase — STRICTLY gated behind strategy "replace". Merge
+    //     (the default) never deletes; it only reports Figma-only tokens.
+    if (strategy === "replace" && diff.toDelete.length > 0) {
+      anyPhaseRan = true;
+      const deleteResult = await applyDeletes(
+        connector,
+        diff.toDelete,
+        figmaDoc,
+      );
+      acc.deleted += deleteResult.deleted;
+      acc.failed += deleteResult.failed;
+      acc.errors.push(...deleteResult.errors);
+      if (deleteResult.deleted > 0) {
+        deleteWarning = `⚠️ REPLACE STRATEGY: permanently deleted ${deleteResult.deleted} Figma variable(s) that were not present in the token file. Recover via Figma's version history / Edit > Undo if this was unintended.`;
+        parseWarnings.push(deleteWarning);
+      }
+    }
+
+    if (anyPhaseRan) applyResult = acc;
   }
 
   // Slim the diff for the response: full entries blow past LLM context for
@@ -482,17 +575,32 @@ async function handleImport(
             applyNote: dryRun
               ? "Dry-run only — no Figma mutations performed."
               : applyResult
-                ? `Applied ${applyResult.applied} value update(s) to Figma. ${applyResult.failed} failed.`
-                : diff.toUpdate.length === 0
+                ? [
+                    applyResult.createdCollections > 0
+                      ? `Created ${applyResult.createdCollections} collection(s).`
+                      : null,
+                    applyResult.created > 0
+                      ? `Created ${applyResult.created} variable(s).`
+                      : null,
+                    `Applied ${applyResult.applied} value update(s).`,
+                    applyResult.deleted > 0
+                      ? `Deleted ${applyResult.deleted} variable(s) (replace strategy).`
+                      : null,
+                    `${applyResult.failed} failed.`,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+                : diff.toUpdate.length === 0 && diff.toCreate.length === 0
                   ? "Nothing to apply — all tokens already in sync."
-                  : "Updates were detected but skipped (likely all aliases or unresolved values).",
-            toCreatePhase2Note:
-              diff.toCreate.length > 0
-                ? `${diff.toCreate.length} create(s) detected — create-phase mutations ship in a future phase. Use figma_setup_design_tokens / figma_batch_create_variables manually for now.`
-                : undefined,
-            toDeletePhase2Note:
-              diff.toDelete.length > 0
-                ? `${diff.toDelete.length} Figma-only token(s) preserved (merge strategy). Use strategy: "replace" to delete them, or figma_delete_variable manually.`
+                  : "Changes were detected but skipped (likely all unresolvable aliases or non-writable TIMING/EASING types — see warnings).",
+            deleteNote: deleteWarning
+              ? deleteWarning
+              : diff.toDelete.length > 0
+                ? strategy === "replace" && dryRun
+                  ? `${diff.toDelete.length} Figma-only token(s) would be PERMANENTLY DELETED on apply (replace strategy + dry-run).`
+                  : strategy === "replace"
+                    ? `${diff.toDelete.length} Figma-only token(s) targeted for deletion (replace strategy) — see applyResult for outcome.`
+                    : `${diff.toDelete.length} Figma-only token(s) preserved (merge strategy). Use strategy: "replace" to delete them, or figma_delete_variable manually.`
                 : undefined,
             inputFileCount: inputFiles.length,
             parsedSetCount: merged.sets.length,
@@ -501,6 +609,9 @@ async function handleImport(
             applyResult: applyResult
               ? {
                   applied: applyResult.applied,
+                  created: applyResult.created,
+                  createdCollections: applyResult.createdCollections,
+                  deleted: applyResult.deleted,
                   failed: applyResult.failed,
                   errors: applyResult.errors.slice(0, 10),
                 }
@@ -686,8 +797,11 @@ function mergeDocuments(docs: TokenDocument[]): TokenDocument {
  * Compute a diff plan between Figma's current state (left) and the code's
  * proposed state (right). Returns a structured diff plan; value-update
  * mutations are applied via the plugin bridge below.
+ *
+ * Exported for test coverage of the dialect-normalized comparison
+ * (round-trip exports in both DTCG dialects must diff as unchanged).
  */
-function computeDiffPlan(
+export function computeDiffPlan(
   figmaDoc: TokenDocument,
   codeDoc: TokenDocument,
 ): {
@@ -726,7 +840,9 @@ function computeDiffPlan(
     } else if (!valuesEqual(figmaToken.values, codeToken.values)) {
       toUpdate.push({
         path: key,
-        before: figmaToken.values,
+        // Figma-side values carry the transient rawColor floats — strip
+        // them so diff samples in the tool response stay shaped as before.
+        before: stripRawColorFromValues(figmaToken.values),
         after: codeToken.values,
       });
     } else {
@@ -753,6 +869,13 @@ function computeDiffPlan(
  * Recursive for composite values (typography, shadow) — those have nested
  * objects too. Aliases are equal when both have the same `reference` string;
  * literals are equal by deep value comparison.
+ *
+ * Each side is canonicalized to a dialect-agnostic form before comparing
+ * (see canonicalizeTokenValueForComparison): a DTCG 2025.10 color object
+ * equals the same color's legacy hex string (both quantized to 1/255 per
+ * channel), `{ value: 16, unit: "px" }` equals bare 16, and the transient
+ * rawColor field is ignored. Without this, importing a 2025-dialect file
+ * would report EVERY color as toUpdate on EVERY import, forever.
  */
 function valuesEqual(
   a: Record<string, any>,
@@ -763,7 +886,14 @@ function valuesEqual(
   if (aKeys.length !== bKeys.length) return false;
   for (let i = 0; i < aKeys.length; i++) {
     if (aKeys[i] !== bKeys[i]) return false;
-    if (!deepEqual(a[aKeys[i]], b[bKeys[i]])) return false;
+    if (
+      !deepEqual(
+        canonicalizeTokenValueForComparison(a[aKeys[i]]),
+        canonicalizeTokenValueForComparison(b[bKeys[i]]),
+      )
+    ) {
+      return false;
+    }
   }
   return true;
 }
@@ -794,13 +924,98 @@ function deepEqual(a: unknown, b: unknown): boolean {
 // ============================================================================
 
 /**
- * Result of the apply phase. Returned in the tool response so the AI can
- * report what actually happened to the user.
+ * Aggregate result of the apply phase (create + update + delete sub-phases).
+ * Returned in the tool response so the AI can report what actually happened
+ * to the user. Per-item failures accumulate in errors[] without failing the
+ * batch (partial-success semantics).
  */
 interface ApplyResult {
+  /** Value updates applied (toUpdate). */
   applied: number;
+  /** Variables created (toCreate). */
+  created: number;
+  /** Collections created (sets with no matching Figma collection). */
+  createdCollections: number;
+  /** Variables deleted (toDelete, strategy "replace" only). */
+  deleted: number;
   failed: number;
   errors: Array<{ variableId: string; error: string }>;
+}
+
+/**
+ * How an alias reference resolves for the apply phase:
+ *   - { id }      → an existing (or already-created) Figma variable ID
+ *   - { pending } → the target is itself in this import's toCreate batch;
+ *                   the create script resolves it in its second pass via the
+ *                   returned key
+ *   - null        → unresolvable; caller skips with a warning
+ */
+type AliasIdResolution = { id: string } | { pending: string } | null;
+
+/**
+ * Build a resolver that maps a DTCG alias reference (set-qualified
+ * `{theme.color.primary}`, bare `{color.primary}` when unambiguous, or the
+ * converter's `{__library:VariableID:...}` cross-library form) to a Figma
+ * variable ID.
+ *
+ * Resolution priority for a matched code-side token:
+ *   1. a variable created earlier in THIS apply run (createdIdByKey — the
+ *      resolver closes over the mutable map, so the create phase's results
+ *      are visible to the later update phase)
+ *   2. the live Figma snapshot's variable ID for the same set::path
+ *   3. "pending" when the target is queued in this run's toCreate batch
+ *   4. the token's own $extensions variableId (stale-but-recorded fallback)
+ * References that don't match a code-side token fall back to the live Figma
+ * snapshot lookup. Exported for test coverage.
+ */
+export function makeAliasIdResolver(
+  figmaDoc: TokenDocument,
+  codeDoc: TokenDocument,
+  toCreateKeys: Set<string>,
+  createdIdByKey: Map<string, string>,
+): (reference: string) => AliasIdResolution {
+  const codeLookup = buildTokenLookup(codeDoc);
+  const figmaLookup = buildTokenLookup(figmaDoc);
+  // "SetName::dot.path" → live Figma variable ID.
+  const figmaIdByKey = new Map<string, string>();
+  for (const set of figmaDoc.sets) {
+    for (const t of set.tokens) {
+      const id = t.extensions?.["figma-console-mcp"]?.variableId;
+      if (typeof id === "string") {
+        figmaIdByKey.set(`${set.name}::${t.path.join(".")}`, id);
+      }
+    }
+  }
+
+  return (reference: string): AliasIdResolution => {
+    const bare = reference.replace(/^\{|\}$/g, "");
+    // Cross-library references preserve the original Figma variable ID —
+    // usable directly as an alias target.
+    if (bare.startsWith("__library:")) {
+      return { id: bare.slice("__library:".length) };
+    }
+    const codeEntry = codeLookup.get(bare);
+    if (codeEntry) {
+      const key = `${codeEntry.setName}::${codeEntry.token.path.join(".")}`;
+      const createdId = createdIdByKey.get(key);
+      if (createdId) return { id: createdId };
+      const liveId = figmaIdByKey.get(key);
+      if (liveId) return { id: liveId };
+      if (toCreateKeys.has(key)) return { pending: key };
+      const extId =
+        codeEntry.token.extensions?.["figma-console-mcp"]?.variableId;
+      if (typeof extId === "string") return { id: extId };
+      return null;
+    }
+    // Not in the code document — the reference may point at a Figma-only
+    // token (present in the live snapshot but absent from the import file).
+    const figmaEntry = figmaLookup.get(bare);
+    if (figmaEntry) {
+      const id = figmaEntry.token.extensions?.["figma-console-mcp"]?.variableId;
+      if (typeof id === "string") return { id };
+    }
+    return null;
+  };
 }
 
 /**
@@ -839,6 +1054,10 @@ function buildCollectionModeMap(
  * Plugin API's setValueForMode call.
  *
  *   - color hex string "#RRGGBB(AA)" → { r, g, b, a } floats in [0, 1]
+ *   - DTCG 2025.10 color objects → { r, g, b, a }: srgb components map
+ *     directly (clamped to [0, 1]); non-srgb colorSpaces (display-p3,
+ *     oklch, …) fall back to the object's `hex` field when present, else
+ *     skip-invalid; hex-only objects are accepted too
  *   - FLOAT-typed number → number ("16px"-style strings and DTCG
  *     { value, unit } objects are parsed to their numeric part; anything
  *     that still comes out NaN is skipped rather than pushed to Figma)
@@ -874,6 +1093,20 @@ export function tokenValueToFigma(
   let figmaValue: unknown;
   if (resolvedType === "COLOR" && typeof value.literal === "string") {
     figmaValue = hexToRgba(value.literal);
+  } else if (
+    resolvedType === "COLOR" &&
+    typeof value.literal === "object" &&
+    value.literal !== null &&
+    !Array.isArray(value.literal)
+  ) {
+    // DTCG 2025.10 object-form color. Without this branch the object fell
+    // through to String(literal) → "[object Object]" pushed at a COLOR
+    // variable.
+    const converted = colorObjectToFigmaRgba(
+      value.literal as Record<string, unknown>,
+    );
+    if (converted.kind !== "value") return converted;
+    figmaValue = converted.value;
   } else if (resolvedType === "FLOAT") {
     const parsed = parseNumericLiteral(value.literal);
     if (Number.isNaN(parsed)) {
@@ -893,10 +1126,70 @@ export function tokenValueToFigma(
 }
 
 /**
+ * Convert a DTCG 2025.10 color object literal to Figma's { r, g, b, a }
+ * floats. Handles, in priority order:
+ *   1. srgb (or unspecified) colorSpace + 3 numeric components → direct
+ *      mapping, each channel clamped to [0, 1]; optional `alpha` (default 1)
+ *   2. any object with a `hex` string field (covers non-srgb colorSpaces
+ *      like display-p3/oklch that carry the hex interop fallback, and
+ *      hex-only objects) → hexToRgba, with the `alpha` field taking
+ *      precedence over hex-embedded alpha when present
+ *   3. non-srgb colorSpace without a hex fallback → skip-invalid (we can't
+ *      do color-space conversion, and guessing would corrupt the variable)
+ */
+function colorObjectToFigmaRgba(
+  obj: Record<string, unknown>,
+):
+  | { kind: "value"; value: { r: number; g: number; b: number; a: number } }
+  | { kind: "skip-invalid"; reason: string } {
+  const colorSpace =
+    typeof obj.colorSpace === "string" ? obj.colorSpace : undefined;
+  const comps = obj.components;
+  if (
+    (colorSpace === undefined || colorSpace === "srgb") &&
+    Array.isArray(comps) &&
+    comps.length === 3 &&
+    comps.every((c) => typeof c === "number")
+  ) {
+    const [r, g, b] = (comps as number[]).map(clamp01);
+    const a = typeof obj.alpha === "number" ? clamp01(obj.alpha) : 1;
+    return { kind: "value", value: { r, g, b, a } };
+  }
+  if (typeof obj.hex === "string") {
+    try {
+      const rgba = hexToRgba(obj.hex);
+      if (typeof obj.alpha === "number") rgba.a = clamp01(obj.alpha);
+      return { kind: "value", value: rgba };
+    } catch {
+      return {
+        kind: "skip-invalid",
+        reason: `color object has an unparseable hex field ${JSON.stringify(obj.hex)}`,
+      };
+    }
+  }
+  if (colorSpace !== undefined && colorSpace !== "srgb") {
+    return {
+      kind: "skip-invalid",
+      reason: `unsupported colorSpace "${colorSpace}" without hex fallback`,
+    };
+  }
+  return {
+    kind: "skip-invalid",
+    reason: `cannot convert ${JSON.stringify(obj)} to a Figma color — expected srgb components or a hex field`,
+  };
+}
+
+/**
  * Parse a token literal into a number for FLOAT variables. Handles:
  *   - plain numbers → as-is
  *   - unit-bearing dimension strings ("16px", "1.5rem", "-4pt") → numeric part
- *   - DTCG dimension/duration objects ({ value: 16, unit: "px" }) → value
+ *   - DTCG dimension AND duration objects ({ value: 16, unit: "px" },
+ *     { value: 300, unit: "ms" }, { value: 0.3, unit: "s" }) → raw `value`.
+ *     The unit is deliberately ignored — Figma FLOAT variables are unitless,
+ *     so we take the number as-authored and do NOT convert seconds to ms.
+ *     True TIMING-typed variables are skipped before import ever reaches
+ *     this path (Plugin API can't write them), so plain FLOAT is the only
+ *     consumer here.
  * Anything unparseable returns NaN — callers must skip (never push NaN
  * into setValueForMode).
  */
@@ -962,6 +1255,7 @@ function buildUpdatePayloads(
   codeDoc: TokenDocument,
   collectionModeMap: Map<string, Map<string, string>>,
   warnings: string[],
+  resolveAliasId?: (reference: string) => AliasIdResolution,
 ): VariableUpdate[] {
   // Build lookups: setName::tokenPath → (figmaToken, codeToken)
   const figmaLookup = new Map<string, { token: any; set: any }>();
@@ -1039,8 +1333,16 @@ function buildUpdatePayloads(
       }
       const conversion = tokenValueToFigma(value as any, resolvedType);
       if (conversion.kind === "skip-alias") {
+        // Alias-target update: resolve the reference to a Figma variable ID
+        // and write it as a native variable alias. Creates run before
+        // updates, so references to just-created variables resolve too.
+        const resolved = resolveAliasId?.(conversion.reference);
+        if (resolved && "id" in resolved) {
+          valuesByMode[modeId] = { type: "VARIABLE_ALIAS", id: resolved.id };
+          continue;
+        }
         warnings.push(
-          `Skipped ${entry.path} (mode "${modeName}") — alias reference "${conversion.reference}" updates are not yet supported in the apply phase. To update this token, edit the alias target's value instead, or hard-code a literal hex value in the source file.`,
+          `Skipped ${entry.path} (mode "${modeName}") — alias reference "${conversion.reference}" could not be resolved to an existing or newly-created Figma variable. Fix the reference, or edit the alias target's value instead.`,
         );
         continue;
       }
@@ -1097,7 +1399,7 @@ function inferFigmaResolvedType(
 async function applyUpdates(
   connector: any,
   updates: VariableUpdate[],
-): Promise<ApplyResult> {
+): Promise<Pick<ApplyResult, "applied" | "failed" | "errors">> {
   // Serialize the update list into the script payload. JSON.stringify
   // handles escape correctly even with nested objects (RGBA color values).
   const payload = JSON.stringify(updates);
@@ -1156,4 +1458,453 @@ async function applyUpdates(
     failed: inner.failed ?? 0,
     errors,
   };
+}
+
+// ============================================================================
+// CREATE PHASE — create missing collections + variables via the plugin
+// ============================================================================
+
+/**
+ * One value to set on a variable at creation time. New-collection variables
+ * carry `modeName` (the script resolves the modeId from the collection it
+ * just created); existing-collection variables carry `modeId` (resolved
+ * server-side from the live snapshot). Alias values come in two flavors:
+ * `alias` (target already exists in Figma) and `alias-pending` (target is
+ * created in this same batch; the script resolves `targetKey` against its
+ * created-ID map in the second pass).
+ */
+type CreateValueEntry = {
+  modeName?: string;
+  modeId?: string;
+} & (
+  | { kind: "literal"; value: unknown }
+  | { kind: "alias"; targetId: string }
+  | { kind: "alias-pending"; targetKey: string }
+);
+
+interface CreateVariableDef {
+  /** Diff key ("SetName::dot.path") — primary key for created-ID mapping. */
+  key: string;
+  /** Figma variable name (slash-joined token path). */
+  name: string;
+  resolvedType: VariableUpdate["resolvedType"];
+  description?: string;
+  values: CreateValueEntry[];
+}
+
+/**
+ * The create-phase plan: which collections to create (with the token file's
+ * full mode list) and which variables to create where. Built entirely
+ * server-side so the plugin script stays a dumb executor.
+ */
+export interface CreatePlan {
+  newCollections: Array<{
+    setName: string;
+    modes: string[];
+    variables: CreateVariableDef[];
+  }>;
+  existingCollections: Array<{
+    collectionId: string;
+    variables: CreateVariableDef[];
+  }>;
+}
+
+const WRITABLE_RESOLVED_TYPES = new Set(["COLOR", "FLOAT", "STRING", "BOOLEAN"]);
+
+/**
+ * Translate the diff's toCreate entries into a CreatePlan.
+ *
+ *   - Sets with no matching Figma collection (matched by the round-trip
+ *     figmaCollectionId first, then by name) become newCollections carrying
+ *     the set's FULL mode list.
+ *   - Variables missing from an existing collection go to that collection,
+ *     with values pre-resolved to modeIds; values for modes the collection
+ *     doesn't have are skipped with a warning.
+ *   - resolvedType honors $extensions.figmaResolvedType when recorded, else
+ *     falls back to inferFigmaResolvedType. TIMING/EASING variables are
+ *     skipped with a warning — the Figma Plugin API cannot create them.
+ *   - Literal values convert via tokenValueToFigma (both DTCG dialects);
+ *     alias values resolve via the alias-ID resolver (existing target →
+ *     "alias", within-batch target → "alias-pending", unresolvable → skip
+ *     with warning).
+ *
+ * Exported for test coverage.
+ */
+export function buildCreatePlan(
+  toCreate: Array<{ path: string }>,
+  codeDoc: TokenDocument,
+  figmaPayload: { collections: any[]; variables: any[] },
+  resolveAliasId: (reference: string) => AliasIdResolution,
+  warnings: string[],
+): CreatePlan {
+  // Code-side lookup: "SetName::dot.path" → { set, token }.
+  const codeByKey = new Map<string, { set: any; token: any }>();
+  for (const set of codeDoc.sets) {
+    for (const token of set.tokens) {
+      codeByKey.set(`${set.name}::${token.path.join(".")}`, { set, token });
+    }
+  }
+
+  // Figma collection lookup by ID and by name.
+  const collectionById = new Map<string, any>();
+  const collectionByName = new Map<string, any>();
+  for (const c of figmaPayload.collections) {
+    collectionById.set(c.id, c);
+    collectionByName.set(c.name, c);
+  }
+
+  const newBySet = new Map<
+    string,
+    { setName: string; modes: string[]; variables: CreateVariableDef[] }
+  >();
+  const existingById = new Map<
+    string,
+    { collectionId: string; variables: CreateVariableDef[] }
+  >();
+
+  for (const entry of toCreate) {
+    const match = codeByKey.get(entry.path);
+    if (!match) continue; // Defensive — toCreate keys come from codeDoc.
+    const { set, token } = match;
+
+    // Which Figma collection does this set map to? Round-trip collection ID
+    // wins; name match second; otherwise the set needs a new collection.
+    const existingCollection =
+      (set.meta?.figmaCollectionId
+        ? collectionById.get(set.meta.figmaCollectionId)
+        : undefined) ?? collectionByName.get(set.name);
+
+    // Resolve the Figma-native type, honoring the recorded resolvedType.
+    const recorded =
+      token.extensions?.["figma-console-mcp"]?.figmaResolvedType;
+    const figmaNativeType: string =
+      typeof recorded === "string" &&
+      ["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"].includes(
+        recorded,
+      )
+        ? recorded
+        : inferFigmaResolvedType(token.type);
+    if (!WRITABLE_RESOLVED_TYPES.has(figmaNativeType)) {
+      warnings.push(
+        `Skipped create for ${entry.path} — Figma Plugin API cannot create ${
+          figmaNativeType === "TIMING" ? "Timing" : "Easing"
+        } variables (only BOOLEAN/COLOR/FLOAT/STRING are creatable). Create this variable in the Figma UI instead.`,
+      );
+      continue;
+    }
+    const resolvedType = figmaNativeType as VariableUpdate["resolvedType"];
+
+    // Mode-name → modeId map for existing collections.
+    const modeIdByName = new Map<string, string>();
+    if (existingCollection) {
+      for (const m of existingCollection.modes ?? []) {
+        modeIdByName.set(m.name, m.modeId);
+      }
+    }
+
+    const values: CreateValueEntry[] = [];
+    for (const [modeName, value] of Object.entries(
+      token.values as Record<string, any>,
+    )) {
+      let modeKeying: { modeName?: string; modeId?: string };
+      if (existingCollection) {
+        const modeId = modeIdByName.get(modeName);
+        if (!modeId) {
+          warnings.push(
+            `Cannot set ${entry.path} (mode "${modeName}") — mode not found in existing Figma collection "${set.name}". Add the mode in Figma first (figma_add_mode).`,
+          );
+          continue;
+        }
+        modeKeying = { modeId };
+      } else {
+        modeKeying = { modeName };
+      }
+
+      if (value?.reference) {
+        const resolved = resolveAliasId(value.reference);
+        if (!resolved) {
+          warnings.push(
+            `Skipped ${entry.path} (mode "${modeName}") — alias reference "${value.reference}" could not be resolved to an existing or newly-created Figma variable.`,
+          );
+          continue;
+        }
+        if ("id" in resolved) {
+          values.push({ ...modeKeying, kind: "alias", targetId: resolved.id });
+        } else {
+          values.push({
+            ...modeKeying,
+            kind: "alias-pending",
+            targetKey: resolved.pending,
+          });
+        }
+        continue;
+      }
+
+      const conversion = tokenValueToFigma(value, resolvedType);
+      if (conversion.kind === "skip-invalid") {
+        warnings.push(
+          `Skipped ${entry.path} (mode "${modeName}") — ${conversion.reason}.`,
+        );
+        continue;
+      }
+      if (conversion.kind !== "value") continue; // skip-empty / skip-alias (handled above)
+      values.push({ ...modeKeying, kind: "literal", value: conversion.value });
+    }
+
+    const def: CreateVariableDef = {
+      key: entry.path,
+      name: token.path.join("/"),
+      resolvedType,
+      ...(token.description ? { description: token.description } : {}),
+      values,
+    };
+
+    if (existingCollection) {
+      let bucket = existingById.get(existingCollection.id);
+      if (!bucket) {
+        bucket = { collectionId: existingCollection.id, variables: [] };
+        existingById.set(existingCollection.id, bucket);
+      }
+      bucket.variables.push(def);
+    } else {
+      let bucket = newBySet.get(set.name);
+      if (!bucket) {
+        bucket = {
+          setName: set.name,
+          modes: set.modes?.length ? [...set.modes] : ["Default"],
+          variables: [],
+        };
+        newBySet.set(set.name, bucket);
+      }
+      bucket.variables.push(def);
+    }
+  }
+
+  return {
+    newCollections: [...newBySet.values()],
+    existingCollections: [...existingById.values()],
+  };
+}
+
+/**
+ * Execute a CreatePlan via the plugin bridge in ONE batched script (same
+ * executeCodeViaUI transport the update phase and figma_setup_design_tokens
+ * use — see write-tools.ts for the precedent):
+ *
+ *   Pass 0 — create missing collections; rename the auto-created default
+ *            mode to the set's first mode, addMode() for the rest.
+ *   Pass 1 — create every variable and set its LITERAL values.
+ *   Pass 2 — set alias values, after all variables exist, so aliases among
+ *            just-created variables resolve via the in-script created-ID map.
+ *
+ * Per-item failures are collected and surfaced without failing the batch.
+ */
+async function applyCreates(
+  connector: any,
+  plan: CreatePlan,
+): Promise<{
+  created: number;
+  createdCollections: number;
+  failed: number;
+  errors: Array<{ variableId: string; error: string }>;
+  createdIdByKey: Map<string, string>;
+}> {
+  const payload = JSON.stringify(plan);
+  const totalVars =
+    plan.newCollections.reduce((n, c) => n + c.variables.length, 0) +
+    plan.existingCollections.reduce((n, c) => n + c.variables.length, 0);
+  const timeout = Math.min(
+    60000,
+    Math.max(15000, totalVars * 200 + plan.newCollections.length * 500),
+  );
+
+  const script = `
+    const plan = ${payload};
+    const results = [];
+    const aliasFailures = [];
+    const createdIds = {};
+    const createdCollections = [];
+    const pendingAliases = [];
+
+    function createVariableWithValues(def, collection, modeMap) {
+      try {
+        const variable = figma.variables.createVariable(def.name, collection, def.resolvedType);
+        if (def.description) variable.description = def.description;
+        createdIds[def.key] = variable.id;
+        let appliedModes = 0;
+        const valueErrors = [];
+        for (const val of def.values) {
+          const modeId = val.modeId || (modeMap ? modeMap[val.modeName] : null);
+          if (!modeId) { valueErrors.push('unknown mode: ' + (val.modeName || val.modeId)); continue; }
+          if (val.kind === 'literal') {
+            try { variable.setValueForMode(modeId, val.value); appliedModes++; }
+            catch (err) { valueErrors.push('mode ' + modeId + ': ' + String(err && err.message || err)); }
+          } else {
+            // Alias values apply in pass 2, after ALL variables exist.
+            pendingAliases.push({ variable: variable, key: def.key, modeId: modeId, targetId: val.targetId || null, targetKey: val.targetKey || null });
+          }
+        }
+        results.push({ key: def.key, name: def.name, id: variable.id, success: true, appliedModes: appliedModes, valueErrors: valueErrors });
+      } catch (err) {
+        results.push({ key: def.key, name: def.name, success: false, error: String(err && err.message || err) });
+      }
+    }
+
+    // Pass 0 + 1a — new collections (full mode list), then their variables.
+    for (const nc of plan.newCollections) {
+      let collection;
+      const modeMap = {};
+      try {
+        collection = figma.variables.createVariableCollection(nc.setName);
+        const defaultModeId = collection.modes[0].modeId;
+        collection.renameMode(defaultModeId, nc.modes[0]);
+        modeMap[nc.modes[0]] = defaultModeId;
+        for (let i = 1; i < nc.modes.length; i++) {
+          modeMap[nc.modes[i]] = collection.addMode(nc.modes[i]);
+        }
+        createdCollections.push({ name: nc.setName, id: collection.id });
+      } catch (err) {
+        for (const def of nc.variables) {
+          results.push({ key: def.key, name: def.name, success: false, error: 'collection "' + nc.setName + '" creation failed: ' + String(err && err.message || err) });
+        }
+        continue;
+      }
+      for (const def of nc.variables) createVariableWithValues(def, collection, modeMap);
+    }
+
+    // Pass 1b — variables missing from EXISTING collections.
+    for (const group of plan.existingCollections) {
+      const collection = await figma.variables.getVariableCollectionByIdAsync(group.collectionId);
+      if (!collection) {
+        for (const def of group.variables) {
+          results.push({ key: def.key, name: def.name, success: false, error: 'collection not found: ' + group.collectionId });
+        }
+        continue;
+      }
+      for (const def of group.variables) createVariableWithValues(def, collection, null);
+    }
+
+    // Pass 2 — alias values. Targets are either pre-resolved IDs or keys of
+    // variables created above (createdIds).
+    for (const pa of pendingAliases) {
+      try {
+        const targetId = pa.targetId || (pa.targetKey ? createdIds[pa.targetKey] : null);
+        if (!targetId) {
+          aliasFailures.push({ key: pa.key, error: 'alias target was not created: ' + (pa.targetKey || 'unknown') });
+          continue;
+        }
+        pa.variable.setValueForMode(pa.modeId, { type: 'VARIABLE_ALIAS', id: targetId });
+      } catch (err) {
+        aliasFailures.push({ key: pa.key, error: 'alias: ' + String(err && err.message || err) });
+      }
+    }
+
+    return {
+      createdCollections: createdCollections,
+      created: results.filter(r => r.success).length,
+      failed: results.filter(r => !r.success).length,
+      results: results,
+      aliasFailures: aliasFailures,
+      createdIds: createdIds,
+    };
+  `;
+
+  const execResult = await connector.executeCodeViaUI(script, timeout);
+
+  if (!execResult?.success) {
+    return {
+      created: 0,
+      createdCollections: 0,
+      failed: totalVars,
+      errors: [
+        {
+          variableId: "<create-batch>",
+          error:
+            execResult?.error ??
+            "Plugin executeCodeViaUI returned an error or timed out.",
+        },
+      ],
+      createdIdByKey: new Map(),
+    };
+  }
+
+  const inner = execResult.result ?? execResult;
+  const errors: Array<{ variableId: string; error: string }> = [];
+  for (const r of inner.results ?? []) {
+    if (!r.success) errors.push({ variableId: r.key, error: r.error });
+  }
+  for (const f of inner.aliasFailures ?? []) {
+    errors.push({ variableId: f.key, error: f.error });
+  }
+
+  return {
+    created: inner.created ?? 0,
+    createdCollections: (inner.createdCollections ?? []).length,
+    failed: (inner.failed ?? 0) + (inner.aliasFailures ?? []).length,
+    errors,
+    createdIdByKey: new Map(Object.entries(inner.createdIds ?? {})),
+  };
+}
+
+// ============================================================================
+// DELETE PHASE — strategy "replace" only
+// ============================================================================
+
+/**
+ * Delete Figma variables that are absent from the token file. STRICTLY
+ * gated by the caller behind strategy "replace" — merge never reaches this.
+ * Uses the connector's DELETE_VARIABLE bridge command (the same one behind
+ * figma_delete_variable), one call per variable, with per-item error
+ * isolation.
+ */
+async function applyDeletes(
+  connector: any,
+  toDelete: Array<{ path: string }>,
+  figmaDoc: TokenDocument,
+): Promise<{
+  deleted: number;
+  failed: number;
+  errors: Array<{ variableId: string; error: string }>;
+}> {
+  // Diff key → live Figma variable ID.
+  const figmaIdByKey = new Map<string, string>();
+  for (const set of figmaDoc.sets) {
+    for (const t of set.tokens) {
+      const id = t.extensions?.["figma-console-mcp"]?.variableId;
+      if (typeof id === "string") {
+        figmaIdByKey.set(`${set.name}::${t.path.join(".")}`, id);
+      }
+    }
+  }
+
+  let deleted = 0;
+  let failed = 0;
+  const errors: Array<{ variableId: string; error: string }> = [];
+
+  for (const entry of toDelete) {
+    const variableId = figmaIdByKey.get(entry.path);
+    if (!variableId) {
+      failed++;
+      errors.push({
+        variableId: entry.path,
+        error: "no Figma variable ID recorded for this token — cannot delete",
+      });
+      continue;
+    }
+    try {
+      const result = await connector.deleteVariable(variableId);
+      if (result && result.success === false) {
+        throw new Error(result.error ?? "delete failed");
+      }
+      deleted++;
+    } catch (err) {
+      failed++;
+      errors.push({
+        variableId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return { deleted, failed, errors };
 }

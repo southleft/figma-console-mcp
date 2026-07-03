@@ -68,6 +68,8 @@ export {
 
 export {
   buildTokenIndex,
+  buildTokenLookup,
+  type TokenLookupEntry,
   resolveReference,
   resolveAliasChain,
   validateAliases,
@@ -83,3 +85,14 @@ export {
   type ConvertOptions,
   type ConvertResult,
 } from "./figma-converter.js";
+
+export {
+  type DtcgDialect,
+  canonicalizeTokenValueForComparison,
+  colorLiteralToCanonicalHex,
+  colorValueTo2025,
+  dimensionLiteralTo2025,
+  hexToRawRgba,
+  stripRawColorFromValues,
+  clamp01,
+} from "./dialect.js";

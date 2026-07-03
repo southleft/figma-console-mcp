@@ -31,6 +31,11 @@ import type {
 } from "../types.js";
 import { FIGMA_MCP_EXTENSION_KEY } from "../types.js";
 import { formatDtcgReference } from "../alias-resolver.js";
+import {
+  colorValueTo2025,
+  dimensionLiteralTo2025,
+  type DtcgDialect,
+} from "../dialect.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 /**
@@ -67,6 +72,9 @@ export function formatDtcg(
 
   const splitByMode = opts.target.splitByMode ?? false;
   const splitByCollection = opts.target.splitByCollection ?? false;
+  // Value-encoding dialect. 'legacy' (default) is byte-identical to the
+  // historical output; '2025' opts into DTCG 2025.10 object colors/dimensions.
+  const dialect: DtcgDialect = opts.target.dtcgDialect ?? "legacy";
 
   if (splitByMode && splitByCollection) {
     for (const set of doc.sets) {
@@ -79,6 +87,7 @@ export function formatDtcg(
           content: serializeAsDtcg(
             { sets: [{ ...set, modes: [mode], tokens: fileTokens }], meta: doc.meta },
             warnings,
+            dialect,
             mode,
           ),
         });
@@ -99,20 +108,20 @@ export function formatDtcg(
         }));
       files.push({
         path: filenameFor(opts, undefined, mode),
-        content: serializeAsDtcg({ sets: fileSets, meta: doc.meta }, warnings, mode),
+        content: serializeAsDtcg({ sets: fileSets, meta: doc.meta }, warnings, dialect, mode),
       });
     }
   } else if (splitByCollection) {
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set),
-        content: serializeAsDtcg({ sets: [set], meta: doc.meta }, warnings),
+        content: serializeAsDtcg({ sets: [set], meta: doc.meta }, warnings, dialect),
       });
     }
   } else {
     files.push({
       path: filenameFor(opts),
-      content: serializeAsDtcg(doc, warnings),
+      content: serializeAsDtcg(doc, warnings, dialect),
     });
   }
 
@@ -176,6 +185,7 @@ function slugify(s: string): string {
 function serializeAsDtcg(
   doc: TokenDocument,
   warnings: string[],
+  dialect: DtcgDialect,
   fileMode?: string,
 ): string {
   // Build the nested DTCG group tree by walking every token's path and
@@ -220,7 +230,7 @@ function serializeAsDtcg(
     }
 
     for (const token of set.tokens) {
-      writeTokenIntoTree(setGroup, token, set.modes, warnings, fileMode);
+      writeTokenIntoTree(setGroup, token, set.modes, warnings, dialect, fileMode);
     }
   }
 
@@ -252,6 +262,7 @@ function writeTokenIntoTree(
   token: Token,
   setModes: string[],
   warnings: string[],
+  dialect: DtcgDialect,
   fileMode?: string,
 ): void {
   let cursor: DtcgGroup = root;
@@ -277,7 +288,7 @@ function writeTokenIntoTree(
   }
 
   const leafKey = token.path[token.path.length - 1];
-  const rendered = renderToken(token, setModes, warnings, fileMode);
+  const rendered = renderToken(token, setModes, warnings, dialect, fileMode);
   const existing = cursor[leafKey];
   if (
     existing &&
@@ -330,6 +341,7 @@ function renderToken(
   token: Token,
   setModes: string[],
   warnings: string[],
+  dialect: DtcgDialect,
   fileMode?: string,
 ): DtcgToken {
   const result: DtcgToken = {
@@ -345,13 +357,13 @@ function renderToken(
   // for it, otherwise the token's first mode.
   const primaryMode =
     setModes[0] in token.values ? setModes[0] : modeKeys[0];
-  result.$value = encodeValue(token.values[primaryMode], token, warnings);
+  result.$value = encodeValue(token.values[primaryMode], token, warnings, dialect);
 
   const otherModes: Record<string, unknown> = {};
   if (!isSingleMode) {
     for (const m of modeKeys) {
       if (m === primaryMode) continue;
-      otherModes[m] = encodeValue(token.values[m], token, warnings);
+      otherModes[m] = encodeValue(token.values[m], token, warnings, dialect);
     }
   }
 
@@ -393,6 +405,7 @@ function encodeValue(
   value: TokenValue | undefined,
   token: Token,
   warnings: string[],
+  dialect: DtcgDialect,
 ): string | number | boolean | object {
   if (!value) {
     warnings.push(
@@ -408,6 +421,20 @@ function encodeValue(
       `Token ${token.path.join(".")} has neither literal nor reference — emitting empty string.`,
     );
     return "";
+  }
+  // DTCG 2025.10 dialect: colors emit the object form (components from the
+  // converter's full-precision rawColor floats, hex kept as the interop
+  // courtesy field); dimension-typed bare numbers emit { value, unit: "px" }.
+  // duration already emits { value, unit: "ms" } in both dialects. Anything
+  // the encoders don't recognize keeps the legacy rendering.
+  if (dialect === "2025") {
+    if (token.type === "color") {
+      const encoded = colorValueTo2025(value);
+      if (encoded) return encoded;
+    } else if (token.type === "dimension") {
+      const encoded = dimensionLiteralTo2025(value.literal);
+      if (encoded) return encoded;
+    }
   }
   return value.literal as string | number | boolean | object;
 }

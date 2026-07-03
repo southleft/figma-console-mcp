@@ -45,14 +45,41 @@ export function buildTokenIndex(
   warnings?: string[],
 ): Map<string, Token> {
   const index = new Map<string, Token>();
+  for (const [key, entry] of buildTokenLookup(doc, warnings)) {
+    index.set(key, entry.token);
+  }
+  return index;
+}
+
+/**
+ * A token plus its owning set. The set name is what the import apply phase
+ * needs to build `<set-name>::<dot.path>` diff keys from a resolved alias
+ * target (variable creation and alias-target updates).
+ */
+export interface TokenLookupEntry {
+  setName: string;
+  token: Token;
+}
+
+/**
+ * Set-aware variant of buildTokenIndex — identical key scheme and ambiguity
+ * rules (set-qualified keys always; bare-path fallback only when unambiguous
+ * across sets), but each entry carries the owning set's name alongside the
+ * token. buildTokenIndex delegates to this so the two can never drift.
+ */
+export function buildTokenLookup(
+  doc: TokenDocument,
+  warnings?: string[],
+): Map<string, TokenLookupEntry> {
+  const index = new Map<string, TokenLookupEntry>();
   // barePath → owning entries, used to detect cross-set ambiguity.
-  const bareOwners = new Map<string, Array<{ setName: string; token: Token }>>();
+  const bareOwners = new Map<string, TokenLookupEntry[]>();
 
   for (const set of doc.sets) {
     const setKey = slugifySetName(set.name);
     for (const token of set.tokens) {
       const bare = token.path.join(".");
-      index.set(`${setKey}.${bare}`, token);
+      index.set(`${setKey}.${bare}`, { setName: set.name, token });
       const owners = bareOwners.get(bare) ?? [];
       owners.push({ setName: set.name, token });
       bareOwners.set(bare, owners);
@@ -63,7 +90,7 @@ export function buildTokenIndex(
   // when it doesn't shadow a set-qualified key that's already indexed.
   for (const [bare, owners] of bareOwners) {
     if (owners.length === 1) {
-      if (!index.has(bare)) index.set(bare, owners[0].token);
+      if (!index.has(bare)) index.set(bare, owners[0]);
     } else if (warnings) {
       warnings.push(
         `Token path "${bare}" exists in multiple collections (${owners

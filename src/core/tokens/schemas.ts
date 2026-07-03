@@ -117,6 +117,12 @@ export const ExportTokensInputSchema = z.object({
     .describe(
       "Emit one file per Figma collection. Default false. Useful when collections map to different runtime themes.",
     ),
+  dtcgDialect: z
+    .enum(["legacy", "2025"])
+    .optional()
+    .describe(
+      "DTCG dialect for dtcg/json-flat/json-nested outputs. legacy (default): hex-string colors, maximum compatibility (Style Dictionary v4, Tokens Studio). 2025: DTCG 2025.10 object colors/dimensions (Style Dictionary v5+). Other formats (css-vars, scss, tailwind, ts-module) render final code and ignore this option.",
+    ),
   colorFormat: ColorFormatSchema.optional().describe(
     "Color value format in the output. Default: 'hex'. Use 'oklch' for modern Tailwind v4 charts.",
   ),

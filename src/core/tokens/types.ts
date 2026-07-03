@@ -103,6 +103,15 @@ export interface TokenValue {
     | TransitionValue
     | Record<string, unknown>;
   reference?: string;
+  /**
+   * TRANSIENT — full-precision Figma rgba floats (0–1) carried alongside the
+   * hex-string literal for COLOR tokens. The DTCG 2025.10 dialect emits
+   * `components` from these floats instead of round-tripping through the
+   * 8-bit-quantized hex. Set only by the Figma converter; never serialized
+   * into output (formatters read it at render time, and lastSyncedValue /
+   * diff samples strip it via stripRawColorFromValues).
+   */
+  rawColor?: { r: number; g: number; b: number; a: number };
 }
 
 /**

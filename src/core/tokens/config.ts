@@ -46,6 +46,16 @@ const OutputTargetSchema = z.object({
    * for CSS/SCSS/Tailwind/etc. since they can't natively express aliases).
    */
   resolveAliases: z.boolean().optional(),
+  /**
+   * DTCG dialect for dtcg/json outputs. 'legacy' (default): hex-string
+   * colors and bare-number dimensions, maximum compatibility (Style
+   * Dictionary v4, Tokens Studio). '2025': DTCG 2025.10 object colors
+   * ({ colorSpace, components, alpha?, hex }) and dimensions
+   * ({ value, unit }) for Style Dictionary v5+ and other 2025.10-aware
+   * tooling. Ignored by css/scss/tailwind/ts formatters, which render
+   * final code.
+   */
+  dtcgDialect: z.enum(["legacy", "2025"]).optional(),
   /** Per-target transform options. Override the global defaults. */
   transforms: z
     .object({

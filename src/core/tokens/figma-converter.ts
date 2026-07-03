@@ -20,6 +20,7 @@ import type {
   TokenValue,
 } from "./types.js";
 import { slugifySetName } from "./alias-resolver.js";
+import { stripRawColorFromValues } from "./dialect.js";
 
 /**
  * Shape of Figma's variable collection as returned by formatVariables(). We
@@ -281,8 +282,10 @@ function convertVariable(
         ...(Object.keys(springByMode).length > 0 ? { spring: springByMode } : {}),
         lastSyncedAt: new Date().toISOString(),
         // We snapshot the synced value so future merge calls can detect
-        // two-sided conflicts.
-        lastSyncedValue: { ...values },
+        // two-sided conflicts. rawColor is transient render-time data and
+        // must not leak into serialized extensions (legacy output stays
+        // byte-identical).
+        lastSyncedValue: stripRawColorFromValues({ ...values }),
       },
     },
   };
@@ -391,7 +394,19 @@ function convertValue(
   // Literal values per type.
   if (resolvedType === "COLOR") {
     if (typeof rawValue === "object" && rawValue !== null && "r" in rawValue) {
-      return { literal: rgbaToHex(rawValue) };
+      // The hex string stays the literal (legacy dialect + back-compat), but
+      // we also carry the raw full-precision floats so the 2025.10 dialect
+      // can emit `components` without round-tripping through 8-bit hex.
+      // `rawColor` is transient — see TokenValue.rawColor in types.ts.
+      return {
+        literal: rgbaToHex(rawValue),
+        rawColor: {
+          r: rawValue.r,
+          g: rawValue.g,
+          b: rawValue.b,
+          a: rawValue.a ?? 1,
+        },
+      };
     }
     warnings.push(`COLOR value isn't an RGB object: ${JSON.stringify(rawValue)}`);
     return { literal: String(rawValue) };

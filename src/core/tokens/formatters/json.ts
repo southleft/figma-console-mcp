@@ -33,6 +33,11 @@
 
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
 import { buildTokenIndex, resolveAliasChain } from "../alias-resolver.js";
+import {
+  colorValueTo2025,
+  dimensionLiteralTo2025,
+  type DtcgDialect,
+} from "../dialect.js";
 import type { FormatOptions, FormatResult } from "./index.js";
 
 export function formatJsonFlat(
@@ -44,6 +49,7 @@ export function formatJsonFlat(
 
   const splitByCollection = opts.target.splitByCollection ?? false;
   const prefix = opts.target.prefix ?? "";
+  const dialect: DtcgDialect = opts.target.dtcgDialect ?? "legacy";
   // Plain JSON has no native alias mechanism — resolve aliases to their
   // literal target so consumers get usable values, not opaque `{ref}` strings.
   const tokenIndex = buildTokenIndex(doc);
@@ -52,13 +58,13 @@ export function formatJsonFlat(
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set, "flat"),
-        content: renderFlat([set], prefix, tokenIndex, warnings),
+        content: renderFlat([set], prefix, tokenIndex, warnings, dialect),
       });
     }
   } else {
     files.push({
       path: filenameFor(opts, undefined, "flat"),
-      content: renderFlat(doc.sets, prefix, tokenIndex, warnings),
+      content: renderFlat(doc.sets, prefix, tokenIndex, warnings, dialect),
     });
   }
 
@@ -73,19 +79,20 @@ export function formatJsonNested(
   const files: FormatResult["files"] = [];
 
   const splitByCollection = opts.target.splitByCollection ?? false;
+  const dialect: DtcgDialect = opts.target.dtcgDialect ?? "legacy";
   const tokenIndex = buildTokenIndex(doc);
 
   if (splitByCollection) {
     for (const set of doc.sets) {
       files.push({
         path: filenameFor(opts, set, "nested"),
-        content: renderNested([set], tokenIndex, warnings),
+        content: renderNested([set], tokenIndex, warnings, dialect),
       });
     }
   } else {
     files.push({
       path: filenameFor(opts, undefined, "nested"),
-      content: renderNested(doc.sets, tokenIndex, warnings),
+      content: renderNested(doc.sets, tokenIndex, warnings, dialect),
     });
   }
 
@@ -117,6 +124,7 @@ function renderFlat(
   prefix: string,
   tokenIndex: Map<string, Token>,
   warnings: string[],
+  dialect: DtcgDialect,
 ): string {
   const out: Record<string, unknown> = {};
 
@@ -129,7 +137,7 @@ function renderFlat(
           modeName === primaryMode
             ? baseName
             : `${baseName}--${slugify(modeName)}`;
-        const resolved = resolveValue(value, token, modeName, tokenIndex, warnings);
+        const resolved = resolveValue(value, token, modeName, tokenIndex, warnings, dialect);
         if (resolved !== undefined) out[key] = resolved;
       }
     }
@@ -146,6 +154,7 @@ function renderNested(
   sets: TokenSet[],
   tokenIndex: Map<string, Token>,
   warnings: string[],
+  dialect: DtcgDialect,
 ): string {
   const out: Record<string, unknown> = {};
 
@@ -169,14 +178,14 @@ function renderNested(
       if (isMultiMode) {
         const modeValues: Record<string, unknown> = {};
         for (const [modeName, value] of Object.entries(token.values)) {
-          const resolved = resolveValue(value, token, modeName, tokenIndex, warnings);
+          const resolved = resolveValue(value, token, modeName, tokenIndex, warnings, dialect);
           if (resolved !== undefined) modeValues[modeName] = resolved;
         }
         cursor[leafKey] = modeValues;
       } else {
         const [onlyModeName, onlyValue] = Object.entries(token.values)[0] ?? [];
         if (onlyValue) {
-          const resolved = resolveValue(onlyValue, token, onlyModeName, tokenIndex, warnings);
+          const resolved = resolveValue(onlyValue, token, onlyModeName, tokenIndex, warnings, dialect);
           if (resolved !== undefined) cursor[leafKey] = resolved;
         }
       }
@@ -196,6 +205,7 @@ function resolveValue(
   mode: string,
   tokenIndex: Map<string, Token>,
   warnings: string[],
+  dialect: DtcgDialect,
 ): unknown {
   let effective: TokenValue | null = value;
   if (value.reference) {
@@ -213,6 +223,18 @@ function resolveValue(
   }
   if (!effective || effective.literal === undefined || effective.literal === null) {
     return undefined;
+  }
+  // DTCG 2025.10 dialect (opt-in): colors emit the object form, dimensions
+  // emit { value, unit: "px" }. Legacy (default) keeps hex strings and
+  // "16px" strings — byte-identical to historical output.
+  if (dialect === "2025") {
+    if (token.type === "color") {
+      const encoded = colorValueTo2025(effective);
+      if (encoded) return encoded;
+    } else if (token.type === "dimension") {
+      const encoded = dimensionLiteralTo2025(effective.literal);
+      if (encoded) return encoded;
+    }
   }
   if (typeof effective.literal === "number") {
     if (token.type === "dimension") return `${effective.literal}px`;
