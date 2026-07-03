@@ -223,6 +223,18 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 		return this.sendCommand('INSTANTIATE_COMPONENT', params);
 	}
 
+	async createComponentSet(params: {
+		baseComponentId?: string;
+		properties?: Record<string, string[]>;
+		componentIds?: string[];
+		variantProperties?: Array<Record<string, string>>;
+		name?: string;
+		parentId?: string;
+		position?: { x: number; y: number };
+	}): Promise<any> {
+		return this.sendCommand('CREATE_COMPONENT_SET', params, 30000);
+	}
+
 	// ============================================================================
 	// Node manipulation
 	// ============================================================================

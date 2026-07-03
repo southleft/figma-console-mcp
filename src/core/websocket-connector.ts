@@ -229,6 +229,19 @@ export class WebSocketConnector implements IFigmaConnector {
     return this.wsServer.sendCommand('INSTANTIATE_COMPONENT', params);
   }
 
+  async createComponentSet(params: {
+    baseComponentId?: string;
+    properties?: Record<string, string[]>;
+    componentIds?: string[];
+    variantProperties?: Array<Record<string, string>>;
+    name?: string;
+    parentId?: string;
+    position?: { x: number; y: number };
+  }): Promise<any> {
+    // Cloning up to 100 variants can be slow on heavy components — 30s ceiling
+    return this.wsServer.sendCommand('CREATE_COMPONENT_SET', params, 30000);
+  }
+
   // ============================================================================
   // Node manipulation
   // ============================================================================

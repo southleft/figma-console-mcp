@@ -2134,57 +2134,13 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Component Set Arrangement Tool
 	// ============================================================================
 
-	// Tool: Arrange Component Set (Professional Layout with Native Visualization)
-	// Rearranges variants IN PLACE (sets x/y on existing children) so the component
-	// set's identity is preserved and placed instances are unaffected
-	server.tool(
-		"figma_arrange_component_set",
-		`Organize a component set with Figma's native purple dashed visualization. Use after creating variants, adding states (hover/disabled/pressed), or when component sets need cleanup.
-
-Non-destructive: rearranges the existing variants in place (grid positions on the existing set's children), so the component set keeps its node ID and all placed instances remain intact. Arranges variants in a labeled grid (columns = last property like State, rows = other properties like Type+Size) and wraps the set in a white container with title, row/column labels. Safe to run on component sets with placed instances, and safe to re-run.`,
-		{
-			componentSetId: z
-				.string()
-				.optional()
-				.describe(
-					"Node ID of the component set to arrange. If not provided, will look for a selected component set.",
-				),
-			componentSetName: z
-				.string()
-				.optional()
-				.describe(
-					"Name of the component set to find. Used if componentSetId not provided.",
-				),
-			options: z
-				.object({
-					gap: z
-						.number()
-						.optional()
-						.default(24)
-						.describe("Gap between grid cells in pixels (default: 24)"),
-					cellPadding: z
-						.number()
-						.optional()
-						.default(20)
-						.describe(
-							"Padding inside each cell around the variant (default: 20)",
-						),
-					columnProperty: z
-						.string()
-						.optional()
-						.describe(
-							"Property to use for columns (default: auto-detect last property, usually 'State')",
-						),
-				})
-				.optional()
-				.describe("Layout options"),
-		},
-		async ({ componentSetId, componentSetName, options }) => {
-			try {
-				const connector = await getDesktopConnector();
-
-				// Build the code to execute in Figma
-				const code = `
+	// Builds the in-place grid arrangement script. Shared by
+	// figma_arrange_component_set and figma_create_component_set (autoArrange).
+	const buildArrangeComponentSetCode = (
+		componentSetId: string | null,
+		componentSetName: string | null,
+		options?: { gap?: number; cellPadding?: number; columnProperty?: string },
+	): string => `
 // ============================================================================
 // COMPONENT SET ARRANGEMENT WITH PROPER LABELS AND CONTAINER
 // Creates: White container frame -> Row labels (left) -> Column headers (top) -> Component set (center)
@@ -2629,6 +2585,61 @@ return {
 };
 `;
 
+	// Tool: Arrange Component Set (Professional Layout with Native Visualization)
+	// Rearranges variants IN PLACE (sets x/y on existing children) so the component
+	// set's identity is preserved and placed instances are unaffected
+	server.tool(
+		"figma_arrange_component_set",
+		`Organize a component set with Figma's native purple dashed visualization. Use after creating variants, adding states (hover/disabled/pressed), or when component sets need cleanup.
+
+Non-destructive: rearranges the existing variants in place (grid positions on the existing set's children), so the component set keeps its node ID and all placed instances remain intact. Arranges variants in a labeled grid (columns = last property like State, rows = other properties like Type+Size) and wraps the set in a white container with title, row/column labels. Safe to run on component sets with placed instances, and safe to re-run.`,
+		{
+			componentSetId: z
+				.string()
+				.optional()
+				.describe(
+					"Node ID of the component set to arrange. If not provided, will look for a selected component set.",
+				),
+			componentSetName: z
+				.string()
+				.optional()
+				.describe(
+					"Name of the component set to find. Used if componentSetId not provided.",
+				),
+			options: z
+				.object({
+					gap: z
+						.number()
+						.optional()
+						.default(24)
+						.describe("Gap between grid cells in pixels (default: 24)"),
+					cellPadding: z
+						.number()
+						.optional()
+						.default(20)
+						.describe(
+							"Padding inside each cell around the variant (default: 20)",
+						),
+					columnProperty: z
+						.string()
+						.optional()
+						.describe(
+							"Property to use for columns (default: auto-detect last property, usually 'State')",
+						),
+				})
+				.optional()
+				.describe("Layout options"),
+		},
+		async ({ componentSetId, componentSetName, options }) => {
+			try {
+				const connector = await getDesktopConnector();
+
+				const code = buildArrangeComponentSetCode(
+					componentSetId ?? null,
+					componentSetName ?? null,
+					options,
+				);
+
 				const result = await connector.executeCodeViaUI(code, 25000);
 
 				if (!result.success) {
@@ -2661,6 +2672,203 @@ return {
 									error:
 										error instanceof Error ? error.message : String(error),
 									hint: "Make sure the Desktop Bridge plugin is running and a component set exists.",
+								},
+							),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	// Tool: Create Component Set with variants (structured command — no hand-written
+	// figma_execute scripts, no 30s execution-cap juggling for callers)
+	server.tool(
+		"figma_create_component_set",
+		`Create a component set with variants in one call — replaces hand-written figma.combineAsVariants scripts.
+
+Two modes:
+1. **Generate from a base component**: pass baseComponentId + properties (variant axes). The base is cloned for every combination of the axes ({ State: ['default','hover','disabled'], Size: ['sm','lg'] } → 6 variants), each named 'Prop=Value' comma-joined (e.g. 'State=hover, Size=sm'), then combined into a set. The base component itself becomes the FIRST variant (same node ID), so existing instances of the base survive as instances of that variant.
+2. **Combine existing components**: pass componentIds, optionally with variantProperties (aligned 1:1) to rename each component to Prop=Value form before combining.
+
+Figma derives the variant property definitions from the names; they live on the SET (componentPropertyDefinitions), not on individual variants. The result includes each variant's key — instantiate with a VARIANT's key/nodeId via figma_instantiate_component, not the set's key.
+
+Set autoArrange:true to lay the new set out as a labeled grid inside a white container (same layout as figma_arrange_component_set). Requires Desktop Bridge plugin.`,
+		{
+			baseComponentId: z
+				.string()
+				.optional()
+				.describe(
+					"Node ID of an existing COMPONENT to use as the base. Cloned per property combination; becomes the set's first variant (keeps its node ID, so placed instances survive). Mutually exclusive with componentIds.",
+				),
+			properties: z
+				.record(z.string(), z.array(z.string()))
+				.optional()
+				.describe(
+					"Variant property axes — required with baseComponentId. Example: { State: ['default','hover','disabled'], Size: ['sm','lg'] } creates 6 variants. Max 100 combinations. Names and values must not contain '=' or ','.",
+				),
+			componentIds: z
+				.array(z.string())
+				.optional()
+				.describe(
+					"Node IDs of existing COMPONENT nodes to combine as variants. Mutually exclusive with baseComponentId. Components already inside a component set are rejected.",
+				),
+			variantProperties: z
+				.array(z.record(z.string()))
+				.optional()
+				.describe(
+					"Only with componentIds: one property map per component, aligned by index — e.g. [{ State: 'default' }, { State: 'hover' }]. Each component is renamed to 'Prop=Value, ...' before combining. Without this, existing names are kept (names lacking '=' become 'Property 1=<name>').",
+				),
+			name: z
+				.string()
+				.optional()
+				.describe("Name for the component set (e.g., 'Button'). Defaults to Figma's derived name."),
+			parentId: z
+				.string()
+				.optional()
+				.describe(
+					"Node ID of the container (frame/section) to create the set in. Defaults to the current page.",
+				),
+			position: z
+				.object({ x: z.number(), y: z.number() })
+				.optional()
+				.describe("Position of the set within its parent."),
+			autoArrange: z
+				.boolean()
+				.optional()
+				.default(false)
+				.describe(
+					"If true, arrange the new set in a labeled grid (columns = last property, rows = other properties) inside a white container — same in-place layout as figma_arrange_component_set.",
+				),
+			arrangeOptions: z
+				.object({
+					gap: z.number().optional().describe("Gap between grid cells in pixels (default: 24)"),
+					cellPadding: z.number().optional().describe("Padding inside each cell around the variant (default: 20)"),
+					columnProperty: z.string().optional().describe("Property to use for columns (default: last property)"),
+				})
+				.optional()
+				.describe("Grid layout options, used when autoArrange is true."),
+		},
+		async ({
+			baseComponentId,
+			properties,
+			componentIds,
+			variantProperties,
+			name,
+			parentId,
+			position,
+			autoArrange,
+			arrangeOptions,
+		}) => {
+			try {
+				if (!baseComponentId && (!componentIds || componentIds.length === 0)) {
+					throw new Error(
+						"Provide either baseComponentId + properties (generate variants from a base) or componentIds (combine existing components)",
+					);
+				}
+				if (baseComponentId && componentIds && componentIds.length > 0) {
+					throw new Error(
+						"baseComponentId and componentIds are mutually exclusive — pick one mode",
+					);
+				}
+				if (
+					baseComponentId &&
+					(!properties || Object.keys(properties).length === 0)
+				) {
+					throw new Error(
+						"properties is required with baseComponentId. Example: { State: ['default','hover'], Size: ['sm','lg'] }",
+					);
+				}
+
+				const connector = await getDesktopConnector();
+				const result = await connector.createComponentSet({
+					baseComponentId,
+					properties,
+					componentIds,
+					variantProperties,
+					name,
+					parentId,
+					position,
+				});
+
+				if (!result.success) {
+					throw new Error(result.error || "Failed to create component set");
+				}
+
+				const data = result.data || {};
+
+				// Optional in-place grid arrangement — reuses the same script as
+				// figma_arrange_component_set. Creation already succeeded, so an
+				// arrange failure is reported as a warning, not an error.
+				let arrange: any;
+				if (autoArrange && data.componentSet?.id) {
+					try {
+						const arrangeResult = await connector.executeCodeViaUI(
+							buildArrangeComponentSetCode(
+								data.componentSet.id,
+								null,
+								arrangeOptions,
+							),
+							25000,
+						);
+						if (
+							arrangeResult.success &&
+							arrangeResult.result &&
+							!arrangeResult.result.error
+						) {
+							arrange = {
+								arranged: true,
+								containerId: arrangeResult.result.containerId,
+								grid: arrangeResult.result.grid,
+							};
+						} else {
+							arrange = {
+								arranged: false,
+								error:
+									arrangeResult.error ||
+									arrangeResult.result?.error ||
+									"Arrange failed",
+							};
+						}
+					} catch (arrangeError) {
+						arrange = {
+							arranged: false,
+							error:
+								arrangeError instanceof Error
+									? arrangeError.message
+									: String(arrangeError),
+						};
+					}
+				}
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify(
+								{
+									success: true,
+									message: `Created component set "${data.componentSet?.name ?? name ?? ""}" with ${data.variantCount ?? "?"} variants`,
+									...data,
+									...(arrange ? { arrange } : {}),
+									hint: "To place instances, pass a VARIANT's key/nodeId from variants[] to figma_instantiate_component — not the set's key. Property definitions live on the set (componentPropertyDefinitions). Use figma_capture_screenshot to verify the result.",
+								},
+							),
+						},
+					],
+				};
+			} catch (error) {
+				logger.error({ error }, "Failed to create component set");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify(
+								{
+									error:
+										error instanceof Error ? error.message : String(error),
+									hint: "Make sure the Desktop Bridge plugin is running. baseComponentId/componentIds must reference COMPONENT nodes that are not already inside a component set. Node IDs are session-specific — re-search components if they may be stale.",
 								},
 							),
 						},

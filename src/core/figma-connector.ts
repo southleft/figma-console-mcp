@@ -45,6 +45,15 @@ export interface IFigmaConnector {
   editComponentProperty(nodeId: string, propertyName: string, newValue: any): Promise<any>;
   deleteComponentProperty(nodeId: string, propertyName: string): Promise<any>;
   instantiateComponent(componentKey: string, options?: any): Promise<any>;
+  createComponentSet(params: {
+    baseComponentId?: string;
+    properties?: Record<string, string[]>;
+    componentIds?: string[];
+    variantProperties?: Array<Record<string, string>>;
+    name?: string;
+    parentId?: string;
+    position?: { x: number; y: number };
+  }): Promise<any>;
 
   // Node manipulation
   resizeNode(nodeId: string, width: number, height: number, withConstraints?: boolean): Promise<any>;

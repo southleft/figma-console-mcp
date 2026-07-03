@@ -2023,6 +2023,263 @@ figma.ui.onmessage = async (msg) => {
   }
 
   // ============================================================================
+  // CREATE_COMPONENT_SET - Build a component set with variants in one call
+  // Two modes:
+  //   A) baseComponentId + properties: clone the base for every combination of
+  //      the property axes ({State:[default,hover], Size:[sm,lg]} → 4 variants),
+  //      rename each to "Prop=Value, Prop=Value", combineAsVariants.
+  //      The base component itself BECOMES the first variant (same node ID),
+  //      so existing instances of the base survive as instances of that variant.
+  //   B) componentIds (+ optional variantProperties): combine existing local
+  //      COMPONENT nodes as variants, optionally renaming them first.
+  // Variant properties are derived by Figma from the "Prop=Value" names, and
+  // componentPropertyDefinitions live on the resulting SET (not the variants).
+  // No text is written here, so no font loading is needed (clone() copies text
+  // without touching characters).
+  // ============================================================================
+  else if (msg.type === 'CREATE_COMPONENT_SET') {
+    try {
+      console.log('🌉 [Desktop Bridge] Creating component set:', msg.name || msg.baseComponentId || (msg.componentIds && msg.componentIds.length + ' components'));
+
+      var MAX_VARIANTS = 100;
+      var setWarnings = [];
+      // Rollback state — if combineAsVariants fails after clones were created,
+      // remove them and restore the base's name so no partial artifacts remain
+      var createdClones = [];
+      var renamedBase = null;
+      var originalBaseName = null;
+
+      // Build "Prop=Value, Prop=Value" from an axis-ordered property map
+      function comboName(combo, axisOrder) {
+        var parts = [];
+        for (var a = 0; a < axisOrder.length; a++) {
+          parts.push(axisOrder[a] + '=' + combo[axisOrder[a]]);
+        }
+        return parts.join(', ');
+      }
+
+      var variantNodes = [];
+
+      if (msg.baseComponentId) {
+        // ---- Mode A: generate variants from a base component ----
+        if (!msg.properties || Object.keys(msg.properties).length === 0) {
+          throw new Error('properties is required with baseComponentId. Example: { "State": ["default", "hover"], "Size": ["sm", "lg"] }');
+        }
+
+        var base = await figma.getNodeByIdAsync(msg.baseComponentId);
+        if (!base) throw new Error('Base component not found: ' + msg.baseComponentId + '. NodeIds are session-specific — re-search components to get fresh IDs.');
+        if (base.type !== 'COMPONENT') {
+          throw new Error('baseComponentId must be a COMPONENT node, got ' + base.type + '. To convert a frame, use figma_execute with figma.createComponentFromNode(frame) first.');
+        }
+        if (base.parent && base.parent.type === 'COMPONENT_SET') {
+          throw new Error('Base component is already a variant inside component set "' + base.parent.name + '". Use a standalone component.');
+        }
+
+        // Validate axes and build the cartesian product (last axis varies fastest,
+        // matching Figma's convention of State as the final property)
+        var axisOrder = [];
+        var axisValues = {};
+        for (var axis in msg.properties) {
+          if (msg.properties.hasOwnProperty(axis)) {
+            var vals = msg.properties[axis];
+            if (!vals || !vals.length) throw new Error('Property axis "' + axis + '" has no values');
+            var uniq = {};
+            for (var vv = 0; vv < vals.length; vv++) {
+              var sval = String(vals[vv]);
+              if (sval.indexOf('=') !== -1 || sval.indexOf(',') !== -1) {
+                throw new Error('Variant value "' + sval + '" (axis "' + axis + '") must not contain "=" or "," — Figma parses variant names on those characters');
+              }
+              if (uniq[sval]) throw new Error('Duplicate value "' + sval + '" in axis "' + axis + '"');
+              uniq[sval] = true;
+            }
+            if (axis.indexOf('=') !== -1 || axis.indexOf(',') !== -1) {
+              throw new Error('Property name "' + axis + '" must not contain "=" or ","');
+            }
+            axisOrder.push(axis);
+            axisValues[axis] = vals.map(String);
+          }
+        }
+
+        var combos = [{}];
+        for (var ai = 0; ai < axisOrder.length; ai++) {
+          var nextCombos = [];
+          var axisName = axisOrder[ai];
+          for (var ci = 0; ci < combos.length; ci++) {
+            for (var vi2 = 0; vi2 < axisValues[axisName].length; vi2++) {
+              var extended = {};
+              for (var k in combos[ci]) { if (combos[ci].hasOwnProperty(k)) extended[k] = combos[ci][k]; }
+              extended[axisName] = axisValues[axisName][vi2];
+              nextCombos.push(extended);
+            }
+          }
+          combos = nextCombos;
+        }
+
+        if (combos.length > MAX_VARIANTS) {
+          throw new Error('Requested ' + combos.length + ' variants — capped at ' + MAX_VARIANTS + '. Split into multiple sets or reduce axis values.');
+        }
+
+        // Base becomes the first combination; clones fill in the rest.
+        // Stack clones vertically so nothing overlaps even without autoArrange.
+        var baseX = base.x;
+        var baseY = base.y;
+        var stepY = Math.ceil(base.height) + 40;
+        originalBaseName = base.name;
+        renamedBase = base;
+        base.name = comboName(combos[0], axisOrder);
+        variantNodes.push(base);
+        for (var ci2 = 1; ci2 < combos.length; ci2++) {
+          var clone = base.clone();
+          clone.name = comboName(combos[ci2], axisOrder);
+          clone.x = baseX;
+          clone.y = baseY + ci2 * stepY;
+          createdClones.push(clone);
+          variantNodes.push(clone);
+        }
+      } else if (msg.componentIds && msg.componentIds.length) {
+        // ---- Mode B: combine existing components ----
+        if (msg.componentIds.length > MAX_VARIANTS) {
+          throw new Error('Requested ' + msg.componentIds.length + ' variants — capped at ' + MAX_VARIANTS + '.');
+        }
+        if (msg.variantProperties && msg.variantProperties.length !== msg.componentIds.length) {
+          throw new Error('variantProperties length (' + msg.variantProperties.length + ') must match componentIds length (' + msg.componentIds.length + ')');
+        }
+
+        for (var ni = 0; ni < msg.componentIds.length; ni++) {
+          var node = await figma.getNodeByIdAsync(msg.componentIds[ni]);
+          if (!node) throw new Error('Component not found: ' + msg.componentIds[ni] + '. NodeIds are session-specific — re-search components to get fresh IDs.');
+          if (node.type !== 'COMPONENT') {
+            throw new Error('Node ' + msg.componentIds[ni] + ' is a ' + node.type + ', not a COMPONENT. All componentIds must reference COMPONENT nodes.');
+          }
+          if (node.parent && node.parent.type === 'COMPONENT_SET') {
+            throw new Error('Component "' + node.name + '" (' + node.id + ') is already a variant in set "' + node.parent.name + '". Components can only belong to one set.');
+          }
+          if (msg.variantProperties) {
+            var props = msg.variantProperties[ni];
+            var propKeys = Object.keys(props);
+            if (!propKeys.length) throw new Error('variantProperties[' + ni + '] is empty — each entry needs at least one property (e.g. { "State": "hover" })');
+            variantNodes.push(node);
+            node.name = comboName(props, propKeys);
+          } else {
+            variantNodes.push(node);
+            if (node.name.indexOf('=') === -1) {
+              setWarnings.push('Component "' + node.name + '" is not named "Prop=Value" — Figma will file it under "Property 1=' + node.name + '". Pass variantProperties to control naming.');
+            }
+          }
+        }
+
+        // Duplicate variant names create an invalid (conflicting) set — fail early
+        var nameSeen = {};
+        for (var dn = 0; dn < variantNodes.length; dn++) {
+          if (nameSeen[variantNodes[dn].name]) {
+            throw new Error('Two variants would have identical properties: "' + variantNodes[dn].name + '". Each variant needs a unique property combination.');
+          }
+          nameSeen[variantNodes[dn].name] = true;
+        }
+      } else {
+        throw new Error('Provide either baseComponentId + properties (generate variants) or componentIds (combine existing components).');
+      }
+
+      // Resolve the parent — combineAsVariants REQUIRES a parent, and the set is
+      // created inside it. Fall back to the current page.
+      var setParent = figma.currentPage;
+      if (msg.parentId) {
+        var requestedParent = await figma.getNodeByIdAsync(msg.parentId);
+        if (requestedParent && typeof requestedParent.appendChild === 'function' && requestedParent.type !== 'COMPONENT' && requestedParent.type !== 'COMPONENT_SET' && requestedParent.type !== 'INSTANCE') {
+          setParent = requestedParent;
+        } else {
+          setWarnings.push('parentId "' + msg.parentId + '" not found or cannot contain a component set; created on the current page instead');
+        }
+      }
+
+      var componentSet;
+      try {
+        componentSet = figma.combineAsVariants(variantNodes, setParent);
+      } catch (combineError) {
+        // Housekeeping: don't leave renamed clones behind on failure
+        for (var rc = 0; rc < createdClones.length; rc++) {
+          try { createdClones[rc].remove(); } catch (e) {}
+        }
+        if (renamedBase && originalBaseName !== null) {
+          try { renamedBase.name = originalBaseName; } catch (e) {}
+        }
+        throw combineError;
+      }
+      if (msg.name) componentSet.name = msg.name;
+      if (msg.position) {
+        componentSet.x = msg.position.x || 0;
+        componentSet.y = msg.position.y || 0;
+      }
+
+      // componentPropertyDefinitions live on the SET (not the variants) —
+      // read them back so callers see the axes Figma actually derived.
+      var propertyDefinitions = {};
+      try {
+        var defs = componentSet.componentPropertyDefinitions;
+        for (var defName in defs) {
+          if (defs.hasOwnProperty(defName)) {
+            propertyDefinitions[defName] = {
+              type: defs[defName].type,
+              defaultValue: defs[defName].defaultValue,
+              variantOptions: defs[defName].variantOptions || []
+            };
+          }
+        }
+      } catch (defError) {
+        setWarnings.push('Could not read componentPropertyDefinitions: ' + (defError && defError.message ? defError.message : String(defError)));
+      }
+
+      var variantSummaries = [];
+      for (var vs = 0; vs < componentSet.children.length; vs++) {
+        var child = componentSet.children[vs];
+        if (child.type === 'COMPONENT') {
+          // Include each variant's key — instantiation uses VARIANT keys, not the set key
+          variantSummaries.push({ id: child.id, name: child.name, key: child.key });
+        }
+      }
+
+      figma.currentPage.selection = [componentSet];
+      figma.viewport.scrollAndZoomIntoView([componentSet]);
+
+      console.log('🌉 [Desktop Bridge] Component set created:', componentSet.id, 'with', variantSummaries.length, 'variants');
+
+      // Everything rides in `data` — ui.html's handleResult only forwards
+      // whitelisted top-level fields, and msg.data is on that whitelist.
+      figma.ui.postMessage({
+        type: 'CREATE_COMPONENT_SET_RESULT',
+        requestId: msg.requestId,
+        success: true,
+        data: {
+          componentSet: {
+            id: componentSet.id,
+            name: componentSet.name,
+            key: componentSet.key,
+            x: componentSet.x,
+            y: componentSet.y,
+            width: componentSet.width,
+            height: componentSet.height,
+            parentId: componentSet.parent ? componentSet.parent.id : null
+          },
+          variantCount: variantSummaries.length,
+          variants: variantSummaries,
+          propertyDefinitions: propertyDefinitions,
+          warnings: setWarnings.length ? setWarnings : undefined
+        }
+      });
+
+    } catch (error) {
+      var csErrorMsg = error && error.message ? error.message : String(error);
+      console.error('🌉 [Desktop Bridge] Create component set error:', csErrorMsg);
+      figma.ui.postMessage({
+        type: 'CREATE_COMPONENT_SET_RESULT',
+        requestId: msg.requestId,
+        success: false,
+        error: csErrorMsg
+      });
+    }
+  }
+
+  // ============================================================================
   // SET_NODE_DESCRIPTION - Set description on component/style
   // ============================================================================
   else if (msg.type === 'SET_NODE_DESCRIPTION') {
