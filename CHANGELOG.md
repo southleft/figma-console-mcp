@@ -5,6 +5,42 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.0] - 2026-07-02
+
+Two bodies of work that shipped together because they answer the same complaint from opposite ends: a **full-codebase audit** (33 verified fixes across the token pipeline, REST/Bridge tooling, and connection lifecycle — every finding reproduced against live code paths before fixing) and a **Desktop Bridge connection UX overhaul** that makes the plugin's status display tell the truth and the connection heal itself. Plus follow-ups from an independent Copilot review of the release branch. 1236 tests passing (33 new).
+
+**Plugin re-import required** — both `code.js` and `ui.html` changed: **Plugins → Development → Import plugin from manifest…** → `~/.figma-console-mcp/plugin/manifest.json`. The silver lining: this release ships a version handshake, so from now on the plugin banners itself when it's stale — this should be the last re-import you have to discover on your own.
+
+### Added
+
+- **HTTP `/health` auto-discovery.** The plugin silently polls the port range and reconnects on its own when an MCP server restarts — including the previously-fatal one-dead-among-live case. The manual "reconnect ritual" is gone.
+- **Version handshake.** The server compares the plugin's reported version on connect, pushes a re-import banner into the plugin UI, and surfaces the mismatch in `figma_get_status` and `figma_diagnose`.
+- **Cloud pairing persistence.** Pairing config is restored when the plugin reopens (it was previously write-only), and cloud reconnect no longer dials an invalid URL.
+- **`figma_reconnect` self-heals** via `RELOAD_UI` before giving up.
+
+### Changed
+
+- **The status pill is now honest.** It was wired to Figma's variables loading, not the connection — it glowed green with zero MCP servers connected and through every failure mode. It now derives from live connection state, with a connection count and a "Last action: Xs ago" proof-of-life line.
+- **Cloud pairing status is derived and labeled.** A stale pairing code restored on load could write a bare "Disconnected" directly under a green "Connected" pill. Cloud states now render from one derived source: every string is prefixed "Cloud", routine states hide while the panel is collapsed, and only actionable states ("Cloud pairing lost — reconnecting…") speak up uninvited. Pause renders as "Cloud: paused", not a lost pairing.
+- **Designer-language copy throughout the plugin** — no MCP/port/server jargon; dead-end states say exactly what to do next. Errors filter, Info panel, and dead code removed; Activity feed and copy-log kept.
+- **`figma_take_screenshot` is bridge-first** — works on any plan without a REST token and reflects live runtime state (REST remains the fallback).
+- **Central expired-token UX.** 401/403 token failures are enriched once in `FigmaAPI.request()` with regeneration guidance across ~15 REST tools; 429s retry honoring `Retry-After`.
+- **Leaner default payloads.** `figma_get_variables` defaults to `format: 'summary'` (as its description always recommended) and the design-system kit delta-encodes variant visualSpecs against the component baseline.
+- **`figma_arrange_component_set` rearranges variants in place** — the set keeps its node ID and placed instances survive (previously clone/remove/recombine orphaned every instance).
+
+### Fixed
+
+- **DTCG multi-mode round-trip loss (critical).** Export silently dropped every non-primary mode on re-import — the writer and parser disagreed on the `$extensions` key. Multi-mode collections now round-trip losslessly.
+- **Cross-collection alias misresolution.** Same-path tokens across collections resolved to the wrong collection; references are now set-qualified, which also fixes Style Dictionary v4 dangling references. *Upgrade note: token files exported by older versions carry unqualified alias references — the first import after upgrading reports them as `toUpdate` once (safely skipped; nothing is written incorrectly).*
+- **TIMING/EASING variables (Config 2026) exported as `"[object Object]"`.** They now map to DTCG `duration`/`cubicBezier`, and import safely skips them (the Plugin API cannot write those types yet).
+- **Two cache-poisoning bugs.** The REST variables path cached a truncated page in the wrong shape (filtered calls returned empty for the whole TTL), and a failed component fetch cached an empty design-system manifest — the root of the long-standing "search returns 0 components" reports.
+- **CSWSH origin bypass.** The WebSocket origin allowlist used `startsWith`, spoofable via `figma.com.attacker.example`; now exact-match.
+- **Post-sleep reaper killing healthy siblings.** Termination now requires a failed `/health` probe *plus* two missed heartbeats past staleness. From the Copilot review pass: the probe now runs shell-free (`execFileSync`) with port-range validation (port files live in a world-writable temp dir), and writes to `os.devNull` — the hardcoded `/dev/null` made Windows curl exit non-zero, which read as "nothing responding" and could itself have gotten a healthy sibling killed.
+- **Branch URLs silently targeted the main file** in nearly all REST tools — comment writes landed on the wrong file. Branch keys now resolve correctly everywhere, including the design-system manifest cache (which cached the main file's manifest under branch URLs). FigJam and Slides URLs are accepted too.
+- **Plugin write fixes:** instantiate overrides resolve `#nodeId` suffixes via a 3-tier resolver, fonts preload before TEXT property writes, `SET_IMAGE_FILL` result fields are no longer dropped at the ui.html relay, and silent no-ops now warn or error.
+- **Screenshot fallback auth guidance no longer misfires.** It keyed on a bare "403" substring — which also matches node IDs like `403:12` — and told users their token was expired. It now uses the `isAuthError` tag set by `FigmaAPI.request()`.
+
+
 ## [1.32.1] - 2026-06-30
 
 Fixes a bug in `figma_generate_component_doc` where **color** tokens were documented as raw hex values (and the "Figma Variable" column rendered `—`) even though the component's fills and strokes were bound to variables — while spacing tokens documented correctly. Reported by Robin Di Capua, who noticed the generated Markdown listed hardcoded color values while the same tokens surfaced by name when queried through the Company Docs MCP. It looked intermittent, which is why it went unnoticed: any component doc that had been hand-curated with a Color token section showed names, masking that the generator never produced them.
@@ -1013,6 +1049,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.33.0]: https://github.com/southleft/figma-console-mcp/compare/v1.32.1...v1.33.0
 [1.32.1]: https://github.com/southleft/figma-console-mcp/compare/v1.32.0...v1.32.1
 [1.32.0]: https://github.com/southleft/figma-console-mcp/compare/v1.31.0...v1.32.0
 [1.31.0]: https://github.com/southleft/figma-console-mcp/compare/v1.30.0...v1.31.0
