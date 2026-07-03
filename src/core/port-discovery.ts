@@ -32,8 +32,8 @@
 
 import { writeFileSync, readFileSync, unlinkSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { tmpdir } from 'os';
-import { execFile } from 'child_process';
+import { tmpdir, devNull } from 'os';
+import { execFile, execFileSync } from 'child_process';
 import { promisify } from 'util';
 import { createChildLogger } from './logger.js';
 
@@ -226,32 +226,46 @@ function isKillEligible(data: PortFileData): boolean {
   return lastSeenAge > HEARTBEAT_STALE_MS + KILL_ELIGIBLE_EXTRA_STALE_MS;
 }
 
-/** curl arguments for the /health liveness probe against a sibling's port. */
+/**
+ * Ports reaching the probes come from JSON port files in a world-writable
+ * temp dir, so treat them as untrusted input. A garbage port means a garbage
+ * file — verdict is inconclusive (do NOT kill), same as any other ambiguity.
+ */
+function isValidProbePort(port: unknown): port is number {
+  return Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65535;
+}
+
+/** curl arguments for the /health liveness probe against a sibling's port.
+ * `devNull` (not a literal /dev/null) — Windows ships curl.exe, and a bad
+ * output path there makes curl exit non-zero, which reads as "nothing
+ * responding" and would let the reaper kill a healthy sibling. */
 function healthProbeArgs(port: number): string[] {
-  return ['-s', '-o', '/dev/null', '-m', '1', `http://127.0.0.1:${port}/health`];
+  return ['-s', '-o', devNull, '-m', '1', `http://127.0.0.1:${port}/health`];
 }
 
 /**
  * Liveness probe against a sibling server's HTTP `/health` endpoint (the
  * WebSocket server serves it on the same port). Synchronous via curl —
  * startup-path only; the periodic reaper uses probeServerHealthAsync.
+ * execFileSync (no shell) so the untrusted port can never be interpreted
+ * as shell syntax.
  *
  * @returns true  — server responded (alive, do NOT kill)
  *          false — probe ran and failed (nothing responding on the port)
  *          null  — inconclusive (curl missing / probe ambiguous — do NOT kill)
  */
 function probeServerHealth(port: number): boolean | null {
+  if (!isValidProbePort(port)) return null;
   try {
-    const { execSync } = require('child_process');
-    execSync(`curl ${healthProbeArgs(port).join(' ')}`, {
+    execFileSync('curl', healthProbeArgs(port), {
       timeout: 3000,
       stdio: 'ignore',
     });
     return true;
   } catch (error: any) {
-    // 127 (POSIX shell) / 9009 (Windows cmd) = curl not found — inconclusive
-    if (error?.status === 127 || error?.status === 9009) return null;
-    // execSync-level timeout (signal set, no exit status) — inconclusive
+    // curl binary not found (no shell, so ENOENT instead of exit 127/9009) — inconclusive
+    if (error?.code === 'ENOENT') return null;
+    // execFileSync-level timeout (killed by signal, no exit status) — inconclusive
     if (error?.signal) return null;
     // curl ran and exited non-zero (connection refused, curl -m timeout, …)
     if (typeof error?.status === 'number') return false;
@@ -264,6 +278,7 @@ function probeServerHealth(port: number): boolean | null {
  * verdict semantics, but never blocks the event loop (execFile, no shell).
  */
 async function probeServerHealthAsync(port: number): Promise<boolean | null> {
+  if (!isValidProbePort(port)) return null;
   try {
     await execFileAsync('curl', healthProbeArgs(port), { timeout: 3000 });
     return true;

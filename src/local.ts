@@ -743,8 +743,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					logger.error({ error }, "Failed to capture screenshot");
 					const errorMessage =
 						error instanceof Error ? error.message : String(error);
+					// FigmaAPI.request() tags real token failures with isAuthError —
+					// a bare "403" substring also matches node IDs like "403:12"
+					// and permission-denied responses, which are not token problems.
 					const isAuthError =
-						errorMessage.includes("403") ||
+						(error as any)?.isAuthError === true ||
 						errorMessage.toLowerCase().includes("token expired") ||
 						errorMessage.toLowerCase().includes("invalid token");
 					return {
@@ -1749,10 +1752,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 			const cache = DesignSystemManifestCache.getInstance();
 			const currentUrl = this.getCurrentFileUrl();
-			const fileKeyMatch = currentUrl?.match(
-				/\/(file|design|board|slides)\/([a-zA-Z0-9]+)/,
-			);
-			const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
+			// extractFileKey is branch-aware: on /design/KEY/branch/BRANCH_KEY/…
+			// URLs the branch key is the effective file key — an ad-hoc regex
+			// here returned the main key and cached the wrong manifest for
+			// branch files.
+			const fileKey =
+				(currentUrl ? extractFileKey(currentUrl) : null) ?? "unknown";
 
 			// Check cache first
 			let cacheEntry = cache.get(fileKey);
