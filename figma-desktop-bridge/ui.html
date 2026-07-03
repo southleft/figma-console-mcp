@@ -1682,6 +1682,9 @@
     var _cloudWasConnectedBeforePause = false; // restore cloud on Resume after Pause
     var _cloudRetryCount = 0;               // bounded auto-reconnect budget
     var CLOUD_MAX_RETRIES = 5;
+    var _cloudEverConnected = false;        // paired successfully THIS session — separates a real
+                                            // drop (worth telling the user) from a stale restored
+                                            // code that never connected (stay quiet)
 
     // ============================================================================
     // 3-STAGE UI TOGGLES
@@ -1776,10 +1779,10 @@
       var opening = !document.getElementById('cloud-pair').classList.contains('visible');
       if (opening) closeSubToolbarIfOpen();
       toggleRow('cloud-pair', 'cloud-icon');
-      if (!opening) {
-        var s = document.getElementById('cloud-status');
-        if (s) { s.textContent = ''; s.className = 'cloud-status'; }
-      }
+      // Re-derive on both open and close: opening shows the current cloud
+      // state (previously it could open onto a stale blank), closing hides
+      // routine states while keeping actionable ones ("pairing lost") visible.
+      renderCloudStatus();
     }
 
     function toggleCloudHelp() {
@@ -2176,13 +2179,49 @@
     // Size the plugin window to fit content on first paint.
     requestAnimationFrame(autoResize);
 
-    function resetCloudUI() {
+    // Single source of truth for the cloud pairing status line — derives the
+    // text from actual state (same philosophy as deriveAndRenderStatus for the
+    // pill) instead of trusting one-off events. Every string is prefixed
+    // "Cloud" so it can never read as the plugin's overall status, and the
+    // line stays empty (hidden via :not(:empty)) unless it has something
+    // useful to say — a background failure like an expired pairing code
+    // restored from a previous session stays silent. Transient messages
+    // ("Cloud: connecting…", bad-code errors) are written directly by
+    // cloudDial/cloudConnect and survive until the next state change.
+    function renderCloudStatus() {
       var statusEl = document.getElementById('cloud-status');
-      var btn = document.getElementById('cloud-btn');
-      if (statusEl) {
-        statusEl.textContent = 'Disconnected';
+      if (!statusEl) return;
+      var cp = document.getElementById('cloud-pair');
+      var panelOpen = !!(cp && cp.classList.contains('visible'));
+      var paused = (typeof window.__wsIsPaused === 'function') ? window.__wsIsPaused() : false;
+
+      if (paused) {
+        // Pause closes the cloud socket deliberately and Resume redials it —
+        // never present that as a lost pairing (retry is suppressed while
+        // paused, so "reconnecting…" would also be untrue).
+        statusEl.textContent = panelOpen ? 'Cloud: paused' : '';
+        statusEl.className = 'cloud-status';
+      } else if (hasLiveCloudConnection()) {
+        statusEl.textContent = panelOpen ? 'Cloud: connected' : '';
+        statusEl.className = 'cloud-status connected';
+      } else if (!_cloudUserDisconnected && _cloudEverConnected && _cloudRetryCount < CLOUD_MAX_RETRIES) {
+        // Paired earlier this session and dropped — actionable, so it shows
+        // even while the panel is collapsed.
+        statusEl.textContent = 'Cloud pairing lost — reconnecting…';
+        statusEl.className = 'cloud-status';
+      } else if (!_cloudUserDisconnected && _cloudEverConnected) {
+        statusEl.textContent = 'Cloud pairing lost. Generate a fresh code in Claude and reconnect.';
+        statusEl.className = 'cloud-status error';
+      } else {
+        statusEl.textContent = panelOpen ? 'Cloud: not connected' : '';
         statusEl.className = 'cloud-status';
       }
+      autoResize();
+    }
+
+    function resetCloudUI() {
+      var btn = document.getElementById('cloud-btn');
+      renderCloudStatus();
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Connect';
@@ -2205,7 +2244,15 @@
       }
 
       if (btn) btn.disabled = true;
-      if (statusEl) { statusEl.textContent = 'Connecting...'; statusEl.className = 'cloud-status'; }
+      // Manual attempts show progress; auto re-dials render the derived state
+      // ("Cloud pairing lost — reconnecting…", or silence for a background
+      // restore) so an unlabeled transient never floats under the main pill.
+      if (isAuto) {
+        renderCloudStatus();
+      } else if (statusEl) {
+        statusEl.textContent = 'Cloud: connecting…';
+        statusEl.className = 'cloud-status';
+      }
 
       try {
         var opened = false;
@@ -2217,7 +2264,7 @@
           _lastCloudCode = code;
           _cloudUserDisconnected = false;
           _cloudRetryCount = 0;
-          if (statusEl) { statusEl.textContent = 'Connected via cloud'; statusEl.className = 'cloud-status connected'; }
+          _cloudEverConnected = true;
           if (btn) { btn.disabled = false; btn.textContent = 'Disconnect'; btn.onclick = cloudDisconnect; }
 
           // Add to the shared connection pool (uses same handlers as localhost).
@@ -2226,6 +2273,9 @@
           if (window.__wsAddCloudConnection) {
             window.__wsAddCloudConnection(cloudWs, 'cloud', resetCloudUI);
           }
+
+          // After the pool add, so hasLiveCloudConnection() sees this socket.
+          renderCloudStatus();
 
           // Persist cloud config via code.js clientStorage
           parent.postMessage({ pluginMessage: {
@@ -2302,6 +2352,7 @@
 
     function cloudDisconnect() {
       _cloudUserDisconnected = true; // deliberate — suppress auto re-dial
+      _cloudEverConnected = false;   // a deliberate disconnect is not a "lost" pairing
       if (cloudWs) {
         try { cloudWs.close(1000, 'Manual disconnect'); } catch (e) {}
       }
