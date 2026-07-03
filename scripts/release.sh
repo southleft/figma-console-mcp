@@ -348,6 +348,23 @@ for f in "${ALL_DOC_FILES[@]}"; do
     "(${CLOUD_TOOLS} tools)" \
     "(N tools) cloud"
 
+  # CORRECTIVE (must run AFTER the generic rule above): the bottom-line
+  # sentence in mode-comparison.md has three DIFFERENT counts in one line —
+  # "read-only (9 tools) … write access (95 tools) … everything (106 tools)".
+  # The generic rule clobbers all three to the cloud count (shipped wrong in
+  # v1.33.0 and again in v1.33.1's first pass); these anchored rules repair
+  # the remote and local slots. sed -E has no lookbehind, so clobber-then-
+  # correct ordering is the mechanism — do not reorder.
+  replace_in_file "$ROOT/$f" \
+    "read-only \\(([0-9]+) tools\\)" \
+    "read-only (${REMOTE_TOOLS} tools)" \
+    "read-only (N tools) corrective"
+
+  replace_in_file "$ROOT/$f" \
+    "everything \\(([0-9]+) tools\\)" \
+    "everything (${LOCAL_TOOLS} tools)" \
+    "everything (N tools) corrective"
+
   # "N tools including full write" — cloud mode in README
   replace_in_file "$ROOT/$f" \
     "[0-9]+ tools including full write" \
@@ -365,6 +382,21 @@ for f in "${ALL_DOC_FILES[@]}"; do
     "— [0-9]+ tools" \
     "— ${CLOUD_TOOLS} tools" \
     "— N tools"
+
+  # CORRECTIVE (must run AFTER the generic rule above): the three setup
+  # cards in docs/index.mdx each carry a different mode's count; the generic
+  # rule sets all three to the cloud count. Anchor by card label to repair
+  # the NPX (local) and Remote slots. Same clobber-then-correct ordering as
+  # the parenthesized rules — do not reorder.
+  replace_in_file "$ROOT/$f" \
+    "Full capabilities — [0-9]+ tools" \
+    "Full capabilities — ${LOCAL_TOOLS} tools" \
+    "Full capabilities — N tools corrective"
+
+  replace_in_file "$ROOT/$f" \
+    "Quick exploration — [0-9]+ tools" \
+    "Quick exploration — ${REMOTE_TOOLS} tools" \
+    "Quick exploration — N tools corrective"
 done
 
 # ── 7. Lockfile sync ───────────────────────────────────

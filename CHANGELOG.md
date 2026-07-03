@@ -5,6 +5,16 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.1] - 2026-07-02
+
+Security-focused dependency sweep, same-day follow-up to v1.33.0. No code changes, no API changes, no plugin behavior changes. Nothing breaks on an un-updated plugin — but note the v1.33.0 version handshake will show the plugin's update banner (the version stamp moved to 1.33.1); re-import when convenient to clear it.
+
+### Fixed
+
+- **All runtime and critical security alerts resolved via in-range dependency bumps** (`npm audit fix`, no `--force`): `ws` 8.21.0, `hono` 4.12.27, `undici` 7.28.0, `handlebars` 4.7.9 (the lone critical, a dev-only transitive of ts-jest), plus `lodash`, `path-to-regexp`, `basic-ftp`, `fast-uri`, `vite`, and friends. Every bump is within existing semver ranges — 1236 tests pass unchanged and the Cloudflare deploy dry-run is clean. Supersedes dependabot PRs #81, #82, and #84.
+- **`wrangler` deliberately pinned at 4.72.0.** Newer wrangler requires Node ≥22 and would break deploys on Node 20 toolchains. The only remaining audit findings are confined to wrangler/miniflare's bundled dev-time toolchain — they are not part of the published npm package or the deployed Worker bundle, and they clear whenever the Node 22 upgrade lands.
+
+
 ## [1.33.0] - 2026-07-02
 
 Two bodies of work that shipped together because they answer the same complaint from opposite ends: a **full-codebase audit** (33 verified fixes across the token pipeline, REST/Bridge tooling, and connection lifecycle — every finding reproduced against live code paths before fixing) and a **Desktop Bridge connection UX overhaul** that makes the plugin's status display tell the truth and the connection heal itself. Plus follow-ups from an independent Copilot review of the release branch. 1236 tests passing (33 new).
@@ -1049,6 +1059,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.33.1]: https://github.com/southleft/figma-console-mcp/compare/v1.33.0...v1.33.1
 [1.33.0]: https://github.com/southleft/figma-console-mcp/compare/v1.32.1...v1.33.0
 [1.32.1]: https://github.com/southleft/figma-console-mcp/compare/v1.32.0...v1.32.1
 [1.32.0]: https://github.com/southleft/figma-console-mcp/compare/v1.31.0...v1.32.0
