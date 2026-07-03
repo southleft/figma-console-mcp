@@ -21,7 +21,7 @@ jest.setTimeout(10000);
 function connectClient(
   server: FigmaWebSocketServer,
   port: number,
-  fileInfo?: { fileKey: string; fileName: string; currentPage?: string }
+  fileInfo?: { fileKey: string; fileName: string; currentPage?: string; pluginVersion?: string }
 ): Promise<WebSocket> {
   const info = fileInfo || { fileKey: 'test-file-key', fileName: 'Test File', currentPage: 'Page 1' };
   return new Promise((resolve, reject) => {
@@ -148,6 +148,85 @@ describe('FigmaWebSocketServer', () => {
       const client2 = await connectClient(server, TEST_PORT);
       clients.push(client2);
       expect(server.isClientConnected()).toBe(true);
+    });
+  });
+
+  describe('plugin version handshake', () => {
+    // Regression for the v1.33.1 false positive: the handshake must compare
+    // the plugin's reported version against the BUNDLED plugin files' version
+    // (what a manifest re-import installs), never against the server's
+    // package version — server-only releases bump the package without
+    // touching plugin files. bundledPluginVersion is injected here at a value
+    // that cannot match package.json, so any comparison against the server
+    // version would fail these tests.
+    const BUNDLED = '9.9.9';
+
+    /** Collect messages of a given type arriving on the client. */
+    function collectMessages(ws: WebSocket, type: string): any[] {
+      const seen: any[] = [];
+      ws.on('message', (raw) => {
+        try {
+          const msg = JSON.parse(raw.toString());
+          if (msg.type === type) seen.push(msg);
+        } catch { /* ignore */ }
+      });
+      return seen;
+    }
+
+    const settle = () => new Promise((r) => setTimeout(r, 150));
+
+    test('plugin matching the bundled plugin version is NOT flagged stale (server-only release)', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT, bundledPluginVersion: BUNDLED });
+      await server.start();
+
+      const ws = new WebSocket(`ws://localhost:${TEST_PORT}`);
+      const updateMsgs = collectMessages(ws, 'PLUGIN_UPDATE_AVAILABLE');
+      const connected = new Promise<void>((res) => server.once('connected', res));
+      await new Promise<void>((res) => ws.on('open', () => res()));
+      ws.send(JSON.stringify({
+        type: 'FILE_INFO',
+        data: { fileKey: 'vh-file', fileName: 'Version Test', pluginVersion: BUNDLED },
+      }));
+      await connected;
+      clients.push(ws);
+      await settle();
+
+      expect(server.getConnectedFileInfo()?.pluginVersion).toBe(BUNDLED);
+      expect(server.getConnectedFileInfo()?.pluginUpdateAvailable).toBe(false);
+      expect(updateMsgs).toHaveLength(0);
+    });
+
+    test('plugin older than the bundled plugin version IS flagged and notified', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT, bundledPluginVersion: BUNDLED });
+      await server.start();
+
+      const ws = new WebSocket(`ws://localhost:${TEST_PORT}`);
+      const updateMsgs = collectMessages(ws, 'PLUGIN_UPDATE_AVAILABLE');
+      const connected = new Promise<void>((res) => server.once('connected', res));
+      await new Promise<void>((res) => ws.on('open', () => res()));
+      ws.send(JSON.stringify({
+        type: 'FILE_INFO',
+        data: { fileKey: 'vh-file', fileName: 'Version Test', pluginVersion: '9.9.8' },
+      }));
+      await connected;
+      clients.push(ws);
+      await settle();
+
+      expect(server.getConnectedFileInfo()?.pluginUpdateAvailable).toBe(true);
+      expect(updateMsgs).toHaveLength(1);
+      expect(updateMsgs[0].bundledPluginVersion).toBe(BUNDLED);
+      expect(updateMsgs[0].pluginVersion).toBe('9.9.8');
+    });
+
+    test('plugin reporting no version is flagged stale', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT, bundledPluginVersion: BUNDLED });
+      await server.start();
+
+      const client = await connectClient(server, TEST_PORT); // helper sends no pluginVersion
+      clients.push(client);
+
+      expect(server.getConnectedFileInfo()?.pluginVersion).toBeNull();
+      expect(server.getConnectedFileInfo()?.pluginUpdateAvailable).toBe(true);
     });
   });
 

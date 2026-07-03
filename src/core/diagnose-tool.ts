@@ -15,6 +15,12 @@ import { MCP_NAME, withIdentity } from "./identity.js";
 export interface DiagnoseToolOptions {
 	/** Server build version (e.g. from package.json) */
 	getServerVersion: () => string;
+	/**
+	 * Version of the plugin files bundled with this server (what a manifest
+	 * re-import installs). May lag the server version on server-only releases.
+	 * Falls back to getServerVersion when absent.
+	 */
+	getBundledPluginVersion?: () => string;
 	/** "local" for NPX/stdio mode, "cloud" for Cloudflare Workers mode */
 	mode: "local" | "cloud";
 	/** Snapshot of plugin connection state (or null if no WS server) */
@@ -62,8 +68,9 @@ function buildReport(opts: DiagnoseToolOptions): string {
 			lines.push(`- Editor type: ${plugin.editorType}.`);
 		}
 		if (plugin.pluginUpdateAvailable) {
+			const bundledVersion = opts.getBundledPluginVersion?.() ?? opts.getServerVersion();
 			lines.push(
-				`- ⚠️ **Plugin update available**: the imported plugin${plugin.pluginVersion ? ` (v${plugin.pluginVersion})` : " (version unknown — very old)"} is older than this server (v${opts.getServerVersion()}). Figma caches plugin files, so re-import it: Figma Desktop → Plugins → Development → Import plugin from manifest → select manifest.json. Until then, recently added or fixed plugin features may silently misbehave.`,
+				`- ⚠️ **Plugin update available**: the imported plugin${plugin.pluginVersion ? ` (v${plugin.pluginVersion})` : " (version unknown — very old)"} differs from the plugin files this server ships (v${bundledVersion}). Figma caches plugin files, so re-import it: Figma Desktop → Plugins → Development → Import plugin from manifest → select manifest.json. Until then, recently added or fixed plugin features may silently misbehave.`,
 			);
 		}
 	} else {

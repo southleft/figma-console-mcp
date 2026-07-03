@@ -32,11 +32,59 @@ try {
   // Non-critical — version will show as 0.0.0
 }
 
+/**
+ * Extract the PLUGIN_VERSION constant from figma-desktop-bridge/code.js source.
+ * Returns null when the constant is absent or malformed.
+ */
+export function parseBundledPluginVersion(codeJsSource: string): string | null {
+  const match = codeJsSource.match(/var PLUGIN_VERSION\s*=\s*'(\d+\.\d+\.\d+)'/);
+  return match ? match[1] : null;
+}
+
+// The version of the plugin files THIS package ships — i.e. what a manifest
+// re-import would install. This is deliberately NOT the package version:
+// server-only releases (deps, docs, server code) bump package.json without
+// touching figma-desktop-bridge/, and comparing the plugin against
+// SERVER_VERSION would falsely nag users to re-import an already-current
+// plugin (seen live: plugin 1.33.0 + server 1.33.1 → spurious update banner).
+let BUNDLED_PLUGIN_VERSION = SERVER_VERSION;
+try {
+  const parsed = parseBundledPluginVersion(
+    readFileSync(join(PACKAGE_ROOT, 'figma-desktop-bridge', 'code.js'), 'utf-8')
+  );
+  if (parsed) BUNDLED_PLUGIN_VERSION = parsed;
+} catch {
+  // Non-critical — fall back to SERVER_VERSION (pre-v1.33.2 behavior)
+}
+
+/** Version of the plugin files bundled with this server (what a re-import installs). */
+export function getBundledPluginVersion(): string {
+  return BUNDLED_PLUGIN_VERSION;
+}
+
+/**
+ * A plugin needs re-importing when it reports no version (predates version
+ * reporting) or a version different from the plugin files this server ships.
+ * The server's own package version is irrelevant here.
+ */
+export function computePluginUpdateAvailable(
+  pluginVersion: string | null,
+  bundledPluginVersion: string
+): boolean {
+  return !pluginVersion || pluginVersion !== bundledPluginVersion;
+}
+
 const logger = createChildLogger({ component: 'websocket-server' });
 
 export interface WebSocketServerOptions {
   port: number;
   host?: string;
+  /**
+   * Version of the plugin files shipped with this server, used for the
+   * FILE_INFO version handshake. Defaults to the PLUGIN_VERSION parsed from
+   * the packaged figma-desktop-bridge/code.js. Overridable for tests.
+   */
+  bundledPluginVersion?: string;
 }
 
 interface PendingRequest {
@@ -57,7 +105,7 @@ export interface ConnectedFileInfo {
   connectedAt: number;
   /** Version reported by the imported plugin's code.js (FILE_INFO). Null when the plugin predates version reporting. */
   pluginVersion?: string | null;
-  /** True when the imported plugin's version differs from this server's — the user should re-import manifest.json. */
+  /** True when the imported plugin's version differs from the plugin files bundled with this server — the user should re-import manifest.json. */
   pluginUpdateAvailable?: boolean;
 }
 
@@ -557,19 +605,27 @@ export class FigmaWebSocketServer extends EventEmitter {
     // Figma caches plugin files at the app level, so a version mismatch means
     // the user is running stale plugin code and must re-import manifest.json.
     // A missing version means the plugin predates version reporting — also stale.
+    // Compared against the BUNDLED plugin version (what a re-import would
+    // install), NOT the server's package version — server-only releases don't
+    // change the plugin files, so they must not trigger the re-import banner.
+    const bundledPluginVersion =
+      this.options.bundledPluginVersion ?? BUNDLED_PLUGIN_VERSION;
     const pluginVersion: string | null = data.pluginVersion || null;
-    const pluginUpdateAvailable =
-      !pluginVersion || pluginVersion !== SERVER_VERSION;
+    const pluginUpdateAvailable = computePluginUpdateAvailable(
+      pluginVersion,
+      bundledPluginVersion
+    );
     if (pluginUpdateAvailable) {
       logger.warn(
-        { fileKey, pluginVersion, serverVersion: SERVER_VERSION },
-        'Imported plugin version differs from server — re-import manifest.json to update'
+        { fileKey, pluginVersion, bundledPluginVersion, serverVersion: SERVER_VERSION },
+        'Imported plugin version differs from the plugin files bundled with this server — re-import manifest.json to update'
       );
       try {
         ws.send(
           JSON.stringify({
             type: 'PLUGIN_UPDATE_AVAILABLE',
             serverVersion: SERVER_VERSION,
+            bundledPluginVersion,
             pluginVersion,
           })
         );
