@@ -44,7 +44,7 @@ import { registerTokensTools } from "./core/tokens-tools.js";
 import { wrapServerForIdentity } from "./core/identity.js";
 import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
-import { FigmaWebSocketServer } from "./core/websocket-server.js";
+import { FigmaWebSocketServer, getBundledPluginVersion } from "./core/websocket-server.js";
 import { WebSocketConnector } from "./core/websocket-connector.js";
 import {
 	DEFAULT_WS_PORT,
@@ -1246,6 +1246,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 											websocket: {
 												available: wsConnected,
 												serverRunning: this.wsServer?.isStarted() ?? false,
+												// Version of the plugin files this server ships — what a
+												// manifest re-import installs. pluginUpdateAvailable on
+												// connected files compares against THIS, not the server
+												// version (which can be newer on server-only releases).
+												bundledPluginVersion: getBundledPluginVersion(),
 												port: this.wsActualPort ? String(this.wsActualPort) : null,
 												preferredPort: String(this.wsPreferredPort),
 												portFallbackUsed: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort,
@@ -3107,6 +3112,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					return "0.0.0";
 				}
 			},
+			getBundledPluginVersion,
 			getPluginState: () => {
 				if (!this.wsServer) return null;
 				const fileInfo = this.wsServer.getConnectedFileInfo();

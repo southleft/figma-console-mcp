@@ -5,8 +5,11 @@
 // which then forwards messages to the MCP server over the WebSocket bridge.
 
 // Plugin version — sent in FILE_INFO for server-side version compatibility checks.
-// The server compares this against its own version to detect stale cached plugins.
-var PLUGIN_VERSION = '1.33.1'; // Kept in sync with package.json by scripts/release.sh — see issue #62.
+// The server compares this against the version of the plugin files IT ships to
+// detect stale cached plugins. Bumped by scripts/release.sh ONLY when plugin files
+// change (see issue #62); server-only releases leave it alone, so it may lag
+// package.json — that's intentional, not drift.
+var PLUGIN_VERSION = '1.33.0'; // Last release in which plugin files changed.
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 

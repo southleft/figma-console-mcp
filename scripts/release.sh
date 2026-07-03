@@ -255,14 +255,31 @@ replace_in_file "$ROOT/src/core/tokens-tools.ts" \
   "MCP_VERSION constant"
 
 # ── 3b. PLUGIN_VERSION sync in figma-desktop-bridge/code.js ──
-# Keeps the in-plugin PLUGIN_VERSION constant aligned with package.json. Without this,
-# Figma's plugin runtime can serve cached pre-bump code.js / ui.html and tools added
-# after the cached version's release will fail with "Unknown method". See issue #62.
+# Bumped ONLY when plugin files actually changed since the last release.
+# When they did change, the bump busts Figma's plugin-file cache and marks
+# older imported plugins stale (issue #62). When they did NOT change
+# (server-only release: deps, docs, server code), the constant must stay
+# put — the server's FILE_INFO handshake compares the plugin's reported
+# version against THIS constant, and bumping it would falsely flag every
+# connected plugin as needing a re-import.
 echo -e "${BOLD}3b. figma-desktop-bridge PLUGIN_VERSION${NC}"
-replace_in_file "$ROOT/figma-desktop-bridge/code.js" \
-  "var PLUGIN_VERSION = '[0-9]+\.[0-9]+\.[0-9]+'" \
-  "var PLUGIN_VERSION = '$VERSION'" \
-  "PLUGIN_VERSION constant"
+PLUGIN_FILES_CHANGED=true
+if git -C "$ROOT" rev-parse -q --verify "v$CURRENT_VERSION" > /dev/null 2>&1; then
+  # -I ignores the PLUGIN_VERSION line itself (a prior bump must not read as a
+  # "plugin change" next release) and JS comment lines (comment-only edits
+  # don't require a re-import).
+  if git -C "$ROOT" diff --quiet -I '^var PLUGIN_VERSION' -I '^//' "v$CURRENT_VERSION" -- figma-desktop-bridge/; then
+    PLUGIN_FILES_CHANGED=false
+  fi
+fi
+if $PLUGIN_FILES_CHANGED; then
+  replace_in_file "$ROOT/figma-desktop-bridge/code.js" \
+    "var PLUGIN_VERSION = '[0-9]+\.[0-9]+\.[0-9]+'" \
+    "var PLUGIN_VERSION = '$VERSION'" \
+    "PLUGIN_VERSION constant"
+else
+  echo -e "  ${CYAN}SKIP${NC} figma-desktop-bridge/code.js — no plugin file changes since v$CURRENT_VERSION (server-only release; keeping PLUGIN_VERSION so connected plugins aren't falsely flagged stale)"
+fi
 
 # ── 4. Local tool count (N+ tools) ─────────────────────
 # Matches any number followed by + and "tool(s)" in context of local/full mode
