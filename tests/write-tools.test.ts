@@ -5,7 +5,14 @@
  * response shapes, edge cases, and code generation logic.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { registerWriteTools } from "../src/core/write-tools";
+import {
+	componentSetTimeoutMs,
+	componentSetVariantCount,
+} from "../src/core/websocket-connector";
 
 // ============================================================================
 // Mock infrastructure
@@ -804,5 +811,257 @@ describe("Write Tools", () => {
 			});
 			expect(findVar(sandbox, "spacing/md").valuesByMode.m0).toBe(16);
 		});
+
+		it("keeps ONE results entry per token — value-phase problems attach as valueErrors instead of inflating created+failed", async () => {
+			const sandbox = makeSandbox();
+			const { tool } = setupWithSandbox(sandbox);
+			const result = await tool.handler({
+				collectionName: "Brand",
+				modes: ["Default"],
+				tokens: [
+					{
+						name: "color/x",
+						resolvedType: "COLOR",
+						// "Ghost" is not a declared mode — previously this pushed a
+						// SECOND results entry for color/x, so created + failed
+						// exceeded the token count.
+						values: { Default: "#FFFFFF", Ghost: "#000000" },
+					},
+				],
+			});
+
+			const parsed = parseResult(result);
+			expect(parsed.results).toHaveLength(1);
+			expect(parsed.created).toBe(1);
+			expect(parsed.failed).toBe(0);
+			expect(parsed.created + parsed.failed).toBe(1);
+			expect(parsed.results[0].success).toBe(true);
+			expect(parsed.results[0].valueErrors).toEqual([
+				"Unknown mode: Ghost — value skipped.",
+			]);
+			expect(parsed.warnings).toHaveLength(1);
+			expect(parsed.warnings[0]).toContain("Unknown mode: Ghost");
+			// The Default value still applied.
+			expect(findVar(sandbox, "color/x").valuesByMode.m0).toEqual({
+				r: 1,
+				g: 1,
+				b: 1,
+				a: 1,
+			});
+		});
+	});
+});
+
+// ============================================================================
+// CREATE_COMPONENT_SET timeout scaling (Finding 5)
+// ============================================================================
+
+describe("createComponentSet timeout scaling", () => {
+	it("computes variant count from the axes matrix (Mode A)", () => {
+		expect(
+			componentSetVariantCount({
+				properties: { State: ["default", "hover", "disabled"], Size: ["sm", "lg"] },
+			}),
+		).toBe(6);
+	});
+
+	it("uses componentIds length for Mode B", () => {
+		expect(
+			componentSetVariantCount({
+				componentIds: Array.from({ length: 48 }, (_, i) => `c${i}`),
+			}),
+		).toBe(48);
+	});
+
+	it("keeps the 30s floor (+5s server buffer) for small sets", () => {
+		expect(
+			componentSetTimeoutMs({ properties: { State: ["a", "b"] } }),
+		).toBe(35000);
+	});
+
+	it("scales past 30s for large matrices (48 variants no longer double-timeouts)", () => {
+		// 48 * 1200 = 57600ms base + 5000 buffer — comfortably past the old
+		// fixed 30s that fired while the plugin kept building the set.
+		expect(
+			componentSetTimeoutMs({
+				componentIds: Array.from({ length: 48 }, (_, i) => `c${i}`),
+			}),
+		).toBe(62600);
+	});
+
+	it("caps at 120s (+5s buffer) at the 100-variant hard limit", () => {
+		expect(
+			componentSetTimeoutMs({
+				componentIds: Array.from({ length: 100 }, (_, i) => `c${i}`),
+			}),
+		).toBe(125000);
+	});
+});
+
+// ============================================================================
+// code.js CREATE_COMPONENT_SET handler — Mode B hardening (Finding 6)
+//
+// The handler block is extracted from figma-desktop-bridge/code.js and
+// executed against a fake `figma` sandbox, so validation and rename-rollback
+// behavior is tested for real rather than by string-matching the source.
+// ============================================================================
+
+describe("code.js CREATE_COMPONENT_SET Mode B hardening", () => {
+	const codeJsSource = readFileSync(
+		join(__dirname, "../figma-desktop-bridge/code.js"),
+		"utf-8",
+	);
+
+	function extractHandler() {
+		const start = codeJsSource.indexOf(
+			"else if (msg.type === 'CREATE_COMPONENT_SET')",
+		);
+		if (start === -1) throw new Error("CREATE_COMPONENT_SET handler not found");
+		const endMarker = codeJsSource.indexOf("// SET_NODE_DESCRIPTION", start);
+		const block = codeJsSource.slice(
+			start,
+			codeJsSource.lastIndexOf("}", endMarker) + 1,
+		);
+		// `if (false) {}` satisfies the leading `else if`.
+		return new Function(
+			"figma",
+			"msg",
+			`return (async () => { if (false) {} ${block} })();`,
+		);
+	}
+
+	function makeComponent(id: string, name: string) {
+		return {
+			id,
+			name,
+			key: `key-${id}`,
+			type: "COMPONENT",
+			x: 0,
+			y: 0,
+			height: 40,
+			parent: { type: "PAGE" },
+		};
+	}
+
+	function makeComponentSetSandbox(
+		nodes: Array<ReturnType<typeof makeComponent>>,
+		opts: { combineThrows?: string } = {},
+	) {
+		const posted: any[] = [];
+		const byId = new Map(nodes.map((n) => [n.id, n]));
+		const figma = {
+			getNodeByIdAsync: async (id: string) => byId.get(id) ?? null,
+			combineAsVariants: (variants: any[], parent: any) => {
+				if (opts.combineThrows) throw new Error(opts.combineThrows);
+				return {
+					id: "SET:1",
+					name: "Set",
+					key: "setkey",
+					x: 0,
+					y: 0,
+					width: 100,
+					height: 100,
+					parent,
+					children: variants,
+					componentPropertyDefinitions: {},
+				};
+			},
+			currentPage: { id: "0:1", selection: [] as any[] },
+			viewport: { scrollAndZoomIntoView: () => {} },
+			ui: { postMessage: (m: any) => posted.push(m) },
+		};
+		return { figma, posted };
+	}
+
+	async function runHandler(
+		sandbox: ReturnType<typeof makeComponentSetSandbox>,
+		msg: Record<string, unknown>,
+	) {
+		await extractHandler()(sandbox.figma, {
+			type: "CREATE_COMPONENT_SET",
+			requestId: "req-1",
+			...msg,
+		});
+		expect(sandbox.posted).toHaveLength(1);
+		return sandbox.posted[0];
+	}
+
+	it("sanity: valid Mode B combine renames components and succeeds", async () => {
+		const c1 = makeComponent("c1", "Btn A");
+		const c2 = makeComponent("c2", "Btn B");
+		const sandbox = makeComponentSetSandbox([c1, c2]);
+		const result = await runHandler(sandbox, {
+			componentIds: ["c1", "c2"],
+			variantProperties: [{ State: "default" }, { State: "hover" }],
+		});
+
+		expect(result.success).toBe(true);
+		expect(c1.name).toBe("State=default");
+		expect(c2.name).toBe("State=hover");
+		expect(result.data.variantCount).toBe(2);
+	});
+
+	it("rejects variantProperties VALUES containing '=' or ',' and restores earlier renames", async () => {
+		const c1 = makeComponent("c1", "Btn A");
+		const c2 = makeComponent("c2", "Btn B");
+		const sandbox = makeComponentSetSandbox([c1, c2]);
+		const result = await runHandler(sandbox, {
+			componentIds: ["c1", "c2"],
+			// c1 renames fine; c2's value would silently create a bogus axis.
+			variantProperties: [{ State: "default" }, { State: "hover,Size=lg" }],
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('must not contain "=" or ","');
+		expect(result.error).toContain("hover,Size=lg");
+		// The rename applied to c1 before the throw is rolled back.
+		expect(c1.name).toBe("Btn A");
+		expect(c2.name).toBe("Btn B");
+	});
+
+	it("rejects variantProperties KEYS containing '=' or ','", async () => {
+		const c1 = makeComponent("c1", "Btn A");
+		const sandbox = makeComponentSetSandbox([c1]);
+		const result = await runHandler(sandbox, {
+			componentIds: ["c1"],
+			variantProperties: [{ "State=weird": "hover" }],
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('Property name "State=weird"');
+		expect(c1.name).toBe("Btn A");
+	});
+
+	it("restores Mode B renames when the duplicate-combination check throws", async () => {
+		const c1 = makeComponent("c1", "Btn A");
+		const c2 = makeComponent("c2", "Btn B");
+		const sandbox = makeComponentSetSandbox([c1, c2]);
+		const result = await runHandler(sandbox, {
+			componentIds: ["c1", "c2"],
+			// Identical combos — throws AFTER both components were renamed.
+			variantProperties: [{ State: "hover" }, { State: "hover" }],
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain("identical properties");
+		expect(c1.name).toBe("Btn A");
+		expect(c2.name).toBe("Btn B");
+	});
+
+	it("restores Mode B renames when combineAsVariants itself throws", async () => {
+		const c1 = makeComponent("c1", "Btn A");
+		const c2 = makeComponent("c2", "Btn B");
+		const sandbox = makeComponentSetSandbox([c1, c2], {
+			combineThrows: "boom-combine",
+		});
+		const result = await runHandler(sandbox, {
+			componentIds: ["c1", "c2"],
+			variantProperties: [{ State: "default" }, { State: "hover" }],
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe("boom-combine");
+		expect(c1.name).toBe("Btn A");
+		expect(c2.name).toBe("Btn B");
 	});
 });

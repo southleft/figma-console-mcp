@@ -1016,6 +1016,10 @@ for (let i = 1; i < modeNames.length; i++) {
 // brace-reference values can alias variables created later in this call).
 const results = [];
 const warnings = [];
+const resultByName = {};       // ONE results entry per token name — value-phase
+                               // problems attach to it as valueErrors instead of
+                               // pushing extra entries (which inflated created+failed
+                               // past the token count).
 const createdByName = {};      // exact name -> variable (this call)
 const createdByLower = {};     // lowercased name -> variable (this call)
 const createdDefs = [];        // { def, variable } for the value pass
@@ -1026,7 +1030,9 @@ for (const t of tokenDefs) {
     createdByName[t.name] = variable;
     createdByLower[t.name.toLowerCase()] = variable;
     createdDefs.push({ def: t, variable: variable });
-    results.push({ success: true, name: t.name, id: variable.id });
+    const entry = { success: true, name: t.name, id: variable.id };
+    resultByName[t.name] = entry;
+    results.push(entry);
   } catch (err) {
     results.push({ success: false, name: t.name, error: String(err) });
   }
@@ -1088,12 +1094,22 @@ async function resolveReference(raw) {
 }
 
 // Step 4: Apply values — literals directly, brace references as aliases.
+// Value-phase problems attach to the token's EXISTING results entry (as
+// valueErrors) + warnings; they never add a second entry for the same name.
+function noteValueProblem(name, message) {
+  const entry = resultByName[name];
+  if (entry) {
+    entry.valueErrors = entry.valueErrors || [];
+    entry.valueErrors.push(message);
+  }
+  warnings.push('Token "' + name + '": ' + message);
+}
 for (const entry of createdDefs) {
   const t = entry.def;
   const variable = entry.variable;
   for (const [modeName, value] of Object.entries(t.values)) {
     const modeId = modeMap[modeName];
-    if (!modeId) { results.push({ success: false, name: t.name, error: 'Unknown mode: ' + modeName }); continue; }
+    if (!modeId) { noteValueProblem(t.name, 'Unknown mode: ' + modeName + ' — value skipped.'); continue; }
     try {
       if (isReference(value)) {
         const target = await resolveReference(value);
@@ -1107,7 +1123,7 @@ for (const entry of createdDefs) {
         variable.setValueForMode(modeId, processed);
       }
     } catch (err) {
-      results.push({ success: false, name: t.name, error: 'mode "' + modeName + '": ' + String(err) });
+      noteValueProblem(t.name, 'mode "' + modeName + '": ' + String(err));
     }
   }
 }
@@ -2777,7 +2793,9 @@ Two modes:
 
 Figma derives the variant property definitions from the names; they live on the SET (componentPropertyDefinitions), not on individual variants. The result includes each variant's key — instantiate with a VARIANT's key/nodeId via figma_instantiate_component, not the set's key.
 
-Set autoArrange:true to lay the new set out as a labeled grid inside a white container (same layout as figma_arrange_component_set). Requires Desktop Bridge plugin.`,
+Set autoArrange:true to lay the new set out as a labeled grid inside a white container (same layout as figma_arrange_component_set). Requires Desktop Bridge plugin.
+
+SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count (~1.2s/variant, 30s floor / 2min cap), but above ~40 variants the single-pass clone+combine gets slow and heavy base components may still push the limit — prefer splitting large matrices into multiple sets (e.g. one set per Size).`,
 		{
 			baseComponentId: z
 				.string()
@@ -2864,6 +2882,20 @@ Set autoArrange:true to lay the new set out as a labeled grid inside a white con
 					);
 				}
 
+				// Variant count drives the connector's scaled timeout; above ~40 the
+				// single-pass clone+combine gets slow, so surface a heads-up.
+				let requestedVariantCount = componentIds?.length ?? 1;
+				if (properties && !componentIds?.length) {
+					requestedVariantCount = 1;
+					for (const values of Object.values(properties)) {
+						requestedVariantCount *= Math.max(1, values?.length ?? 1);
+					}
+				}
+				const sizeWarning =
+					requestedVariantCount > 40
+						? `${requestedVariantCount} variants requested — large sets are slow to build (timeout scales automatically, ~1.2s/variant, 2min cap) and heavy base components may still time out. Consider splitting into multiple sets (e.g. one per Size).`
+						: undefined;
+
 				const connector = await getDesktopConnector();
 				const result = await connector.createComponentSet({
 					baseComponentId,
@@ -2934,6 +2966,7 @@ Set autoArrange:true to lay the new set out as a labeled grid inside a white con
 									success: true,
 									message: `Created component set "${data.componentSet?.name ?? name ?? ""}" with ${data.variantCount ?? "?"} variants`,
 									...data,
+									...(sizeWarning ? { sizeWarning } : {}),
 									...(arrange ? { arrange } : {}),
 									hint: "To place instances, pass a VARIANT's key/nodeId from variants[] to figma_instantiate_component — not the set's key. Property definitions live on the set (componentPropertyDefinitions). Use figma_capture_screenshot to verify the result.",
 								},

@@ -206,15 +206,15 @@ describe("DTCG 2025.10 dialect", () => {
       expect(result).toEqual({ kind: "value", value: 300 });
     });
 
-    it("takes the raw value from duration objects in seconds without converting", () => {
-      // Figma FLOAT variables are unitless — the number is pushed as
-      // authored. TIMING-typed variables never reach this path (import
-      // skips them), so plain FLOAT is the only consumer.
+    it("converts seconds duration objects to milliseconds (agrees with diff canonicalization)", () => {
+      // The diff side canonicalizes {0.3, "s"} ≡ {300, "ms"} ≡ 300; the
+      // write path MUST agree, or the diff would report a change and apply
+      // would write a 1000x-wrong raw value on every import, forever.
       const result = tokenValueToFigma(
         { literal: { value: 0.3, unit: "s" } },
         "FLOAT",
       );
-      expect(result).toEqual({ kind: "value", value: 0.3 });
+      expect(result).toEqual({ kind: "value", value: 300 });
     });
   });
 

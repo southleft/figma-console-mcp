@@ -14,6 +14,47 @@ import { createChildLogger } from './logger.js';
 
 const logger = createChildLogger({ component: 'websocket-connector' });
 
+/**
+ * Number of variants a CREATE_COMPONENT_SET request will produce:
+ * Mode B = componentIds.length; Mode A = the cartesian product of the
+ * property axes ({State:[a,b,c], Size:[s,l]} → 6).
+ */
+export function componentSetVariantCount(params: {
+  properties?: Record<string, string[]>;
+  componentIds?: string[];
+}): number {
+  if (params.componentIds?.length) return params.componentIds.length;
+  if (params.properties) {
+    let count = 1;
+    for (const values of Object.values(params.properties)) {
+      count *= Math.max(1, values?.length ?? 1);
+    }
+    return count;
+  }
+  return 1;
+}
+
+/**
+ * Server-hop timeout for CREATE_COMPONENT_SET, scaled by variant count.
+ * The plugin builds all variants in ONE uncancellable pass, so timing out
+ * early doesn't stop the work — it just makes the report contradict the
+ * file state (set gets created after the "failure") and invites duplicate
+ * retries. Budget ~1.2s per variant with a 30s floor and 120s cap, plus a
+ * 5s buffer over the ui.html hop (which uses the same base formula) so the
+ * plugin-side result or error always wins the race.
+ *
+ * NOTE: ui.html's CREATE_COMPONENT_SET route and
+ * cloud-websocket-connector.ts mirror the base formula — keep all three in
+ * sync.
+ */
+export function componentSetTimeoutMs(params: {
+  properties?: Record<string, string[]>;
+  componentIds?: string[];
+}): number {
+  const count = componentSetVariantCount(params);
+  return Math.min(120000, Math.max(30000, count * 1200)) + 5000;
+}
+
 export class WebSocketConnector implements IFigmaConnector {
   private wsServer: FigmaWebSocketServer;
 
@@ -238,8 +279,16 @@ export class WebSocketConnector implements IFigmaConnector {
     parentId?: string;
     position?: { x: number; y: number };
   }): Promise<any> {
-    // Cloning up to 100 variants can be slow on heavy components — 30s ceiling
-    return this.wsServer.sendCommand('CREATE_COMPONENT_SET', params, 30000);
+    // Cloning + combining large variant matrices is slow on heavy components
+    // and the plugin-side pass is uncancellable — a fixed 30s ceiling made a
+    // 48-variant set REPORT failure while the plugin kept going and created
+    // the set anyway (retry → duplicates). Scale the timeout with variant
+    // count instead (precedent: the token-import create phase).
+    return this.wsServer.sendCommand(
+      'CREATE_COMPONENT_SET',
+      params,
+      componentSetTimeoutMs(params),
+    );
   }
 
   // ============================================================================

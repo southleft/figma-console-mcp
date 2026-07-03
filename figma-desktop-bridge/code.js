@@ -2043,11 +2043,32 @@ figma.ui.onmessage = async (msg) => {
 
       var MAX_VARIANTS = 100;
       var setWarnings = [];
-      // Rollback state — if combineAsVariants fails after clones were created,
-      // remove them and restore the base's name so no partial artifacts remain
+      // Rollback state — if anything throws before combineAsVariants succeeds,
+      // remove Mode A clones, restore the base's name, AND restore every
+      // Mode B component the handler renamed, so no partial artifacts remain.
+      // (Previously only Mode A was rolled back: a throw from the
+      // duplicate-combo check or combineAsVariants left the user's standalone
+      // components permanently renamed with no set created.)
       var createdClones = [];
       var renamedBase = null;
       var originalBaseName = null;
+      var renamedNodes = []; // Mode B: [{ node, originalName }]
+      var combineDone = false;
+
+      function rollbackComponentSetWork() {
+        for (var rc = 0; rc < createdClones.length; rc++) {
+          try { createdClones[rc].remove(); } catch (e) {}
+        }
+        createdClones = [];
+        if (renamedBase && originalBaseName !== null) {
+          try { renamedBase.name = originalBaseName; } catch (e) {}
+          renamedBase = null;
+        }
+        for (var rn = 0; rn < renamedNodes.length; rn++) {
+          try { renamedNodes[rn].node.name = renamedNodes[rn].originalName; } catch (e) {}
+        }
+        renamedNodes = [];
+      }
 
       // Build "Prop=Value, Prop=Value" from an axis-ordered property map
       function comboName(combo, axisOrder) {
@@ -2158,6 +2179,20 @@ figma.ui.onmessage = async (msg) => {
             var props = msg.variantProperties[ni];
             var propKeys = Object.keys(props);
             if (!propKeys.length) throw new Error('variantProperties[' + ni + '] is empty — each entry needs at least one property (e.g. { "State": "hover" })');
+            // Same '='/',' validation as Mode A — a value like "hover,Size=lg"
+            // would silently create a bogus axis when Figma parses the name.
+            for (var pk = 0; pk < propKeys.length; pk++) {
+              var propName = propKeys[pk];
+              var propValue = String(props[propName]);
+              if (propName.indexOf('=') !== -1 || propName.indexOf(',') !== -1) {
+                throw new Error('Property name "' + propName + '" (variantProperties[' + ni + ']) must not contain "=" or "," — Figma parses variant names on those characters');
+              }
+              if (propValue.indexOf('=') !== -1 || propValue.indexOf(',') !== -1) {
+                throw new Error('Variant value "' + propValue + '" (property "' + propName + '", variantProperties[' + ni + ']) must not contain "=" or "," — Figma parses variant names on those characters');
+              }
+            }
+            // Record the rename so the rollback path can restore it.
+            renamedNodes.push({ node: node, originalName: node.name });
             variantNodes.push(node);
             node.name = comboName(props, propKeys);
           } else {
@@ -2192,19 +2227,10 @@ figma.ui.onmessage = async (msg) => {
         }
       }
 
-      var componentSet;
-      try {
-        componentSet = figma.combineAsVariants(variantNodes, setParent);
-      } catch (combineError) {
-        // Housekeeping: don't leave renamed clones behind on failure
-        for (var rc = 0; rc < createdClones.length; rc++) {
-          try { createdClones[rc].remove(); } catch (e) {}
-        }
-        if (renamedBase && originalBaseName !== null) {
-          try { renamedBase.name = originalBaseName; } catch (e) {}
-        }
-        throw combineError;
-      }
+      // Housekeeping on failure happens in the outer catch (gated on
+      // !combineDone) — it restores Mode A clones/base AND Mode B renames.
+      var componentSet = figma.combineAsVariants(variantNodes, setParent);
+      combineDone = true;
       if (msg.name) componentSet.name = msg.name;
       if (msg.position) {
         componentSet.x = msg.position.x || 0;
@@ -2270,6 +2296,10 @@ figma.ui.onmessage = async (msg) => {
     } catch (error) {
       var csErrorMsg = error && error.message ? error.message : String(error);
       console.error('🌉 [Desktop Bridge] Create component set error:', csErrorMsg);
+      // Undo partial work unless the set was actually created (after
+      // combineAsVariants succeeds the clones/renames live inside the set —
+      // never touch them then).
+      try { if (!combineDone) rollbackComponentSetWork(); } catch (e) {}
       figma.ui.postMessage({
         type: 'CREATE_COMPONENT_SET_RESULT',
         requestId: msg.requestId,

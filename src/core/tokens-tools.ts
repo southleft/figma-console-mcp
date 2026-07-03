@@ -46,6 +46,7 @@ import {
   ExportTokensInputSchema,
   ImportTokensInputSchema,
   format as formatTokenDocument,
+  hexToRawRgba,
   loadTokensConfig,
   parse as parseTokenPayload,
   resolveOutputTargets,
@@ -450,6 +451,7 @@ async function handleImport(
       applied: 0,
       created: 0,
       createdCollections: 0,
+      renamed: 0,
       deleted: 0,
       failed: 0,
       errors: [],
@@ -497,10 +499,20 @@ async function handleImport(
     }
 
     // 7b. UPDATE phase — value updates including alias-target updates
-    //     (references resolved to { type: "VARIABLE_ALIAS", id }).
-    if (diff.toUpdate.length > 0) {
+    //     (references resolved to { type: "VARIABLE_ALIAS", id }) AND
+    //     renames (ID-matched tokens whose path moved: variable.name is set
+    //     to the new '/'-joined path instead of create+delete).
+    if (diff.toUpdate.length > 0 || diff.toRename.length > 0) {
+      const renameEntries = diff.toRename.map((r) => ({
+        path: r.from, // Figma-side lookup (old key)
+        codePath: r.path, // code-side lookup (new key)
+        newName: r.newName,
+        before: undefined,
+        after: undefined,
+        changes: r.changes,
+      }));
       const updates = buildUpdatePayloads(
-        diff.toUpdate,
+        [...renameEntries, ...diff.toUpdate],
         figmaDoc,
         merged,
         collectionModeMap,
@@ -509,8 +521,19 @@ async function handleImport(
       );
       if (updates.length > 0) {
         anyPhaseRan = true;
+        const renameIds = new Set(
+          updates.filter((u) => u.newName !== undefined).map((u) => u.variableId),
+        );
         const updateResult = await applyUpdates(connector, updates);
-        acc.applied += updateResult.applied;
+        const renamedFailed = updateResult.errors.filter((e) =>
+          renameIds.has(e.variableId),
+        ).length;
+        const renamedOk = renameIds.size - renamedFailed;
+        acc.renamed += renamedOk;
+        // `applied` counts successful non-rename update entries; a rename
+        // entry (even one that also carried value changes) counts once,
+        // under `renamed`.
+        acc.applied += updateResult.applied - renamedOk;
         acc.failed += updateResult.failed;
         acc.errors.push(...updateResult.errors);
       }
@@ -546,6 +569,7 @@ async function handleImport(
     summary: {
       toCreate: diff.toCreate.length,
       toUpdate: diff.toUpdate.length,
+      toRename: diff.toRename.length,
       toDelete: diff.toDelete.length,
       unchanged: diff.unchanged,
     },
@@ -555,11 +579,17 @@ async function handleImport(
         type: e.type,
       })),
       toUpdate: diff.toUpdate.slice(0, SAMPLE_LIMIT),
+      toRename: diff.toRename.slice(0, SAMPLE_LIMIT).map((e) => ({
+        from: e.from,
+        to: e.path,
+        variableId: e.variableId,
+      })),
       toDelete: diff.toDelete.slice(0, SAMPLE_LIMIT),
     },
     truncated: {
       toCreate: diff.toCreate.length > SAMPLE_LIMIT,
       toUpdate: diff.toUpdate.length > SAMPLE_LIMIT,
+      toRename: diff.toRename.length > SAMPLE_LIMIT,
       toDelete: diff.toDelete.length > SAMPLE_LIMIT,
     },
   };
@@ -582,6 +612,9 @@ async function handleImport(
                     applyResult.created > 0
                       ? `Created ${applyResult.created} variable(s).`
                       : null,
+                    applyResult.renamed > 0
+                      ? `Renamed ${applyResult.renamed} variable(s).`
+                      : null,
                     `Applied ${applyResult.applied} value update(s).`,
                     applyResult.deleted > 0
                       ? `Deleted ${applyResult.deleted} variable(s) (replace strategy).`
@@ -590,7 +623,9 @@ async function handleImport(
                   ]
                     .filter(Boolean)
                     .join(" ")
-                : diff.toUpdate.length === 0 && diff.toCreate.length === 0
+                : diff.toUpdate.length === 0 &&
+                    diff.toCreate.length === 0 &&
+                    diff.toRename.length === 0
                   ? "Nothing to apply — all tokens already in sync."
                   : "Changes were detected but skipped (likely all unresolvable aliases or non-writable TIMING/EASING types — see warnings).",
             deleteNote: deleteWarning
@@ -611,6 +646,7 @@ async function handleImport(
                   applied: applyResult.applied,
                   created: applyResult.created,
                   createdCollections: applyResult.createdCollections,
+                  renamed: applyResult.renamed,
                   deleted: applyResult.deleted,
                   failed: applyResult.failed,
                   errors: applyResult.errors.slice(0, 10),
@@ -798,8 +834,18 @@ function mergeDocuments(docs: TokenDocument[]): TokenDocument {
  * proposed state (right). Returns a structured diff plan; value-update
  * mutations are applied via the plugin bridge below.
  *
+ * MATCH PRIORITY (as the tool description promises): Figma variable ID
+ * first, then exact set::path. A code-side token whose path has no Figma
+ * counterpart but whose $extensions["figma-console-mcp"].variableId matches
+ * a live variable is a RENAME — routed to toRename (name change + any
+ * value/meta changes), and its Figma-side counterpart is EXCLUDED from
+ * toDelete. Without this, a path rename in the code file would create a
+ * duplicate variable under merge, and under replace would permanently
+ * delete the original (detaching all its bindings).
+ *
  * Exported for test coverage of the dialect-normalized comparison
- * (round-trip exports in both DTCG dialects must diff as unchanged).
+ * (round-trip exports in both DTCG dialects must diff as unchanged) and
+ * rename classification.
  */
 export function computeDiffPlan(
   figmaDoc: TokenDocument,
@@ -818,6 +864,17 @@ export function computeDiffPlan(
      */
     changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
   }>;
+  toRename: Array<{
+    /** New (code-side) diff key. */
+    path: string;
+    /** Old (Figma-side) diff key the variableId matched. */
+    from: string;
+    variableId: string;
+    /** New Figma variable name — the '/'-joined code-side token path. */
+    newName: string;
+    /** Value/meta changes to apply alongside the rename. */
+    changes: { values: boolean; scopes: boolean; codeSyntax: boolean };
+  }>;
   toDelete: Array<{ path: string }>;
   unchanged: number;
 } {
@@ -834,6 +891,12 @@ export function computeDiffPlan(
       codeTokens.set(`${set.name}::${t.path.join(".")}`, t);
     }
   }
+  // ID-first index: live Figma variableId → its diff key + token.
+  const figmaByVariableId = new Map<string, { key: string; token: any }>();
+  for (const [key, token] of figmaTokens) {
+    const id = token.extensions?.["figma-console-mcp"]?.variableId;
+    if (typeof id === "string") figmaByVariableId.set(id, { key, token });
+  }
 
   const toCreate: Array<{ path: string; type: string; value: unknown }> = [];
   const toUpdate: Array<{
@@ -842,12 +905,52 @@ export function computeDiffPlan(
     after: unknown;
     changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
   }> = [];
+  const toRename: Array<{
+    path: string;
+    from: string;
+    variableId: string;
+    newName: string;
+    changes: { values: boolean; scopes: boolean; codeSyntax: boolean };
+  }> = [];
+  // Figma-side keys consumed by a rename — excluded from toDelete.
+  const renamedFigmaKeys = new Set<string>();
   const toDelete: Array<{ path: string }> = [];
   let unchanged = 0;
 
   for (const [key, codeToken] of codeTokens) {
     const figmaToken = figmaTokens.get(key);
     if (!figmaToken) {
+      // No path match — try the ID-first match before classifying as a
+      // create. Guards: the matched Figma path must not ALSO exist in the
+      // code doc (then the ID was copy-pasted, not renamed), and each Figma
+      // variable can be claimed by at most one rename.
+      const extId = codeToken.extensions?.["figma-console-mcp"]?.variableId;
+      const idMatch =
+        typeof extId === "string" ? figmaByVariableId.get(extId) : undefined;
+      if (
+        idMatch &&
+        !codeTokens.has(idMatch.key) &&
+        !renamedFigmaKeys.has(idMatch.key)
+      ) {
+        renamedFigmaKeys.add(idMatch.key);
+        const valuesChanged = !valuesEqual(
+          idMatch.token.values,
+          codeToken.values,
+        );
+        const meta = diffVariableMeta(idMatch.token, codeToken);
+        toRename.push({
+          path: key,
+          from: idMatch.key,
+          variableId: extId as string,
+          newName: codeToken.path.join("/"),
+          changes: {
+            values: valuesChanged,
+            scopes: meta.scopesChanged,
+            codeSyntax: meta.codeSyntaxChanged,
+          },
+        });
+        continue;
+      }
       toCreate.push({
         path: key,
         type: codeToken.type,
@@ -890,14 +993,15 @@ export function computeDiffPlan(
   }
 
   for (const key of figmaTokens.keys()) {
-    if (!codeTokens.has(key)) {
+    if (!codeTokens.has(key) && !renamedFigmaKeys.has(key)) {
       // Reports as "would delete if strategy=replace" but defaults to
-      // preserve under merge strategy.
+      // preserve under merge strategy. Keys consumed by a rename are NOT
+      // deletions — the variable lives on under its new name.
       toDelete.push({ path: key });
     }
   }
 
-  return { toCreate, toUpdate, toDelete, unchanged };
+  return { toCreate, toUpdate, toRename, toDelete, unchanged };
 }
 
 /**
@@ -1043,6 +1147,8 @@ interface ApplyResult {
   created: number;
   /** Collections created (sets with no matching Figma collection). */
   createdCollections: number;
+  /** Variables renamed (ID-matched path moves; may include value changes). */
+  renamed: number;
   /** Variables deleted (toDelete, strategy "replace" only). */
   deleted: number;
   failed: number;
@@ -1135,6 +1241,13 @@ interface VariableUpdate {
   variableName: string;
   resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN";
   valuesByMode: Record<string, unknown>; // modeId → Figma-native value
+  /**
+   * Rename op: set `variable.name` to this '/'-joined path before any value
+   * writes. Produced by the ID-first rename classification in
+   * computeDiffPlan — never combined with a create/delete of the same
+   * variable.
+   */
+  newName?: string;
   /** Full replacement scopes array (`variable.scopes = [...]`). */
   scopes?: string[];
   /**
@@ -1168,7 +1281,10 @@ function buildCollectionModeMap(
  * Convert a TokenValue back to Figma's native value shape. Required for the
  * Plugin API's setValueForMode call.
  *
- *   - color hex string "#RRGGBB(AA)" → { r, g, b, a } floats in [0, 1]
+ *   - color hex string "#RRGGBB(AA)" → { r, g, b, a } floats in [0, 1].
+ *     Non-hex color strings ("rgb(255,0,0)", "transparent", named colors
+ *     like "salmon") return skip-invalid instead of throwing — a throw here
+ *     would abort the import mid-apply.
  *   - DTCG 2025.10 color objects → { r, g, b, a }: srgb components map
  *     directly (clamped to [0, 1]); non-srgb colorSpaces (display-p3,
  *     oklch, …) fall back to the object's `hex` field when present, else
@@ -1207,7 +1323,20 @@ export function tokenValueToFigma(
 
   let figmaValue: unknown;
   if (resolvedType === "COLOR" && typeof value.literal === "string") {
-    figmaValue = hexToRgba(value.literal);
+    // Guarded: hexToRgba throws on anything that isn't a hex color
+    // ("rgb(255,0,0)", "transparent", "salmon", "oklch(...)"). A throw here
+    // would abort the whole import AFTER the create phase already mutated
+    // Figma — so malformed colors become a per-value skip instead.
+    try {
+      figmaValue = hexToRgba(value.literal);
+    } catch (err) {
+      return {
+        kind: "skip-invalid",
+        reason: `cannot convert ${JSON.stringify(value.literal)} to a Figma color (${
+          err instanceof Error ? err.message : String(err)
+        })`,
+      };
+    }
   } else if (
     resolvedType === "COLOR" &&
     typeof value.literal === "object" &&
@@ -1298,13 +1427,17 @@ function colorObjectToFigmaRgba(
  * Parse a token literal into a number for FLOAT variables. Handles:
  *   - plain numbers → as-is
  *   - unit-bearing dimension strings ("16px", "1.5rem", "-4pt") → numeric part
- *   - DTCG dimension AND duration objects ({ value: 16, unit: "px" },
- *     { value: 300, unit: "ms" }, { value: 0.3, unit: "s" }) → raw `value`.
- *     The unit is deliberately ignored — Figma FLOAT variables are unitless,
- *     so we take the number as-authored and do NOT convert seconds to ms.
- *     True TIMING-typed variables are skipped before import ever reaches
- *     this path (Plugin API can't write them), so plain FLOAT is the only
- *     consumer here.
+ *   - DTCG dimension AND duration objects: { value: 16, unit: "px" } → 16,
+ *     { value: 300, unit: "ms" } → 300, and { value: 0.3, unit: "s" } → 300
+ *     — seconds MULTIPLY to milliseconds so the write path agrees with the
+ *     diff canonicalization (canonicalizeTokenValueForComparison, which
+ *     treats {0.3, "s"} ≡ {300, "ms"} ≡ 300). If the write path took the
+ *     raw 0.3 instead, the diff would report a change, apply would write a
+ *     1000x-wrong value, and every subsequent import would rewrite it
+ *     forever. Other units (px/rem/…) keep the raw value — Figma FLOAT is
+ *     unitless. True TIMING-typed variables are skipped before import ever
+ *     reaches this path (Plugin API can't write them), so plain FLOAT is
+ *     the only consumer here.
  * Anything unparseable returns NaN — callers must skip (never push NaN
  * into setValueForMode).
  */
@@ -1322,41 +1455,40 @@ function parseNumericLiteral(literal: unknown): number {
     typeof literal === "object" &&
     "value" in (literal as Record<string, unknown>)
   ) {
-    return parseNumericLiteral((literal as Record<string, unknown>).value);
+    const obj = literal as Record<string, unknown>;
+    const inner = parseNumericLiteral(obj.value);
+    // s → ms, matching the diff-side canonicalization (see doc above).
+    if (obj.unit === "s") return inner * 1000;
+    return inner;
   }
   return Number(literal);
 }
 
+/**
+ * Parse a hex color string to Figma rgba floats. Validates through the
+ * dialect module's colorLiteralToCanonicalHex (via hexToRawRgba) so ONLY
+ * genuine 3/6/8-digit hex strings pass — the previous implementation
+ * dispatched on string LENGTH alone, so named colors like "red" (3 chars)
+ * or "salmon" (6 chars) produced NaN channels that reached setValueForMode.
+ * A bare hex without the leading "#" is still tolerated (historical
+ * behavior). Throws on anything else; tokenValueToFigma catches and turns
+ * it into a skip-invalid.
+ */
 function hexToRgba(hex: string): {
   r: number;
   g: number;
   b: number;
   a: number;
 } {
-  const cleaned = hex.replace(/^#/, "");
-  let r: number;
-  let g: number;
-  let b: number;
-  let a = 1;
-  if (cleaned.length === 3) {
-    r = parseInt(cleaned[0] + cleaned[0], 16) / 255;
-    g = parseInt(cleaned[1] + cleaned[1], 16) / 255;
-    b = parseInt(cleaned[2] + cleaned[2], 16) / 255;
-  } else if (cleaned.length === 6) {
-    r = parseInt(cleaned.slice(0, 2), 16) / 255;
-    g = parseInt(cleaned.slice(2, 4), 16) / 255;
-    b = parseInt(cleaned.slice(4, 6), 16) / 255;
-  } else if (cleaned.length === 8) {
-    r = parseInt(cleaned.slice(0, 2), 16) / 255;
-    g = parseInt(cleaned.slice(2, 4), 16) / 255;
-    b = parseInt(cleaned.slice(4, 6), 16) / 255;
-    a = parseInt(cleaned.slice(6, 8), 16) / 255;
-  } else {
+  const trimmed = hex.trim();
+  const normalized = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  const rgba = hexToRawRgba(normalized);
+  if (!rgba) {
     throw new Error(
-      `[figma-console-mcp] Invalid hex color "${hex}" — expected 3, 6, or 8 hex digits.`,
+      `[figma-console-mcp] Invalid hex color ${JSON.stringify(hex)} — expected #RGB, #RRGGBB, or #RRGGBBAA.`,
     );
   }
-  return { r, g, b, a };
+  return rgba;
 }
 
 /**
@@ -1366,7 +1498,16 @@ function hexToRgba(hex: string): {
  */
 function buildUpdatePayloads(
   toUpdate: Array<{
+    /** Figma-side diff key (where the live variable is today). */
     path: string;
+    /**
+     * Code-side diff key when it differs from `path` — set for RENAME
+     * entries, where the code token lives at the NEW path while the Figma
+     * variable is still indexed under the old one.
+     */
+    codePath?: string;
+    /** Rename op: new '/'-joined variable name. */
+    newName?: string;
     before: unknown;
     after: unknown;
     changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
@@ -1393,7 +1534,9 @@ function buildUpdatePayloads(
 
   const updates: VariableUpdate[] = [];
   for (const entry of toUpdate) {
-    const codeMatch = codeLookup.get(entry.path);
+    // Rename entries look up the code token at its NEW path (codePath) and
+    // the Figma variable at its OLD path (path).
+    const codeMatch = codeLookup.get(entry.codePath ?? entry.path);
     const figmaMatch = figmaLookup.get(entry.path);
     if (!codeMatch || !figmaMatch) continue;
 
@@ -1521,7 +1664,8 @@ function buildUpdatePayloads(
     if (
       Object.keys(valuesByMode).length === 0 &&
       scopes === undefined &&
-      codeSyntaxOps === undefined
+      codeSyntaxOps === undefined &&
+      entry.newName === undefined
     ) {
       continue;
     }
@@ -1531,6 +1675,7 @@ function buildUpdatePayloads(
       variableName: figmaToken.path.join("/"),
       resolvedType,
       valuesByMode,
+      ...(entry.newName !== undefined ? { newName: entry.newName } : {}),
       ...(scopes !== undefined ? { scopes } : {}),
       ...(codeSyntaxOps !== undefined ? { codeSyntax: codeSyntaxOps } : {}),
     });
@@ -1583,6 +1728,10 @@ async function applyUpdates(
         if (!variable) {
           results.push({ id: u.variableId, success: false, error: "Variable not found in current file" });
           continue;
+        }
+        // Rename FIRST — a rename entry may carry no value writes at all.
+        if (u.newName) {
+          variable.name = u.newName;
         }
         let appliedModes = 0;
         for (const modeId in u.valuesByMode) {
@@ -1989,8 +2138,16 @@ async function applyCreates(
         }
         createdCollections.push({ name: nc.setName, id: collection.id });
       } catch (err) {
+        // Roll back the orphaned collection if creation succeeded but mode
+        // setup (renameMode/addMode) threw — otherwise a half-configured
+        // empty collection is left behind in the file.
+        let rolledBack = false;
+        if (collection) {
+          try { collection.remove(); rolledBack = true; } catch (removeErr) {}
+        }
+        const suffix = rolledBack ? ' (partially-created collection rolled back)' : '';
         for (const def of nc.variables) {
-          results.push({ key: def.key, name: def.name, success: false, error: 'collection "' + nc.setName + '" creation failed: ' + String(err && err.message || err) });
+          results.push({ key: def.key, name: def.name, success: false, error: 'collection "' + nc.setName + '" creation failed' + suffix + ': ' + String(err && err.message || err) });
         }
         continue;
       }
@@ -2055,18 +2212,32 @@ async function applyCreates(
 
   const inner = execResult.result ?? execResult;
   const errors: Array<{ variableId: string; error: string }> = [];
-  for (const r of inner.results ?? []) {
+  const results: any[] = inner.results ?? [];
+  const aliasFailures: any[] = inner.aliasFailures ?? [];
+  for (const r of results) {
     if (!r.success) errors.push({ variableId: r.key, error: r.error });
   }
-  for (const f of inner.aliasFailures ?? []) {
+  for (const f of aliasFailures) {
     errors.push({ variableId: f.key, error: f.error });
   }
 
+  // Count each variable exactly ONCE: a variable that was created but whose
+  // alias pass failed counts as failed, not as created+failed (the previous
+  // arithmetic double-counted it across both buckets). Alias failures can
+  // repeat per mode — dedupe by variable key.
+  const aliasFailedKeys = new Set(aliasFailures.map((f) => f.key));
+  const createFailed = results.filter((r) => !r.success).length;
+  const createdOk = results.filter(
+    (r) => r.success && !aliasFailedKeys.has(r.key),
+  ).length;
+
   return {
-    created: inner.created ?? 0,
+    created: createdOk,
     createdCollections: (inner.createdCollections ?? []).length,
-    failed: (inner.failed ?? 0) + (inner.aliasFailures ?? []).length,
+    failed: createFailed + aliasFailedKeys.size,
     errors,
+    // Alias-failed variables DO exist — keep their IDs resolvable for the
+    // later update phase.
     createdIdByKey: new Map(Object.entries(inner.createdIds ?? {})),
   };
 }

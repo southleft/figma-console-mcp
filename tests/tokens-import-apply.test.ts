@@ -20,8 +20,10 @@ import {
 } from "../src/core/tokens/index.js";
 import {
   buildCreatePlan,
+  computeDiffPlan,
   makeAliasIdResolver,
   registerImportTokensTool,
+  tokenValueToFigma,
 } from "../src/core/tokens-tools.js";
 
 // ============================================================================
@@ -80,17 +82,28 @@ function extractJson(script: string, marker: string): any {
  */
 function makeMockConnector(
   state: ReturnType<typeof figmaState>,
-  opts: { failCreateKeys?: string[]; failUpdateIds?: string[] } = {},
+  opts: {
+    failCreateKeys?: string[];
+    failUpdateIds?: string[];
+    /**
+     * Keys whose variable CREATE succeeds but whose second-pass alias
+     * value application fails (plugin-side aliasFailures entries).
+     */
+    aliasFailKeys?: string[];
+  } = {},
 ) {
-  const calls: Array<{ type: "create" | "update" | "delete"; detail: any }> =
-    [];
+  const calls: Array<{
+    type: "create" | "update" | "delete";
+    detail: any;
+    script?: string;
+  }> = [];
   return {
     calls,
     getVariablesFromPluginUI: async () => state,
     executeCodeViaUI: async (script: string) => {
       if (script.includes("const plan = ")) {
         const plan = extractJson(script, "const plan = ");
-        calls.push({ type: "create", detail: plan });
+        calls.push({ type: "create", detail: plan, script });
         const allVars = [
           ...plan.newCollections.flatMap((c: any) => c.variables),
           ...plan.existingCollections.flatMap((c: any) => c.variables),
@@ -106,6 +119,9 @@ function makeMockConnector(
             results.push({ key: v.key, name: v.name, id, success: true });
           }
         }
+        const aliasFailures = (opts.aliasFailKeys ?? [])
+          .filter((k) => createdIds[k] !== undefined)
+          .map((k) => ({ key: k, error: "alias: boom-alias" }));
         return {
           success: true,
           result: {
@@ -116,7 +132,7 @@ function makeMockConnector(
             created: results.filter((r) => r.success).length,
             failed: results.filter((r) => !r.success).length,
             results,
-            aliasFailures: [],
+            aliasFailures,
             createdIds,
           },
         };
@@ -615,5 +631,274 @@ describe("figma_import_tokens apply phase (mocked connector)", () => {
     expect(connector.calls).toEqual([]);
     expect(res.diff.summary.toCreate).toBe(3);
     expect(res.diff.summary.toUpdate).toBe(2);
+  });
+
+  it("counts a created-but-alias-failed variable ONCE (as failed), and its script carries pass-0 rollback", async () => {
+    const connector = makeMockConnector(figmaState(), {
+      aliasFailKeys: ["Brand::color.alias"],
+    });
+    const handler = captureImportHandler(connector);
+    const res = await runImport(handler, {
+      payload: createAndUpdatePayload,
+      dryRun: false,
+      strategy: "merge",
+    });
+
+    // 3 variables created plugin-side; one's alias pass failed → it counts
+    // once, as failed. created + failed must equal the total (3), never 4.
+    expect(res.applyResult.created).toBe(2);
+    expect(res.applyResult.failed).toBe(1);
+    expect(res.applyResult.created + res.applyResult.failed).toBe(3);
+    expect(
+      res.applyResult.errors.some(
+        (e: any) =>
+          e.variableId === "Brand::color.alias" && e.error.includes("boom-alias"),
+      ),
+    ).toBe(true);
+
+    // Orphaned-collection rollback lives in the create script's pass-0
+    // catch: a failed addMode() must remove() the half-created collection.
+    const createCall = connector.calls.find((c) => c.type === "create")!;
+    expect(createCall.script).toContain("collection.remove()");
+    expect(createCall.script).toContain("rolled back");
+  });
+});
+
+// ============================================================================
+// FINDING 1 — ID-first rename detection (no duplicate create / no delete)
+// ============================================================================
+
+describe("rename detection (ID-first matching)", () => {
+  /** DTCG payload: color/primary renamed to color/renamedPrimary, carrying
+   *  the round-trip variableId. accent unchanged. */
+  function renamePayload(newValue = "#FF0000") {
+    return JSON.stringify({
+      Theme: {
+        color: {
+          renamedPrimary: {
+            $type: "color",
+            $value: newValue,
+            $extensions: {
+              "figma-console-mcp": {
+                variableId: "VariableID:1:10",
+                collectionId: "VariableCollectionId:1:1",
+                figmaResolvedType: "COLOR",
+              },
+            },
+          },
+          accent: { $type: "color", $value: "#00FF00" },
+        },
+      },
+    });
+  }
+
+  it("computeDiffPlan classifies an ID-matched path move as toRename, not create+delete", () => {
+    const { document: figmaDoc } = convertFigmaVariablesToDocument(
+      normalizedFigmaPayload(),
+    );
+    const codeDoc: TokenDocument = {
+      sets: [
+        {
+          name: "Theme",
+          modes: ["Default"],
+          tokens: [
+            {
+              path: ["color", "renamedPrimary"],
+              type: "color",
+              values: { Default: { literal: "#FF0000" } },
+              extensions: {
+                "figma-console-mcp": { variableId: "VariableID:1:10" },
+              },
+            },
+            {
+              path: ["color", "accent"],
+              type: "color",
+              values: { Default: { literal: "#00FF00" } },
+            },
+          ],
+        },
+      ],
+    };
+    const diff = computeDiffPlan(figmaDoc, codeDoc);
+    expect(diff.toCreate).toEqual([]);
+    expect(diff.toDelete).toEqual([]);
+    expect(diff.toUpdate).toEqual([]);
+    expect(diff.toRename).toEqual([
+      {
+        path: "Theme::color.renamedPrimary",
+        from: "Theme::color.primary",
+        variableId: "VariableID:1:10",
+        newName: "color/renamedPrimary",
+        changes: { values: false, scopes: false, codeSyntax: false },
+      },
+    ]);
+    expect(diff.unchanged).toBe(1); // accent
+  });
+
+  it("merge: applies a pure rename as ONE name-change update — no create, no delete", async () => {
+    const connector = makeMockConnector(figmaState());
+    const handler = captureImportHandler(connector);
+    const res = await runImport(handler, {
+      payload: renamePayload(),
+      dryRun: false,
+      strategy: "merge",
+    });
+
+    expect(res.mode).toBe("applied");
+    expect(connector.calls.map((c) => c.type)).toEqual(["update"]);
+    const updates = connector.calls[0].detail;
+    expect(updates).toHaveLength(1);
+    expect(updates[0].variableId).toBe("VariableID:1:10");
+    expect(updates[0].newName).toBe("color/renamedPrimary");
+    // Pure rename: no value writes.
+    expect(updates[0].valuesByMode).toEqual({});
+
+    expect(res.applyResult.renamed).toBe(1);
+    expect(res.applyResult.created).toBe(0);
+    expect(res.applyResult.deleted).toBe(0);
+    expect(res.applyResult.applied).toBe(0);
+    expect(res.diff.summary.toRename).toBe(1);
+  });
+
+  it("replace: a rename NEVER deletes the original variable", async () => {
+    const connector = makeMockConnector(figmaState());
+    const handler = captureImportHandler(connector);
+    const res = await runImport(handler, {
+      payload: renamePayload(),
+      dryRun: false,
+      strategy: "replace",
+    });
+
+    // The old path is consumed by the rename — not a Figma-only leftover.
+    expect(connector.calls.filter((c) => c.type === "delete")).toEqual([]);
+    expect(connector.calls.filter((c) => c.type === "create")).toEqual([]);
+    expect(res.applyResult.renamed).toBe(1);
+    expect(res.applyResult.deleted).toBe(0);
+    expect(res.diff.summary.toDelete).toBe(0);
+  });
+
+  it("rename + value change applies both in a single update entry", async () => {
+    const connector = makeMockConnector(figmaState());
+    const handler = captureImportHandler(connector);
+    const res = await runImport(handler, {
+      payload: renamePayload("#123456"),
+      dryRun: false,
+      strategy: "merge",
+    });
+
+    const updates = connector.calls.find((c) => c.type === "update")!.detail;
+    expect(updates).toHaveLength(1);
+    expect(updates[0].newName).toBe("color/renamedPrimary");
+    const written = updates[0].valuesByMode.m1;
+    expect(written.r).toBeCloseTo(0x12 / 255, 10);
+    expect(written.g).toBeCloseTo(0x34 / 255, 10);
+    expect(written.b).toBeCloseTo(0x56 / 255, 10);
+    // One variable, one op — counted as a rename (which carried values).
+    expect(res.applyResult.renamed).toBe(1);
+    expect(res.applyResult.applied).toBe(0);
+  });
+});
+
+// ============================================================================
+// FINDING 2 + 3 — malformed color literals never throw or emit NaN
+// ============================================================================
+
+describe("malformed color literals (skip-invalid, never throw)", () => {
+  it("returns skip-invalid for CSS functional notation instead of throwing", () => {
+    const result = tokenValueToFigma({ literal: "rgb(255,0,0)" }, "COLOR");
+    expect(result.kind).toBe("skip-invalid");
+    expect((result as { reason: string }).reason).toContain("rgb(255,0,0)");
+  });
+
+  it("returns skip-invalid for CSS keywords like 'transparent'", () => {
+    expect(tokenValueToFigma({ literal: "transparent" }, "COLOR").kind).toBe(
+      "skip-invalid",
+    );
+  });
+
+  it("returns skip-invalid for named colors ('salmon' is 6 chars but NOT hex)", () => {
+    // Regression: length-only dispatch parsed "salmon" as hex digits and
+    // pushed NaN channels into setValueForMode.
+    expect(tokenValueToFigma({ literal: "salmon" }, "COLOR").kind).toBe(
+      "skip-invalid",
+    );
+    expect(tokenValueToFigma({ literal: "red" }, "COLOR").kind).toBe(
+      "skip-invalid",
+    );
+  });
+
+  it("still accepts genuine hex, with and without the leading '#'", () => {
+    expect(tokenValueToFigma({ literal: "#4085F2" }, "COLOR")).toEqual({
+      kind: "value",
+      value: { r: 0x40 / 255, g: 0x85 / 255, b: 0xf2 / 255, a: 1 },
+    });
+    // Bare hex tolerance is historical behavior — keep it.
+    expect(tokenValueToFigma({ literal: "4085F2" }, "COLOR")).toEqual({
+      kind: "value",
+      value: { r: 0x40 / 255, g: 0x85 / 255, b: 0xf2 / 255, a: 1 },
+    });
+  });
+});
+
+// ============================================================================
+// FINDING 4 — seconds/milliseconds agreement between diff and write paths
+// ============================================================================
+
+describe("duration unit agreement (diff canonicalization vs write path)", () => {
+  function figmaSideWith(value: number): TokenDocument {
+    return {
+      sets: [
+        {
+          name: "Motion",
+          modes: ["Default"],
+          tokens: [
+            {
+              path: ["delay", "short"],
+              type: "number",
+              values: { Default: { literal: value } },
+            },
+          ],
+        },
+      ],
+    };
+  }
+  function codeSideWith(seconds: number): TokenDocument {
+    return {
+      sets: [
+        {
+          name: "Motion",
+          modes: ["Default"],
+          tokens: [
+            {
+              path: ["delay", "short"],
+              type: "number",
+              values: {
+                Default: { literal: { value: seconds, unit: "s" } },
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("FLOAT 300 vs {value: 0.3, unit: 's'} diffs as UNCHANGED", () => {
+    const diff = computeDiffPlan(figmaSideWith(300), codeSideWith(0.3));
+    expect(diff.toUpdate).toEqual([]);
+    expect(diff.unchanged).toBe(1);
+  });
+
+  it("{value: 0.5, unit: 's'} produces ONE update writing 500, and the next diff is clean", () => {
+    // Diff detects the change…
+    const diff = computeDiffPlan(figmaSideWith(300), codeSideWith(0.5));
+    expect(diff.toUpdate).toHaveLength(1);
+    // …the write path agrees with the canonicalization (500, NOT raw 0.5)…
+    expect(
+      tokenValueToFigma({ literal: { value: 0.5, unit: "s" } }, "FLOAT"),
+    ).toEqual({ kind: "value", value: 500 });
+    // …and once Figma holds 500, the loop closes: no permanent re-diff.
+    const nextDiff = computeDiffPlan(figmaSideWith(500), codeSideWith(0.5));
+    expect(nextDiff.toUpdate).toEqual([]);
+    expect(nextDiff.unchanged).toBe(1);
   });
 });
