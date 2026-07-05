@@ -6,9 +6,12 @@
  * (sent via FILE_INFO on connection). Per-file state (selection, document changes,
  * console logs) is maintained independently.
  *
- * Active file tracking: The "active" file is automatically switched when the user
- * interacts with a file (selection/page changes) or can be set explicitly via
- * setActiveFile(). All backward-compatible getters return data from the active file.
+ * Active file tracking: Until an MCP client explicitly targets a file, the
+ * "active" file follows the latest connected/user-touched file for backward
+ * compatibility. Once setActiveFile() is called (for example via
+ * figma_navigate), the explicit target is sticky: passive peer FILE_INFO,
+ * SELECTION_CHANGE, and PAGE_CHANGE events continue updating per-file state but
+ * no longer silently retarget later tool calls.
  *
  * Data flow: MCP Server ←WebSocket→ ui.html ←postMessage→ code.js ←figma.*→ Figma
  */
@@ -178,6 +181,13 @@ export class FigmaWebSocketServer extends EventEmitter {
   private _pendingClients: Map<WebSocket, ReturnType<typeof setTimeout>> = new Map();
   /** The fileKey of the currently active (targeted) file */
   private _activeFileKey: string | null = null;
+  /**
+   * True after an MCP/client-level action explicitly picked the active file
+   * (setActiveFile(), normally reached through figma_navigate). While true,
+   * background events from other connected files must not silently retarget
+   * subsequent commands.
+   */
+  private _activeFileExplicit = false;
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private requestIdCounter = 0;
   private options: WebSocketServerOptions;
@@ -498,7 +508,14 @@ export class FigmaWebSocketServer extends EventEmitter {
         if (found) {
           found.client.selection = message.data as SelectionInfo;
           found.client.lastActivity = Date.now();
-          this._activeFileKey = found.fileKey;
+          if (!this._activeFileExplicit) {
+            this._activeFileKey = found.fileKey;
+          } else if (this._activeFileKey !== found.fileKey) {
+            logger.debug(
+              { eventFileKey: found.fileKey, activeFileKey: this._activeFileKey },
+              'Ignoring passive selection event from peer file because active file was set explicitly'
+            );
+          }
         }
         this.emit('selectionChange', { fileKey: found?.fileKey ?? null, ...message.data });
       }
@@ -510,7 +527,14 @@ export class FigmaWebSocketServer extends EventEmitter {
           found.client.fileInfo.currentPage = message.data.pageName;
           found.client.fileInfo.currentPageId = message.data.pageId || null;
           found.client.lastActivity = Date.now();
-          this._activeFileKey = found.fileKey;
+          if (!this._activeFileExplicit) {
+            this._activeFileKey = found.fileKey;
+          } else if (this._activeFileKey !== found.fileKey) {
+            logger.debug(
+              { eventFileKey: found.fileKey, activeFileKey: this._activeFileKey },
+              'Ignoring passive page event from peer file because active file was set explicitly'
+            );
+          }
         }
         this.emit('pageChange', { fileKey: found?.fileKey ?? null, ...message.data });
       }
@@ -570,6 +594,7 @@ export class FigmaWebSocketServer extends EventEmitter {
       this.clients.delete(previousEntry.fileKey);
       if (this._activeFileKey === previousEntry.fileKey) {
         this._activeFileKey = null;
+        this._activeFileExplicit = false;
       }
       // In-flight commands to the old file can never receive a response now —
       // reject them immediately instead of leaving them to hang until timeout
@@ -656,10 +681,19 @@ export class FigmaWebSocketServer extends EventEmitter {
       gracePeriodTimer: null,
     });
 
-    // Most recently connected file becomes active (user just opened the plugin there).
-    // On bulk reconnect the order is non-deterministic, but the first user interaction
-    // (SELECTION_CHANGE or PAGE_CHANGE) will correct the active file immediately.
-    this._activeFileKey = fileKey;
+    // Before a client explicitly picks a target, preserve the legacy behavior:
+    // the most recently connected file becomes active and selection/page events
+    // can still auto-switch it. After setActiveFile() pins an explicit target,
+    // FILE_INFO from peer files must not silently steal that target. Same-file
+    // reconnects keep the explicit target intact because fileKey is unchanged.
+    if (!this._activeFileKey || !this._activeFileExplicit || this._activeFileKey === fileKey) {
+      this._activeFileKey = fileKey;
+    } else {
+      logger.debug(
+        { fileKey, activeFileKey: this._activeFileKey },
+        'Ignoring passive FILE_INFO from peer file because active file was set explicitly'
+      );
+    }
 
     logger.info(
       {
@@ -1051,7 +1085,8 @@ export class FigmaWebSocketServer extends EventEmitter {
     const client = this.clients.get(fileKey);
     if (client && client.ws.readyState === WebSocket.OPEN) {
       this._activeFileKey = fileKey;
-      logger.info({ fileKey, fileName: client.fileInfo.fileName }, 'Active file switched');
+      this._activeFileExplicit = true;
+      logger.info({ fileKey, fileName: client.fileInfo.fileName }, 'Active file switched explicitly');
       this.emit('activeFileChanged', { fileKey, fileName: client.fileInfo.fileName });
       return true;
     }
@@ -1137,6 +1172,7 @@ export class FigmaWebSocketServer extends EventEmitter {
     }
     this.clients.clear();
     this._activeFileKey = null;
+    this._activeFileExplicit = false;
 
     // Close WS server first (handles WebSocket connections)
     if (this.wss) {

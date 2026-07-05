@@ -1008,6 +1008,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							const isSameFile = !!(requestedFileKey && fileInfo?.fileKey && requestedFileKey === fileInfo.fileKey);
 
 							if (isSameFile) {
+								// Even if the requested file is already active, make the
+								// navigation explicit so passive events from peer files cannot
+								// silently steal subsequent tool calls in multi-file sessions.
+								this.wsServer.setActiveFile(requestedFileKey);
 								return {
 									content: [
 										{
