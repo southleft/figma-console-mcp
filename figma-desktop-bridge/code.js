@@ -3025,6 +3025,14 @@ figma.ui.onmessage = async (msg) => {
 
       slotNode.appendChild(appendedNode);
 
+      // Cloned nodes keep their original x/y, which can land them outside the
+      // slot's visible bounds (live-validated: a clone from elsewhere on the
+      // page rendered invisible inside a 100×100 slot). In auto-layout slots
+      // Figma manages position; in NONE layout, snap to the slot origin.
+      if (slotNode.layoutMode === 'NONE' || !slotNode.layoutMode) {
+        try { appendedNode.x = 0; appendedNode.y = 0; } catch (e) { /* locked/readonly — leave as-is */ }
+      }
+
       figma.ui.postMessage({
         type: 'APPEND_TO_SLOT_RESULT',
         requestId: msg.requestId,
