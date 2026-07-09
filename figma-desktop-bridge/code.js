@@ -9,7 +9,7 @@
 // detect stale cached plugins. Bumped by scripts/release.sh ONLY when plugin files
 // change (see issue #62); server-only releases leave it alone, so it may lag
 // package.json — that's intentional, not drift.
-var PLUGIN_VERSION = '1.34.0'; // Last release in which plugin files changed.
+var PLUGIN_VERSION = '1.35.0'; // Last release in which plugin files changed.
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
@@ -468,14 +468,18 @@ async function resolveSlotNode(params) {
     if (typeof instance.findAllWithCriteria !== 'function') {
       throw new Error('Instance does not support slot lookup');
     }
-    var matches = instance.findAllWithCriteria({ types: ['SLOT'] }).filter(function(n) {
+    var allSlots = instance.findAllWithCriteria({ types: ['SLOT'] });
+    var matches = allSlots.filter(function(n) {
       return n.name === params.slotName;
     });
     if (matches.length === 0) {
-      var available = instance.findAllWithCriteria({ types: ['SLOT'] }).map(function(n) { return n.name; });
+      var available = allSlots.map(function(n) { return n.name; });
       throw new Error('Slot "' + params.slotName + '" not found on instance. Available slots: ' + (available.length ? available.join(', ') : '(none)'));
     }
-    return matches[0];
+    // findAllWithCriteria is deep — a nested instance can carry an identically
+    // named slot. Prefer the instance's OWN slot (direct child) over nested ones.
+    var direct = matches.filter(function(n) { return n.parent === instance; });
+    return (direct.length ? direct : matches)[0];
   }
 
   throw new Error('Provide slotId OR (instanceId + slotName)');
@@ -2716,9 +2720,12 @@ figma.ui.onmessage = async (msg) => {
         if (msg.description) options.description = msg.description;
       }
 
-      // SLOT and VARIANT properties do not support defaultValue — pass empty string
+      // SLOT properties do not support defaultValue — pass empty string.
+      // VARIANT properties REQUIRE a non-empty defaultValue (live-validated
+      // 2026-07-09: '' throws "Component property default value cannot be
+      // empty") — pass the caller's value through untouched.
       var defaultValue = msg.defaultValue;
-      if (msg.propertyType === 'SLOT' || msg.propertyType === 'VARIANT') {
+      if (msg.propertyType === 'SLOT') {
         defaultValue = '';
       }
 
@@ -2853,8 +2860,11 @@ figma.ui.onmessage = async (msg) => {
       } else if (msg.layoutMode === 'GRID') {
         throw new Error('GRID layoutMode is not allowed on slot nodes');
       }
-      if (msg.width !== undefined && msg.height !== undefined) {
-        newSlot.resize(msg.width, msg.height);
+      if (msg.width !== undefined || msg.height !== undefined) {
+        newSlot.resize(
+          msg.width !== undefined ? msg.width : newSlot.width,
+          msg.height !== undefined ? msg.height : newSlot.height
+        );
       }
 
       var slotPropertyKey = null;
@@ -2954,23 +2964,19 @@ figma.ui.onmessage = async (msg) => {
         throw new Error('Slot has no parent');
       }
 
-      if (msg.clearExisting) {
-        var existingChildren = [];
-        try {
-          for (var ei = 0; ei < slotNode.children.length; ei++) {
-            existingChildren.push(slotNode.children[ei]);
-          }
-        } catch (e) { /* ignore */ }
-        for (var er = 0; er < existingChildren.length; er++) {
-          existingChildren[er].remove();
-        }
-      }
-
+      // Prepare the content FIRST — validation failures must not leave the
+      // slot half-mutated (clearExisting used to run before source resolution,
+      // so a bad sourceNodeId emptied the slot and then errored).
       var appendedNode;
       if (msg.sourceNodeId) {
         var sourceNode = await figma.getNodeByIdAsync(msg.sourceNodeId);
         if (!sourceNode) {
           throw new Error('Source node not found: ' + msg.sourceNodeId);
+        }
+        // Guard BEFORE cloning — a clone of a ComponentNode is itself a
+        // ComponentNode, and cloning first leaks an orphan main component.
+        if (sourceNode.type === 'COMPONENT') {
+          throw new Error('ComponentNodes cannot be appended directly to a slot. Create an instance with createInstance() or clone an existing instance instead.');
         }
         if (msg.clone !== false) {
           appendedNode = sourceNode.clone();
@@ -2993,7 +2999,9 @@ figma.ui.onmessage = async (msg) => {
             appendedNode = figma.createText();
             await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
             appendedNode.fontName = { family: 'Inter', style: 'Regular' };
-            if (slotProps.text) appendedNode.characters = slotProps.text;
+            // Coerce: schema allows string|number; characters requires string.
+            // Check !== undefined so 0 and "0" are honored.
+            if (slotProps.text !== undefined) appendedNode.characters = String(slotProps.text);
             break;
           case 'LINE':
             appendedNode = figma.createLine();
@@ -3010,17 +3018,28 @@ figma.ui.onmessage = async (msg) => {
           default:
             throw new Error('Unsupported node type for slot content: ' + msg.nodeType);
         }
-        if (slotProps.name) appendedNode.name = slotProps.name;
-        if (slotProps.width !== undefined && slotProps.height !== undefined) {
-          appendedNode.resize(slotProps.width, slotProps.height);
+        if (slotProps.name) appendedNode.name = String(slotProps.name);
+        // Coerce to numbers and allow width-only / height-only resizes.
+        if (slotProps.width !== undefined || slotProps.height !== undefined) {
+          var rw = slotProps.width !== undefined ? Number(slotProps.width) : appendedNode.width;
+          var rh = slotProps.height !== undefined ? Number(slotProps.height) : appendedNode.height;
+          if (!isNaN(rw) && !isNaN(rh)) appendedNode.resize(rw, rh);
         }
       } else {
         throw new Error('Provide sourceNodeId (to clone/move into slot) or nodeType (to create new content in slot)');
       }
 
-      // ComponentNodes cannot be appended directly to slots
-      if (appendedNode.type === 'COMPONENT') {
-        throw new Error('ComponentNodes cannot be appended directly to a slot. Create an instance with createInstance() or clone an existing instance instead.');
+      // Content is ready — NOW it is safe to clear existing children.
+      if (msg.clearExisting) {
+        var existingChildren = [];
+        try {
+          for (var ei = 0; ei < slotNode.children.length; ei++) {
+            existingChildren.push(slotNode.children[ei]);
+          }
+        } catch (e) { /* ignore */ }
+        for (var er = 0; er < existingChildren.length; er++) {
+          existingChildren[er].remove();
+        }
       }
 
       slotNode.appendChild(appendedNode);

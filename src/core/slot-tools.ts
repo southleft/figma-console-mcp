@@ -118,7 +118,7 @@ export function registerSlotTools(
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(result.data ?? result),
+							text: JSON.stringify({ success: true, ...(result.data ?? {}) }),
 						},
 					],
 				};
@@ -318,8 +318,16 @@ const frame = await figma.getNodeByIdAsync(${JSON.stringify(frameNodeId)});
 if (!frame || frame.type !== 'FRAME') {
   throw new Error('frameNodeId must be a FRAME node');
 }
-if (frame.parent !== component) {
-  throw new Error('Frame must be a direct child of the component');
+// For a COMPONENT the frame must be its direct child. For a COMPONENT_SET the
+// property lives on the set but the frame lives inside a variant COMPONENT —
+// accept a frame whose parent is a variant of this set.
+const directChild = frame.parent === component;
+const variantChild = component.type === 'COMPONENT_SET' &&
+  frame.parent && frame.parent.type === 'COMPONENT' && frame.parent.parent === component;
+if (!directChild && !variantChild) {
+  throw new Error(component.type === 'COMPONENT_SET'
+    ? 'Frame must be a direct child of one of the set\\'s variant components'
+    : 'Frame must be a direct child of the component');
 }
 if (frame.layoutMode === 'GRID') {
   throw new Error('GRID layoutMode is not allowed on slot frames');
@@ -328,7 +336,9 @@ const options = {};
 ${description ? `options.description = ${JSON.stringify(description)};` : ""}
 ${preferredValues ? `options.preferredValues = ${JSON.stringify(preferredValues)};` : ""}
 const propKey = component.addComponentProperty(${JSON.stringify(propertyName)}, 'SLOT', '', Object.keys(options).length ? options : undefined);
-frame.componentPropertyReferences = { slotContentId: propKey };
+// Merge — assigning a fresh object would wipe the frame's existing bindings
+// (e.g. a BOOLEAN property driving 'visible').
+frame.componentPropertyReferences = Object.assign({}, frame.componentPropertyReferences, { slotContentId: propKey });
 return { propertyKey: propKey, frameId: frame.id, frameName: frame.name };
 `;
 				const result = await connector.executeCodeViaUI(code, 10000);

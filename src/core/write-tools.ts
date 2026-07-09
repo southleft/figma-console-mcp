@@ -1418,7 +1418,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 				.union([z.string(), z.number(), z.boolean()])
 				.optional()
 				.describe(
-					"Default value. Required for BOOLEAN/TEXT/INSTANCE_SWAP. Omit for VARIANT/SLOT.",
+					"Default value. Required for TEXT (string), INSTANCE_SWAP (component id), and VARIANT (a non-empty variant option name — Figma rejects empty). Optional for BOOLEAN (defaults false). Omit for SLOT.",
 				),
 			description: z
 				.string()
@@ -1441,10 +1441,25 @@ After instantiating components, use figma_take_screenshot to verify the result l
 				if (description) options.description = description;
 				if (preferredValues) options.preferredValues = preferredValues;
 
+				// SLOT is the only type that takes no default. VARIANT requires a
+				// non-empty default (Figma rejects ''), and TEXT/INSTANCE_SWAP fail
+				// deep in the plugin with opaque errors when the default is missing —
+				// validate here so the caller gets an actionable message.
+				if (
+					(type === "TEXT" || type === "INSTANCE_SWAP" || type === "VARIANT") &&
+					(defaultValue === undefined || defaultValue === "")
+				) {
+					throw new Error(
+						`defaultValue is required for ${type} properties` +
+							(type === "INSTANCE_SWAP"
+								? " (a component id)"
+								: type === "VARIANT"
+									? " (a non-empty variant option name)"
+									: ""),
+					);
+				}
 				const resolvedDefault =
-					type === "SLOT" || type === "VARIANT"
-						? ""
-						: defaultValue ?? (type === "BOOLEAN" ? false : "");
+					type === "SLOT" ? "" : (defaultValue ?? (type === "BOOLEAN" ? false : ""));
 
 				const result = await connector.addComponentProperty(
 					nodeId,
