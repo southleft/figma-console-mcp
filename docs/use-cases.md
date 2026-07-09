@@ -629,7 +629,7 @@ or
 ## 📚 More Examples
 
 See also:
-- [Tool Documentation](tools) - Complete API reference for all 107 tools
+- [Tool Documentation](tools) - Complete API reference for all 112 tools
 - [Architecture Overview](architecture) - Understanding deployment modes
 - [Example Prompts](../README.md#example-prompts) - Quick prompt examples
 - [Troubleshooting](troubleshooting) - Solutions to common issues

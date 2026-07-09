@@ -7,7 +7,7 @@ description: "Complete API reference for all 107 MCP tools, including parameters
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **107 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **96 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **112 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **101 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -37,6 +37,11 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_create_component_set` | **Create a component set with variants in one call** — axes matrix or existing components | Local / Cloud |
 | | `figma_arrange_component_set` | Organize variants with labels | Local / Cloud |
 | | `figma_set_description` | Add component descriptions | Local / Cloud |
+| **🧩 Slots** | `figma_create_slot` | **Add a slot to a component** (auto-linked SLOT property; variants supported) | Local / Cloud |
+| | `figma_get_slots` | List slots on a component, set, or instance | Local / Cloud |
+| | `figma_append_to_slot` | **Populate an instance's slot** — clone a node or create content | Local / Cloud |
+| | `figma_reset_slot` | Clear a slot's content on an instance | Local / Cloud |
+| | `figma_add_slot_property` | Retrofit an existing frame as a slot (manual SLOT binding) | Local / Cloud |
 | **🧩 Components** | `figma_search_components` | Find components by name (local + library) | Local / Cloud |
 | | `figma_get_library_components` | Discover components from published libraries | Local |
 | | `figma_get_library_component_by_key` | **Resolve any component key to full props + variants + visual specs** — no library URL needed | Local / Cloud |
@@ -1601,6 +1606,68 @@ figma_arrange_component_set({
 │  └─────────────────────────────────────┘
 └─────────────────────────────────────────┘
 ```
+
+---
+
+### `figma_create_slot`
+
+Add a Figma Slot to a component via the GA `createSlot()` API. The linked SLOT component property is created automatically and named after the slot — renaming the slot later renames the property.
+
+**Mode:** Local / Cloud (requires Desktop Bridge)
+
+```javascript
+figma_create_slot({
+  nodeId: "123:456",        // COMPONENT node (standalone OR a variant inside a set)
+  name: "Content",          // optional slot layer name
+  width: 320, height: 140,  // optional initial size (each independent)
+  layoutMode: "VERTICAL"    // optional: NONE | HORIZONTAL | VERTICAL (GRID rejected by Figma)
+})
+// → { success, slot: { id, name, propertyKey, width, height, layoutMode } }
+```
+
+For a COMPONENT_SET, call once per variant component — each variant gets its own SlotNode pointing at a shared property.
+
+### `figma_get_slots`
+
+List slots on a COMPONENT, COMPONENT_SET (aggregated across variants, each tagged with `variantId`/`variantName`), or INSTANCE. Returns ids, names, property keys, dimensions, layout mode, and current children. Use on an instance before `figma_append_to_slot` to discover slot names.
+
+**Mode:** Local / Cloud (requires Desktop Bridge)
+
+### `figma_append_to_slot`
+
+Populate a slot on a component instance. Slot content **cannot** be set through `figma_set_instance_properties` — Figma rejects slot values there by design; this tool is the population path.
+
+**Mode:** Local / Cloud (requires Desktop Bridge)
+
+```javascript
+// Clone an existing node into the slot
+figma_append_to_slot({
+  instanceId: "123:789", slotName: "Content",  // or slotId directly
+  sourceNodeId: "123:111",                     // node to clone (clone: false moves it)
+  clearExisting: true                           // optional: replace current content
+})
+
+// Or create new content in place
+figma_append_to_slot({
+  instanceId: "123:789", slotName: "Content",
+  nodeType: "TEXT",                            // FRAME | RECTANGLE | ELLIPSE | TEXT | LINE | POLYGON | STAR | VECTOR
+  properties: { text: "Hello", name: "Label", width: 200, height: 24 }
+})
+```
+
+Notes: main components can't be appended (clone an instance instead); in NONE-layout slots, clones snap to the slot origin so they stay visible; `clearExisting` only clears after the new content validates.
+
+### `figma_reset_slot`
+
+Clear all content from a slot on an instance. Takes `slotId` or `instanceId` + `slotName`.
+
+**Mode:** Local / Cloud (requires Desktop Bridge)
+
+### `figma_add_slot_property`
+
+Retrofit an existing frame as a slot: adds a SLOT component property and binds the frame to it via `componentPropertyReferences.slotContentId`. Prefer `figma_create_slot` for new slots. Supports `description` and `preferredValues` (the components the slot should accept). Works on standalone components and on component sets (bind a frame inside any variant). Existing property references on the frame are preserved.
+
+**Mode:** Local / Cloud (requires Desktop Bridge)
 
 ---
 

@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, **debugging**, and **bidirectional token sync**.
 
-> **🆕 Bidirectional Token Sync v2 + DTCG 2025.10 (v1.34.0):** `figma_import_tokens` now applies the *whole* diff plan — creates, renames, alias re-targeting, and replace-gated deletes — for a true code→Figma round-trip; exports speak DTCG 2025.10 on request (opt-in, legacy default byte-identical); scopes/codeSyntax round-trip; `figma_setup_design_tokens` accepts alias values; and the new `figma_create_component_set` builds a full variant set from an axes matrix in one call. **Plugin re-import required** (`code.js` + `ui.html` changed). [See what's new →](CHANGELOG.md#1340---2026-07-03)
+> **🆕 Figma Slots Support (v1.35.0):** Create, inspect, populate, and reset Figma Slots (GA at Config 2026) programmatically — `figma_create_slot` adds slots to components (variants included), `figma_append_to_slot` populates instance slots with cloned or new content, plus `figma_get_slots`, `figma_reset_slot`, and `figma_add_slot_property`. Live-validated against the GA Plugin API; closes the most-requested issue [#29](https://github.com/southleft/figma-console-mcp/issues/29), based on community PR [#77](https://github.com/southleft/figma-console-mcp/pull/77). **Plugin re-import required** (`code.js` + `ui.html` changed). [See what's new →](CHANGELOG.md#1350---2026-07-09)
 
 ## What is this?
 
@@ -55,9 +55,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **107** | **96** | **9** |
+| **Total tools available** | **112** | **101** | **9** |
 
-> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (96 tools) from web AI clients without Node.js. NPX/Local Git gives the full 107 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (101 tools) from web AI clients without Node.js. NPX/Local Git gives the full 112 tools with real-time monitoring.
 
 ---
 
@@ -65,7 +65,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 107 tools including design creation, variable management, and component instantiation.
+**What you get:** All 112 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -162,7 +162,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 107 tools as NPX, plus full source code access.
+**What you get:** Same 112 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -251,7 +251,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 **Best for:** Using Claude.ai, v0, Replit, or Lovable to create and modify Figma designs — no Node.js required.
 
-**What you get:** 96 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
+**What you get:** 101 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
 
 #### Prerequisites
 
@@ -308,7 +308,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **107** | **96** | **107** | **9** (read-only) |
+| **Total tools** | **112** | **101** | **112** | **9** (read-only) |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -323,7 +323,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 107 tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 112 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -430,6 +430,13 @@ When you first use design system tools:
   - Add descriptions to components, component sets, and styles
   - Supports markdown formatting for rich documentation
   - Descriptions appear in Dev Mode for developers
+
+### 🧩 Figma Slots (Local Mode + Cloud Mode)
+- `figma_create_slot` - **Add a slot to a component** via the GA `createSlot()` API — the linked SLOT property is created automatically; works on standalone components and variants inside a component set
+- `figma_get_slots` - List slots on a component, component set (aggregated across variants), or instance — ids, names, property keys, dimensions, and current children
+- `figma_append_to_slot` - **Populate an instance's slot** by cloning an existing node or creating new content (`setProperties` rejects slot values by design — this is the population path)
+- `figma_reset_slot` - Clear a slot's content on an instance
+- `figma_add_slot_property` - Retrofit an existing frame as a slot via a manual SLOT property binding, with `description` and `preferredValues`
 
 ### 🔍 Design-Code Parity (All Modes)
 - `figma_check_design_parity` - Compare Figma component specs against code implementation, producing a scored diff report with actionable fix items
@@ -673,7 +680,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 107 tools work through the WebSocket transport
+- All 112 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -812,9 +819,10 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.34.0 (Stable) - Production-ready. Latest: Bidirectional Token Sync v2 + DTCG 2025.10 — `figma_import_tokens` now applies the complete diff plan (creates missing collections/variables, applies renames, writes real `VARIABLE_ALIAS` references, and deletes only under explicit `replace`), `figma_export_tokens` speaks the DTCG 2025.10 dialect on request (legacy default byte-identical), variable scopes/codeSyntax round-trip via `$extensions`, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and the new `figma_create_component_set` builds a full variant set from an axes matrix in one call. On top of the v1.33.x line: version-handshake fix (re-import banner only fires when plugin files actually changed), security dependency sweep, and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **107 tools** (Local) / **96 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
+**Current Status:** v1.35.0 (Stable) - Production-ready. Latest: Figma Slots write support — create, inspect, populate, and reset Slots (GA at Config 2026) via 5 new tools (`figma_create_slot`, `figma_get_slots`, `figma_append_to_slot`, `figma_reset_slot`, `figma_add_slot_property`), live-validated against the GA Plugin API and based on community PR #77. On top of v1.34.0's Bidirectional Token Sync v2 + DTCG 2025.10 — `figma_import_tokens` applies the complete diff plan (creates missing collections/variables, applies renames, writes real `VARIABLE_ALIAS` references, and deletes only under explicit `replace`), `figma_export_tokens` speaks the DTCG 2025.10 dialect on request (legacy default byte-identical), variable scopes/codeSyntax round-trip via `$extensions`, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and `figma_create_component_set` builds a full variant set from an axes matrix in one call. On top of the v1.33.x line: version-handshake fix (re-import banner only fires when plugin files actually changed), security dependency sweep, and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **112 tools** (Local) / **101 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
 
 **Recent Releases:**
+- [x] **v1.35.0** - Figma Slots write support, closing [#29](https://github.com/southleft/figma-console-mcp/issues/29) (the tracker's most-requested feature) via community PR [#77](https://github.com/southleft/figma-console-mcp/pull/77) by @simonesalvucci, updated to the GA API. Five new tools: `figma_create_slot` (slot + auto-linked SLOT property; variants inside component sets supported — the beta restriction was lifted at GA), `figma_get_slots`, `figma_append_to_slot` (clone or create content into instance slots; snaps clones to the slot origin), `figma_reset_slot`, and `figma_add_slot_property` (retrofit an existing frame as a slot). Hardened by live validation: VARIANT `defaultValue` passthrough restored (Figma requires non-empty), destructive-path reorder in the append handler (content validated before `clearExisting` empties anything), relay whitelist fix for `slot` payloads. **Plugin re-import required** (`code.js` + `ui.html` changed).
 - [x] **v1.34.0** - Bidirectional Token Sync v2 + DTCG 2025.10. `figma_import_tokens` now applies the *complete* diff plan: missing collections and variables are created (with modes, inferred/recorded types, and values set in dependency order — aliases in a second pass), token-path renames route to the update phase by round-trip variable ID (no more create+delete pairs that would permanently destroy the original under `replace`), reference values write real `{ type: "VARIABLE_ALIAS", id }` payloads via a four-tier resolver, and deletes are strictly gated behind `strategy: "replace"`. `figma_export_tokens` gains `dtcgDialect: "2025"` (object-form colors from full-precision floats, object dimensions) while the legacy default stays byte-identical; import accepts both dialects unconditionally with dialect-insensitive diff normalization. Variable `scopes` + `codeSyntax` round-trip through `$extensions["figma-console-mcp"]`. `figma_setup_design_tokens` accepts DTCG brace references (`"{color.blue.600}"`) that resolve to real aliases, including forward references. New tool `figma_create_component_set` builds a variant set from an axes matrix (or combines existing components) with `Prop=Value` naming, optional auto-arranged grid, and variant keys in the response — with count-scaled timeouts and rollback on failure. **Plugin re-import required** (`code.js` + `ui.html` changed — the component-set handler and relay). 183 tests across the token/write-tools suites.
 - [x] **v1.33.2** - Version-handshake false-positive fix. The v1.33.0 handshake compared the plugin's reported version against the server's *package* version, so server-only releases (like the v1.33.1 dependency sweep) flagged every up-to-date plugin as stale and pushed the re-import banner for files that hadn't changed. The server now compares against the `PLUGIN_VERSION` embedded in the `figma-desktop-bridge/code.js` it ships — exactly what a re-import would install — and `PLUGIN_VERSION` itself now means "last release in which plugin files changed" (release tooling bumps it only when `figma-desktop-bridge/` actually changed since the last tag). `figma_get_status` gains `transport.websocket.bundledPluginVersion`; `figma_diagnose` blames the right version. No new tools, **no plugin re-import required** (one-time exception: if you re-imported at v1.33.1, the banner appears once more — clear it with one final re-import). 1245 tests passing (9 new).
 - [x] **v1.33.1** - Security dependency sweep. All runtime and critical npm audit alerts resolved via in-range bumps (`ws` 8.21.0, `hono` 4.12.27, `undici` 7.28.0, `handlebars` 4.7.9 — the lone critical, dev-only — plus `lodash`, `path-to-regexp`, `basic-ftp`, `fast-uri`, `vite`). `wrangler` deliberately held at 4.72.0 because newer versions require Node ≥22; the only residual audit findings are inside wrangler/miniflare's dev-time toolchain, which never ships in the npm package or Worker bundle. Supersedes dependabot PRs #81/#82/#84. No code changes, no API changes, no plugin re-import. 1236 tests passing unchanged.

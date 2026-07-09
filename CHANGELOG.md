@@ -5,6 +5,31 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.35.0] - 2026-07-09
+
+### Added
+
+- **Figma Slots write support** — 5 new Desktop Bridge tools close [#29](https://github.com/southleft/figma-console-mcp/issues/29), building on the slot *read* support (`extractSlots`) that shipped in v1.33.0. Slots went GA at Config 2026; the Plugin API surface was live-validated against Figma Desktop on 2026-07-09. Based on [PR #77](https://github.com/southleft/figma-console-mcp/pull/77) by [@simonesalvucci](https://github.com/simonesalvucci), updated to the GA API:
+  - **`figma_create_slot`** — create a SlotNode inside a component via `createSlot()`; the linked SLOT component property is created automatically and renaming the slot renames the property. Works on standalone COMPONENTs *and* variant components inside a COMPONENT_SET (the beta-era restriction was lifted at GA).
+  - **`figma_get_slots`** — list slots on a COMPONENT, COMPONENT_SET (aggregated across variants), or INSTANCE: ids, names, property keys, dimensions, layout, and current children.
+  - **`figma_append_to_slot`** — populate an instance's slot by cloning an existing node (`sourceNodeId`) or creating new content (`nodeType` + properties). Slot content **cannot** be set via `figma_set_instance_properties` (Figma rejects it by design) — this is the population path. Clones snap to the slot origin in NONE-layout slots so they stay visible.
+  - **`figma_reset_slot`** — clear a slot's content on an instance.
+  - **`figma_add_slot_property`** — bind an existing frame as a slot via a manual SLOT property (alternative to `figma_create_slot` for retrofitting); supports `description` and `preferredValues`, and works with frames inside a set's variant components.
+- `figma_add_component_property` now supports the `SLOT` property type, plus `description`/`preferredValues` options.
+
+### Changed
+
+- `figma_add_component_property` validates `defaultValue` upfront: required and non-empty for TEXT, INSTANCE_SWAP, and VARIANT (Figma rejects an empty VARIANT default — live-validated), optional for BOOLEAN, omitted for SLOT. Failures now produce actionable errors instead of opaque plugin-side ones.
+- `ANALYZE_COMPONENT_SET`'s `ai_instruction` now tells agents to populate slots via `figma_append_to_slot` rather than `setProperties`.
+
+### Fixed
+
+- Desktop Bridge relay: `slot` response payloads are now forwarded through the ui.html result whitelist (previously dropped for `APPEND_TO_SLOT`).
+- `APPEND_TO_SLOT` no longer empties the slot before validating the source node — content is prepared first, so a bad `sourceNodeId` leaves existing slot content untouched; cloning a main component is rejected *before* the clone (no more orphaned duplicates).
+
+**Plugin re-import required** to use the new slot tools (`code.js` + `ui.html` changed): Plugins → Development → Import plugin from manifest → `~/.figma-console-mcp/plugin/manifest.json`.
+
+
 ## [1.34.0] - 2026-07-03
 
 ### Added
@@ -1100,6 +1125,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.35.0]: https://github.com/southleft/figma-console-mcp/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/southleft/figma-console-mcp/compare/v1.33.2...v1.34.0
 [1.33.2]: https://github.com/southleft/figma-console-mcp/compare/v1.33.1...v1.33.2
 [1.33.1]: https://github.com/southleft/figma-console-mcp/compare/v1.33.0...v1.33.1

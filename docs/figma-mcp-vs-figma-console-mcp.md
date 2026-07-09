@@ -21,7 +21,7 @@ The short answer: **approach** and **audience**. The Figma MCP is a task-driven 
   <Card title="Figma Console MCP" icon="terminal">
     **Made by Southleft** — A design system management platform. 107 dedicated tools for reading, writing, managing tokens, analyzing parity, and bridging the gap between designers and developers.
 
-    107 tools. Plugin API + REST API. Open source (MIT).
+    112 tools. Plugin API + REST API. Open source (MIT).
   </Card>
 </Columns>
 
@@ -244,7 +244,7 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 | Question | Figma MCP | Console MCP |
 |---|---|---|
 | *Can it read my designs?* | Yes | Yes |
-| *Can it write to my designs?* | Yes (via `use_figma`) | Yes (96 tools) |
+| *Can it write to my designs?* | Yes (via `use_figma`) | Yes (101 tools) |
 | *Can it manage variables?* | Yes (via code execution) | Yes (11 dedicated tools + batch) |
 | *Can it run arbitrary plugin code?* | No | Yes (`figma_execute`) |
 | *Does it know what I selected?* | No | Yes, in real time |

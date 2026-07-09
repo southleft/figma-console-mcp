@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.34.0 — Bidirectional Token Sync v2 + DTCG 2025.10:** `figma_import_tokens` now applies the *whole* diff plan — creates, renames, alias re-targeting, and replace-gated deletes — for a true code→Figma round-trip. Exports speak DTCG 2025.10 on request (opt-in; the legacy default stays byte-identical), variable scopes/codeSyntax round-trip, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and the new `figma_create_component_set` builds a full variant set from an axes matrix in one call. **Plugin re-import required** (`code.js` + `ui.html` changed). [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1340---2026-07-03)
+**New in v1.35.0 — Figma Slots Support:** Create, inspect, populate, and reset Figma Slots (GA at Config 2026) programmatically. `figma_create_slot` adds slots to components — variants included — with the linked SLOT property created automatically; `figma_append_to_slot` populates instance slots with cloned or newly created content (the path Figma requires — `setProperties` rejects slot values by design); plus `figma_get_slots`, `figma_reset_slot`, and `figma_add_slot_property`. Live-validated against the GA Plugin API. Closes [#29](https://github.com/southleft/figma-console-mcp/issues/29), based on community PR [#77](https://github.com/southleft/figma-console-mcp/pull/77). **Plugin re-import required** (`code.js` + `ui.html` changed). [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1350---2026-07-09)
 </Note>
 
 # Your Design System as an API
@@ -146,6 +146,7 @@ Real component data. Real token values. Real code that uses your actual design s
     - `figma_execute` — Run any Plugin API code
     - `figma_create_component_set` — Build a full variant set from an axes matrix (or combine existing components) in one call — variant keys returned, ready to instantiate
     - `figma_arrange_component_set` — Organize variants with labels
+    - `figma_create_slot` / `figma_append_to_slot` — Add slots to components and populate them on instances (Figma Slots, GA at Config 2026), plus `figma_get_slots`, `figma_reset_slot`, and `figma_add_slot_property`
     - `figma_create_variable` — Add design tokens
     - Plus 20+ node manipulation tools
   </Accordion>
@@ -208,12 +209,12 @@ Real component data. Real token values. Real code that uses your actual design s
 
 <Columns cols={3}>
   <Card title="NPX Setup (Recommended)" icon="bolt" href="/setup#-npx-setup-recommended">
-    **Full capabilities — 107 tools**
+    **Full capabilities — 112 tools**
 
     All tools including real-time monitoring. Requires Node.js and a Figma token.
   </Card>
   <Card title="Cloud Mode" icon="cloud-arrow-up" href="/setup#-cloud-mode-web-ai-clients">
-    **Web AI clients — 96 tools**
+    **Web AI clients — 101 tools**
 
     Full write access from Claude.ai, v0, Replit, or Lovable. Pair with a code — no Node.js needed.
   </Card>
@@ -276,7 +277,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Real scenarios and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 107 tools
+    Complete reference for 112 tools
   </Card>
   <Card title="Troubleshooting" icon="circle-question" href="/troubleshooting">
     Common issues and solutions
