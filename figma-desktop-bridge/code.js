@@ -2837,15 +2837,15 @@ figma.ui.onmessage = async (msg) => {
         throw new Error('Node not found: ' + msg.nodeId);
       }
       if (componentNode.type !== 'COMPONENT') {
-        throw new Error('Node must be a COMPONENT. Got: ' + componentNode.type + '. Use createSlot on individual variant components before combineAsVariants.');
-      }
-      if (componentNode.parent && componentNode.parent.type === 'COMPONENT_SET') {
-        throw new Error('Cannot create slots on variant components inside a COMPONENT_SET from this tool. Add slots to each variant component before combining, or target a standalone COMPONENT.');
+        throw new Error('Node must be a COMPONENT (standalone or a variant inside a COMPONENT_SET). Got: ' + componentNode.type + '. For a COMPONENT_SET, call this once per variant component.');
       }
       if (typeof componentNode.createSlot !== 'function') {
-        throw new Error('createSlot() is not available. Update Figma Desktop to a version with Slots support (open beta).');
+        throw new Error('createSlot() is not available. Update Figma Desktop to a version with Slots support.');
       }
 
+      // createSlot() takes no arguments (a name arg is ignored — live-validated
+      // 2026-07-09). Renaming the returned node renames the linked SLOT property
+      // key live (Slot#id → Name#id), so rename-after-create IS the naming API.
       var newSlot = componentNode.createSlot();
       if (msg.name) newSlot.name = msg.name;
       if (msg.layoutMode && msg.layoutMode !== 'GRID') {

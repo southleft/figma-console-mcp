@@ -31,7 +31,7 @@ export function registerSlotTools(
 ): void {
 	server.tool(
 		"figma_create_slot",
-		`Create a SlotNode inside a component using createSlot(). Automatically creates a linked SLOT component property. Slots are freeform drop zones for instance content — more flexible than INSTANCE_SWAP. Requires a standalone COMPONENT (not a variant inside a COMPONENT_SET). GRID layout is not allowed on slots. Requires Desktop Bridge.`,
+		`Create a SlotNode inside a component using createSlot(). Automatically creates a linked SLOT component property named after the slot (renaming the slot renames the property). Slots are freeform drop zones for instance content — more flexible than INSTANCE_SWAP. Works on standalone COMPONENTs and variant COMPONENTs inside a COMPONENT_SET (call once per variant). GRID layout is not allowed on slots. Requires Desktop Bridge.`,
 		{
 			nodeId: z
 				.string()
@@ -87,7 +87,7 @@ export function registerSlotTools(
 							type: "text" as const,
 							text: JSON.stringify({
 								error: error instanceof Error ? error.message : String(error),
-								hint: "Target a standalone COMPONENT. Add slots to variant components before combineAsVariants. Ensure Figma Desktop supports Slots (open beta).",
+								hint: "Target a COMPONENT node (standalone or a variant inside a COMPONENT_SET). Ensure Figma Desktop supports Slots.",
 							}),
 						},
 					],
