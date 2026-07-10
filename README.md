@@ -88,6 +88,13 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -e ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
 ```
 
+**Autohand Code (CLI, macOS/Linux/WSL/Git Bash):**
+```bash
+autohand mcp add figma-console env FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE ENABLE_MCP_APPS=true npx -y figma-console-mcp@latest
+```
+
+Add `--scope project` before `figma-console` to save the server in the current project's `.autohand` configuration. See the [Autohand Code CLI](https://github.com/autohandai/code-cli/) for installation details.
+
 **Cursor / Windsurf / Claude Desktop:**
 
 Add to your MCP config file (see [Where to find your config file](#-where-to-find-your-config-file) below):
