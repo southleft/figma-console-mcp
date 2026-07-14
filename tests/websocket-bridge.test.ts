@@ -1603,6 +1603,88 @@ describe('Multi-client WebSocket', () => {
 
       expect(server.getActiveFileKey()).toBe('file-a');
     });
+
+    test('explicit setActiveFile is sticky against peer SELECTION_CHANGE', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      expect(server.getActiveFileKey()).toBe('file-b');
+      expect(server.setActiveFile('file-a')).toBe(true);
+      expect(server.getActiveFileKey()).toBe('file-a');
+
+      const selPromise = new Promise<void>((resolve) =>
+        server.once('selectionChange', resolve)
+      );
+      c2.send(JSON.stringify({
+        type: 'SELECTION_CHANGE',
+        data: {
+          nodes: [{ id: '2:1', name: 'Peer Frame', type: 'FRAME', width: 100, height: 100 }],
+          count: 1,
+          page: 'Page 1',
+          timestamp: Date.now(),
+        },
+      }));
+      await selPromise;
+
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.getCurrentSelection()).toBeNull();
+
+      server.setActiveFile('file-b');
+      expect(server.getCurrentSelection()!.nodes[0].name).toBe('Peer Frame');
+    });
+
+    test('explicit setActiveFile is sticky against peer PAGE_CHANGE', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A', currentPage: 'A Page' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B', currentPage: 'B Page' });
+      clients.push(c2);
+
+      expect(server.setActiveFile('file-a')).toBe(true);
+
+      const pagePromise = new Promise<void>((resolve) =>
+        server.once('pageChange', resolve)
+      );
+      c2.send(JSON.stringify({
+        type: 'PAGE_CHANGE',
+        data: { pageId: '9:0', pageName: 'Peer Components', timestamp: Date.now() },
+      }));
+      await pagePromise;
+
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.getConnectedFileInfo()!.currentPage).toBe('A Page');
+
+      server.setActiveFile('file-b');
+      expect(server.getConnectedFileInfo()!.currentPage).toBe('Peer Components');
+    });
+
+    test('explicit setActiveFile is sticky against peer FILE_INFO reconnects', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const c1 = await connectClient(server, TEST_PORT, { fileKey: 'file-a', fileName: 'A' });
+      clients.push(c1);
+      const c2 = await connectClient(server, TEST_PORT, { fileKey: 'file-b', fileName: 'B' });
+      clients.push(c2);
+
+      expect(server.setActiveFile('file-a')).toBe(true);
+      expect(server.getActiveFileKey()).toBe('file-a');
+
+      const c3 = await connectClient(server, TEST_PORT, { fileKey: 'file-c', fileName: 'C' });
+      clients.push(c3);
+
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.getConnectedFiles().map(f => f.fileKey)).toEqual(
+        expect.arrayContaining(['file-a', 'file-b', 'file-c'])
+      );
+    });
   });
 
   describe('per-file state isolation', () => {
