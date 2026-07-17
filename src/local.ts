@@ -984,7 +984,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool 6: Navigate / switch active file
 		this.server.tool(
 			"figma_navigate",
-			"Switch the active Figma file target among files that already have the Desktop Bridge plugin running. Local mode is WebSocket-only — this tool does NOT launch a browser or open files. If the requested URL is already the active file, it confirms the connection. If another connected plugin matches the URL, it switches the active target so subsequent tool calls hit that file. If no connected plugin matches, returns guidance for the user to open the Desktop Bridge plugin in the target file. Use figma_list_open_files to see all connected files.",
+			"Switch the active Figma file target among files that already have the Desktop Bridge plugin running. Local mode is WebSocket-only — this tool does NOT launch a browser or open files. If the requested URL is already the active file, it confirms the connection. If another connected plugin matches the URL, it switches the active target so subsequent tool calls hit that file. If no connected plugin matches, returns guidance for the user to open the Desktop Bridge plugin in the target file. Use figma_list_open_files to see all connected files.\n\nPass lock: true to PIN this file as the target — new connections, reconnects, and the user's own selection/page changes in other files will no longer move the target. Use this for parallel work (agent edits one file while the user works in another) so commands can't silently route to the wrong file. Switching to another file (or lock: false) releases the pin; it also releases automatically if the pinned file disconnects.",
 			{
 				url: z
 					.string()
@@ -992,8 +992,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					.describe(
 						"Figma URL to navigate to (e.g., https://www.figma.com/design/abc123)",
 					),
+				lock: z
+					.boolean()
+					.optional()
+					.describe(
+						"Pin this file as the active target so connections, reconnects, and user interaction in other files won't move it. Defaults to false.",
+					),
 			},
-			async ({ url }) => {
+			async ({ url, lock }) => {
 				try {
 					// Phase 3: local mode now talks to Figma exclusively through the
 					// WebSocket Desktop Bridge plugin. Navigation is plugin-side: we
@@ -1009,6 +1015,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							const isSameFile = !!(requestedFileKey && fileInfo?.fileKey && requestedFileKey === fileInfo.fileKey);
 
 							if (isSameFile) {
+								// Apply/release the pin even when already active, so
+								// `figma_navigate(url, lock: true)` on the current file works.
+								if (lock !== undefined && requestedFileKey) {
+									this.wsServer.setActiveFile(requestedFileKey, lock);
+								}
 								return {
 									content: [
 										{
@@ -1021,8 +1032,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 														fileName: fileInfo!.fileName,
 														fileKey: fileInfo!.fileKey,
 													},
+													locked: this.wsServer.isTargetLocked(),
 													message:
-														"Already connected to this file via WebSocket. All tools are ready to use — no navigation needed.",
+														"Already connected to this file via WebSocket. All tools are ready to use — no navigation needed." +
+														(lock ? " Target is now pinned to this file." : ""),
 													ai_instruction:
 														"The requested file is already connected via WebSocket. You can proceed with any tool calls (figma_get_variables, figma_get_file_data, figma_execute, etc.) without further navigation.",
 												},
@@ -1037,7 +1050,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								const connectedFiles = this.wsServer.getConnectedFiles();
 								const targetFile = connectedFiles.find(f => f.fileKey === requestedFileKey);
 								if (targetFile) {
-									this.wsServer.setActiveFile(requestedFileKey);
+									this.wsServer.setActiveFile(requestedFileKey, lock ?? false);
 									return {
 										content: [
 											{
@@ -1050,14 +1063,17 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 															fileName: targetFile.fileName,
 															fileKey: targetFile.fileKey,
 														},
+														locked: this.wsServer.isTargetLocked(),
 														connectedFiles: connectedFiles.map(f => ({
 															fileName: f.fileName,
 															fileKey: f.fileKey,
 															isActive: f.fileKey === requestedFileKey,
 														})),
-														message: `Switched active file to "${targetFile.fileName}". All tools now target this file.`,
+														message: `Switched active file to "${targetFile.fileName}". All tools now target this file.` +
+															(lock ? " Target is pinned — it won't move until you switch files or the plugin disconnects." : ""),
 														ai_instruction:
-															"Active file has been switched via WebSocket. All subsequent tool calls (figma_get_variables, figma_execute, etc.) will target this file. No browser navigation needed.",
+															"Active file has been switched via WebSocket. All subsequent tool calls (figma_get_variables, figma_execute, etc.) will target this file. No browser navigation needed." +
+															(lock ? " The target is now pinned to this file." : ""),
 													},
 												),
 											},
@@ -1696,6 +1712,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 					const connectedFiles = this.wsServer.getConnectedFiles();
 					const activeFileKey = this.wsServer.getActiveFileKey();
+					const targetLocked = this.wsServer.isTargetLocked();
 
 					return {
 						content: [{
@@ -1703,6 +1720,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							text: JSON.stringify({
 								transport: "websocket",
 								activeFileKey,
+								targetLocked,
 								files: connectedFiles.map(f => ({
 									fileName: f.fileName,
 									fileKey: f.fileKey,
@@ -1717,7 +1735,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								message: connectedFiles.length === 1
 									? `Connected to 1 file: "${connectedFiles[0].fileName}"`
 									: `Connected to ${connectedFiles.length} files. Active: "${connectedFiles.find(f => f.isActive)?.fileName || 'none'}"`,
-								ai_instruction: "Use figma_navigate with a file URL to switch the active file. All tools target the active file by default.",
+								ai_instruction: `Use figma_navigate with a file URL to switch the active file. All tools target the active file by default. ${targetLocked ? "The active target is currently PINNED (locked) — it won't move on reconnects or user interaction until you switch files. " : "To work in one file while the user works in another, call figma_navigate with lock: true to pin the target so it can't silently switch. "}`,
 							}),
 						}],
 					};
