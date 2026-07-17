@@ -272,18 +272,18 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 			if (lower.includes("when to use") && !lower.includes("not")) {
 				currentSection = "when_to_use";
 				continue;
-			} else if (lower.includes("when not to use") || lower.includes("when to not use") || lower.includes("don't use") || lower.includes("do not use")) {
+			}if (lower.includes("when not to use") || lower.includes("when to not use") || lower.includes("don't use") || lower.includes("do not use")) {
 				currentSection = "when_not_to_use";
 				continue;
-			} else if (lower.includes("accessibility") || lower.includes("a11y") || lower.includes("aria")) {
+			}if (lower.includes("accessibility") || lower.includes("a11y") || lower.includes("aria")) {
 				currentSection = "accessibility";
 				continue;
-			} else if (lower.includes("content") || lower.includes("title text") || lower.includes("description text") || lower.includes("button label") || lower.includes("writing") || lower.includes("copy")) {
+			}if (lower.includes("content") || lower.includes("title text") || lower.includes("description text") || lower.includes("button label") || lower.includes("writing") || lower.includes("copy")) {
 				currentSection = "content";
 				currentContentHeading = effectiveHeader || "";
 				result.contentGuidelines.push({ heading: effectiveHeader || "", items: [] });
 				continue;
-			} else if (currentSection === "overview") {
+			}if (currentSection === "overview") {
 				// A header after overview text means we're moving to a new section
 				currentSection = "other";
 				// Check if this might be a content guideline sub-section
@@ -460,7 +460,7 @@ function walkVariantNode(
 /**
  * Collect typography data from all text nodes in a component tree.
  */
-export function collectTypographyData(node: any, depth: number = 0, maxDepth: number = 5): TextStyleData[] {
+export function collectTypographyData(node: any, depth = 0, maxDepth = 5): TextStyleData[] {
 	const results: TextStyleData[] = [];
 	if (depth > maxDepth) return results;
 
@@ -499,7 +499,7 @@ export function collectTypographyData(node: any, depth: number = 0, maxDepth: nu
  * Build an anatomy tree representation from a Figma node structure.
  * Returns a formatted string showing the component's nested structure.
  */
-export function buildAnatomyTree(node: any, depth: number = 0, maxDepth: number = 5): string {
+export function buildAnatomyTree(node: any, depth = 0, maxDepth = 5): string {
 	if (depth > maxDepth) return "";
 
 	// For COMPONENT_SET, pick the variant with the deepest children tree for the richest anatomy
@@ -547,7 +547,7 @@ function buildAnatomyLines(
 	const childPrefix = depth === 0 ? "" : (isLast ? "    " : "│   ");
 
 	// Build node label
-	let label = node.name || node.type;
+	const label = node.name || node.type;
 	const typeHint = node.type === "TEXT" ? " (TEXT)"
 		: node.type === "INSTANCE" ? " (INSTANCE)"
 		: node.type === "COMPONENT" ? " (COMPONENT)"
@@ -839,7 +839,7 @@ function compareVisual(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscr
 	// Corner radius
 	const figmaRadius = node.cornerRadius;
 	if (figmaRadius !== undefined && cv.borderRadius !== undefined) {
-		const codeRadius = typeof cv.borderRadius === "string" ? parseFloat(cv.borderRadius) : cv.borderRadius;
+		const codeRadius = typeof cv.borderRadius === "string" ? Number.parseFloat(cv.borderRadius) : cv.borderRadius;
 		if (!isNaN(codeRadius) && !numericClose(figmaRadius, codeRadius)) {
 			discrepancies.push({
 				category: "visual",
@@ -885,7 +885,7 @@ function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: ParityDisc
 		const dVal = designSpacing[designKey as keyof typeof designSpacing];
 		const cVal = cs[key as keyof typeof cs];
 		if (dVal !== undefined && cVal !== undefined) {
-			const cNum = typeof cVal === "string" ? parseFloat(cVal) : (cVal as number);
+			const cNum = typeof cVal === "string" ? Number.parseFloat(cVal) : (cVal as number);
 			if (!isNaN(cNum) && !numericClose(dVal as number, cNum)) {
 				discrepancies.push({
 					category: "spacing",
@@ -901,7 +901,7 @@ function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: ParityDisc
 
 	// Width/height (only compare if both are numeric)
 	if (designSpacing.width !== undefined && cs.width !== undefined) {
-		const cNum = typeof cs.width === "string" ? parseFloat(cs.width) : cs.width;
+		const cNum = typeof cs.width === "string" ? Number.parseFloat(cs.width) : cs.width;
 		if (!isNaN(cNum) && !numericClose(designSpacing.width, cNum, 2)) {
 			discrepancies.push({
 				category: "spacing",
@@ -915,7 +915,7 @@ function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: ParityDisc
 	}
 
 	if (designSpacing.height !== undefined && cs.height !== undefined) {
-		const cNum = typeof cs.height === "string" ? parseFloat(cs.height) : cs.height;
+		const cNum = typeof cs.height === "string" ? Number.parseFloat(cs.height) : cs.height;
 		if (!isNaN(cNum) && !numericClose(designSpacing.height, cNum, 2)) {
 			discrepancies.push({
 				category: "spacing",
@@ -969,7 +969,7 @@ function compareTypography(node: any, codeSpec: CodeSpec, discrepancies: ParityD
 	}
 
 	if (designTypo.fontWeight && ct.fontWeight) {
-		const codeWeight = typeof ct.fontWeight === "string" ? parseInt(ct.fontWeight, 10) : ct.fontWeight;
+		const codeWeight = typeof ct.fontWeight === "string" ? Number.parseInt(ct.fontWeight, 10) : ct.fontWeight;
 		if (!isNaN(codeWeight) && designTypo.fontWeight !== codeWeight) {
 			discrepancies.push({
 				category: "typography",
@@ -983,7 +983,7 @@ function compareTypography(node: any, codeSpec: CodeSpec, discrepancies: ParityD
 	}
 
 	if (designTypo.lineHeight && ct.lineHeight) {
-		const codeLH = typeof ct.lineHeight === "string" ? parseFloat(ct.lineHeight) : ct.lineHeight;
+		const codeLH = typeof ct.lineHeight === "string" ? Number.parseFloat(ct.lineHeight) : ct.lineHeight;
 		if (!isNaN(codeLH) && !numericClose(designTypo.lineHeight, codeLH, 1)) {
 			discrepancies.push({
 				category: "typography",
@@ -1041,7 +1041,7 @@ function compareTokens(
 					designValue: tokenName,
 					codeValue: null,
 					message: `Design uses token "${tokenName}" but code doesn't reference it`,
-					suggestion: `Add token reference in code`,
+					suggestion: "Add token reference in code",
 				});
 			}
 		}
@@ -1104,7 +1104,7 @@ function compareComponentAPI(node: any, codeSpec: CodeSpec, discrepancies: Parit
 				designValue: null,
 				codeValue: codeProp.name,
 				message: `Code prop "${codeProp.name}" has no matching Figma component property`,
-				suggestion: `Add component property in Figma`,
+				suggestion: "Add component property in Figma",
 			});
 		} else if (matchingFigma.type === "VARIANT" && codeProp.values) {
 			// Check variant values match
@@ -1575,7 +1575,7 @@ function buildParityInstruction(
 			"Present as:",
 			"",
 			`## ${componentName} — Parity Report`,
-			`**Score: 100/100** | 0 critical | 0 major | 0 minor | 0 info`,
+			"**Score: 100/100** | 0 critical | 0 major | 0 minor | 0 info",
 			"",
 			"### Action Required",
 			"None — design and code are fully aligned.",
@@ -1701,7 +1701,7 @@ function generateFrontmatter(
 		`description: ${((description.split(/\n\s*\n|\n#{1,6}\s|\n\*\*/)[0] || description).replace(/\n/g, " ").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/)[0] || `${componentName} component`)}`,
 		`status: ${status}`,
 		`version: ${version}`,
-		`category: components`,
+		"category: components",
 		...(level ? [`level: ${level}`] : []),
 		`tags: [${tags.join(", ")}]`,
 		`figma: ${fileUrl}`,
@@ -1925,7 +1925,7 @@ interface CollectedColor {
  * Recursively walk a node tree and collect all unique colors from fills, strokes, and text.
  * For COMPONENT_SET nodes, walks the first child (default variant) instead of the set frame.
  */
-function collectNodeColors(node: any, colors: CollectedColor[], depth: number = 0, maxDepth: number = 3): void {
+function collectNodeColors(node: any, colors: CollectedColor[], depth = 0, maxDepth = 3): void {
 	if (depth > maxDepth) return;
 
 	// For COMPONENT_SET, walk into the first child (default variant) for visual data

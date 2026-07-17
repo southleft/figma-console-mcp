@@ -390,9 +390,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			// Not available yet — log guidance but don't throw
 			// The user may open the plugin later
 			logger.warn(
-				`WebSocket transport not available yet.\n\n` +
-				`Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n` +
-				`No special launch flags needed — the plugin connects automatically.`,
+				"WebSocket transport not available yet.\n\n" +
+				"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n" +
+				"No special launch flags needed — the plugin connects automatically.",
 			);
 		}
 	}
@@ -451,7 +451,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					// Try console monitor first, fall back to WebSocket console buffer
 					let logs: import("./core/types/index.js").ConsoleLogEntry[];
 					let status: ReturnType<NonNullable<typeof this.wsServer>["getConsoleStatus"]>;
-					let source: "websocket" = "websocket";
+					let source = "websocket" as const;
 
 					if (this.wsServer?.isClientConnected()) {
 						// Plugin-captured console logs delivered via WebSocket bridge
@@ -533,7 +533,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Note: For screenshots of specific components, use figma_get_component_image instead
 		this.server.tool(
 			"figma_take_screenshot",
-			`Export an image of the current Figma page or specific node via REST API. Returns an image URL (valid 30 days). Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image.`,
+			"Export an image of the current Figma page or specific node via REST API. Returns an image URL (valid 30 days). Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image.",
 			{
 				nodeId: z
 					.string()
@@ -756,9 +756,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 			async ({ clearConsole: clearConsoleBefore }) => {
 				try {
-					let transport: "websocket" = "websocket";
+					let transport = "websocket" as const;
 					let clearedCount = 0;
-					let currentUrl: string | null = null;
+					const currentUrl: string | null = null;
 
 					// Reload the plugin UI iframe through the WebSocket bridge.
 					if (this.wsServer?.isClientConnected()) {
@@ -832,7 +832,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			async () => {
 				try {
 					let clearedCount = 0;
-					let transport: "websocket" = "websocket";
+					let transport = "websocket" as const;
 
 					// Clear the WebSocket plugin-side log buffer (non-disruptive)
 					if (this.wsServer?.isClientConnected()) {
@@ -1002,9 +1002,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								],
 							};
 						}
-						throw new Error(
-							"No connection available. Open the Desktop Bridge plugin in Figma.",
-						);
 					}
 
 					// If we got here, the WebSocket plugin bridge wasn't connected.
@@ -1054,10 +1051,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					// ConsoleMonitor is gone in WS-only local mode — both fields below
 					// (monitorWorkerCount, consoleMonitor) report static zero/null so the
 					// status-shape stays stable for any consumer that parses it.
-					let currentUrl = this.getCurrentFileUrl();
+					const currentUrl = this.getCurrentFileUrl();
 
 					// Determine active transport
-					let activeTransport: string = "none";
+					let activeTransport = "none";
 					if (wsConnected) {
 						activeTransport = "websocket";
 					}
@@ -1280,8 +1277,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					// Clear cached desktop connector to force fresh detection
 					this.desktopConnector = null;
 
-					let transport: string = "none";
-					let currentUrl: string | null = null;
+					let transport = "none";
+					const currentUrl: string | null = null;
 					let fileName: string | null = null;
 
 					// figma_reconnect is informational in WebSocket-only mode — the
@@ -1402,7 +1399,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						};
 					}
 
-					let result: Record<string, any> = {
+					const result: Record<string, any> = {
 						selection: selection.nodes,
 						count: selection.count,
 						page: selection.page,
@@ -1794,7 +1791,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
 
 					// Check cache first
-					let cacheEntry = cache.get(fileKey);
+					const cacheEntry = cache.get(fileKey);
 					if (cacheEntry && !forceRefresh) {
 						const categories = getCategories(cacheEntry.manifest);
 						const tokenSummary = getTokenSummary(cacheEntry.manifest);
@@ -3350,7 +3347,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			// If the preferred port is taken (e.g., Claude Desktop Chat tab already bound it),
 			// try subsequent ports in the range (9223-9232) so multiple instances can coexist.
 			const wsHost = process.env.FIGMA_WS_HOST || 'localhost';
-			this.wsPreferredPort = parseInt(process.env.FIGMA_WS_PORT || String(DEFAULT_WS_PORT), 10);
+			this.wsPreferredPort = Number.parseInt(process.env.FIGMA_WS_PORT || String(DEFAULT_WS_PORT), 10);
 
 			// Clean up stale/orphaned MCP server instances before trying to bind.
 			// Phase 1: Remove stale port files and terminate zombie processes that have port files

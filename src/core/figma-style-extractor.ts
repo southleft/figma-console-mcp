@@ -132,14 +132,14 @@ export class FigmaStyleExtractor {
   /**
    * Process a single node and extract style information
    */
-  private processNode(node: FigmaNode, depth: number = 0): void {
+  private processNode(node: FigmaNode, depth = 0): void {
     if (!node || depth > 10) return; // Limit depth to prevent infinite recursion
 
     // Extract colors from fills
     if (node.fills && Array.isArray(node.fills)) {
       node.fills.forEach(fill => {
         if (fill.type === 'SOLID' && fill.color && fill.visible !== false) {
-          this.extractColor(fill.color, fill.opacity, node);
+          this.extractColor(fill.color, node, fill.opacity);
         }
       });
     }
@@ -148,7 +148,7 @@ export class FigmaStyleExtractor {
     if (node.strokes && Array.isArray(node.strokes)) {
       node.strokes.forEach(stroke => {
         if (stroke.type === 'SOLID' && stroke.color && stroke.visible !== false) {
-          this.extractColor(stroke.color, stroke.opacity, node, 'stroke');
+          this.extractColor(stroke.color, node, stroke.opacity, 'stroke');
         }
       });
     }
@@ -191,7 +191,7 @@ export class FigmaStyleExtractor {
   /**
    * Extract color variable
    */
-  private extractColor(color: FigmaColor, opacity: number = 1, node: FigmaNode, type: string = 'fill'): void {
+  private extractColor(color: FigmaColor, node: FigmaNode, opacity = 1, type = 'fill'): void {
     const r = Math.round(color.r * 255);
     const g = Math.round(color.g * 255);
     const b = Math.round(color.b * 255);

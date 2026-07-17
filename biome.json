@@ -9,7 +9,7 @@
 		"enabled": true
 	},
 	"files": {
-		"includes": ["!worker-configuration.d.ts", "src/**/*"]
+		"includes": ["src/**/*", "!worker-configuration.d.ts"]
 	},
 	"formatter": {
 		"enabled": true,
@@ -40,7 +40,7 @@
 			}
 		}
 	},
-	"root": false,
+	"root": true,
 	"vcs": {
 		"clientKind": "git",
 		"enabled": true,

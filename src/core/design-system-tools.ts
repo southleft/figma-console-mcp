@@ -178,8 +178,16 @@ export function extractVisualSpec(node: any): VisualSpec | undefined {
 				if (s.color) stroke.color = rgbaToHex(s.color);
 				return stroke;
 			});
-		if (node.strokeWeight !== undefined) spec.strokes!.forEach((s: any) => s.weight = node.strokeWeight);
-		if (node.strokeAlign) spec.strokes!.forEach((s: any) => s.align = node.strokeAlign);
+		if (node.strokeWeight !== undefined) {
+			spec.strokes!.forEach((s: any) => {
+				s.weight = node.strokeWeight;
+			});
+		}
+		if (node.strokeAlign) {
+			spec.strokes!.forEach((s: any) => {
+				s.align = node.strokeAlign;
+			});
+		}
 		if (spec.strokes!.length > 0) hasData = true;
 	}
 

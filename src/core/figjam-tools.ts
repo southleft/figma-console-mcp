@@ -389,7 +389,7 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 
 	server.tool(
 		"figjam_create_code_block",
-		`Create a code block on a FigJam board. Use for sharing code snippets, config examples, or technical documentation in collaborative boards.`,
+		"Create a code block on a FigJam board. Use for sharing code snippets, config examples, or technical documentation in collaborative boards.",
 		{
 			code: z.string().max(MAX_CODE_LENGTH).describe("The code content"),
 			language: z
@@ -437,7 +437,7 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 
 	server.tool(
 		"figjam_auto_arrange",
-		`Arrange nodes on a FigJam board in a grid, horizontal row, or vertical column layout. Use after batch-creating elements to organize them neatly.`,
+		"Arrange nodes on a FigJam board in a grid, horizontal row, or vertical column layout. Use after batch-creating elements to organize them neatly.",
 		{
 			nodeIds: z
 				.array(z.string())

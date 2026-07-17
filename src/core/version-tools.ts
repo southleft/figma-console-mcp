@@ -623,7 +623,8 @@ export function registerVersionTools(
 				for (const entry of bufferedMetadata) {
 					const target = scopedById.get(entry.node_id);
 					if (target) {
-						(target.metadata_changes ??= []).push({
+						target.metadata_changes ??= [];
+						target.metadata_changes.push({
 							field: entry.field,
 							new_value: entry.new_value,
 							timestamp: entry.timestamp,
@@ -980,10 +981,10 @@ export function registerVersionTools(
 					? await findVersionAuthorMetadata(api, result.fileKey, idsToLookup)
 					: new Map<string, VersionAuthorMeta | null>();
 
-				let fromMeta: VersionAuthorMeta | null = isCurrentSentinel(from_version)
+				const fromMeta: VersionAuthorMeta | null = isCurrentSentinel(from_version)
 					? buildHeadMeta(result.fromFile)
 					: authorMap.get(from_version) ?? null;
-				let toMeta: VersionAuthorMeta | null = isCurrentSentinel(to_version)
+				const toMeta: VersionAuthorMeta | null = isCurrentSentinel(to_version)
 					? buildHeadMeta(result.toFile)
 					: authorMap.get(to_version) ?? null;
 

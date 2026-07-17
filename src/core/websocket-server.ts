@@ -15,7 +15,7 @@
 
 import { WebSocketServer as WSServer, WebSocket } from 'ws';
 import { EventEmitter } from 'events';
-import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'http';
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'http';
 import type { Server as HttpServer } from 'http';
 import { readFileSync } from 'fs';
 import { join } from 'path';

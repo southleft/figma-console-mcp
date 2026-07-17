@@ -34,6 +34,6 @@ export function normalizeColor(color: string): string {
 }
 
 /** Compare numeric values with a tolerance */
-export function numericClose(a: number, b: number, tolerance: number = 1): boolean {
+export function numericClose(a: number, b: number, tolerance = 1): boolean {
 	return Math.abs(a - b) <= tolerance;
 }

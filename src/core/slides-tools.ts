@@ -76,7 +76,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_list_slides",
-		`List all slides in the current Figma Slides presentation with their IDs, names, grid positions, and skip status. Only works in Slides files.`,
+		"List all slides in the current Figma Slides presentation with their IDs, names, grid positions, and skip status. Only works in Slides files.",
 		{},
 		async () => {
 			try {
@@ -115,7 +115,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_get_slide_content",
-		`Get the content tree of a specific slide including all text, shapes, and frames. Returns node hierarchy with properties.`,
+		"Get the content tree of a specific slide including all text, shapes, and frames. Returns node hierarchy with properties.",
 		{
 			slideId: z
 				.string()
@@ -151,7 +151,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_get_slide_grid",
-		`Get the 2D slide grid layout showing how slides are organized in rows and columns.`,
+		"Get the 2D slide grid layout showing how slides are organized in rows and columns.",
 		{},
 		async () => {
 			try {
@@ -182,7 +182,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_get_slide_transition",
-		`Get the current transition settings for a slide (style, duration, easing curve, timing).`,
+		"Get the current transition settings for a slide (style, duration, easing curve, timing).",
 		{
 			slideId: z
 				.string()
@@ -218,7 +218,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_get_text_styles",
-		`Get all local text styles in the current file. Returns style IDs, names, font info, and sizes. Use these IDs when setting textStyleId on text nodes via figma_execute.`,
+		"Get all local text styles in the current file. Returns style IDs, names, font info, and sizes. Use these IDs when setting textStyleId on text nodes via figma_execute.",
 		{},
 		async () => {
 			try {
@@ -248,7 +248,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_get_focused_slide",
-		`Get the slide currently focused in single-slide view.`,
+		"Get the slide currently focused in single-slide view.",
 		{},
 		async () => {
 			try {
@@ -283,7 +283,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_create_slide",
-		`Create a new blank slide in the Figma Slides presentation. Optionally specify grid position.`,
+		"Create a new blank slide in the Figma Slides presentation. Optionally specify grid position.",
 		{
 			row: z
 				.number()
@@ -363,7 +363,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_duplicate_slide",
-		`Duplicate an existing slide. The clone is placed adjacent to the original.`,
+		"Duplicate an existing slide. The clone is placed adjacent to the original.",
 		{
 			slideId: z
 				.string()
@@ -399,7 +399,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_reorder_slides",
-		`Reorder slides by providing a new 2D array of slide IDs. Each inner array represents a row in the grid. WARNING: This is a destructive operation.`,
+		"Reorder slides by providing a new 2D array of slide IDs. Each inner array represents a row in the grid. WARNING: This is a destructive operation.",
 		{
 			grid: z
 				.array(z.array(z.string().max(50)).max(MAX_GRID_ROW))
@@ -437,7 +437,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_set_slide_transition",
-		`Set the transition effect for a slide (style, duration, easing curve). Triggers on click by default.`,
+		"Set the transition effect for a slide (style, duration, easing curve). Triggers on click by default.",
 		{
 			slideId: z
 				.string()
@@ -493,7 +493,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_skip_slide",
-		`Toggle whether a slide is skipped during presentation mode.`,
+		"Toggle whether a slide is skipped during presentation mode.",
 		{
 			slideId: z
 				.string()
@@ -532,7 +532,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_add_text_to_slide",
-		`Add a new text element to a specific slide. Supports custom fonts, colors, alignment, and text formatting.`,
+		"Add a new text element to a specific slide. Supports custom fonts, colors, alignment, and text formatting.",
 		{
 			slideId: z
 				.string()
@@ -634,7 +634,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_add_shape_to_slide",
-		`Add a rectangle or ellipse shape to a specific slide with optional fill color.`,
+		"Add a rectangle or ellipse shape to a specific slide with optional fill color.",
 		{
 			slideId: z
 				.string()
@@ -699,7 +699,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_set_slide_background",
-		`Set the background color of a slide. Creates or updates a full-slide background rectangle.`,
+		"Set the background color of a slide. Creates or updates a full-slide background rectangle.",
 		{
 			slideId: z
 				.string()
@@ -743,7 +743,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_set_slides_view_mode",
-		`Toggle the Figma Slides viewport between grid view and single-slide view.`,
+		"Toggle the Figma Slides viewport between grid view and single-slide view.",
 		{
 			mode: z
 				.enum(VIEW_MODES)
@@ -778,7 +778,7 @@ export function registerSlidesTools(
 
 	server.tool(
 		"figma_focus_slide",
-		`Navigate to and focus a specific slide in single-slide view.`,
+		"Navigate to and focus a specific slide in single-slide view.",
 		{
 			slideId: z
 				.string()

@@ -28,7 +28,7 @@ export class ConsoleMonitor {
 	private isMonitoring = false;
 	private page: any = null; // @cloudflare/puppeteer Page (this class is cloud-mode-only after Phase 3).
 	private workers: Set<WebWorker> = new Set();
-	private lastUrl: string = ''; // Track the last URL to detect real navigations vs hash changes
+	private lastUrl = ''; // Track the last URL to detect real navigations vs hash changes
 
 	constructor(config: ConsoleConfig) {
 		this.config = config;

@@ -295,7 +295,7 @@ function formatDate(iso: string): string {
 function escapeMd(s: string): string {
 	// Escape characters that would break markdown. Keep light — release notes
 	// should be readable, not over-escaped.
-	return s.replace(/([\\`*_{}\[\]<>])/g, "\\$1");
+	return s.replace(/([\\`*_{}[\]<>])/g, "\\$1");
 }
 
 function stringifyValue(v: any): string {

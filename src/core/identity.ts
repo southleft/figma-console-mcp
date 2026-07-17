@@ -95,7 +95,7 @@ export function wrapServerForIdentity(server: McpServer): void {
 	const target = server as unknown as { tool: AnyTool };
 	const originalTool = target.tool.bind(target);
 
-	target.tool = function (...args: unknown[]): unknown {
+	target.tool = (...args: unknown[]): unknown => {
 		if (args.length === 0 || typeof args[args.length - 1] !== "function") {
 			return originalTool(...args);
 		}

@@ -107,7 +107,7 @@ export function getPortFilePath(port: number): string {
  * Write a port advertisement file so clients can discover this server instance.
  * Includes PID for stale-file detection and lastSeen for heartbeat tracking.
  */
-export function advertisePort(port: number, host: string = 'localhost'): void {
+export function advertisePort(port: number, host = 'localhost'): void {
   const now = new Date().toISOString();
   const data: PortFileData = {
     port,
@@ -230,10 +230,10 @@ function getProcessAgeMs(pid: number): number | null {
     }).trim();
     const m = out.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
     if (!m) return null;
-    const days = parseInt(m[1] || '0', 10);
-    const hours = parseInt(m[2] || '0', 10);
-    const mins = parseInt(m[3], 10);
-    const secs = parseInt(m[4], 10);
+    const days = Number.parseInt(m[1] || '0', 10);
+    const hours = Number.parseInt(m[2] || '0', 10);
+    const mins = Number.parseInt(m[3], 10);
+    const secs = Number.parseInt(m[4], 10);
     return ((((days * 24 + hours) * 60 + mins) * 60) + secs) * 1000;
   } catch {
     return null;

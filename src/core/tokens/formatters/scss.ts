@@ -156,7 +156,7 @@ function renderAllModes(
           const mapName = `${varName(token.path, prefix)}--modes`;
           lines.push(`${mapName}: (`);
           lines.push(entries.join(",\n"));
-          lines.push(`);`);
+          lines.push(");");
         }
       }
     }

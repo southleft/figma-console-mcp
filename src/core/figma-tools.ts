@@ -221,7 +221,7 @@ function adaptiveResponse(
 	// Build AI instruction with suggested actions
 	if (shouldCompress) {
 		if (options.suggestedActions && options.suggestedActions.length > 0) {
-			aiInstruction += `To get more detail:\n`;
+			aiInstruction += "To get more detail:\n";
 			options.suggestedActions.forEach(action => {
 				aiInstruction += `• ${action}\n`;
 			});
@@ -289,11 +289,11 @@ function adaptiveVerbosity(
 		compressionReason = `Response size (${sizeKB.toFixed(0)}KB) exceeds maximum threshold (${RESPONSE_SIZE_THRESHOLDS.MAX_SIZE_KB}KB)`;
 		aiInstruction =
 			`⚠️ RESPONSE AUTO-COMPRESSED: The response was automatically reduced to 'inventory' verbosity (names/IDs only) because the full response would be ${sizeKB.toFixed(0)}KB, which would exhaust Claude Desktop's context window.\n\n` +
-			`To get more detail:\n` +
+			"To get more detail:\n" +
 			`• Use format='filtered' with collection/namePattern/mode filters to narrow the scope\n` +
-			`• Use pagination (page=1, pageSize=20) to retrieve data in smaller chunks\n` +
-			`• Use returnAsLinks=true to get resource_link references instead of full data\n\n` +
-			`Current response contains variable/collection names and IDs only.`;
+			"• Use pagination (page=1, pageSize=20) to retrieve data in smaller chunks\n" +
+			"• Use returnAsLinks=true to get resource_link references instead of full data\n\n" +
+			"Current response contains variable/collection names and IDs only.";
 	} else if (sizeKB > RESPONSE_SIZE_THRESHOLDS.CRITICAL_SIZE_KB) {
 		// Critical: Downgrade to summary if higher was requested
 		if (requestedVerbosity === "full" || requestedVerbosity === "standard") {
@@ -301,12 +301,12 @@ function adaptiveVerbosity(
 			compressionReason = `Response size (${sizeKB.toFixed(0)}KB) exceeds critical threshold (${RESPONSE_SIZE_THRESHOLDS.CRITICAL_SIZE_KB}KB)`;
 			aiInstruction =
 				`⚠️ RESPONSE AUTO-COMPRESSED: The response was automatically reduced to 'summary' verbosity because the ${requestedVerbosity} response would be ${sizeKB.toFixed(0)}KB, risking context window exhaustion.\n\n` +
-				`To get more detail, use filtering options:\n` +
+				"To get more detail, use filtering options:\n" +
 				`• format='filtered' with collection='CollectionName' to focus on specific collections\n` +
 				`• namePattern='color' to filter by variable name\n` +
 				`• mode='Light' to filter by mode\n` +
-				`• pagination with smaller pageSize values\n\n` +
-				`Current response includes variable names, types, and mode information.`;
+				"• pagination with smaller pageSize values\n\n" +
+				"Current response includes variable names, types, and mode information.";
 		}
 	} else if (sizeKB > RESPONSE_SIZE_THRESHOLDS.WARNING_SIZE_KB) {
 		// Warning: Downgrade full to standard
@@ -315,7 +315,7 @@ function adaptiveVerbosity(
 			compressionReason = `Response size (${sizeKB.toFixed(0)}KB) exceeds warning threshold (${RESPONSE_SIZE_THRESHOLDS.WARNING_SIZE_KB}KB)`;
 			aiInstruction =
 				`ℹ️ RESPONSE OPTIMIZED: The response was automatically reduced to 'standard' verbosity because the full response would be ${sizeKB.toFixed(0)}KB.\n\n` +
-				`This response includes essential variable properties. For specific details, use filtering:\n` +
+				"This response includes essential variable properties. For specific details, use filtering:\n" +
 				`• format='filtered' with collection/namePattern/mode filters\n` +
 				`• Request verbosity='full' with specific filters to get complete data for a subset`;
 		}
@@ -571,8 +571,8 @@ function applyFilters(
  */
 function paginateVariables(
 	data: any,
-	page: number = 1,
-	pageSize: number = 50
+	page = 1,
+	pageSize = 50
 ): {
 	data: any;
 	pagination: {
@@ -621,7 +621,7 @@ function evictOldestCacheEntry(
 	if (cache.size >= MAX_CACHE_ENTRIES) {
 		// Find oldest entry
 		let oldestKey: string | null = null;
-		let oldestTime = Infinity;
+		let oldestTime = Number.POSITIVE_INFINITY;
 
 		for (const [key, entry] of cache.entries()) {
 			if (entry.timestamp < oldestTime) {
@@ -859,7 +859,7 @@ export function registerFigmaAPITools(
 		async ({ fileUrl, depth, nodeIds, enrich, verbosity }) => {
 			try {
 				// Initialize API client (required for file data - no Desktop Bridge alternative)
-				let api;
+				let api: FigmaAPI;
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
@@ -1522,7 +1522,7 @@ export function registerFigmaAPITools(
 								linkCount: content.length - 1, // -1 for summary text
 								estimatedSizeKB: (content.length * 150) / 1024,
 							},
-							`Returning variables as resource_links`
+							"Returning variables as resource_links"
 						);
 
 						return { content };
@@ -1694,7 +1694,16 @@ export function registerFigmaAPITools(
 						}
 
 						// Apply pagination if requested
-						let paginationInfo;
+						let paginationInfo:
+							| {
+									page: number;
+									pageSize: number;
+									totalItems: number;
+									totalPages: number;
+									hasNextPage: boolean;
+									hasPrevPage: boolean;
+							  }
+							| undefined;
 						if (pageSize) {
 							const startIdx = (page - 1) * pageSize;
 							const endIdx = startIdx + pageSize;
@@ -1816,7 +1825,7 @@ export function registerFigmaAPITools(
 									variableCount: localFormatted.variables.length,
 									linkCount: content.length - 1,
 								},
-								`Returning REST API variables as resource_links`
+								"Returning REST API variables as resource_links"
 							);
 
 							return { content };
@@ -2127,7 +2136,7 @@ export function registerFigmaAPITools(
 										variableCount: responseData.variables?.length || 0,
 										linkCount: content.length - 1,
 									},
-									`Returning Desktop variables as resource_links`
+									"Returning Desktop variables as resource_links"
 								);
 
 								return { content };
@@ -2180,7 +2189,7 @@ export function registerFigmaAPITools(
 
 						if (!localError && local) {
 							let localFormatted = formatVariables(local);
-							let publishedFormatted = includePublished ? formatVariables(published) : null;
+							const publishedFormatted = includePublished ? formatVariables(published) : null;
 
 							// Apply filters
 							if (format === 'filtered') {
@@ -2242,9 +2251,8 @@ export function registerFigmaAPITools(
 									"Apply filters: collection, namePattern, or mode parameters",
 								],
 							});
-						} else {
-							logger.warn({ error: localError, fileKey }, "REST API fallback also failed (likely non-Enterprise plan)");
 						}
+							logger.warn({ error: localError, fileKey }, "REST API fallback also failed (likely non-Enterprise plan)");
 					} catch (restFallbackError) {
 						const msg = restFallbackError instanceof Error ? restFallbackError.message : String(restFallbackError);
 						logger.warn({ error: msg, fileKey }, "REST API fallback failed");
@@ -2269,13 +2277,13 @@ export function registerFigmaAPITools(
 
 				// No more fallback options available
 				throw new Error(
-					`Cannot retrieve variables. All methods failed.\n\n` +
-					`Tried methods:\n` +
+					"Cannot retrieve variables. All methods failed.\n\n" +
+					"Tried methods:\n" +
 					`${hasToken ? '✗ REST API (failed)\n' : ''}` +
-					`✗ Desktop Bridge (failed or not available)\n` +
-					`\nTo fix:\n` +
-					`1. If you have FIGMA_ACCESS_TOKEN: Check your token permissions\n` +
-					`2. Install and run the Figma Desktop Bridge plugin and re-run this tool`
+					"✗ Desktop Bridge (failed or not available)\n" +
+					"\nTo fix:\n" +
+					"1. If you have FIGMA_ACCESS_TOKEN: Check your token permissions\n" +
+					"2. Install and run the Figma Desktop Bridge plugin and re-run this tool"
 				);
 			} catch (error) {
 				logger.error({ error }, "Failed to get variables");
@@ -2287,7 +2295,7 @@ export function registerFigmaAPITools(
 					try {
 						logger.info({ fileKey }, "Variables API requires Enterprise, falling back to Styles API");
 
-						let api;
+						let api: FigmaAPI;
 						try {
 							api = await getFigmaAPI();
 						} catch (apiError) {
@@ -2556,7 +2564,7 @@ export function registerFigmaAPITools(
 				logger.info({ nodeId }, "Using REST API fallback");
 
 				// Initialize API client (may throw if no token available)
-				let api;
+				let api: FigmaAPI;
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
@@ -2724,7 +2732,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, verbosity, enrich, include_usage, include_exports, export_formats }) => {
 			try {
-				let api;
+				let api: FigmaAPI;
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
@@ -2894,7 +2902,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, nodeId, scale, format }) => {
 			try {
-				let api;
+				let api: FigmaAPI;
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
@@ -3041,7 +3049,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, nodeId, includeImage, codebasePath }) => {
 			try {
-				let api;
+				let api: FigmaAPI;
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
@@ -3296,7 +3304,7 @@ export function registerFigmaAPITools(
 				const dependencies = Array.from(compositionDeps.values());
 
 				// Scan codebase for existing components if path provided
-				let codebaseRegistry: any = undefined;
+				let codebaseRegistry: any ;
 				if (codebasePath) {
 					const existingComponents = scanCodebaseComponents(codebasePath);
 					if (existingComponents.length > 0) {
@@ -3356,7 +3364,7 @@ export function registerFigmaAPITools(
 						count: dependencies.length,
 						components: dependencies,
 						ai_instruction: codebaseRegistry
-							? `MANDATORY: Cross-reference each dependency against codebaseRegistry.crossReference above. Components marked IMPORT_EXISTING must be imported from their listed path. Components marked BUILD_NEW must be created as standalone components (own directory, file, CSS module, stories) before building the parent. Never inline sub-component logic.`
+							? "MANDATORY: Cross-reference each dependency against codebaseRegistry.crossReference above. Components marked IMPORT_EXISTING must be imported from their listed path. Components marked BUILD_NEW must be created as standalone components (own directory, file, CSS module, stories) before building the parent. Never inline sub-component logic."
 							: "MANDATORY BEFORE WRITING ANY CODE: Scan the target codebase's component directory for existing implementations. If a matching component exists, IMPORT it — never recreate with inline markup. Each sub-component that does NOT exist must be built FIRST as standalone (own directory, file, CSS module, stories, barrel export) before building the parent.",
 					} : undefined,
 					metadata: {
@@ -3459,7 +3467,7 @@ export function registerFigmaAPITools(
 		},
 		async ({ fileUrl, depth, nodeIds }) => {
 			try {
-				let api;
+				let api: FigmaAPI;
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {

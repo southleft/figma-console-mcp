@@ -195,13 +195,12 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 					this.sessionId = storedSessionId;
 					logger.info({ sessionId: this.sessionId }, "Loaded persistent session ID from storage");
 					return;
-				} else {
+				}
 					// Store the fixed session ID
 					this.sessionId = FIXED_SESSION_ID;
 					await storage.put('sessionId', this.sessionId);
 					logger.info({ sessionId: this.sessionId }, "Initialized fixed session ID");
 					return;
-				}
 			} catch (e) {
 				logger.warn({ error: e }, "Failed to access Durable Object storage for session ID");
 			}
@@ -1942,7 +1941,7 @@ export default {
 
 				if (!tokenResponse.ok) {
 					const errorText = await tokenResponse.text();
-					let errorData;
+					let errorData: unknown;
 					try {
 						errorData = JSON.parse(errorText);
 					} catch {
@@ -1985,7 +1984,7 @@ export default {
 				// CRITICAL: Also store under the fixed session ID that Durable Objects use
 				// This ensures getFigmaAPI() can retrieve the token regardless of which
 				// session ID was used during OAuth (e.g., mcp-remote's client_id)
-				const fixedTokenKey = `oauth_token:figma-console-mcp-default-session`;
+				const fixedTokenKey = "oauth_token:figma-console-mcp-default-session";
 				if (tokenKey !== fixedTokenKey) {
 					await env.OAUTH_TOKENS.put(fixedTokenKey, JSON.stringify(storedToken), {
 						expirationTtl: expiresIn

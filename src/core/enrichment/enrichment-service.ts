@@ -250,7 +250,7 @@ export class EnrichmentService {
 			const variables = this.extractVariablesMap(data);
 
 			// Walk node tree to find boundVariables and hardcoded values
-			const walkForTokens = (node: any, path: string = "") => {
+			const walkForTokens = (node: any, path = "") => {
 				if (!node) return;
 				const nodePath = path ? `${path} > ${node.name || node.id}` : (node.name || node.id);
 

@@ -122,10 +122,10 @@ export async function resolveFormattedVariables(opts: {
 	} catch (restErr) {
 		const msg = restErr instanceof Error ? restErr.message : String(restErr);
 		throw new Error(
-			`[figma-console-mcp] Could not read variables. The Figma Variables REST API ` +
+			"[figma-console-mcp] Could not read variables. The Figma Variables REST API " +
 				`is unavailable for this file (${msg}) — it requires an Enterprise plan. ` +
-				`Connect the Figma Console MCP Desktop Bridge plugin (or pair it via Cloud Mode) ` +
-				`to read variables on ANY plan, then retry.`,
+				"Connect the Figma Console MCP Desktop Bridge plugin (or pair it via Cloud Mode) " +
+				"to read variables on ANY plan, then retry.",
 		);
 	}
 }
