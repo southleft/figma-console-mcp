@@ -670,9 +670,12 @@ export class FigmaWebSocketServer extends EventEmitter {
     // Most recently connected file becomes active (user just opened the plugin there).
     // On bulk reconnect the order is non-deterministic, but the first user interaction
     // (SELECTION_CHANGE or PAGE_CHANGE) will correct the active file immediately.
-    // Skip when the target is locked, unless nothing is active yet (the locked
-    // file may be reconnecting after a crash — re-adopt it rather than stall).
-    if (!this._targetLocked || !this._activeFileKey) {
+    // Skip when the target is pinned so a new or reconnecting plugin can't steal it.
+    // Invariant: a locked target always has an active file — every path that nulls
+    // _activeFileKey also releases the lock — so there is no "locked but nothing
+    // active" case to re-adopt here, and a crash-reconnect within the grace window
+    // keeps its active key (the grace timer is cleared before it can fire).
+    if (!this._targetLocked) {
       this._activeFileKey = fileKey;
     }
 

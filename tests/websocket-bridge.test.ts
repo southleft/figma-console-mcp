@@ -406,6 +406,46 @@ describe('FigmaWebSocketServer', () => {
       server.unlockTarget();
       expect(server.isTargetLocked()).toBe(false);
     });
+
+    test('locked file disconnecting releases the lock and falls back', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const a = await connectClient(server, TEST_PORT, fileA);
+      const b = await connectClient(server, TEST_PORT, fileB);
+      clients.push(a, b);
+
+      expect(server.setActiveFile('file-a', true)).toBe(true);
+      expect(server.isTargetLocked()).toBe(true);
+
+      // Pinned file A drops. After the grace period the lock must release and
+      // the active target must fall back to the still-connected file B, rather
+      // than stranding every command against the dead connection.
+      const disconnected = new Promise<void>((r) => server.once('fileDisconnected', () => r()));
+      await closeClient(a);
+      await disconnected;
+
+      expect(server.isTargetLocked()).toBe(false);
+      expect(server.getActiveFileKey()).toBe('file-b');
+    }, 10000);
+
+    test('locked file reconnecting within grace keeps the pin', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const a = await connectClient(server, TEST_PORT, fileA);
+      clients.push(a);
+
+      expect(server.setActiveFile('file-a', true)).toBe(true);
+      expect(server.isTargetLocked()).toBe(true);
+
+      // Drop and immediately reconnect the same file, well within the 5s grace
+      // window. The pin (and active target) must survive the blip.
+      await closeClient(a);
+      const a2 = await connectClient(server, TEST_PORT, fileA);
+      clients.push(a2);
+
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.isTargetLocked()).toBe(true);
+    }, 10000);
   });
 });
 

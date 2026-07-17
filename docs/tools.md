@@ -114,11 +114,14 @@ Switch the active Figma file target (Local Mode) or navigate the cloud headless 
 **Usage:**
 ```javascript
 figma_navigate({
-  url: 'https://www.figma.com/design/abc123/My-Design?node-id=1-2'
+  url: 'https://www.figma.com/design/abc123/My-Design?node-id=1-2',
+  lock: true  // optional — pin this file as the target (Local Mode)
 })
 ```
 
 **Local Mode:** Switches the active file among files that already have the Desktop Bridge plugin running. Does NOT launch a browser or open files — open the target file in Figma Desktop and run the Desktop Bridge plugin in it first.
+
+**`lock` (optional, Local Mode):** Pass `lock: true` to pin the target file. Once pinned, new plugin connections, reconnects, and your own selection/page changes in *other* files will not move the command target — so an AI agent can work in one file while you work in another without writes routing to the wrong file. The pin auto-releases when the pinned file's plugin disconnects or navigates to a different file; switching to another file (or passing `lock: false`) also releases it. Use `figma_list_open_files` to check the current `targetLocked` state before a write batch.
 
 **Remote/Cloud Mode:** Navigates the Cloudflare-hosted headless browser to the URL and starts monitoring.
 
@@ -126,6 +129,7 @@ figma_navigate({
 - Navigation status
 - Current URL
 - Connection or monitoring status
+- `locked` — whether the target is now pinned (Local Mode)
 
 ---
 
