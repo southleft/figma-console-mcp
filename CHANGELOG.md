@@ -5,6 +5,22 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.0] - 2026-07-16
+
+### Added
+
+- **Target lock for multi-file parallel work** — `figma_navigate` gains an optional `lock: true` flag that pins the active file as the command target. This makes it safe to have an AI agent working in one Figma file while you work in another: once pinned, new plugin connections, reconnects, and your own selection/page changes in *other* files can no longer move the target, so writes can't silently land in the wrong file.
+  - The pin auto-releases when it's no longer valid: if the pinned file's plugin disconnects, or if that plugin navigates to a different file. Switching the target to another file (or passing `lock: false`) also releases it.
+  - `figma_list_open_files` now reports a `targetLocked` flag so an agent can verify the pin before a write batch (a lightweight pre-write guard).
+  - New server API on `FigmaWebSocketServer`: `setActiveFile(fileKey, lock?)`, `lockTarget()`, `unlockTarget()`, `isTargetLocked()`.
+
+### Changed
+
+- The active-file target still follows the most-recently-connected/interacted file by default (unchanged behavior) — the lock is strictly opt-in. Without it, nothing about routing changes from v1.35.0.
+
+### Fixed
+
+
 ## [1.35.0] - 2026-07-09
 
 ### Added
@@ -1125,6 +1141,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.36.0]: https://github.com/southleft/figma-console-mcp/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/southleft/figma-console-mcp/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/southleft/figma-console-mcp/compare/v1.33.2...v1.34.0
 [1.33.2]: https://github.com/southleft/figma-console-mcp/compare/v1.33.1...v1.33.2

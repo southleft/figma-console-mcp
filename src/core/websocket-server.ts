@@ -178,6 +178,14 @@ export class FigmaWebSocketServer extends EventEmitter {
   private _pendingClients: Map<WebSocket, ReturnType<typeof setTimeout>> = new Map();
   /** The fileKey of the currently active (targeted) file */
   private _activeFileKey: string | null = null;
+  /**
+   * When true, the active file is pinned: new connections, reconnects, and
+   * user interaction (selection/page changes) will NOT move the active target.
+   * Lets the agent work in one file while the user works in another without
+   * commands silently routing to the wrong file. Cleared if the locked file
+   * disconnects.
+   */
+  private _targetLocked = false;
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private requestIdCounter = 0;
   private options: WebSocketServerOptions;
@@ -498,7 +506,7 @@ export class FigmaWebSocketServer extends EventEmitter {
         if (found) {
           found.client.selection = message.data as SelectionInfo;
           found.client.lastActivity = Date.now();
-          this._activeFileKey = found.fileKey;
+          if (!this._targetLocked) this._activeFileKey = found.fileKey;
         }
         this.emit('selectionChange', { fileKey: found?.fileKey ?? null, ...message.data });
       }
@@ -510,7 +518,7 @@ export class FigmaWebSocketServer extends EventEmitter {
           found.client.fileInfo.currentPage = message.data.pageName;
           found.client.fileInfo.currentPageId = message.data.pageId || null;
           found.client.lastActivity = Date.now();
-          this._activeFileKey = found.fileKey;
+          if (!this._targetLocked) this._activeFileKey = found.fileKey;
         }
         this.emit('pageChange', { fileKey: found?.fileKey ?? null, ...message.data });
       }
@@ -570,6 +578,9 @@ export class FigmaWebSocketServer extends EventEmitter {
       this.clients.delete(previousEntry.fileKey);
       if (this._activeFileKey === previousEntry.fileKey) {
         this._activeFileKey = null;
+        // The pinned plugin navigated to a different file — the old pin is
+        // meaningless, so release it rather than silently re-pinning the new file.
+        this._targetLocked = false;
       }
       // In-flight commands to the old file can never receive a response now —
       // reject them immediately instead of leaving them to hang until timeout
@@ -659,7 +670,14 @@ export class FigmaWebSocketServer extends EventEmitter {
     // Most recently connected file becomes active (user just opened the plugin there).
     // On bulk reconnect the order is non-deterministic, but the first user interaction
     // (SELECTION_CHANGE or PAGE_CHANGE) will correct the active file immediately.
-    this._activeFileKey = fileKey;
+    // Skip when the target is pinned so a new or reconnecting plugin can't steal it.
+    // Invariant: a locked target always has an active file — every path that nulls
+    // _activeFileKey also releases the lock — so there is no "locked but nothing
+    // active" case to re-adopt here, and a crash-reconnect within the grace window
+    // keeps its active key (the grace timer is cleared before it can fire).
+    if (!this._targetLocked) {
+      this._activeFileKey = fileKey;
+    }
 
     logger.info(
       {
@@ -714,9 +732,15 @@ export class FigmaWebSocketServer extends EventEmitter {
         this.clients.delete(fileKey);
         this.rejectPendingRequestsForFile(fileKey, 'WebSocket client disconnected');
 
-        // If active file disconnected, switch to another connected file
+        // If active file disconnected, switch to another connected file.
+        // Release any lock — the pinned file is gone, so honoring the lock
+        // would strand every command against a dead connection.
         if (this._activeFileKey === fileKey) {
           this._activeFileKey = null;
+          if (this._targetLocked) {
+            this._targetLocked = false;
+            logger.info({ fileKey }, 'Target lock released — locked file disconnected');
+          }
           for (const [fk, c] of this.clients) {
             if (c.ws.readyState === WebSocket.OPEN) {
               this._activeFileKey = fk;
@@ -1046,13 +1070,19 @@ export class FigmaWebSocketServer extends EventEmitter {
 
   /**
    * Set the active file by fileKey. Returns true if the file is connected.
+   *
+   * Pass `lock: true` to pin the target so subsequent connections, reconnects,
+   * and user interaction won't move it. Any explicit switch resets the lock to
+   * the value passed here (default: unlocked), so switching without `lock`
+   * releases a prior lock.
    */
-  setActiveFile(fileKey: string): boolean {
+  setActiveFile(fileKey: string, lock = false): boolean {
     const client = this.clients.get(fileKey);
     if (client && client.ws.readyState === WebSocket.OPEN) {
       this._activeFileKey = fileKey;
-      logger.info({ fileKey, fileName: client.fileInfo.fileName }, 'Active file switched');
-      this.emit('activeFileChanged', { fileKey, fileName: client.fileInfo.fileName });
+      this._targetLocked = lock;
+      logger.info({ fileKey, fileName: client.fileInfo.fileName, locked: lock }, 'Active file switched');
+      this.emit('activeFileChanged', { fileKey, fileName: client.fileInfo.fileName, locked: lock });
       return true;
     }
     return false;
@@ -1063,6 +1093,28 @@ export class FigmaWebSocketServer extends EventEmitter {
    */
   getActiveFileKey(): string | null {
     return this._activeFileKey;
+  }
+
+  /**
+   * Pin the current active file so connections, reconnects, and user
+   * interaction won't move the target. Returns false if no file is active.
+   */
+  lockTarget(): boolean {
+    if (!this._activeFileKey) return false;
+    this._targetLocked = true;
+    logger.info({ fileKey: this._activeFileKey }, 'Target locked');
+    return true;
+  }
+
+  /** Release the target lock; the active file resumes following user activity. */
+  unlockTarget(): void {
+    this._targetLocked = false;
+    logger.info({ fileKey: this._activeFileKey }, 'Target unlocked');
+  }
+
+  /** Whether the active file is currently pinned. */
+  isTargetLocked(): boolean {
+    return this._targetLocked;
   }
 
   /**
@@ -1137,6 +1189,7 @@ export class FigmaWebSocketServer extends EventEmitter {
     }
     this.clients.clear();
     this._activeFileKey = null;
+    this._targetLocked = false;
 
     // Close WS server first (handles WebSocket connections)
     if (this.wss) {

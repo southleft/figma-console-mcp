@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.35.0 — Figma Slots Support:** Create, inspect, populate, and reset Figma Slots (GA at Config 2026) programmatically. `figma_create_slot` adds slots to components — variants included — with the linked SLOT property created automatically; `figma_append_to_slot` populates instance slots with cloned or newly created content (the path Figma requires — `setProperties` rejects slot values by design); plus `figma_get_slots`, `figma_reset_slot`, and `figma_add_slot_property`. Live-validated against the GA Plugin API. Closes [#29](https://github.com/southleft/figma-console-mcp/issues/29), based on community PR [#77](https://github.com/southleft/figma-console-mcp/pull/77). **Plugin re-import required** (`code.js` + `ui.html` changed). [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1350---2026-07-09)
+**New in v1.36.0 — Target Lock for Parallel Work:** `figma_navigate` now takes a `lock: true` flag that pins the active file, so an AI agent can keep working in one Figma file while you work in another without commands routing to the wrong file. New connections, reconnects, and your own selection/page changes in other files no longer move the target; the pin auto-releases if that file disconnects or navigates away. `figma_list_open_files` reports a `targetLocked` flag for a pre-write guard. Server-only release — **no plugin re-import needed**. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1360---2026-07-16)
 </Note>
 
 # Your Design System as an API

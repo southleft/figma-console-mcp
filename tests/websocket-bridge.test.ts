@@ -320,6 +320,133 @@ describe('FigmaWebSocketServer', () => {
       expect(message.data.variables).toEqual([]);
     });
   });
+
+  describe('target lock', () => {
+    const fileA = { fileKey: 'file-a', fileName: 'File A', currentPage: 'Page 1' };
+    const fileB = { fileKey: 'file-b', fileName: 'File B', currentPage: 'Page 1' };
+
+    test('unlocked target follows selection changes (baseline)', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const a = await connectClient(server, TEST_PORT, fileA);
+      const b = await connectClient(server, TEST_PORT, fileB);
+      clients.push(a, b);
+
+      // Pin nothing — switch active to A explicitly without lock.
+      expect(server.setActiveFile('file-a')).toBe(true);
+      expect(server.isTargetLocked()).toBe(false);
+
+      // User interacts in B → active should follow to B.
+      const changed = new Promise((r) => server.once('selectionChange', r));
+      b.send(JSON.stringify({ type: 'SELECTION_CHANGE', data: { count: 1 } }));
+      await changed;
+      expect(server.getActiveFileKey()).toBe('file-b');
+    });
+
+    test('locked target ignores selection changes in other files', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const a = await connectClient(server, TEST_PORT, fileA);
+      const b = await connectClient(server, TEST_PORT, fileB);
+      clients.push(a, b);
+
+      // Pin the target to A.
+      expect(server.setActiveFile('file-a', true)).toBe(true);
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.isTargetLocked()).toBe(true);
+
+      // User interacts in B → active must stay on the pinned file A.
+      const changed = new Promise((r) => server.once('selectionChange', r));
+      b.send(JSON.stringify({ type: 'SELECTION_CHANGE', data: { count: 1 } }));
+      await changed;
+      expect(server.getActiveFileKey()).toBe('file-a');
+    });
+
+    test('locked target ignores new plugin connections', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const a = await connectClient(server, TEST_PORT, fileA);
+      clients.push(a);
+      expect(server.setActiveFile('file-a', true)).toBe(true);
+
+      // A second file connects — normally it would steal the active target.
+      const b = await connectClient(server, TEST_PORT, fileB);
+      clients.push(b);
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.isTargetLocked()).toBe(true);
+    });
+
+    test('switching files without lock releases the pin', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const a = await connectClient(server, TEST_PORT, fileA);
+      const b = await connectClient(server, TEST_PORT, fileB);
+      clients.push(a, b);
+
+      expect(server.setActiveFile('file-a', true)).toBe(true);
+      expect(server.isTargetLocked()).toBe(true);
+
+      // Explicit switch without lock releases the pin.
+      expect(server.setActiveFile('file-b')).toBe(true);
+      expect(server.getActiveFileKey()).toBe('file-b');
+      expect(server.isTargetLocked()).toBe(false);
+    });
+
+    test('lockTarget/unlockTarget toggle the pin', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      // No active file → cannot lock.
+      expect(server.lockTarget()).toBe(false);
+
+      const a = await connectClient(server, TEST_PORT, fileA);
+      clients.push(a);
+      expect(server.lockTarget()).toBe(true);
+      expect(server.isTargetLocked()).toBe(true);
+      server.unlockTarget();
+      expect(server.isTargetLocked()).toBe(false);
+    });
+
+    test('locked file disconnecting releases the lock and falls back', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const a = await connectClient(server, TEST_PORT, fileA);
+      const b = await connectClient(server, TEST_PORT, fileB);
+      clients.push(a, b);
+
+      expect(server.setActiveFile('file-a', true)).toBe(true);
+      expect(server.isTargetLocked()).toBe(true);
+
+      // Pinned file A drops. After the grace period the lock must release and
+      // the active target must fall back to the still-connected file B, rather
+      // than stranding every command against the dead connection.
+      const disconnected = new Promise<void>((r) => server.once('fileDisconnected', () => r()));
+      await closeClient(a);
+      await disconnected;
+
+      expect(server.isTargetLocked()).toBe(false);
+      expect(server.getActiveFileKey()).toBe('file-b');
+    }, 10000);
+
+    test('locked file reconnecting within grace keeps the pin', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+      const a = await connectClient(server, TEST_PORT, fileA);
+      clients.push(a);
+
+      expect(server.setActiveFile('file-a', true)).toBe(true);
+      expect(server.isTargetLocked()).toBe(true);
+
+      // Drop and immediately reconnect the same file, well within the 5s grace
+      // window. The pin (and active target) must survive the blip.
+      await closeClient(a);
+      const a2 = await connectClient(server, TEST_PORT, fileA);
+      clients.push(a2);
+
+      expect(server.getActiveFileKey()).toBe('file-a');
+      expect(server.isTargetLocked()).toBe(true);
+    }, 10000);
+  });
 });
 
 // ============================================================================
