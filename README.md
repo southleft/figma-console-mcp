@@ -892,6 +892,7 @@ MIT - See [LICENSE](LICENSE) file for details.
 ## 🔗 Links
 
 - 📚 **[Documentation Site](https://docs.figma-console-mcp.southleft.com)** — Complete guides, tutorials, and API reference
+- ✍️ [Designer setup walkthrough](https://amplifai.design/setup-guide) — community tutorial: full beginner setup for designers (Claude Code + official Figma MCP + Figma Console MCP + Desktop Bridge), ending with a first design-to-code build
 - 📖 [Local Docs](docs/) — Documentation source files
 - 🐛 [Report Issues](https://github.com/southleft/figma-console-mcp/issues)
 - 💬 [Discussions](https://github.com/southleft/figma-console-mcp/discussions)
