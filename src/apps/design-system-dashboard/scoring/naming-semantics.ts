@@ -111,7 +111,35 @@ function containsVisualColorWord(name: string): boolean {
  * visual names (color.blue.500).
  */
 function scoreVariableNaming(data: DesignSystemRawData): Finding {
-	const colorVars = data.variables.filter((v) => v.resolvedType === "COLOR");
+	// Only judge tokens OUTSIDE the primitive tier: primitives are SUPPOSED to
+	// describe appearance (color/blue/500, color/neutral/black — they're the
+	// palette), and the tooltip's own contract ("semantic names survive theme
+	// changes") only applies to the tokens a theme swap re-points. The
+	// primitive tier is detected the same way the alias-usage check detects
+	// it: the collection contributing the most raw (non-alias) values.
+	const rawByCollection = new Map<string, number>();
+	for (const v of data.variables) {
+		for (const value of Object.values(v.valuesByMode ?? {})) {
+			const val = value as Record<string, unknown> | null;
+			if (val?.type !== "VARIABLE_ALIAS") {
+				const key = v.variableCollectionId ?? "?";
+				rawByCollection.set(key, (rawByCollection.get(key) ?? 0) + 1);
+			}
+		}
+	}
+	let primitiveCollectionId: string | null = null;
+	let maxRaw = -1;
+	for (const [key, count] of rawByCollection) {
+		if (count > maxRaw) {
+			maxRaw = count;
+			primitiveCollectionId = key;
+		}
+	}
+	const colorVars = data.variables.filter(
+		(v) =>
+			v.resolvedType === "COLOR" &&
+			(v.variableCollectionId ?? "?") !== primitiveCollectionId,
+	);
 
 	if (colorVars.length === 0) {
 		return {
