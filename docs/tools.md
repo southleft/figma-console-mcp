@@ -7,7 +7,7 @@ description: "Complete API reference for all 107 MCP tools, including parameters
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **112 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **101 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **113 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **101 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -31,6 +31,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_get_file_data` | File structure with verbosity control | All |
 | | `figma_get_file_for_plugin` | File data optimized for plugins | All |
 | | `figma_get_design_system_kit` | **Full design system in one call** (tokens, components, styles, visual specs) | All |
+| | `figma_audit_design_system_report` | **Scored six-category health audit** with per-finding remediation, chunked drill-down, live-first data | Local |
 | | `figma_get_design_system_summary` | Overview of design system | Local / Cloud |
 | | `figma_get_token_values` | Get variable values by mode | Local / Cloud |
 | **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local / Cloud |
@@ -1903,6 +1904,34 @@ Extract your entire design system — tokens, components, and styles — in a si
 Returns component visual specs (exact colors, padding, typography, layout), rendered screenshots, token values per mode (light/dark), and resolved style values. Ideal for AI code generation — the `visualSpec` data provides pixel-accurate reproduction data.
 
 **Available in both Local and Remote modes.**
+
+### `figma_audit_design_system_report`
+
+Run a deterministic, Lighthouse-style health audit of the current design system and get the scored report back as data — no UI, no MCP Apps support, no `ENABLE_MCP_APPS` flag required. Same scoring engine as the Design System Dashboard app: **Naming & Semantics, Token Architecture, Component Metadata, Accessibility, Consistency, Coverage** — each 0–100, weighted into an overall score.
+
+```javascript
+// Bounded readable summary (default)
+figma_audit_design_system_report({})
+
+// Chunked drill-down: full findings for ONE category
+figma_audit_design_system_report({ category: "accessibility" })
+
+// Complete scored JSON (examples/locations clamped)
+figma_audit_design_system_report({ format: "full" })
+
+// Re-crawl after editing the file (results cache for ~5 minutes)
+figma_audit_design_system_report({ forceRefresh: true })
+```
+
+**Built for heavy files and small context windows:**
+- Component data is fetched **live-first** through the Desktop Bridge — one page per plugin roundtrip (30s cap each, failures isolated per page) — with the REST published-library endpoints as fallback. The chosen source is disclosed in the report (`bridge-live` / `rest-published` / `none`) because a published snapshot can be stale: scores from different sources are not comparable.
+- The bridge crawl is **fileKey-verified**: if the plugin is connected to a different file than requested, the audit refuses the data and falls back to REST rather than silently scoring the wrong file.
+- Raw audit data caches for 5 minutes, so a summary call plus per-category drill-downs cost **one crawl**.
+- The default summary output stays bounded regardless of file size; use `category` for detail instead of `format: "full"` when working interactively.
+
+**Every finding ends with a remediation verdict** — whether this MCP can fix it (`design`: auto-fixable via write tools like `figma_rename_variable` / `figma_set_description` / `figma_rename_mode`), can fix it after a design decision (`design-assisted`: e.g. contrast hues, alias tiering), or the work needs a human (`manual`: e.g. missing core components). Reports name the exact tools, so the natural next step is asking your agent to apply the fixes.
+
+**Local Mode only** (requires the Desktop Bridge for live data; REST fallback works with a Figma token).
 
 **Usage:**
 ```javascript

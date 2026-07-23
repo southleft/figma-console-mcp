@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, **debugging**, and **bidirectional token sync**.
 
-> **🆕 Target Lock for Parallel Work (v1.36.0):** `figma_navigate` now takes a `lock: true` flag that pins the active file — so an AI agent can keep working in one Figma file while you work in another, without commands silently routing to the wrong file. New connections, reconnects, and your own selection/page changes in other files no longer move the target; the pin auto-releases if that file disconnects. `figma_list_open_files` reports a `targetLocked` flag for a pre-write guard. Server-only release — **no plugin re-import needed**. [See what's new →](CHANGELOG.md#1360---2026-07-16)
+> **🆕 Design-System Health Audit for Every Client (v1.37.0):** new `figma_audit_design_system_report` tool runs the Design System Dashboard's deterministic scoring engine — naming, tokens, component metadata, accessibility, consistency, coverage — and returns the scored report as data, so **any** MCP client (Claude Code, headless agents, CI) can audit without MCP Apps support or `ENABLE_MCP_APPS`. Live-first data (fileKey-verified per-page bridge crawl, REST published fallback — the source is disclosed), 5-minute cache, chunked per-category drill-down, and every finding states whether this MCP can auto-fix it. Server-only release — **no plugin re-import needed**. [See what's new →](CHANGELOG.md#1370---2026-07-22)
 
 ## What is this?
 
@@ -24,6 +24,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 - **📌 FigJam boards** - Create stickies, flowcharts, tables, and code blocks on collaborative boards
 - **🎞️ Slides presentations** - Build and manage Figma Slides decks programmatically
 - **♿ Accessibility scanning** - 14 WCAG design checks with conformance level tagging, component scorecards, axe-core code scanning, design-to-code parity
+- **📋 Design-system health audits** - Lighthouse-style scored audit across naming, tokens, component metadata, accessibility, consistency, and coverage — available as a plain tool for any MCP client (with per-finding auto-fix guidance) and as a visual dashboard app
 - **🛡 Cross-MCP identity** - Every tool response carries `_mcp: "figma-console-mcp"` and errors are prefixed `[figma-console-mcp]` so attribution stays unambiguous in agents running multiple Figma MCPs
 - **☁️ Cloud Write Relay** - Web AI clients (Claude.ai, v0, Replit) can design in Figma via cloud pairing
 - **🔄 Four ways to connect** - Remote SSE, Cloud Mode, NPX, or Local Git
@@ -55,9 +56,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **112** | **101** | **9** |
+| **Total tools available** | **113** | **101** | **9** |
 
-> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (101 tools) from web AI clients without Node.js. NPX/Local Git gives the full 112 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (101 tools) from web AI clients without Node.js. NPX/Local Git gives the full 113 tools with real-time monitoring.
 
 ---
 
@@ -65,7 +66,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 112 tools including design creation, variable management, and component instantiation.
+**What you get:** All 113 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -162,7 +163,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 112 tools as NPX, plus full source code access.
+**What you get:** Same 113 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -308,7 +309,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **112** | **101** | **112** | **9** (read-only) |
+| **Total tools** | **113** | **101** | **113** | **9** (read-only) |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -323,7 +324,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 112 tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 113 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -400,6 +401,7 @@ When you first use design system tools:
 - `figma_get_styles` - Color, text, effect styles
 - `figma_get_file_data` - Full file structure
 - `figma_get_file_for_plugin` - Optimized file data
+- `figma_audit_design_system_report` - **Scored health audit for any MCP client** — six-category report (naming, tokens, metadata, accessibility, consistency, coverage) with per-finding remediation ("can this MCP fix it?"), chunked per-category drill-down, live-first data with disclosed source, 5-minute cache
 
 ### 📚 Shared Library Inspection
 - `figma_get_library_component_by_key` - **Resolve any component key to full properties + variants + visual specs** — without needing the source library file's URL. Works for both COMPONENT_SET and standalone COMPONENT keys. Adaptive compression at >500KB.
@@ -680,7 +682,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 112 tools work through the WebSocket transport
+- All 113 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -763,6 +765,8 @@ A Lighthouse-style health scorecard that audits your design system across six ca
 - Refresh button to re-run the audit without consuming AI context
 - Pure scoring engine with no external dependencies — all analysis runs locally
 
+**No MCP Apps support? Same audit, plain tool:** `figma_audit_design_system_report` runs the identical scoring engine and returns the report as data — summary by default, per-category drill-down via `category`, full JSON via `format: "full"` — with a remediation section stating which findings this MCP can fix (`design`), which need a design decision first (`design-assisted`), and which need human design work (`manual`). Works in every MCP client with no `ENABLE_MCP_APPS` flag; results cache for 5 minutes (`forceRefresh` to re-crawl).
+
 **Enabling MCP Apps:**
 
 MCP Apps are enabled by default in the setup configurations above (via `"ENABLE_MCP_APPS": "true"`). If you set up before v1.10.0 and don't have this in your config, add it to your `env` section:
@@ -819,9 +823,10 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.36.0 (Stable) - Production-ready. Latest: Target lock for multi-file parallel work — `figma_navigate` takes a `lock: true` flag that pins the active file so an AI agent can work in one file while you work in another without commands routing to the wrong file (server-only, no plugin re-import). On top of v1.35.0's Figma Slots write support — create, inspect, populate, and reset Slots (GA at Config 2026) via 5 new tools (`figma_create_slot`, `figma_get_slots`, `figma_append_to_slot`, `figma_reset_slot`, `figma_add_slot_property`), live-validated against the GA Plugin API and based on community PR #77. On top of v1.34.0's Bidirectional Token Sync v2 + DTCG 2025.10 — `figma_import_tokens` applies the complete diff plan (creates missing collections/variables, applies renames, writes real `VARIABLE_ALIAS` references, and deletes only under explicit `replace`), `figma_export_tokens` speaks the DTCG 2025.10 dialect on request (legacy default byte-identical), variable scopes/codeSyntax round-trip via `$extensions`, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and `figma_create_component_set` builds a full variant set from an axes matrix in one call. On top of the v1.33.x line: version-handshake fix (re-import banner only fires when plugin files actually changed), security dependency sweep, and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **112 tools** (Local) / **101 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
+**Current Status:** v1.37.0 (Stable) - Production-ready. Latest: Design-system health audit for every client — `figma_audit_design_system_report` runs the dashboard's deterministic six-category scoring engine and returns the report as data with per-finding remediation, live-first fileKey-verified data (source disclosed), chunked per-category drill-down, and a 5-minute cache (server-only, no plugin re-import). On top of v1.36.0's target lock for multi-file parallel work — — `figma_navigate` takes a `lock: true` flag that pins the active file so an AI agent can work in one file while you work in another without commands routing to the wrong file. On top of v1.35.0's Figma Slots write support — create, inspect, populate, and reset Slots (GA at Config 2026) via 5 new tools (`figma_create_slot`, `figma_get_slots`, `figma_append_to_slot`, `figma_reset_slot`, `figma_add_slot_property`), live-validated against the GA Plugin API and based on community PR #77. On top of v1.34.0's Bidirectional Token Sync v2 + DTCG 2025.10 — `figma_import_tokens` applies the complete diff plan (creates missing collections/variables, applies renames, writes real `VARIABLE_ALIAS` references, and deletes only under explicit `replace`), `figma_export_tokens` speaks the DTCG 2025.10 dialect on request (legacy default byte-identical), variable scopes/codeSyntax round-trip via `$extensions`, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and `figma_create_component_set` builds a full variant set from an axes matrix in one call. On top of the v1.33.x line: version-handshake fix (re-import banner only fires when plugin files actually changed), security dependency sweep, and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **113 tools** (Local) / **101 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
 
 **Recent Releases:**
+- [x] **v1.37.0** - Design-system health audit for every MCP client. New `figma_audit_design_system_report` runs the Design System Dashboard's deterministic scoring engine (naming, token architecture, component metadata, accessibility, consistency, coverage) and returns the scored report as data — no MCP Apps support or `ENABLE_MCP_APPS` needed (the previous registration gated everything, making the audit unreachable outside Claude Desktop). Component data is now live-first: a fileKey-verified per-page bridge crawl (30s/page, failures isolated per page) with REST published-library fallback, and the chosen source is disclosed in the report (`bridge-live` / `rest-published` / `none`) so stale-publish scores can't masquerade as live ones. Output is token-safe by design: bounded summary, per-category chunked drill-down, clamped full JSON, 5-minute raw-data cache. Every finding carries a remediation verdict — auto-fixable by this MCP's write tools, fixable after a design decision, or manual — with the exact tools named. Scoring accuracy pass: variant components no longer poison PascalCase/casing checks, Title Case accepted, component-set names count toward core-component coverage, `color/content/*` recognized in contrast pairing, state synonyms (`active`≈`pressed` etc.), and `.`/`_`-prefixed internals excluded. Server-only — no plugin re-import needed.
 - [x] **v1.36.0** - Target lock for multi-file parallel work. `figma_navigate` gains a `lock: true` flag that pins the active file — new connections, reconnects, and the user's own selection/page changes in other files no longer move the command target, so an agent can safely write to one file while the user works in another. Auto-releases when the pinned file disconnects or navigates away; `figma_list_open_files` reports a `targetLocked` flag for pre-write guards. Server-only — no plugin re-import needed.
 - [x] **v1.35.0** - Figma Slots write support, closing [#29](https://github.com/southleft/figma-console-mcp/issues/29) (the tracker's most-requested feature) via community PR [#77](https://github.com/southleft/figma-console-mcp/pull/77) by @simonesalvucci, updated to the GA API. Five new tools: `figma_create_slot` (slot + auto-linked SLOT property; variants inside component sets supported — the beta restriction was lifted at GA), `figma_get_slots`, `figma_append_to_slot` (clone or create content into instance slots; snaps clones to the slot origin), `figma_reset_slot`, and `figma_add_slot_property` (retrofit an existing frame as a slot). Hardened by live validation: VARIANT `defaultValue` passthrough restored (Figma requires non-empty), destructive-path reorder in the append handler (content validated before `clearExisting` empties anything), relay whitelist fix for `slot` payloads. **Plugin re-import required** (`code.js` + `ui.html` changed).
 - [x] **v1.34.0** - Bidirectional Token Sync v2 + DTCG 2025.10. `figma_import_tokens` now applies the *complete* diff plan: missing collections and variables are created (with modes, inferred/recorded types, and values set in dependency order — aliases in a second pass), token-path renames route to the update phase by round-trip variable ID (no more create+delete pairs that would permanently destroy the original under `replace`), reference values write real `{ type: "VARIABLE_ALIAS", id }` payloads via a four-tier resolver, and deletes are strictly gated behind `strategy: "replace"`. `figma_export_tokens` gains `dtcgDialect: "2025"` (object-form colors from full-precision floats, object dimensions) while the legacy default stays byte-identical; import accepts both dialects unconditionally with dialect-insensitive diff normalization. Variable `scopes` + `codeSyntax` round-trip through `$extensions["figma-console-mcp"]`. `figma_setup_design_tokens` accepts DTCG brace references (`"{color.blue.600}"`) that resolve to real aliases, including forward references. New tool `figma_create_component_set` builds a variant set from an axes matrix (or combines existing components) with `Prop=Value` naming, optional auto-arranged grid, and variant keys in the response — with count-scaled timeouts and rollback on failure. **Plugin re-import required** (`code.js` + `ui.html` changed — the component-set handler and relay). 183 tests across the token/write-tools suites.

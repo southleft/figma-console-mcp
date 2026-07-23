@@ -21,7 +21,7 @@ The short answer: **approach** and **audience**. The Figma MCP is a task-driven 
   <Card title="Figma Console MCP" icon="terminal">
     **Made by Southleft** — A design system management platform. 107 dedicated tools for reading, writing, managing tokens, analyzing parity, and bridging the gap between designers and developers.
 
-    112 tools. Plugin API + REST API. Open source (MIT).
+    113 tools. Plugin API + REST API. Open source (MIT).
   </Card>
 </Columns>
 
