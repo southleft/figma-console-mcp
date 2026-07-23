@@ -5,6 +5,31 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.0] - 2026-07-22
+
+### Added
+
+- **`figma_audit_design_system_report`** — a plain, always-available companion to the Design System Dashboard MCP App. The dashboard's `figma_audit_design_system` tool is only visible to MCP-Apps-capable hosts (e.g. Claude Desktop) and is gated behind `ENABLE_MCP_APPS`; the new report tool runs the **same deterministic scoring engine** and returns the audit as data, so any MCP client (Claude Code, headless agents, CI) can audit a design system with no UI support and no env flag.
+  - **Chunked by design:** the default `summary` output is bounded regardless of file size; per-dimension detail is fetched one category at a time via `category` (naming-semantics | token-architecture | component-metadata | accessibility | consistency | coverage); `format: "full"` clamps per-finding examples (≤5) and locations (≤10).
+  - **Cached by design:** audit raw data is cached for 5 minutes (`forceRefresh` to bypass), so a summary call plus six drill-downs cost one crawl.
+  - **Remediation map:** every finding now reports whether this MCP can fix it — `design` (auto-fixable via write tools), `design-assisted` (needs a design decision first), or `manual` — including the exact tools and approach (`scoring/remediation.ts`). Reports end with a "what this MCP can fix" section.
+
+### Changed
+
+- **Audit component data is now live-first.** The audit fetch prefers a Desktop Bridge crawl (`GET_LOCAL_COMPONENTS` — chunked in the plugin, pages processed in batches of 3 with event-loop yields) over the REST published-library endpoints, which only reflect the last publish. The bridge result is **fileKey-verified**: if the bridge is connected to a different file than requested, the audit refuses the data and falls back to REST rather than silently scoring the wrong file. The chosen source is reported in `dataAvailability.componentsSource` (`bridge-live` | `rest-published` | `none`) and surfaced as a caveat in both the dashboard app text and the report tool whenever scores come from a published snapshot or empty data. This resolves a class of confusing score differences where two people auditing "the same file" scored different data.
+- Scoring engine accuracy fixes (both the dashboard app and the report tool benefit):
+  - Component-naming and casing checks now score the published surface (standalone components + component sets) instead of variant components, whose Figma-mandated `prop=value` names (e.g. `State=Hover`) could never pass and structurally zeroed the check for any variant-based library.
+  - The PascalCase check accepts Title Case with spaces ("Form Field", "Section Header") — same convention, different spelling.
+  - Core-component coverage searches component-set names, so set-based libraries no longer report existing Input/Navigation/etc. as missing.
+  - Color-contrast pairing recognizes the `color/content/*` semantic convention, and the `on-` foreground fragment is anchored to a path segment (no more false matches inside words like "annotation-gray").
+  - State-variant coverage treats synonyms as equivalent: `active`≈`pressed`, `error`≈`danger`≈`invalid`, `selected`≈`checked`, `focus`≈`focused`, `hover`≈`hovered`.
+  - Components and sets prefixed with `.` or `_` (Figma's own unpublished/internal convention, same prefix FigmaLint documents) are excluded from scorable units.
+
+### Fixed
+
+- The design-system audit tooling was unreachable for standard MCP clients: everything was registered inside the `ENABLE_MCP_APPS` block. The plain report tool and its data fetch now register unconditionally; only the visual dashboard app remains gated.
+
+
 ## [1.36.0] - 2026-07-16
 
 ### Added
@@ -1141,6 +1166,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.37.0]: https://github.com/southleft/figma-console-mcp/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/southleft/figma-console-mcp/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/southleft/figma-console-mcp/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/southleft/figma-console-mcp/compare/v1.33.2...v1.34.0

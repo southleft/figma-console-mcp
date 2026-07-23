@@ -113,7 +113,10 @@ function scoreCoreComponentPresence(data: DesignSystemRawData): Finding {
 	const matchExamples: string[] = [];
 
 	for (const category of CORE_COMPONENT_PATTERNS) {
-		const matching = data.components.filter((c) =>
+		// Component sets carry the canonical component names ("Input",
+		// "Navigation") while their variant children are named `prop=value`,
+		// so sets must be searched too or set-based libraries score as missing.
+		const matching = [...data.components, ...data.componentSets].filter((c) =>
 			category.pattern.test(c.name),
 		);
 		if (matching.length > 0) {
