@@ -5,6 +5,22 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.1] - 2026-07-22
+
+### Changed
+
+- **Design-system audit scoring calibration** — measurement corrections so the six-category audit (dashboard app + `figma_audit_design_system_report`) scores what a system's architecture actually earns. Checks previously measured targets that were unreachable for ANY healthy system:
+  - **Alias usage** is now measured over non-primitive-tier values. Primitive tiers — detected by zero aliases, largest raw-value contribution, or tier naming (`primitive`/`core`/`base`/`palette`/`brand`/`foundation`) — are alias *targets*; the old all-values ratio punished systems for having a primitive tier at all, and capped multi-root architectures (e.g. a Brand tier plus a Primitive tier) well below 100 forever.
+  - **Color contrast** resolves alias chains (semantic tokens are usually aliases — skipping them dropped exactly the tokens whose names drive pairing and fell back to noisy scale-vs-scale cross-products), excludes translucent colors (they composite; a 5%-alpha wash is not a 1.0:1 background), and checks only *declared* pairs: `content/on/<family>` and `<family>-strong` text against that family's surfaces, `inverse` ↔ `inverted`, family-colored and plain content against the canvas, and component-scoped tokens by path mirror. Foreground candidates whose names also match the background pattern (e.g. `body/background`) are surfaces, not text.
+  - **Casing consistency** is scored per pool — components and variables legitimately follow different conventions (TitleCase components + kebab token paths) — with ambiguity-aware matching (a single lowercase word is simultaneously valid camelCase/kebab/snake) and numeric scale segments (`100`, `3.5`) skipped.
+  - **Mode naming consistency** now flags the same mode *concept* spelled differently across collections (`Light` vs `light`) instead of demanding identical mode sets — a theme collection's Light/Dark and a density collection's Compact/Comfortable are architecture, not inconsistency.
+  - **Variable naming** judges visual color words (`blue`, `gray`, …) only outside the primitive tier — the palette is *supposed* to describe appearance; the semantic contract ("names survive theme changes") only applies to the tokens a theme re-points.
+
+### Fixed
+
+- `figma_audit_design_system_report`'s `forceRefresh` now bypasses the variables cache as well as the audit cache — previously a stale `variablesCache` entry could survive a forced re-crawl and under-report alias counts until the entry's 5-minute TTL expired.
+
+
 ## [1.37.0] - 2026-07-22
 
 ### Added
@@ -1166,6 +1182,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.37.1]: https://github.com/southleft/figma-console-mcp/compare/v1.37.0...v1.37.1
 [1.37.0]: https://github.com/southleft/figma-console-mcp/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/southleft/figma-console-mcp/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/southleft/figma-console-mcp/compare/v1.34.0...v1.35.0
