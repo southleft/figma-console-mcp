@@ -15,15 +15,18 @@ const MAX_EXAMPLES = 5;
 /** WCAG AA minimum contrast ratio for normal text. */
 const WCAG_AA_RATIO = 4.5;
 
-/** State-related variant values that indicate accessible component design. */
-const STATE_VARIANTS = [
-	"disabled",
-	"error",
-	"focus",
-	"hover",
-	"active",
-	"pressed",
-	"selected",
+/**
+ * State-related variant values that indicate accessible component design.
+ * Each entry is a set of synonyms — CSS `:active` IS the pressed state, so a
+ * library expressing it as either "active" or "pressed" satisfies that state.
+ */
+const STATE_VARIANTS: Array<{ name: string; synonyms: string[] }> = [
+	{ name: "disabled", synonyms: ["disabled"] },
+	{ name: "error", synonyms: ["error", "danger", "invalid"] },
+	{ name: "focus", synonyms: ["focus", "focused"] },
+	{ name: "hover", synonyms: ["hover", "hovered"] },
+	{ name: "active/pressed", synonyms: ["active", "pressed"] },
+	{ name: "selected", synonyms: ["selected", "checked"] },
 ];
 
 /** Semantic color token name patterns that indicate accessibility awareness. */
@@ -137,7 +140,11 @@ function scoreColorContrast(data: DesignSystemRawData): Finding {
 	}
 
 	const bgPattern = /background|bg|surface|canvas|base/i;
-	const fgPattern = /text|foreground|fg|on-|on\.|label|title|body|heading/i;
+	// "content" covers the common `color/content/*` semantic convention; the
+	// bare `on-` fragment is anchored to a path segment so names like
+	// "annotation-gray" don't false-match.
+	const fgPattern =
+		/text|foreground|fg|content|(?:^|\/)on-|on\.|label|title|body|heading/i;
 
 	const backgrounds = colors.filter((c) => bgPattern.test(c.name));
 	const foregrounds = colors.filter((c) => fgPattern.test(c.name));
@@ -234,14 +241,14 @@ function scoreStateVariants(data: DesignSystemRawData): Finding {
 	// Check which state variants exist across all component names
 	const allNames = components.map((c) => c.name.toLowerCase()).join(" ");
 	const foundStates = STATE_VARIANTS.filter((state) =>
-		allNames.includes(state),
+		state.synonyms.some((syn) => allNames.includes(syn)),
 	);
 	const ratio = foundStates.length / STATE_VARIANTS.length;
 	const score = clamp(ratio * 100);
 
 	const missingStates = STATE_VARIANTS.filter(
-		(state) => !allNames.includes(state),
-	);
+		(state) => !state.synonyms.some((syn) => allNames.includes(syn)),
+	).map((state) => state.name);
 
 	return {
 		id: "a11y-state-variants",

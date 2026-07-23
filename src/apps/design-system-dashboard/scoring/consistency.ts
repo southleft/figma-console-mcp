@@ -6,13 +6,16 @@
  * size value consistency, and mode naming consistency.
  */
 
+import { classifyComponents } from "./component-metadata.js";
 import type { CategoryScore, DesignSystemRawData, Finding } from "./types.js";
 import { buildCollectionNameMap, clamp, getSeverity } from "./types.js";
 
 /** Maximum examples to include in a finding. */
 const MAX_EXAMPLES = 5;
 
-const PASCAL_CASE_RE = /^[A-Z][a-zA-Z0-9]*$/;
+// Accepts PascalCase and Title Case with spaces (see naming-semantics.ts) —
+// "Form Field" and "FormField" are the same convention for casing purposes.
+const PASCAL_CASE_RE = /^[A-Z][a-zA-Z0-9]*(?: [A-Z0-9&(][a-zA-Z0-9()]*)*$/;
 const CAMEL_CASE_RE = /^[a-z][a-zA-Z0-9]*$/;
 const KEBAB_CASE_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 const SNAKE_CASE_RE = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
@@ -144,9 +147,12 @@ function detectCasing(segment: string): string {
  * Score casing consistency across component and variable names.
  */
 function scoreCasingConsistency(data: DesignSystemRawData): Finding {
-	// Check component name casing
+	// Check component name casing. Variant components use Figma's `prop=value`
+	// naming and would drown the signal — measure the published surface
+	// (standalone components + component sets) instead.
+	const { scorableUnits } = classifyComponents(data);
 	const componentSegments: string[] = [];
-	for (const comp of data.components) {
+	for (const comp of scorableUnits) {
 		const segments = comp.name.split("/").map((s: string) => s.trim());
 		componentSegments.push(...segments);
 	}

@@ -91,7 +91,16 @@ export function classifyComponents(
 	const standalone: any[] = [];
 	const variants: any[] = [];
 
+	// Components prefixed with "." or "_" are internal/unpublished by Figma's
+	// own convention (they are excluded from library publishing, and FigmaLint
+	// documents the same prefix as its exclusion mechanism). They are not part
+	// of the system's public API surface, so they are not scorable units.
+	const isInternal = (c: any) =>
+		typeof c?.name === "string" &&
+		(c.name.startsWith(".") || c.name.startsWith("_"));
+
 	for (const comp of data.components) {
+		if (isInternal(comp)) continue;
 		if (isComponentInSet(comp, lookup)) {
 			variants.push(comp);
 		} else {
@@ -99,11 +108,13 @@ export function classifyComponents(
 		}
 	}
 
+	const publicSets = data.componentSets.filter((s: any) => !isInternal(s));
+
 	return {
 		standalone,
 		variants,
-		componentSets: data.componentSets,
-		scorableUnits: [...standalone, ...data.componentSets],
+		componentSets: publicSets,
+		scorableUnits: [...standalone, ...publicSets],
 	};
 }
 
