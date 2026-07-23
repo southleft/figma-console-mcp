@@ -6,6 +6,7 @@
  * naming conventions against semantic best practices.
  */
 
+import { classifyComponents } from "./component-metadata.js";
 import type { CategoryScore, DesignSystemRawData, Finding } from "./types.js";
 import { buildCollectionNameMap, clamp, getSeverity } from "./types.js";
 
@@ -78,7 +79,10 @@ const SEMANTIC_VARIANT_VALUES = [
 	"link",
 ];
 
-const PASCAL_CASE_RE = /^[A-Z][a-zA-Z0-9]*$/;
+// Accepts PascalCase ("IconButton") and Title Case with spaces ("Form Field",
+// "Section Header") — both are consistent, discoverable component-naming
+// conventions in Figma; rejecting spaces failed the dominant real-world style.
+const PASCAL_CASE_RE = /^[A-Z][a-zA-Z0-9]*(?: [A-Z0-9&(][a-zA-Z0-9()]*)*$/;
 const BOOLEAN_PREFIX_RE =
 	/^(is|has|can|should|will|did|was|with|show|hide|enable|disable)/i;
 
@@ -157,7 +161,12 @@ function scoreVariableNaming(data: DesignSystemRawData): Finding {
  * Components should use PascalCase and avoid mixed abbreviations.
  */
 function scoreComponentNaming(data: DesignSystemRawData): Finding {
-	const components = data.components;
+	// Variant components are named by Figma's own `prop=value` convention
+	// (e.g. "State=Hover") and can never be PascalCase — judging them here
+	// makes the check structurally fail for any variant-rich library. Score
+	// the published surface instead: standalone components + component sets.
+	const { scorableUnits } = classifyComponents(data);
+	const components = scorableUnits;
 
 	if (components.length === 0) {
 		return {

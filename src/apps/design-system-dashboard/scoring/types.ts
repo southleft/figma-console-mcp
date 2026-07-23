@@ -86,6 +86,13 @@ export interface DataAvailability {
 	components: boolean;
 	styles: boolean;
 	variableError?: string;
+	/**
+	 * Where component/set data came from. "bridge-live" scores the file as it
+	 * currently is; "rest-published" scores the last published library
+	 * snapshot, which may be stale. Scores from the two sources are not
+	 * comparable — surface this in any report.
+	 */
+	componentsSource?: "bridge-live" | "rest-published" | "none";
 }
 
 /** Raw data fetched from Figma tools, passed into the scoring engine. */

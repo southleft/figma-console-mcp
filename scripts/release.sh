@@ -108,10 +108,16 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ── Auto-detect tool counts from source code ────────────
 auto_count_local() {
-  # All unique figma_* and figjam_* tool names in local mode sources (core + local.ts)
-  grep -roh '"fig\(ma\|jam\)_[a-z_]*"' \
-    "$ROOT/src/core/" "$ROOT/src/local.ts" \
-    2>/dev/null | sort -u | wc -l | tr -d ' '
+  # All unique figma_* and figjam_* tool names in local mode sources (core + local.ts),
+  # plus plain (non-app) tools registered inside MCP App modules. Only names
+  # passed to server.tool(...) count — registerAppTool(...) names are app-only
+  # (invisible to standard MCP clients) and must NOT inflate the local count.
+  {
+    grep -roh '"fig\(ma\|jam\)_[a-z_]*"' \
+      "$ROOT/src/core/" "$ROOT/src/local.ts" 2>/dev/null
+    grep -rA1 'server\.tool(' "$ROOT/src/apps/" 2>/dev/null \
+      | grep -oh '"fig\(ma\|jam\)_[a-z_]*"'
+  } | sort -u | wc -l | tr -d ' '
 }
 
 auto_count_remote() {
