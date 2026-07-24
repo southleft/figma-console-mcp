@@ -3376,8 +3376,14 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					let variables: any[] = [];
 					let collections: any[] = [];
 
-					// 1. Check cache first
-					const cacheEntry = this.variablesCache.get(fileKey);
+					// 1. Check cache first — unless the caller forced a refresh.
+					// forceRefresh must bypass BOTH the audit cache and this
+					// variables cache: during v1.37.0 verification, a stale
+					// variablesCache entry survived an audit forceRefresh and
+					// under-reported alias counts.
+					const cacheEntry = forceRefresh
+						? undefined
+						: this.variablesCache.get(fileKey);
 					if (cacheEntry && Date.now() - cacheEntry.timestamp < 5 * 60 * 1000) {
 						const cached = cacheEntry.data;
 						if (Array.isArray(cached.variables)) {

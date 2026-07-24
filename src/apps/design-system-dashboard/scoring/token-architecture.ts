@@ -183,7 +183,67 @@ function scoreAliasUsage(data: DesignSystemRawData): Finding {
 	}
 
 	const ratio = aliasCount / totalValues;
-	const score = clamp(ratio * 100);
+	// Calibration: primitives hold raw values BY DEFINITION — they are the
+	// alias TARGETS — so a raw all-values ratio punishes systems for having a
+	// primitive tier at all. What layering actually demands is that values
+	// OUTSIDE the primitive tier alias into it instead of duplicating raw
+	// values. Treat the collection contributing the most raw values as the
+	// primitive tier and measure alias density over the remaining values.
+	const rawByCollection = new Map<string, number>();
+	for (const variable of data.variables) {
+		if (!variable.valuesByMode) continue;
+		for (const value of Object.values(variable.valuesByMode)) {
+			if (!isAlias(value)) {
+				const key = variable.variableCollectionId ?? "?";
+				rawByCollection.set(key, (rawByCollection.get(key) ?? 0) + 1);
+			}
+		}
+	}
+	// The primitive tier = the collection contributing the most raw values.
+	// Additionally, any collection containing ZERO aliases is an alias SOURCE
+	// (a self-contained primitive set, e.g. a motion-timing collection) — it
+	// cannot be expected to alias into anything, so its raw values are also
+	// excluded from the layering denominator.
+	const aliasByCollection = new Map<string, number>();
+	for (const variable of data.variables) {
+		if (!variable.valuesByMode) continue;
+		for (const value of Object.values(variable.valuesByMode)) {
+			if (isAlias(value)) {
+				const key = variable.variableCollectionId ?? "?";
+				aliasByCollection.set(key, (aliasByCollection.get(key) ?? 0) + 1);
+			}
+		}
+	}
+	let primitiveKey: string | null = null;
+	let primitiveRaw = 0;
+	for (const [key, count] of rawByCollection) {
+		if (count > primitiveRaw) {
+			primitiveRaw = count;
+			primitiveKey = key;
+		}
+	}
+	// A system can have MULTIPLE primitive roots (e.g. a Brand tier plus a
+	// Primitive tier that aliases brand colors but roots its own neutrals) —
+	// recognize primitive tiers by the strongest signals available: zero
+	// aliases (pure source), the largest raw contributor, or a tier-naming
+	// convention (primitive/core/base/palette/brand/foundation).
+	const tierNames = new Map<string, string>();
+	for (const col of data.collections) {
+		if (col.id) tierNames.set(col.id, col.name ?? "");
+	}
+	const PRIMITIVE_NAME_RE = /primitive|core|base|palette|brand|foundation/i;
+	let excludedRaw = 0;
+	for (const [key, count] of rawByCollection) {
+		const isZeroAlias = !(aliasByCollection.get(key) ?? 0);
+		const isMaxRaw = key === primitiveKey;
+		const isPrimitiveNamed = PRIMITIVE_NAME_RE.test(tierNames.get(key) ?? "");
+		if (isZeroAlias || isMaxRaw || isPrimitiveNamed) {
+			excludedRaw += count;
+		}
+	}
+	const nonPrimitiveValues = Math.max(1, totalValues - excludedRaw);
+	const layeredRatio = aliasCount / nonPrimitiveValues;
+	const score = clamp(layeredRatio * 100);
 
 	return {
 		id: "token-alias-usage",

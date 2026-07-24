@@ -84,6 +84,11 @@ function buildRealisticData(): DesignSystemRawData {
 		{ id: "v1", name: "color/action/primary", resolvedType: "COLOR", variableCollectionId: "col1", description: "Primary action color", valuesByMode: { "m1": { type: "VARIABLE_ALIAS", id: "v10" } } },
 		{ id: "v2", name: "color/action/secondary", resolvedType: "COLOR", variableCollectionId: "col1", description: "Secondary action color", valuesByMode: { "m1": { type: "VARIABLE_ALIAS", id: "v11" } } },
 		{ id: "v3", name: "color/action/danger", resolvedType: "COLOR", variableCollectionId: "col1", description: "", valuesByMode: { "m1": { type: "VARIABLE_ALIAS", id: "v12" } } },
+		// Raw value INSIDE the semantic collection — a layering gap: this is what
+		// keeps the alias-usage score partial under the calibrated formula
+		// (primitive-tier raw values are excluded from the denominator, so only
+		// non-primitive raws like this one count against layering).
+		{ id: "v4", name: "color/action/muted", resolvedType: "COLOR", variableCollectionId: "col1", description: "Muted action color", valuesByMode: { "m1": { r: 0.5, g: 0.55, b: 0.6, a: 1 } } },
 		// Visual color tokens (raw values — leaf segments are visual color words, flagged by naming scorer)
 		{ id: "v10", name: "color/primary/blue", resolvedType: "COLOR", variableCollectionId: "col2", description: "Blue primary", valuesByMode: { "m1": { r: 0.2, g: 0.4, b: 0.9, a: 1 } } },
 		{ id: "v11", name: "color/accent/teal", resolvedType: "COLOR", variableCollectionId: "col2", description: "", valuesByMode: { "m1": { r: 0.3, g: 0.5, b: 0.95, a: 1 } } },

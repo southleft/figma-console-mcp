@@ -86,31 +86,59 @@ function isDirectColor(
 }
 
 /**
- * Extract resolved color values from variables.
- * Returns an array of { name, r, g, b } objects for direct color values.
+ * Extract resolved color values from variables, following alias chains.
+ * Semantic tokens are usually ALIASES of primitives — skipping them (the old
+ * behavior) dropped exactly the tokens whose names drive fg/bg pairing, so
+ * alias-heavy systems fell back to noisy scale-vs-scale pairing.
+ * Returns an array of { name, r, g, b } objects.
  */
 function extractColorValues(
 	variables: any[],
 ): Array<{ name: string; r: number; g: number; b: number }> {
-	const colors: Array<{ name: string; r: number; g: number; b: number }> = [];
-
+	const byId = new Map<string, any>();
 	for (const variable of variables) {
-		if (variable.resolvedType !== "COLOR" || !variable.valuesByMode) continue;
+		if (variable.id) byId.set(variable.id, variable);
+	}
 
+	const resolve = (variable: any, depth = 0): any => {
+		if (!variable?.valuesByMode || depth > 8) return null;
 		for (const value of Object.values(variable.valuesByMode)) {
-			if (isDirectColor(value)) {
-				colors.push({
-					name: variable.name,
-					r: value.r,
-					g: value.g,
-					b: value.b,
-				});
-				break; // Use the first direct color value per variable
+			if (isDirectColor(value)) return value;
+			const v = value as Record<string, unknown>;
+			if (v?.type === "VARIABLE_ALIAS" && typeof v.id === "string") {
+				const target = byId.get(v.id);
+				const resolved = target ? resolve(target, depth + 1) : null;
+				if (resolved) return resolved;
 			}
+		}
+		return null;
+	};
+
+	const colors: Array<{ name: string; r: number; g: number; b: number }> = [];
+	for (const variable of variables) {
+		if (variable.resolvedType !== "COLOR") continue;
+		const value = resolve(variable);
+		// Skip translucent colors: they composite over whatever is beneath
+		// them, so a standalone contrast ratio is meaningless (a 5%-alpha
+		// "background/subtle" wash is not a 1.0:1 background).
+		if (value && (value.a === undefined || value.a >= 0.99)) {
+			colors.push({ name: variable.name, r: value.r, g: value.g, b: value.b });
 		}
 	}
 
 	return colors;
+}
+
+/**
+ * Component-scoped tokens (comp/button/..., component/card/...) only ever
+ * co-occur with tokens of the SAME component scope — pairing a button label
+ * against a card background measures a combination that never renders.
+ * Returns the scope prefix for component-scoped names, or null for global
+ * semantic tokens (which may pair freely).
+ */
+function componentScope(name: string): string | null {
+	const m = name.match(/^(comp|component|components)\/([^/]+)/i);
+	return m ? `${m[1].toLowerCase()}/${m[2].toLowerCase()}` : null;
 }
 
 /**
@@ -147,7 +175,11 @@ function scoreColorContrast(data: DesignSystemRawData): Finding {
 		/text|foreground|fg|content|(?:^|\/)on-|on\.|label|title|body|heading/i;
 
 	const backgrounds = colors.filter((c) => bgPattern.test(c.name));
-	const foregrounds = colors.filter((c) => fgPattern.test(c.name));
+	// A token whose name also matches the background pattern is a surface, not
+	// a foreground — "body/background" must not be treated as body text.
+	const foregrounds = colors.filter(
+		(c) => fgPattern.test(c.name) && !bgPattern.test(c.name),
+	);
 
 	// If naming conventions are not used, use luminance-based heuristic
 	let pairs: Array<{
@@ -156,9 +188,96 @@ function scoreColorContrast(data: DesignSystemRawData): Finding {
 	}> = [];
 
 	if (backgrounds.length > 0 && foregrounds.length > 0) {
-		// Pair foregrounds with backgrounds by naming proximity
+		// Pair foregrounds with backgrounds where the token names DECLARE the
+		// relationship, instead of a full cross-product (which measures
+		// combinations that never render — a primary button label on a
+		// knockout background, default text on an inverted surface):
+		//   1. inverse-content tokens pair with inverted backgrounds only;
+		//   2. utility-family content (danger/warning/…) pairs with the same
+		//      utility family's backgrounds;
+		//   3. other GLOBAL content tokens pair with the default background
+		//      (the canvas every non-inverse text token must survive on);
+		//   4. component-scoped tokens pair by path mirror within the same
+		//      component and variant family (content ↔ background).
+		// Interaction/emphasis modifiers (-hover, -active, -strong, …) are
+		// stripped when matching so state variants inherit their base pair.
+		const stripModifiers = (leaf: string) =>
+			leaf.replace(/-(hover|active|pressed|focus|strong|subtle|weak)$/i, "");
+		const leafOf = (name: string) =>
+			stripModifiers(name.split("/").pop()?.toLowerCase() ?? "");
+		const utilityFamily = (name: string) =>
+			name.match(/utility\/([a-z]+)/i)?.[1]?.toLowerCase() ?? null;
+
+		// Family of a background token: first path segment after "background"
+		// when one exists ("background/danger/weak" → danger), else null
+		// (canvas-level backgrounds like "background/default").
+		const bgFamilyOf = (name: string): string | null => {
+			const segs = name.toLowerCase().split("/");
+			const i = segs.findIndex((s) => /^(background|bg|surface)$/.test(s));
+			if (i < 0) return null;
+			const rest = segs.slice(i + 1).filter((s) => s !== "utility");
+			return rest.length >= 2 ? rest[0] : null;
+		};
+		// Is a background the canvas (the default app surface)?
+		const bgIsCanvas = (name: string): boolean => {
+			const segs = name.toLowerCase().split("/");
+			const i = segs.findIndex((s) => /^(background|bg|surface)$/.test(s));
+			if (i < 0) return false;
+			const rest = segs.slice(i + 1);
+			return rest.length === 1 && stripModifiers(rest[0]) === "default";
+		};
+		// On-surface declaration for a content token: either an explicit
+		// "/on/<family>" path segment (content/on/primary) or an "on-<family>"
+		// / "<family>-strong" leaf — both dialects declare "this text sits ON
+		// that family's surface". Returns the target family, or null.
+		const onSurfaceFamilyOf = (name: string): string | null => {
+			const lower = name.toLowerCase();
+			const pathMatch = lower.match(/\/on\/([a-z][a-z0-9-]*)/);
+			if (pathMatch) return stripModifiers(pathMatch[1]);
+			const leaf = lower.split("/").pop() ?? "";
+			const onLeaf = leaf.match(/^on-([a-z0-9-]+)$/);
+			if (onLeaf) return stripModifiers(onLeaf[1]);
+			const strongLeaf = leaf.match(/^([a-z0-9]+)-strong$/);
+			if (strongLeaf) return strongLeaf[1];
+			return null;
+		};
+
 		for (const fg of foregrounds) {
+			const fgScope = componentScope(fg.name);
+			const fgOnFamily = onSurfaceFamilyOf(fg.name);
+			const fgIsInverse =
+				fgOnFamily === "inverse" || /inverse/i.test(leafOf(fg.name));
 			for (const bg of backgrounds) {
+				const bgScope = componentScope(bg.name);
+				if (fgScope !== bgScope) continue;
+				const bgIsInverted =
+					/invert|inverse/i.test(leafOf(bg.name)) ||
+					bgFamilyOf(bg.name) === "inverse";
+				if (fgScope !== null) {
+					// Component scope: mirror the path with content→background
+					// swapped and modifiers stripped.
+					const mirror = fg.name
+						.toLowerCase()
+						.replace(/(^|\/)(content|text|foreground|fg)(\/|$)/, "$1background$3");
+					const bgNorm = bg.name.toLowerCase();
+					const strip = (s: string) =>
+						s
+							.split("/")
+							.map((seg, i, arr) => (i === arr.length - 1 ? stripModifiers(seg) : seg))
+							.join("/");
+					if (strip(bgNorm) !== strip(mirror)) continue;
+				} else if (fgIsInverse || bgIsInverted) {
+					// inverse content ↔ inverted/inverse surfaces only
+					if (!(fgIsInverse && bgIsInverted)) continue;
+				} else if (fgOnFamily) {
+					// declared on-surface text → its family's surface only
+					if (bgFamilyOf(bg.name) !== fgOnFamily) continue;
+				} else {
+					// everything else (plain content, family-COLORED canvas text
+					// like content/brand or content/danger/default) must survive
+					// on the canvas — and only the canvas is a declared pair.
+					if (!bgIsCanvas(bg.name)) continue;
+				}
 				pairs.push({ fg, bg });
 			}
 		}

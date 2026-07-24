@@ -157,7 +157,9 @@ function scoreCasingConsistency(data: DesignSystemRawData): Finding {
 		componentSegments.push(...segments);
 	}
 
-	// Check variable name leaf segments
+	// Check variable name segments. Pure-numeric segments (scale steps like
+	// "100", "3.5", "12") carry no casing signal and are skipped.
+	const NUMERIC_SEGMENT_RE = /^\d+([.·․․]?\d+)?$/;
 	const variableLeaves: string[] = [];
 	for (const v of data.variables) {
 		const segments = v.name.split(/[/.]/);
@@ -166,46 +168,90 @@ function scoreCasingConsistency(data: DesignSystemRawData): Finding {
 		}
 	}
 
-	const allSegments = [...componentSegments, ...variableLeaves].filter(
-		(s) => s.length > 1,
-	);
+	// Calibration: components and variables legitimately follow DIFFERENT
+	// conventions (TitleCase components + lowercase/kebab token paths is the
+	// dominant real-world pattern). Pooling them and demanding one dominant
+	// casing structurally fails every such system, so consistency is measured
+	// WITHIN each pool and combined as a segment-weighted average.
+	const pools: Array<{ label: string; segments: string[] }> = [
+		{
+			label: "component",
+			segments: componentSegments.filter(
+				(s) => s.length > 1 && !NUMERIC_SEGMENT_RE.test(s),
+			),
+		},
+		{
+			label: "variable",
+			segments: variableLeaves.filter(
+				(s) => s.length > 1 && !NUMERIC_SEGMENT_RE.test(s),
+			),
+		},
+	].filter((p) => p.segments.length > 0);
 
-	if (allSegments.length === 0) {
+	if (pools.length === 0) {
 		return {
 			id: "consistency-casing",
 			label: "Casing consistency",
 			score: 100,
 			severity: "info",
 			tooltip:
-				"Name segments should use a consistent casing convention (PascalCase, camelCase, etc.) across all components and variables.",
+				"Name segments should follow a consistent casing convention within components and within variables (the two may differ — e.g. TitleCase components with kebab-case token paths).",
 			details: "No name segments to evaluate.",
 		};
 	}
 
-	// Count casing patterns
-	const casingCounts = new Map<string, number>();
-	for (const segment of allSegments) {
-		const casing = detectCasing(segment);
-		casingCounts.set(casing, (casingCounts.get(casing) ?? 0) + 1);
-	}
+	// A segment can be AMBIGUOUS between conventions: a single lowercase word
+	// ("default", "brand") is simultaneously valid camelCase, kebab-case, and
+	// snake_case — only multi-word segments reveal the convention. Score each
+	// segment against the set of conventions it is compatible with, and pick
+	// the convention that the most segments are compatible with.
+	const compatibleCasings = (segment: string): string[] => {
+		const out: string[] = [];
+		if (PASCAL_CASE_RE.test(segment)) out.push("PascalCase");
+		if (CAMEL_CASE_RE.test(segment)) out.push("camelCase");
+		if (KEBAB_CASE_RE.test(segment)) out.push("kebab-case");
+		if (SNAKE_CASE_RE.test(segment)) out.push("snake_case");
+		if (out.length === 0) out.push(detectCasing(segment));
+		return out;
+	};
 
-	// Find dominant casing
-	let dominantCasing = "mixed";
-	let dominantCount = 0;
-	for (const [casing, count] of casingCounts.entries()) {
-		if (count > dominantCount) {
-			dominantCount = count;
-			dominantCasing = casing;
+	let weightedConsistent = 0;
+	let totalSegments = 0;
+	const poolSummaries: string[] = [];
+	const nonDominantSegments: string[] = [];
+	for (const pool of pools) {
+		const casingCounts = new Map<string, number>();
+		const compat = pool.segments.map((s) => compatibleCasings(s));
+		for (const casings of compat) {
+			for (const casing of casings) {
+				casingCounts.set(casing, (casingCounts.get(casing) ?? 0) + 1);
+			}
+		}
+		let dominantCasing = "mixed";
+		let dominantCount = 0;
+		for (const [casing, count] of casingCounts.entries()) {
+			if (count > dominantCount) {
+				dominantCount = count;
+				dominantCasing = casing;
+			}
+		}
+		weightedConsistent += dominantCount;
+		totalSegments += pool.segments.length;
+		poolSummaries.push(
+			`${pool.label} names ${Math.round((dominantCount / pool.segments.length) * 100)}% ${dominantCasing}`,
+		);
+		for (let i = 0; i < pool.segments.length; i++) {
+			if (
+				!compat[i].includes(dominantCasing) &&
+				nonDominantSegments.length < MAX_EXAMPLES
+			) {
+				nonDominantSegments.push(`${pool.segments[i]} (${pool.label})`);
+			}
 		}
 	}
 
-	const ratio = dominantCount / allSegments.length;
+	const ratio = weightedConsistent / totalSegments;
 	const score = clamp(ratio * 100);
-
-	// Find segments using non-dominant casing
-	const nonDominantSegments = allSegments.filter(
-		(seg) => detectCasing(seg) !== dominantCasing,
-	);
 
 	return {
 		id: "consistency-casing",
@@ -213,12 +259,10 @@ function scoreCasingConsistency(data: DesignSystemRawData): Finding {
 		score,
 		severity: getSeverity(score),
 		tooltip:
-			"Name segments should use a consistent casing convention (PascalCase, camelCase, etc.) across all components and variables.",
-		details: `${Math.round(ratio * 100)}% of name segments use ${dominantCasing}. Consistent casing improves readability.`,
+			"Name segments should follow a consistent casing convention within components and within variables (the two may differ — e.g. TitleCase components with kebab-case token paths).",
+		details: `${Math.round(ratio * 100)}% of name segments follow their pool's dominant casing (${poolSummaries.join("; ")}).`,
 		examples:
-			nonDominantSegments.length > 0
-				? nonDominantSegments.slice(0, MAX_EXAMPLES)
-				: undefined,
+			nonDominantSegments.length > 0 ? nonDominantSegments : undefined,
 	};
 }
 
@@ -362,21 +406,30 @@ function scoreModeNamingConsistency(data: DesignSystemRawData): Finding {
 		};
 	}
 
-	// Compare mode name sets - check how many match the most common pattern
-	const serialized = modeNameSets.map((s) => s.join(","));
-	const patternCounts = new Map<string, number>();
-	for (const s of serialized) {
-		patternCounts.set(s, (patternCounts.get(s) ?? 0) + 1);
-	}
-
-	let dominantCount = 0;
-	for (const count of patternCounts.values()) {
-		if (count > dominantCount) {
-			dominantCount = count;
+	// Calibration: collections legitimately serve DIFFERENT mode axes — a
+	// theme collection's Light/Dark, a density collection's Compact/
+	// Comfortable, a shape collection's Pill/Sharp. Demanding identical mode
+	// SETS across them penalizes correct architecture. What actually causes
+	// confusion is the same mode CONCEPT spelled differently across
+	// collections ("light" vs "Light" vs "light-mode"), so measure spelling
+	// consistency per mode concept instead.
+	const spellingsByConcept = new Map<string, Set<string>>();
+	for (const collection of collections) {
+		for (const mode of collection.modes || []) {
+			const concept = mode.name.toLowerCase().replace(/[\s_-]+/g, "");
+			if (!spellingsByConcept.has(concept)) {
+				spellingsByConcept.set(concept, new Set());
+			}
+			spellingsByConcept.get(concept)?.add(mode.name);
 		}
 	}
 
-	const ratio = dominantCount / modeNameSets.length;
+	const concepts = [...spellingsByConcept.entries()];
+	const inconsistent = concepts.filter(([, spellings]) => spellings.size > 1);
+	const ratio =
+		concepts.length === 0
+			? 1
+			: (concepts.length - inconsistent.length) / concepts.length;
 	const score = clamp(ratio * 100);
 
 	return {
@@ -385,11 +438,17 @@ function scoreModeNamingConsistency(data: DesignSystemRawData): Finding {
 		score,
 		severity: getSeverity(score),
 		tooltip:
-			"All collections with multiple modes should use the same mode names (e.g. Light/Dark). Inconsistent mode names cause confusion.",
+			"The same mode concept should be spelled identically across collections (e.g. always \"Light\", never a mix of \"Light\" and \"light\"). Collections may have different mode sets — that's architecture, not inconsistency.",
 		details:
-			ratio < 1
-				? `${Math.round(ratio * 100)}% of collections share the same mode names. Align mode names across collections.`
-				: "All collections use consistent mode names.",
+			inconsistent.length > 0
+				? `${inconsistent.length} mode name${inconsistent.length === 1 ? "" : "s"} spelled inconsistently across collections.`
+				: "Mode names are spelled consistently across collections.",
+		examples:
+			inconsistent.length > 0
+				? inconsistent
+						.slice(0, MAX_EXAMPLES)
+						.map(([, spellings]) => [...spellings].join(" vs "))
+				: undefined,
 	};
 }
 
