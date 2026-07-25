@@ -23,6 +23,19 @@ import type {
 	DocGenerationResult,
 	CompanyDocsContentEntry,
 } from "./types/design-code.js";
+import {
+	buildDesignHistory,
+	DEFAULT_HISTORY_VERSIONS,
+	MAX_HISTORY_VERSIONS,
+	type DesignHistoryResult,
+} from "./history/component-history.js";
+import {
+	buildGitHistory,
+	DEFAULT_GIT_LIMIT,
+	MAX_GIT_LIMIT,
+	type GitHistoryResult,
+} from "./history/git-history.js";
+import { formatHistorySection } from "./history/history-formatter.js";
 
 const logger = createChildLogger({ component: "design-code-tools" });
 const enrichmentService = new EnrichmentService(logger);
@@ -1683,6 +1696,16 @@ function generateFrontmatter(
 	codeInfo?: CodeDocInfo,
 	canonicalSource?: "figma" | "code" | "reconciled",
 	level?: string | null,
+	/**
+	 * Newest Figma version that touched this component, when design history was
+	 * pulled. Emitted as its own `figmaVersion` field rather than folded into
+	 * `version` — that one is the code-side semver and means something different.
+	 */
+	latestDesignVersion?: {
+		version_id: string;
+		label: string | null;
+		created_at: string;
+	} | null,
 ): string {
 	const status = codeInfo?.changelog?.[0]
 		? "stable"
@@ -1715,6 +1738,18 @@ function generateFrontmatter(
 	}
 	if (canonicalSource) {
 		lines.push(`canonical: ${canonicalSource}`);
+	}
+	if (latestDesignVersion) {
+		// Quote the label — it's user-authored and may contain YAML-significant
+		// characters (a colon in "v2: buttons" would otherwise break parsing).
+		// Unlabeled auto-saves fall back to the date rather than the raw 19-digit
+		// version ID, which carries no meaning for a docs reader.
+		const date = latestDesignVersion.created_at?.split("T")[0];
+		const label = latestDesignVersion.label
+			? `"${latestDesignVersion.label.replace(/"/g, '\\"')}"`
+			: date || latestDesignVersion.version_id;
+		lines.push(`figmaVersion: ${label}`);
+		if (date) lines.push(`figmaVersionDate: ${date}`);
 	}
 
 	lines.push(`lastUpdated: ${new Date().toISOString().split("T")[0]}`);
@@ -2904,7 +2939,7 @@ export function registerDesignCodeTools(
 	// -----------------------------------------------------------------------
 	server.tool(
 		"figma_generate_component_doc",
-		"Generate AI-complete component documentation from a Figma component. Produces structured markdown with anatomy, per-variant color tokens, typography, content guidelines (parsed from Figma description), design annotations (animation timings, interaction specs, accessibility notes from Dev Mode), icon mapping, spacing tokens, and design-code parity analysis. Merges Figma design data with optional code-side info (CVA definitions, sub-component APIs, source files). Output works with any docs platform. For richest output, read the component source code first and pass codeInfo.",
+		"Generate AI-complete component documentation from a Figma component. Produces structured markdown with anatomy, per-variant color tokens, typography, content guidelines (parsed from Figma description), design annotations (animation timings, interaction specs, accessibility notes from Dev Mode), icon mapping, spacing tokens, and design-code parity analysis. Merges Figma design data with optional code-side info (CVA definitions, sub-component APIs, source files). Output works with any docs platform. For richest output, read the component source code first and pass codeInfo. Pass history: { figma: true, git: true } to add an ongoing '## History' section: per-version design changes pulled from Figma version history and scoped to this component, plus recent git commits touching its source files.",
 		{
 			fileUrl: z
 				.string()
@@ -2932,6 +2967,55 @@ export function registerDesignCodeTools(
 			systemName: z.string().optional().describe("Design system name for headers"),
 			enrich: z.boolean().optional().default(true).describe("Enable enrichment for token data"),
 			includeFrontmatter: z.boolean().optional().default(true).describe("Include YAML frontmatter metadata"),
+			history: z
+				.object({
+					figma: z
+						.boolean()
+						.optional()
+						.default(false)
+						.describe("Pull design history from Figma version history, scoped to this component. Costs roughly one API call per version walked."),
+					git: z
+						.boolean()
+						.optional()
+						.default(false)
+						.describe("Pull code history via `git log` for the component's source files. Local mode only."),
+					versions: z
+						.number()
+						.int()
+						.min(1)
+						.max(MAX_HISTORY_VERSIONS)
+						.optional()
+						.default(DEFAULT_HISTORY_VERSIONS)
+						.describe(`How many Figma versions to walk back. Default ${DEFAULT_HISTORY_VERSIONS}, max ${MAX_HISTORY_VERSIONS}.`),
+					includeAutosaves: z
+						.boolean()
+						.optional()
+						.default(false)
+						.describe("Include unlabeled Figma auto-saves. Default false — autosaves are noisy and often unattributed."),
+					mode: z
+						.enum(["summary", "standard", "detailed"])
+						.optional()
+						.default("standard")
+						.describe("Design-history verbosity. detailed names individual properties and variable bindings."),
+					gitLimit: z
+						.number()
+						.int()
+						.min(1)
+						.max(MAX_GIT_LIMIT)
+						.optional()
+						.default(DEFAULT_GIT_LIMIT)
+						.describe(`How many commits to list. Default ${DEFAULT_GIT_LIMIT}, max ${MAX_GIT_LIMIT}.`),
+					gitPaths: z
+						.array(z.string())
+						.optional()
+						.describe("Explicit paths to log commits for. Defaults to codeInfo.filePath plus codeInfo.sourceFiles[].path."),
+					repoPath: z
+						.string()
+						.optional()
+						.describe("Repo directory to run git in. Defaults to the server's working directory."),
+				})
+				.optional()
+				.describe("Pull an ongoing changelog from Figma version history and/or git. When enabled, replaces the manual '## Changelog' section with a richer '## History' section. Both sources are off by default so existing callers are unaffected."),
 		},
 		async ({
 			fileUrl,
@@ -2942,6 +3026,7 @@ export function registerDesignCodeTools(
 			systemName,
 			enrich = true,
 			includeFrontmatter = true,
+			history,
 		}) => {
 			try {
 				const url = fileUrl || getCurrentUrl();
@@ -3114,6 +3199,58 @@ export function registerDesignCodeTools(
 					: hasCodeInfo ? "code"
 					: "figma";
 
+				// -------------------------------------------------------
+				// Ongoing history (opt-in): Figma version history + git log
+				// -------------------------------------------------------
+				// Both are best-effort. Neither is allowed to fail doc
+				// generation — the builders return notes instead of throwing.
+				let designHistory: DesignHistoryResult | null = null;
+				let gitHistory: GitHistoryResult | null = null;
+
+				if (history?.figma) {
+					// Scope to the COMPONENT_SET when there is one: variant node IDs
+					// churn as variants are added and removed, so the set is the
+					// stable identity to track across versions.
+					const historyNodeId = setInfo.setNodeId || nodeId;
+					designHistory = await buildDesignHistory(api, fileKey, [historyNodeId], {
+						versions: history.versions,
+						includeAutosaves: history.includeAutosaves,
+						mode: history.mode,
+					});
+				}
+
+				if (history?.git) {
+					if (isRemoteMode) {
+						gitHistory = {
+							entries: [],
+							notes: [
+								"Git history is unavailable in remote/cloud mode — the Worker runtime has no filesystem or git binary. Run the MCP server locally to include code history.",
+							],
+							_meta: { repo_root: null, paths: [], followed_renames: false },
+						};
+					} else {
+						// Prefer explicit paths; otherwise derive them from the code-side
+						// info the caller already supplies for the implementation section.
+						const derivedPaths =
+							history.gitPaths && history.gitPaths.length > 0
+								? history.gitPaths
+								: [
+										...(codeInfo?.filePath ? [codeInfo.filePath] : []),
+										...(codeInfo?.sourceFiles?.map((f) => f.path) ?? []),
+									  ];
+						gitHistory = await buildGitHistory({
+							paths: derivedPaths,
+							limit: history.gitLimit,
+							repoPath: history.repoPath,
+						});
+					}
+				}
+
+				// Newest Figma version that actually touched this component. Surfaced
+				// in frontmatter as design provenance — deliberately NOT merged into
+				// the code-side semver `version` field, which means something else.
+				const latestDesignVersion = designHistory?.entries[0] ?? null;
+
 				// Resolve sections with defaults
 				const s: DocSections = {
 					overview: true,
@@ -3137,7 +3274,7 @@ export function registerDesignCodeTools(
 
 				if (includeFrontmatter) {
 					const atomicLevel = await detectAtomicLevel(api, fileKey, nodeId, setInfo.setNodeId, componentMeta, allComponentsMeta);
-					parts.push(generateFrontmatter(componentName, description, node, componentMeta, fileUrl_, codeInfo, canonicalSource, atomicLevel));
+					parts.push(generateFrontmatter(componentName, description, node, componentMeta, fileUrl_, codeInfo, canonicalSource, atomicLevel, latestDesignVersion));
 					parts.push("");
 				}
 
@@ -3207,9 +3344,26 @@ export function registerDesignCodeTools(
 					}
 				}
 
-				if (s.changelog && codeInfo?.changelog) {
-					parts.push(generateChangelogSection(codeInfo));
-					includedSections.push("changelog");
+				if (s.changelog) {
+					// When either history source was requested, emit the richer "## History"
+					// section (which folds any manual codeInfo.changelog in as release notes).
+					// Otherwise fall through to the original pass-through "## Changelog" so
+					// existing callers get byte-identical output.
+					if (designHistory || gitHistory) {
+						const historySection = formatHistorySection({
+							componentName,
+							design: designHistory,
+							git: gitHistory,
+							manual: codeInfo?.changelog ?? null,
+						});
+						if (historySection.trim()) {
+							parts.push(historySection);
+							includedSections.push("history");
+						}
+					} else if (codeInfo?.changelog) {
+						parts.push(generateChangelogSection(codeInfo));
+						includedSections.push("changelog");
+					}
 				}
 
 				const markdown = parts.join("\n");
@@ -3221,6 +3375,18 @@ export function registerDesignCodeTools(
 					`Documentation generated for ${componentName} component (canonical source: ${canonicalSource}).`,
 					`Ask the user where they'd like to save this file. Suggested path: ${suggestedPath}`,
 				];
+				if (!history?.figma && !history?.git) {
+					aiInstParts.push(
+						"",
+						"To include an ongoing changelog, call again with history: { figma: true } to pull per-version design changes from Figma version history, and/or history: { git: true } (with codeInfo.filePath set) to pull recent commits for the component's source files.",
+					);
+				}
+				if (designHistory && designHistory.entries.length === 0) {
+					aiInstParts.push("", `Design history returned no rows. ${designHistory.notes.join(" ")}`);
+				}
+				if (gitHistory && gitHistory.entries.length === 0) {
+					aiInstParts.push("", `Git history returned no rows. ${gitHistory.notes.join(" ")}`);
+				}
 				if (!hasCodeInfo) {
 					aiInstParts.push(
 						"",
@@ -3250,6 +3416,32 @@ export function registerDesignCodeTools(
 						variablesIncluded: enrichedData?.variables_used !== undefined,
 						stylesIncluded: enrichedData?.styles_used !== undefined,
 					},
+					...(designHistory || gitHistory
+						? {
+							historySummary: {
+								design: designHistory
+									? {
+											requested: true,
+											entries: designHistory.entries.length,
+											versionsScanned: designHistory._meta.versions_scanned,
+											apiCalls: designHistory._meta.api_calls,
+											usedAutosaveFallback: designHistory._meta.used_autosave_fallback === true,
+											latestVersionId: latestDesignVersion?.version_id ?? null,
+											notes: designHistory.notes,
+										}
+									: null,
+								git: gitHistory
+									? {
+											requested: true,
+											entries: gitHistory.entries.length,
+											repoRoot: gitHistory._meta.repo_root,
+											paths: gitHistory._meta.paths,
+											notes: gitHistory.notes,
+										}
+									: null,
+							},
+						}
+						: {}),
 					suggestedOutputPath: suggestedPath,
 					ai_instruction: aiInstParts.join("\n"),
 				};

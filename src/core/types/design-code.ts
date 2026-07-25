@@ -267,6 +267,27 @@ export interface DocGenerationResult {
 		variablesIncluded: boolean;
 		stylesIncluded: boolean;
 	};
+	/** Present only when history was requested via the `history` parameter. */
+	historySummary?: {
+		design: {
+			requested: boolean;
+			entries: number;
+			versionsScanned: number;
+			apiCalls: number;
+			/** True when the file had no labeled versions and auto-saves were used. */
+			usedAutosaveFallback: boolean;
+			/** Raw version ID of the newest row — kept here since the rendered table shows dates. */
+			latestVersionId: string | null;
+			notes: string[];
+		} | null;
+		git: {
+			requested: boolean;
+			entries: number;
+			repoRoot: string | null;
+			paths: string[];
+			notes: string[];
+		} | null;
+	};
 	suggestedOutputPath: string;
 	ai_instruction: string;
 }
