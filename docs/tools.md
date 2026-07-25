@@ -65,7 +65,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_batch_update_variables` | Update up to 100 variables at once | Local / Cloud |
 | | `figma_setup_design_tokens` | Create collection + modes + variables atomically | Local / Cloud |
 | **🔍 Design-Code Parity** | `figma_check_design_parity` | Compare Figma specs vs code implementation | All |
-| | `figma_generate_component_doc` | Generate component documentation from Figma + code | All |
+| | `figma_generate_component_doc` | Generate component documentation from Figma + code, with optional Figma version + git history | All |
 | **💬 Comments** | `figma_get_comments` | Get comments on a Figma file | All |
 | | `figma_post_comment` | Post a comment, optionally pinned to a node | All |
 | | `figma_delete_comment` | Delete a comment by ID | All |
@@ -2265,17 +2265,77 @@ figma_generate_component_doc({
 - `systemName` (optional): Design system name for documentation headers
 - `enrich` (optional): Enable enrichment analysis (default: true)
 - `includeFrontmatter` (optional): Include YAML frontmatter metadata (default: true)
+- `history` (optional): Pull an ongoing changelog instead of relying on hand-written `codeInfo.changelog` entries. Both sources are **off by default**, so existing callers are unaffected.
+  - `figma` (default `false`): Walk Figma version history and diff each consecutive pair **scoped to this component**, producing one row per version that actually changed it
+  - `git` (default `false`): Run `git log` for the component's source files. **Local mode only** — the Cloudflare Worker runtime has no filesystem or git binary
+  - `versions` (default `5`, max `20`): How many Figma versions to walk back
+  - `includeAutosaves` (default `false`): Include unlabeled Figma auto-saves. Prefers labeled versions, but **auto-falls back to auto-saves when a file has none** (see below), so you rarely need to set this
+  - `mode` (`summary` | `standard` | `detailed`, default `standard`): `detailed` names individual component properties and variable bindings instead of counting them
+  - `gitLimit` (default `10`, max `50`): How many commits to list
+  - `gitPaths` (optional): Explicit paths to log. Defaults to `codeInfo.filePath` plus every `codeInfo.sourceFiles[].path`
+  - `repoPath` (optional): Repo directory to run git in. Defaults to the server's working directory
 
 **Returns:**
 - `componentName`: Resolved component name
 - `markdown`: Complete markdown documentation with frontmatter, overview, states & variants, visual specs, implementation, accessibility sections
 - `includedSections`: Which sections were generated
 - `dataSourceSummary`: What data sources were available (Figma enriched, code info, variables, styles)
+- `historySummary`: Present only when `history` was requested — per-source row counts, API calls made, resolved git paths, and any degradation notes
 - `suggestedOutputPath`: Where to save the file
 - `ai_instruction`: Guidance for the AI on next steps (saving file, asking user for path)
 
 **COMPONENT_SET Handling:**
 Same as parity checker — resolves to default variant for visual specs, reads property definitions from the COMPONENT_SET.
+
+---
+
+#### Component History (`history`)
+
+When either history source is enabled, the generated doc gains a `## History` section in place of the pass-through `## Changelog`:
+
+```javascript
+figma_generate_component_doc({
+  nodeId: '695:313',
+  codeInfo: { filePath: 'src/components/Button/Button.tsx' },
+  history: { figma: true, git: true, versions: 10, mode: 'detailed' }
+})
+```
+
+```markdown
+## History
+
+### Design history
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| v1.2 icon slot | 2026-03-01 | carol | Added 1 layer: `Icon`<br>Property `Disabled` added (BOOLEAN) |
+
+### Code history
+
+| Commit | Date | Author | Message |
+|--------|------|--------|---------|
+| `a1b2c3d` | 2026-03-02 | TJ | feat(button): add icon slot |
+
+### Release notes
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 2.1.0 | 2026-03-05 | Icon slot support |
+```
+
+Any `codeInfo.changelog` entries you pass are still rendered, folded in as **Release notes**. Frontmatter also gains `figmaVersion` / `figmaVersionDate` provenance — kept separate from the code-side `version` semver.
+
+**Cost:** design history costs roughly one API call per version walked (N rows needs N+1 scoped node snapshots). Past-version snapshots are immutable and cached per process, so repeat runs on the same component are nearly free.
+
+**Scoping:** history tracks the **COMPONENT_SET** when the node belongs to one. Variant node IDs churn as variants are added and removed, so the set is the stable identity across versions.
+
+**Labeled versions vs auto-saves:** labeled versions make the best changelog rows, but many real design-system files have none at all — a mature file was verified live with 72 auto-saves and 0 labeled versions. Rather than emit an empty section there, history falls back to auto-saves automatically and says so in a note (`historySummary.design.usedAutosaveFallback`). Auto-save noise is largely absorbed downstream: a version only becomes a row if it actually changed the scoped component — on a real 24-variant Button, 20 version-pairs produced 4 rows. Auto-save rows render as `_(auto-save)_` with the date rather than the raw 19-digit version ID; that ID stays available as `historySummary.design.latestVersionId`.
+
+**Coverage limits** — the generated doc states these inline so an empty table is never misread as "nothing changed":
+- Figma's REST version snapshots **omit description and Dev Mode annotation edits**, raw layout/visual properties, and variable *value* changes. Structure (child layers), component property definitions, variable *bindings*, and renames are tracked, at depth 2
+- Version-history retention is plan-dependent, so lower tiers expose a shorter window
+- Reading version history requires the `file_versions:read` OAuth scope, or the **Versions** Read permission on a Personal Access Token. Without it the section degrades to an explanatory note rather than failing the doc
+- `git` history uses `--follow` (renames traced) only when exactly one path is resolved — git supports it for a single pathspec only
 
 ---
 
