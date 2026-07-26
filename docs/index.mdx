@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.37.0 (scoring calibrated in v1.37.1) — Design-System Health Audit for Every Client:** the new `figma_audit_design_system_report` tool runs the Design System Dashboard's deterministic scoring engine (naming, tokens, component metadata, accessibility, consistency, coverage) and returns the scored report as data — so any MCP client (Claude Code, headless agents, CI) can audit without MCP Apps support or `ENABLE_MCP_APPS`. Live-first, fileKey-verified data with the source disclosed, 5-minute cache, chunked per-category drill-down, and every finding states whether this MCP can auto-fix it. Server-only release — **no plugin re-import needed**. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1371---2026-07-22)
+**New in v1.38.0 — Ongoing Component Changelogs in Generated Docs:** `figma_generate_component_doc` now pulls a *real* changelog instead of only echoing hand-written entries. Opt in with `history: { figma: true, git: true }` and the generated doc gains a `## History` section combining **design history** — Figma version history diffed per version and scoped to that component, surfacing renames, added component properties, and token bindings — with **code history** from `git log` on the component's source files, auto-derived from `codeInfo`. Prefers labeled versions and falls back to Figma auto-saves when a file has none (most files don't). Off by default, so existing calls are byte-identical. Server-only release — **no plugin re-import needed**. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1380---2026-07-25)
 </Note>
 
 # Your Design System as an API

@@ -5,6 +5,33 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.38.0] - 2026-07-25
+
+### Added
+
+- **Ongoing component changelog in generated docs** — `figma_generate_component_doc` gained an opt-in `history` parameter that pulls a *real* changelog instead of only echoing hand-written `codeInfo.changelog` entries. Previously the tool's `changelog` section was pure pass-through: if you didn't hand it version rows, the section silently disappeared. The version-diff machinery already existed (`figma_diff_versions`, `figma_generate_changelog`, `figma_blame_node`) — the doc generator just never called it.
+  - `history.figma` walks Figma version history and diffs each consecutive pair **scoped to the component**, emitting one row per version that actually changed it. Reuses the same `diffNode` engine as `figma_diff_versions`, so coverage matches exactly.
+  - `history.git` runs `git log` for the component's source files, derived automatically from `codeInfo.filePath` and every `codeInfo.sourceFiles[].path` (or set `history.gitPaths` explicitly). Local mode only.
+  - Output is a `## History` section with **Design history**, **Code history**, and — folding in any `codeInfo.changelog` you pass — **Release notes**. Frontmatter also gains `figmaVersion` / `figmaVersionDate` design provenance, kept separate from the code-side `version` semver.
+  - Both sources default to **off**, so callers that don't opt in get byte-identical output to v1.37.1, including the original `## Changelog` section.
+  - New `historySummary` field on the tool result reports row counts, API calls, resolved git paths, `usedAutosaveFallback`, `latestVersionId`, and any degradation notes.
+
+### Changed
+
+- **Design history prefers labeled versions but falls back to auto-saves.** Labeled versions make better changelog rows, but plenty of real design-system files have none at all — this was verified against a mature system carrying 72 auto-saves and 0 labeled versions, where a labeled-only walk produces an empty section. History now retries with auto-saves when fewer than two labeled versions exist, and says so in a note that also points at Figma's *right-click a version → Add label* flow. Files that do curate labels never see the note and never pay the extra API call.
+- **Auto-save rows render as `_(auto-save)_` plus their date** rather than Figma's 19-digit numeric version ID, which carries no meaning for a docs reader. The raw ID remains available programmatically as `historySummary.design.latestVersionId`.
+
+### Fixed
+
+- **Detailed-mode variable-binding changes are grouped by property instead of enumerated per node.** Binding a single token across a component set fans out to one entry per variant — on a real 24-variant Button that produced 44 near-identical bullets inside one markdown table cell, destroying the table. Bindings now collapse to `Variable bound: \`counterAxisSpacing\` on 28 layers`, which is both readable and *more* informative than the wall of text it replaces. A 12-bullet-per-row cap with an explicit `…and N more changes` marker backstops any other source of fan-out.
+
+### Notes
+
+- **No new tools** — this is an additive parameter on an existing tool, so Local/Cloud/Remote tool counts are unchanged at 113/101/9.
+- **Server-only release — no plugin re-import needed.**
+- History is best-effort by design and never fails doc generation: a missing `file_versions:read` scope, versions pruned by plan-tier retention, a non-git directory, or untracked paths all degrade to an explanatory note. Figma's REST version snapshots omit description and Dev Mode annotation edits, raw layout/visual properties, and variable *value* changes; the generated doc states this inline so an empty table is never misread as "nothing changed".
+
+
 ## [1.37.1] - 2026-07-22
 
 ### Changed
@@ -1182,6 +1209,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.38.0]: https://github.com/southleft/figma-console-mcp/compare/v1.37.1...v1.38.0
 [1.37.1]: https://github.com/southleft/figma-console-mcp/compare/v1.37.0...v1.37.1
 [1.37.0]: https://github.com/southleft/figma-console-mcp/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/southleft/figma-console-mcp/compare/v1.35.0...v1.36.0
