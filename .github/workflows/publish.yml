@@ -40,9 +40,9 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -76,7 +76,21 @@ jobs:
       - name: Publish
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            npm publish --dry-run
+            # --dry-run still contacts the registry, so it exercises packaging
+            # and the auth handshake. When the version already exists the
+            # registry rejects it before that tells us anything useful, so
+            # treat only that specific error as an expected outcome — any other
+            # failure is real and must fail the job.
+            set +e
+            out="$(npm publish --dry-run 2>&1)"; code=$?
+            echo "$out"
+            if [ $code -ne 0 ]; then
+              if echo "$out" | grep -q "cannot publish over the previously published versions"; then
+                echo "::notice::Dry run OK — packaging and registry contact succeeded; version already published, so the auth handshake was not exercised. A real release is the first true test of the trusted-publisher config."
+                exit 0
+              fi
+              exit $code
+            fi
           else
             npm publish
           fi
