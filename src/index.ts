@@ -100,7 +100,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		refreshToken?: string;
 		expiresAt: number;
 	}> {
-		const env = this.env as Env;
+		const env = this.env as unknown as Env;
 
 		if (!env.FIGMA_OAUTH_CLIENT_ID || !env.FIGMA_OAUTH_CLIENT_SECRET) {
 			throw new Error("OAuth not configured on server");
@@ -937,7 +937,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 			{},
 			async () => {
 				try {
-					const env = this.env as Env;
+					const env = this.env as unknown as Env;
 					const code = generatePairingCode();
 
 					// Create a unique DO ID for this relay session
@@ -981,7 +981,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Cloud Desktop Connector factory
 		// ================================================================
 		const getCloudDesktopConnector = async (): Promise<any> => {
-			const env = this.env as Env;
+			const env = this.env as unknown as Env;
 			const relayDoId = await this.ctx.storage.get<string>('relayDoId');
 			if (!relayDoId) {
 				throw new Error('No cloud relay session. Call figma_pair_plugin first to pair the Desktop Bridge plugin.');
