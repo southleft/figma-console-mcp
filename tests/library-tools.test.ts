@@ -560,6 +560,20 @@ describe("Library Tools — figma_get_library_component_by_key", () => {
 // Plugin-API tools — figma_get_library_variables + figma_import_library_variable
 // ============================================================================
 
+/**
+ * Wrap a value the way the Desktop Bridge actually does on the wire.
+ *
+ * executeCodeViaUI() NEVER resolves to the injected script's bare return
+ * value — handleResult() in figma-desktop-bridge/ui.html builds
+ * `{ success: true, result: <value> }` around it. These mocks previously
+ * resolved to the bare value, which encoded a contract that does not exist
+ * and let a total failure of both tools ship green. Every mock here must go
+ * through bridge() so the suite tests the real envelope.
+ */
+function bridge<T>(result: T) {
+	return { success: true, result };
+}
+
 describe("Library Variable Tools (Plugin API)", () => {
 	let server: ReturnType<typeof createMockServer>;
 	let mockConnector: { executeCodeViaUI: jest.Mock };
@@ -610,7 +624,7 @@ describe("Library Variable Tools (Plugin API)", () => {
 
 	describe("figma_get_library_variables", () => {
 		it("returns all collections grouped by library when no filter is passed", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce(MOCK_COLLECTIONS);
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(bridge(MOCK_COLLECTIONS));
 
 			const tool = server._getTool("figma_get_library_variables");
 			const result = await tool.handler({});
@@ -624,7 +638,7 @@ describe("Library Variable Tools (Plugin API)", () => {
 		});
 
 		it("filters by libraryName (case-insensitive substring)", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce(MOCK_COLLECTIONS);
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(bridge(MOCK_COLLECTIONS));
 
 			const tool = server._getTool("figma_get_library_variables");
 			const result = await tool.handler({ libraryName: "northright" });
@@ -640,7 +654,7 @@ describe("Library Variable Tools (Plugin API)", () => {
 		});
 
 		it("filters by resolvedType and prunes empty collections", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce(MOCK_COLLECTIONS);
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(bridge(MOCK_COLLECTIONS));
 
 			const tool = server._getTool("figma_get_library_variables");
 			const result = await tool.handler({ resolvedType: "FLOAT" });
@@ -653,9 +667,11 @@ describe("Library Variable Tools (Plugin API)", () => {
 		});
 
 		it("returns __error sentinel as a clean isError response", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce({
-				__error: "figma.teamLibrary API not available.",
-			});
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(
+				bridge({
+					__error: "figma.teamLibrary API not available.",
+				}),
+			);
 
 			const tool = server._getTool("figma_get_library_variables");
 			const result = await tool.handler({});
@@ -681,7 +697,7 @@ describe("Library Variable Tools (Plugin API)", () => {
 		});
 
 		it("sends a Plugin API script that calls getAvailableLibraryVariableCollectionsAsync", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce([]);
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(bridge([]));
 
 			const tool = server._getTool("figma_get_library_variables");
 			await tool.handler({});
@@ -707,7 +723,7 @@ describe("Library Variable Tools (Plugin API)", () => {
 		};
 
 		it("imports a variable and returns its local id", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce(IMPORTED_VARIABLE);
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(bridge(IMPORTED_VARIABLE));
 
 			const tool = server._getTool("figma_import_library_variable");
 			const result = await tool.handler({ variableKey: "var-key-primary" });
@@ -721,7 +737,7 @@ describe("Library Variable Tools (Plugin API)", () => {
 		});
 
 		it("safely escapes the variable key into the Plugin script", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce(IMPORTED_VARIABLE);
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(bridge(IMPORTED_VARIABLE));
 
 			const tool = server._getTool("figma_import_library_variable");
 			// Try to break out of the JS string literal — this MUST be neutralized
@@ -735,9 +751,11 @@ describe("Library Variable Tools (Plugin API)", () => {
 		});
 
 		it("returns a specific hint when library is not subscribed", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce({
-				__error: "The source library is not subscribed by this file.",
-			});
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(
+				bridge({
+					__error: "The source library is not subscribed by this file.",
+				}),
+			);
 
 			const tool = server._getTool("figma_import_library_variable");
 			const result = await tool.handler({ variableKey: "var-key-x" });
@@ -749,9 +767,11 @@ describe("Library Variable Tools (Plugin API)", () => {
 		});
 
 		it("returns generic hint for other __error sentinels", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce({
-				__error: "Some other plugin failure",
-			});
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(
+				bridge({
+					__error: "Some other plugin failure",
+				}),
+			);
 
 			const tool = server._getTool("figma_import_library_variable");
 			const result = await tool.handler({ variableKey: "var-key-x" });
@@ -776,7 +796,7 @@ describe("Library Variable Tools (Plugin API)", () => {
 		});
 
 		it("sends a Plugin API script that calls importVariableByKeyAsync", async () => {
-			mockConnector.executeCodeViaUI.mockResolvedValueOnce(IMPORTED_VARIABLE);
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce(bridge(IMPORTED_VARIABLE));
 
 			const tool = server._getTool("figma_import_library_variable");
 			await tool.handler({ variableKey: "var-key-primary" });
@@ -785,6 +805,112 @@ describe("Library Variable Tools (Plugin API)", () => {
 			expect(script).toContain(
 				"figma.variables.importVariableByKeyAsync",
 			);
+		});
+	});
+
+	// ------------------------------------------------------------------
+	// Bridge-envelope regression tests.
+	//
+	// Both tools read executeCodeViaUI()'s return value directly, as if it
+	// were the injected script's own value. It never is — the bridge wraps
+	// it in `{ success, result }`. That made figma_get_library_variables
+	// report 0 collections unconditionally, and figma_import_library_variable
+	// report hard failures as successes with `id: undefined`. Reported by
+	// Isabella Minzly, 2026-07-29.
+	//
+	// These assert on the envelope shape specifically, so a future refactor
+	// that reintroduces the bare-value assumption fails here instead of
+	// shipping a tool that confidently returns the opposite of the truth.
+	// ------------------------------------------------------------------
+	describe("Desktop Bridge envelope handling (regression)", () => {
+		it("unwraps the envelope instead of reporting 0 collections", async () => {
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce({
+				success: true,
+				result: MOCK_COLLECTIONS,
+			});
+
+			const tool = server._getTool("figma_get_library_variables");
+			const data = parseResult(await tool.handler({}));
+
+			expect(data.summary.totalCollections).toBe(3);
+			expect(data.summary.totalVariables).toBe(4);
+		});
+
+		it("surfaces a sentinel nested at result.__error as an error", async () => {
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce({
+				success: true,
+				result: { __error: "figma.teamLibrary API not available." },
+			});
+
+			const tool = server._getTool("figma_get_library_variables");
+			const result = await tool.handler({});
+
+			expect(result.isError).toBe(true);
+			expect(parseResult(result).error).toContain("teamLibrary");
+		});
+
+		it("reports a bridge-level failure instead of an empty success", async () => {
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce({
+				success: false,
+				error: "Execution timed out after 30000ms",
+			});
+
+			const tool = server._getTool("figma_get_library_variables");
+			const result = await tool.handler({});
+
+			expect(result.isError).toBe(true);
+			expect(parseResult(result).error).toContain("timed out");
+		});
+
+		it("returns the imported variable, not the envelope", async () => {
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce({
+				success: true,
+				result: {
+					id: "VariableID:1:42",
+					key: "var-key-primary",
+					name: "primary",
+					resolvedType: "COLOR",
+				},
+			});
+
+			const tool = server._getTool("figma_import_library_variable");
+			const data = parseResult(
+				await tool.handler({ variableKey: "var-key-primary" }),
+			);
+
+			expect(data.imported.id).toBe("VariableID:1:42");
+			expect(data.imported.success).toBeUndefined();
+			expect(data.usage.bind).toContain("VariableID:1:42");
+			expect(data.usage.bind).not.toContain("undefined");
+		});
+
+		it("fails a failed import loudly rather than returning id: undefined", async () => {
+			// The exact shape observed live against the Desktop Bridge.
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce({
+				success: true,
+				result: { __error: 'could not find variable with key "deadbeef"' },
+			});
+
+			const tool = server._getTool("figma_import_library_variable");
+			const result = await tool.handler({ variableKey: "deadbeef" });
+			const data = parseResult(result);
+
+			expect(result.isError).toBe(true);
+			expect(data.error).toContain("could not find variable");
+			expect(data.usage?.bind).toBeUndefined();
+		});
+
+		it("never reports success when the import yields no id", async () => {
+			mockConnector.executeCodeViaUI.mockResolvedValueOnce({
+				success: true,
+				result: { key: "var-key-x", name: "orphan" },
+			});
+
+			const tool = server._getTool("figma_import_library_variable");
+			const result = await tool.handler({ variableKey: "var-key-x" });
+
+			expect(result.isError).toBe(true);
+			expect(parseResult(result).error).toContain("no variable id");
 		});
 	});
 });
