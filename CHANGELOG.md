@@ -5,6 +5,23 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.38.2] - 2026-07-29
+
+### Fixed
+
+- **"Server disconnected" — the MCP server's own reaper was terminating healthy servers.** If your MCP client kept dropping the Figma Console connection and reconnecting only bought you a few minutes, this was why. It affected every client equally (reproduced in both Claude Code and Claude Desktop) because the fault was server-side, and it is unrelated to the older Desktop Bridge plugin reconnect issues.
+  - **Primary cause: the liveness probe could never succeed.** The reaper probes a sibling's `/health` before deciding it is dead, but it requested `http://127.0.0.1:{port}` while the WebSocket server binds `localhost` — which Node resolves to the **IPv6 loopback** on dual-stack macOS (`lsof` shows `[::1]:9223`, with nothing listening on IPv4). curl therefore returned connection-refused for perfectly healthy servers, which the caller maps to "confirmed dead". Every kill-safety gate built on that probe was inverted from a protection into a rubber stamp — including the one written specifically to spare siblings after the machine wakes from sleep. Verified live on a server actively handling a session: `127.0.0.1` gave curl exit 7, `localhost` gave exit 0.
+  - **Port advertisement files were written non-atomically.** A plain truncate-then-write, re-run every 30s per instance while every sibling scans all ten files in the range. A reader landing in that window got a parse error — and both cleanup paths treated an unparseable file as "corrupt, delete it", with no liveness check. That stranded a healthy server as a port-holder with no port file.
+  - **The orphan path killed without asking.** A process holding a port with no port file was terminated outright, never probed, even though the probe helper already existed and the sibling code path used it.
+  - **A stranded server could never recover.** The heartbeat returned early when its own file was missing, so a server that lost its file stayed unadvertised permanently — and an unadvertised port-holder is exactly what the orphan path kills.
+  - **Fixes:** probe `localhost` so curl tries every resolved address; write port files atomically via temp-file + `rename`; never delete a file on a parse failure; health-probe before the orphan kill in both the sync and async paths; and re-advertise from the heartbeat when our own file has gone missing, guarded by in-process port ownership so it can never resurrect a file after clean shutdown or claim a port we do not hold.
+  - **Important:** this only protects **newly started** server processes. A server already running an older build keeps the broken probe and will still terminate healthy siblings — so after upgrading, fully restart your MCP clients rather than just reconnecting. On macOS/Linux you can confirm nothing stale is left with `pkill -f 'figma-console-mcp/dist/local.js'` before restarting.
+
+### Internal
+
+- Two existing tests asserted the unsafe behaviour (`should clean up corrupt files`) and now assert the file is preserved instead. Seven new regression tests cover probe addressing, atomic writes, heartbeat self-healing, and the orphan-path probe gate; each was verified to fail against the pre-fix source before the fix was applied. 1422 tests passing.
+
+
 ## [1.38.1] - 2026-07-29
 
 ### Fixed
@@ -1229,6 +1246,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.38.2]: https://github.com/southleft/figma-console-mcp/compare/v1.38.1...v1.38.2
 [1.38.1]: https://github.com/southleft/figma-console-mcp/compare/v1.38.0...v1.38.1
 [1.38.0]: https://github.com/southleft/figma-console-mcp/compare/v1.37.1...v1.38.0
 [1.37.1]: https://github.com/southleft/figma-console-mcp/compare/v1.37.0...v1.37.1
