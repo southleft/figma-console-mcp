@@ -14,7 +14,7 @@ export interface IFigmaConnector {
   executeInPluginContext<T = any>(code: string): Promise<T>;
   getVariablesFromPluginUI(fileKey?: string): Promise<any>;
   getVariables(fileKey?: string): Promise<any>;
-  executeCodeViaUI(code: string, timeoutMs?: number): Promise<any>;
+  executeCodeViaUI(code: string, timeoutMs?: number, fileKey?: string): Promise<any>;
 
   // Variable operations
   updateVariable(variableId: string, modeId: string, value: any): Promise<any>;

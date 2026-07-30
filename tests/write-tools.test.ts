@@ -129,14 +129,21 @@ describe("Write Tools", () => {
 			const tool = server._getTool("figma_execute");
 			await tool.handler({ code: "return 1", timeout: 99999 });
 
-			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 30000);
+			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 30000, undefined);
 		});
 
 		it("passes through smaller timeouts unchanged", async () => {
 			const tool = server._getTool("figma_execute");
 			await tool.handler({ code: "return 1", timeout: 3000 });
 
-			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 3000);
+			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 3000, undefined);
+		});
+
+		it("passes fileKey through to target a specific connected file", async () => {
+			const tool = server._getTool("figma_execute");
+			await tool.handler({ code: "return 1", timeout: 3000, fileKey: "file-b" });
+
+			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 3000, "file-b");
 		});
 
 		it("returns resultAnalysis and fileContext in response", async () => {
