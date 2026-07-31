@@ -56,9 +56,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **113** | **101** | **9** |
+| **Total tools available** | **114** | **101** | **9** |
 
-> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (101 tools) from web AI clients without Node.js. NPX/Local Git gives the full 113 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (101 tools) from web AI clients without Node.js. NPX/Local Git gives the full 114 tools with real-time monitoring.
 
 ---
 
@@ -66,7 +66,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 113 tools including design creation, variable management, and component instantiation.
+**What you get:** All 114 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -163,7 +163,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 113 tools as NPX, plus full source code access.
+**What you get:** Same 114 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -309,7 +309,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **113** | **101** | **113** | **9** (read-only) |
+| **Total tools** | **114** | **101** | **114** | **9** (read-only) |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -324,7 +324,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 113 tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 114 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -417,6 +417,8 @@ When you first use design system tools:
   - Create frames, shapes, text, components
   - Apply auto-layout, styles, effects
   - Build complete UI mockups programmatically
+  - Optional `fileKey` targets one specific connected file directly (Local Mode), without touching the active file or target lock
+- `figma_execute_across_files` - **Local Mode only.** Fan the same script out to every (or a chosen subset of) Desktop Bridge-connected files concurrently, returning a per-file result map — for cross-file consistency checks/fixes across a multi-file design system, replacing "open file, run plugin, repeat per file"
 - `figma_create_component_set` - **Create a component set with variants in one declarative call**
   - Generate every variant combination from an axes matrix (e.g. `{ State: ["default", "hover", "disabled"], Size: ["sm", "lg"] }` → 6 variants) off a base component, or combine existing components
   - `Prop=Value` variant naming, `combineAsVariants` under the hood, optional auto-arranged labeled grid
@@ -682,7 +684,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 113 tools work through the WebSocket transport
+- All 114 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
