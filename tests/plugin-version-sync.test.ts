@@ -33,6 +33,7 @@ import {
 	parseBundledPluginVersion,
 	getBundledPluginVersion,
 	computePluginUpdateAvailable,
+	compareSemver,
 } from "../src/core/websocket-server";
 
 const root = path.resolve(__dirname, "..");
@@ -45,15 +46,6 @@ const codeJs = fs.readFileSync(
 );
 
 /** Numeric semver comparison: negative when a < b, 0 when equal, positive when a > b. */
-function compareSemver(a: string, b: string): number {
-	const pa = a.split(".").map(Number);
-	const pb = b.split(".").map(Number);
-	for (let i = 0; i < 3; i++) {
-		if (pa[i] !== pb[i]) return pa[i] - pb[i];
-	}
-	return 0;
-}
-
 describe("#62 plugin version drift", () => {
 	it("figma-desktop-bridge/code.js has a parseable PLUGIN_VERSION", () => {
 		expect(parseBundledPluginVersion(codeJs)).toMatch(/^\d+\.\d+\.\d+$/);
@@ -88,5 +80,61 @@ describe("v1.33.1 regression — server-only releases must not flag the plugin s
 	it("parseBundledPluginVersion returns null for sources without the constant", () => {
 		expect(parseBundledPluginVersion("var x = 1;")).toBeNull();
 		expect(parseBundledPluginVersion("var PLUGIN_VERSION = 'abc'")).toBeNull();
+	});
+});
+
+describe("v1.39.0 regression — an older server must not nag a newer plugin", () => {
+	/**
+	 * The banner used to fire on any inequality, in both directions. Because the
+	 * port range keeps several servers alive at once and each parses
+	 * BUNDLED_PLUGIN_VERSION once at module load, every server left running from
+	 * before an upgrade told a freshly re-imported plugin it was stale. The advice
+	 * was unfollowable: re-importing only installs the same or a newer plugin.
+	 * Observed live with four leftover v1.38.2 servers against a 1.39.0 plugin.
+	 */
+	it("plugin newer than the server's bundled copy is NOT flagged", () => {
+		expect(computePluginUpdateAvailable("1.39.0", "1.35.0")).toBe(false);
+	});
+
+	it("plugin newer by a single patch is NOT flagged", () => {
+		expect(computePluginUpdateAvailable("1.39.1", "1.39.0")).toBe(false);
+	});
+
+	it("plugin older than the bundled copy is still flagged", () => {
+		expect(computePluginUpdateAvailable("1.35.0", "1.39.0")).toBe(true);
+	});
+
+	it("matching versions are not flagged", () => {
+		expect(computePluginUpdateAvailable("1.39.0", "1.39.0")).toBe(false);
+	});
+
+	it("compares numerically, not lexicographically", () => {
+		// "1.9.0" > "1.10.0" as strings; the plugin here is genuinely older.
+		expect(computePluginUpdateAvailable("1.9.0", "1.10.0")).toBe(true);
+		expect(computePluginUpdateAvailable("1.10.0", "1.9.0")).toBe(false);
+	});
+
+	it("falls back to inequality when a version is unparseable", () => {
+		expect(computePluginUpdateAvailable("weird", "1.39.0")).toBe(true);
+		expect(computePluginUpdateAvailable("1.39.0", "weird")).toBe(true);
+		expect(computePluginUpdateAvailable("weird", "weird")).toBe(false);
+	});
+
+	it("a plugin reporting no version is still flagged", () => {
+		expect(computePluginUpdateAvailable(null, "1.39.0")).toBe(true);
+	});
+});
+
+describe("compareSemver", () => {
+	it("orders versions numerically", () => {
+		expect(compareSemver("1.39.0", "1.39.0")).toBe(0);
+		expect(compareSemver("1.9.0", "1.10.0")).toBeLessThan(0);
+		expect(compareSemver("2.0.0", "1.99.99")).toBeGreaterThan(0);
+	});
+
+	it("returns null for unparseable input", () => {
+		expect(compareSemver("1.39", "1.39.0")).toBeNull();
+		expect(compareSemver("abc", "1.0.0")).toBeNull();
+		expect(compareSemver("1.-1.0", "1.0.0")).toBeNull();
 	});
 });
