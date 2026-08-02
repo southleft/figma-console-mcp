@@ -77,29 +77,26 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-# ── npm auth precheck ───────────────────────────────────
-# Granular access tokens cap at 90 days. If the token in ~/.npmrc has
-# expired, every downstream step still runs successfully and we only
-# discover the problem at Phase 5 (`npm publish`) — by which point
-# version bumps, CHANGELOG scaffolding, and the GitHub Release have
-# already happened and need manual cleanup.
+# ── npm auth precheck (advisory) ────────────────────────
+# Publishing runs in CI via Trusted Publishing / OIDC on a `v*` tag push
+# (.github/workflows/publish.yml) — no local token, no 2FA prompt. A stale
+# or missing ~/.npmrc token therefore does NOT block a release, so this is
+# a warning rather than the hard gate it used to be when the maintainer
+# ran `npm publish` by hand.
 #
-# Fail fast: in non-dry-run mode, verify `npm whoami` resolves before
-# touching any files. Skip the check on --dry-run so previews stay cheap.
+# The token still matters for the manual fallback (`npm publish` from a
+# real TTY), so an expired one is worth flagging — just not worth aborting
+# a release that will never touch it.
 if [[ "$DRY_RUN" == false ]]; then
   if ! NPM_USER=$(npm whoami 2>/dev/null); then
-    echo -e "${RED}Error: npm authentication failed${NC}"
+    echo -e "${YELLOW}Note: npm auth unavailable${NC} — ${BOLD}npm whoami${NC} returned 401."
+    echo -e "  Not a blocker: publishing runs in CI via OIDC on the ${BOLD}v${VERSION}${NC} tag push."
+    echo -e "  Only refresh the token if you need the manual ${BOLD}npm publish${NC} fallback:"
+    echo -e "  ${CYAN}https://www.npmjs.com/settings/~/tokens${NC}"
     echo ""
-    echo "  ${BOLD}npm whoami${NC} returned 401 — the token in ~/.npmrc is expired or revoked."
-    echo ""
-    echo "  Granular access tokens expire every 90 days (npm's cap)."
-    echo "  Renew at: ${CYAN}https://www.npmjs.com/settings/~/tokens${NC}"
-    echo "  See ${CYAN}.notes/RELEASING.md → Known Issues → npm token rotation${NC} for the full recipe."
-    echo ""
-    echo "  Re-run this script after refreshing the token. No files have been modified yet."
-    exit 1
+  else
+    echo -e "${CYAN}npm auth:${NC} ${BOLD}$NPM_USER${NC} (verified)"
   fi
-  echo -e "${CYAN}npm auth:${NC} ${BOLD}$NPM_USER${NC} (verified)"
 fi
 
 # ── Resolve paths ───────────────────────────────────────
@@ -496,8 +493,26 @@ if $CREATE_RELEASE; then
   if $DRY_RUN; then
     echo -e "  ${CYAN}WOULD${NC} create GitHub Release v${VERSION} (--latest)"
   else
-    if command -v gh &>/dev/null; then
-      # Pull release notes from CHANGELOG.md — extract content between this version header and the next
+    if ! command -v gh &>/dev/null; then
+      echo -e "  ${YELLOW}SKIP${NC} GitHub Release — gh CLI not installed"
+    elif ! git rev-parse "v${VERSION}" &>/dev/null; then
+      # This script runs at Phase 2 — BEFORE the version bump is committed and
+      # tagged (Phase 5). `gh release create` on a tag that doesn't exist yet
+      # makes one from the REMOTE default branch head, which is the commit
+      # *without* the version bump. That tag push then fires
+      # .github/workflows/publish.yml against a tree whose package.json still
+      # holds the previous version. It also captures the CHANGELOG section
+      # while it's still an empty Phase 3 scaffold.
+      #
+      # So: never create it here. Print the command to run after the tag is
+      # pushed, when the notes are written and the tag points at the release.
+      echo -e "  ${YELLOW}DEFER${NC} GitHub Release — tag v${VERSION} doesn't exist yet"
+      echo -e "         Creating it now would tag the wrong commit and trigger publish early."
+      echo -e "         After committing, tagging, and pushing, run:"
+      echo -e "         ${CYAN}gh release create v${VERSION} -t v${VERSION} --latest --notes-from-tag${NC}"
+      echo -e "         (or pass -F with the finished CHANGELOG section)"
+    else
+      # Tag exists locally — safe to publish notes from the finished CHANGELOG.
       RELEASE_NOTES=$(awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found" "$ROOT/CHANGELOG.md" | sed '/^$/d')
       if [[ -z "$RELEASE_NOTES" ]]; then
         RELEASE_NOTES="See [CHANGELOG](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md) for details."
@@ -512,8 +527,6 @@ if $CREATE_RELEASE; then
         -n "$RELEASE_NOTES" 2>/dev/null && \
         echo -e "  ${GREEN}DONE${NC} GitHub Release v${VERSION} created" || \
         echo -e "  ${YELLOW}SKIP${NC} GitHub Release — already exists or gh not authenticated"
-    else
-      echo -e "  ${YELLOW}SKIP${NC} GitHub Release — gh CLI not installed"
     fi
   fi
   CHANGES+=("GitHub Release: v${VERSION}")

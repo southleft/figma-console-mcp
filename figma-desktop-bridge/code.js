@@ -9,7 +9,7 @@
 // detect stale cached plugins. Bumped by scripts/release.sh ONLY when plugin files
 // change (see issue #62); server-only releases leave it alone, so it may lag
 // package.json — that's intentional, not drift.
-var PLUGIN_VERSION = '1.35.0'; // Last release in which plugin files changed.
+var PLUGIN_VERSION = '1.39.0'; // Last release in which plugin files changed.
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
