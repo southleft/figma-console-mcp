@@ -96,6 +96,30 @@ describe('CloudWebSocketConnector', () => {
 		});
 	});
 
+	describe('executeCodeViaUI per-file targeting', () => {
+		it('runs against the paired file when no fileKey is given', async () => {
+			const stub = createMockStub({ commandResult: { success: true, result: 42 } });
+			const connector = new CloudWebSocketConnector(stub);
+
+			await expect(connector.executeCodeViaUI('return 42;')).resolves.toEqual({
+				success: true,
+				result: 42,
+			});
+		});
+
+		it('rejects a fileKey rather than silently running against the paired file', async () => {
+			const stub = createMockStub({ commandResult: { success: true } });
+			const connector = new CloudWebSocketConnector(stub);
+
+			// Cloud Mode pairs with exactly one plugin instance. Honoring the call
+			// as-if-targeted would report a successful write to the wrong file.
+			await expect(
+				connector.executeCodeViaUI('return 1;', 5000, 'some-other-file-key'),
+			).rejects.toThrow('Per-file targeting (fileKey) is Local Mode only');
+			expect(stub.fetch).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('command forwarding', () => {
 		it('sends EXECUTE_CODE to relay', async () => {
 			const stub = createMockStub({ commandResult: { output: 'hello' } });

@@ -34,7 +34,9 @@ When creating: place inside a named Section, positioned BELOW or AWAY from exist
 After creating: screenshot to verify clean placement and no overlaps.
 On failure/retry: DELETE any partial artifacts (empty frames, orphaned layers, blank pages) before retrying. Use node.remove() to clean up.
 Pages: NEVER create a new page if one with that name already exists — use the existing one. If you created a blank page during a failed attempt, delete it.
-Layers: If your code creates helper frames, placeholder nodes, or intermediate layers that aren't part of the final result, remove them.`,
+Layers: If your code creates helper frames, placeholder nodes, or intermediate layers that aren't part of the final result, remove them.
+
+**MULTI-FILE (Local Mode only):** Pass fileKey to run this in a specific connected file without switching the active file/target lock (see figma_list_open_files). To run the same code across several connected files at once, use figma_execute_across_files instead. Cloud Mode pairs with a single plugin instance and rejects fileKey.`,
 		{
 			code: z
 				.string()
@@ -49,13 +51,20 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 				.describe(
 					"Execution timeout in milliseconds (default: 5000, max: 30000)",
 				),
+			fileKey: z
+				.string()
+				.optional()
+				.describe(
+					"Local Mode only. Run against this specific connected file instead of the active file. Does not change the active file or target lock. Get connected fileKeys from figma_list_open_files. Rejected in Cloud Mode, which pairs with a single plugin instance.",
+				),
 		},
-		async ({ code, timeout }) => {
+		async ({ code, timeout, fileKey }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.executeCodeViaUI(
 					code,
 					Math.min(timeout, 30000),
+					fileKey,
 				);
 
 				return {

@@ -56,9 +56,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **113** | **101** | **9** |
+| **Total tools available** | **114** | **101** | **9** |
 
-> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (101 tools) from web AI clients without Node.js. NPX/Local Git gives the full 113 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (101 tools) from web AI clients without Node.js. NPX/Local Git gives the full 114 tools with real-time monitoring.
 
 ---
 
@@ -66,7 +66,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 113 tools including design creation, variable management, and component instantiation.
+**What you get:** All 114 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -163,7 +163,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 113 tools as NPX, plus full source code access.
+**What you get:** Same 114 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -309,7 +309,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **113** | **101** | **113** | **9** (read-only) |
+| **Total tools** | **114** | **101** | **114** | **9** (read-only) |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -324,7 +324,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 113 tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 114 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -417,6 +417,10 @@ When you first use design system tools:
   - Create frames, shapes, text, components
   - Apply auto-layout, styles, effects
   - Build complete UI mockups programmatically
+  - Optional `fileKey` targets one specific connected file directly (Local Mode only), without touching the active file or target lock
+- `figma_execute_across_files` - **Local Mode only.** Run the same script in several Desktop Bridge-connected files at once, concurrently, returning a per-file result map — for cross-file consistency checks and fixes across a multi-file design system, replacing "open file, run plugin, repeat per file"
+  - Name the files with `fileKeys` (from `figma_list_open_files`), or pass `allFiles: true` to hit every connected file — one of the two is required, so a script never fans out to files you didn't mean to touch
+  - Per-file timeouts and error isolation: one slow or failing file doesn't delay or fail the others
 - `figma_create_component_set` - **Create a component set with variants in one declarative call**
   - Generate every variant combination from an axes matrix (e.g. `{ State: ["default", "hover", "disabled"], Size: ["sm", "lg"] }` → 6 variants) off a base component, or combine existing components
   - `Prop=Value` variant naming, `combineAsVariants` under the hood, optional auto-arranged labeled grid
@@ -682,7 +686,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 113 tools work through the WebSocket transport
+- All 114 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -823,7 +827,7 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.38.2 (Stable) - Production-ready. Latest: a connection-stability fix — the server's own orphan reaper was terminating healthy MCP servers because its liveness probe used an IPv4 literal while the server binds the IPv6 loopback, which turned every kill-safety gate into a rubber stamp; this was the cause of recurring "Server disconnected" errors across all MCP clients. Alongside v1.38.1's fix for the shared-library variable tools, which had silently reported zero collections since v1.29.0 and reported failed imports as successes. On top of v1.38.0's ongoing component changelogs in generated docs — `figma_generate_component_doc` takes an opt-in `history` parameter that pulls per-component **design history** from Figma version history (each version diffed and scoped to that component, so renames, added properties, and token bindings show up as rows) alongside **code history** from `git log` on the component's source files, rendered as a `## History` section with design, code, and release-note tables. Prefers labeled versions, falls back to auto-saves when a file has none, and is off by default so existing calls are unchanged (server-only, no plugin re-import). On top of v1.37.x's design-system health audit for every client — `figma_audit_design_system_report` runs the dashboard's deterministic six-category scoring engine and returns the report as data with per-finding remediation, live-first fileKey-verified data (source disclosed), chunked per-category drill-down, and a 5-minute cache (server-only, no plugin re-import). On top of v1.36.0's target lock for multi-file parallel work — — `figma_navigate` takes a `lock: true` flag that pins the active file so an AI agent can work in one file while you work in another without commands routing to the wrong file. On top of v1.35.0's Figma Slots write support — create, inspect, populate, and reset Slots (GA at Config 2026) via 5 new tools (`figma_create_slot`, `figma_get_slots`, `figma_append_to_slot`, `figma_reset_slot`, `figma_add_slot_property`), live-validated against the GA Plugin API and based on community PR #77. On top of v1.34.0's Bidirectional Token Sync v2 + DTCG 2025.10 — `figma_import_tokens` applies the complete diff plan (creates missing collections/variables, applies renames, writes real `VARIABLE_ALIAS` references, and deletes only under explicit `replace`), `figma_export_tokens` speaks the DTCG 2025.10 dialect on request (legacy default byte-identical), variable scopes/codeSyntax round-trip via `$extensions`, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and `figma_create_component_set` builds a full variant set from an axes matrix in one call. On top of the v1.33.x line: version-handshake fix (re-import banner only fires when plugin files actually changed), security dependency sweep, and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **113 tools** (Local) / **101 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
+**Current Status:** v1.38.2 (Stable) - Production-ready. Latest: a connection-stability fix — the server's own orphan reaper was terminating healthy MCP servers because its liveness probe used an IPv4 literal while the server binds the IPv6 loopback, which turned every kill-safety gate into a rubber stamp; this was the cause of recurring "Server disconnected" errors across all MCP clients. Alongside v1.38.1's fix for the shared-library variable tools, which had silently reported zero collections since v1.29.0 and reported failed imports as successes. On top of v1.38.0's ongoing component changelogs in generated docs — `figma_generate_component_doc` takes an opt-in `history` parameter that pulls per-component **design history** from Figma version history (each version diffed and scoped to that component, so renames, added properties, and token bindings show up as rows) alongside **code history** from `git log` on the component's source files, rendered as a `## History` section with design, code, and release-note tables. Prefers labeled versions, falls back to auto-saves when a file has none, and is off by default so existing calls are unchanged (server-only, no plugin re-import). On top of v1.37.x's design-system health audit for every client — `figma_audit_design_system_report` runs the dashboard's deterministic six-category scoring engine and returns the report as data with per-finding remediation, live-first fileKey-verified data (source disclosed), chunked per-category drill-down, and a 5-minute cache (server-only, no plugin re-import). On top of v1.36.0's target lock for multi-file parallel work — — `figma_navigate` takes a `lock: true` flag that pins the active file so an AI agent can work in one file while you work in another without commands routing to the wrong file. On top of v1.35.0's Figma Slots write support — create, inspect, populate, and reset Slots (GA at Config 2026) via 5 new tools (`figma_create_slot`, `figma_get_slots`, `figma_append_to_slot`, `figma_reset_slot`, `figma_add_slot_property`), live-validated against the GA Plugin API and based on community PR #77. On top of v1.34.0's Bidirectional Token Sync v2 + DTCG 2025.10 — `figma_import_tokens` applies the complete diff plan (creates missing collections/variables, applies renames, writes real `VARIABLE_ALIAS` references, and deletes only under explicit `replace`), `figma_export_tokens` speaks the DTCG 2025.10 dialect on request (legacy default byte-identical), variable scopes/codeSyntax round-trip via `$extensions`, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and `figma_create_component_set` builds a full variant set from an axes matrix in one call. On top of the v1.33.x line: version-handshake fix (re-import banner only fires when plugin files actually changed), security dependency sweep, and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **114 tools** (Local) / **101 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
 
 **Recent Releases:**
 - [x] **v1.38.2** - Connection stability: the orphan reaper was terminating healthy MCP servers, the cause of recurring "Server disconnected" errors across every MCP client (reproduced in both Claude Code and Claude Desktop; unrelated to the Desktop Bridge plugin). The reaper probes a sibling's `/health` before deciding it is dead, but requested `127.0.0.1` while the WebSocket server binds `localhost` — resolved to the IPv6 loopback on dual-stack macOS, with nothing on IPv4 — so the probe reported "nothing responding" for healthy servers and every kill-safety gate built on it became a rubber stamp, including the one written to spare siblings after the machine sleeps. Three supporting defects: port files written non-atomically (a reader landing mid-rewrite got a parse error that both cleanup paths treated as "corrupt, delete it", stranding a healthy server), an orphan path that terminated fileless port-holders without probing at all, and a heartbeat that gave up permanently once its own file went missing. Fixes: probe `localhost`, atomic temp+rename writes, never delete on a parse failure, health-probe before the orphan kill in both paths, and self-healing re-advertisement guarded by in-process port ownership. **Fully restart MCP clients after upgrading** — older running builds keep the broken probe and still terminate healthy siblings. Server-only, no plugin re-import. 1422 tests (7 new regressions, each verified to fail pre-fix).

@@ -7,7 +7,7 @@ description: "Complete API reference for all 107 MCP tools, including parameters
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **113 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **101 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **114 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **101 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -35,6 +35,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_get_design_system_summary` | Overview of design system | Local / Cloud |
 | | `figma_get_token_values` | Get variable values by mode | Local / Cloud |
 | **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local / Cloud |
+| | `figma_execute_across_files` | **Run the same code in several connected files at once**, concurrently | Local |
 | | `figma_create_component_set` | **Create a component set with variants in one call** — axes matrix or existing components | Local / Cloud |
 | | `figma_arrange_component_set` | Organize variants with labels | Local / Cloud |
 | | `figma_set_description` | Add component descriptions | Local / Cloud |
@@ -780,10 +781,12 @@ figma_execute({
 **Parameters:**
 - `code` (required): JavaScript code to execute. Has access to `figma` global object.
 - `timeout` (optional): Execution timeout in ms (default: 5000, max: 30000)
+- `fileKey` (optional, **Local Mode only**): Run against a specific connected file instead of the active one, without changing the active file or releasing target lock. Get connected fileKeys from `figma_list_open_files`. Cloud Mode pairs with a single plugin instance and rejects this parameter rather than silently running against the paired file.
 
 **Returns:**
 - Whatever the code returns (use `return` statement)
 - Execution success/failure status
+- `fileContext` — the file name and key **as reported by the plugin that ran the code**, so you can confirm it executed where you intended
 
 **Best Practices:**
 1. **Always use `await` for async operations** (loadFontAsync, getNodeByIdAsync)
@@ -816,6 +819,75 @@ frame.paddingBottom = 16;
 frame.paddingLeft = 16;
 frame.paddingRight = 16;
 ```
+
+---
+
+### `figma_execute_across_files`
+
+**Local Mode only.** Run the same code in several connected files at once, concurrently. Built for cross-file work on a multi-file design system — auditing every file for the same problem, or applying the same fix to a set of them — instead of switching the active file and running `figma_execute` once per file.
+
+Each file's code runs in that file's own plugin context, so one file's failure or timeout doesn't affect the others. Results come back as a per-file map.
+
+**When to Use:**
+- Checking the same thing across a library split over multiple files ("which files still use the old text styles?")
+- Applying one mechanical fix across a known set of files
+- Any read that you'd otherwise repeat file by file
+
+**Usage:**
+```javascript
+// Preferred: name the files you mean.
+figma_execute_across_files({
+  fileKeys: ["abc123", "def456"],     // from figma_list_open_files
+  code: `
+    const detached = figma.currentPage.findAll(n => n.type === "INSTANCE" && !n.mainComponent);
+    return { detachedCount: detached.length };
+  `,
+  timeout: 10000
+})
+
+// Every connected file — opt in explicitly.
+figma_execute_across_files({
+  allFiles: true,
+  code: `return { pageCount: figma.root.children.length };`
+})
+```
+
+**Parameters:**
+- `code` (required): JavaScript to run in each targeted file. Same `figma` global as `figma_execute`.
+- `fileKeys` (optional): Which connected files to target. Get them from `figma_list_open_files`.
+- `allFiles` (optional, default `false`): Target every connected file.
+- `timeout` (optional): Per-file timeout in ms (default: 10000, max: 30000). Applied independently per file — one unresponsive file doesn't delay the rest.
+
+**You must pass either `fileKeys` or `allFiles: true`.** The tool refuses to run otherwise. This is deliberate: `allFiles` executes your code in files you may be actively editing, including one pinned by target lock, so hitting everything is a decision rather than what happens when you leave a parameter out. Name the files explicitly for anything that writes.
+
+**Returns:**
+```json
+{
+  "results": {
+    "abc123": {
+      "fileName": "Design System — Core",
+      "success": true,
+      "result": { "detachedCount": 3 },
+      "fileContext": { "fileName": "Design System — Core", "fileKey": "abc123" }
+    },
+    "def456": {
+      "fileName": "Design System — Icons",
+      "success": false,
+      "error": "WebSocket command EXECUTE_CODE timed out after 10000ms"
+    }
+  },
+  "totalTargeted": 2,
+  "totalSucceeded": 1,
+  "totalFailed": 1,
+  "missingFileKeys": ["ghi789"]
+}
+```
+
+- `fileContext` is reported by the plugin that actually ran the code — use it to confirm each result came from the file you addressed.
+- `missingFileKeys` lists requested files that aren't currently connected; the rest still run.
+- The response is only marked as an error if *every* targeted file failed.
+
+**Requires** the Desktop Bridge plugin open in each target file. Cloud Mode pairs with exactly one plugin instance, so this tool isn't available there.
 
 ---
 
