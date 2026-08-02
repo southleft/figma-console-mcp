@@ -75,9 +75,19 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 	}
 
 	async executeCodeViaUI(code: string, timeoutMs = 5000, fileKey?: string): Promise<any> {
-		// fileKey is accepted for IFigmaConnector parity but unused here — the
-		// cloud relay pairs with exactly one plugin instance, so there is no
+		// fileKey exists for IFigmaConnector parity but cannot be honored here —
+		// the cloud relay pairs with exactly one plugin instance, so there is no
 		// multi-file target to route between (matches getVariables* above).
+		// Reject rather than silently running against the paired file: a caller
+		// that asked for file B and got a successful write to file A has no way
+		// to tell from the response that it was misrouted.
+		if (fileKey) {
+			throw new Error(
+				'Per-file targeting (fileKey) is Local Mode only. Cloud Mode pairs with a single ' +
+				'plugin instance, so there is no second file to route to. Omit fileKey to run ' +
+				'against the paired file, or use Local Mode (NPX/Git) for multi-file work.'
+			);
+		}
 		return this.sendCommand('EXECUTE_CODE', { code, timeout: timeoutMs }, timeoutMs + 2000);
 	}
 

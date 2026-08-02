@@ -79,7 +79,67 @@ describe("Multi-File Tools", () => {
 			expect(parseResult(result).error).toContain("No files connected");
 		});
 
-		it("runs code against every connected file when fileKeys is omitted", async () => {
+		it("refuses to fan out when neither fileKeys nor allFiles is given", async () => {
+			const files = [connectedFile("file-a", "Nova", true), connectedFile("file-b", "Vega")];
+			const wsServer = createMockWsServer(files);
+			const executeCodeViaUI = jest.fn().mockResolvedValue({ success: true, result: null });
+			registerMultiFileTools(server as any, () => wsServer as any, async () => ({ executeCodeViaUI }));
+			const tool = server._getTool("figma_execute_across_files");
+
+			const result = await tool.handler({ code: "figma.root.children[0].remove();", timeout: 5000 });
+			const parsed = parseResult(result);
+
+			// Nothing may execute — targeting every open file has to be asked for.
+			expect(executeCodeViaUI).not.toHaveBeenCalled();
+			expect(result.isError).toBe(true);
+			expect(parsed.error).toContain("No target files specified");
+			expect(parsed.connectedFiles).toEqual([
+				{ fileKey: "file-a", fileName: "Nova", isActive: true },
+				{ fileKey: "file-b", fileName: "Vega", isActive: false },
+			]);
+		});
+
+		it("skips connected files that report no fileKey instead of hitting the active file", async () => {
+			const files = [
+				connectedFile("file-a", "Nova", true),
+				{ ...connectedFile("", "Unidentified"), fileKey: null },
+			];
+			const wsServer = createMockWsServer(files as any);
+			const executeCodeViaUI = jest.fn().mockResolvedValue({ success: true, result: null });
+			registerMultiFileTools(server as any, () => wsServer as any, async () => ({ executeCodeViaUI }));
+			const tool = server._getTool("figma_execute_across_files");
+
+			const result = await tool.handler({ code: "return 1;", allFiles: true, timeout: 5000 });
+			const parsed = parseResult(result);
+
+			// A null fileKey would fall through to sendCommand's active-file
+			// default and silently run the code against file-a a second time.
+			expect(executeCodeViaUI).toHaveBeenCalledTimes(1);
+			expect(executeCodeViaUI).toHaveBeenCalledWith("return 1;", 5000, "file-a");
+			expect(parsed.totalTargeted).toBe(1);
+			expect(parsed.skippedUnidentifiedFiles).toEqual(["Unidentified"]);
+		});
+
+		it("returns the plugin-reported fileContext so targeting can be verified", async () => {
+			const files = [connectedFile("file-a", "Nova")];
+			const wsServer = createMockWsServer(files);
+			const executeCodeViaUI = jest.fn().mockResolvedValue({
+				success: true,
+				result: null,
+				fileContext: { fileName: "Nova", fileKey: "file-a" },
+			});
+			registerMultiFileTools(server as any, () => wsServer as any, async () => ({ executeCodeViaUI }));
+			const tool = server._getTool("figma_execute_across_files");
+
+			const result = await tool.handler({ code: "return 1;", fileKeys: ["file-a"], timeout: 5000 });
+
+			expect(parseResult(result).results["file-a"].fileContext).toEqual({
+				fileName: "Nova",
+				fileKey: "file-a",
+			});
+		});
+
+		it("runs code against every connected file when allFiles is true", async () => {
 			const files = [
 				connectedFile("file-a", "Nova", true),
 				connectedFile("file-b", "Vega"),
@@ -90,7 +150,7 @@ describe("Multi-File Tools", () => {
 			registerMultiFileTools(server as any, () => wsServer as any, async () => ({ executeCodeViaUI }));
 			const tool = server._getTool("figma_execute_across_files");
 
-			const result = await tool.handler({ code: "return { pages: 5 };", timeout: 5000 });
+			const result = await tool.handler({ code: "return { pages: 5 };", allFiles: true, timeout: 5000 });
 			const parsed = parseResult(result);
 
 			expect(executeCodeViaUI).toHaveBeenCalledTimes(3);
@@ -125,7 +185,7 @@ describe("Multi-File Tools", () => {
 			registerMultiFileTools(server as any, () => wsServer as any, async () => ({ executeCodeViaUI }));
 			const tool = server._getTool("figma_execute_across_files");
 
-			await tool.handler({ code: "return 1;", timeout: 5000 });
+			await tool.handler({ code: "return 1;", allFiles: true, timeout: 5000 });
 
 			// Both dispatches fire before either resolves — file-b (shorter
 			// delay) finishes before file-a, which is impossible if the calls
@@ -203,7 +263,7 @@ describe("Multi-File Tools", () => {
 			registerMultiFileTools(server as any, () => wsServer as any, async () => ({ executeCodeViaUI }));
 			const tool = server._getTool("figma_execute_across_files");
 
-			const result = await tool.handler({ code: "return 1;", timeout: 5000 });
+			const result = await tool.handler({ code: "return 1;", allFiles: true, timeout: 5000 });
 			const parsed = parseResult(result);
 
 			expect(result.isError).toBe(false);
@@ -224,7 +284,7 @@ describe("Multi-File Tools", () => {
 			registerMultiFileTools(server as any, () => wsServer as any, async () => ({ executeCodeViaUI }));
 			const tool = server._getTool("figma_execute_across_files");
 
-			const result = await tool.handler({ code: "return 1;", timeout: 5000 });
+			const result = await tool.handler({ code: "return 1;", allFiles: true, timeout: 5000 });
 			const parsed = parseResult(result);
 
 			expect(result.isError).toBe(true);
@@ -241,7 +301,7 @@ describe("Multi-File Tools", () => {
 			registerMultiFileTools(server as any, () => wsServer as any, async () => ({ executeCodeViaUI }));
 			const tool = server._getTool("figma_execute_across_files");
 
-			const result = await tool.handler({ code: "return x;", timeout: 5000 });
+			const result = await tool.handler({ code: "return x;", allFiles: true, timeout: 5000 });
 			const parsed = parseResult(result);
 
 			expect(parsed.totalFailed).toBe(1);
@@ -255,7 +315,7 @@ describe("Multi-File Tools", () => {
 			registerMultiFileTools(server as any, () => wsServer as any, async () => ({ executeCodeViaUI }));
 			const tool = server._getTool("figma_execute_across_files");
 
-			await tool.handler({ code: "return 1;", timeout: 999999 });
+			await tool.handler({ code: "return 1;", allFiles: true, timeout: 999999 });
 
 			expect(executeCodeViaUI).toHaveBeenCalledWith("return 1;", 30000, "file-a");
 		});
