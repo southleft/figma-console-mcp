@@ -74,7 +74,10 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 		return this.sendCommand('EXECUTE_CODE', { code, timeout: 30000 }, 32000);
 	}
 
-	async executeCodeViaUI(code: string, timeoutMs = 5000): Promise<any> {
+	async executeCodeViaUI(code: string, timeoutMs = 5000, fileKey?: string): Promise<any> {
+		// fileKey is accepted for IFigmaConnector parity but unused here — the
+		// cloud relay pairs with exactly one plugin instance, so there is no
+		// multi-file target to route between (matches getVariables* above).
 		return this.sendCommand('EXECUTE_CODE', { code, timeout: timeoutMs }, timeoutMs + 2000);
 	}
 
