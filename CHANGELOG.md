@@ -5,6 +5,24 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.39.1] - 2026-08-02
+
+Server-only. **No plugin re-import needed** — and if you were being told to re-import repeatedly after upgrading to 1.39.0, this is the fix for that.
+
+### Fixed
+
+- **An older server told a newer plugin to re-import, and the banner could never be cleared.** After upgrading, the Desktop Bridge could keep showing *"Plugin update available — re-import it in Figma"* no matter how many times you re-imported. Re-importing was the one thing that could not help: it only ever installs the same or a newer plugin.
+  - **Cause.** `computePluginUpdateAvailable()` was a bare inequality (`pluginVersion !== bundledPluginVersion`) with no direction check, so it fired when the connected plugin was *newer* than the server's bundled copy as readily as when it was older.
+  - **Why it is a normal state rather than an edge case.** The server occupies a port in the 9223–9232 range and several instances run at once (one per MCP client, and clients like Claude Desktop spawn more than one). `BUNDLED_PLUGIN_VERSION` is parsed once at module load, so every server still running from before an upgrade holds the old value in memory and nags a correctly-updated plugin. Reproduced live on the v1.39.0 release: four leftover v1.38.2 servers with 19 hours of uptime, each sending `PLUGIN_UPDATE_AVAILABLE` to a freshly re-imported 1.39.0 plugin.
+  - **Fix.** Compare direction with a new exported `compareSemver()` and flag only when the bundled copy is genuinely newer. An older server now stays quiet, since it has nothing to offer. Unparseable versions fall back to the previous inequality so an unusual build still prompts, and a plugin reporting no version at all is still flagged — both unchanged.
+  - **Workaround if you are on 1.39.0** and don't want to upgrade yet: quit the MCP clients holding the older server processes (they outlive the client that spawned them), leaving only servers on the current version.
+  - Close relative of the v1.33.1 false-banner bug, which corrected *which* version was compared but left the direction unchecked.
+
+### Internal
+
+- Nine new tests around the version handshake, including numeric-not-lexicographic ordering (`1.9.0` vs `1.10.0`) and the unparseable-version fallback. The three direction-specific cases were each verified to fail against the previous logic before the fix landed. 1452 tests passing.
+
+
 ## [1.39.0] - 2026-08-02
 
 Multi-file work. If you keep several files of a design system open at once, you can now run the same code across them concurrently instead of switching the active file and repeating yourself. Based on community PR [#107](https://github.com/southleft/figma-console-mcp/pull/107) from [@Wolfr](https://github.com/Wolfr) (Johan Ronsse), who hit this driving nine files at once.
@@ -1283,6 +1301,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.39.1]: https://github.com/southleft/figma-console-mcp/compare/v1.39.0...v1.39.1
 [1.39.0]: https://github.com/southleft/figma-console-mcp/compare/v1.38.2...v1.39.0
 [1.38.2]: https://github.com/southleft/figma-console-mcp/compare/v1.38.1...v1.38.2
 [1.38.1]: https://github.com/southleft/figma-console-mcp/compare/v1.38.0...v1.38.1
