@@ -1,5 +1,7 @@
 # Figma Console MCP Server
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fsouthleft%2Ffigma-console-mcp.svg)](https://mcptoplist.com/server/glama%2Fsouthleft%2Ffigma-console-mcp)
+
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io/)
 [![npm](https://img.shields.io/npm/v/figma-console-mcp)](https://www.npmjs.com/package/figma-console-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
