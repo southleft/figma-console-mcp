@@ -9,6 +9,9 @@
   "enablePrivatePluginApi": true,
   "permissions": ["teamlibrary"],
   "documentAccess": "dynamic-page",
+  "relaunchButtons": [
+    { "command": "open", "name": "Open Figma Desktop Bridge", "multipleSelection": false }
+  ],
   "networkAccess": {
     "allowedDomains": [
       "http://localhost",
