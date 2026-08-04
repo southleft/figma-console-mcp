@@ -30,15 +30,18 @@ export function registerDeepComponentTools(
 			depth: z.preprocess(
 				(v) => (typeof v === "string" ? Number(v) : v),
 				z.number().optional().default(10),
-			).describe("Maximum tree depth to traverse (default: 10, max: 20). Use higher values for deeply nested components."),
+			).describe("Maximum tree depth to traverse (default: 10). Pass 0 (or a negative value) for UNLIMITED depth — traverses the entire subtree. Unlimited/large results can be big; target a specific child node if the payload is unwieldy."),
 		},
 		async ({ nodeId, depth = 10 }) => {
 			try {
-				const clampedDepth = Math.min(Math.max(depth, 1), 20);
-				logger.info({ nodeId, depth: clampedDepth }, "Deep component extraction");
+				// depth <= 0 => unlimited (no clamp); positive values pass through as-is.
+				const unlimited = depth <= 0;
+				const effectiveDepth = unlimited ? 0 : Math.max(depth, 1);
+				const depthLabel: number | string = unlimited ? "unlimited" : effectiveDepth;
+				logger.info({ nodeId, depth: depthLabel }, "Deep component extraction");
 
 				const connector = await getDesktopConnector();
-				const result = await connector.deepGetComponent(nodeId, clampedDepth);
+				const result = await connector.deepGetComponent(nodeId, effectiveDepth);
 
 				if (!result || (result.success === false)) {
 					throw new Error(result?.error || "Failed to extract component");
@@ -55,11 +58,11 @@ export function registerDeepComponentTools(
 					component: data,
 					metadata: {
 						purpose: "deep_component_development",
-						treeDepth: clampedDepth,
+						treeDepth: depthLabel,
 						responseSizeKB: sizeKB,
 						variablesResolved: data._variableMapSize || 0,
 						note: [
-							`Deep component tree extracted via Plugin API (depth ${clampedDepth}).`,
+							`Deep component tree extracted via Plugin API (depth ${depthLabel}).`,
 							"boundVariables are resolved to token names, collections, and codeSyntax.",
 							"INSTANCE nodes include mainComponent references (key, name, component set).",
 							"Use this data to generate production-quality, token-aware, accessible code.",
