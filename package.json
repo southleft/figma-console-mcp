@@ -61,7 +61,7 @@
 		"@cloudflare/puppeteer": "^1.0.4",
 		"@modelcontextprotocol/ext-apps": "^1.0.1",
 		"@modelcontextprotocol/sdk": "^1.26.0",
-		"agents": "^0.7.1",
+		"agents": "^0.20.1",
 		"axe-core": "^4.11.2",
 		"jsdom": "^29.0.1",
 		"pino": "^9.5.0",
