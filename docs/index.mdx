@@ -4,7 +4,7 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 ---
 
 <Note>
-**New in v1.39.0 (patched v1.39.1) — Multi-File Execution:** Work across several Figma files at once. `figma_execute_across_files` runs one script against every (or a chosen subset of) connected file **concurrently** — for auditing a multi-file design system for the same problem, or applying one fix across a known set, instead of switching the active file and repeating yourself. Four files × 2s of work completes in ~3s, not ~8s. `figma_execute` also takes an optional `fileKey` to target a single file without moving the active file or releasing target lock. You must name `fileKeys` or pass `allFiles: true` — there's no fan-out-to-everything default, since this runs code in files you may be actively editing. From community PR [#107](https://github.com/southleft/figma-console-mcp/pull/107) by [@Wolfr](https://github.com/Wolfr). Also fixes a relay bug that silently dropped `resultAnalysis` and `fileContext` from every `figma_execute` response — **re-import `manifest.json`** for those two fields; everything else works without it.  **Patched in v1.39.1:** if the plugin kept telling you to re-import no matter how many times you did, that was an older server instance nagging a newer plugin — an unfixable banner, now silenced. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1391---2026-08-02)
+**New in v1.40.0 — Design System Extraction:** Turn a production codebase into a design system. Seven Local-Mode `figma_ds_*` tools scan one or more apps (usage-ranked component inventory with vendor classification, variant inference from real call sites, duplicate detection, and a UI-kit-vs-design-system architecture pass), mine the de-facto styling into DTCG tokens with per-token provenance (multi-mode CSS custom properties, SCSS variables, Tailwind config values, shadcn HSL triples, utility-class frequency mining), scaffold the design-system package, wire a fresh Storybook workshop to the app's real theme layers and fonts, deep-extract components for porting with CSF3 story scaffolds, verify with deterministic fidelity evals, and persist porting progress across sessions. The extracted tokens import straight into Figma variables via `figma_import_tokens` — a full code → design system → Figma round-trip. Also fixes the token formatters quoting CSS functional expressions like `cubic-bezier(...)`, which silently killed transitions. Server-only — no plugin re-import needed. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1400---2026-08-16)
 </Note>
 
 # Your Design System as an API
@@ -123,6 +123,18 @@ Real component data. Real token values. Real code that uses your actual design s
     - `figma_get_design_system_summary` — Overview of entire system
   </Accordion>
 
+  <Accordion title="Codebase → Design System Extraction" icon="dna">
+    Turn a production codebase into a design system — analyze, tokenize, scaffold, port, verify. Local Mode only (these tools read and write your local filesystem). The extracted tokens import straight into Figma variables via `figma_import_tokens`.
+
+    - `figma_ds_analyze` — Scan one or more app codebases: framework/styling/vendor detection, usage-ranked component inventory (vendored / wrapped / pure-vendor / bespoke), variant inference from real call sites, duplicate detection, and architecture classification (atomic levels, specializations, missing primitives)
+    - `figma_ds_extract_tokens` — Mine styling into DTCG tokens with per-token provenance: multi-mode CSS custom properties, SCSS variables, Tailwind config values, shadcn HSL triples, utility-class frequency mining
+    - `figma_ds_scaffold` — Generate the design-system package: token files, token/typography/iconography showcase pages, framework peer deps
+    - `figma_ds_setup_storybook` — Wire a fresh Storybook workshop to the extraction: the app's real theme layers and fonts, plus a theme toolbar from the extracted modes
+    - `figma_ds_extract_component` — Per-component porting manifest with a ready-to-adapt CSF3 story scaffold
+    - `figma_ds_verify` — Deterministic fidelity evals + Figma round-trip readiness
+    - `figma_ds_status` — Porting progress persisted across sessions
+  </Accordion>
+
   <Accordion title="Design System Health Audit" icon="clipboard-check">
     Score your design system's health with a deterministic six-category audit — naming & semantics, token architecture, component metadata, accessibility, consistency, and coverage — from any MCP client.
 
@@ -216,7 +228,7 @@ Real component data. Real token values. Real code that uses your actual design s
 
 <Columns cols={3}>
   <Card title="NPX Setup (Recommended)" icon="bolt" href="/setup#-npx-setup-recommended">
-    **Full capabilities — 114 tools**
+    **Full capabilities — 121 tools**
 
     All tools including real-time monitoring. Requires Node.js and a Figma token.
   </Card>
@@ -284,7 +296,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Real scenarios and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 114 tools
+    Complete reference for 121 tools
   </Card>
   <Card title="Troubleshooting" icon="circle-question" href="/troubleshooting">
     Common issues and solutions

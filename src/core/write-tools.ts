@@ -3052,7 +3052,7 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 		"reflow/responsive (1.4.10), reading order (1.3.2), and disabled context (4.1.2). " +
 		"Best-practice readability hints (opt-in via rules: ['best-practice'] or ['all']): text sizing, line height, letter spacing, paragraph spacing. " +
 		"Note: line/paragraph spacing below 1.5x/2x is NOT a WCAG 1.4.12 failure — 1.4.12 requires supporting user spacing overrides without breaking (a code concern, see figma_scan_code_accessibility), not specific design values — so these are non-normative hints scoped to multi-line text only. " +
-		"Design system checks: hardcoded colors, missing text styles, default names, detached components. " +
+		"Design system checks (5 rules): hardcoded colors, missing text styles, default names, detached components, and token misuse (a semantic token bound to the wrong property, e.g. a bg/* or surface/* variable used as a text fill). " +
 		"Layout checks: missing auto-layout, empty containers. " +
 		"Default audit runs WCAG + design-system + layout (best-practice hints excluded). " +
 		"Returns categorized findings with severity levels (critical/warning/info) and WCAG conformance level (a/aa/aaa/best-practice) so teams can filter by target level. " +

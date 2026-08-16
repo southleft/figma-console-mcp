@@ -285,140 +285,27 @@ else
   echo -e "  ${CYAN}SKIP${NC} figma-desktop-bridge/code.js — no plugin file changes since v$CURRENT_VERSION (server-only release; keeping PLUGIN_VERSION so connected plugins aren't falsely flagged stale)"
 fi
 
-# ── 4. Local tool count (N+ tools) ─────────────────────
-# Matches any number followed by + and "tool(s)" in context of local/full mode
-# Patterns: "60+ tools", "the full 60+", "All 59+ tools", "**59+**"
-echo -e "${BOLD}4. Local tool count → ${LOCAL_TOOLS}+${NC}"
-
-for f in "${ALL_DOC_FILES[@]}"; do
-  # "N+ tools" — the most common pattern (e.g., "60+ tools", "59+ tools")
-  replace_in_file "$ROOT/$f" \
-    "[0-9]+\+ tools" \
-    "${LOCAL_TOOLS}+ tools" \
-    "N+ tools"
-
-  # "full N+" — e.g., "the full 60+" at end of sentence
-  replace_in_file "$ROOT/$f" \
-    "full [0-9]+\+" \
-    "full ${LOCAL_TOOLS}+" \
-    "full N+"
-
-  # "**N+**" — bold markdown pattern in tables
-  replace_in_file "$ROOT/$f" \
-    "\*\*[0-9]+\+\*\*" \
-    "**${LOCAL_TOOLS}+**" \
-    "**N+** bold"
-
-  # "All N+" — e.g., "All 59+ tools"
-  replace_in_file "$ROOT/$f" \
-    "All [0-9]+\+" \
-    "All ${LOCAL_TOOLS}+" \
-    "All N+"
-
-  # "N+ tool " (singular with trailing space, e.g., "57+ tool access")
-  replace_in_file "$ROOT/$f" \
-    "[0-9]+\+ tool " \
-    "${LOCAL_TOOLS}+ tool " \
-    "N+ tool (singular)"
-
-  # '<span class="number">N+</span>' — landing page HTML in src/index.ts
-  replace_in_file "$ROOT/$f" \
-    '"number">[0-9]+\+<' \
-    "\"number\">${LOCAL_TOOLS}+<" \
-    'HTML <span class="number">N+</span>'
-done
-
-# ── 5. Remote tool count (read-only SSE mode) ──────────
-echo -e "${BOLD}5. Remote tool count → ${REMOTE_TOOLS}${NC}"
-
-for f in "${ALL_DOC_FILES[@]}"; do
-  # "N read-only tools"
-  replace_in_file "$ROOT/$f" \
-    "[0-9]+ read-only tools" \
-    "${REMOTE_TOOLS} read-only tools" \
-    "N read-only tools"
-
-  # "Only N tools"
-  replace_in_file "$ROOT/$f" \
-    "Only [0-9]+ tools" \
-    "Only ${REMOTE_TOOLS} tools" \
-    "Only N tools"
-
-  # ", N in Remote"
-  replace_in_file "$ROOT/$f" \
-    ", [0-9]+ in Remote" \
-    ", ${REMOTE_TOOLS} in Remote" \
-    "N in Remote"
-
-  # "(N tools)" in remote context — be careful not to match cloud tools
-  # Only match in files that discuss remote mode specifically
-  if [[ "$f" == "docs/mode-comparison.md" || "$f" == "docs/setup.md" || "$f" == "docs/introduction.md" ]]; then
-    # "22 tools" on lines mentioning "read-only" or "remote" or "SSE"
-    :
-  fi
-done
-
-# ── 6. Cloud tool count ────────────────────────────────
-echo -e "${BOLD}6. Cloud tool count → ${CLOUD_TOOLS}${NC}"
-
-for f in "${ALL_DOC_FILES[@]}"; do
-  # "(N tools)" — cloud mode parenthesized pattern, e.g., "(44 tools)"
-  # This is the primary cloud mode pattern used in mode-comparison.md
-  replace_in_file "$ROOT/$f" \
-    "\\(([0-9]+) tools\\)" \
-    "(${CLOUD_TOOLS} tools)" \
-    "(N tools) cloud"
-
-  # CORRECTIVE (must run AFTER the generic rule above): the bottom-line
-  # sentence in mode-comparison.md has three DIFFERENT counts in one line —
-  # "read-only (9 tools) … write access (95 tools) … everything (106 tools)".
-  # The generic rule clobbers all three to the cloud count (shipped wrong in
-  # v1.33.0 and again in v1.33.1's first pass); these anchored rules repair
-  # the remote and local slots. sed -E has no lookbehind, so clobber-then-
-  # correct ordering is the mechanism — do not reorder.
-  replace_in_file "$ROOT/$f" \
-    "read-only \\(([0-9]+) tools\\)" \
-    "read-only (${REMOTE_TOOLS} tools)" \
-    "read-only (N tools) corrective"
-
-  replace_in_file "$ROOT/$f" \
-    "everything \\(([0-9]+) tools\\)" \
-    "everything (${LOCAL_TOOLS} tools)" \
-    "everything (N tools) corrective"
-
-  # "N tools including full write" — cloud mode in README
-  replace_in_file "$ROOT/$f" \
-    "[0-9]+ tools including full write" \
-    "${CLOUD_TOOLS} tools including full write" \
-    "N tools including full write"
-
-  # "get N tools"
-  replace_in_file "$ROOT/$f" \
-    "get [0-9]+ tools" \
-    "get ${CLOUD_TOOLS} tools" \
-    "get N tools"
-
-  # "— N tools" in cloud context
-  replace_in_file "$ROOT/$f" \
-    "— [0-9]+ tools" \
-    "— ${CLOUD_TOOLS} tools" \
-    "— N tools"
-
-  # CORRECTIVE (must run AFTER the generic rule above): the three setup
-  # cards in docs/index.mdx each carry a different mode's count; the generic
-  # rule sets all three to the cloud count. Anchor by card label to repair
-  # the NPX (local) and Remote slots. Same clobber-then-correct ordering as
-  # the parenthesized rules — do not reorder.
-  replace_in_file "$ROOT/$f" \
-    "Full capabilities — [0-9]+ tools" \
-    "Full capabilities — ${LOCAL_TOOLS} tools" \
-    "Full capabilities — N tools corrective"
-
-  replace_in_file "$ROOT/$f" \
-    "Quick exploration — [0-9]+ tools" \
-    "Quick exploration — ${REMOTE_TOOLS} tools" \
-    "Quick exploration — N tools corrective"
-done
+# ── 4. Tool counts (Local / Remote / Cloud) ────────────
+# Delegated to scripts/update-tool-counts.mjs — a manifest that knows the MODE
+# of every count reference explicitly ({file, pattern, mode} entries). This
+# replaced the old sed approach, which shipped wrong-mode counts in three
+# consecutive releases (v1.33.0, v1.33.1, v1.34.0). The script self-audits
+# after applying (Phase 3.5 Block D) and exits nonzero on any wrong-mode
+# count or unclassified "N tools" reference.
+echo -e "${BOLD}4. Tool counts (local/remote/cloud) — update-tool-counts.mjs${NC}"
+COUNT_ARGS=(--local "$LOCAL_TOOLS" --remote "$REMOTE_TOOLS" --cloud "$CLOUD_TOOLS")
+if $DRY_RUN; then
+  COUNT_ARGS+=(--dry-run)
+fi
+if node "$SCRIPT_DIR/update-tool-counts.mjs" "${COUNT_ARGS[@]}"; then
+  CHANGES+=("tool counts: manifest-driven update (update-tool-counts.mjs)")
+else
+  echo -e "${RED}Tool-count update/verify FAILED.${NC}"
+  echo -e "  A count is inconsistent or a new/changed doc sentence with a tool count"
+  echo -e "  isn't classified. Fix the docs, or update MANIFEST/ALLOWLIST in"
+  echo -e "  ${CYAN}scripts/update-tool-counts.mjs${NC}, then re-run."
+  exit 1
+fi
 
 # ── 7. Lockfile sync ───────────────────────────────────
 echo -e "${BOLD}7. Lockfile sync${NC}"

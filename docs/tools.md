@@ -7,7 +7,7 @@ description: "Complete API reference for all 107 MCP tools, including parameters
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **114 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **101 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **121 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **101 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
 
 ## Quick Reference
 
@@ -23,6 +23,13 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_reload_plugin` | Reload current page | All |
 | **🔁 Token Sync** | `figma_export_tokens` | Export Figma variables to DTCG JSON + CSS (replaces Style Dictionary) | Local / Cloud |
 | | `figma_import_tokens` | Push code-side token edits back to Figma (diff-aware merge) | Local / Cloud |
+| **🧬 Design System Extraction** | `figma_ds_analyze` | Scan production codebase(s): component inventory, classification, architecture | Local |
+| | `figma_ds_extract_tokens` | Mine codebase styling into DTCG tokens with provenance | Local |
+| | `figma_ds_scaffold` | Generate the design-system package + token files + showcase docs | Local |
+| | `figma_ds_setup_storybook` | Wire a fresh Storybook workshop to the extracted system | Local |
+| | `figma_ds_extract_component` | Per-component porting manifest + CSF3 story scaffold | Local |
+| | `figma_ds_verify` | Deterministic fidelity evals + Figma round-trip readiness | Local |
+| | `figma_ds_status` | Read/record porting progress (persists across sessions) | Local |
 | **🎨 Design System** | `figma_get_variables` | Extract design tokens/variables | All |
 | | `figma_get_styles` | Get color, text, effect styles | All |
 | | `figma_get_component` | Get component data | All |
@@ -426,6 +433,213 @@ figma_import_tokens({
 Partial-success semantics throughout — per-variable errors don't fail the batch; results are returned in `applyResult.errors[]`.
 
 **Cloud Mode:** Pass tokens inline via `payload` (single file) or `files` (multi-file). Omit `configPath`. The apply phase works in Cloud Mode because it routes through the paired Desktop Bridge plugin via the Cloud Plugin Relay — transport-agnostic.
+
+---
+
+## 🧬 Design System Extraction Tools
+
+> **⚠️ Local Mode only**: These tools read a production codebase and write a design-system package to your local filesystem — something the cloud deployment cannot do. They are registered only in Local Mode (NPX / Local Git) and never appear in Cloud or Remote Mode tool lists.
+
+Turn a production codebase into a design system. The tools run in order:
+
+1. **`figma_ds_analyze`** — scan the app(s): component inventory, classification, architecture picture
+2. **`figma_ds_extract_tokens`** — mine the styling into DTCG tokens
+3. **`figma_ds_scaffold`** — generate the design-system package, then run `npm create storybook@latest` inside it
+4. **`figma_ds_setup_storybook`** — wire the fresh workshop to the extracted system
+5. Per component: **`figma_ds_extract_component`** → port it → record with **`figma_ds_status`**
+6. **`figma_ds_verify`** — deterministic fidelity evals before handoff or pushing tokens to Figma
+
+For design-led organizations, the extracted `tokens/tokens.json` imports straight into Figma variables with `figma_import_tokens` (top-level groups become collections) — a full code → design system → Figma round-trip.
+
+All manifests persist under `<outDir>/.extraction/`, so a long engagement survives session boundaries.
+
+### `figma_ds_analyze`
+
+Analyze one or more production app codebases as the first step of extraction. Detects framework (React/Next/Angular/Web Components), styling methods (Tailwind v3/v4, CSS Modules, SCSS, Emotion, styled-components), and vendor component layers (shadcn/ui, Radix, MUI, Chakra, etc.); builds a component inventory with per-component classification (vendored / wrapped / pure-vendor / bespoke), prop contracts, real usage counts (porting rank), observed prop values (variant inference), and duplicate detection. Iconography and typography rules are captured for the scaffold's showcase pages.
+
+It also classifies the **architecture** — the difference between a UI kit and a design system. An app ships `FollowButton`, `ModerationMenu`, `NodeCard` (components named after usage); a design system ships `Button`, `Menu`, `Card`. The analyzer assigns atomic levels, detects specializations (`FollowButton` → `Button`), and derives `missingPrimitives`: the generic components the specializations imply but that don't exist in the codebase — your design-system build list.
+
+**When to Use:**
+- Starting a design-system engagement from an existing product codebase
+- Deciding what to build: which components are worth porting, which are vendor pass-throughs, which usage-named components should collapse into generic primitives
+- Finding the shared design language across several apps (pass multiple targets — inventories merge and cross-app duplicates are flagged)
+
+**Usage:**
+```javascript
+figma_ds_analyze({
+  targets: ["/absolute/path/to/app"],          // multiple targets = cross-app extraction
+  outDir: "/absolute/path/to/design-system",   // optional; default: <first target>/design-system
+  exclude: ["legacy/"],                        // optional substring filters
+  maxFiles: 5000
+})
+```
+
+**Parameters:**
+- `targets` (required): App root directories. **Absolute paths strongly recommended** — the MCP server's working directory is not your project.
+- `outDir` (optional): Where the design-system package will be generated; manifests persist under `<outDir>/.extraction/`. Default: `<first target>/design-system`.
+- `include` / `exclude` (optional): Substring filters on relative paths (`node_modules`, `dist`, `.next`, etc. are always skipped).
+- `maxFiles` (optional): Hard cap on files scanned per target (default 5000).
+
+**Returns:** A compressed summary — per-target detection results, inventory counts by classification, top components by usage, duplicate groups, and the architecture summary (specializations + missing primitives) — plus the path to the full manifest at `<outDir>/.extraction/analysis.json`. Read slices of the manifest for detail.
+
+---
+
+### `figma_ds_extract_tokens`
+
+Extract design tokens from the analyzed codebase into canonical DTCG JSON (plus optional CSS variables / Tailwind / SCSS / TypeScript projections via the same formatter engine as `figma_export_tokens`).
+
+Mining runs in two confidence tiers:
+
+1. **Declared** styling intent — `:root` and `@theme` custom properties (light + dark blocks across framework conventions: `.dark`, `[data-theme=…]`, `[data-mode=…]`, `prefers-color-scheme` → multi-mode tokens), SCSS variables, `tailwind.config` theme values, shadcn HSL triples. These keep their names and always become tokens.
+2. **Inferred** — recurring raw values (hex colors, spacing/radius/font sizes) promoted above a frequency threshold; everything below the threshold is listed in the report for human review instead of silently dropped. Tailwind utility classes used in markup are frequency-mined and valued from the app's **own installed theme**, so the values are version-accurate rather than from a hardcoded palette.
+
+Every token carries provenance — source `file:line`, confidence tier, frequency — in `$extensions`. Names stay structural as mined (`color/blue/500`); do a semantic-naming review pass with the user afterwards (role names layer on as aliases).
+
+**Usage:**
+```javascript
+figma_ds_extract_tokens({
+  outDir: "/absolute/path/to/design-system",  // same outDir as figma_ds_analyze
+  formats: ["dtcg", "css-vars", "tailwind-v4"],  // match the app's styling method
+  minFrequency: 4,      // promotion threshold for undeclared raw values
+  write: true           // false = dry run, returns the DTCG document inline
+})
+```
+
+**Parameters:**
+- `outDir` (optional): The outDir used in `figma_ds_analyze` (reads `.extraction/analysis.json` from it). Pass explicitly when in doubt.
+- `targets` (optional): Override — scan these app roots instead of the analysis manifest's targets (rarely needed).
+- `formats` (optional, default `["dtcg", "css-vars"]`): Token file formats to write under `<outDir>/tokens/`. `dtcg` (canonical) is always written; the full format list matches `figma_export_tokens`.
+- `dtcgDialect` (optional, default `"legacy"`): `"legacy"` hex-string colors (max compatibility) or `"2025"` DTCG 2025.10 object colors/dimensions.
+- `minFrequency` (optional, default 4): How often a raw value must recur to be promoted to a token.
+- `write` (optional, default `true`): Write files, or return the document inline (dry run).
+
+**Returns:** Token counts by tier and type, set/mode structure, warnings, a below-threshold sample for review, and the list of files written. The DTCG output at `tokens/tokens.json` is directly importable via `figma_import_tokens` — top-level groups become Figma variable collections.
+
+---
+
+### `figma_ds_scaffold`
+
+Generate the design-system package skeleton at `outDir` from a completed analysis + token extraction: `package.json` (app framework as peer deps), `src/components` layout, token files via the shared formatter engine, framework-neutral token/typography/iconography showcase MDX docs pages (the bird's-eye view of what was mined), and a README with the workflow.
+
+Storybook itself is **not** installed by this tool — after scaffolding, run `npm create storybook@latest` inside `outDir`. The Storybook CLI auto-detects the framework and installs the current version, so the scaffold never bakes version-pinned Storybook templates that rot.
+
+**Usage:**
+```javascript
+figma_ds_scaffold({
+  outDir: "/absolute/path/to/design-system",
+  packageName: "@acme/design-system",   // default: @extracted/design-system
+  force: false                          // existing files are skipped unless true
+})
+```
+
+**Parameters:**
+- `outDir` (required): The outDir used in `figma_ds_analyze` / `figma_ds_extract_tokens`.
+- `packageName` (optional): npm package name for the design system.
+- `framework` (optional): Override the scaffold framework (default: first framework detected by the analysis). Note: Storybook has no `.astro` renderer — `astro` scaffolds a react-vite workshop whose stories mirror the component markup.
+- `formats` / `dtcgDialect` (optional): Token formats to (re)generate under `tokens/`.
+- `force` (optional, default `false`): Overwrite existing scaffold files (token files always refresh).
+
+**Returns:** Files written/skipped and next steps. Additive by default — safe to re-run.
+
+---
+
+### `figma_ds_setup_storybook`
+
+Wire a freshly-initialized Storybook workshop to the extracted design system — run **after** `npm create storybook@latest` inside `outDir`. A stock workshop knows nothing about the source app; each piece this generates corresponds to a real render-fidelity failure found in live extraction runs:
+
+- **`.storybook/preview.css`** — Tailwind entry importing the extracted tokens plus the **source app's** `@theme` utility mapping, custom `@utility` definitions, `@layer base`, and `@font-face` rules mined from its stylesheets, with a dark variant covering both `.dark` and `[data-theme]` conventions
+- **Font copying** — self-hosted font files copied into `staticDirs`, with runtime-var fallbacks
+- **`main.js` patch** — Tailwind vite plugin + automatic JSX runtime (without it, stories throw `React is not defined`)
+- **`preview.jsx` patch** — preview.css import + a theme toolbar/decorator that sets both the class and `data-theme` conventions, using the extracted mode names
+
+**Usage:**
+```javascript
+figma_ds_setup_storybook({
+  outDir: "/absolute/path/to/design-system"   // must contain a fresh .storybook/
+})
+```
+
+**Parameters:**
+- `outDir` (required): The design-system package dir (same outDir as `figma_ds_analyze`) containing the freshly-initialized `.storybook/`.
+
+**Returns:** What was generated/patched, plus any manual steps for things it couldn't patch safely. Idempotent — safe to re-run. Restart the Storybook dev server afterwards; `@import`ed CSS changes are not always hot-reloaded.
+
+---
+
+### `figma_ds_extract_component`
+
+Deep-extract **one** component from the inventory for porting into the design system: source (capped at 64KB), local import closure (relative imports to follow), prop contract, observed call-site variants, vendor classification, style touchpoints (classNames, CSS-module imports, custom properties referenced), and a ready-to-adapt CSF3 story scaffold with variant stories inferred from real usage.
+
+The agent then ports the component into `<outDir>/src/components/<Name>/` and records progress with `figma_ds_status`.
+
+**Usage:**
+```javascript
+figma_ds_extract_component({
+  outDir: "/absolute/path/to/design-system",
+  component: "Button"    // name from the inventory (see figma_ds_analyze topByUsage)
+})
+```
+
+**Parameters:**
+- `outDir` (required): The outDir used in `figma_ds_analyze`.
+- `component` (required): Component name from the inventory. Near-miss names come back as suggestions.
+
+**Returns:** The porting manifest plus a `portingChecklist` (decouple app-specific imports, replace hardcoded values with tokens, adapt the story scaffold, verify visually, record status). Pure-vendor components return guidance instead of source — theme them via tokens and document approved usage, or wrap them in the design system if customization is needed.
+
+---
+
+### `figma_ds_verify`
+
+Run the deterministic fidelity evals on an extracted design-system package — the governance gate before handing off or pushing tokens to Figma. Each check encodes a failure class found in real extraction runs:
+
+| Check | Catches |
+|---|---|
+| DTCG parse + alias integrity | `tokens.json` that won't import, dangling `{alias}` references |
+| Quoted-CSS-expression scan | Quoted functional expressions (`"cubic-bezier(...)"`) in generated token files — they silently kill transitions |
+| Workshop `var()` resolution | `var(--x)` consumed in component/preview CSS with no definition anywhere in the workshop |
+| Structure | Component directories missing a stories file or index barrel |
+| Porting coverage | Portable inventory components with no recorded porting status |
+
+Also reports **Figma round-trip readiness** with the exact `figma_import_tokens` call for design-led orgs (ask the user: code-led or design-led?).
+
+**Usage:**
+```javascript
+figma_ds_verify({ outDir: "/absolute/path/to/design-system" })
+```
+
+**Parameters:**
+- `outDir` (required): The design-system package dir.
+
+**Returns:** `{ passed, checks: [{ name, status: pass|fail|warn|skip, details }], figmaRoundTrip: { ready, how } }`.
+
+---
+
+### `figma_ds_status`
+
+Read or update porting progress, persisted in `<outDir>/.extraction/status.json` so long engagements survive session boundaries.
+
+**Usage:**
+```javascript
+// Read progress
+figma_ds_status({ outDir: "/absolute/path/to/design-system" })
+
+// Record a component's status
+figma_ds_status({
+  outDir: "/absolute/path/to/design-system",
+  update: {
+    component: "Button",
+    status: "ported",              // pending | in-progress | ported | skipped
+    notes: "Merged FollowButton + SubscribeButton into variants",
+    storyFile: "src/components/Button/Button.stories.jsx"
+  }
+})
+```
+
+**Parameters:**
+- `outDir` (required): The outDir used in `figma_ds_analyze`.
+- `update` (optional): `{ component, status, notes?, storyFile? }`. Omit to just read progress.
+
+**Returns:** Status counts, the next components remaining, and the manifest path.
 
 ---
 

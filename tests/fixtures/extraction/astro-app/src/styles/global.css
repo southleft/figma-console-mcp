@@ -1,0 +1,38 @@
+@import 'tailwindcss';
+
+:root {
+  --sl-color-red-500: #f05735;
+  --sl-color-blue-500: #006699;
+  --sl-color-ink-900: #181714;
+  --sl-color-paper-100: #f3f1eb;
+  --sl-font-display: 'Agrandir', 'IBM Plex Sans', sans-serif;
+  --sl-text-h1: clamp(2.5rem, 1.6rem + 3.8vw, 4.5rem);
+  --sl-text-body: 1rem;
+}
+
+[data-theme='dark'] {
+  --sl-bg: var(--sl-color-ink-900);
+  --sl-accent: var(--sl-color-red-500);
+}
+
+[data-theme='light'] {
+  --sl-bg: var(--sl-color-paper-100);
+  --sl-accent: var(--sl-color-blue-500);
+}
+
+h1 {
+  font-size: var(--sl-text-h1);
+  font-family: var(--sl-font-display);
+  line-height: 1.05;
+}
+
+.lead {
+  font-size: 1.25rem;
+  line-height: 1.6;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}

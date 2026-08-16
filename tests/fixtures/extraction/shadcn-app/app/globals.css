@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --primary: 222.2 47.4% 11.2%;
+  --primary-foreground: 210 40% 98%;
+  --radius: 0.5rem;
+  --color-blue-500: #3b82f6;
+  --accent-highlight: #ff6b35;
+}
+
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --primary: 210 40% 98%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+}
+
+.hero {
+  color: #22c55e;
+  padding: 24px;
+  border-radius: 8px;
+}
+
+.hero-alt {
+  background: #22c55e;
+  margin: 24px;
+}
+
+.banner {
+  border-color: #22c55e;
+  padding: 24px;
+}
