@@ -1,0 +1,8 @@
+{
+  "name": "css-modules-fixture-app",
+  "private": true,
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  }
+}

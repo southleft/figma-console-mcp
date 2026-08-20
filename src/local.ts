@@ -40,6 +40,8 @@ import { registerLibraryTools, registerLibraryVariableTools } from "./core/libra
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { registerWriteTools } from "./core/write-tools.js";
+import { registerMultiFileTools } from "./core/multi-file-tools.js";
+import { registerDesignSystemExtractionTools } from "./core/design-system-extraction-tools.js";
 import { registerTokensTools } from "./core/tokens-tools.js";
 import { wrapServerForIdentity } from "./core/identity.js";
 import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
@@ -3060,12 +3062,30 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// so local mode and cloud mode share the same 30 implementations — no risk of drift.
 		registerWriteTools(this.server, () => this.getDesktopConnector());
 
+		// Register cross-file tools (figma_execute_across_files) — run the same
+		// code against every (or a chosen subset of) currently connected files
+		// concurrently. Local mode only, needs direct wsServer access for
+		// getConnectedFiles(), so it isn't part of the connector abstraction.
+		registerMultiFileTools(
+			this.server,
+			() => this.wsServer,
+			() => this.getDesktopConnector(),
+		);
+
 		// Register token sync tools — figma_export_tokens and figma_import_tokens.
 		// Replace Style Dictionary and Tokens Studio's export pipeline for the
 		// popular styling methods (DTCG canonical — legacy + 2025.10 dialects —
 		// plus CSS/Tailwind/SCSS/TS/JSON/Style Dictionary/Tokens Studio, all
 		// derived from a single internal token model).
 		registerTokensTools(this.server, () => this.getDesktopConnector());
+
+		// Register design system extraction tools (figma_ds_*) — scan a
+		// production codebase, mine its de-facto styling into DTCG tokens, and
+		// scaffold a design-system/ package with Storybook. Local mode only:
+		// these read/write the local filesystem, which Cloudflare Workers
+		// cannot (registerMultiFileTools precedent — never registered in
+		// src/index.ts, so no Cloud Mode silent no-op is possible).
+		registerDesignSystemExtractionTools(this.server);
 
 		// Register Figma API tools (Tools 8-11)
 		registerFigmaAPITools(

@@ -177,7 +177,7 @@ Figma Console MCP makes this real. Your design system becomes:
 
 ### Recommended: NPX Setup (Full Capabilities)
 
-Get all 113 tools including design creation, variable management, and component instantiation.
+Get all 121 tools including design creation, variable management, and component instantiation.
 
 <Steps>
   <Step title="Get a Figma Token">
@@ -224,7 +224,7 @@ If you just want to explore or evaluate the tool, use Remote Mode. It's read-onl
 </Steps>
 
 <Warning>
-**Remote mode without pairing is read-only** (101 tools). For write access from web AI clients, use Cloud Mode above. For full capabilities with real-time monitoring, use NPX Setup.
+**Remote mode without pairing is read-only** (9 tools). For write access from web AI clients, use Cloud Mode above. For full capabilities with real-time monitoring, use NPX Setup.
 </Warning>
 
 <Card title="Full Setup Guide" icon="book-open" href="/setup">
@@ -289,7 +289,7 @@ Figma Console MCP offers three connection tiers with different capabilities:
 
 | Feature | Local (NPX/Git) | Cloud Mode | Remote (Read-Only) |
 |---------|-----------------|------------|-------------------|
-| **Total tools** | **113** | **101** | **9** |
+| **Total tools** | **114** | **101** | **9** |
 | **Setup** | ~10 minutes | ~5 minutes | ~2 minutes |
 | **Create designs** | ✅ | ✅ | ❌ |
 | **Edit designs** | ✅ | ✅ | ❌ |
@@ -347,7 +347,7 @@ Figma Console MCP offers three connection tiers with different capabilities:
     Real-world examples and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 113 tools
+    Complete reference for 121 tools
   </Card>
 </Columns>
 

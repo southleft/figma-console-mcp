@@ -1,0 +1,27 @@
+---
+interface Props {
+  href?: string;
+  kind?: 'primary' | 'ghost';
+  label: string;
+}
+const { href, kind = 'primary', label } = Astro.props;
+const Tag = href ? 'a' : 'button';
+---
+
+<Tag class={`btn btn--${kind}`} href={href}>
+  {label}
+</Tag>
+
+<style>
+  .btn {
+    padding: 12px 24px;
+    border-radius: 999px;
+    background: var(--sl-accent);
+    color: #fdfcfa;
+  }
+  .btn--ghost {
+    background: transparent;
+    border: 1px solid var(--sl-accent);
+    border-radius: 999px;
+  }
+</style>

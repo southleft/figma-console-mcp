@@ -2433,6 +2433,13 @@
             if (msg.warnings !== undefined) result.warnings = msg.warnings;
             if (msg.updatedCount !== undefined) result.updatedCount = msg.updatedCount;
             if (msg.nodes !== undefined) result.nodes = msg.nodes;
+            // EXECUTE_CODE reports these two: resultAnalysis (silent-failure
+            // hints, which figma_execute's own description tells callers to
+            // check) and fileContext (the file the code actually ran in, which
+            // is how per-file targeting is verified). code.js has always sent
+            // them; this relay hop dropped them, so they never arrived.
+            if (msg.resultAnalysis !== undefined) result.resultAnalysis = msg.resultAnalysis;
+            if (msg.fileContext !== undefined) result.fileContext = msg.fileContext;
             request.resolve(result);
           } else {
             request.resolve({ success: false, error: msg.error || 'Unknown error' });

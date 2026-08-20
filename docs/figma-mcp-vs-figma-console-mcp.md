@@ -21,7 +21,7 @@ The short answer: **approach** and **audience**. The Figma MCP is a task-driven 
   <Card title="Figma Console MCP" icon="terminal">
     **Made by Southleft** — A design system management platform. 107 dedicated tools for reading, writing, managing tokens, analyzing parity, and bridging the gap between designers and developers.
 
-    113 tools. Plugin API + REST API. Open source (MIT).
+    121 tools. Plugin API + REST API. Open source (MIT).
   </Card>
 </Columns>
 
@@ -90,6 +90,7 @@ Figma Console MCP was built for design system teams. These tools have no equival
 | Design annotations (read, write, clear) | No | Yes (3 dedicated tools) |
 | Annotation-enriched component docs | No | Yes |
 | Bidirectional Figma↔code token sync (DTCG canonical, legacy + 2025.10 dialects) | No | Yes (`figma_export_tokens` / `figma_import_tokens`) |
+| Extract a design system FROM a production codebase (tokens, components, Storybook, Figma round-trip) | No | Yes (`figma_ds_analyze` → `figma_ds_verify`, 7 tools, Local Mode) |
 | Replaces Style Dictionary + Tokens Studio export pipeline | No | Yes (10 formats: DTCG, CSS, Tailwind v4/v3, SCSS, TS, JSON ×2, Style Dictionary v3, Tokens Studio) |
 | Import applies creates / renames / alias writes / replace-gated deletes | No | Yes (full apply phase) |
 | Round-trip safe — preserves Figma variable IDs in `$extensions` | No | Yes |
@@ -276,7 +277,7 @@ Both tools are better together. Use the one that fits your workflow, or use both
 
 <Columns cols={2}>
   <Card title="Set Up Figma Console MCP" icon="rocket" href="/setup">
-    Full 106 tool access in ~10 minutes. Manage your design system with AI.
+    Full 121 tool access in ~10 minutes. Manage your design system with AI.
   </Card>
   <Card title="Set Up Figma MCP (Official)" icon="figma" href="https://developers.figma.com/docs/figma-mcp-server/">
     Figma's official documentation for their MCP server.

@@ -1,0 +1,105 @@
+# Publish to npm via Trusted Publishing (OIDC).
+#
+# No NPM_TOKEN. Authentication is a short-lived OIDC token minted by GitHub and
+# exchanged with npm, which means there is no long-lived publishing secret in
+# this repo to steal, and no 2FA prompt for a human to answer. It also replaces
+# 2FA-bypass granular access tokens, whose direct-publish capability npm is
+# removing around January 2027.
+#
+# Requires a matching Trusted Publisher on npmjs.com:
+#   package Settings -> Trusted Publisher -> GitHub Actions
+#     Organization or user: southleft
+#     Repository:           figma-console-mcp
+#     Workflow filename:    publish.yml      <- this file's name; keep in sync
+#     Environment name:     (blank)
+#     Allowed actions:      npm publish
+#
+# Renaming this file breaks publishing until the npm config is updated to match.
+
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Manual escape hatch. Use dry_run to exercise auth and packaging without
+  # writing to the registry — worth doing once before relying on this for a
+  # real release.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Pack and authenticate without publishing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write   # required to mint the OIDC token; publishing fails without it
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # NOTE: deliberately no `registry-url:` here. Setting it makes setup-node
+      # write an .npmrc containing
+      #   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+      # and with no NODE_AUTH_TOKEN secret in the repo (there isn't one — that's
+      # the point of OIDC) the placeholder literal `XXXXX-XXXXX-XXXXX-XXXXX` is
+      # left in place. npm then finds explicit credentials, uses them instead of
+      # performing the OIDC exchange, and the registry rejects the publish as
+      # `E404 Not Found - PUT` — which reads like a missing package or a missing
+      # Trusted Publisher config rather than the credential conflict it is.
+      # This cost the v1.39.0 release one failed run; leave registry-url off.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # OIDC/trusted publishing needs npm 11+. Node 22 ships npm 10, so upgrade
+      # explicitly rather than depending on the runner image's bundled version.
+      - name: Upgrade npm for OIDC support
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      - run: npm ci
+
+      # Gate the release on the same checks used locally. prepublishOnly runs
+      # the full build again during publish; running it here surfaces a failure
+      # before anything reaches the registry.
+      - run: npm test
+      - run: npm run build
+
+      - name: Verify tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG"
+            exit 1
+          fi
+          echo "Tag and package.json agree on $PKG"
+
+      - name: Publish
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            # --dry-run still contacts the registry, so it exercises packaging
+            # and the auth handshake. When the version already exists the
+            # registry rejects it before that tells us anything useful, so
+            # treat only that specific error as an expected outcome — any other
+            # failure is real and must fail the job.
+            set +e
+            out="$(npm publish --dry-run 2>&1)"; code=$?
+            echo "$out"
+            if [ $code -ne 0 ]; then
+              if echo "$out" | grep -q "cannot publish over the previously published versions"; then
+                echo "::notice::Dry run OK — packaging and registry contact succeeded; version already published, so the auth handshake was not exercised. A real release is the first true test of the trusted-publisher config."
+                exit 0
+              fi
+              exit $code
+            fi
+          else
+            npm publish
+          fi

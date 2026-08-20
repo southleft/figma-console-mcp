@@ -433,6 +433,35 @@ function safeKey(value: string): string {
 	return JSON.stringify(value);
 }
 
+/**
+ * Unwrap the Desktop Bridge envelope around an executeCodeViaUI() result.
+ *
+ * The bridge resolves to `{ success, result }` (built by handleResult() in
+ * figma-desktop-bridge/ui.html) — NEVER the bare value the injected script
+ * returned. Reading the envelope as if it were the script's own return value
+ * silently yields the wrong type: `Array.isArray(envelope)` is always false,
+ * and a `{ __error }` sentinel lands at `.result.__error`, not `.__error`.
+ * That turns a hard failure into a confident-looking empty success, which is
+ * worse than a crash — see the regression tests in tests/library-tools.test.ts.
+ *
+ * Returns the script's value, or `{ __error }` when the bridge itself reported
+ * failure so callers can route both failure modes through one guard. The
+ * `?? raw` fallback keeps this tolerant of a bare value, matching the
+ * defensive `execResult.result ?? execResult` precedent in tokens-tools.ts.
+ */
+function unwrapBridgeResult(raw: any): any {
+	if (raw && typeof raw === "object" && raw.success === false) {
+		return {
+			__error:
+				raw.error || "Desktop Bridge reported a failure with no error message.",
+		};
+	}
+	if (raw && typeof raw === "object" && "result" in raw) {
+		return raw.result ?? raw;
+	}
+	return raw;
+}
+
 export function registerLibraryVariableTools(
 	server: McpServer,
 	getDesktopConnector: () => Promise<IFigmaConnector>,
@@ -524,16 +553,17 @@ export function registerLibraryVariableTools(
 				`;
 
 				const raw = await connector.executeCodeViaUI(script, 30000);
+				const payload = unwrapBridgeResult(raw);
 
 				// Detect the wrapped-error sentinel
-				if (raw && typeof raw === "object" && (raw as any).__error) {
+				if (payload && typeof payload === "object" && payload.__error) {
 					return {
 						content: [
 							{
 								type: "text",
 								text: JSON.stringify({
 									_mcp: "figma-console-mcp",
-									error: (raw as any).__error,
+									error: payload.__error,
 									hint: "Plugin sandbox could not access the team library API. Ensure Figma Desktop is recent and the Desktop Bridge is connected.",
 								}),
 							},
@@ -542,7 +572,7 @@ export function registerLibraryVariableTools(
 					};
 				}
 
-				let collections = Array.isArray(raw) ? raw : [];
+				let collections = Array.isArray(payload) ? payload : [];
 
 				// Apply server-side filters (cheaper to filter here than in plugin)
 				if (libraryName) {
@@ -679,9 +709,10 @@ After import, the variable becomes locally addressable by its returned 'id' and 
 				`;
 
 				const raw = await connector.executeCodeViaUI(script, 20000);
+				const imported = unwrapBridgeResult(raw);
 
-				if (raw && typeof raw === "object" && (raw as any).__error) {
-					const errMsg = (raw as any).__error as string;
+				if (imported && typeof imported === "object" && imported.__error) {
+					const errMsg = imported.__error as string;
 					let hint =
 						"Verify the variableKey was returned by figma_get_library_variables and that the source library is subscribed by the current file.";
 					if (/not subscribed|not enabled|access/i.test(errMsg)) {
@@ -704,15 +735,37 @@ After import, the variable becomes locally addressable by its returned 'id' and 
 					};
 				}
 
+				// An import with no id is a failure however it got here — never
+				// report it as a success with `id: undefined`, which is
+				// indistinguishable from a real import to a scripted caller.
+				if (!imported || typeof imported !== "object" || !imported.id) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									_mcp: "figma-console-mcp",
+									error:
+										"Import returned no variable id — the variable was not imported.",
+									hint: "Verify the variableKey came from figma_get_library_variables and that the source library is subscribed by the current file.",
+									variableKey,
+									received: imported,
+								}),
+							},
+						],
+						isError: true,
+					};
+				}
+
 				return {
 					content: [
 						{
 							type: "text",
 							text: JSON.stringify({
 								_mcp: "figma-console-mcp",
-								imported: raw,
+								imported,
 								usage: {
-									bind: `Use the imported variable's id ('${(raw as any)?.id}') with figma_set_fills, figma_update_variable, or any other variable-binding tool to reference this token from nodes in the current file.`,
+									bind: `Use the imported variable's id ('${imported.id}') with figma_set_fills, figma_update_variable, or any other variable-binding tool to reference this token from nodes in the current file.`,
 									note: "Variables imported from a library remain linked to their source — updates published from the library will propagate here automatically.",
 								},
 							}),

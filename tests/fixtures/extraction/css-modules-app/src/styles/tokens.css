@@ -1,0 +1,9 @@
+:root {
+  --color-blue-500: #3b82f6;
+  --color-blue-700: #1d4ed8;
+  --color-primary: var(--color-blue-500);
+  --space-2: 8px;
+  --space-4: 16px;
+  --radius-md: 6px;
+  --font-size-body: 1rem;
+}

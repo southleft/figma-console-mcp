@@ -223,13 +223,17 @@ describe('Port Discovery Module', () => {
       expect(existsSync(getPortFilePath(TEST_PORT_BASE))).toBe(true);
     });
 
-    it('should clean up corrupt files', () => {
+    // Previously asserted that an unparseable file is deleted. That is the
+    // behaviour that stranded healthy servers: a reader hitting a file
+    // mid-rewrite sees partial JSON, indistinguishable from real corruption,
+    // and deleting it leaves a live port-holder with no port file — exactly
+    // what the orphan reaper terminates. Unreadable files are now left alone.
+    it('should NOT delete an unparseable file (may be a mid-write read)', () => {
       const filePath = getPortFilePath(TEST_PORT_BASE);
       writeFileSync(filePath, 'corrupt data');
 
-      const cleaned = cleanupStalePortFiles();
-      expect(cleaned).toBeGreaterThanOrEqual(1);
-      expect(existsSync(filePath)).toBe(false);
+      cleanupStalePortFiles();
+      expect(existsSync(filePath)).toBe(true);
     });
 
     it('should not terminate our own process even if stale', () => {
@@ -272,13 +276,12 @@ describe('Port Discovery Module', () => {
       expect(existsSync(getPortFilePath(TEST_PORT_BASE))).toBe(true);
     });
 
-    it('should clean up corrupt files', async () => {
+    it('should NOT delete an unparseable file (may be a mid-write read)', async () => {
       const filePath = getPortFilePath(TEST_PORT_BASE);
       writeFileSync(filePath, 'corrupt data');
 
-      const cleaned = await cleanupStalePortFilesAsync();
-      expect(cleaned).toBeGreaterThanOrEqual(1);
-      expect(existsSync(filePath)).toBe(false);
+      await cleanupStalePortFilesAsync();
+      expect(existsSync(filePath)).toBe(true);
     });
 
     it('should not terminate our own process even if stale', async () => {
@@ -826,4 +829,143 @@ describe('cleanupStalePortFilesAsync — kill-safety gates (integration)', () =>
       try { unlinkSync(getPortFilePath(port)); } catch { /* ignore */ }
     }
   }, 20000);
+});
+
+// ============================================================================
+// Reaper self-harm regression suite
+//
+// The reaper was terminating healthy MCP servers, producing "Server
+// disconnected" across every MCP client. Three independent defects combined:
+//
+//   1. healthProbeArgs() probed http://127.0.0.1:{port}, but the WebSocket
+//      server binds `localhost`, which Node resolves to the IPv6 loopback on
+//      dual-stack macOS ([::1]). Nothing listens on IPv4, so the probe
+//      returned connection-refused for HEALTHY servers — which the callers
+//      map to `false` = "confirmed dead". Every kill-safety gate built on the
+//      probe was inverted into a rubber stamp.
+//   2. Port files were written with a non-atomic truncate-then-write, and a
+//      reader landing in that window got a parse error that the cleanup paths
+//      treated as "corrupt, delete it".
+//   3. The orphan path killed port-holders with no port file without probing
+//      them at all.
+//
+// Diagnosed 2026-07-29 from a live instance: PID alive, LISTENING on its port,
+// no advertisement file, and `curl 127.0.0.1` failing while `curl localhost`
+// succeeded on the very server handling the session.
+// ============================================================================
+
+describe('Reaper self-harm regressions', () => {
+  describe('health probe addressing', () => {
+    it('probes localhost, not a hardcoded IPv4 literal', () => {
+      // Reads the source rather than the behaviour: the failure mode is that
+      // the probe silently cannot reach an IPv6-bound server, which a unit
+      // test on a machine that happens to bind IPv4 would not catch.
+      const src = readFileSync(
+        join(__dirname, '..', 'src', 'core', 'port-discovery.ts'),
+        'utf-8',
+      );
+      const probeFn = src.slice(
+        src.indexOf('function healthProbeArgs'),
+        src.indexOf('function probeServerHealth'),
+      );
+      expect(probeFn).toContain('http://localhost:');
+      expect(probeFn).not.toContain('http://127.0.0.1:');
+    });
+  });
+
+  describe('atomic port file writes', () => {
+    it('never leaves a partially-written file visible to readers', () => {
+      const port = TEST_PORT_BASE + 21;
+      const filePath = getPortFilePath(port);
+      try {
+        // Rewrite repeatedly while reading — with truncate-then-write this
+        // interleaving is what produced parse failures in siblings.
+        for (let i = 0; i < 60; i++) {
+          advertisePort(port, 'localhost');
+          const raw = readFileSync(filePath, 'utf-8');
+          expect(() => JSON.parse(raw)).not.toThrow();
+          expect(JSON.parse(raw).pid).toBe(process.pid);
+        }
+      } finally {
+        try { unlinkSync(filePath); } catch { /* ignore */ }
+      }
+    });
+
+    it('leaves no .tmp files behind', () => {
+      const port = TEST_PORT_BASE + 22;
+      const filePath = getPortFilePath(port);
+      try {
+        advertisePort(port, 'localhost');
+        expect(existsSync(`${filePath}.${process.pid}.tmp`)).toBe(false);
+      } finally {
+        try { unlinkSync(filePath); } catch { /* ignore */ }
+      }
+    });
+  });
+
+  describe('self-healing heartbeat', () => {
+    it('re-advertises when our own port file is deleted underneath us', () => {
+      const port = TEST_PORT_BASE + 23;
+      const filePath = getPortFilePath(port);
+      try {
+        advertisePort(port, 'localhost');
+        unlinkSync(filePath); // simulate a sibling wrongly deleting it
+        expect(existsSync(filePath)).toBe(false);
+
+        refreshPortAdvertisement(port);
+
+        // Without this, the process stays unadvertised forever and the orphan
+        // reaper eventually terminates it.
+        expect(existsSync(filePath)).toBe(true);
+        expect(readPortFile(port)?.pid).toBe(process.pid);
+      } finally {
+        try { unlinkSync(filePath); } catch { /* ignore */ }
+      }
+    });
+
+    it('does not resurrect a file for a port this process never advertised', () => {
+      const port = TEST_PORT_BASE + 24;
+      const filePath = getPortFilePath(port);
+      try {
+        expect(existsSync(filePath)).toBe(false);
+        refreshPortAdvertisement(port);
+        expect(existsSync(filePath)).toBe(false);
+      } finally {
+        try { unlinkSync(filePath); } catch { /* ignore */ }
+      }
+    });
+
+    it('stops re-advertising after unadvertisePort (clean shutdown)', () => {
+      const port = TEST_PORT_BASE + 25;
+      const filePath = getPortFilePath(port);
+      try {
+        advertisePort(port, 'localhost');
+        unadvertisePort(port);
+        expect(existsSync(filePath)).toBe(false);
+
+        // A heartbeat racing shutdown must not bring the file back.
+        refreshPortAdvertisement(port);
+        expect(existsSync(filePath)).toBe(false);
+      } finally {
+        try { unlinkSync(filePath); } catch { /* ignore */ }
+      }
+    });
+  });
+
+  describe('orphan path health probe', () => {
+    it('probes before terminating a port-holder with no port file', () => {
+      const src = readFileSync(
+        join(__dirname, '..', 'src', 'core', 'port-discovery.ts'),
+        'utf-8',
+      );
+      for (const marker of ['cleanupOrphanedProcesses', 'cleanupOrphanedProcessesAsync']) {
+        const start = src.indexOf(`export ${marker.includes('Async') ? 'async ' : ''}function ${marker}(`);
+        expect(start).toBeGreaterThan(-1);
+        const body = src.slice(start, start + 4000);
+        // The kill must be gated on a definitive probe failure.
+        expect(body).toContain('probeServerHealth');
+        expect(body).toContain("health !== false");
+      }
+    });
+  });
 });

@@ -63,15 +63,52 @@ export function getBundledPluginVersion(): string {
 }
 
 /**
+ * Compare two `major.minor.patch` strings. Returns <0 when a precedes b, 0 when
+ * equal, >0 when a follows b, and null when either side isn't parseable.
+ */
+export function compareSemver(a: string, b: string): number | null {
+  const parse = (v: string): number[] | null => {
+    const parts = v.trim().split('.');
+    if (parts.length !== 3) return null;
+    const nums = parts.map((p) => Number(p));
+    return nums.every((n) => Number.isInteger(n) && n >= 0) ? nums : null;
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  if (!pa || !pb) return null;
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
+
+/**
  * A plugin needs re-importing when it reports no version (predates version
- * reporting) or a version different from the plugin files this server ships.
+ * reporting) or an OLDER version than the plugin files this server ships.
  * The server's own package version is irrelevant here.
+ *
+ * The direction matters. This used to be a bare `!==`, which also fired when
+ * the connected plugin was NEWER than the server's bundled copy — telling the
+ * user to re-import, which can only ever install the same or a newer plugin,
+ * so the banner could never be cleared. That is not a rare state: the port
+ * range means several server instances run at once, and during an upgrade the
+ * older ones keep an outdated BUNDLED_PLUGIN_VERSION in memory (it is parsed
+ * once at module load) while the freshly re-imported plugin is already current.
+ * Every stale server then nags a correctly-updated plugin. Observed live on
+ * v1.39.0 with four leftover v1.38.2 servers.
+ *
+ * An older server has nothing to offer a newer plugin, so it stays quiet.
  */
 export function computePluginUpdateAvailable(
   pluginVersion: string | null,
   bundledPluginVersion: string
 ): boolean {
-  return !pluginVersion || pluginVersion !== bundledPluginVersion;
+  if (!pluginVersion) return true;
+  const cmp = compareSemver(pluginVersion, bundledPluginVersion);
+  // Unparseable on either side — fall back to the conservative inequality so a
+  // genuinely odd plugin build still prompts rather than passing silently.
+  if (cmp === null) return pluginVersion !== bundledPluginVersion;
+  return cmp < 0;
 }
 
 const logger = createChildLogger({ component: 'websocket-server' });

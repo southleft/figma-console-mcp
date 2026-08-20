@@ -17,8 +17,8 @@ Before any release, read `.notes/RELEASING.md` and follow all five phases. Run `
 
 ## Known Issues
 
-- **Cloudflare build type error**: `src/index.ts` line ~54 Env type mismatch is pre-existing on main. Does not affect runtime.
-- **npm publish**: Use `npm publish --ignore-scripts` if prepublishOnly triggers a build failure.
+- ~~**Cloudflare build type error**~~: fixed — the three `this.env as Env` casts in `src/index.ts` are now `as unknown as Env`, so `npm run build:cloudflare` exits 0 and the full `npm run build` chain (which `prepublishOnly` runs) succeeds.
+- ~~**npm publish `--ignore-scripts`**~~: no longer needed now that the build passes. Publishing runs in CI via `.github/workflows/publish.yml` (Trusted Publishing / OIDC) on `v*` tag pushes — no token, no 2FA prompt. Renaming that workflow file breaks publishing until the npm Trusted Publisher config is updated to match.
 - **Pre-existing tsc errors**: `src/apps/*/ui/mcp-app.ts` DOM type errors are expected (separate tsconfig files).
 
 ## Architecture

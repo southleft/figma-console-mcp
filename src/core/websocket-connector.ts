@@ -119,8 +119,11 @@ export class WebSocketConnector implements IFigmaConnector {
     return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: 30000 }, 32000, fileKey);
   }
 
-  async executeCodeViaUI(code: string, timeoutMs = 5000): Promise<any> {
-    return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: timeoutMs }, timeoutMs + 2000);
+  async executeCodeViaUI(code: string, timeoutMs = 5000, fileKey?: string): Promise<any> {
+    // fileKey is optional — when passed, routes to that specific connected
+    // client instead of the active file (see sendCommand's targetFileKey),
+    // so code can run against a non-active file without switching to it.
+    return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: timeoutMs }, timeoutMs + 2000, fileKey);
   }
 
   // ============================================================================

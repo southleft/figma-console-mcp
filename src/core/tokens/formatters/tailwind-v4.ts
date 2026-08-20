@@ -342,6 +342,11 @@ function formatValue(value: unknown, type: string): string {
 
 function needsQuoting(s: string): boolean {
   if (/^["']/.test(s)) return false;
+  // CSS functional expressions (cubic-bezier(...), calc(...), var(...), etc.)
+  // are CSS values, not string literals - quoting them invalidates every
+  // declaration that consumes the variable (found live: a quoted cubic-bezier
+  // easing silently killed a button's hover transition).
+  if (/^[a-zA-Z-]+\(/.test(s.trim())) return false;
   if (/^[\d.]+([a-z%]+)?$/.test(s)) return false;
   if (/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(s)) return false;
   return true;

@@ -30,7 +30,7 @@
  *   External tools read port files for discovery
  */
 
-import { writeFileSync, readFileSync, unlinkSync, existsSync, readdirSync } from 'fs';
+import { writeFileSync, readFileSync, unlinkSync, existsSync, readdirSync, renameSync } from 'fs';
 import { join } from 'path';
 import { tmpdir, devNull } from 'os';
 import { execFile, execFileSync } from 'child_process';
@@ -128,10 +128,35 @@ export function advertisePort(port: number, host: string = 'localhost'): void {
 
   const filePath = getPortFilePath(port);
   try {
-    writeFileSync(filePath, JSON.stringify(data, null, 2));
+    writePortFileAtomic(filePath, data);
+    advertisedPorts.add(port);
     logger.info({ port, filePath }, 'Port advertised');
   } catch (error) {
     logger.warn({ port, filePath, error }, 'Failed to write port advertisement file');
+  }
+}
+
+/**
+ * Write a port file atomically: full write to a PID-unique temp file, then
+ * `renameSync` onto the target. `rename(2)` is atomic on POSIX, so a reader
+ * only ever sees the complete old file or the complete new one.
+ *
+ * A plain `writeFileSync` truncates first, leaving a window where readers see
+ * an empty or partial file. That window is re-opened every 30s per instance
+ * by the heartbeat, while every sibling scans all ten files — and a reader
+ * that hits it gets a JSON parse error, which the cleanup paths used to treat
+ * as "corrupt, delete it" and the orphan reaper treats as "no port file =
+ * orphan, kill it". A transient read blip must never be able to strand or
+ * kill a healthy server.
+ */
+function writePortFileAtomic(filePath: string, data: PortFileData): void {
+  const tmpPath = `${filePath}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+    renameSync(tmpPath, filePath);
+  } catch (error) {
+    try { unlinkSync(tmpPath); } catch { /* best-effort */ }
+    throw error;
   }
 }
 
@@ -143,16 +168,36 @@ export function advertisePort(port: number, host: string = 'localhost'): void {
 export function refreshPortAdvertisement(port: number): void {
   const filePath = getPortFilePath(port);
   try {
-    if (!existsSync(filePath)) return;
+    if (!existsSync(filePath)) {
+      // Our file is gone but we are still running and still hold the port.
+      // Returning here (the old behaviour) left the process permanently
+      // unadvertised — and an unadvertised process holding a port is exactly
+      // what the orphan reaper terminates. Re-advertise instead so the state
+      // is self-healing rather than terminal. Guarded by ownsPort so we never
+      // resurrect a file for a port that has since been taken by someone else.
+      if (ownsPort(port)) advertisePort(port);
+      return;
+    }
     const raw = readFileSync(filePath, 'utf-8');
     const data: PortFileData = JSON.parse(raw);
     // Only refresh our own port file
     if (data.pid !== process.pid) return;
     data.lastSeen = new Date().toISOString();
-    writeFileSync(filePath, JSON.stringify(data, null, 2));
+    writePortFileAtomic(filePath, data);
   } catch {
     // Best-effort — heartbeat failures are non-fatal
   }
+}
+
+/**
+ * Whether THIS process is the one that advertised `port` in this run.
+ * Tracked in-process rather than re-derived from the filesystem, because the
+ * filesystem is precisely the state we may be repairing.
+ */
+const advertisedPorts = new Set<number>();
+
+function ownsPort(port: number): boolean {
+  return advertisedPorts.has(port);
 }
 
 /**
@@ -161,6 +206,9 @@ export function refreshPortAdvertisement(port: number): void {
  */
 export function unadvertisePort(port: number): void {
   const filePath = getPortFilePath(port);
+  // Drop ownership first so a heartbeat racing this shutdown can't re-advertise
+  // the file we are deliberately removing.
+  advertisedPorts.delete(port);
   try {
     if (existsSync(filePath)) {
       unlinkSync(filePath);
@@ -238,9 +286,20 @@ function isValidProbePort(port: unknown): port is number {
 /** curl arguments for the /health liveness probe against a sibling's port.
  * `devNull` (not a literal /dev/null) — Windows ships curl.exe, and a bad
  * output path there makes curl exit non-zero, which reads as "nothing
- * responding" and would let the reaper kill a healthy sibling. */
+ * responding" and would let the reaper kill a healthy sibling.
+ *
+ * The host MUST be `localhost`, not `127.0.0.1`. The WebSocket server binds
+ * `options.host || 'localhost'`, and on a dual-stack macOS box Node resolves
+ * that to the IPv6 loopback — `lsof` shows `[::1]:9223`, with nothing
+ * listening on IPv4. Probing `127.0.0.1` therefore returned connection-refused
+ * for every *healthy* server, which `probeServerHealth` maps to `false` =
+ * "confirmed dead". That inverted every kill-safety gate below: the probe that
+ * exists to spare live-but-stale siblings was instead rubber-stamping their
+ * termination. Verified live: on a working server, `127.0.0.1` gave curl exit
+ * 7 while `localhost` gave exit 0. `localhost` lets curl try every resolved
+ * address (both families), so it works regardless of which stack Node picked. */
 function healthProbeArgs(port: number): string[] {
-  return ['-s', '-o', devNull, '-m', '1', `http://127.0.0.1:${port}/health`];
+  return ['-s', '-o', devNull, '-m', '1', `http://localhost:${port}/health`];
 }
 
 /**
@@ -533,8 +592,14 @@ export function cleanupStalePortFiles(): number {
             }
           }
         } catch {
-          // Corrupt file — remove it
-          try { unlinkSync(filePath); cleaned++; } catch { /* ignore */ }
+          // Unreadable/unparseable — do NOT delete. A partial read of a file
+          // mid-rewrite is indistinguishable from genuine corruption, and
+          // deleting it strands a healthy server: it becomes a port-holder
+          // with no port file, which the orphan reaper terminates on sight.
+          // Writes are atomic now (writePortFileAtomic), so this should be
+          // unreachable in practice; leaving the file alone means the worst
+          // case is a stale file that the dead-PID branch reclaims later.
+          logger.debug({ filePath }, 'Unreadable port file — leaving in place');
         }
       }
     }
@@ -601,8 +666,14 @@ export async function cleanupStalePortFilesAsync(): Promise<number> {
             }
           }
         } catch {
-          // Corrupt file — remove it
-          try { unlinkSync(filePath); cleaned++; } catch { /* ignore */ }
+          // Unreadable/unparseable — do NOT delete. A partial read of a file
+          // mid-rewrite is indistinguishable from genuine corruption, and
+          // deleting it strands a healthy server: it becomes a port-holder
+          // with no port file, which the orphan reaper terminates on sight.
+          // Writes are atomic now (writePortFileAtomic), so this should be
+          // unreachable in practice; leaving the file alone means the worst
+          // case is a stale file that the dead-PID branch reclaims later.
+          logger.debug({ filePath }, 'Unreadable port file — leaving in place');
         }
       }
     }
@@ -674,9 +745,20 @@ export function cleanupOrphanedProcesses(
               continue;
             }
 
+            // See the async path: a missing port file is not proof of death.
+            // Only a definitive probe failure authorises termination.
+            const health = probeServerHealth(port);
+            if (health !== false) {
+              logger.debug(
+                { port, pid, probe: health === true ? 'responding' : 'inconclusive' },
+                'Port-holder without a port file is still serving /health — skipping kill',
+              );
+              continue;
+            }
+
             logger.info(
               { port, pid, command: cmdline.substring(0, 120) },
-              'Terminating orphaned MCP server (no port file, holding port)',
+              'Terminating orphaned MCP server (no port file, holding port, health probe failed)',
             );
             // terminateProcess escalates SIGTERM -> SIGKILL. Only count it as
             // cleaned when the process is confirmed gone, so the log reflects
@@ -805,9 +887,23 @@ export async function cleanupOrphanedProcessesAsync(
           continue;
         }
 
+        // A missing port file is not proof of death — it can also mean a
+        // transient read failure, or a file removed out from under a healthy
+        // server. Ask the server itself before killing it. Same verdict
+        // semantics as the stale-file path: only a definitive `false`
+        // (probe ran, nothing answered) authorises termination.
+        const health = await probeServerHealthAsync(port);
+        if (health !== false) {
+          logger.debug(
+            { port, pid, probe: health === true ? 'responding' : 'inconclusive' },
+            'Port-holder without a port file is still serving /health — re-advertising is its job, not ours; skipping kill',
+          );
+          continue;
+        }
+
         logger.info(
           { port, pid, command: cmdline.substring(0, 120) },
-          'Terminating orphaned MCP server (no port file, holding port)',
+          'Terminating orphaned MCP server (no port file, holding port, health probe failed)',
         );
         // Only count confirmed kills, matching the sync path.
         if (await terminateProcessAsync(pid)) {
