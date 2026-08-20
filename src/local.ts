@@ -70,6 +70,7 @@ import {
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
 import { registerSlotTools } from "./core/slot-tools.js";
+import { registerLocalProcessLifecycle } from "./core/local-process-lifecycle.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -4068,31 +4069,18 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 async function main() {
 	const server = new LocalFigmaConsoleMCP();
 
-	// Handle graceful shutdown. A hard backstop guarantees the process exits even
-	// if shutdown() hangs (e.g. an HTTP/WebSocket close that blocks on a lingering
-	// connection). Without this, the SIGTERM listener suppresses Node's default
-	// terminate-on-SIGTERM and the process zombifies — holding its port forever.
-	const SHUTDOWN_TIMEOUT_MS = 5000;
-	let shuttingDown = false;
-	const gracefulExit = async (code: number) => {
-		if (shuttingDown) return;
-		shuttingDown = true;
-		const backstop = setTimeout(() => {
-			logger.error(`Shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms — forcing exit`);
-			process.exit(code);
-		}, SHUTDOWN_TIMEOUT_MS);
-		backstop.unref();
-		try {
-			await server.shutdown();
-		} catch (error) {
+	// Handle both OS signals and stdio transport closure. MCP clients commonly
+	// close stdin without sending a signal; treating EOF as a terminal condition
+	// prevents the still-live WebSocket bridge from orphaning this process.
+	registerLocalProcessLifecycle({
+		shutdown: () => server.shutdown(),
+		onShutdownTimeout: (timeoutMs) => {
+			logger.error(`Shutdown exceeded ${timeoutMs}ms — forcing exit`);
+		},
+		onShutdownError: (error) => {
 			logger.error({ error }, "Error during shutdown");
-		}
-		clearTimeout(backstop);
-		process.exit(code);
-	};
-
-	process.on("SIGINT", () => { void gracefulExit(0); });
-	process.on("SIGTERM", () => { void gracefulExit(0); });
+		},
+	});
 
 	// Start the server
 	await server.start();
