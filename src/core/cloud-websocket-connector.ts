@@ -368,8 +368,14 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 	// Image fill
 	// ============================================================================
 
-	async setImageFill(nodeIds: string[], imageData: string, scaleMode = 'FILL'): Promise<any> {
-		return this.sendCommand('SET_IMAGE_FILL', { nodeIds, imageData, scaleMode }, 60000);
+	async setImageFill(nodeIds: string[], imageData: string, scaleMode = 'FILL', name?: string): Promise<any> {
+		const params: { nodeIds: string[]; imageData: string; scaleMode: string; name?: string } = {
+			nodeIds,
+			imageData,
+			scaleMode,
+		};
+		if (name) params.name = name;
+		return this.sendCommand('SET_IMAGE_FILL', params, 60000);
 	}
 
 	// ============================================================================

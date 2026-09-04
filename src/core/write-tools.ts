@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { resolveImageInput } from "./image-input.js";
 import { createChildLogger } from "./logger.js";
 
 const logger = createChildLogger({ component: "write-tools" });
@@ -1850,25 +1851,58 @@ After instantiating components, use figma_take_screenshot to verify the result l
 		},
 	);
 
-	// Tool: Set Image Fill on nodes
+	// Tool: Set Image Fill on nodes (also inserts a new image when nodeIds is omitted)
 	server.tool(
 		"figma_set_image_fill",
-		"Set an image fill on one or more Figma nodes. The imageData parameter accepts a base64-encoded " +
-		"image string (JPEG/PNG). The image is decoded in the browser bridge and passed " +
-		"as raw bytes to the Figma plugin. Requires Desktop Bridge plugin.",
+		"Insert a PNG/JPEG/GIF into Figma, or set an image fill on existing nodes. " +
+		"This is the way to put a local image on the canvas — clipboard paste is not supported. " +
+		"imageData accepts (1) an absolute local file path (Local Mode only; Windows paths like " +
+		"C:/Users/me/photo.png work) or (2) base64-encoded image bytes, optionally as a " +
+		"data:image/...;base64 URL. Omit nodeIds to paste the image onto the current page as a new " +
+		"rectangle sized to the image (selected and zoomed into). Pass nodeIds to apply the image as " +
+		"a fill on existing frames/shapes. Requires Desktop Bridge plugin.",
 		{
-			nodeIds: z.array(z.string()).describe("Array of node IDs to apply the image fill to"),
-			imageData: z.string().describe("Base64-encoded image data (JPEG/PNG)"),
-			scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("How the image fills the node (default: FILL)"),
+			nodeIds: z
+				.array(z.string())
+				.optional()
+				.describe(
+					"Node IDs to apply the image fill to. Omit or pass [] to insert a new image on the current page.",
+				),
+			imageData: z
+				.string()
+				.describe(
+					"Absolute local file path to a PNG/JPEG/GIF (Local Mode) or base64-encoded image data (optionally a data URL).",
+				),
+			scaleMode: z
+				.enum(["FILL", "FIT", "CROP", "TILE"])
+				.optional()
+				.describe("How the image fills the node (default: FILL)"),
+			name: z
+				.string()
+				.optional()
+				.describe(
+					"Layer name for a newly created image node. Defaults to the file name when imageData is a path.",
+				),
 		},
-		async ({ nodeIds, imageData, scaleMode }) => {
+		async ({ nodeIds, imageData, scaleMode, name }) => {
 			try {
+				const resolved = resolveImageInput(imageData);
 				const connector = await getDesktopConnector();
-				const result = await connector.setImageFill(nodeIds, imageData, scaleMode || "FILL");
+				const ids = nodeIds && nodeIds.length ? nodeIds : [];
+				const result = await connector.setImageFill(
+					ids,
+					resolved.base64,
+					scaleMode || "FILL",
+					name || resolved.name,
+				);
 
 				if (!result.success) {
 					throw new Error(result.error || "Failed to set image fill");
 				}
+
+				const createdNode = result.nodes && result.nodes[0] && result.nodes[0].created
+					? result.nodes[0]
+					: null;
 
 				return {
 					content: [
@@ -1876,9 +1910,13 @@ After instantiating components, use figma_take_screenshot to verify the result l
 							type: "text" as const,
 							text: JSON.stringify({
 								success: true,
-								message: `Image fill applied to ${result.updatedCount || 0} node(s)`,
+								message: createdNode
+									? `Inserted image "${createdNode.name}" (${createdNode.width}×${createdNode.height}) on the current page`
+									: `Image fill applied to ${result.updatedCount || 0} node(s)`,
 								imageHash: result.imageHash,
 								nodes: result.nodes,
+								created: Boolean(createdNode),
+								source: resolved.source,
 							}),
 						},
 					],

@@ -334,6 +334,87 @@ describe("Write Tools", () => {
 	});
 
 	// ========================================================================
+	// figma_set_image_fill — local file + insert-as-new-node
+	// ========================================================================
+
+	describe("figma_set_image_fill", () => {
+		const pngBase64 =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+		it("sends decoded base64 and empty nodeIds when inserting a new image", async () => {
+			mockConnector.setImageFill.mockResolvedValue({
+				success: true,
+				imageHash: "hash123",
+				updatedCount: 1,
+				nodes: [{ id: "n1", name: "Image", created: true, width: 1, height: 1 }],
+			});
+
+			const tool = server._getTool("figma_set_image_fill");
+			const result = await tool.handler({ imageData: pngBase64 });
+			const parsed = parseResult(result);
+
+			expect(mockConnector.setImageFill).toHaveBeenCalledWith(
+				[],
+				pngBase64,
+				"FILL",
+				undefined,
+			);
+			expect(parsed.created).toBe(true);
+			expect(parsed.message).toContain("Inserted image");
+		});
+
+		it("reads a local file path and uses the file name as the layer name", async () => {
+			const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+			const { tmpdir } = await import("node:os");
+			const dir = mkdtempSync(join(tmpdir(), "figma-set-image-fill-"));
+			const filePath = join(dir, "avatar.png");
+			writeFileSync(filePath, Buffer.from(pngBase64, "base64"));
+
+			try {
+				const tool = server._getTool("figma_set_image_fill");
+				await tool.handler({ imageData: filePath, nodeIds: ["1:2"] });
+
+				expect(mockConnector.setImageFill).toHaveBeenCalledWith(
+					["1:2"],
+					pngBase64,
+					"FILL",
+					"avatar",
+				);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		it("returns a file-not-found error without calling the plugin", async () => {
+			const tool = server._getTool("figma_set_image_fill");
+			const result = await tool.handler({
+				imageData: "C:\\Users\\nobody\\does-not-exist.png",
+			});
+			const parsed = parseResult(result);
+
+			expect(result.isError).toBe(true);
+			expect(parsed.error).toMatch(/Image file not found/);
+			expect(mockConnector.setImageFill).not.toHaveBeenCalled();
+		});
+
+		it("applies a fill to existing nodes when nodeIds are provided", async () => {
+			const tool = server._getTool("figma_set_image_fill");
+			await tool.handler({
+				nodeIds: ["1:2", "3:4"],
+				imageData: pngBase64,
+				scaleMode: "FIT",
+			});
+
+			expect(mockConnector.setImageFill).toHaveBeenCalledWith(
+				["1:2", "3:4"],
+				pngBase64,
+				"FIT",
+				undefined,
+			);
+		});
+	});
+
+	// ========================================================================
 	// Error response consistency
 	// ========================================================================
 
