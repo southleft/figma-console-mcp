@@ -267,11 +267,29 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 	// Slot operations
 	// ============================================================================
 
-	async createSlot(nodeId: string, options?: { name?: string; width?: number; height?: number; layoutMode?: string }): Promise<any> {
+	private rejectFileKey(fileKey?: string): void {
+		// fileKey exists on these methods for IFigmaConnector parity but cannot be
+		// honored here — the cloud relay pairs with exactly one plugin instance,
+		// so there is no multi-file target to route between (matches
+		// executeCodeViaUI above). Reject rather than silently running against
+		// the paired file: a caller that asked for file B and got a successful
+		// write to file A has no way to tell from the response that it was misrouted.
+		if (fileKey) {
+			throw new Error(
+				'Per-file targeting (fileKey) is Local Mode only. Cloud Mode pairs with a single ' +
+				'plugin instance, so there is no second file to route to. Omit fileKey to run ' +
+				'against the paired file, or use Local Mode (NPX/Git) for multi-file work.'
+			);
+		}
+	}
+
+	async createSlot(nodeId: string, options?: { name?: string; width?: number; height?: number; layoutMode?: string }, fileKey?: string): Promise<any> {
+		this.rejectFileKey(fileKey);
 		return this.sendCommand('CREATE_SLOT', { nodeId, ...options });
 	}
 
-	async getSlots(nodeId: string): Promise<any> {
+	async getSlots(nodeId: string, fileKey?: string): Promise<any> {
+		this.rejectFileKey(fileKey);
 		return this.sendCommand('GET_SLOTS', { nodeId });
 	}
 
@@ -284,11 +302,13 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 		properties?: Record<string, string | number>;
 		clone?: boolean;
 		clearExisting?: boolean;
-	}): Promise<any> {
+	}, fileKey?: string): Promise<any> {
+		this.rejectFileKey(fileKey);
 		return this.sendCommand('APPEND_TO_SLOT', params);
 	}
 
-	async resetSlot(params: { slotId?: string; instanceId?: string; slotName?: string }): Promise<any> {
+	async resetSlot(params: { slotId?: string; instanceId?: string; slotName?: string }, fileKey?: string): Promise<any> {
+		this.rejectFileKey(fileKey);
 		return this.sendCommand('RESET_SLOT', params);
 	}
 
