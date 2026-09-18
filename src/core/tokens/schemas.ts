@@ -91,7 +91,7 @@ export const ExportTokensInputSchema = z.object({
       "Explicit path to a tokens.config.json file. When omitted, the tool walks up from cwd looking for one — typical case is zero-arg.",
     ),
   strategy: SyncStrategySchema.optional().describe(
-    "How to handle existing output files. 'merge' (default) diffs against current contents and writes only changed tokens, preserving code-only additions. 'replace' wipes and rewrites. 'dry-run' computes the diff and reports what would change without writing.",
+    "How to handle existing output files. Export always replaces a target file's contents with the current Figma state — it does not merge token-by-token. 'merge' (default) is the SAFE mode: it refuses to write, leaving the file untouched, if overwriting an existing DTCG file would delete tokens the export does not manage (hand-added tokens, or tokens from collections not included in this export). 'replace' overwrites unconditionally. 'dry-run' reports what would be written without writing.",
   ),
   prefix: z
     .string()

@@ -3100,7 +3100,14 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// popular styling methods (DTCG canonical — legacy + 2025.10 dialects —
 		// plus CSS/Tailwind/SCSS/TS/JSON/Style Dictionary/Tokens Studio, all
 		// derived from a single internal token model).
-		registerTokensTools(this.server, () => this.getDesktopConnector());
+		registerTokensTools(this.server, () => this.getDesktopConnector(), {
+			// Lets figma_export_tokens report WHICH connected file it read from —
+			// the bridge reads the active file, which may not be the intended one.
+			resolveFileName: (fileKey) =>
+				this.wsServer
+					?.getConnectedFiles()
+					.find((f) => f.fileKey === fileKey)?.fileName ?? null,
+		});
 
 		// Register design system extraction tools (figma_ds_*) — scan a
 		// production codebase, mine its de-facto styling into DTCG tokens, and

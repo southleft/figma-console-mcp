@@ -69,7 +69,7 @@ const logger = createChildLogger({ component: "tokens-tools" });
  * on every exported token document. Kept in sync with package.json by
  * scripts/release.sh — see step 3 of the release flow.
  */
-const MCP_VERSION = "1.40.1";
+const MCP_VERSION = "1.40.2";
 
 const EXPORT_TOOL_DESCRIPTION = `Export Figma variables to design token files in your codebase. Bidirectional with figma_import_tokens — together they replace Style Dictionary and Tokens Studio's export pipeline for the popular styling methods.
 
@@ -87,7 +87,7 @@ FULLY-IMPLEMENTED OUTPUT FORMATS:
 
 ZERO-ARG USAGE: With a tokens.config.json at your project root, just call the tool with no args — it picks up source dir, output formats, modes, prefix, etc. from config. See the response's \`suggestedScaffold\` payload when no config is detected — present it to the user, write the scaffold via your file tools, then call again.
 
-MERGE STRATEGY: Default \`strategy: "merge"\` only writes tokens that actually changed in Figma since the last sync. Use \`dry-run\` to preview what would change. Use \`replace\` to wipe and rewrite (rare; for resetting drift).
+WRITE SAFETY: Export REPLACES the contents of each target file with the current Figma state — it does not merge into it. Under the default \`strategy: "merge"\` the tool refuses to write (and changes nothing) when overwriting an existing DTCG file would delete tokens it does not manage: tokens added by hand, or tokens from collections outside this export. It also refuses when a requested collectionId is not in the file it read, or when the export is empty — both usually mean a different file is active in Figma than you intended. Variables deleted in Figma are removed from the file as normal. Use \`dry-run\` to preview, \`replace\` to overwrite unconditionally. Generated files record the Figma file they came from (a \`Source: Figma file <key>\` header line; \`figmaFileKey\` in DTCG), and the default strategy also refuses to overwrite a file that was generated from a DIFFERENT Figma file. Plain-JSON formats (json-flat, json-nested, style-dictionary-v3, tokens-studio) cannot carry that record — pin \`figmaFile\` in tokens.config.json for a hard guarantee. Every response includes \`source\` (the Figma file name/key the data was read from) — check it.
 
 DTCG DIALECT (\`dtcgDialect\`, applies to dtcg/json-flat/json-nested outputs): legacy (default): hex-string colors, maximum compatibility (Style Dictionary v4, Tokens Studio). 2025: DTCG 2025.10 object colors/dimensions (Style Dictionary v5+). figma_import_tokens accepts BOTH dialects regardless of this setting.
 
@@ -116,6 +116,12 @@ export interface RegisterTokensToolsOptions {
    * are all Local Mode only.
    */
   isRemoteMode?: boolean;
+  /**
+   * Resolve a Figma fileKey to its display name (Local Mode: from the Desktop
+   * Bridge's connected-file registry). Used to tell the caller WHICH file an
+   * export actually read from — the bridge reads whatever file is active.
+   */
+  resolveFileName?: (fileKey: string) => string | null | undefined;
 }
 
 export function registerExportTokensTool(
@@ -139,7 +145,7 @@ export function registerExportTokensTool(
               text: JSON.stringify({
                 error: err instanceof Error ? err.message : String(err),
                 // Output-location errors already say what to do; the format hint would only mislead.
-                ...(/outputPath|Cannot write/.test(err instanceof Error ? err.message : String(err))
+                ...(/outputPath|Cannot write|[Nn]othing was written/.test(err instanceof Error ? err.message : String(err))
                   ? {}
                   : {
                       hint: "If this is a TokenFormatNotImplementedError for a non-DTCG/non-CSS format, export to 'dtcg' or 'css-vars' instead — those are the fully-implemented formats. The canonical DTCG JSON can be consumed by Style Dictionary v4 or any other DTCG-aware tooling.",
@@ -260,10 +266,31 @@ async function handleExport(
 
   // 3. Normalize to the converter's expected shape.
   const payload = normalizeFigmaPayload(variableData);
+  const sourceFileKey: string | null =
+    (typeof variableData.fileKey === "string" && variableData.fileKey) ||
+    fileKey ||
+    null;
+
+  // 3b. Identify the Figma file the data ACTUALLY came from. Without a
+  //     tokens.config.json `figmaFile`, the bridge reads whichever file is
+  //     active in Figma Desktop — which may not be the one the caller means.
+  //     (With `figmaFile` pinned, sendCommand routes to that file's plugin
+  //     connection and rejects if it isn't connected, so no check is needed.)
+  const source = {
+    fileKey: sourceFileKey,
+    fileName:
+      (sourceFileKey && opts.resolveFileName?.(sourceFileKey)) || null,
+  };
+  // 3c. Every requested collection must exist in that file. A partial or
+  //     empty match would otherwise be written over the target as if it were
+  //     the full export.
+  assertRequestedCollectionsFound(args.collectionIds, payload.collections, source);
 
   // 4. Convert to canonical TokenDocument.
   const { document, warnings } = convertFigmaVariablesToDocument(payload, {
-    figmaFileKey: fileKey,
+    // The file the data was ACTUALLY read from — stamped into DTCG output so a
+    // later export from a different Figma file can be recognized and refused.
+    figmaFileKey: sourceFileKey ?? undefined,
     collectionIds: args.collectionIds,
     modes: args.modes,
     stripPrefix: args.prefix,
@@ -274,7 +301,12 @@ async function handleExport(
   const targets = resolveOutputTargets(loaded?.config ?? null, args.format);
 
   // 6. Format the document for each target.
-  const allFiles: Array<{ format: string; path: string; content: string }> = [];
+  const allFiles: Array<{
+    format: string;
+    path: string;
+    content: string;
+    splitByCollection: boolean;
+  }> = [];
   const allWarnings: string[] = [...warnings];
   if (
     args.scope === "collection" &&
@@ -304,7 +336,14 @@ async function handleExport(
         projectRoot: loaded?.projectRoot,
       });
       for (const file of result.files) {
-        allFiles.push({ format: target.format, ...file });
+        allFiles.push({
+          format: target.format,
+          ...file,
+          content: stampSourceFile(file.content, sourceFileKey),
+          splitByCollection: !!(
+            args.splitByCollection ?? target.splitByCollection
+          ),
+        });
       }
       allWarnings.push(...result.warnings);
     } catch (err) {
@@ -329,6 +368,99 @@ async function handleExport(
   const plan = planExportWrites(allFiles, args.outputPath, loaded);
   allWarnings.push(...plan.warnings);
 
+  // Validate EVERY planned write before performing ANY of them — a refused
+  // export must leave the disk exactly as it found it.
+  const totalTokens = document.sets.reduce((n, s) => n + s.tokens.length, 0);
+  if (totalTokens === 0) {
+    if (plan.writes.length > 0) {
+      throw new Error(
+        `[figma-console-mcp] The export contains 0 tokens (read from ${describeSource(source)}), so nothing was written — writing it would have emptied ${plan.writes.length === 1 ? `"${plan.writes[0].fullPath}"` : `${plan.writes.length} files`}. Check that the right file is active in Figma and that the collectionIds/modes filters match it.`,
+      );
+    }
+    allWarnings.push(
+      `The export contains 0 tokens (read from ${describeSource(source)}). Check that the right file is active in Figma and that the collectionIds/modes filters match it.`,
+    );
+  }
+  if (args.strategy !== "replace") {
+    const allExportedCollectionIds = document.sets
+      .map((s) => s.meta?.figmaCollectionId)
+      .filter((id): id is string => typeof id === "string");
+    // Exported collections that ended up with no tokens appear in no file's
+    // content — yet a token stamped with one that vanishes was still
+    // legitimately deleted in Figma.
+    const emptyExportedCollectionIds = document.sets
+      .filter((s) => s.tokens.length === 0)
+      .map((s) => s.meta?.figmaCollectionId)
+      .filter((id): id is string => typeof id === "string");
+
+    for (const write of plan.writes) {
+      if (!existsSync(write.fullPath)) continue;
+      let existing: string;
+      try {
+        existing = readFileSync(write.fullPath, "utf-8");
+      } catch (err) {
+        // Unreadable target: we cannot prove the overwrite is safe, so don't.
+        throw new Error(
+          `[figma-console-mcp] Nothing was written. "${write.fullPath}" exists but could not be read to check what overwriting it would destroy (${err instanceof Error ? err.message : String(err)}). Fix the file's permissions, or pass strategy: "replace" to overwrite it unconditionally.`,
+        );
+      }
+
+      // (a) Any format: was this file generated from a DIFFERENT Figma file?
+      const stampedKey = readSourceFileStamp(existing);
+      if (stampedKey && !sourceFileKey) {
+        // The target records its source, but this run can't say where ITS data
+        // came from — we cannot prove they match, so don't overwrite.
+        throw new Error(
+          `[figma-console-mcp] Nothing was written. "${write.fullPath}" was generated from Figma file ${stampedKey}, but the Desktop Bridge plugin did not report which file this export read from, so it can't be confirmed to be the same one. Re-import the plugin manifest in Figma (the bundled manifest enables file-key reporting) and retry, or pass strategy: "replace" to overwrite anyway.`,
+        );
+      }
+      if (stampedKey && sourceFileKey && stampedKey !== sourceFileKey) {
+        throw new Error(
+          `[figma-console-mcp] Nothing was written. "${write.fullPath}" was generated from Figma file ${stampedKey}, but this export read from ${describeSource(source)} — most likely a different file/tab is active in Figma than you intended. Switch to the right file (or use figma_navigate) and retry. If you really mean to re-source this file, pass strategy: "replace".`,
+        );
+      }
+
+      // (b) DTCG: would the overwrite destroy tokens this export doesn't manage?
+      //     A DTCG target we cannot parse (merge-conflict markers, a truncated
+      //     write) can't be checked — refuse rather than bulldoze it.
+      if (
+        write.format === "dtcg" &&
+        stripBom(existing).trim() !== "" &&
+        !isParsableJson(existing)
+      ) {
+        throw new Error(
+          `[figma-console-mcp] Nothing was written. "${write.fullPath}" exists but is not valid JSON (unresolved merge conflict? partial write?), so what overwriting it would destroy can't be checked. Fix the file, or pass strategy: "replace" to overwrite it unconditionally.`,
+        );
+      }
+      //     A DTCG token file must never be replaced by a DIFFERENT kind of
+      //     output (css-vars aimed at typography.tokens.json): the new side
+      //     isn't JSON, so the token comparison below would see nothing lost.
+      if (dtcgTokenCount(existing) > 0 && !isParsableJson(write.content)) {
+        throw new Error(
+          `[figma-console-mcp] Nothing was written. "${write.fullPath}" is a DTCG token file (${dtcgTokenCount(existing)} tokens), and this export would replace it with ${write.format} output — every token in it would be lost. Point outputPath at a ${write.format} file instead, or pass strategy: "replace" if you really mean to convert this file.`,
+        );
+      }
+      //     Which collections does THIS file speak for? With splitByCollection
+      //     a file holds one collection, so only that one (a token from another
+      //     collection pasted in is NOT ours to drop). Otherwise every exported
+      //     collection feeds the file — including one that has just lost the
+      //     mode a splitByMode file is for, whose tokens rightly disappear.
+      const loss = findUnmanagedTokenLoss(
+        existing,
+        write.content,
+        new Set(
+          write.splitByCollection
+            ? [
+                ...collectionIdsInDtcg(write.content),
+                ...emptyExportedCollectionIds,
+              ]
+            : allExportedCollectionIds,
+        ),
+      );
+      if (loss) throw unmanagedLossError(loss, write.fullPath, source);
+    }
+  }
+
   if (!dryRun) {
     for (const write of plan.writes) {
       try {
@@ -352,6 +484,10 @@ async function handleExport(
             mode: dryRun ? "dry-run" : outputBase ? "written" : "inline",
             configFound: !!loaded,
             configPath: loaded?.configPath ?? null,
+            // Which Figma file the variables were read from. Verify this is
+            // the file you meant — the bridge reads the ACTIVE file unless
+            // tokens.config.json pins `figmaFile`.
+            source,
             collections: document.sets.map((s) => ({
               name: s.name,
               modes: s.modes,
@@ -755,6 +891,282 @@ function resolveOutputBaseForFormat(
   return null;
 }
 
+/** Where an export's variables were read from. */
+export interface ExportSource {
+  fileKey: string | null;
+  fileName: string | null;
+}
+
+function describeSource(source: ExportSource): string {
+  if (source.fileName && source.fileKey)
+    return `Figma file "${source.fileName}" (${source.fileKey})`;
+  if (source.fileKey) return `Figma file ${source.fileKey}`;
+  return "the file currently active in Figma";
+}
+
+/**
+ * Throw unless every requested collection id exists in the pulled payload.
+ * All-or-nothing on purpose: exporting 1 of 2 requested collections over an
+ * existing file is still data loss, just a quieter one.
+ */
+export function assertRequestedCollectionsFound(
+  requested: string[] | undefined,
+  available: Array<{ id: string; name?: string }>,
+  source: ExportSource,
+): void {
+  if (!Array.isArray(requested) || requested.length === 0) return;
+  const have = new Set(available.map((c) => c.id));
+  const missing = requested.filter((id) => !have.has(id));
+  if (missing.length === 0) return;
+  const listed = available
+    .slice(0, 12)
+    .map((c) => `${c.name ?? "(unnamed)"} [${c.id}]`)
+    .join(", ");
+  throw new Error(
+    `[figma-console-mcp] ${missing.length} of ${requested.length} requested collection(s) not found in ${describeSource(source)}: ${missing.join(", ")}. Nothing was written. ` +
+      "The Desktop Bridge reads from the file that is active in Figma Desktop, so this usually means a different file/tab is focused than the one that owns the collection — switch to it (or use figma_navigate) and retry. " +
+      (available.length > 0
+        ? `Collections in that file: ${listed}${available.length > 12 ? ", …" : ""}.`
+        : "That file has no variable collections."),
+  );
+}
+
+const GENERATED_HEADER = "Generated by figma-console-mcp";
+
+/** Editors on Windows love a UTF-8 BOM; JSON.parse does not. */
+function stripBom(content: string): string {
+  return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+}
+
+function isParsableJson(content: string): boolean {
+  try {
+    JSON.parse(stripBom(content));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Record which Figma file a generated TEXT output came from, as a
+ * `Source: Figma file <key>` comment line directly under the formatter's
+ * existing "Generated by figma-console-mcp" header — in that header's own
+ * comment style, so this works for every current and future text format
+ * without touching the formatters. JSON outputs are left alone here: DTCG
+ * carries the key in its root `$extensions`, and the plain-JSON formats have
+ * nowhere to put a comment.
+ */
+export function stampSourceFile(
+  content: string,
+  sourceFileKey: string | null,
+): string {
+  if (!sourceFileKey) return content;
+  const lines = content.split("\n");
+  const idx = lines
+    .slice(0, 6)
+    .findIndex((line) => line.includes(GENERATED_HEADER));
+  if (idx === -1) return content;
+  const header = lines[idx];
+  const label = `Source: Figma file ${sourceFileKey}`;
+  const indent = header.match(/^\s*/)?.[0] ?? "";
+  const trimmed = header.trimStart();
+  let stamp: string;
+  if (trimmed.startsWith("/*") && trimmed.trimEnd().endsWith("*/")) {
+    stamp = `${indent}/* ${label} */`;
+  } else if (trimmed.startsWith("//")) {
+    stamp = `${indent}// ${label}`;
+  } else if (trimmed.startsWith("*")) {
+    stamp = `${indent}* ${label}`;
+  } else {
+    return content; // unknown comment style — never guess at syntax
+  }
+  lines.splice(idx + 1, 0, stamp);
+  return lines.join("\n");
+}
+
+/**
+ * Read back the Figma file key a previously exported file was generated from:
+ * DTCG root `$extensions["figma-console-mcp"].figmaFileKey`, or the
+ * `Source: Figma file <key>` header line of a text output. Null when the file
+ * carries no stamp (exported before stamping existed, or a plain-JSON format).
+ */
+export function readSourceFileStamp(rawContent: string): string | null {
+  const content = stripBom(rawContent);
+  const head = content.slice(0, 800);
+  if (head.includes(GENERATED_HEADER)) {
+    const m = head.match(/Source: Figma file ([A-Za-z0-9_-]+)/);
+    if (m) return m[1];
+  }
+  if (content.trimStart().startsWith("{")) {
+    try {
+      const key = JSON.parse(content)?.$extensions?.["figma-console-mcp"]
+        ?.figmaFileKey;
+      if (typeof key === "string" && key) return key;
+    } catch {
+      /* not JSON — no stamp */
+    }
+  }
+  return null;
+}
+
+/** Number of `$value` leaves in a DTCG document; 0 when it isn't one. */
+function dtcgTokenCount(content: string): number {
+  let root: unknown;
+  try {
+    root = JSON.parse(stripBom(content));
+  } catch {
+    return 0;
+  }
+  let count = 0;
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    const obj = node as Record<string, unknown>;
+    if ("$value" in obj) {
+      count++;
+      return;
+    }
+    for (const [key, child] of Object.entries(obj)) {
+      if (!key.startsWith("$")) walk(child);
+    }
+  };
+  walk(root);
+  return count;
+}
+
+/** Collection ids present in a DTCG document (set-level and token-level stamps). */
+function collectionIdsInDtcg(content: string): string[] {
+  let root: unknown;
+  try {
+    root = JSON.parse(stripBom(content));
+  } catch {
+    return [];
+  }
+  const ids = new Set<string>();
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    const obj = node as Record<string, unknown>;
+    const ext = (obj.$extensions as Record<string, any> | undefined)?.[
+      "figma-console-mcp"
+    ];
+    if (typeof ext?.figmaCollectionId === "string") ids.add(ext.figmaCollectionId);
+    if (typeof ext?.collectionId === "string") ids.add(ext.collectionId);
+    if ("$value" in obj) return;
+    for (const [key, child] of Object.entries(obj)) {
+      if (!key.startsWith("$")) walk(child);
+    }
+  };
+  walk(root);
+  return [...ids];
+}
+
+/** Tokens an overwrite would destroy that the export has no authority over. */
+export interface UnmanagedTokenLoss {
+  /** Tokens with no figma-console-mcp variable stamp — hand-added / code-only. */
+  codeOnly: string[];
+  /** Tokens stamped with a collection that is not part of this export. */
+  otherCollections: string[];
+}
+
+/**
+ * Compare an existing DTCG token file with the content about to replace it.
+ *
+ * A token that disappears is only a legitimate drop when the export MANAGES
+ * it: stamped with a variableId AND belonging to a collection included in this
+ * export — i.e. the variable was deleted in Figma. Anything else that would
+ * vanish is loss the caller never asked for:
+ *   • code-only tokens (no stamp) someone added by hand, and
+ *   • tokens from collections outside this export — a scoped export pointed at
+ *     a shared file, or an export read from the WRONG Figma file.
+ *
+ * Returns null when nothing unmanaged is lost, or when the existing file is
+ * not a DTCG JSON document (CSS/SCSS/TS outputs are generated artifacts).
+ */
+export function findUnmanagedTokenLoss(
+  existingContent: string,
+  newContent: string,
+  exportedCollectionIds: Set<string>,
+): UnmanagedTokenLoss | null {
+  let existing: unknown;
+  let next: unknown;
+  try {
+    existing = JSON.parse(stripBom(existingContent));
+    next = JSON.parse(stripBom(newContent));
+  } catch {
+    return null;
+  }
+
+  const collect = (
+    node: unknown,
+    path: string[],
+    out: Map<string, Record<string, unknown> | undefined>,
+  ): void => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    const obj = node as Record<string, unknown>;
+    if ("$value" in obj) {
+      const ext = (obj.$extensions as Record<string, unknown> | undefined)?.[
+        "figma-console-mcp"
+      ];
+      out.set(
+        path.join("."),
+        ext && typeof ext === "object"
+          ? (ext as Record<string, unknown>)
+          : undefined,
+      );
+      return;
+    }
+    for (const [key, child] of Object.entries(obj)) {
+      if (key.startsWith("$")) continue;
+      collect(child, [...path, key], out);
+    }
+  };
+
+  const before = new Map<string, Record<string, unknown> | undefined>();
+  const after = new Map<string, Record<string, unknown> | undefined>();
+  collect(existing, [], before);
+  collect(next, [], after);
+  if (before.size === 0) return null;
+
+  const loss: UnmanagedTokenLoss = { codeOnly: [], otherCollections: [] };
+  for (const [path, stamp] of before) {
+    if (after.has(path)) continue;
+    if (!stamp || typeof stamp.variableId !== "string") {
+      loss.codeOnly.push(path);
+    } else if (
+      typeof stamp.collectionId !== "string" ||
+      !exportedCollectionIds.has(stamp.collectionId)
+    ) {
+      loss.otherCollections.push(path);
+    }
+    // else: stamped + collection exported + gone = deleted in Figma. Fine.
+  }
+  return loss.codeOnly.length + loss.otherCollections.length > 0 ? loss : null;
+}
+
+function unmanagedLossError(
+  loss: UnmanagedTokenLoss,
+  fullPath: string,
+  source: ExportSource,
+): Error {
+  const sample = (paths: string[]) =>
+    `${paths.slice(0, 5).join(", ")}${paths.length > 5 ? `, +${paths.length - 5} more` : ""}`;
+  const parts: string[] = [];
+  if (loss.otherCollections.length > 0) {
+    parts.push(
+      `${loss.otherCollections.length} token(s) from collections that are not part of this export (${sample(loss.otherCollections)})`,
+    );
+  }
+  if (loss.codeOnly.length > 0) {
+    parts.push(
+      `${loss.codeOnly.length} token(s) that were not exported from Figma, e.g. added by hand (${sample(loss.codeOnly)})`,
+    );
+  }
+  return new Error(
+    `[figma-console-mcp] Nothing was written. Overwriting "${fullPath}" with this export (read from ${describeSource(source)}) would delete ${parts.join(" and ")}. ` +
+      "Export replaces the whole file — it does not merge into it. If the source file above is not the one you intended, switch files in Figma and retry. " +
+      'If the loss is intended, pass strategy: "replace" to overwrite anyway; otherwise export to a different path and reconcile by hand.',
+  );
+}
+
 /** A single file the export is going to write, with its resolved destination. */
 export interface PlannedExportWrite {
   format: string;
@@ -763,6 +1175,8 @@ export interface PlannedExportWrite {
   /** Absolute destination on disk. */
   fullPath: string;
   content: string;
+  /** True when this file holds ONE collection (a splitByCollection target). */
+  splitByCollection?: boolean;
 }
 
 /**
@@ -796,7 +1210,12 @@ const EXPORT_FILE_EXTENSIONS = new Set([
  * target is combined with a multi-file export.
  */
 export function planExportWrites(
-  files: Array<{ format: string; path: string; content: string }>,
+  files: Array<{
+    format: string;
+    path: string;
+    content: string;
+    splitByCollection?: boolean;
+  }>,
   outputPath: string | undefined,
   loaded: ReturnType<typeof loadTokensConfig>,
 ): { writes: PlannedExportWrite[]; warnings: string[] } {
@@ -838,6 +1257,7 @@ export function planExportWrites(
             sourcePath: file.path,
             fullPath: target,
             content: file.content,
+            splitByCollection: file.splitByCollection,
           },
         ],
         warnings,
@@ -854,6 +1274,7 @@ export function planExportWrites(
       sourcePath: file.path,
       fullPath: isAbsolute(file.path) ? file.path : join(base, file.path),
       content: file.content,
+      splitByCollection: file.splitByCollection,
     });
   }
   return { writes, warnings };
