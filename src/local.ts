@@ -2390,7 +2390,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					}
 
 					// LOCAL SEARCH PATH: Use cached design system manifest (existing behavior)
-					const { searchComponents } = await import(
+					const { searchComponents, componentSearchLoadFailure } = await import(
 						"./core/design-system-manifest.js"
 					);
 
@@ -2409,6 +2409,29 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 											hint: "If you're trying to search a published library from another file, pass the libraryFileKey or libraryFileUrl parameter.",
 										},
 									),
+								},
+							],
+							isError: true,
+						};
+					}
+
+					// A failed components fetch leaves nothing to search. Returning
+					// `success: true, results: []` there reads as "no such component
+					// exists" — the caller must be told the search never happened.
+					const loadFailure = componentSearchLoadFailure(
+						cacheEntry.manifest,
+						cacheWarning,
+					);
+					if (loadFailure) {
+						return {
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										error: loadFailure,
+										searched: false,
+										hint: "This is NOT a 'no matches' result — the file's components could not be loaded. Very large files can exceed the load timeout; check the Desktop Bridge plugin and retry, or look up a known node directly with figma_get_component_details / figma_get_component. To search a published library instead, pass libraryFileKey.",
+									}),
 								},
 							],
 							isError: true,

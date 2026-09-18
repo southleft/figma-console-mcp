@@ -32,8 +32,16 @@ import {
   existsSync,
   readFileSync,
   readdirSync,
+  statSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  resolve,
+} from "node:path";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -61,7 +69,7 @@ const logger = createChildLogger({ component: "tokens-tools" });
  * on every exported token document. Kept in sync with package.json by
  * scripts/release.sh — see step 3 of the release flow.
  */
-const MCP_VERSION = "1.40.0";
+const MCP_VERSION = "1.40.1";
 
 const EXPORT_TOOL_DESCRIPTION = `Export Figma variables to design token files in your codebase. Bidirectional with figma_import_tokens — together they replace Style Dictionary and Tokens Studio's export pipeline for the popular styling methods.
 
@@ -130,7 +138,12 @@ export function registerExportTokensTool(
               type: "text" as const,
               text: JSON.stringify({
                 error: err instanceof Error ? err.message : String(err),
-                hint: "If this is a TokenFormatNotImplementedError for a non-DTCG/non-CSS format, export to 'dtcg' or 'css-vars' instead — those are the fully-implemented formats. The canonical DTCG JSON can be consumed by Style Dictionary v4 or any other DTCG-aware tooling.",
+                // Output-location errors already say what to do; the format hint would only mislead.
+                ...(/outputPath|Cannot write/.test(err instanceof Error ? err.message : String(err))
+                  ? {}
+                  : {
+                      hint: "If this is a TokenFormatNotImplementedError for a non-DTCG/non-CSS format, export to 'dtcg' or 'css-vars' instead — those are the fully-implemented formats. The canonical DTCG JSON can be consumed by Style Dictionary v4 or any other DTCG-aware tooling.",
+                    }),
               }),
             },
           ],
@@ -263,6 +276,14 @@ async function handleExport(
   // 6. Format the document for each target.
   const allFiles: Array<{ format: string; path: string; content: string }> = [];
   const allWarnings: string[] = [...warnings];
+  if (
+    args.scope === "collection" &&
+    !(Array.isArray(args.collectionIds) && args.collectionIds.length > 0)
+  ) {
+    allWarnings.push(
+      "scope is 'collection' but no collectionIds were passed — every collection was exported. Pass collectionIds (see figma_get_variables) to narrow the export.",
+    );
+  }
 
   for (const target of targets) {
     try {
@@ -298,23 +319,25 @@ async function handleExport(
   // 7. If outputPath is set, write to disk. Otherwise return inline.
   // Output routing: canonical-format files (matching config.source.canonical)
   // go to source.dir; everything else goes to generated.dir.
+  //
+  // The write plan is computed (and validated) up front — for dry-runs too —
+  // so a bad outputPath fails with an actionable message before any file is
+  // written, instead of surfacing a raw EEXIST/ENOTDIR half-way through.
   const dryRun = args.strategy === "dry-run";
   const writtenPaths: string[] = [];
 
+  const plan = planExportWrites(allFiles, args.outputPath, loaded);
+  allWarnings.push(...plan.warnings);
+
   if (!dryRun) {
-    for (const file of allFiles) {
-      const base = resolveOutputBaseForFormat(
-        args.outputPath,
-        loaded,
-        file.format,
-      );
-      if (!base) continue; // No config or outputPath → caller will get content inline.
-      const fullPath = isAbsolute(file.path)
-        ? file.path
-        : join(base, file.path);
-      mkdirSync(dirname(fullPath), { recursive: true });
-      writeFileSync(fullPath, file.content, "utf-8");
-      writtenPaths.push(fullPath);
+    for (const write of plan.writes) {
+      try {
+        mkdirSync(dirname(write.fullPath), { recursive: true });
+        writeFileSync(write.fullPath, write.content, "utf-8");
+      } catch (err) {
+        throw describeExportWriteError(err, write.fullPath);
+      }
+      writtenPaths.push(write.fullPath);
     }
   }
   const outputBase = writtenPaths.length > 0 ? "(multiple)" : null;
@@ -336,11 +359,17 @@ async function handleExport(
               figmaCollectionId: s.meta?.figmaCollectionId,
             })),
             outputs: dryRun
-              ? allFiles.map((f) => ({
+              ? allFiles.map((f) => {
+                const planned = plan.writes.find(
+                  (w) => w.format === f.format && w.sourcePath === f.path,
+                );
+                return {
                   format: f.format,
                   path: f.path,
+                  ...(planned ? { wouldWriteTo: planned.fullPath } : {}),
                   preview: f.content.slice(0, 500) + (f.content.length > 500 ? "…" : ""),
-                }))
+                };
+              })
               : outputBase
                 ? writtenPaths.map((p) => ({ writtenTo: p }))
                 : allFiles,
@@ -724,6 +753,129 @@ function resolveOutputBaseForFormat(
     return resolve(loaded.projectRoot, loaded.config.generated.dir);
   }
   return null;
+}
+
+/** A single file the export is going to write, with its resolved destination. */
+export interface PlannedExportWrite {
+  format: string;
+  /** Formatter-chosen relative filename (e.g. `tokens.tokens.json`). */
+  sourcePath: string;
+  /** Absolute destination on disk. */
+  fullPath: string;
+  content: string;
+}
+
+/**
+ * Extensions the formatters emit. An `outputPath` ending in one of these is a
+ * FILE target, not a directory — nobody wants a directory named
+ * `typography.tokens.json`.
+ */
+const EXPORT_FILE_EXTENSIONS = new Set([
+  ".json",
+  ".css",
+  ".scss",
+  ".less",
+  ".ts",
+  ".js",
+  ".mjs",
+  ".cjs",
+]);
+
+/**
+ * Decide where every formatted file lands. `outputPath` is interpreted as:
+ *
+ *   • a DIRECTORY when it exists as one, ends in a path separator, or has no
+ *     recognized file extension — formatter filenames are joined onto it
+ *     (the long-standing behavior);
+ *   • a FILE when it exists as a regular file or ends in a token-file
+ *     extension — valid only when the export produces exactly one file, which
+ *     is then written at that exact path (so callers can re-export straight
+ *     into an existing `typography.tokens.json`).
+ *
+ * Throws a descriptive error — before anything is written — when a file
+ * target is combined with a multi-file export.
+ */
+export function planExportWrites(
+  files: Array<{ format: string; path: string; content: string }>,
+  outputPath: string | undefined,
+  loaded: ReturnType<typeof loadTokensConfig>,
+): { writes: PlannedExportWrite[]; warnings: string[] } {
+  const warnings: string[] = [];
+
+  if (outputPath) {
+    const target = resolveOutputBaseForFormat(outputPath, loaded, "")!;
+    const stat = statSync(target, { throwIfNoEntry: false });
+    const explicitDir = /[\\/]$/.test(outputPath);
+    const isFileTarget =
+      !explicitDir &&
+      !stat?.isDirectory() &&
+      (stat?.isFile() === true ||
+        EXPORT_FILE_EXTENSIONS.has(extname(target).toLowerCase()));
+
+    if (isFileTarget) {
+      if (files.length > 1) {
+        const names = files.map((f) => f.path);
+        const shown = names.slice(0, 6).join(", ");
+        throw new Error(
+          `[figma-console-mcp] outputPath "${outputPath}" ${stat?.isFile() ? "is an existing file" : "looks like a file path"}, but this export produces ${files.length} files (${shown}${names.length > 6 ? ", …" : ""}). ` +
+            "Either pass a DIRECTORY as outputPath (each file is written inside it), or narrow the export to a single file — one `format`, `collectionIds` for the collection you want, and no splitByMode/splitByCollection — and it will be written at exactly that path.",
+        );
+      }
+      if (files.length === 0) return { writes: [], warnings };
+
+      const file = files[0];
+      const wantExt = extname(file.path).toLowerCase();
+      const gotExt = extname(target).toLowerCase();
+      if (wantExt && gotExt && wantExt !== gotExt) {
+        warnings.push(
+          `outputPath "${basename(target)}" ends in ${gotExt} but the ${file.format} format produces ${wantExt} content — written as requested; double-check the filename.`,
+        );
+      }
+      return {
+        writes: [
+          {
+            format: file.format,
+            sourcePath: file.path,
+            fullPath: target,
+            content: file.content,
+          },
+        ],
+        warnings,
+      };
+    }
+  }
+
+  const writes: PlannedExportWrite[] = [];
+  for (const file of files) {
+    const base = resolveOutputBaseForFormat(outputPath, loaded, file.format);
+    if (!base) continue; // No config or outputPath → caller gets content inline.
+    writes.push({
+      format: file.format,
+      sourcePath: file.path,
+      fullPath: isAbsolute(file.path) ? file.path : join(base, file.path),
+      content: file.content,
+    });
+  }
+  return { writes, warnings };
+}
+
+/**
+ * Translate the raw fs errors a bad output location produces (a regular file
+ * sitting where a directory is needed) into something the caller can act on.
+ */
+function describeExportWriteError(err: unknown, fullPath: string): Error {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  if (code === "EEXIST" || code === "ENOTDIR") {
+    return new Error(
+      `[figma-console-mcp] Cannot write "${fullPath}": part of that path already exists as a regular file, so the directory can't be created. Point outputPath at a directory (or at the exact file to overwrite, for a single-file export).`,
+    );
+  }
+  if (code === "EISDIR") {
+    return new Error(
+      `[figma-console-mcp] Cannot write "${fullPath}": a directory already exists at that path.`,
+    );
+  }
+  return err instanceof Error ? err : new Error(String(err));
 }
 
 /**

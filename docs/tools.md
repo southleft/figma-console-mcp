@@ -353,6 +353,26 @@ figma_export_tokens({
 })
 ```
 
+**`outputPath` — directory or file:**
+
+| You pass | Treated as | Result |
+|---|---|---|
+| A directory, an extension-less path, or a path ending in `/` | Directory (created if missing) | Each generated file is written inside it (`tokens.tokens.json`, `tokens.css`, …) |
+| An existing file, or a path ending in `.json` / `.css` / `.scss` / `.less` / `.ts` / `.js` | File | The export must produce **exactly one file**, which is written at that exact path (overwriting it) |
+
+To re-export one collection straight into an existing per-topic token file:
+
+```javascript
+figma_export_tokens({
+  scope: "collection",
+  collectionIds: ["VariableCollectionId:12:34"],
+  format: "dtcg",
+  outputPath: "src/styles/tokens/typography.tokens.json"
+})
+```
+
+A file path combined with a multi-file export (several formats from `tokens.config.json`, `splitByMode`, `splitByCollection`, `tokens-studio`) is rejected with an explanatory error **before anything is written** — pass a directory instead, or narrow the export to one file. `strategy: "dry-run"` reports the resolved destination as `wouldWriteTo`.
+
 **Output formats:**
 
 | Format | Notes |

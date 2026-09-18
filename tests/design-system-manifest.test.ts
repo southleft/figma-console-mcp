@@ -6,6 +6,7 @@
  */
 
 import {
+	componentSearchLoadFailure,
 	DesignSystemManifestCache,
 	searchComponents,
 	getCategories,
@@ -435,5 +436,26 @@ describe("Design System Manifest", () => {
 			// get() should also return null for expired entries
 			expect(cache.get("f1")).toBeNull();
 		});
+	});
+});
+
+describe("componentSearchLoadFailure", () => {
+	const warning = "Components fetch failed (WebSocket command GET_LOCAL_COMPONENTS timed out after 300000ms) — results may be incomplete and were NOT cached; retry after checking the Desktop Bridge plugin.";
+
+	it("reports a failed load instead of letting an empty manifest read as 'no matches'", () => {
+		const msg = componentSearchLoadFailure(makeManifest(), warning);
+		expect(msg).toContain("Component search could not run");
+		expect(msg).toContain("timed out after 300000ms");
+	});
+
+	it("lets a genuinely empty file search normally (no warning = the load succeeded)", () => {
+		expect(componentSearchLoadFailure(makeManifest(), undefined)).toBeNull();
+	});
+
+	it("still searches when components did load despite a warning", () => {
+		const manifest = makeManifest({
+			components: { k1: { key: "k1", nodeId: "1:1", name: "Button" } } as any,
+		});
+		expect(componentSearchLoadFailure(manifest, warning)).toBeNull();
 	});
 });

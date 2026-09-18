@@ -356,13 +356,51 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 // Per-Variant Data Collection
 // ============================================================================
 
+/** A single solid color found on a node, with its bound token when there is one */
+interface VariantColorEntry {
+	hex: string;
+	nodeName: string;
+	variableId?: string;
+	variableName?: string;
+	/** For icon artwork: layer name of the icon instance this color belongs to */
+	iconLabel?: string;
+}
+
 /** Color data collected from a specific variant */
 interface VariantColorData {
 	variantName: string;
-	fills: Array<{ hex: string; nodeName: string; variableId?: string; variableName?: string }>;
-	strokes: Array<{ hex: string; nodeName: string; variableId?: string; variableName?: string }>;
-	textColors: Array<{ hex: string; nodeName: string; variableId?: string; variableName?: string }>;
-	icons: Array<{ name: string; type: string }>;
+	/**
+	 * BACKGROUND fills only: the variant root's own fills or, when the root is
+	 * transparent, a full-bleed background layer (see `backgroundLayer`). Never a
+	 * descendant's color — an empty array means the variant has no background.
+	 */
+	fills: VariantColorEntry[];
+	/** Layer name the background came from when it isn't the variant root itself */
+	backgroundLayer?: string;
+	/** Fills on non-text descendants that are neither the background nor part of an icon */
+	descendantFills: VariantColorEntry[];
+	/** Fills and strokes found inside a detected icon instance */
+	iconColors: VariantColorEntry[];
+	strokes: VariantColorEntry[];
+	textColors: VariantColorEntry[];
+	icons: Array<{
+		/** Main component name when resolvable, else the cleaned layer name */
+		name: string;
+		type: string;
+		layerName?: string;
+		/** INSTANCE_SWAP property driving this instance — the icon is a default, not fixed */
+		swapProperty?: string;
+	}>;
+}
+
+/**
+ * Component metadata that ships alongside a REST `getNodes` document
+ * (`nodes[id].components` / `.componentSets`), keyed by node id. Lets us name
+ * the main component behind an INSTANCE without a Plugin API round-trip.
+ */
+export interface ComponentLookup {
+	components?: Record<string, { name?: string; componentSetId?: string } | undefined>;
+	componentSets?: Record<string, { name?: string } | undefined>;
 }
 
 /** Typography data from a text node */
@@ -377,11 +415,102 @@ interface TextStyleData {
 	variableBindings?: Record<string, string>;
 }
 
+/** Strip Figma's internal "#123:4" id suffix from a component property name */
+function stripPropertyIdSuffix(rawName: string): string {
+	return rawName.replace(/#\d+:\d+$/, "").trim();
+}
+
+/**
+ * Human-readable name of the main component behind an instance/component id.
+ * Variants resolve to "Set name (Value / Value)" since a bare "Size=16" is useless.
+ */
+export function resolveMainComponentName(componentId: string | undefined, lookup: ComponentLookup = {}): string | undefined {
+	if (!componentId) return undefined;
+	const comp = lookup.components?.[componentId];
+	if (!comp?.name) return undefined;
+	const setName = comp.componentSetId ? lookup.componentSets?.[comp.componentSetId]?.name : undefined;
+	if (setName) return `${setName} (${cleanVariantName(comp.name)})`;
+	return comp.name;
+}
+
+/** Largest dimension (px) an instance-swap slot can have and still be treated as an icon */
+const MAX_ICON_SLOT_SIZE = 64;
+
+/**
+ * Decide whether an INSTANCE is an icon, and name it.
+ * Signals, any of which qualifies:
+ *   - the layer name or the MAIN COMPONENT name mentions "icon"
+ *   - the instance is driven by an INSTANCE_SWAP property and is icon-sized —
+ *     covers slots with neutral layer names like "Leading Modifier"
+ * The reported name is the main component (what's actually in the slot) when it
+ * can be resolved, falling back to the cleaned layer name.
+ */
+function detectIconInstance(node: any, lookup: ComponentLookup): VariantColorData["icons"][number] | null {
+	if (node.type !== "INSTANCE") return null;
+
+	const layerName: string = node.name || "";
+	const mainName = resolveMainComponentName(node.componentId, lookup);
+	const swapRef = node.componentPropertyReferences?.mainComponent;
+	const swapProperty = typeof swapRef === "string" ? stripPropertyIdSuffix(swapRef) : undefined;
+
+	const box = node.absoluteBoundingBox || node.size;
+	const width = box?.width ?? box?.x;
+	const height = box?.height ?? box?.y;
+	const iconSized = typeof width !== "number" || typeof height !== "number"
+		? true
+		: Math.max(width, height) <= MAX_ICON_SLOT_SIZE;
+
+	const nameSaysIcon = /icon/i.test(layerName) || (mainName ? /icon/i.test(mainName) : false);
+	if (!nameSaysIcon && !(swapProperty && iconSized)) return null;
+
+	const cleanedLayerName = layerName.replace(/^icon\s*\/?\s*/i, "").trim() || layerName;
+	return {
+		name: mainName || cleanedLayerName,
+		type: "instance",
+		layerName,
+		...(swapProperty ? { swapProperty } : {}),
+	};
+}
+
+/** True when the node has at least one visible solid fill */
+function hasVisibleSolidFill(node: any): boolean {
+	return Array.isArray(node?.fills)
+		&& node.fills.some((f: any) => f.type === "SOLID" && f.color && f.visible !== false);
+}
+
+/**
+ * When a variant's root is transparent, some systems paint the surface with a
+ * dedicated full-bleed layer instead. Returns that layer: a visible, non-text,
+ * non-instance direct child that covers the root's bounds (±1px) and has a
+ * solid fill. Anything smaller (an icon, a dot, a divider) is NOT a background.
+ */
+function findBackgroundLayer(root: any): any | null {
+	if (hasVisibleSolidFill(root)) return null;
+	const rootBox = root.absoluteBoundingBox;
+	if (!rootBox || !Array.isArray(root.children)) return null;
+
+	for (const child of root.children) {
+		if (child.visible === false || child.type === "TEXT" || child.type === "INSTANCE") continue;
+		const box = child.absoluteBoundingBox;
+		if (!box || !hasVisibleSolidFill(child)) continue;
+		const covers = Math.abs(box.x - rootBox.x) <= 1
+			&& Math.abs(box.y - rootBox.y) <= 1
+			&& Math.abs(box.width - rootBox.width) <= 1
+			&& Math.abs(box.height - rootBox.height) <= 1;
+		if (covers) return child;
+	}
+	return null;
+}
+
 /**
  * Collect color data from all variants in a COMPONENT_SET.
  * For single COMPONENTs, returns data for just that component.
  */
-export function collectAllVariantData(node: any, varNameMap: Map<string, string>): VariantColorData[] {
+export function collectAllVariantData(
+	node: any,
+	varNameMap: Map<string, string>,
+	lookup: ComponentLookup = {},
+): VariantColorData[] {
 	const variants: VariantColorData[] = [];
 
 	const nodesToWalk = node.type === "COMPONENT_SET" && node.children?.length > 0
@@ -392,55 +521,79 @@ export function collectAllVariantData(node: any, varNameMap: Map<string, string>
 		const data: VariantColorData = {
 			variantName: variant.name || "Default",
 			fills: [],
+			descendantFills: [],
+			iconColors: [],
 			strokes: [],
 			textColors: [],
 			icons: [],
 		};
 
-		walkVariantNode(variant, data, varNameMap, 0, 5);
+		const backgroundLayer = findBackgroundLayer(variant);
+		if (backgroundLayer) data.backgroundLayer = backgroundLayer.name || "background layer";
+
+		walkVariantNode(variant, data, { varNameMap, lookup, backgroundLayer }, 0, 5, null);
 		variants.push(data);
 	}
 
 	return variants;
 }
 
+interface VariantWalkContext {
+	varNameMap: Map<string, string>;
+	lookup: ComponentLookup;
+	/** Full-bleed layer standing in for a transparent root's background, if any */
+	backgroundLayer: any | null;
+}
+
 /** Walk a single variant node tree to collect colors and icons */
 function walkVariantNode(
 	node: any,
 	data: VariantColorData,
-	varNameMap: Map<string, string>,
+	ctx: VariantWalkContext,
 	depth: number,
 	maxDepth: number,
+	/** Label of the icon instance we're inside of, or null when outside any icon */
+	insideIcon: string | null,
 ): void {
 	if (depth > maxDepth) return;
 
 	const isText = node.type === "TEXT";
 
-	// Check if this is an icon instance
-	if (node.type === "INSTANCE" && (
-		node.name?.toLowerCase().includes("icon") ||
-		node.name?.toLowerCase().startsWith("icon")
-	)) {
-		const iconName = node.name.replace(/^icon\s*\/?\s*/i, "").trim();
-		data.icons.push({ name: iconName || node.name, type: "instance" });
+	// Icons are reported once, at the outermost instance — everything beneath it
+	// (vectors, nested instances) is that icon's artwork, not a separate icon.
+	if (insideIcon === null) {
+		const icon = detectIconInstance(node, ctx.lookup);
+		if (icon) {
+			data.icons.push(icon);
+			insideIcon = icon.layerName || icon.name;
+		}
 	}
 
-	// Collect fills
+	const toEntry = (paint: any): VariantColorEntry => {
+		const varId = paint.boundVariables?.color?.id;
+		return {
+			hex: figmaRGBAToHex({ ...paint.color, a: paint.opacity ?? paint.color.a ?? 1 }),
+			nodeName: node.name || "",
+			variableId: varId,
+			variableName: varId ? ctx.varNameMap.get(varId) : undefined,
+		};
+	};
+
+	// Collect fills. Only the variant root (or its full-bleed stand-in) is a
+	// BACKGROUND — a descendant's fill must never be promoted to one, or a
+	// transparent variant gets documented with its icon's color as the surface.
 	if (node.fills && Array.isArray(node.fills)) {
 		for (const fill of node.fills) {
 			if (fill.type === "SOLID" && fill.color && fill.visible !== false) {
-				const hex = figmaRGBAToHex({ ...fill.color, a: fill.opacity ?? fill.color.a ?? 1 });
-				const varId = fill.boundVariables?.color?.id;
-				const entry = {
-					hex,
-					nodeName: node.name || "",
-					variableId: varId,
-					variableName: varId ? varNameMap.get(varId) : undefined,
-				};
+				const entry = toEntry(fill);
 				if (isText) {
 					data.textColors.push(entry);
-				} else {
+				} else if (insideIcon !== null) {
+					data.iconColors.push({ ...entry, iconLabel: insideIcon });
+				} else if (depth === 0 || node === ctx.backgroundLayer) {
 					data.fills.push(entry);
+				} else {
+					data.descendantFills.push(entry);
 				}
 			}
 		}
@@ -450,14 +603,12 @@ function walkVariantNode(
 	if (node.strokes && Array.isArray(node.strokes)) {
 		for (const stroke of node.strokes) {
 			if (stroke.type === "SOLID" && stroke.color && stroke.visible !== false) {
-				const hex = figmaRGBAToHex({ ...stroke.color, a: stroke.opacity ?? stroke.color.a ?? 1 });
-				const varId = stroke.boundVariables?.color?.id;
-				data.strokes.push({
-					hex,
-					nodeName: node.name || "",
-					variableId: varId,
-					variableName: varId ? varNameMap.get(varId) : undefined,
-				});
+				const entry = toEntry(stroke);
+				if (insideIcon !== null) {
+					data.iconColors.push({ ...entry, iconLabel: insideIcon });
+				} else {
+					data.strokes.push(entry);
+				}
 			}
 		}
 	}
@@ -465,7 +616,7 @@ function walkVariantNode(
 	// Recurse into children
 	if (node.children && Array.isArray(node.children)) {
 		for (const child of node.children) {
-			walkVariantNode(child, data, varNameMap, depth + 1, maxDepth);
+			walkVariantNode(child, data, ctx, depth + 1, maxDepth, insideIcon);
 		}
 	}
 }
@@ -647,6 +798,187 @@ function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new M
 	}
 
 	return tokens;
+}
+
+/** Parse "Size=lg, State=hover" into ordered [property, value] pairs */
+export function parseVariantProperties(rawName: string): Array<[string, string]> {
+	const pairs: Array<[string, string]> = [];
+	for (const part of (rawName || "").split(",")) {
+		const eqIdx = part.indexOf("=");
+		if (eqIdx <= 0) continue;
+		pairs.push([part.slice(0, eqIdx).trim(), part.slice(eqIdx + 1).trim()]);
+	}
+	return pairs;
+}
+
+/** One row of the cross-variant spacing table */
+export interface VariantSpacingRow {
+	property: string;
+	/** True when every variant has the same value AND the same variable binding */
+	uniform: boolean;
+	/** Markdown for the "Figma Variable" cell */
+	variableCell: string;
+	/** Markdown for the "Value" cell */
+	valueCell: string;
+}
+
+export interface VariantSpacingComparison {
+	variantCount: number;
+	rows: VariantSpacingRow[];
+	/** Human-readable findings worth a maintainer's attention (binding asymmetry) */
+	inconsistencies: string[];
+}
+
+const SPACING_COMPARISON_PROPS = [
+	{ key: "paddingTop", label: "Padding top" },
+	{ key: "paddingRight", label: "Padding right" },
+	{ key: "paddingBottom", label: "Padding bottom" },
+	{ key: "paddingLeft", label: "Padding left" },
+	{ key: "itemSpacing", label: "Gap" },
+	{ key: "cornerRadius", label: "Border radius" },
+	{ key: "strokeWeight", label: "Border width" },
+];
+
+/** Cap on variant names spelled out in a single note, so 100-variant sets stay readable */
+const MAX_NAMED_VARIANTS = 5;
+
+function formatSpacingValue(value: number | string): string {
+	return typeof value === "number" ? `${value}px` : value;
+}
+
+/**
+ * Compare spacing across EVERY variant of a COMPONENT_SET instead of reporting
+ * the first child as if it spoke for the whole set.
+ *
+ *   - all variants agree            → one plain row, same as a single component
+ *   - they differ along one variant
+ *     property (e.g. Size)          → "varies by Size: sm 4px · md 8px"
+ *   - they differ with no pattern   → "varies: 0px ×8, 55px (Primary / Default)"
+ *
+ * Separately flags any property bound to a variable on some variants and left
+ * hardcoded on others with NO variant property accounting for the split — a
+ * reliable fingerprint of an accidental edit.
+ *
+ * The REST API omits zero-valued spacing fields, so a property missing on one
+ * variant but present on another is compared as 0, not skipped.
+ */
+export function collectSpacingAcrossVariants(
+	setNode: any,
+	varNameMap: Map<string, string> = new Map(),
+): VariantSpacingComparison {
+	const variants: any[] = Array.isArray(setNode?.children) ? setNode.children : [];
+	const result: VariantSpacingComparison = { variantCount: variants.length, rows: [], inconsistencies: [] };
+	if (variants.length === 0) return result;
+
+	for (const { key, label } of SPACING_COMPARISON_PROPS) {
+		const isSet = (v: any) => (v[key] !== undefined && v[key] !== null)
+			// Per-corner rounding: REST drops the scalar and sends only the 4-tuple
+			|| (key === "cornerRadius" && Array.isArray(v.rectangleCornerRadii));
+		if (!variants.some(isSet)) continue;
+
+		const samples = variants.map((v) => {
+			let value: number | string = v[key] ?? 0;
+			// Per-corner radii: `cornerRadius` is absent and the 4-tuple carries the values
+			if (key === "cornerRadius" && (v[key] === undefined || v[key] === null) && Array.isArray(v.rectangleCornerRadii)) {
+				value = v.rectangleCornerRadii.map((r: number) => `${r}px`).join(" / ");
+			}
+			const varId: string | undefined = typeof v.boundVariables?.[key]?.id === "string"
+				? v.boundVariables[key].id
+				: undefined;
+			return {
+				displayName: cleanVariantName(v.name || "Unknown"),
+				props: parseVariantProperties(v.name || ""),
+				value,
+				variableName: varId ? varNameMap.get(varId) || varId : undefined,
+				signature: `${value}|${varId ?? ""}`,
+				display: "",
+			};
+		});
+
+		const signatures = new Set(samples.map((x) => x.signature));
+		if (signatures.size === 1) {
+			const only = samples[0];
+			result.rows.push({
+				property: label,
+				uniform: true,
+				variableCell: only.variableName ? `\`${only.variableName}\`` : "—",
+				valueCell: formatSpacingValue(only.value),
+			});
+			continue;
+		}
+
+		// Variable cell: every distinct token in play, plus a marker when some variants have none
+		const variableNames = [...new Set(samples.map((x) => x.variableName).filter((n): n is string => !!n))];
+		const bound = samples.filter((x) => x.variableName);
+		const unbound = samples.filter((x) => !x.variableName);
+		const variableParts = variableNames.map((n) => `\`${n}\``);
+		if (bound.length > 0 && unbound.length > 0) variableParts.push("unbound");
+		const variableCell = variableParts.length > 0 ? variableParts.join(", ") : "—";
+
+		// Two variants can share a pixel value yet bind different tokens. When the
+		// binding is part of what varies, show it next to the value — otherwise
+		// "sm 8px · lg 8px" reads as a contradiction.
+		const bindingVaries = variableNames.length > 1 || (bound.length > 0 && unbound.length > 0);
+		for (const x of samples) {
+			x.display = bindingVaries
+				? `${formatSpacingValue(x.value)} (${x.variableName ? `\`${x.variableName}\`` : "unbound"})`
+				: formatSpacingValue(x.value);
+		}
+
+		// Is the variation fully explained by ONE variant property (e.g. Size)?
+		let explainedBy: string | null = null;
+		let explainedGroups: Array<[string, string]> = [];
+		for (const [propName] of samples[0].props) {
+			const groups = new Map<string, Set<string>>();
+			for (const x of samples) {
+				const propValue = x.props.find(([n]) => n === propName)?.[1];
+				if (propValue === undefined) { groups.clear(); break; }
+				if (!groups.has(propValue)) groups.set(propValue, new Set());
+				groups.get(propValue)!.add(x.display);
+			}
+			// groups.size < samples.length: with one variant per group the "explanation"
+			// is vacuous — any values at all would satisfy it (single-property sets).
+			if (groups.size > 1 && groups.size < samples.length && [...groups.values()].every((vals) => vals.size === 1)) {
+				explainedBy = propName;
+				explainedGroups = [...groups.entries()].map(([pv, vals]) => [pv, [...vals][0]]);
+				break;
+			}
+		}
+
+		let valueCell: string;
+		if (explainedBy) {
+			valueCell = `varies by **${explainedBy}**: ${explainedGroups.map(([pv, val]) => `${pv} ${val}`).join(" · ")}`;
+		} else {
+			// No pattern — list each distinct value, most common first, naming the rare ones
+			const byValue = new Map<string, string[]>();
+			for (const x of samples) {
+				if (!byValue.has(x.display)) byValue.set(x.display, []);
+				byValue.get(x.display)!.push(x.displayName);
+			}
+			const parts = [...byValue.entries()]
+				.sort((a, b) => b[1].length - a[1].length)
+				.map(([val, names]) => names.length <= 2 ? `${val} — ${names.join(", ")}` : `${val} ×${names.length}`);
+			valueCell = `varies: ${parts.join(", ")}`;
+		}
+
+		result.rows.push({ property: label, uniform: false, variableCell, valueCell });
+
+		// Only an UNEXPLAINED binding split is suspicious. When a variant property
+		// accounts for it (a "Dot" shape that has no padding at all), it's a design
+		// decision — the table row already shows it, and flagging it would be noise.
+		if (bound.length > 0 && unbound.length > 0 && !explainedBy) {
+			const named = unbound
+				.slice(0, MAX_NAMED_VARIANTS)
+				.map((x) => `${x.displayName} (${formatSpacingValue(x.value)})`)
+				.join(", ");
+			const more = unbound.length > MAX_NAMED_VARIANTS ? `, +${unbound.length - MAX_NAMED_VARIANTS} more` : "";
+			result.inconsistencies.push(
+				`**${label}** is bound to ${variableNames.map((n) => `\`${n}\``).join(", ")} on ${bound.length} of ${samples.length} variants but hardcoded on ${unbound.length}: ${named}${more}.`,
+			);
+		}
+	}
+
+	return result;
 }
 
 // ============================================================================
@@ -1828,9 +2160,16 @@ function generateOverviewSection(
 	return lines.join("\n");
 }
 
-function generateStatesAndVariantsSection(
+/** Icon cell text: the icon in the slot, flagged when it's only an instance-swap default */
+function formatIconCell(icon: VariantColorData["icons"][number] | undefined): string {
+	if (!icon) return "—";
+	return icon.swapProperty ? `${icon.name} _(default — swappable via **${icon.swapProperty}**)_` : icon.name;
+}
+
+export function generateStatesAndVariantsSection(
 	node: any,
 	variantData?: VariantColorData[],
+	lookup: ComponentLookup = {},
 ): string {
 	const props = node.componentPropertyDefinitions;
 	if (!props || Object.keys(props).length === 0) return "";
@@ -1840,10 +2179,11 @@ function generateStatesAndVariantsSection(
 	const variants: Array<{ name: string; values: string[]; defaultValue: string }> = [];
 	const booleans: Array<{ name: string; defaultValue: boolean }> = [];
 	const textProps: Array<{ name: string; defaultValue: string }> = [];
+	const instanceSwaps: Array<{ name: string; defaultName: string | null; preferredCount: number }> = [];
 
 	for (const [rawName, def] of Object.entries(props) as Array<[string, any]>) {
 		// Strip Figma internal ID suffixes like "#17100:0" from property names
-		const name = rawName.replace(/#\d+:\d+$/, "").trim();
+		const name = stripPropertyIdSuffix(rawName);
 		if (def.type === "VARIANT") {
 			variants.push({
 				name,
@@ -1854,6 +2194,13 @@ function generateStatesAndVariantsSection(
 			booleans.push({ name, defaultValue: def.defaultValue ?? true });
 		} else if (def.type === "TEXT") {
 			textProps.push({ name, defaultValue: def.defaultValue || "" });
+		} else if (def.type === "INSTANCE_SWAP") {
+			// defaultValue is the default component's node id — name it when we can
+			instanceSwaps.push({
+				name,
+				defaultName: resolveMainComponentName(def.defaultValue, lookup) ?? null,
+				preferredCount: Array.isArray(def.preferredValues) ? def.preferredValues.length : 0,
+			});
 		}
 	}
 
@@ -1864,9 +2211,12 @@ function generateStatesAndVariantsSection(
 
 		// Determine which columns to show based on available data
 		const hasIcons = variantData.some((v) => v.icons.length > 0);
-		const hasFills = variantData.some((v) => v.fills.length > 0);
+		// Any color at all earns the matrix — a set of transparent (outline/ghost)
+		// variants still has text and icon colors worth tabulating.
+		const hasColors = variantData.some((v) =>
+			v.fills.length > 0 || v.textColors.length > 0 || v.iconColors.length > 0 || v.strokes.length > 0);
 
-		if (hasFills || hasIcons) {
+		if (hasColors || hasIcons) {
 			const headerParts = ["Variant", "Background"];
 			if (hasIcons) headerParts.push("Icon");
 			headerParts.push("Text/Icon Color");
@@ -1887,15 +2237,14 @@ function generateStatesAndVariantsSection(
 					: "—";
 
 				// Get primary text/icon color
-				const textColor = vd.textColors[0] || vd.strokes[0];
+				const textColor = vd.textColors[0] || vd.iconColors[0] || vd.strokes[0];
 				const textVal = textColor
 					? (textColor.variableName ? `\`${textColor.variableName}\` (${textColor.hex})` : textColor.hex)
 					: "—";
 
 				const rowParts = [`**${displayName}**`, bgVal];
 				if (hasIcons) {
-					const icon = vd.icons[0]?.name || "—";
-					rowParts.push(icon);
+					rowParts.push(formatIconCell(vd.icons[0]));
 				}
 				rowParts.push(textVal);
 				lines.push("| " + rowParts.join(" | ") + " |");
@@ -1911,8 +2260,7 @@ function generateStatesAndVariantsSection(
 			lines.push("|---------|---------------------|");
 			for (const vd of variantData) {
 				const displayName = cleanVariantName(vd.variantName);
-				const icon = vd.icons[0]?.name || "—";
-				lines.push(`| ${displayName} | ${icon} |`);
+				lines.push(`| ${displayName} | ${formatIconCell(vd.icons[0])} |`);
 			}
 			lines.push("");
 		}
@@ -1927,7 +2275,7 @@ function generateStatesAndVariantsSection(
 	}
 
 	// Configurable properties table (all property types)
-	if (booleans.length > 0 || textProps.length > 0) {
+	if (booleans.length > 0 || textProps.length > 0 || instanceSwaps.length > 0) {
 		lines.push("### Configurable Properties");
 		lines.push("");
 		lines.push("| Property | Type | Default | Description |");
@@ -1941,6 +2289,10 @@ function generateStatesAndVariantsSection(
 		}
 		for (const t of textProps) {
 			lines.push(`| **${t.name}** | \`string\` | \`"${t.defaultValue}"\` | Sets ${t.name.toLowerCase()} content |`);
+		}
+		for (const sw of instanceSwaps) {
+			const preferred = sw.preferredCount > 0 ? ` (${sw.preferredCount} preferred values)` : "";
+			lines.push(`| **${sw.name}** | \`instance swap\` | ${sw.defaultName ? `\`${sw.defaultName}\`` : "—"} | Swaps the nested ${sw.name.toLowerCase()} instance${preferred} |`);
 		}
 		lines.push("");
 	}
@@ -2021,11 +2373,13 @@ function deduplicateColors(colors: CollectedColor[]): CollectedColor[] {
 	return Array.from(seen.values());
 }
 
-function generateVisualSpecsSection(
+export function generateVisualSpecsSection(
 	node: any,
 	enrichedData: EnrichedComponent | null,
 	variantData?: VariantColorData[],
 	varNameMap: Map<string, string> = new Map(),
+	/** The full COMPONENT_SET when `node` is its default variant — enables cross-variant spacing comparison */
+	setNode?: any,
 ): string {
 	const lines = ["", "## Token Specification", ""];
 
@@ -2048,19 +2402,38 @@ function generateVisualSpecsSection(
 		lines.push("|---------|---------------|-------|");
 
 		for (const vd of variantData) {
-			const nameMatch = vd.variantName.match(/Variant=([^,]+)/i);
-			const displayName = nameMatch ? nameMatch[1].trim() : vd.variantName;
+			// Same naming as the Variant Matrix: every property value, whatever the
+			// properties are called ("Variant=Secondary, Appearance=Critical" → "Secondary / Critical").
+			const displayName = cleanVariantName(vd.variantName);
 
 			// Section header for this variant
 			lines.push(`| **${displayName}** | | |`);
 
-			// Background fills
-			for (const fill of vd.fills) {
-				const varName = fill.variableName || (fill.variableId ? varNameMap.get(fill.variableId) : undefined);
-				lines.push(
-					`| Background | ${varName ? `\`${varName}\`` : "—"} | ${fill.hex} |`,
-				);
+			const tokenCell = (c: VariantColorEntry) => {
+				const varName = c.variableName || (c.variableId ? varNameMap.get(c.variableId) : undefined);
+				return varName ? `\`${varName}\`` : "—";
+			};
+			// Multi-path icons and repeated shapes would otherwise emit identical rows
+			const emitted = new Set<string>();
+			const pushRow = (label: string, c: VariantColorEntry) => {
+				const row = `| ${label} | ${tokenCell(c)} | ${c.hex} |`;
+				if (emitted.has(row)) return;
+				emitted.add(row);
+				lines.push(row);
+			};
+
+			// Background — the variant's own surface only. Say so when there isn't one.
+			const bgLabel = vd.backgroundLayer ? `Background (${vd.backgroundLayer})` : "Background";
+			if (vd.fills.length === 0) {
+				lines.push("| Background | — | none (transparent) |");
 			}
+			for (const fill of vd.fills) pushRow(bgLabel, fill);
+
+			// Fills on inner layers — reported under the layer's name, never as a background
+			for (const fill of vd.descendantFills) pushRow(`Fill (${fill.nodeName})`, fill);
+
+			// Icon artwork colors
+			for (const c of vd.iconColors) pushRow(c.iconLabel ? `Icon (${c.iconLabel})` : "Icon", c);
 
 			// Text colors
 			for (const text of vd.textColors) {
@@ -2105,10 +2478,37 @@ function generateVisualSpecsSection(
 
 	// Spacing tokens with variable names
 	const visualNode = resolveVisualNode(node);
-	const spacingTokens = collectSpacingTokens(visualNode, varNameMap);
-	if (spacingTokens.length > 0) {
+	const comparison = setNode?.type === "COMPONENT_SET" && setNode.children?.length > 1
+		? collectSpacingAcrossVariants(setNode, varNameMap)
+		: null;
+	const spacingTokens = comparison ? [] : collectSpacingTokens(visualNode, varNameMap);
+	if (comparison && comparison.rows.length > 0) {
 		lines.push("### Spacing Tokens");
 		lines.push("");
+		lines.push(`_Compared across all ${comparison.variantCount} variants — a single value means every variant agrees._`);
+		lines.push("");
+		lines.push("| Property | Figma Variable | Value |");
+		lines.push("|----------|---------------|-------|");
+		for (const row of comparison.rows) {
+			lines.push(`| ${row.property} | ${row.variableCell} | ${row.valueCell} |`);
+		}
+		lines.push("");
+		if (comparison.inconsistencies.length > 0) {
+			lines.push("#### Spacing Inconsistencies");
+			lines.push("");
+			lines.push("_A property tokenized on most variants but hardcoded on a few usually means an accidental edit._");
+			lines.push("");
+			for (const note of comparison.inconsistencies) lines.push(`- ${note}`);
+			lines.push("");
+		}
+	} else if (spacingTokens.length > 0) {
+		lines.push("### Spacing Tokens");
+		lines.push("");
+		// A lone variant doesn't speak for its whole set — say which one this is
+		if (isVariantName(visualNode.name || "") || /^[^=,]+=[^=,]+$/.test(visualNode.name || "")) {
+			lines.push(`_Describes the \`${cleanVariantName(visualNode.name)}\` variant only._`);
+			lines.push("");
+		}
 		lines.push("| Property | Figma Variable | Value |");
 		lines.push("|----------|---------------|-------|");
 		for (const token of spacingTokens) {
@@ -3152,8 +3552,14 @@ export function registerDesignCodeTools(
 					}
 				}
 
-				// Collect per-variant color/icon data
-				const variantData = collectAllVariantData(node, varNameMap);
+				// Collect per-variant color/icon data. The REST response carries component
+				// metadata next to the document — that's what names the icon actually sitting
+				// in a slot, instead of guessing from its layer name.
+				const componentLookup: ComponentLookup = {
+					components: nodeData.components,
+					componentSets: nodeData.componentSets,
+				};
+				const variantData = collectAllVariantData(node, varNameMap, componentLookup);
 
 				// Resolve clean component name (prefer set name over variant name)
 				const componentName = resolveComponentName(node, setInfo.setName, codeInfo?.filePath?.split("/").pop()?.replace(/\.\w+$/, ""));
@@ -3292,7 +3698,7 @@ export function registerDesignCodeTools(
 				}
 
 				if (s.statesAndVariants) {
-					const variantsSection = generateStatesAndVariantsSection(nodeForVariants, variantData);
+					const variantsSection = generateStatesAndVariantsSection(nodeForVariants, variantData, componentLookup);
 					if (variantsSection) {
 						parts.push(variantsSection);
 						includedSections.push("statesAndVariants");
@@ -3300,7 +3706,7 @@ export function registerDesignCodeTools(
 				}
 
 				if (s.visualSpecs) {
-					parts.push(generateVisualSpecsSection(nodeForVisual, enrichedData, variantData, varNameMap));
+					parts.push(generateVisualSpecsSection(nodeForVisual, enrichedData, variantData, varNameMap, node));
 					includedSections.push("visualSpecs");
 				}
 
