@@ -82,9 +82,9 @@
 		"ts-jest": "^29.2.5",
 		"tsx": "^4.19.2",
 		"typescript": "5.9.3",
-		"vite": "^6.0.0",
+		"vite": "^8.1.3",
 		"vite-plugin-singlefile": "^2.0.0",
-		"wrangler": "4.72.0",
+		"wrangler": "4.107.0",
 		"zod-to-json-schema": "^3.25.1"
 	}
 }
