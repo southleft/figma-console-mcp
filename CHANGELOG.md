@@ -5,6 +5,20 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.40.4] - 2026-09-21
+
+Found by live-testing v1.40.3 against hard production components (a 2-variant side navigation with 62 hidden layers, gradients, shadows and an 8-level tree) rather than tidy examples. Server-only: **no plugin re-import needed**.
+
+### Fixed
+
+- **Bridge reads went to the ACTIVE file, not the file named in `fileUrl`.** `figma_generate_component_doc` fetched variable names, the description and annotations from whichever file was active in Figma. Documenting a component in file A while file B was active printed `—` for every color token and raw `VariableID:118:874` for spacing — and because node and variable ids are only unique *within* a file, an id collision would silently return file B's names, description or annotations instead. The same flaw affected **`figma_get_component`** (which asks the plugin *before* REST, so it could return a different component that happened to share the node id) and **`figma_get_component_for_development`** (description and annotations). All now target the file in the URL; if that file isn't connected to the bridge they fall back to REST / hex values rather than to another file's data. Same root cause as the v1.40.2 export fix.
+- **A tool result over 16 MB disconnected the server for the rest of the session.** Claude Code closes the transport when one JSON-RPC message passes 16 MB (`wrote >16MB to stdout without a JSON-RPC message boundary`); the user saw only "Connection closed" and lost every tool. Reproduced twice with `figma_execute` returning large node JSON. Every tool result is now size-checked centrally (8 MB): an oversized result is replaced by an error that says how big it was, that any Figma changes still happened, and how to ask for less.
+- **Anatomy mislabeled every vertical auto-layout.** `primaryAxisSizingMode` was hard-wired to "width" and the counter axis to "height", which is only true for horizontal layouts — a fixed-width sidebar printed as `[fixed-height]`. Labels now follow the layout's real axes.
+- **v1.40.3's "show every icon" produced an unreadable cell** on a component with 23 icons. Repeats are now grouped and counted (`CaretDown ×3 _(2 hidden)_`), capped at five kinds. Icons are also named by the glyph actually in the slot: many systems wrap it (`Icon (small)` holding a swappable `MagnifyingGlass`), and the wrapper's name says nothing about which icon it is.
+- **v1.40.3's typography table listed one element several times with conflicting scopes** (`text-8 … all variants` *and* `… open=true`). Rows were identified by position in the tree, so ten nav items' badges became ten elements. A row is now identified by (element name, style) and appears once, with one scope.
+- **Anatomy repeated identical siblings in full** — ten near-identical nav items ran to ~150 lines. Runs of siblings that print identically collapse to one entry marked `×N`; a sibling that differs in anything the tree shows stays separate.
+- Shadow offsets/blur from scaled instances printed as `y 0.39000001549720764` (now rounded, hex uppercased), and an empty `## Overview` heading was left behind when a component has no description.
+
 ## [1.40.3] - 2026-09-21
 
 Fidelity fixes for `figma_generate_component_doc` on harder components — tabs, scrollable containers, anything with hidden layers, one-sided borders, or variants that differ structurally. Server-only: **no plugin re-import needed**. Reported by Robin Di Capua, who checks every generated claim against the file; several further instances of the same defect classes were found by sweeping the tool for them.
@@ -1385,6 +1399,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.40.4]: https://github.com/southleft/figma-console-mcp/compare/v1.40.3...v1.40.4
 [1.40.3]: https://github.com/southleft/figma-console-mcp/compare/v1.40.2...v1.40.3
 [1.40.2]: https://github.com/southleft/figma-console-mcp/compare/v1.40.1...v1.40.2
 [1.40.1]: https://github.com/southleft/figma-console-mcp/compare/v1.40.0...v1.40.1

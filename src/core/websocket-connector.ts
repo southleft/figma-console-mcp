@@ -204,8 +204,8 @@ export class WebSocketConnector implements IFigmaConnector {
   // Component operations
   // ============================================================================
 
-  async getComponentFromPluginUI(nodeId: string): Promise<any> {
-    return this.wsServer.sendCommand('GET_COMPONENT', { nodeId }, 10000);
+  async getComponentFromPluginUI(nodeId: string, fileKey?: string): Promise<any> {
+    return this.wsServer.sendCommand('GET_COMPONENT', { nodeId }, 10000, fileKey);
   }
 
   async getLocalComponents(): Promise<any> {
@@ -220,8 +220,8 @@ export class WebSocketConnector implements IFigmaConnector {
   // Annotation operations
   // ============================================================================
 
-  async getAnnotations(nodeId: string, includeChildren?: boolean, depth?: number): Promise<any> {
-    return this.wsServer.sendCommand('GET_ANNOTATIONS', { nodeId, includeChildren, depth }, 10000);
+  async getAnnotations(nodeId: string, includeChildren?: boolean, depth?: number, fileKey?: string): Promise<any> {
+    return this.wsServer.sendCommand('GET_ANNOTATIONS', { nodeId, includeChildren, depth }, 10000, fileKey);
   }
 
   async setAnnotations(nodeId: string, annotations: any[], mode?: 'replace' | 'append'): Promise<any> {

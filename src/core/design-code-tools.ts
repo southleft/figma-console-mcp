@@ -510,12 +510,14 @@ function describePaint(paint: any): string | null {
 function describeEffect(effect: any): string | null {
 	if (!effect || effect.visible === false || typeof effect.type !== "string") return null;
 	if (effect.type === "DROP_SHADOW" || effect.type === "INNER_SHADOW") {
-		const color = effect.color ? figmaRGBAToHex({ ...effect.color, a: effect.color.a ?? 1 }) : "";
-		const x = effect.offset?.x ?? 0, y = effect.offset?.y ?? 0;
-		return `${effect.type === "DROP_SHADOW" ? "drop" : "inner"} shadow: x ${x} · y ${y} · blur ${effect.radius ?? 0} · spread ${effect.spread ?? 0}${color ? ` · ${color}` : ""}`;
+		const color = effect.color ? figmaRGBAToHex({ ...effect.color, a: effect.color.a ?? 1 }).toUpperCase() : "";
+		// Scaled instances produce values like 0.39000001549720764
+		const n = (v: number | undefined) => Math.round((v ?? 0) * 100) / 100;
+		return `${effect.type === "DROP_SHADOW" ? "drop" : "inner"} shadow: x ${n(effect.offset?.x)} · y ${n(effect.offset?.y)} · blur ${n(effect.radius)} · spread ${n(effect.spread)}${color ? ` · ${color}` : ""}`;
 	}
-	if (effect.type === "LAYER_BLUR") return `layer blur ${effect.radius ?? 0}px`;
-	if (effect.type === "BACKGROUND_BLUR") return `background blur ${effect.radius ?? 0}px`;
+	const radius = Math.round((effect.radius ?? 0) * 100) / 100;
+	if (effect.type === "LAYER_BLUR") return `layer blur ${radius}px`;
+	if (effect.type === "BACKGROUND_BLUR") return `background blur ${radius}px`;
 	return `${effect.type.toLowerCase().replace(/_/g, " ")} effect`;
 }
 
@@ -550,12 +552,31 @@ function detectIconInstance(node: any, lookup: ComponentLookup): VariantColorDat
 	if (!nameSaysIcon && !(swapProperty && iconSized)) return null;
 
 	const cleanedLayerName = layerName.replace(/^icon\s*\/?\s*/i, "").trim() || layerName;
+	// Many systems wrap the glyph: an "Icon (small)" instance whose only job is to
+	// hold a swappable "MagnifyingGlass". The wrapper says nothing about WHICH icon
+	// this is — the instance nested inside it does.
+	const glyph = findNestedGlyphName(node, lookup);
 	return {
-		name: mainName || cleanedLayerName,
+		name: glyph || mainName || cleanedLayerName,
 		type: "instance",
 		layerName,
 		...(swapProperty ? { swapProperty } : {}),
 	};
+}
+
+/** Name of the first instance nested inside an icon wrapper (breadth-first, ≤3 levels) */
+function findNestedGlyphName(icon: any, lookup: ComponentLookup): string | undefined {
+	let level: any[] = Array.isArray(icon.children) ? icon.children : [];
+	for (let depth = 0; depth < 3 && level.length > 0; depth++) {
+		for (const child of level) {
+			if (child.type === "INSTANCE") {
+				const name = resolveMainComponentName(child.componentId, lookup);
+				if (name) return name;
+			}
+		}
+		level = level.flatMap((c) => (Array.isArray(c.children) ? c.children : []));
+	}
+	return undefined;
 }
 
 /** True when the node has at least one visible paint (solid, gradient, image…) */
@@ -803,64 +824,42 @@ const typographySignature = (ts: TextStyleData) =>
  */
 export function collectTypographyAcrossVariants(setNode: any): TypographyRow[] {
 	const variants: any[] = Array.isArray(setNode?.children) ? setNode.children : [];
+	// A row's identity is (element name, style) — NOT its position in the tree.
+	// Positional identity ("text-8 #4") made ten nav items' badges ten separate
+	// elements, each with its own scope, and printed the same fact three times.
+	const rowKey = (ts: TextStyleData) => `${ts.nodeName}|${typographySignature(ts)}`;
 	const perVariant = variants.map((v) => {
-		// Same-named text layers within one variant are told apart by order
-		const seen = new Map<string, number>();
-		const byElement = new Map<string, TextStyleData>();
-		for (const ts of collectTypographyData(v)) {
-			const n = (seen.get(ts.nodeName) ?? 0) + 1;
-			seen.set(ts.nodeName, n);
-			byElement.set(n === 1 ? ts.nodeName : `${ts.nodeName} #${n}`, ts);
-		}
-		return { name: cleanVariantName(v.name || "Unknown"), props: parseVariantProperties(v.name || ""), byElement };
+		const keys = new Map<string, TextStyleData>();
+		for (const ts of collectTypographyData(v)) if (!keys.has(rowKey(ts))) keys.set(rowKey(ts), ts);
+		return { name: cleanVariantName(v.name || "Unknown"), props: parseVariantProperties(v.name || ""), keys };
 	});
 
-	const elements: string[] = [];
-	for (const pv of perVariant) for (const el of pv.byElement.keys()) if (!elements.includes(el)) elements.push(el);
-
-	const rows: TypographyRow[] = [];
-	for (const el of elements) {
-		const having = perVariant.filter((pv) => pv.byElement.has(el));
-		const distinct = new Map<string, { style: TextStyleData; names: string[] }>();
-		for (const pv of having) {
-			const style = pv.byElement.get(el)!;
-			const sig = typographySignature(style);
-			if (!distinct.has(sig)) distinct.set(sig, { style, names: [] });
-			distinct.get(sig)!.names.push(pv.name);
-		}
-		if (distinct.size === 1) {
-			const only = [...distinct.values()][0];
-			// Present in only some variants? Say which, rather than implying all.
-			const scope = having.length === perVariant.length ? "" : scopeLabel(only.names, perVariant.length);
-			rows.push({ style: { ...only.style, nodeName: el }, scope });
-			continue;
-		}
-		const explanation = explainByVariantProperty(
-			having.map((pv) => ({ props: pv.props, display: typographySignature(pv.byElement.get(el)!) })),
-		);
-		for (const [sig, group] of distinct) {
-			const propValue = explanation?.groups.filter(([, display]) => display === sig).map(([pv]) => pv);
-			const scope = explanation && propValue && propValue.length > 0
-				? `${explanation.property}=${propValue.join(" | ")}`
-				: scopeLabel(group.names, perVariant.length);
-			rows.push({ style: { ...group.style, nodeName: el }, scope });
+	const order: string[] = [];
+	const styles = new Map<string, TextStyleData>();
+	for (const pv of perVariant) {
+		for (const [key, ts] of pv.keys) {
+			if (!styles.has(key)) { styles.set(key, ts); order.push(key); }
 		}
 	}
 
-	// Same-named layers ("Label", "Label #2", "Label #3" — three tabs in a tab list)
-	// that share a style and a scope are one fact, not three rows.
-	const merged: TypographyRow[] = [];
-	const seenRows = new Set<string>();
-	for (const row of rows) {
-		const baseName = row.style.nodeName.replace(/ #\d+$/, "");
-		const key = `${baseName}|${typographySignature(row.style)}|${row.scope}|${row.style.hidden ? "h" : ""}`;
-		if (seenRows.has(key)) continue;
-		seenRows.add(key);
+	return order.map((key) => {
+		const style = styles.get(key)!;
+		const having = perVariant.filter((pv) => pv.keys.has(key));
+		let scope = "";
+		if (having.length < perVariant.length) {
+			// Which variant property decides where this (element, style) appears?
+			const explanation = explainByVariantProperty(
+				perVariant.map((pv) => ({ props: pv.props, display: pv.keys.has(key) ? "yes" : "no" })),
+			);
+			const values = explanation?.groups.filter(([, display]) => display === "yes").map(([pv]) => pv) ?? [];
+			scope = explanation && values.length > 0
+				? `${explanation.property}=${values.join(" | ")}`
+				: scopeLabel(having.map((pv) => pv.name), perVariant.length);
+		}
 		// Text layers are often auto-named after their content — keep the table readable
-		const label = baseName.length > 40 ? `${baseName.slice(0, 40)}…` : baseName;
-		merged.push({ ...row, style: { ...row.style, nodeName: label } });
-	}
-	return merged;
+		const label = style.nodeName.length > 40 ? `${style.nodeName.slice(0, 40)}…` : style.nodeName;
+		return { style: { ...style, nodeName: label }, scope };
+	});
 }
 
 /** "Primary / Default, Primary / Hover, +3 more" — enough to identify, short enough to read */
@@ -915,6 +914,8 @@ function buildAnatomyLines(
 	isLast: boolean,
 	depth: number,
 	maxDepth: number,
+	/** Appended to this node's own line — " ×7" for a collapsed run of identical siblings */
+	suffix: string = "",
 ): void {
 	if (depth > maxDepth) return;
 
@@ -943,9 +944,13 @@ function buildAnatomyLines(
 	let sizingInfo = "";
 	if (node.primaryAxisSizingMode || node.counterAxisSizingMode) {
 		const parts: string[] = [];
-		if (node.primaryAxisSizingMode === "FIXED") parts.push("fixed-width");
+		// The PRIMARY axis is width only in a horizontal layout — in a vertical one it
+		// is height. (These were hard-wired to width/height, mislabeling every
+		// vertical auto-layout: a fixed-width sidebar printed as "fixed-height".)
+		const vertical = node.layoutMode === "VERTICAL";
+		if (node.primaryAxisSizingMode === "FIXED") parts.push(vertical ? "fixed-height" : "fixed-width");
 		if (node.primaryAxisSizingMode === "AUTO") parts.push("hug-content");
-		if (node.counterAxisSizingMode === "FIXED") parts.push("fixed-height");
+		if (node.counterAxisSizingMode === "FIXED") parts.push(vertical ? "fixed-width" : "fixed-height");
 		if (node.layoutGrow === 1) parts.push("fill");
 		if (parts.length > 0) sizingInfo = ` [${parts.join(", ")}]`;
 	}
@@ -953,22 +958,35 @@ function buildAnatomyLines(
 	// Hidden layers stay in the tree, marked: the color table names them (a hidden
 	// focus ring is real design intent), so the tree must not pretend they don't exist.
 	const hiddenHint = node.visible === false ? " (hidden)" : "";
-	lines.push(`${prefix}${connector}${label}${typeHint}${hiddenHint}${layoutInfo}${sizingInfo}`);
+	lines.push(`${prefix}${connector}${label}${typeHint}${suffix}${hiddenHint}${layoutInfo}${sizingInfo}`);
 
-	// Recurse into children
-	if (node.children && Array.isArray(node.children)) {
-		const visibleChildren = node.children;
-		for (let i = 0; i < visibleChildren.length; i++) {
-			const isChildLast = i === visibleChildren.length - 1;
+	// Recurse into children, collapsing RUNS of siblings that would print
+	// identically (ten nav items, five list rows) into one entry marked ×N. Compared
+	// on the rendered text, so anything the tree shows — a different gap, one hidden
+	// caret — keeps a sibling separate.
+	if (node.children && Array.isArray(node.children) && depth < maxDepth) {
+		const rendered = node.children.map((child: any) => {
+			const own: string[] = [];
+			buildAnatomyLines(child, own, "", true, depth + 1, maxDepth);
+			return own.join("\n");
+		});
+		const runs: Array<{ child: any; count: number }> = [];
+		node.children.forEach((child: any, i: number) => {
+			const last = runs[runs.length - 1];
+			if (last && rendered[i] === rendered[i - 1]) last.count++;
+			else runs.push({ child, count: 1 });
+		});
+		runs.forEach((run, i) => {
 			buildAnatomyLines(
-				visibleChildren[i],
+				run.child,
 				lines,
 				prefix + childPrefix,
-				isChildLast,
+				i === runs.length - 1,
 				depth + 1,
 				maxDepth,
+				run.count > 1 ? ` ×${run.count}` : "",
 			);
-		}
+		});
 	}
 }
 
@@ -2396,16 +2414,17 @@ export function generateOverviewSection(
 	lines.push(links.join(" | "));
 	lines.push("");
 
-	lines.push("## Overview");
-	lines.push("");
+	// Collected separately so an empty overview doesn't leave an orphaned heading
+	const section: string[] = [];
+
 
 	// Use parsed overview or fall back to raw description
 	// No filler: libraries that deliberately keep descriptions empty would get a
 	// sentence carrying no information on every page. Nothing says more than that.
 	const overviewText = parsedDesc.overview || description?.split("\n")[0] || "";
 	if (overviewText.trim()) {
-		lines.push(overviewText);
-		lines.push("");
+		section.push(overviewText);
+		section.push("");
 	}
 
 	// Base component attribution
@@ -2414,31 +2433,37 @@ export function generateOverviewSection(
 			? `[${codeInfo.baseComponent.name}](${codeInfo.baseComponent.url})`
 			: codeInfo.baseComponent.name;
 		if (codeInfo.baseComponent.description) {
-			lines.push(`Built on ${baseLink}, ${codeInfo.baseComponent.description}`);
+			section.push(`Built on ${baseLink}, ${codeInfo.baseComponent.description}`);
 		} else {
-			lines.push(`Built on ${baseLink}.`);
+			section.push(`Built on ${baseLink}.`);
 		}
-		lines.push("");
+		section.push("");
 	}
 
 	// When to Use
 	if (parsedDesc.whenToUse.length > 0) {
-		lines.push("### When to Use");
-		lines.push("");
+		section.push("### When to Use");
+		section.push("");
 		for (const item of parsedDesc.whenToUse) {
-			lines.push(`- ${item}`);
+			section.push(`- ${item}`);
 		}
-		lines.push("");
+		section.push("");
 	}
 
 	// When NOT to Use
 	if (parsedDesc.whenNotToUse.length > 0) {
-		lines.push("### When NOT to Use");
-		lines.push("");
+		section.push("### When NOT to Use");
+		section.push("");
 		for (const item of parsedDesc.whenNotToUse) {
-			lines.push(`- ${item}`);
+			section.push(`- ${item}`);
 		}
+		section.push("");
+	}
+
+	if (section.length > 0) {
+		lines.push("## Overview");
 		lines.push("");
+		lines.push(...section);
 	}
 
 	return lines.join("\n");
@@ -2447,8 +2472,26 @@ export function generateOverviewSection(
 /** Icon cell text: the icon in the slot, flagged when it's only an instance-swap default */
 function formatIconCell(icons: VariantColorData["icons"]): string {
 	if (!icons || icons.length === 0) return "—";
-	// A chip with a leading AND a trailing icon has two — show both
-	return icons.map(formatOneIcon).join("; ");
+	// A chip with a leading AND a trailing icon has two — show both. A nav with
+	// twenty repeats of the same one shows it once, counted.
+	const groups = new Map<string, { icon: VariantColorData["icons"][number]; total: number; hidden: number }>();
+	for (const icon of icons) {
+		const key = `${icon.name}|${icon.swapProperty ?? ""}`;
+		if (!groups.has(key)) groups.set(key, { icon, total: 0, hidden: 0 });
+		const g = groups.get(key)!;
+		g.total++;
+		if (icon.hidden) g.hidden++;
+	}
+	const MAX_ICON_GROUPS = 5;
+	const parts = [...groups.values()].slice(0, MAX_ICON_GROUPS).map(({ icon, total, hidden }) => {
+		if (total === 1) return formatOneIcon(icon);
+		// Count first, then the note: "Placeholder ×9 _(all hidden)_"
+		const label = formatOneIcon({ ...icon, hidden: false });
+		const note = hidden === 0 ? "" : hidden === total ? " _(all hidden)_" : ` _(${hidden} hidden)_`;
+		return `${label} ×${total}${note}`;
+	});
+	if (groups.size > MAX_ICON_GROUPS) parts.push(`+${groups.size - MAX_ICON_GROUPS} more`);
+	return parts.join("; ");
 }
 
 function formatOneIcon(icon: VariantColorData["icons"][number]): string {
@@ -2724,6 +2767,8 @@ export function generateVisualSpecsSection(
 			};
 			// Multi-path icons and repeated shapes would otherwise emit identical rows
 			const emitted = new Set<string>();
+			// Text layers are often auto-named after their content ("Lorem ipsum dolor…")
+			const short = (name: string) => (name.length > 40 ? `${name.slice(0, 40)}…` : name);
 			const pushRow = (label: string, c: VariantColorEntry) => {
 				const row = `| ${label}${c.hidden ? " _(hidden layer)_" : ""} | ${tokenCell(c)} | ${c.hex} |`;
 				if (emitted.has(row)) return;
@@ -2745,7 +2790,7 @@ export function generateVisualSpecsSection(
 			for (const c of vd.iconColors) pushRow(c.iconLabel ? `Icon (${c.iconLabel})` : "Icon", c);
 
 			// Text colors
-			for (const text of vd.textColors) pushRow(`Text (${text.nodeName})`, text);
+			for (const text of vd.textColors) pushRow(`Text (${short(text.nodeName)})`, text);
 
 			// Strokes — through the same writer, so a visible underline and a hidden
 			// focus ring sharing one color don't print as two indistinguishable rows
@@ -3954,7 +3999,11 @@ export function registerDesignCodeTools(
 				if (getDesktopConnector) {
 					try {
 						const connector = await getDesktopConnector();
-						const varsResult = await connector.getVariables();
+						// Target the file being DOCUMENTED, not whichever file is active:
+						// variable ids are file-local, so the active file's variables either
+						// resolve nothing (every token prints as "—") or, on an id collision,
+						// resolve to the wrong names. Rejects → caught → hex fallback.
+						const varsResult = await connector.getVariables(fileKey);
 						const varList = varsResult?.variables || varsResult?.result?.variables;
 						if (Array.isArray(varList)) {
 							for (const [id, name] of buildVariableNameMap(
@@ -3987,7 +4036,7 @@ export function registerDesignCodeTools(
 				if (getDesktopConnector) {
 					try {
 						const connector = await getDesktopConnector();
-						const bridgeResult = await connector.getComponentFromPluginUI(nodeId);
+						const bridgeResult = await connector.getComponentFromPluginUI(nodeId, fileKey);
 						if (bridgeResult.success && bridgeResult.component) {
 							// Fetch description from bridge if REST API returned empty
 							if (!description) {

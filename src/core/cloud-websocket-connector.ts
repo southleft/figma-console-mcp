@@ -167,7 +167,9 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 	// Component operations
 	// ============================================================================
 
-	async getComponentFromPluginUI(nodeId: string): Promise<any> {
+	// Cloud Mode pairs with exactly one plugin instance, so there is no other file to
+	// confuse it with — `fileKey` is accepted for interface parity and unused.
+	async getComponentFromPluginUI(nodeId: string, _fileKey?: string): Promise<any> {
 		return this.sendCommand('GET_COMPONENT', { nodeId }, 10000);
 	}
 

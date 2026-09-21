@@ -2554,7 +2554,9 @@ export function registerFigmaAPITools(
 
 						const connector = await getDesktopConnector();
 
-						const desktopResult = await connector.getComponentFromPluginUI(nodeId);
+						// fileKey: node ids are file-local — without it the ACTIVE file answers,
+						// and may return a different component that shares this id.
+						const desktopResult = await connector.getComponentFromPluginUI(nodeId, fileKey);
 
 						if (desktopResult.success && desktopResult.component) {
 							logger.info(
@@ -3334,7 +3336,7 @@ export function registerFigmaAPITools(
 					try {
 						const connector = await getDesktopConnector();
 						// Fetch annotations with child traversal (depth matches REST traversal)
-						const annotResult = await connector.getAnnotations(nodeId, true, 4);
+						const annotResult = await connector.getAnnotations(nodeId, true, 4, fileKey);
 						if (annotResult?.success !== false && annotResult?.data) {
 							const data = annotResult.data;
 							annotations = data.annotations || [];
@@ -3361,7 +3363,7 @@ export function registerFigmaAPITools(
 
 						// Also fetch description from bridge if REST returned empty
 						if (!componentData.description && !componentData.descriptionMarkdown) {
-							const bridgeResult = await connector.getComponentFromPluginUI(nodeId);
+							const bridgeResult = await connector.getComponentFromPluginUI(nodeId, fileKey);
 							if (bridgeResult?.success && bridgeResult.component) {
 								if (bridgeResult.component.descriptionMarkdown) {
 									componentData.descriptionMarkdown = bridgeResult.component.descriptionMarkdown;

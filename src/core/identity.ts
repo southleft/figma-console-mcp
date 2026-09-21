@@ -75,6 +75,55 @@ function tagToolResponse(result: unknown): unknown {
 }
 
 /**
+ * Largest tool result this server will hand to the client, in bytes of content.
+ *
+ * MCP clients read one JSON-RPC message at a time and defend themselves against
+ * runaway output: Claude Code disconnects the server outright once a single
+ * message passes 16 MB ("wrote >16MB to stdout without a JSON-RPC message
+ * boundary … Disconnecting"). The user sees only "Connection closed" and loses
+ * every tool for the rest of the session. 8 MB leaves room for JSON-RPC string
+ * escaping, which inflates nested JSON noticeably.
+ */
+export const MAX_TOOL_RESPONSE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Replace an oversized tool result with an actionable error. Returning it would
+ * not deliver the data anyway — it would kill the connection.
+ */
+export function capToolResponse(result: unknown, maxBytes: number = MAX_TOOL_RESPONSE_BYTES): unknown {
+	if (
+		!result ||
+		typeof result !== "object" ||
+		!Array.isArray((result as { content?: unknown[] }).content)
+	) {
+		return result;
+	}
+	let bytes = 0;
+	for (const item of (result as { content: Array<Record<string, unknown>> }).content) {
+		if (typeof item?.text === "string") bytes += Buffer.byteLength(item.text, "utf8");
+		if (typeof item?.data === "string") bytes += item.data.length; // base64 image/audio
+	}
+	if (bytes <= maxBytes) return result;
+
+	const mb = (n: number) => (n / (1024 * 1024)).toFixed(1);
+	return {
+		content: [
+			{
+				type: "text",
+				text: JSON.stringify({
+					_mcp: MCP_NAME,
+					error: `${ERROR_PREFIX} This call produced a ${mb(bytes)} MB result, above the ${mb(maxBytes)} MB this server will return. It was withheld because MCP clients disconnect on oversized messages (Claude Code closes the connection above 16 MB), which would have ended this session instead of delivering the data.`,
+					resultBytes: bytes,
+					note: "Only the RESPONSE was withheld. If this call made changes in Figma, those changes still happened.",
+					hint: "Ask for less in one call: return counts or a summary instead of full node data, target fewer nodes, use a smaller depth, or page through the data across several calls.",
+				}),
+			},
+		],
+		isError: true,
+	};
+}
+
+/**
  * Monkey-patch an MCP server instance so every tool registered on it gets
  * identity tagging applied to its responses and an identity prefix on any
  * Error it throws — without modifying the ~97 individual tool handlers.
@@ -105,7 +154,7 @@ export function wrapServerForIdentity(server: McpServer): void {
 		const wrappedHandler = async (...handlerArgs: unknown[]): Promise<unknown> => {
 			try {
 				const result = await handler(...handlerArgs);
-				return tagToolResponse(result);
+				return capToolResponse(tagToolResponse(result));
 			} catch (err) {
 				if (err instanceof Error && !err.message.startsWith(ERROR_PREFIX)) {
 					err.message = `${ERROR_PREFIX} ${err.message}`;

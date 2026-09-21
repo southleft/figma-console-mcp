@@ -13,6 +13,7 @@ import {
 	collectTypographyAcrossVariants,
 	countPossiblyTruncated,
 	describeStrokeWeight,
+	buildAnatomyTree,
 	buildVariableNameMap,
 	generateAnatomySection,
 	generateFrontmatter,
@@ -381,5 +382,54 @@ describe("found in review of this fix", () => {
 		const md = generateAnatomySection({ name: "C", type: "COMPONENT", children: [nest(3)] }, 4);
 		expect(md).toContain("depth limit of this extraction (4 levels)");
 		expect(generateAnatomySection({ name: "C", type: "COMPONENT", children: [nest(3)] })).not.toContain("depth limit");
+	});
+});
+
+describe("found by LIVE testing on a hard component (CBDS Navigation-Side)", () => {
+	it("labels sizing by the layout's real axes — a vertical layout's primary axis is HEIGHT", () => {
+		const sidebar = { name: "Side", type: "FRAME", layoutMode: "VERTICAL", primaryAxisSizingMode: "AUTO", counterAxisSizingMode: "FIXED", children: [] };
+		expect(buildAnatomyTree(sidebar)).toContain("[hug-content, fixed-width]");
+		const row = { ...sidebar, layoutMode: "HORIZONTAL", primaryAxisSizingMode: "FIXED" };
+		expect(buildAnatomyTree(row)).toContain("[fixed-width, fixed-height]");
+	});
+
+	it("collapses runs of identical siblings, but keeps one that prints differently", () => {
+		const item = (caretHidden: boolean) => ({ name: "Nav item", type: "INSTANCE", children: [{ name: "Label", type: "TEXT" }, { name: "Caret", type: "VECTOR", visible: !caretHidden }] });
+		const tree = buildAnatomyTree({ name: "Menu", type: "FRAME", children: [item(true), item(true), item(false), item(true), item(true), item(true)] });
+		expect(tree).toContain("Nav item (INSTANCE) ×2");
+		expect(tree).toContain("Nav item (INSTANCE) ×3");
+		expect(tree.match(/Nav item \(INSTANCE\)/g)).toHaveLength(3); // 2 + the odd one + 3
+	});
+
+	it("names the glyph inside a generic icon wrapper, and groups repeats instead of listing 23 icons", () => {
+		const lookup = { components: { w: { name: "Size=small", componentSetId: "s" }, g1: { name: "MagnifyingGlass" }, g2: { name: "CaretDown" } }, componentSets: { s: { name: "Icon" } } };
+		const icon = (glyph: string, visible = true) => ({ name: "Icon", type: "INSTANCE", componentId: "w", visible, children: [{ name: glyph, type: "INSTANCE", componentId: glyph === "MagnifyingGlass" ? "g1" : "g2", children: [] }] });
+		const nav = {
+			name: "Nav", type: "COMPONENT_SET", componentPropertyDefinitions: { open: { type: "VARIANT", variantOptions: ["true"] } },
+			children: [{ name: "open=true", type: "COMPONENT", children: [icon("MagnifyingGlass"), icon("CaretDown"), icon("CaretDown", false), icon("CaretDown", false)] }],
+		};
+		const md = generateStatesAndVariantsSection(nav, collectAllVariantData(nav, names, lookup), lookup);
+		expect(md).toContain("| MagnifyingGlass; CaretDown ×3 _(2 hidden)_ |");
+		const allHidden = { ...nav, children: [{ name: "open=true", type: "COMPONENT", children: [icon("CaretDown", false), icon("CaretDown", false)] }] };
+		expect(generateStatesAndVariantsSection(allHidden, collectAllVariantData(allHidden, names, lookup), lookup)).toContain("| CaretDown ×2 _(all hidden)_ |");
+		expect(md).not.toContain("Icon (small)");
+	});
+
+	it("lists an (element, style) once with ONE scope, however many times the layer repeats", () => {
+		const badge = (hidden: boolean) => text(600, { name: "text-8", visible: !hidden });
+		const open = { name: "open=true", type: "COMPONENT", children: [badge(true), badge(true), badge(false), text(400, { name: "Menu item" })] };
+		const closed = { name: "open=false", type: "COMPONENT", children: [badge(true), badge(true)] };
+		const rows = collectTypographyAcrossVariants({ type: "COMPONENT_SET", children: [open, closed] });
+		const label = (r: any) => `${r.style.nodeName}${r.style.hidden ? " (hidden)" : ""} → ${r.scope || "all"}`;
+		expect(rows.map(label)).toEqual(["text-8 (hidden) → all", "text-8 → open=true", "Menu item → open=true"]);
+	});
+
+	it("rounds scaled effect values and leaves no orphaned Overview heading", () => {
+		const v = { name: "Logo", type: "COMPONENT", effects: [{ type: "DROP_SHADOW", color: { r: 0, g: 0, b: 0, a: 0.12 }, offset: { x: 0, y: 0.39000001549720764 }, radius: 1.5600000619888306 }], children: [] };
+		const md = generateVisualSpecsSection(v, null, collectAllVariantData(v, names), names);
+		expect(md).toContain("drop shadow: x 0 · y 0.39 · blur 1.56 · spread 0 · #0000001F");
+		const parsed = { overview: "", whenToUse: [], whenNotToUse: [], contentGuidelines: [], accessibilityNotes: [], additionalNotes: [] };
+		expect(generateOverviewSection("Logo", "", "https://figma.com/x", parsed as any)).not.toContain("## Overview");
+		expect(generateOverviewSection("Logo", "A mark.", "https://figma.com/x", { ...parsed, overview: "A mark." } as any)).toContain("## Overview");
 	});
 });
