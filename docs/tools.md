@@ -2597,7 +2597,7 @@ figma_generate_component_doc({
 - `ai_instruction`: Guidance for the AI on next steps (saving file, asking user for path)
 
 **COMPONENT_SET Handling:**
-Same as parity checker — resolves to default variant for visual specs, reads property definitions from the COMPONENT_SET.
+Documents the **whole set**, not one variant: colors are listed per variant; spacing, typography and layer structure are compared across every variant (a shared value prints once, differences are attributed to the variant property that drives them — `varies by **Size**`, an *Applies to* column, one anatomy tree per distinct structure). Property definitions are read from the COMPONENT_SET. Hidden layers are included and labeled; gradients, shadows, blurs and opacity are reported; and if the component's tree is deeper than the extraction reaches (8 levels), the document says so rather than presenting itself as complete.
 
 ---
 

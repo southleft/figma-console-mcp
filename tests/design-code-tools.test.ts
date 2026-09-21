@@ -401,7 +401,7 @@ describe("Anatomy Tree Builder", () => {
 		expect(tree).not.toContain("Variant=Default");
 	});
 
-	it("hides invisible nodes", () => {
+	it("keeps hidden layers in the tree, marked — the color table names them, so the tree can't omit them", () => {
 		const node = {
 			name: "Frame",
 			type: "FRAME",
@@ -412,7 +412,8 @@ describe("Anatomy Tree Builder", () => {
 		};
 		const tree = buildAnatomyTree(node);
 		expect(tree).toContain("Visible");
-		expect(tree).not.toContain("Hidden");
+		expect(tree).toContain("Hidden (TEXT) (hidden)");
+		expect(tree).not.toContain("Visible (TEXT) (hidden)");
 	});
 
 	it("includes layout info for auto-layout frames", () => {
