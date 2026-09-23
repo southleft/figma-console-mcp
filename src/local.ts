@@ -46,7 +46,7 @@ import { registerTokensTools } from "./core/tokens-tools.js";
 import { wrapServerForIdentity } from "./core/identity.js";
 import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
-import { FigmaWebSocketServer, getBundledPluginVersion } from "./core/websocket-server.js";
+import { FigmaWebSocketServer, getBundledPluginVersion, getServerVersion } from "./core/websocket-server.js";
 import { WebSocketConnector } from "./core/websocket-connector.js";
 import {
 	DEFAULT_WS_PORT,
@@ -169,7 +169,8 @@ class LocalFigmaConsoleMCP {
 		this.server = new McpServer(
 			{
 				name: "Figma Console MCP (Local)",
-				version: "0.1.0",
+				// Was hard-coded "0.1.0" — every client saw that regardless of the release
+				version: getServerVersion(),
 			},
 			{
 				instructions: `## Figma Console MCP - Visual Design Workflow

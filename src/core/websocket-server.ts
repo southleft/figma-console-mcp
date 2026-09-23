@@ -32,6 +32,11 @@ try {
   // Non-critical — version will show as 0.0.0
 }
 
+/** This package's version, as published — what MCP clients are told in `initialize`. */
+export function getServerVersion(): string {
+  return SERVER_VERSION;
+}
+
 /**
  * Extract the PLUGIN_VERSION constant from figma-desktop-bridge/code.js source.
  * Returns null when the constant is absent or malformed.

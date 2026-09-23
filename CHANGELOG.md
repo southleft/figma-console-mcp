@@ -5,6 +5,22 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.40.5] - 2026-09-23
+
+Dependency hygiene for the npm package. Server-only: **no plugin re-import needed**.
+
+### Security
+
+- **`npm install figma-console-mcp` pulled in `extract-zip` (high: symlink path traversal / arbitrary file write, [GHSA-7pqw-9j4j-h8q3](https://github.com/advisories/GHSA-7pqw-9j4j-h8q3), [GHSA-jmr9-qjv8-65gv](https://github.com/advisories/GHSA-jmr9-qjv8-65gv)) via `@cloudflare/puppeteer → @puppeteer/browsers`.** The local server never loads Puppeteer — only the Cloudflare Worker does, and it uses Browser Rendering, which never extracts archives — so the vulnerable code was never executed. But it was a regular dependency, so every consumer installed it and every consumer's production audit flagged it, with no upstream fix for them to apply. `@cloudflare/puppeteer` and `agents` (also Worker-only) are now devDependencies — the Worker is built from this repository, where they remain available — and the Worker build output (`dist/cloudflare`) is no longer included in the npm package. A fresh install of the package now audits clean (`npm audit`: 0 vulnerabilities, from 4 high), and installs 64 MB instead of 173 MB. Reported by Daniel Westerlund.
+
+### Fixed
+
+- **The local server reported its version as `0.1.0` to MCP clients**, regardless of the release. It now reports the published package version.
+
+### Added
+
+- A test that fails if the npm entry point imports anything not declared in `dependencies` (moving a runtime package to devDependencies would break `npx` users), or if Worker-only packages return to `dependencies`.
+
 ## [1.40.4] - 2026-09-21
 
 Found by live-testing v1.40.3 against hard production components (a 2-variant side navigation with 62 hidden layers, gradients, shadows and an 8-level tree) rather than tidy examples. Server-only: **no plugin re-import needed**.
@@ -1399,6 +1415,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.40.5]: https://github.com/southleft/figma-console-mcp/compare/v1.40.4...v1.40.5
 [1.40.4]: https://github.com/southleft/figma-console-mcp/compare/v1.40.3...v1.40.4
 [1.40.3]: https://github.com/southleft/figma-console-mcp/compare/v1.40.2...v1.40.3
 [1.40.2]: https://github.com/southleft/figma-console-mcp/compare/v1.40.1...v1.40.2

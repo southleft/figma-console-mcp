@@ -1,6 +1,6 @@
 {
 	"name": "figma-console-mcp",
-	"version": "1.40.4",
+	"version": "1.40.5",
 	"description": "The most comprehensive MCP server for Figma — design tokens, variables, components, write tools, version history diff, accessibility audits, FigJam, Slides, and more. Local (WebSocket Desktop Bridge plugin) and Cloudflare Workers (paired + remote) modes.",
 	"type": "module",
 	"main": "dist/local.js",
@@ -10,6 +10,7 @@
 	},
 	"files": [
 		"dist",
+		"!dist/cloudflare",
 		"figma-desktop-bridge",
 		"README.md",
 		"LICENSE"
@@ -58,10 +59,8 @@
 		"node": ">=18.0.0"
 	},
 	"dependencies": {
-		"@cloudflare/puppeteer": "^1.0.4",
 		"@modelcontextprotocol/ext-apps": "^1.0.1",
 		"@modelcontextprotocol/sdk": "^1.26.0",
-		"agents": "^0.7.1",
 		"axe-core": "^4.11.2",
 		"jsdom": "^29.0.1",
 		"pino": "^9.5.0",
@@ -72,11 +71,13 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.2.5",
+		"@cloudflare/puppeteer": "^1.0.4",
 		"@types/jest": "^29.5.14",
 		"@types/jsdom": "^28.0.1",
 		"@types/node": "^22.10.2",
 		"@types/uuid": "^10.0.0",
 		"@types/ws": "^8.18.1",
+		"agents": "^0.7.1",
 		"cross-env": "^7.0.3",
 		"jest": "^29.7.0",
 		"ts-jest": "^29.2.5",
