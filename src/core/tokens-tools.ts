@@ -46,6 +46,7 @@ import {
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { createChildLogger } from "./logger.js";
+import { augmentWithExtendedCollections, countOverrides } from "./extended-collections.js";
 import {
   buildTokenLookup,
   canonicalizeTokenValueForComparison,
@@ -69,7 +70,7 @@ const logger = createChildLogger({ component: "tokens-tools" });
  * on every exported token document. Kept in sync with package.json by
  * scripts/release.sh — see step 3 of the release flow.
  */
-const MCP_VERSION = "1.40.5";
+const MCP_VERSION = "1.40.6";
 
 const EXPORT_TOOL_DESCRIPTION = `Export Figma variables to design token files in your codebase. Bidirectional with figma_import_tokens — together they replace Style Dictionary and Tokens Studio's export pipeline for the popular styling methods.
 
@@ -264,6 +265,42 @@ async function handleExport(
     );
   }
 
+  // 3a. Extended collections (Figma collection extensions) own no variables of
+  //     their own — their values live in `variableOverrides` on the collection —
+  //     so the converter would emit them as EMPTY sets. Export can't represent
+  //     "extends X" yet (DTCG has no notion of it, and figma_import_tokens could
+  //     not recreate one), so exclude them explicitly and say so.
+  const extensionWarnings: string[] = [];
+  const extended = await augmentWithExtendedCollections(connector, variableData, fileKey);
+  if (extended.warning) extensionWarnings.push(extended.warning);
+  const extendedCollections: any[] = (Array.isArray(variableData.variableCollections)
+    ? variableData.variableCollections
+    : Object.values(variableData.variableCollections ?? {})
+  ).filter((c: any) => c?.isExtension);
+  if (extendedCollections.length > 0) {
+    const requestedExtended = Array.isArray(args.collectionIds)
+      ? extendedCollections.filter((c) => args.collectionIds.includes(c.id))
+      : [];
+    if (requestedExtended.length > 0) {
+      const names = requestedExtended.map((c) => `"${c.name}" (${c.id})`).join(", ");
+      throw new Error(
+        `[figma-console-mcp] ${names} ${requestedExtended.length === 1 ? "is an extended collection" : "are extended collections"}, which figma_export_tokens cannot export yet. Nothing was written. ` +
+          "An extended collection inherits its parent's variables and stores only its overrides, and the token formats have no way to express that. " +
+          `To read its values — every variable, per mode, marked overridden or inherited — use figma_get_variables with collection="${requestedExtended[0].name}". To export the base tokens, request the parent collection instead.`,
+      );
+    }
+    const extendedIds = new Set(extendedCollections.map((c) => c.id));
+    if (Array.isArray(variableData.variableCollections)) {
+      variableData.variableCollections = variableData.variableCollections.filter((c: any) => !extendedIds.has(c.id));
+    }
+    for (const c of extendedCollections) {
+      const counts = countOverrides(c);
+      extensionWarnings.push(
+        `Extended collection "${c.name}" was not exported (${counts.values} overridden value${counts.values === 1 ? "" : "s"} across ${counts.variables} variable${counts.variables === 1 ? "" : "s"}). Exporting extended collections isn't supported yet; use figma_get_variables with collection="${c.name}" to read its values.`,
+      );
+    }
+  }
+
   // 3. Normalize to the converter's expected shape.
   const payload = normalizeFigmaPayload(variableData);
   const sourceFileKey: string | null =
@@ -307,7 +344,7 @@ async function handleExport(
     content: string;
     splitByCollection: boolean;
   }> = [];
-  const allWarnings: string[] = [...warnings];
+  const allWarnings: string[] = [...extensionWarnings, ...warnings];
   if (
     args.scope === "collection" &&
     !(Array.isArray(args.collectionIds) && args.collectionIds.length > 0)

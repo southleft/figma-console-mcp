@@ -27,6 +27,10 @@ export interface HistorySectionInput {
 	componentName: string;
 	design?: DesignHistoryResult | null;
 	git?: GitHistoryResult | null;
+	/** Builds a commit page URL, when the repository's web host is known */
+	commitLink?: (sha: string) => string | null;
+	/** How to print a code path in published docs (never an absolute local path) */
+	showPath?: (path: string) => string;
 	manual?: ManualChangelogEntry[] | null;
 }
 
@@ -40,7 +44,7 @@ export function formatHistorySection(input: HistorySectionInput): string {
 		wroteAnySubsection = true;
 	}
 	if (input.git) {
-		appendGitHistory(lines, input.git);
+		appendGitHistory(lines, input.git, input.commitLink, input.showPath);
 		wroteAnySubsection = true;
 	}
 	if (input.manual && input.manual.length > 0) {
@@ -82,7 +86,7 @@ function appendDesignHistory(lines: string[], design: DesignHistoryResult): void
 	appendNotes(lines, design.notes);
 }
 
-function appendGitHistory(lines: string[], git: GitHistoryResult): void {
+function appendGitHistory(lines: string[], git: GitHistoryResult, commitLink?: (sha: string) => string | null, showPath: (path: string) => string = (p) => p): void {
 	lines.push("### Code history");
 	lines.push("");
 
@@ -91,13 +95,13 @@ function appendGitHistory(lines: string[], git: GitHistoryResult): void {
 		lines.push("|--------|------|--------|---------|");
 		for (const c of git.entries) {
 			lines.push(
-				`| \`${c.short_hash}\` | ${formatDate(c.date)} | ${escapeCell(c.author)} | ${escapeCell(c.subject)} |`,
+				`| ${(() => { const url = commitLink?.(c.hash); return url ? `[\`${c.short_hash}\`](${url})` : `\`${c.short_hash}\``; })()} | ${formatDate(c.date)} | ${escapeCell(c.author)} | ${escapeCell(c.subject)} |`,
 			);
 		}
 		lines.push("");
 
 		if (git._meta.paths.length > 0) {
-			const scope = git._meta.paths.map((p) => `\`${p}\``).join(", ");
+			const scope = git._meta.paths.map((p) => `\`${showPath(p)}\``).join(", ");
 			const follow = git._meta.followed_renames ? " (renames followed)" : "";
 			lines.push(`_Commits touching ${scope}${follow}._`);
 			lines.push("");

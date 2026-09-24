@@ -5,6 +5,22 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.40.6] - 2026-09-24
+
+Extended variable collections, and a third round of `figma_generate_component_doc` fidelity fixes. Server-only: **no plugin re-import needed**.
+
+### Fixed
+
+- **Overrides in extended variable collections were invisible — tools reported "no override exists".** An extended collection stores its overrides on the collection itself (`variableOverrides`), has its own mode ids, and shares its parent's variables, which keep the parent's `variableCollectionId` and only the root collection's `valuesByMode`. Nothing read any of that, and every tool grouped variables by their home collection, so an extended collection looked empty. `figma_get_variables` now fetches the extension data (one extra plugin call, returning nothing on files without extensions): the summary names each extended collection, what it extends and how many values it overrides; filtering by an extended collection returns every variable with its value in that collection's modes, marked overridden or inherited, through any depth of chain; and each variable lists its overrides by mode name. Reported by Brett Cooper.
+- **The mode filter treated `0`, `false` and `""` as "no value"**, so a spacing override of 0 or a boolean override of false was dropped from filtered results.
+- **`figma_export_tokens` emitted extended collections as empty token sets** (and a scoped export of one failed with a misleading "wrong file active" message). Exporting extended collections isn't supported yet — the token formats can't express "extends X" — so they are now left out with a warning giving their override counts, and requesting one explicitly explains why and where to read its values.
+- **`figma_generate_component_doc`: a radius bound to a variable was always reported as unbound.** Figma binds radius per corner and never as `cornerRadius` — as `topLeftRadius` … in the Plugin API and `rectangleCornerRadii.RECTANGLE_TOP_LEFT_CORNER_RADIUS` … in the REST API this tool reads (live-verified on a real file); bindings are now read per corner in both shapes (one token, one per corner, or "top-left, top-right only"). Per-side stroke weights had the same flaw and are fixed too, and the cross-axis gap of wrapping auto-layouts is now reported. Reported by Robin Di Capua.
+- **Design-Code Parity printed an empty heading, and never compared boolean props.** A `True`/`False` variant or a Figma boolean property is now compared with a `boolean` (or `true | false`) code prop, names match with or without a leading `is`/`has`, unmatched properties are listed on each side, and when nothing is comparable the section says so or is left out.
+- **"View Source" and "Storybook" links were raw relative paths, and nothing recorded which commit the code was read at.** In local mode, files git tracks are linked to their exact commit on GitHub, GitLab or Bitbucket; the frontmatter records `sourceCommit` (and `sourceDirty` when the files had uncommitted changes); commit SHAs in the history table link to their commits. Paths that can't be linked are shown as text — absolute local paths are shown relative to the repo or as a file name, never with the author's directory layout — and remote URLs have credentials stripped. The repository is taken from `history.repoPath` or from the repo containing an absolute file path, never from the server's own working directory. A stories file is labeled "Stories source"; pass the new `codeInfo.storybookUrl` to link a running Storybook.
+- **A hidden layer shown by a boolean property wasn't linked to that property.** It now reads `(hidden — shown when Is Focused = true)` in the anatomy and color tables, and the boolean is described by the layer it controls ("Shows/hides **Focus Ring**") instead of an invented "is focused element".
+- **Same-named layers in different nested instances couldn't be told apart.** Typography and color rows that share a name but differ are qualified by their instance: `Label in Tab (Is Selected=True)`.
+- `figma_get_variables` via the REST API no longer strips extended-collection fields.
+
 ## [1.40.5] - 2026-09-23
 
 Dependency hygiene for the npm package. Server-only: **no plugin re-import needed**.
@@ -1415,6 +1431,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.40.6]: https://github.com/southleft/figma-console-mcp/compare/v1.40.5...v1.40.6
 [1.40.5]: https://github.com/southleft/figma-console-mcp/compare/v1.40.4...v1.40.5
 [1.40.4]: https://github.com/southleft/figma-console-mcp/compare/v1.40.3...v1.40.4
 [1.40.3]: https://github.com/southleft/figma-console-mcp/compare/v1.40.2...v1.40.3

@@ -18,6 +18,7 @@
  * Like design history, this never throws — failures degrade to notes.
  */
 
+import { basename, isAbsolute } from "node:path";
 import { createChildLogger } from "../logger.js";
 
 const logger = createChildLogger({ component: "git-history" });
@@ -106,7 +107,8 @@ export async function buildGitHistory(
 	const rootProbe = await runGit(exec, ["rev-parse", "--show-toplevel"], cwd);
 	if (!rootProbe.ok) {
 		result.notes.push(
-			`Not a git repository (or git unavailable) at ${cwd}: ${firstLine(rootProbe.stderr) || rootProbe.error}`,
+			// Folder name only: these notes are rendered into published docs
+			`Not a git repository (or git unavailable) at \`${basename(cwd)}\`: ${firstLine(rootProbe.stderr) || rootProbe.error}`,
 		);
 		return result;
 	}
@@ -140,7 +142,7 @@ export async function buildGitHistory(
 
 	if (result.entries.length === 0) {
 		result.notes.push(
-			`No commits found touching ${paths.map((p) => `\`${p}\``).join(", ")}. The paths may be untracked, or relative to a different directory than ${result._meta.repo_root ?? cwd}.`,
+			`No commits found touching ${paths.map((p) => `\`${isAbsolute(p) ? basename(p) : p}\``).join(", ")}. The paths may be untracked, or relative to a different directory than the repository root (\`${basename(result._meta.repo_root ?? cwd)}\`).`,
 		);
 	}
 
@@ -155,6 +157,102 @@ export async function buildGitHistory(
 // ============================================================================
 // Parsing
 // ============================================================================
+
+/** Where the documented code came from, so a generated page can be pinned to it */
+export interface SourceRevision {
+	/** Web URL of the repository (credentials stripped), or null for unknown hosts */
+	webBase: string | null;
+	host: "github" | "gitlab" | "bitbucket" | null;
+	/** Full SHA of HEAD */
+	commit: string;
+	/** True when any of the documented files differ from HEAD */
+	dirty: boolean;
+	/** Input path → path relative to the repo root, for files git tracks */
+	tracked: Map<string, string>;
+}
+
+/**
+ * Turn a git remote into a browsable web URL. Credentials are always dropped —
+ * `https://user:token@host/…` must never end up in published documentation.
+ * Exported for unit testing.
+ */
+export function remoteToWebBase(remote: string): { webBase: string; host: SourceRevision["host"] } | null {
+	const r = remote.trim();
+	let host: string, path: string;
+	const scp = r.match(/^[\w.-]+@([^:/]+):(.+)$/); // git@github.com:org/repo.git
+	if (scp) { host = scp[1]; path = scp[2]; }
+	else {
+		try {
+			const u = new URL(r); // https://…, ssh://git@host/…
+			if (!/^(https?|ssh|git):$/.test(u.protocol)) return null;
+			host = u.hostname; path = u.pathname.replace(/^\/+/, "");
+		} catch { return null; }
+	}
+	path = path.replace(/\.git$/, "").replace(/\/+$/, "");
+	if (!host || !path) return null;
+	const kind = /(^|\.)github\.com$/i.test(host) ? "github"
+		: /gitlab/i.test(host) ? "gitlab"
+		: /(^|\.)bitbucket\.org$/i.test(host) ? "bitbucket"
+		: null;
+	if (!kind) return null; // unknown host: no guessing at URL layouts
+	return { webBase: `https://${host}/${path}`, host: kind };
+}
+
+/** Browsable URL for a file at a commit, per host */
+export function blobUrl(rev: Pick<SourceRevision, "webBase" | "host" | "commit">, repoRelativePath: string): string | null {
+	if (!rev.webBase || !rev.host) return null;
+	const p = repoRelativePath.split("/").map(encodeURIComponent).join("/");
+	if (rev.host === "gitlab") return `${rev.webBase}/-/blob/${rev.commit}/${p}`;
+	if (rev.host === "bitbucket") return `${rev.webBase}/src/${rev.commit}/${p}`;
+	return `${rev.webBase}/blob/${rev.commit}/${p}`;
+}
+
+/** Browsable URL for a commit, per host */
+export function commitUrl(rev: Pick<SourceRevision, "webBase" | "host">, sha: string): string | null {
+	if (!rev.webBase || !rev.host) return null;
+	if (rev.host === "gitlab") return `${rev.webBase}/-/commit/${sha}`;
+	if (rev.host === "bitbucket") return `${rev.webBase}/commits/${sha}`;
+	return `${rev.webBase}/commit/${sha}`;
+}
+
+/**
+ * Resolve the commit the documented files are read at, and which of them git
+ * tracks. Never throws; returns null outside a git repo. Files git does not
+ * track (e.g. a design system installed under node_modules) are simply absent
+ * from `tracked`, so no link is invented for them.
+ */
+export async function resolveSourceRevision(options: { paths: string[]; repoPath?: string }): Promise<SourceRevision | null> {
+	const cwd = options.repoPath || process.cwd();
+	const paths = [...new Set(options.paths.map((p) => p?.trim()).filter((p): p is string => !!p))];
+	if (paths.length === 0) return null;
+	let exec: ExecFileFn;
+	try { exec = await loadExecFile(); } catch { return null; }
+
+	const head = await runGit(exec, ["rev-parse", "HEAD"], cwd);
+	if (!head.ok) return null;
+	const commit = head.stdout.trim();
+
+	const tracked = new Map<string, string>();
+	for (const p of paths) {
+		const ls = await runGit(exec, ["ls-files", "--full-name", "--error-unmatch", "--", p], cwd);
+		const rel = ls.ok ? ls.stdout.trim().split("\n")[0] : "";
+		if (rel) tracked.set(p, rel);
+	}
+
+	const status = tracked.size > 0
+		? await runGit(exec, ["status", "--porcelain", "--", ...tracked.keys()], cwd)
+		: { ok: true, stdout: "" } as GitRunResult;
+	const remote = await runGit(exec, ["remote", "get-url", "origin"], cwd);
+	const web = remote.ok ? remoteToWebBase(remote.stdout) : null;
+
+	return {
+		webBase: web?.webBase ?? null,
+		host: web?.host ?? null,
+		commit,
+		dirty: !!(status.ok && status.stdout.trim()),
+		tracked,
+	};
+}
 
 /** Exported for unit testing — parses the record-separated `git log` output. */
 export function parseGitLog(stdout: string): GitCommitEntry[] {

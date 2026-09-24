@@ -6,6 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { basename, dirname, isAbsolute, relative } from "node:path";
 import type { FigmaAPI } from "./figma-api.js";
 import { extractFileKey, withTimeout } from "./figma-api.js";
 import { createChildLogger } from "./logger.js";
@@ -30,10 +31,14 @@ import {
 	type DesignHistoryResult,
 } from "./history/component-history.js";
 import {
+	blobUrl,
 	buildGitHistory,
+	commitUrl,
 	DEFAULT_GIT_LIMIT,
 	MAX_GIT_LIMIT,
+	resolveSourceRevision,
 	type GitHistoryResult,
+	type SourceRevision,
 } from "./history/git-history.js";
 import { formatHistorySection } from "./history/history-formatter.js";
 
@@ -384,6 +389,10 @@ interface VariantColorEntry {
 	iconLabel?: string;
 	/** The layer (or an ancestor) has `visible: false` — real design intent, but not painted */
 	hidden?: boolean;
+	/** Boolean property that shows the hidden layer (or its hidden ancestor) */
+	shownWhen?: string;
+	/** Nearest nested instance the layer lives in — tells same-named layers apart */
+	owner?: string;
 }
 
 /** Color data collected from a specific variant */
@@ -441,6 +450,8 @@ interface TextStyleData {
 	hidden?: boolean;
 	/** The layer mixes styles (e.g. a bolded word) — the values shown are its base style only */
 	mixed?: boolean;
+	/** Nearest nested instance the text lives in */
+	owner?: string;
 }
 
 /**
@@ -461,6 +472,45 @@ export function buildVariableNameMap(variables: any[], collections?: any[]): Map
 		out.set(v.id, (nameCounts.get(v.name) ?? 0) > 1 && collection ? `${collection}/${v.name}` : v.name);
 	}
 	return out;
+}
+
+/**
+ * A code path as it may appear in published docs: repo-relative paths as given;
+ * absolute local paths made relative to `root` when inside it, else reduced to
+ * the file name — never the author's home directory layout.
+ */
+export function displayPath(path: string, root?: string): string {
+	if (!isAbsolute(path)) return path;
+	if (root) {
+		const rel = relative(root, path);
+		if (rel && !rel.startsWith("..") && !isAbsolute(rel)) return rel;
+	}
+	return basename(path);
+}
+
+/** The boolean component property that controls this layer's visibility, if any */
+export function visibilityProperty(node: any): string | null {
+	const ref = node?.componentPropertyReferences?.visible;
+	return typeof ref === "string" ? stripPropertyIdSuffix(ref) : null;
+}
+
+/**
+ * How to label a layer's visibility: "(hidden — shown when Is Focused = true)"
+ * for a hidden layer a boolean property reveals, "(toggled by Show Icon)" for a
+ * visible one it can hide, "(hidden)" otherwise. Empty for ordinary layers.
+ */
+export function visibilityNote(node: any): string {
+	const prop = visibilityProperty(node);
+	if (node?.visible === false) return prop ? `hidden — shown when ${prop} = true` : "hidden";
+	return prop ? `toggled by ${prop}` : "";
+}
+
+/** "Tab Item (Is Selected=True)" — an instance, qualified by its variant */
+export function describeInstance(node: any): string {
+	const variantProps = Object.entries(node?.componentProperties ?? {})
+		.filter(([, p]: [string, any]) => p?.type === "VARIANT")
+		.map(([k, p]: [string, any]) => `${stripPropertyIdSuffix(k)}=${p.value}`);
+	return variantProps.length > 0 ? `${node.name} (${variantProps.join(", ")})` : node?.name ?? "instance";
 }
 
 /** Strip Figma's internal "#123:4" id suffix from a component property name */
@@ -663,13 +713,20 @@ function walkVariantNode(
 	insideIcon: string | null,
 	/** An ancestor is hidden, so nothing beneath it paints either */
 	ancestorHidden: boolean = false,
+	/** Property that shows the nearest hidden ancestor, when one does */
+	ancestorShownWhen: string | null = null,
+	/** Nearest nested instance ("Tab Item (Is Selected=True)") */
+	owner: string | null = null,
 ): void {
 	if (depth > maxDepth) return;
 
 	const isText = node.type === "TEXT";
 	// Hidden layers are COLLECTED, not skipped: a hidden focus ring is real design
-	// intent. They are labeled so a reader can tell it from what actually renders.
-	const hidden = ancestorHidden || node.visible === false;
+	// intent. They are labeled so a reader can tell it from what actually renders —
+	// and, when a boolean property reveals them, with the property that does.
+	const hiddenHere = node.visible === false;
+	const hidden = ancestorHidden || hiddenHere;
+	const shownWhen = hiddenHere ? visibilityProperty(node) : ancestorShownWhen;
 
 	// Icons are reported once, at the outermost instance — everything beneath it
 	// (vectors, nested instances) is that icon's artwork, not a separate icon.
@@ -690,6 +747,8 @@ function walkVariantNode(
 			variableId: varId,
 			variableName: varId ? ctx.varNameMap.get(varId) : undefined,
 			...(hidden ? { hidden: true } : {}),
+			...(hidden && shownWhen ? { shownWhen } : {}),
+			...(owner ? { owner } : {}),
 		};
 	};
 
@@ -749,7 +808,8 @@ function walkVariantNode(
 	// Recurse into children
 	if (node.children && Array.isArray(node.children)) {
 		for (const child of node.children) {
-			walkVariantNode(child, data, ctx, depth + 1, maxDepth, insideIcon, hidden);
+			walkVariantNode(child, data, ctx, depth + 1, maxDepth, insideIcon, hidden, shownWhen,
+				node.type === "INSTANCE" && depth > 0 ? describeInstance(node) : owner);
 		}
 	}
 }
@@ -762,6 +822,7 @@ export function collectTypographyData(
 	depth: number = 0,
 	maxDepth: number = DOC_TREE_DEPTH,
 	ancestorHidden: boolean = false,
+	owner: string | null = null,
 ): TextStyleData[] {
 	const results: TextStyleData[] = [];
 	if (depth > maxDepth) return results;
@@ -789,6 +850,7 @@ export function collectTypographyData(
 			lineHeight: s.lineHeightPx || s.fontSize || 14,
 			letterSpacing: s.letterSpacing || 0,
 			...(hidden ? { hidden: true } : {}),
+			...(owner ? { owner } : {}),
 			// REST: characterStyleOverrides maps characters → styleOverrideTable ids; any
 			// non-zero entry means part of the text departs from `style`
 			...(Array.isArray(node.characterStyleOverrides) && node.characterStyleOverrides.some((id: number) => id !== 0)
@@ -798,7 +860,8 @@ export function collectTypographyData(
 
 	if (node.children && Array.isArray(node.children)) {
 		for (const child of node.children) {
-			results.push(...collectTypographyData(child, depth + 1, maxDepth, hidden));
+			results.push(...collectTypographyData(child, depth + 1, maxDepth, hidden,
+				node.type === "INSTANCE" && depth > 0 ? describeInstance(node) : owner));
 		}
 	}
 
@@ -842,6 +905,14 @@ export function collectTypographyAcrossVariants(setNode: any): TypographyRow[] {
 		}
 	}
 
+	// An element name shared by rows with DIFFERENT styles (the selected tab's
+	// SemiBold Label vs the others' Regular Label) is qualified by its instance.
+	const stylesPerName = new Map<string, number>();
+	for (const key of order) {
+		const n = styles.get(key)!.nodeName;
+		stylesPerName.set(n, (stylesPerName.get(n) ?? 0) + 1);
+	}
+
 	return order.map((key) => {
 		const style = styles.get(key)!;
 		const having = perVariant.filter((pv) => pv.keys.has(key));
@@ -857,7 +928,8 @@ export function collectTypographyAcrossVariants(setNode: any): TypographyRow[] {
 				: scopeLabel(having.map((pv) => pv.name), perVariant.length);
 		}
 		// Text layers are often auto-named after their content — keep the table readable
-		const label = style.nodeName.length > 40 ? `${style.nodeName.slice(0, 40)}…` : style.nodeName;
+		const base = style.nodeName.length > 40 ? `${style.nodeName.slice(0, 40)}…` : style.nodeName;
+		const label = (stylesPerName.get(style.nodeName) ?? 0) > 1 && style.owner ? `${base} in ${style.owner}` : base;
 		return { style: { ...style, nodeName: label }, scope };
 	});
 }
@@ -957,7 +1029,8 @@ function buildAnatomyLines(
 
 	// Hidden layers stay in the tree, marked: the color table names them (a hidden
 	// focus ring is real design intent), so the tree must not pretend they don't exist.
-	const hiddenHint = node.visible === false ? " (hidden)" : "";
+	const note = visibilityNote(node);
+	const hiddenHint = note ? ` (${note})` : "";
 	lines.push(`${prefix}${connector}${label}${typeHint}${suffix}${hiddenHint}${layoutInfo}${sizingInfo}`);
 
 	// Recurse into children, collapsing RUNS of siblings that would print
@@ -991,8 +1064,80 @@ function buildAnatomyLines(
 }
 
 /**
- * Collect spacing tokens with their bound variable names.
+ * The variable a spacing-table property is bound to, read from where Figma
+ * actually stores the binding. Radius and per-side stroke weights are bound PER
+ * CORNER / PER SIDE (`topLeftRadius`, `strokeBottomWeight`, …) — there is never a
+ * `cornerRadius` key in `boundVariables`, even when all four corners share one
+ * token — so a lookup by the row's own key reported every radius token as
+ * hardcoded.
+ *
+ * `name` is the display text for the Figma Variable column (undefined = unbound);
+ * `signature` identifies the binding for cross-variant comparison.
  */
+export function resolvePropertyBinding(
+	node: any,
+	key: string,
+	varNameMap: Map<string, string> = new Map(),
+): { name?: string; signature: string } {
+	const bound = node?.boundVariables ?? {};
+	// The same binding has two shapes. Plugin API: flat keys (`topLeftRadius`,
+	// `strokeBottomWeight`). REST — which this tool reads — nests them:
+	// `rectangleCornerRadii.RECTANGLE_TOP_LEFT_CORNER_RADIUS`,
+	// `individualStrokeWeights.BORDER_BOTTOM_WEIGHT` (verified against JSON_REST_V1).
+	const REST_NESTED: Record<string, [string, string]> = {
+		topLeftRadius: ["rectangleCornerRadii", "RECTANGLE_TOP_LEFT_CORNER_RADIUS"],
+		topRightRadius: ["rectangleCornerRadii", "RECTANGLE_TOP_RIGHT_CORNER_RADIUS"],
+		bottomRightRadius: ["rectangleCornerRadii", "RECTANGLE_BOTTOM_RIGHT_CORNER_RADIUS"],
+		bottomLeftRadius: ["rectangleCornerRadii", "RECTANGLE_BOTTOM_LEFT_CORNER_RADIUS"],
+		strokeTopWeight: ["individualStrokeWeights", "BORDER_TOP_WEIGHT"],
+		strokeRightWeight: ["individualStrokeWeights", "BORDER_RIGHT_WEIGHT"],
+		strokeBottomWeight: ["individualStrokeWeights", "BORDER_BOTTOM_WEIGHT"],
+		strokeLeftWeight: ["individualStrokeWeights", "BORDER_LEFT_WEIGHT"],
+	};
+	const idOf = (k: string): string | undefined => {
+		let b = bound[k];
+		if (b === undefined && REST_NESTED[k]) b = bound[REST_NESTED[k][0]]?.[REST_NESTED[k][1]];
+		const id = Array.isArray(b) ? b[0]?.id : b?.id;
+		return typeof id === "string" ? id : undefined;
+	};
+	const nameOf = (id: string) => varNameMap.get(id) || id;
+
+	let parts: Array<[string, string | undefined]> | null = null;
+	if (key === "cornerRadius") {
+		if (idOf("cornerRadius")) parts = null;
+		else parts = [
+			["top-left", idOf("topLeftRadius")], ["top-right", idOf("topRightRadius")],
+			["bottom-right", idOf("bottomRightRadius")], ["bottom-left", idOf("bottomLeftRadius")],
+		];
+	} else if (key === "strokeWeight" && !idOf("strokeWeight")) {
+		const sides = node?.individualStrokeWeights;
+		const all: Array<[string, string, number]> = [
+			["top", "strokeTopWeight", sides?.top ?? 1], ["right", "strokeRightWeight", sides?.right ?? 1],
+			["bottom", "strokeBottomWeight", sides?.bottom ?? 1], ["left", "strokeLeftWeight", sides?.left ?? 1],
+		];
+		// Only sides that actually paint a border say anything about it
+		parts = all.filter(([, , w]) => w > 0).map(([side, k]) => [side, idOf(k)]);
+	}
+
+	if (!parts) {
+		const id = idOf(key);
+		return id ? { name: nameOf(id), signature: id } : { signature: "" };
+	}
+	const ids = parts.map(([, id]) => id);
+	const boundIds = ids.filter((id): id is string => !!id);
+	if (boundIds.length === 0) return { signature: "" };
+	const signature = parts.map(([p, id]) => `${p}:${id ?? ""}`).join(",");
+	if (boundIds.length === ids.length && new Set(boundIds).size === 1) {
+		return { name: nameOf(boundIds[0]), signature: boundIds[0] };
+	}
+	if (new Set(boundIds).size === 1) {
+		const on = parts.filter(([, id]) => id).map(([p]) => p);
+		return { name: `${nameOf(boundIds[0])} (${on.join(", ")} only)`, signature };
+	}
+	return { name: parts.map(([p, id]) => `${p}: ${id ? nameOf(id) : "unbound"}`).join(", "), signature };
+}
+
+/** Collect spacing tokens with their bound variable names. */
 function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new Map()): Array<{
 	property: string;
 	value: number | string;
@@ -1000,7 +1145,6 @@ function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new M
 }> {
 	const tokens: Array<{ property: string; value: number | string; variableName?: string }> = [];
 	const autoLayout = !!node.layoutMode && node.layoutMode !== "NONE";
-	const boundVars = node.boundVariables || {};
 
 	const spacingProps = [
 		{ key: "paddingTop", label: "Padding top" },
@@ -1008,6 +1152,8 @@ function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new M
 		{ key: "paddingBottom", label: "Padding bottom" },
 		{ key: "paddingLeft", label: "Padding left" },
 		{ key: "itemSpacing", label: "Gap" },
+		// Cross-axis gap between wrapped rows (auto-layout WRAP); bound as its own key
+		{ key: "counterAxisSpacing", label: "Row gap (wrap)" },
 		{ key: "cornerRadius", label: "Border radius" },
 		{ key: "strokeWeight", label: "Border width" },
 	];
@@ -1022,17 +1168,10 @@ function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new M
 			value = node.rectangleCornerRadii.map((r: number) => `${r}px`).join(" / ");
 		}
 		if (value !== undefined && value !== null) {
-			const varBinding = boundVars[key];
-			// Bound spacing variables expose their id as boundVariables[key].id.
-			// Resolve it to a friendly token name (e.g. `spacing/1`) when the caller
-			// supplied a name map; fall back to the raw id so the binding stays visible.
-			const varId: string | undefined =
-				typeof varBinding?.id === "string" ? varBinding.id : undefined;
-			const varName = varId ? varNameMap.get(varId) || varId : undefined;
 			tokens.push({
 				property: label,
 				value,
-				variableName: typeof varName === "string" ? varName : undefined,
+				variableName: resolvePropertyBinding(node, key, varNameMap).name,
 			});
 		}
 	}
@@ -1132,6 +1271,8 @@ const SPACING_COMPARISON_PROPS = [
 	{ key: "paddingBottom", label: "Padding bottom" },
 	{ key: "paddingLeft", label: "Padding left" },
 	{ key: "itemSpacing", label: "Gap" },
+	// Cross-axis gap between wrapped rows (auto-layout WRAP); bound as its own key
+	{ key: "counterAxisSpacing", label: "Row gap (wrap)" },
 	{ key: "cornerRadius", label: "Border radius" },
 	{ key: "strokeWeight", label: "Border width" },
 ];
@@ -1188,15 +1329,13 @@ export function collectSpacingAcrossVariants(
 				value = v.rectangleCornerRadii.map((r: number) => `${r}px`).join(" / ");
 			}
 			if (key === "strokeWeight") value = describeStrokeWeight(v);
-			const varId: string | undefined = typeof v.boundVariables?.[key]?.id === "string"
-				? v.boundVariables[key].id
-				: undefined;
+			const binding = resolvePropertyBinding(v, key, varNameMap);
 			return {
 				displayName: cleanVariantName(v.name || "Unknown"),
 				props: parseVariantProperties(v.name || ""),
 				value,
-				variableName: varId ? varNameMap.get(varId) || varId : undefined,
-				signature: `${value}|${varId ?? ""}`,
+				variableName: binding.name,
+				signature: `${value}|${binding.signature}`,
 				display: "",
 			};
 		});
@@ -2336,6 +2475,10 @@ export function generateFrontmatter(
 		label: string | null;
 		created_at: string;
 	} | null,
+	/** The commit the code-side information was read at (local mode, git repos only) */
+	sourceRevision?: SourceRevision | null,
+	/** Directory absolute code paths are shown relative to */
+	sourceRoot?: string,
 ): string {
 	// Only state what is actually known. "stable" / "1.0.0" used to be emitted for
 	// every component and read as extracted facts.
@@ -2361,13 +2504,20 @@ export function generateFrontmatter(
 	];
 
 	if (codeInfo?.filePath) {
-		lines.push(`source: ${codeInfo.filePath}`);
+		lines.push(`source: ${displayPath(codeInfo.filePath, sourceRoot)}`);
 	}
 	if (codeInfo?.packageName) {
 		lines.push(`package: ${codeInfo.packageName}`);
 	}
 	if (canonicalSource) {
 		lines.push(`canonical: ${canonicalSource}`);
+	}
+	if (sourceRevision) {
+		// Pins the code side of this page: without it nothing says whether the
+		// code it describes is still current.
+		lines.push(`sourceCommit: ${sourceRevision.commit}`);
+		if (sourceRevision.dirty) lines.push("sourceDirty: true # documented files had uncommitted changes");
+		if (sourceRevision.webBase) lines.push(`sourceRepository: ${sourceRevision.webBase}`);
 	}
 	if (latestDesignVersion) {
 		// Quote the label — it's user-authored and may contain YAML-significant
@@ -2393,23 +2543,37 @@ export function generateOverviewSection(
 	fileUrl: string,
 	parsedDesc: ParsedDescription,
 	codeInfo?: CodeDocInfo,
+	/** Stable web URL for a code path (pinned to a commit), when one can be resolved */
+	sourceUrl?: (path: string) => string | null,
+	/** Directory absolute paths are shown relative to */
+	sourceRoot?: string,
 ): string {
 	const lines: string[] = [
 		`# ${componentName}`,
 		"",
 	];
 
-	// Build links line
+	// Never publish an absolute local path (it discloses the author's username and
+	// directory layout) — show it relative to the repo when known, else the file name.
+	const shown = (p: string) => displayPath(p, sourceRoot);
+	// Build links line. A raw repo-relative path is NOT a link — it resolves to
+	// nothing once the page is published anywhere else — so link only what
+	// resolves to a stable URL, and show anything else as a path.
 	const links: string[] = [`**[Open in Figma](${fileUrl})**`];
 	if (codeInfo?.filePath) {
-		links.push(`**[View Source](${codeInfo.filePath})**`);
+		const url = sourceUrl?.(codeInfo.filePath);
+		links.push(url ? `**[View Source](${url})**` : `Source: \`${shown(codeInfo.filePath)}\``);
 	}
-	// Add Storybook link if stories file exists in sourceFiles
+	if (codeInfo?.storybookUrl) {
+		links.push(`**[Storybook](${codeInfo.storybookUrl})**`);
+	}
+	// A stories FILE is the stories' source, not a running Storybook — say so
 	const storiesFile = codeInfo?.sourceFiles?.find(
 		(f) => f.role.toLowerCase().includes("storybook") || f.role.toLowerCase().includes("stories") || f.path.includes(".stories."),
 	);
 	if (storiesFile) {
-		links.push(`**[Storybook](${storiesFile.path})**`);
+		const url = sourceUrl?.(storiesFile.path);
+		links.push(url ? `**[Stories source](${url})**` : `Stories source: \`${shown(storiesFile.path)}\``);
 	}
 	lines.push(links.join(" | "));
 	lines.push("");
@@ -2512,7 +2676,22 @@ export function generateStatesAndVariantsSection(
 	const lines = ["", "## Variants", ""];
 
 	const variants: Array<{ name: string; values: string[]; defaultValue: string }> = [];
-	const booleans: Array<{ name: string; defaultValue: boolean }> = [];
+	const booleans: Array<{ name: string; defaultValue: boolean; controls: string[] }> = [];
+
+	// Which layers each boolean property shows/hides — read from the layers' own
+	// componentPropertyReferences.visible. Nested instances are not descended
+	// into: their references point at THEIR component's properties, not ours.
+	const layersByBoolean = new Map<string, Set<string>>();
+	const collectVisibilityRefs = (n: any, isRoot: boolean) => {
+		const ref = n?.componentPropertyReferences?.visible;
+		if (!isRoot && typeof ref === "string") {
+			if (!layersByBoolean.has(ref)) layersByBoolean.set(ref, new Set());
+			layersByBoolean.get(ref)!.add(n.name);
+		}
+		if (!isRoot && n?.type === "INSTANCE") return;
+		for (const c of n?.children ?? []) collectVisibilityRefs(c, false);
+	};
+	for (const root of node.type === "COMPONENT_SET" ? node.children ?? [] : [node]) collectVisibilityRefs(root, true);
 	const textProps: Array<{ name: string; defaultValue: string }> = [];
 	const instanceSwaps: Array<{ name: string; defaultName: string | null; preferredCount: number }> = [];
 	const slots: Array<{ name: string; preferredCount: number; description: string | null }> = [];
@@ -2527,7 +2706,7 @@ export function generateStatesAndVariantsSection(
 				defaultValue: def.defaultValue || "",
 			});
 		} else if (def.type === "BOOLEAN") {
-			booleans.push({ name, defaultValue: def.defaultValue ?? true });
+			booleans.push({ name, defaultValue: def.defaultValue ?? true, controls: [...(layersByBoolean.get(rawName) ?? [])] });
 		} else if (def.type === "TEXT") {
 			textProps.push({ name, defaultValue: def.defaultValue || "" });
 		} else if (def.type === "INSTANCE_SWAP") {
@@ -2633,7 +2812,12 @@ export function generateStatesAndVariantsSection(
 			lines.push(`| **${v.name}** | \`${v.values.map((val) => `"${val}"`).join(" \\| ")}\` | \`"${v.defaultValue}"\` | Changes visual treatment |`);
 		}
 		for (const b of booleans) {
-			lines.push(`| **${b.name}** | \`boolean\` | \`${b.defaultValue}\` | Shows/hides ${b.name.toLowerCase()} element |`);
+			// Describe the property by the layer it actually controls; never invent an
+			// element from the property's name ("Is Focused" → "is focused element")
+			const what = b.controls.length > 0
+				? `Shows/hides ${b.controls.map((l) => `**${l}**`).join(", ")}`
+				: "Boolean toggle";
+			lines.push(`| **${b.name}** | \`boolean\` | \`${b.defaultValue}\` | ${what} |`);
 		}
 		for (const t of textProps) {
 			lines.push(`| **${t.name}** | \`string\` | \`"${t.defaultValue}"\` | Sets ${t.name.toLowerCase()} content |`);
@@ -2770,7 +2954,8 @@ export function generateVisualSpecsSection(
 			// Text layers are often auto-named after their content ("Lorem ipsum dolor…")
 			const short = (name: string) => (name.length > 40 ? `${name.slice(0, 40)}…` : name);
 			const pushRow = (label: string, c: VariantColorEntry) => {
-				const row = `| ${label}${c.hidden ? " _(hidden layer)_" : ""} | ${tokenCell(c)} | ${c.hex} |`;
+				const visibility = !c.hidden ? "" : c.shownWhen ? ` _(hidden — shown when ${c.shownWhen} = true)_` : " _(hidden layer)_";
+				const row = `| ${label}${visibility} | ${tokenCell(c)} | ${c.hex} |`;
 				if (emitted.has(row)) return;
 				emitted.add(row);
 				lines.push(row);
@@ -2790,7 +2975,17 @@ export function generateVisualSpecsSection(
 			for (const c of vd.iconColors) pushRow(c.iconLabel ? `Icon (${c.iconLabel})` : "Icon", c);
 
 			// Text colors
-			for (const text of vd.textColors) pushRow(`Text (${short(text.nodeName)})`, text);
+			// Same-named text layers with DIFFERENT colors (a selected and an unselected
+			// tab's Label) are told apart by the nested instance they live in
+			const colorsByName = new Map<string, Set<string>>();
+			for (const t of vd.textColors) {
+				if (!colorsByName.has(t.nodeName)) colorsByName.set(t.nodeName, new Set());
+				colorsByName.get(t.nodeName)!.add(`${t.hex}|${t.variableName ?? ""}`);
+			}
+			for (const text of vd.textColors) {
+				const ambiguous = (colorsByName.get(text.nodeName)?.size ?? 0) > 1 && text.owner;
+				pushRow(`Text (${short(text.nodeName)}${ambiguous ? ` in ${text.owner}` : ""})`, text);
+			}
 
 			// Strokes — through the same writer, so a visible underline and a hidden
 			// focus ring sharing one color don't print as two indistinguishable rows
@@ -2898,7 +3093,7 @@ export function generateVisualSpecsSection(
 	return lines.join("\n");
 }
 
-function generateImplementationSection(codeInfo?: CodeDocInfo): string {
+function generateImplementationSection(codeInfo?: CodeDocInfo, sourceRoot?: string): string {
 	if (!codeInfo) return "";
 
 	const lines = ["", "## Implementation", ""];
@@ -2910,7 +3105,7 @@ function generateImplementationSection(codeInfo?: CodeDocInfo): string {
 		lines.push("| File | Role | Variants |");
 		lines.push("|------|------|----------|");
 		for (const sf of codeInfo.sourceFiles) {
-			lines.push(`| \`${sf.path}\` | ${sf.role} | ${sf.variants ?? "—"} |`);
+			lines.push(`| \`${displayPath(sf.path, sourceRoot)}\` | ${sf.role} | ${sf.variants ?? "—"} |`);
 		}
 		lines.push("");
 	}
@@ -3264,6 +3459,8 @@ export function generateTypographySection(node: any): string {
 		const key = `${ts.fontFamily}:${ts.fontWeight}:${ts.fontSize}:${ts.lineHeight}:${ts.hidden ? "h" : ""}:${ts.mixed ? "m" : ""}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
+		const sameName = textStyles.filter((o) => o.nodeName === ts.nodeName && `${o.fontFamily}:${o.fontWeight}:${o.fontSize}:${o.lineHeight}` !== `${ts.fontFamily}:${ts.fontWeight}:${ts.fontSize}:${ts.lineHeight}`);
+		if (sameName.length > 0 && ts.owner) ts.nodeName = `${ts.nodeName} in ${ts.owner}`;
 		lines.push(
 			`| ${ts.nodeName}${ts.hidden ? " _(hidden layer)_" : ""}${ts.mixed ? " _(mixed styles — base style shown)_" : ""} | ${ts.fontFamily} | ${ts.fontWeightName} (${ts.fontWeight}) | ${ts.fontSize}px | ${ts.lineHeight}px | ${ts.letterSpacing === 0 ? "0" : `${ts.letterSpacing}px`} |`,
 		);
@@ -3301,72 +3498,118 @@ export function generateParitySection(
 	node: any,
 	codeInfo: CodeDocInfo,
 ): string {
-	const lines = ["", "## Design-Code Parity", ""];
-
-	// Variant coverage — compare each Figma variant PROPERTY with the code prop of
-	// the same name, value by value. (This used to look only for a property
-	// literally named "Variant" and otherwise captured the first property's NAME —
-	// so a Size × State set was reported as having a Figma-only variant "Size".)
+	// Names match ignoring case/punctuation and a leading is/has, so Figma's
+	// "Is Selected" meets code's `isSelected` / `selected`.
 	const normalize = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+	const keysFor = (name: string) => {
+		const n = normalize(name);
+		const stripped = n.replace(/^(is|has)(?=[a-z0-9])/, "");
+		return stripped && stripped !== n ? [n, stripped] : [n];
+	};
+	const BOOL = /^(true|false)$/i;
 
-	const figmaProps = new Map<string, { name: string; values: Map<string, string> }>();
+	type FigmaProp = { name: string; kind: "values" | "boolean"; values: Map<string, string> };
+	const figmaProps = new Map<string, FigmaProp>();
 	if (node.type === "COMPONENT_SET" && node.children) {
 		for (const child of node.children) {
 			for (const [propName, value] of parseVariantProperties(child.name || "")) {
 				const key = normalize(propName);
-				if (!figmaProps.has(key)) figmaProps.set(key, { name: propName, values: new Map() });
+				if (!figmaProps.has(key)) figmaProps.set(key, { name: propName, kind: "values", values: new Map() });
 				figmaProps.get(key)!.values.set(value.toLowerCase(), value);
 			}
 		}
 	}
-
-	// Code props whose type is a union of string literals: "sm" | "md" | 'lg'
-	const codeProps = new Map<string, { name: string; values: Map<string, string> }>();
-	for (const prop of codeInfo.props ?? []) {
-		const literals = prop.type?.match(/["']([^"']+)["']/g);
-		if (!literals) continue;
-		const values = new Map<string, string>();
-		for (const m of literals) {
-			const raw = m.replace(/["']/g, "");
-			values.set(raw.toLowerCase(), raw);
-		}
-		codeProps.set(normalize(prop.name), { name: prop.name, values });
+	// A variant property whose only values are True/False is a boolean in all but name
+	for (const p of figmaProps.values()) {
+		if (p.values.size > 0 && [...p.values.keys()].every((v) => BOOL.test(v))) p.kind = "boolean";
+	}
+	// BOOLEAN component properties (show/hide toggles) are booleans too
+	for (const [rawName, def] of Object.entries(node.componentPropertyDefinitions ?? {}) as Array<[string, any]>) {
+		if (def?.type !== "BOOLEAN") continue;
+		const name = stripPropertyIdSuffix(rawName);
+		if (!figmaProps.has(normalize(name))) figmaProps.set(normalize(name), { name, kind: "boolean", values: new Map() });
 	}
 
-	// Compare properties present on BOTH sides, plus "variant" when either side has
-	// it (the long-standing behavior). A property with no counterpart gets no
-	// claim at all — a boolean in code and a True/False variant in Figma aren't comparable here.
-	const compared = [...figmaProps.keys()].filter((k) => codeProps.has(k));
-	if (!compared.includes("variant") && (figmaProps.has("variant") || codeProps.has("variant"))) compared.push("variant");
+	type CodeProp = { name: string; kind: "values" | "boolean"; values: Map<string, string> };
+	const codeProps: CodeProp[] = [];
+	for (const prop of codeInfo.props ?? []) {
+		const type = prop.type ?? "";
+		const literals = type.match(/["']([^"']+)["']/g);
+		const isBoolean = /^\s*boolean\s*(\|\s*(undefined|null)\s*)*$/i.test(type)
+			|| /^\s*(true\s*\|\s*false|false\s*\|\s*true)\s*(\|\s*(undefined|null)\s*)*$/i.test(type);
+		if (isBoolean) {
+			codeProps.push({ name: prop.name, kind: "boolean", values: new Map() });
+		} else if (literals) {
+			const values = new Map<string, string>();
+			for (const m of literals) {
+				const raw = m.replace(/["']/g, "");
+				values.set(raw.toLowerCase(), raw);
+			}
+			codeProps.push({ name: prop.name, kind: "values", values });
+		}
+	}
 
-	if (compared.length > 0) {
-		const labelProperty = compared.length > 1 || compared[0] !== "variant";
+	// Pair each Figma property with at most one code prop, exact name first
+	const pairs: Array<{ figma?: FigmaProp; code?: CodeProp }> = [];
+	const usedCode = new Set<CodeProp>();
+	for (const fp of figmaProps.values()) {
+		const fKeys = keysFor(fp.name);
+		const match = codeProps.find((cp) => !usedCode.has(cp) && normalize(cp.name) === fKeys[0])
+			?? codeProps.find((cp) => !usedCode.has(cp) && keysFor(cp.name).some((k) => fKeys.includes(k)));
+		if (match) { usedCode.add(match); pairs.push({ figma: fp, code: match }); }
+	}
+	const unmatchedFigma = [...figmaProps.values()].filter((fp) => !pairs.some((p) => p.figma === fp));
+	const unmatchedCode = codeProps.filter((cp) => !usedCode.has(cp));
+	// Long-standing behavior: a "variant" prop on one side is compared even with no counterpart
+	for (const fp of unmatchedFigma.filter((p) => normalize(p.name) === "variant" && p.kind === "values")) pairs.push({ figma: fp });
+	for (const cp of unmatchedCode.filter((p) => normalize(p.name) === "variant" && p.kind === "values")) pairs.push({ code: cp });
 
-		lines.push("### Variant Coverage");
-		lines.push("");
+	const rows: string[] = [];
+	const labelProperty = pairs.length > 1 || (pairs[0] && normalize((pairs[0].figma ?? pairs[0].code)!.name) !== "variant");
+	for (const { figma, code } of pairs) {
+		const propLabel = figma?.name || code?.name || "";
+		const bothBoolean = figma?.kind === "boolean" && code?.kind === "boolean";
+		if (bothBoolean) {
+			rows.push(`| ${figma!.name} ↔ \`${code!.name}\` | Yes | Yes | In sync (boolean) |`);
+			continue;
+		}
+		if (figma && code && figma.kind !== code.kind && !(figma.values.size > 0 && code.values.size > 0)) {
+			rows.push(`| ${figma.name} ↔ \`${code.name}\` | Yes | Yes | **Type mismatch** — Figma ${figma.kind === "boolean" ? "True/False" : "named values"}, code \`${codeInfo.props?.find((p) => p.name === code.name)?.type ?? code.kind}\` |`);
+			continue;
+		}
+		const allValues = new Set([...(figma?.values.keys() ?? []), ...(code?.values.keys() ?? [])]);
+		for (const valueKey of allValues) {
+			const inFigma = figma?.values.has(valueKey) ?? false;
+			const inCode = code?.values.has(valueKey) ?? false;
+			const display = figma?.values.get(valueKey) || code?.values.get(valueKey) || valueKey;
+			const status = inFigma && inCode
+				? "In sync"
+				: inFigma ? "Figma-only — needs code variant" : "Code-only — needs Figma variant";
+			rows.push(`| ${labelProperty ? `${propLabel}: ${display}` : display} | ${inFigma ? "Yes" : "**No**"} | ${inCode ? "Yes" : "**No**"} | ${status} |`);
+		}
+	}
+
+	const leftoverFigma = unmatchedFigma.filter((p) => !pairs.some((x) => x.figma === p));
+	const leftoverCode = unmatchedCode.filter((p) => !pairs.some((x) => x.code === p));
+	// Nothing on either side that could be compared: leave the section out rather
+	// than print a heading with nothing under it.
+	if (rows.length === 0 && leftoverFigma.length === 0 && leftoverCode.length === 0) return "";
+
+	const lines = ["", "## Design-Code Parity", ""];
+	if (rows.length > 0) {
+		lines.push("### Variant Coverage", "");
 		lines.push("| Variant | In Figma | In Code | Status |");
 		lines.push("|---------|----------|---------|--------|");
-
-		for (const key of compared) {
-			const figma = figmaProps.get(key);
-			const code = codeProps.get(key);
-			const propLabel = figma?.name || code?.name || key;
-			const allValues = new Set([...(figma?.values.keys() ?? []), ...(code?.values.keys() ?? [])]);
-			for (const valueKey of allValues) {
-				const inFigma = figma?.values.has(valueKey) ?? false;
-				const inCode = code?.values.has(valueKey) ?? false;
-				const display = figma?.values.get(valueKey) || code?.values.get(valueKey) || valueKey;
-				const status = inFigma && inCode
-					? "In sync"
-					: inFigma ? "Figma-only — needs code variant" : "Code-only — needs Figma variant";
-				lines.push(
-					`| ${labelProperty ? `${propLabel}: ${display}` : display} | ${inFigma ? "Yes" : "**No**"} | ${inCode ? "Yes" : "**No**"} | ${status} |`,
-				);
-			}
-		}
+		lines.push(...rows, "");
+	} else {
+		lines.push("_No Figma property matched a code prop by name and type, so nothing was compared._", "");
+	}
+	if (leftoverFigma.length > 0 || leftoverCode.length > 0) {
+		lines.push("**Not compared** — no counterpart on the other side:", "");
+		if (leftoverFigma.length > 0) lines.push(`- Figma: ${leftoverFigma.map((p) => `${p.name} (${p.kind === "boolean" ? "True/False" : [...p.values.values()].join(" | ")})`).join(", ")}`);
+		if (leftoverCode.length > 0) lines.push(`- Code: ${leftoverCode.map((p) => `\`${p.name}\``).join(", ")}`);
 		lines.push("");
 	}
-
 	return lines.join("\n");
 }
 
@@ -3514,6 +3757,7 @@ const codeDocInfoSchema = z.object({
 		changes: z.string(),
 	})).optional().describe("Changelog entries"),
 	filePath: z.string().optional().describe("Component file path"),
+	storybookUrl: z.string().optional().describe("URL of a running Storybook (or the component's story) to link from the doc. Without it, a stories file in sourceFiles is linked as \"Stories source\", not \"Storybook\"."),
 	packageName: z.string().optional().describe("Package name"),
 	variantDefinition: z.string().optional().describe("CVA or variant definition code block"),
 	subComponents: z.array(z.object({
@@ -4122,6 +4366,30 @@ export function registerDesignCodeTools(
 				// the code-side semver `version` field, which means something else.
 				const latestDesignVersion = designHistory?.entries[0] ?? null;
 
+				// Pin the code side to a commit and build stable links (local mode only —
+				// the Worker has no filesystem). Only files git actually TRACKS get links:
+				// code read from an installed package (node_modules) or an unrelated
+				// working directory is shown as a path, never as a guessed URL.
+				let sourceRevision: SourceRevision | null = null;
+				const codePaths = [
+					...(codeInfo?.filePath ? [codeInfo.filePath] : []),
+					...(codeInfo?.sourceFiles?.map((f) => f.path) ?? []),
+				];
+				// Which repo? An explicit history.repoPath, or the repo that CONTAINS an
+				// absolute path. Never the server's own working directory: relative paths
+				// resolved there could match a same-named file in an unrelated project
+				// and pin the page to the wrong history.
+				const firstAbsolute = codePaths.find((p) => isAbsolute(p));
+				const repoPathForLinks = history?.repoPath ?? (firstAbsolute ? dirname(firstAbsolute) : undefined);
+				if (!isRemoteMode && codePaths.length > 0 && repoPathForLinks) {
+					sourceRevision = await resolveSourceRevision({ paths: codePaths, repoPath: repoPathForLinks }).catch(() => null);
+					if (sourceRevision && sourceRevision.tracked.size === 0) sourceRevision = null;
+				}
+				const sourceUrl = (path: string): string | null => {
+					const rel = sourceRevision?.tracked.get(path);
+					return rel && sourceRevision ? blobUrl(sourceRevision, rel) : null;
+				};
+
 				// Resolve sections with defaults
 				const s: DocSections = {
 					overview: true,
@@ -4145,12 +4413,12 @@ export function registerDesignCodeTools(
 
 				if (includeFrontmatter) {
 					const atomicLevel = await detectAtomicLevel(api, fileKey, nodeId, setInfo.setNodeId, componentMeta, allComponentsMeta);
-					parts.push(generateFrontmatter(componentName, description, node, componentMeta, fileUrl_, codeInfo, canonicalSource, atomicLevel, latestDesignVersion));
+					parts.push(generateFrontmatter(componentName, description, node, componentMeta, fileUrl_, codeInfo, canonicalSource, atomicLevel, latestDesignVersion, sourceRevision, repoPathForLinks));
 					parts.push("");
 				}
 
 				if (s.overview) {
-					parts.push(generateOverviewSection(componentName, description, fileUrl_, parsedDesc, codeInfo));
+					parts.push(generateOverviewSection(componentName, description, fileUrl_, parsedDesc, codeInfo, sourceUrl, repoPathForLinks));
 					includedSections.push("overview");
 				}
 
@@ -4192,7 +4460,7 @@ export function registerDesignCodeTools(
 				}
 
 				if (s.implementation && codeInfo) {
-					parts.push(generateImplementationSection(codeInfo));
+					parts.push(generateImplementationSection(codeInfo, repoPathForLinks ?? history?.repoPath));
 					includedSections.push("implementation");
 				}
 
@@ -4208,7 +4476,8 @@ export function registerDesignCodeTools(
 				}
 
 				if (s.parity && hasCodeInfo && hasFigmaData && codeInfo) {
-					const paritySection = generateParitySection(node, codeInfo);
+					// nodeForVariants carries the SET's property definitions when a single variant was requested
+					const paritySection = generateParitySection(nodeForVariants, codeInfo);
 					if (paritySection) {
 						parts.push(paritySection);
 						includedSections.push("parity");
@@ -4225,6 +4494,8 @@ export function registerDesignCodeTools(
 							componentName,
 							design: designHistory,
 							git: gitHistory,
+							commitLink: (sha) => (sourceRevision ? commitUrl(sourceRevision, sha) : null),
+							showPath: (p) => displayPath(p, gitHistory?._meta.repo_root ?? repoPathForLinks),
 							manual: codeInfo?.changelog ?? null,
 						});
 						if (historySection.trim()) {

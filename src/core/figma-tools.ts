@@ -14,6 +14,7 @@ import { identifiedError, withIdentity } from "./identity.js";
 import { EnrichmentService } from "./enrichment/index.js";
 import type { EnrichmentOptions } from "./types/enriched.js";
 import { extractNodeSpec, validateReconstructionSpec, listVariants } from "./figma-reconstruction-spec.js";
+import { augmentWithExtendedCollections, countOverrides, extendedCollectionView } from "./extended-collections.js";
 
 const logger = createChildLogger({ component: "figma-tools" });
 
@@ -355,6 +356,10 @@ function adaptiveVerbosity(
  * Generate compact summary of variables data (~2K tokens)
  * Returns high-level overview with counts and names
  */
+/** Present-and-defined — `0`, `false` and `""` are real variable values, not "missing" */
+const hasModeValue = (valuesByMode: any, modeId: string | null | undefined): boolean =>
+	!!valuesByMode && !!modeId && Object.prototype.hasOwnProperty.call(valuesByMode, modeId) && valuesByMode[modeId] !== undefined;
+
 function generateSummary(data: any): any {
 	const summary = {
 		fileKey: data.fileKey,
@@ -367,12 +372,29 @@ function generateSummary(data: any): any {
 		collections: data.variableCollections?.map((c: any) => ({
 			id: c.id,
 			name: c.name,
-			modes: c.modes?.map((m: any) => ({ id: m.modeId, name: m.name })),
+			modes: c.modes?.map((m: any) => ({ id: m.modeId, name: m.name, ...(m.parentModeId ? { parentModeId: m.parentModeId } : {}) })),
 			variable_count: c.variableIds?.length || 0,
+			...(c.isExtension
+				? (() => {
+					const counts = countOverrides(c);
+					const parent = data.variableCollections?.find((p: any) => p.id === c.parentVariableCollectionId);
+					return {
+						isExtension: true,
+						extends: parent ? parent.name : c.parentVariableCollectionId,
+						parentVariableCollectionId: c.parentVariableCollectionId,
+						overridden_variables: counts.variables,
+						overridden_values: counts.values,
+						hint: `Filter with collection="${c.name}" to see every variable's value in this collection, marked overridden or inherited.`,
+					};
+				})()
+				: {}),
 		})) || [],
 		variables_by_type: {} as Record<string, number>,
 		variable_names: [] as string[],
+		...(data.extendedCollectionsWarning ? { warnings: [data.extendedCollectionsWarning] } : {}),
 	};
+	const extendedCount = (data.variableCollections ?? []).filter((c: any) => c.isExtension).length;
+	if (extendedCount > 0) (summary.overview as any).extended_collections = extendedCount;
 
 	// Count variables by type
 	const typeCount: Record<string, number> = {};
@@ -416,6 +438,13 @@ function applyFilters(
 		filteredVariables = filteredVariables.filter((v: any) =>
 			collectionIds.has(v.variableCollectionId)
 		);
+		// An extended collection owns no variables of its own (they keep their
+		// parent's variableCollectionId) — so the filter above finds nothing for it.
+		// Add its variables AS THEY APPEAR IN IT: values per extended mode, each
+		// override or inheritance resolved through the chain.
+		for (const c of filteredCollections) {
+			if (c.isExtension) filteredVariables.push(...extendedCollectionView(data, c));
+		}
 	}
 
 	// Filter by variable name pattern (regex or substring)
@@ -463,11 +492,11 @@ function applyFilters(
 			// Check if variable has values for the specified mode
 			if (v.valuesByMode) {
 				// Try to match by mode ID directly
-				if (v.valuesByMode[filters.mode!]) {
+				if (hasModeValue(v.valuesByMode, filters.mode)) {
 					return true;
 				}
 				// Try using resolved targetModeId
-				if (targetModeId && v.valuesByMode[targetModeId]) {
+				if (hasModeValue(v.valuesByMode, targetModeId)) {
 					return true;
 				}
 				// Try to match by mode name through collections
@@ -478,7 +507,7 @@ function applyFilters(
 					const mode = collection.modes.find((m: any) =>
 						m.name?.toLowerCase().includes(filters.mode!.toLowerCase()) || m.modeId === filters.mode
 					);
-					return mode && v.valuesByMode[mode.modeId];
+					return !!mode && hasModeValue(v.valuesByMode, mode.modeId);
 				}
 			}
 			return false;
@@ -548,6 +577,9 @@ function applyFilters(
 				variableCollectionId: v.variableCollectionId,
 				...(v.modeNames && { modeNames: v.modeNames }),
 				...(v.modeCount && { modeCount: v.modeCount }),
+				...(v.definedInCollectionId && { definedInCollectionId: v.definedInCollectionId }),
+				...(v.overriddenModeIds && { overriddenModeIds: v.overriddenModeIds }),
+				...(v.extendedCollectionOverrides && { extendedCollectionOverrides: v.extendedCollectionOverrides }),
 			}));
 		} else if (verbosity === "standard") {
 			filteredVariables = filteredVariables.map((v: any) => ({
@@ -560,6 +592,9 @@ function applyFilters(
 				...(v.scopes && { scopes: v.scopes }),
 				...(v.selectedMode && { selectedMode: v.selectedMode }),
 				...(v.modeMetadata && { modeMetadata: v.modeMetadata }),
+				...(v.definedInCollectionId && { definedInCollectionId: v.definedInCollectionId }),
+				...(v.overriddenModeIds && { overriddenModeIds: v.overriddenModeIds }),
+				...(v.extendedCollectionOverrides && { extendedCollectionOverrides: v.extendedCollectionOverrides }),
 			}));
 		}
 		// For "full" verbosity, return all fields (no filtering)
@@ -1995,10 +2030,15 @@ export function registerFigmaAPITools(
 								: desktopResult;
 
 						if (variableData?.success && variableData?.variables) {
+							// Extended collections keep their overrides on the collection, not
+							// on the variables — without this every tool reports "no override".
+							const extended = await augmentWithExtendedCollections(connector, variableData, fileKey);
+							if (extended.warning) variableData.extendedCollectionsWarning = extended.warning;
 							logger.info(
 								{
 									variableCount: variableData.variables.length,
-									collectionCount: variableData.variableCollections?.length
+									collectionCount: variableData.variableCollections?.length,
+									extendedCollections: extended.merged,
 								},
 								"Successfully retrieved variables via Desktop connection!"
 							);
@@ -2010,6 +2050,7 @@ export function registerFigmaAPITools(
 								timestamp: variableData.timestamp || Date.now(),
 								variables: variableData.variables,
 								variableCollections: variableData.variableCollections,
+								...(variableData.extendedCollectionsWarning ? { extendedCollectionsWarning: variableData.extendedCollectionsWarning } : {}),
 							};
 
 							// Store in cache with LRU eviction
@@ -2084,6 +2125,9 @@ export function registerFigmaAPITools(
 											resolvedType: v.resolvedType,
 											valuesByMode: v.valuesByMode,
 											variableCollectionId: v.variableCollectionId,
+											...(v.definedInCollectionId && { definedInCollectionId: v.definedInCollectionId }),
+											...(v.overriddenModeIds && { overriddenModeIds: v.overriddenModeIds }),
+											...(v.extendedCollectionOverrides && { extendedCollectionOverrides: v.extendedCollectionOverrides }),
 										};
 									}
 									return v; // standard/full

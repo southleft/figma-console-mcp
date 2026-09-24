@@ -593,6 +593,16 @@ export function formatVariables(variablesData: any): {
       key: collection.key,
       modes: collection.modes,
       variableIds: collection.variableIds,
+      // Extended collections: keep what REST reports, so summaries and filters
+      // can show overrides instead of an empty collection
+      ...(collection.isExtension
+        ? {
+            isExtension: true,
+            parentVariableCollectionId: collection.parentVariableCollectionId,
+            rootVariableCollectionId: collection.rootVariableCollectionId,
+            variableOverrides: collection.variableOverrides ?? {},
+          }
+        : {}),
     })
   );
 

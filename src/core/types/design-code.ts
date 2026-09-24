@@ -202,6 +202,8 @@ export interface CodeDocInfo {
 	}>;
 	/** Component file path */
 	filePath?: string;
+	/** URL of a running Storybook (or story) for this component */
+	storybookUrl?: string;
 	/** Package name */
 	packageName?: string;
 	/** CVA or variant definition code block */
