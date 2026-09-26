@@ -1523,11 +1523,36 @@ figma.ui.onmessage = async (msg) => {
         } catch (e) {}
         if (n.opacity !== undefined && n.opacity < 1) props.opacity = n.opacity;
 
+        // Mixed corner radius -> per-corner radii (full info instead of dropping)
+        try {
+          if (n.cornerRadius === figma.mixed) {
+            props.cornerRadius = 'MIXED';
+            props.cornerRadiuses = {
+              topLeft: n.topLeftRadius,
+              topRight: n.topRightRadius,
+              bottomRight: n.bottomRightRadius,
+              bottomLeft: n.bottomLeftRadius
+            };
+          }
+        } catch (e) {}
+        // Mixed stroke weight -> per-side weights
+        try {
+          if (n.strokeWeight === figma.mixed) {
+            props.strokeWeight = 'MIXED';
+            props.strokeWeights = {
+              top: n.strokeTopWeight,
+              right: n.strokeRightWeight,
+              bottom: n.strokeBottomWeight,
+              left: n.strokeLeftWeight
+            };
+          }
+        } catch (e) {}
+
         // Typography
         if (n.type === 'TEXT') {
           try { props.characters = n.characters; } catch (e) {}
           try { if (n.fontSize !== figma.mixed) props.fontSize = n.fontSize; } catch (e) {}
-          try { if (n.fontName !== figma.mixed) props.fontFamily = n.fontName.family; props.fontStyle = n.fontName.style; } catch (e) {}
+          try { if (n.fontName !== figma.mixed) { props.fontFamily = n.fontName.family; props.fontStyle = n.fontName.style; } } catch (e) {}
           try { if (n.fontWeight !== figma.mixed) props.fontWeight = n.fontWeight; } catch (e) {}
           try { if (n.lineHeight !== figma.mixed) props.lineHeight = n.lineHeight; } catch (e) {}
           try { if (n.letterSpacing !== figma.mixed) props.letterSpacing = n.letterSpacing; } catch (e) {}
@@ -1537,6 +1562,31 @@ figma.ui.onmessage = async (msg) => {
           try { if (n.textTruncation && n.textTruncation !== 'DISABLED') props.textTruncation = n.textTruncation; } catch (e) {}
           try { if (n.textCase && n.textCase !== 'ORIGINAL') props.textCase = n.textCase; } catch (e) {}
           try { if (n.textDecoration && n.textDecoration !== 'NONE') props.textDecoration = n.textDecoration; } catch (e) {}
+
+          // Expand mixed per-character styles into full per-range segments (no info loss).
+          try {
+            var _typoFields = ['fontName','fontSize','fontWeight','textDecoration','textCase','lineHeight','letterSpacing','fills','textStyleId','fillStyleId'];
+            var _anyMixed = false;
+            for (var _ti = 0; _ti < _typoFields.length; _ti++) {
+              try { if (n[_typoFields[_ti]] === figma.mixed) { _anyMixed = true; break; } } catch (e2) {}
+            }
+            if (_anyMixed && typeof n.getStyledTextSegments === 'function') {
+              props.styledSegments = n.getStyledTextSegments(_typoFields).map(function (s) {
+                var o = { characters: s.characters, start: s.start, end: s.end };
+                try { if (s.fontName) { o.fontFamily = s.fontName.family; o.fontStyle = s.fontName.style; } } catch (e3) {}
+                if (s.fontSize !== undefined) o.fontSize = s.fontSize;
+                if (s.fontWeight !== undefined) o.fontWeight = s.fontWeight;
+                if (s.lineHeight !== undefined) o.lineHeight = s.lineHeight;
+                if (s.letterSpacing !== undefined) o.letterSpacing = s.letterSpacing;
+                if (s.textDecoration !== undefined) o.textDecoration = s.textDecoration;
+                if (s.textCase !== undefined) o.textCase = s.textCase;
+                if (s.fills !== undefined) o.fills = s.fills;
+                if (s.textStyleId) o.textStyleId = s.textStyleId;
+                if (s.fillStyleId) o.fillStyleId = s.fillStyleId;
+                return o;
+              });
+            }
+          } catch (e) {}
         }
 
         // Design tokens (resolved to names)
@@ -1664,14 +1714,20 @@ figma.ui.onmessage = async (msg) => {
       result._variableMapSize = Object.keys(varNameMap).length;
       result._maxDepthUsed = maxDepth;
 
-      var resultJson = JSON.stringify(result);
+      // figma.mixed is a Symbol; it cannot cross figma.ui.postMessage
+      // (structuredClone throws "Cannot unwrap symbol"). Serialize with a
+      // replacer that turns any Symbol into the string "MIXED", then send the
+      // parsed (symbol-free) clone instead of the raw node tree.
+      var resultJson = JSON.stringify(result, function (key, val) {
+        return typeof val === 'symbol' ? 'MIXED' : val;
+      });
       console.log('🌉 [Desktop Bridge] Deep component data: ' + Math.round(resultJson.length / 1024) + 'KB, vars resolved: ' + Object.keys(varNameMap).length);
 
       figma.ui.postMessage({
         type: 'DEEP_GET_COMPONENT_RESULT',
         requestId: msg.requestId,
         success: true,
-        data: result
+        data: JSON.parse(resultJson)
       });
 
     } catch (error) {
