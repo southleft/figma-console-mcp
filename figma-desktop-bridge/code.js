@@ -7347,6 +7347,19 @@ figma.loadAllPagesAsync().then(function() {
     });
   });
 
+  // Plant a per-file relaunch button on the document root so subsequent
+  // launches of the Bridge in this file are a one-click action from the
+  // design panel (visible when no node is selected). The relaunch data is
+  // persisted with the document — survives close/reopen and syncs across
+  // collaborators. Only takes effect inside this file; Figma's plugin API
+  // does not expose cross-file launch, so the first launch per file is
+  // still user-driven.
+  try {
+    figma.root.setRelaunchData({ open: 'Open Figma Desktop Bridge' });
+  } catch (e) {
+    console.warn('🌉 [Desktop Bridge] Could not set relaunch data on document root:', e);
+  }
+
   console.log('🌉 [Desktop Bridge] Document change, selection, and page listeners registered');
 }).catch(function(err) {
   console.warn('🌉 [Desktop Bridge] Could not register event listeners:', err);
