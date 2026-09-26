@@ -5,6 +5,9 @@
  * input validation, and error handling.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 describe('figma_set_image_fill', () => {
 	// ========================================================================
 	// Plugin handler (code.js message handling)
@@ -138,7 +141,7 @@ describe('figma_set_image_fill', () => {
 	// ========================================================================
 
 	describe('tool schema', () => {
-		it('should require nodeIds as string array', () => {
+		it('should accept nodeIds as an optional string array', () => {
 			const validParams = {
 				nodeIds: ['1:2', '3:4'],
 				imageData: 'base64string',
@@ -248,5 +251,119 @@ describe('figma_set_image_fill', () => {
 			const resolved = params.nodeIds || params.nodeId;
 			expect(resolved).toBe('1:2');
 		});
+	});
+});
+describe("code.js SET_IMAGE_FILL handler", () => {
+	const codeJsSource = readFileSync(
+		join(__dirname, "../figma-desktop-bridge/code.js"),
+		"utf-8",
+	);
+
+	function extractHandler() {
+		const start = codeJsSource.indexOf(
+			"else if (msg.type === 'SET_IMAGE_FILL')",
+		);
+		if (start === -1) throw new Error("SET_IMAGE_FILL handler not found");
+		const endMarker = codeJsSource.indexOf("// SET_NODE_STROKES", start);
+		const block = codeJsSource.slice(
+			start,
+			codeJsSource.lastIndexOf("}", endMarker) + 1,
+		);
+		return new Function(
+			"figma",
+			"msg",
+			`return (async () => { if (false) {} ${block} })();`,
+		);
+	}
+
+	function makeSandbox() {
+		const posted: any[] = [];
+		const rect = {
+			id: "rect:1",
+			name: "",
+			x: 0,
+			y: 0,
+			width: 100,
+			height: 100,
+			fills: [] as any[],
+			resize(width: number, height: number) {
+				this.width = width;
+				this.height = height;
+			},
+		};
+		const target = {
+			id: "1:2",
+			name: "Frame",
+			type: "FRAME",
+			fills: [] as any[],
+		};
+		const figma = {
+			createImage: (bytes: Uint8Array) => ({
+				hash: "imghash",
+				bytes,
+				getSizeAsync: async () => ({ width: 200, height: 80 }),
+			}),
+			createRectangle: () => rect,
+			getNodeByIdAsync: async (id: string) => (id === "1:2" ? target : null),
+			currentPage: { selection: [] as any[] },
+			viewport: {
+				center: { x: 500, y: 400 },
+				scrollAndZoomIntoView: jest.fn(),
+			},
+			ui: { postMessage: (m: any) => posted.push(m) },
+		};
+		return { figma, posted, rect, target };
+	}
+
+	it("inserts a new rectangle sized to the image when nodeIds is empty", async () => {
+		const { figma, posted, rect } = makeSandbox();
+		const run = extractHandler();
+		await run(figma, {
+			type: "SET_IMAGE_FILL",
+			requestId: "r1",
+			imageBytes: [1, 2, 3],
+			nodeIds: [],
+			name: "hero",
+		});
+
+		expect(rect.name).toBe("hero");
+		expect(rect.width).toBe(200);
+		expect(rect.height).toBe(80);
+		expect(rect.x).toBe(400);
+		expect(rect.y).toBe(360);
+		expect(figma.currentPage.selection).toEqual([rect]);
+		expect(posted[0]).toMatchObject({
+			type: "SET_IMAGE_FILL_RESULT",
+			success: true,
+			imageHash: "imghash",
+			updatedCount: 1,
+			nodes: [
+				{
+					id: "rect:1",
+					name: "hero",
+					created: true,
+					width: 200,
+					height: 80,
+				},
+			],
+		});
+	});
+
+	it("applies an image fill to existing nodes when nodeIds are provided", async () => {
+		const { figma, posted, target } = makeSandbox();
+		const run = extractHandler();
+		await run(figma, {
+			type: "SET_IMAGE_FILL",
+			requestId: "r2",
+			imageBytes: [1, 2, 3],
+			nodeIds: ["1:2"],
+			scaleMode: "FIT",
+		});
+
+		expect(target.fills).toEqual([
+			{ type: "IMAGE", scaleMode: "FIT", imageHash: "imghash" },
+		]);
+		expect(posted[0].nodes[0].created).toBeUndefined();
+		expect(posted[0].updatedCount).toBe(1);
 	});
 });

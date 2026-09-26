@@ -3281,27 +3281,54 @@ figma.ui.onmessage = async (msg) => {
         imageHash: imageHash
       };
 
-      // Resolve target nodes
+      // Resolve target nodes. Empty nodeIds = insert a new rectangle sized to the image.
       var nodeIds = msg.nodeIds || (msg.nodeId ? [msg.nodeId] : []);
+      if (!Array.isArray(nodeIds)) {
+        nodeIds = [nodeIds];
+      }
       var updatedCount = 0;
       var updatedNodes = [];
       var skipWarnings = [];
 
-      for (var i = 0; i < nodeIds.length; i++) {
-        var node = await figma.getNodeByIdAsync(nodeIds[i]);
-        if (!node) {
-          skipWarnings.push('node "' + nodeIds[i] + '" not found');
-        } else if (!('fills' in node)) {
-          skipWarnings.push('node "' + nodeIds[i] + '" (' + node.type + ') does not support fills');
-        } else {
-          node.fills = [fill];
-          updatedCount++;
-          updatedNodes.push({ id: node.id, name: node.name });
+      if (nodeIds.length === 0) {
+        var size = await image.getSizeAsync();
+        var rect = figma.createRectangle();
+        rect.name = msg.name || 'Image';
+        rect.resize(size.width, size.height);
+        rect.fills = [fill];
+        var center = figma.viewport.center;
+        rect.x = center.x - size.width / 2;
+        rect.y = center.y - size.height / 2;
+        figma.currentPage.selection = [rect];
+        figma.viewport.scrollAndZoomIntoView([rect]);
+        updatedCount = 1;
+        updatedNodes.push({
+          id: rect.id,
+          name: rect.name,
+          created: true,
+          width: size.width,
+          height: size.height
+        });
+      } else {
+        for (var i = 0; i < nodeIds.length; i++) {
+          var node = await figma.getNodeByIdAsync(nodeIds[i]);
+          if (!node) {
+            skipWarnings.push('node "' + nodeIds[i] + '" not found');
+          } else if (!('fills' in node)) {
+            skipWarnings.push('node "' + nodeIds[i] + '" (' + node.type + ') does not support fills');
+          } else {
+            node.fills = [fill];
+            updatedCount++;
+            updatedNodes.push({ id: node.id, name: node.name });
+          }
         }
       }
 
-      if (updatedCount === 0 && nodeIds.length > 0) {
-        throw new Error('Image fill applied to 0 node(s): ' + skipWarnings.join('; '));
+      if (updatedCount === 0) {
+        throw new Error(
+          'Image fill applied to 0 node(s)' +
+          (skipWarnings.length ? ': ' + skipWarnings.join('; ') : '. Pass nodeIds to update existing layers, or omit nodeIds to insert a new image on the page.')
+        );
       }
 
       console.log('🌉 [Desktop Bridge] Image fill applied to', updatedCount, 'node(s), hash:', imageHash);
