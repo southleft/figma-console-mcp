@@ -505,6 +505,16 @@ export function visibilityNote(node: any): string {
 	return prop ? `toggled by ${prop}` : "";
 }
 
+/** The component an instance is made from — its component SET's name for a variant */
+export function componentNameOf(instance: any, lookup: ComponentLookup = {}): string {
+	const comp = lookup.components?.[instance?.componentId];
+	if (comp?.componentSetId) {
+		const setName = lookup.componentSets?.[comp.componentSetId]?.name;
+		if (setName) return setName;
+	}
+	return comp?.name ?? instance?.name ?? "instance";
+}
+
 /** "Tab Item (Is Selected=True)" — an instance, qualified by its variant */
 export function describeInstance(node: any): string {
 	const variantProps = Object.entries(node?.componentProperties ?? {})
@@ -717,6 +727,8 @@ function walkVariantNode(
 	ancestorShownWhen: string | null = null,
 	/** Nearest nested instance ("Tab Item (Is Selected=True)") */
 	owner: string | null = null,
+	/** Component that nearest nested instance is made from ("Tab Item") */
+	ownerComponent: string | null = null,
 ): void {
 	if (depth > maxDepth) return;
 
@@ -726,7 +738,15 @@ function walkVariantNode(
 	// and, when a boolean property reveals them, with the property that does.
 	const hiddenHere = node.visible === false;
 	const hidden = ancestorHidden || hiddenHere;
-	const shownWhen = hiddenHere ? visibilityProperty(node) : ancestorShownWhen;
+	// A layer inside a nested instance is controlled by THAT component's property,
+	// not this one's: "Avatar's notification", never a bare "notification" that
+	// reads as if the documented component had it.
+	const ownProp = hiddenHere ? visibilityProperty(node) : null;
+	// Named by the COMPONENT, not the instance: every tab's "Is Focused" is the Tab
+	// Item's property, so "Tab 1" and "Tab 2" must not split it into two facts.
+	const shownWhen = ownProp
+		? (ownerComponent ? `${ownerComponent}'s ${ownProp}` : ownProp)
+		: hiddenHere ? null : ancestorShownWhen;
 
 	// Icons are reported once, at the outermost instance — everything beneath it
 	// (vectors, nested instances) is that icon's artwork, not a separate icon.
@@ -742,8 +762,10 @@ function walkVariantNode(
 		const varId = paint.boundVariables?.color?.id;
 		return {
 			hex: value,
-			// The variant root's own name is "Size=lg, State=hover" — not a layer name
-			nodeName: depth === 0 ? "" : node.name || "",
+			// The variant root's own name is "Size=lg, State=hover" — not a layer name.
+			// A paint on a nested INSTANCE (a tab's underline) names the instance with its
+			// variant, so the selected tab's stroke reads as the selected tab's.
+			nodeName: depth === 0 ? "" : node.type === "INSTANCE" ? describeInstance(node) : node.name || "",
 			variableId: varId,
 			variableName: varId ? ctx.varNameMap.get(varId) : undefined,
 			...(hidden ? { hidden: true } : {}),
@@ -808,8 +830,10 @@ function walkVariantNode(
 	// Recurse into children
 	if (node.children && Array.isArray(node.children)) {
 		for (const child of node.children) {
+			const isNestedInstance = node.type === "INSTANCE" && depth > 0;
 			walkVariantNode(child, data, ctx, depth + 1, maxDepth, insideIcon, hidden, shownWhen,
-				node.type === "INSTANCE" && depth > 0 ? describeInstance(node) : owner);
+				isNestedInstance ? describeInstance(node) : owner,
+				isNestedInstance ? componentNameOf(node, ctx.lookup) : ownerComponent);
 		}
 	}
 }
@@ -2937,62 +2961,85 @@ export function generateVisualSpecsSection(
 		lines.push("| Element | Figma Variable | Value |");
 		lines.push("|---------|---------------|-------|");
 
-		for (const vd of variantData) {
-			// Same naming as the Variant Matrix: every property value, whatever the
-			// properties are called ("Variant=Secondary, Appearance=Critical" → "Secondary / Critical").
-			const displayName = cleanVariantName(vd.variantName);
+		const tokenCell = (c: VariantColorEntry) => {
+			const varName = c.variableName || (c.variableId ? varNameMap.get(c.variableId) : undefined);
+			return varName ? `\`${varName}\`` : "—";
+		};
+		// Text layers are often auto-named after their content ("Lorem ipsum dolor…")
+		const short = (name: string) => (name.length > 40 ? `${name.slice(0, 40)}…` : name);
 
-			// Section header for this variant
-			lines.push(`| **${displayName}** | | |`);
+		type Row = { label: string; token: string; value: string; shownWhen?: string; plainHidden?: boolean };
+		const rowText = (r: Row, withVisibility: boolean) => {
+			const visibility = !withVisibility ? ""
+				: r.shownWhen ? ` _(hidden — shown when ${r.shownWhen} = true)_`
+				: r.plainHidden ? " _(hidden layer)_" : "";
+			return `| ${r.label}${visibility} | ${r.token} | ${r.value} |`;
+		};
 
-			const tokenCell = (c: VariantColorEntry) => {
-				const varName = c.variableName || (c.variableId ? varNameMap.get(c.variableId) : undefined);
-				return varName ? `\`${varName}\`` : "—";
+		// Pass 1 — each variant's rows
+		const perVariant = variantData.map((vd) => {
+			const rows: Row[] = [];
+			const seen = new Set<string>(); // multi-path icons / repeated shapes → one row
+			const add = (label: string, c: VariantColorEntry) => {
+				const r: Row = { label, token: tokenCell(c), value: c.hex, ...(c.hidden && c.shownWhen ? { shownWhen: c.shownWhen } : {}), ...(c.hidden && !c.shownWhen ? { plainHidden: true } : {}) };
+				const key = rowText(r, true);
+				if (seen.has(key)) return;
+				seen.add(key);
+				rows.push(r);
 			};
-			// Multi-path icons and repeated shapes would otherwise emit identical rows
-			const emitted = new Set<string>();
-			// Text layers are often auto-named after their content ("Lorem ipsum dolor…")
-			const short = (name: string) => (name.length > 40 ? `${name.slice(0, 40)}…` : name);
-			const pushRow = (label: string, c: VariantColorEntry) => {
-				const visibility = !c.hidden ? "" : c.shownWhen ? ` _(hidden — shown when ${c.shownWhen} = true)_` : " _(hidden layer)_";
-				const row = `| ${label}${visibility} | ${tokenCell(c)} | ${c.hex} |`;
-				if (emitted.has(row)) return;
-				emitted.add(row);
-				lines.push(row);
+			// Same-named layers with DIFFERENT colors (a selected and an unselected tab's
+			// Label) are told apart by the nested instance they live in
+			const qualify = (list: VariantColorEntry[]) => {
+				const byName = new Map<string, Set<string>>();
+				for (const e of list) {
+					if (!byName.has(e.nodeName)) byName.set(e.nodeName, new Set());
+					byName.get(e.nodeName)!.add(`${e.hex}|${e.variableName ?? ""}`);
+				}
+				return (e: VariantColorEntry) => ((byName.get(e.nodeName)?.size ?? 0) > 1 && e.owner ? ` in ${e.owner}` : "");
 			};
 
 			// Background — the variant's own surface only. Say so when there isn't one.
 			const bgLabel = vd.backgroundLayer ? `Background (${vd.backgroundLayer})` : "Background";
-			if (vd.fills.length === 0) {
-				lines.push("| Background | — | none (transparent) |");
-			}
-			for (const fill of vd.fills) pushRow(bgLabel, fill);
-
+			if (vd.fills.length === 0) rows.push({ label: "Background", token: "—", value: "none (transparent)" });
+			for (const fill of vd.fills) add(bgLabel, fill);
 			// Fills on inner layers — reported under the layer's name, never as a background
-			for (const fill of vd.descendantFills) pushRow(`Fill (${fill.nodeName})`, fill);
-
-			// Icon artwork colors
-			for (const c of vd.iconColors) pushRow(c.iconLabel ? `Icon (${c.iconLabel})` : "Icon", c);
-
-			// Text colors
-			// Same-named text layers with DIFFERENT colors (a selected and an unselected
-			// tab's Label) are told apart by the nested instance they live in
-			const colorsByName = new Map<string, Set<string>>();
-			for (const t of vd.textColors) {
-				if (!colorsByName.has(t.nodeName)) colorsByName.set(t.nodeName, new Set());
-				colorsByName.get(t.nodeName)!.add(`${t.hex}|${t.variableName ?? ""}`);
-			}
-			for (const text of vd.textColors) {
-				const ambiguous = (colorsByName.get(text.nodeName)?.size ?? 0) > 1 && text.owner;
-				pushRow(`Text (${short(text.nodeName)}${ambiguous ? ` in ${text.owner}` : ""})`, text);
-			}
-
-			// Strokes — through the same writer, so a visible underline and a hidden
-			// focus ring sharing one color don't print as two indistinguishable rows
-			for (const stroke of vd.strokes) pushRow(stroke.nodeName ? `Stroke (${stroke.nodeName})` : "Stroke", stroke);
-
+			const fillQ = qualify(vd.descendantFills);
+			for (const fill of vd.descendantFills) add(`Fill (${fill.nodeName}${fillQ(fill)})`, fill);
+			for (const c of vd.iconColors) add(c.iconLabel ? `Icon (${c.iconLabel})` : "Icon", c);
+			const textQ = qualify(vd.textColors);
+			for (const text of vd.textColors) add(`Text (${short(text.nodeName)}${textQ(text)})`, text);
+			// Strokes go through the same writer, so a visible underline and a hidden focus
+			// ring sharing one color don't print as two indistinguishable rows
+			const strokeQ = qualify(vd.strokes);
+			for (const stroke of vd.strokes) add(stroke.nodeName ? `Stroke (${stroke.nodeName}${strokeQ(stroke)})` : "Stroke", stroke);
 			// Shadows, blurs, opacity — dropping them would imply the component is flat
-			for (const fx of vd.effects) pushRow(fx.nodeName ? `Effect (${fx.nodeName})` : "Effect", fx);
+			for (const fx of vd.effects) add(fx.nodeName ? `Effect (${fx.nodeName})` : "Effect", fx);
+			return { name: cleanVariantName(vd.variantName), rows };
+		});
+
+		// Pass 2 — a layer a boolean property reveals, identical in EVERY variant, is a
+		// fact about the property, not about each variant: print it once, under the
+		// property. If it differs between variants, it stays with each variant.
+		const hoisted = new Map<string, Row[]>();
+		const hoistedKeys = new Set<string>();
+		if (perVariant.length > 1) {
+			for (const r of perVariant[0].rows) {
+				if (!r.shownWhen) continue;
+				const key = rowText(r, true);
+				if (!perVariant.every((pv) => pv.rows.some((x) => rowText(x, true) === key))) continue;
+				hoistedKeys.add(key);
+				if (!hoisted.has(r.shownWhen)) hoisted.set(r.shownWhen, []);
+				hoisted.get(r.shownWhen)!.push(r);
+			}
+		}
+
+		for (const pv of perVariant) {
+			lines.push(`| **${pv.name}** | | |`);
+			for (const r of pv.rows) if (!hoistedKeys.has(rowText(r, true))) lines.push(rowText(r, true));
+		}
+		for (const [prop, rows] of hoisted) {
+			lines.push(`| **When ${prop} = true** _(every variant; hidden otherwise)_ | | |`);
+			for (const r of rows) lines.push(rowText(r, false));
 		}
 		lines.push("");
 	} else {

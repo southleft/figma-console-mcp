@@ -5,6 +5,15 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.40.7] - 2026-09-27
+
+Readability of the `figma_generate_component_doc` Color Tokens table. Server-only: **no plugin re-import needed**.
+
+### Changed
+
+- **A layer revealed by a boolean property is printed once, under the property, when it's the same in every variant.** A tab bar's focus ring (hidden, shown by `Is Focused`) was repeated under each parent variant. It now appears once, under `When Tab Item's Is Focused = true`. When the layer differs between variants, it stays with each variant, because then the difference is the information. A property that belongs to a nested component is named with that component (`Avatar's notification`), so it never reads as if the documented component had it. Reported by Robin Di Capua.
+- **Stroke and fill rows are qualified the way text rows are.** A paint on a nested instance names the instance with its variant, so the selected tab's underline reads `Stroke (Tab 1 (Is Selected=True))`, and same-named fills or strokes in different instances are told apart by instance when their colors differ. Reported by Robin Di Capua.
+
 ## [1.40.6] - 2026-09-24
 
 Extended variable collections, and a third round of `figma_generate_component_doc` fidelity fixes. Server-only: **no plugin re-import needed**.
@@ -1431,6 +1440,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.40.7]: https://github.com/southleft/figma-console-mcp/compare/v1.40.6...v1.40.7
 [1.40.6]: https://github.com/southleft/figma-console-mcp/compare/v1.40.5...v1.40.6
 [1.40.5]: https://github.com/southleft/figma-console-mcp/compare/v1.40.4...v1.40.5
 [1.40.4]: https://github.com/southleft/figma-console-mcp/compare/v1.40.3...v1.40.4
