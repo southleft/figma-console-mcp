@@ -360,6 +360,27 @@ ${COMPARISON_LINK}" "$CHANGELOG"
   CHANGES+=("CHANGELOG.md: version scaffold")
 fi
 
+# ── 8b. Front-page banners: link + version stamp ──────
+# The banner WORDING is editorial (what shipped), so it stays a manual step —
+# but the mechanical parts are automated, and a banner that doesn't mention the
+# release being cut is flagged loudly instead of silently going stale (it
+# pointed at the v1.40.0 notes through seven patch releases before this existed).
+echo -e "${BOLD}8b. Front-page banners${NC}"
+BANNER_ANCHOR="${VERSION//./}---${TODAY}"   # GitHub anchor for "## [x.y.z] - date"
+for banner_file in "$ROOT/README.md" "$ROOT/docs/index.mdx"; do
+  replace_in_file "$banner_file" 'CHANGELOG\.md#[0-9]+---[0-9]{4}-[0-9]{2}-[0-9]{2}' "CHANGELOG.md#${BANNER_ANCHOR}" "banner \"See what's new\" → v$VERSION notes"
+  # (two calls: replace_in_file uses "|" as its sed delimiter, so no alternation)
+  replace_in_file "$banner_file" 'latest v[0-9]+\.[0-9]+\.[0-9]+' "latest v${VERSION}" "banner \"latest\" stamp → v$VERSION"
+  replace_in_file "$banner_file" 'patched v[0-9]+\.[0-9]+\.[0-9]+' "patched v${VERSION}" "banner \"patched\" stamp → v$VERSION"
+done
+# The stamp above updates automatically, so "does it mention the version" can't
+# tell whether the WORDING is current — show the exact headline every release.
+readme_banner=$(grep -m1 -E '^> \*\*🆕' "$ROOT/README.md" | cut -c1-120)
+docs_banner=$(awk '/^<Note>/{getline; print; exit}' "$ROOT/docs/index.mdx" | cut -c1-120)
+echo -e "  ${YELLOW}CHECK${NC} Banner wording is manual — confirm it still describes v$VERSION:"
+echo -e "       README.md:      ${readme_banner:-(no 🆕 banner found)}…"
+echo -e "       docs/index.mdx: ${docs_banner:-(no <Note> banner found)}…"
+
 # ── Step 9: GitHub Release (optional) ──────────────────
 # Auto-creates for minor/major bumps (x.Y.0 or X.0.0), skips for patches.
 # Override with --release or --no-release.
