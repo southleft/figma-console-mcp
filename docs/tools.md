@@ -7,7 +7,7 @@ description: "Complete API reference for all 121 MCP tools, including parameters
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **121 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **95 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools along with `figma_diagnose` and `figma_scan_code_accessibility`. The `/sse` endpoint lists them.
+> **Note:** Local Mode (NPX/Git) provides **121 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **96 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools. Those run a headless browser session that only the `/sse` endpoint keeps open.
 
 ## Quick Reference
 
@@ -100,7 +100,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | **🖼️ Image** | `figma_set_image_fill` | Set image fill on nodes | Local / Cloud |
 | **🔍 Accessibility** | `figma_lint_design` | 14 WCAG checks with AA/best-practice level tagging | Local / Cloud |
 | | `figma_audit_component_accessibility` | Deep component scorecard: states, focus, color-blind simulation | Local / Cloud |
-| | `figma_scan_code_accessibility` | Scan HTML with axe-core (104 rules): ARIA, labels, landmarks, semantics | Local / Cloud |
+| | `figma_scan_code_accessibility` | Scan HTML with axe-core (104 rules): ARIA, labels, landmarks, semantics | Local |
 | **📌 FigJam** | `figjam_create_sticky` | Create a sticky note | Local / Cloud |
 | | `figjam_create_stickies` | Batch create up to 200 stickies | Local / Cloud |
 | | `figjam_create_connector` | Connect two nodes with optional label | Local / Cloud |
@@ -3236,7 +3236,7 @@ figma_audit_component_accessibility()
 
 Scan HTML code for accessibility violations using axe-core (Deque). Runs structural/semantic checks via JSDOM — no browser needed. Visual rules (color contrast) are disabled since they're handled by `figma_lint_design`.
 
-**Mode:** Local / Cloud (standalone — no Figma connection required)
+**Mode:** Local (standalone — no Figma connection required). Not available in Cloud Mode: its HTML parser (JSDOM) does not run in Cloudflare Workers.
 
 **When to Use:**
 - Scanning component HTML for ARIA, label, and semantic issues
@@ -3437,7 +3437,7 @@ Read the connection graph from a FigJam board. Returns all connectors as edges w
 
 Generate a pairing code to connect the Figma Desktop Bridge plugin to the cloud relay. This enables write operations from web-based AI clients.
 
-**Mode:** Cloud only (available on `/mcp` endpoint)
+**Mode:** Cloud only (available on both the `/mcp` and `/sse` endpoints)
 
 **Parameters:** None
 

@@ -201,7 +201,7 @@ Get all 121 tools including design creation, variable management, and component 
 
 ### Cloud Mode (Web AI Clients)
 
-Using Claude.ai, v0, Replit, or Lovable? Get full write access (95 tools) without installing Node.js.
+Using Claude.ai, v0, Replit, or Lovable? Get full write access (96 tools) without installing Node.js.
 
 <Steps>
   <Step title="Run the Desktop Bridge Plugin">
@@ -294,7 +294,7 @@ Figma Console MCP offers three connection tiers with different capabilities:
 
 | Feature | Local (NPX/Git) | Cloud Mode | Remote (Read-Only) |
 |---------|-----------------|------------|-------------------|
-| **Total tools** | **121** | **95** after pairing | Read-only subset |
+| **Total tools** | **121** | **96** after pairing | Read-only subset |
 | **Setup** | ~10 minutes | ~5 minutes | ~2 minutes |
 | **Create designs** | ✅ | ✅ | ❌ |
 | **Edit designs** | ✅ | ✅ | ❌ |

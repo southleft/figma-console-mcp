@@ -26,7 +26,6 @@ import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerLibraryTools, registerLibraryVariableTools } from "./core/library-tools.js";
-import { registerAccessibilityTools } from "./core/accessibility-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { wrapServerForIdentity } from "./core/identity.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
@@ -74,6 +73,10 @@ function isFigmaPAT(token: string): boolean {
  * Figma Console MCP Agent
  * Extends McpAgent to provide Figma-specific debugging tools
  */
+// Server version reported by figma_diagnose in both cloud endpoints.
+// scripts/release.sh keeps this current (it rewrites every `version: "x.y.z"` here).
+const cloudBuild = { version: "1.40.7" };
+
 export class FigmaConsoleMCPv3 extends McpAgent {
 	server = (() => {
 		const s = new McpServer({
@@ -1067,22 +1070,22 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// from subscribed team libraries; routes through the cloud Desktop Bridge)
 		registerLibraryVariableTools(this.server, getCloudDesktopConnector);
 
-		// Register code-side accessibility scanning (axe-core + JSDOM)
-		// Note: May not work in Cloudflare Workers due to JSDOM dependency
-		try {
-			registerAccessibilityTools(this.server);
-		} catch (e) {
-			// Silently skip if axe-core/jsdom not available in Workers environment
-		}
+		// figma_scan_code_accessibility (axe-core + JSDOM) is Local Mode only.
+		// JSDOM cannot run in Workers: called here it failed on every input
+		// ("JSDOM is not a constructor" on /sse, "MessagePort is not defined" on
+		// /mcp), so listing it in Cloud Mode only advertised a broken tool.
 
 		// Register figma_diagnose for cloud mode. Plugin state isn't directly
 		// observable from here (the paired plugin's WS lives in the relay DO),
 		// so we report mode and let the cross-MCP disclaimer do most of the work.
 		registerDiagnoseTool(this.server, {
 			mode: "cloud",
-			getServerVersion: () => "cloud",
+			getServerVersion: () => cloudBuild.version,
 			getPluginState: () => null,
-			getTokenState: () => ({ hasToken: false }),
+			// /sse only admits requests with a validated OAuth token or Figma PAT,
+			// so a running session always has one. (Previously this said "no token"
+			// on every call, which sent users chasing a problem they didn't have.)
+			getTokenState: () => ({ hasToken: true }),
 		});
 
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
@@ -1441,6 +1444,8 @@ export default {
 				return cloudFileUrlCache;
 			};
 			let cloudFileUrlCache: string | null = null;
+			// Relay snapshot for figma_diagnose: null = never paired on this token.
+			let relaySnapshot: { connected: boolean; fileName?: string; fileKey?: string | null; currentPage?: string } | null = null;
 
 			// Pre-fetch file info from relay if paired
 			try {
@@ -1449,7 +1454,13 @@ export default {
 					const doId = env.PLUGIN_RELAY.idFromString(relayDoId);
 					const stub = env.PLUGIN_RELAY.get(doId);
 					const statusRes = await stub.fetch('https://relay/relay/status');
-					const status = await statusRes.json() as { connected?: boolean; fileInfo?: { fileKey?: string | null } };
+					const status = await statusRes.json() as { connected?: boolean; fileInfo?: { fileName?: string; fileKey?: string | null; currentPage?: string } | null };
+					relaySnapshot = {
+						connected: status.connected === true,
+						fileName: status.fileInfo?.fileName,
+						fileKey: status.fileInfo?.fileKey ?? null,
+						currentPage: status.fileInfo?.currentPage,
+					};
 					if (status.connected && status.fileInfo?.fileKey) {
 						cloudFileUrlCache = `https://www.figma.com/design/${status.fileInfo.fileKey}`;
 					}
@@ -1519,6 +1530,16 @@ export default {
 			registerLibraryTools(statelessServer, async () => statelessApi);
 
 			registerLibraryVariableTools(statelessServer, getCloudDesktopConnector);
+
+			// Parity with /sse. (figma_scan_code_accessibility stays Local-only:
+			// JSDOM does not run in Workers — see the note in FigmaConsoleMCPv3.)
+			registerDiagnoseTool(statelessServer, {
+				mode: "cloud",
+				getServerVersion: () => cloudBuild.version,
+				getPluginState: () => relaySnapshot,
+				// This request already passed PAT / OAuth validation above.
+				getTokenState: () => ({ hasToken: true, source: isFigmaPAT(bearerToken) ? "bearer" : "oauth" }),
+			});
 
 			await statelessServer.connect(transport);
 			const response = await transport.handleRequest(request);
@@ -3004,7 +3025,7 @@ export default {
 			<div class="wrap">
 				<div class="section-head">
 					<h2 id="pillars-title">What it does</h2>
-					<p class="section-intro">Four jobs for teams that maintain a design system in Figma and ship it in code. The tools are built to manage the system and keep work true to it, not to draw on the canvas.</p>
+					<p class="section-intro">Four jobs for teams that maintain a design system in Figma and ship it in code. Every tool is built for managing design systems at scale.</p>
 				</div>
 				<ul class="pillars">
 					<li class="pillar">
@@ -3273,7 +3294,7 @@ All values are bound to space/* tokens.</code></pre>
 					</div>
 					<div class="mode">
 						<h3>Cloud</h3>
-						<p class="count"><span data-mode="cloud">95</span><span class="unit">tools</span></p>
+						<p class="count"><span data-mode="cloud">96</span><span class="unit">tools</span></p>
 						<p><strong>For web AI clients</strong> such as Claude.ai. Pair the Desktop Bridge plugin with a code and keep write access.</p>
 					</div>
 					<div class="mode">

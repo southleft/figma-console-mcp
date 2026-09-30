@@ -37,12 +37,12 @@ The MCP server has **three execution modes** and **four setup methods**:
 | Mode | Tools Available | Write Access | Needs Node.js | Real-time |
 |------|-----------------|--------------|---------------|-----------|
 | **Local Mode** (NPX or Git) | **121** | Yes | Yes | Yes |
-| **Cloud Mode** (Remote + Relay) | **95** | Yes | No | No |
+| **Cloud Mode** (Remote + Relay) | **96** | Yes | No | No |
 | **Remote Mode** (read-only) | Read-only subset | No | No | No |
 
-> **Bottom line:** Remote mode is read-only until you pair the plugin. Cloud Mode adds write access (95 tools) without Node.js. Local has everything (121 tools) including real-time monitoring.
+> **Bottom line:** Remote mode is read-only until you pair the plugin. Cloud Mode adds write access (96 tools) without Node.js. Local has everything (121 tools) including real-time monitoring.
 
-> **Two hosted endpoints.** The Cloud Mode count is for the `/mcp` endpoint that web AI clients use. The `/sse` endpoint that Claude Desktop and Claude Code connect to also lists the console-log, screenshot, navigation, status, and diagnostic tools and the code accessibility scan. Remote mode is either endpoint before you pair the plugin.
+> **Two hosted endpoints.** The Cloud Mode count is for the `/mcp` endpoint that web AI clients use. The `/sse` endpoint that Claude Desktop and Claude Code connect to also lists the console-log, screenshot, navigation, status, and reload tools, which need a headless browser session that only `/sse` keeps open. Remote mode is either endpoint before you pair the plugin.
 
 ### Use NPX Setup (Recommended for Most Users)
 - ✅ **All 121 tools** including design creation and real-time monitoring
@@ -52,7 +52,7 @@ The MCP server has **three execution modes** and **four setup methods**:
 - ⚠️ Requires Node.js 18+ and `FIGMA_ACCESS_TOKEN` (manual, one-time)
 
 ### Use Cloud Mode (Web AI Clients)
-- ✅ **95 tools** — full write access (create, edit, delete) plus REST API reads
+- ✅ **96 tools** — full write access (create, edit, delete) plus REST API reads
 - ✅ No Node.js required — only Figma Desktop with the Desktop Bridge plugin
 - ✅ Works with Claude.ai, v0, Replit, Lovable, any MCP-capable web platform
 - ✅ Variables without Enterprise plan (via Plugin API)
@@ -90,7 +90,7 @@ The MCP server has **three execution modes** and **four setup methods**:
 | **Desktop Bridge** | ❌ Not available | ✅ Required for relay | ✅ Available | ✅ Available |
 | **Node.js Required** | No | No | Yes | Yes |
 | **Source Access** | No | No | No | Yes |
-| **Tools** | Read-only subset | 95 (read/write) | 121 (full) | 121 (full) |
+| **Tools** | Read-only subset | 96 (read/write) | 121 (full) | 121 (full) |
 | **Use Case** | Quick evaluation | Web AI clients | Most users | Developers |
 
 ---
@@ -168,7 +168,7 @@ Figma Design Data
 - No Node.js required — relay runs entirely in Cloudflare Workers
 - Desktop Bridge plugin connects to the cloud relay via WebSocket
 - Pairing flow: AI generates 6-character code → user enters in plugin → connected
-- 95 tools available after pairing — write/manipulation + REST API reads + design system + slides + figjam + annotations + comments + version history
+- 96 tools available after pairing — write/manipulation + REST API reads + design system + slides + figjam + annotations + comments + version history
 - Variables work on any Figma plan (uses Plugin API, not Enterprise REST API)
 - Pairing code expires after 5 minutes
 
@@ -253,7 +253,7 @@ Variables & Components Data
 2. Tell your AI to connect to your Figma plugin (natural language)
 3. AI generates a 6-character pairing code
 4. In the Desktop Bridge plugin, toggle "Cloud Mode" and enter the code
-5. Done ✅ — 95 tools with full write access
+5. Done ✅ — 96 tools with full write access
 
 ### NPX
 **Prerequisites:**
@@ -391,7 +391,7 @@ The Desktop Bridge Plugin is the bridge between Figma and the MCP server. It com
 
 **Local Mode Transport:** The server automatically selects an available port in the range 9223–9232, supporting multiple simultaneous MCP instances. All 121 tools work through the WebSocket transport.
 
-**Cloud Mode Transport:** The plugin connects to the Cloudflare relay after pairing. Write operations are relayed from the cloud MCP server through the Durable Object to the plugin. 95 tools are available.
+**Cloud Mode Transport:** The plugin connects to the Cloudflare relay after pairing. Write operations are relayed from the cloud MCP server through the Durable Object to the plugin. 96 tools are available.
 
 ### Plugin Does NOT Work with Remote Read-Only Mode
 
@@ -517,7 +517,7 @@ All setup methods are completely free:
 
 **Key Takeaway:** The three modes offer a clear capability progression:
 - **Remote (read-only):** view data, screenshots, design system extraction
-- **Cloud Mode:** 95 tools — adds full write access (create, edit, delete) via relay
+- **Cloud Mode:** 96 tools — adds full write access (create, edit, delete) via relay
 - **Local Mode (NPX/Git):** 121 tools — adds real-time monitoring (selection, changes, console)
 
 The difference is not just authentication, but **fundamental capabilities**:

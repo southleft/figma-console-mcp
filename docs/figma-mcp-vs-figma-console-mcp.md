@@ -76,7 +76,7 @@ Console MCP concentrates on operating a design system across Figma and code. Eac
 
 Rule-based checks that return the same result for the same input, so they can gate a merge or a release:
 
-- **Accessibility**: `figma_lint_design` (WCAG checks on the canvas), `figma_audit_component_accessibility` (state, focus, and color-blind scorecard for a component), and `figma_scan_code_accessibility` (axe-core scan of HTML).
+- **Accessibility**: `figma_lint_design` (WCAG checks on the canvas), `figma_audit_component_accessibility` (state, focus, and color-blind scorecard for a component), and `figma_scan_code_accessibility` (axe-core scan of HTML, Local Mode).
 - **Design-code parity**: `figma_check_design_parity` compares a Figma component with its code implementation and reports each discrepancy.
 - **Design-system health**: `figma_audit_design_system_report` scores naming, token architecture, component metadata, accessibility, consistency, and coverage, and says which findings the MCP can fix.
 - **Extracted-system fidelity**: `figma_ds_verify` checks that tokens extracted from a codebase parse, resolve, and are ready to import into Figma.
@@ -125,7 +125,7 @@ Neither approach is universally better. A script is flexible and handles one-off
 | **Runs where** | Hosted by Figma | Your machine (`npx` or a git clone), Southleft's hosted Cloud Mode, or your own Cloudflare deployment |
 | **Connection to Figma** | Figma's service | Desktop Bridge plugin over WebSocket, plus the Figma REST API |
 | **Authentication** | OAuth | Personal access token; OAuth for the hosted remote endpoints |
-| **Web AI clients** | Any client that supports remote MCP servers | Cloud Mode: Yes (95 tools) after pairing the Desktop Bridge plugin |
+| **Web AI clients** | Any client that supports remote MCP servers | Cloud Mode: Yes (96 tools) after pairing the Desktop Bridge plugin |
 | **Source code** | Operated by Figma | Open source (MIT), self-hostable |
 
 For Figma's current plan requirements and usage limits, see [Figma's documentation](https://developers.figma.com/docs/figma-mcp-server/). Figma Console MCP is free. It calls the Figma REST API with your own token, so Figma's REST API rate limits apply.

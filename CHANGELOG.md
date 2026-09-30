@@ -5,6 +5,16 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Cloud Mode endpoint fixes. Cloudflare Worker only: nothing changes for npm (Local Mode) users, and **no plugin re-import is needed**.
+
+### Fixed
+
+- **`figma_diagnose` on the `/mcp` endpoint.** Web AI clients in Cloud Mode had no health check. It now reports whether the Desktop Bridge plugin is paired and connected to the cloud relay, which file is active, and how to pair or reconnect.
+- **`figma_diagnose` in Cloud Mode no longer reports a missing token.** It always said "No Figma access token detected", even though the endpoint only accepts requests with a valid token. It also reported its version as "cloud" and gave Local Mode advice for plugin problems.
+- **`figma_scan_code_accessibility` is no longer listed in Cloud Mode.** Its HTML parser (JSDOM) cannot run in Cloudflare Workers, so on `/sse` every call failed with "JSDOM is not a constructor" and a misleading "npm install" hint. It remains available in Local Mode.
+
 ## [1.40.7] - 2026-09-27
 
 Readability of the `figma_generate_component_doc` Color Tokens table. Server-only: **no plugin re-import needed**.

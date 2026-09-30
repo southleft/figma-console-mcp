@@ -53,14 +53,21 @@ function buildReport(opts: DiagnoseToolOptions): string {
 	const plugin = opts.getPluginState?.();
 	lines.push("## Plugin connection");
 	if (!plugin) {
-		lines.push("- No WebSocket server (cloud mode runs without a local plugin bridge unless paired).");
+		if (opts.mode === "cloud") {
+			lines.push("- Desktop Bridge plugin not paired with this cloud session. Read tools that use the Figma REST API work; write tools need pairing.");
+			lines.push("- To pair: call `figma_pair_plugin`, then enter the code in the plugin's Cloud Mode section in Figma Desktop.");
+		} else {
+			lines.push("- No WebSocket server (cloud mode runs without a local plugin bridge unless paired).");
+		}
 	} else if (plugin.connected) {
 		const portInfo = plugin.portFallbackFrom && plugin.port && plugin.port !== plugin.portFallbackFrom
 			? `port ${plugin.port} (fallback from ${plugin.portFallbackFrom})`
 			: plugin.port
 				? `port ${plugin.port}`
 				: "connected";
-		lines.push(`- ✅ Desktop Bridge plugin connected on ${portInfo}.`);
+		lines.push(opts.mode === "cloud"
+			? "- ✅ Desktop Bridge plugin connected through the cloud relay."
+			: `- ✅ Desktop Bridge plugin connected on ${portInfo}.`);
 		if (plugin.fileName) {
 			lines.push(`- Active file: **${plugin.fileName}**${plugin.currentPage ? ` (page: ${plugin.currentPage})` : ""}.`);
 		}
@@ -73,6 +80,9 @@ function buildReport(opts: DiagnoseToolOptions): string {
 				`- ⚠️ **Plugin update available**: the imported plugin${plugin.pluginVersion ? ` (v${plugin.pluginVersion})` : " (version unknown — very old)"} differs from the plugin files this server ships (v${bundledVersion}). Figma caches plugin files, so re-import it: Figma Desktop → Plugins → Development → Import plugin from manifest → select manifest.json. Until then, recently added or fixed plugin features may silently misbehave.`,
 			);
 		}
+	} else if (opts.mode === "cloud") {
+		lines.push("- ⚠️ Paired before, but the Desktop Bridge plugin is not connected to the cloud relay right now.");
+		lines.push("- To fix: open the plugin in Figma Desktop and reconnect in its Cloud Mode section. If the pairing expired, call `figma_pair_plugin` for a new code.");
 	} else {
 		lines.push(`- ⚠️ Desktop Bridge plugin not connected${plugin.port ? ` (server is listening on port ${plugin.port})` : ""}.`);
 		lines.push("- To fix: open the Figma Desktop Bridge plugin in Figma Desktop. If it was already running, close and reopen it once.");
@@ -84,7 +94,7 @@ function buildReport(opts: DiagnoseToolOptions): string {
 	if (!token) {
 		lines.push("- Token state not available in this mode.");
 	} else if (token.hasToken) {
-		lines.push(`- ✅ Figma access token detected (source: ${token.source ?? "unknown"}). REST-based tools should work.`);
+		lines.push(`- ✅ Figma access token detected${token.source ? ` (source: ${token.source})` : ""}. REST-based tools should work.`);
 	} else {
 		lines.push("- ⚠️ No Figma access token detected. Plugin-based tools still work; REST-only tools (file data, version history, image rendering) will return an auth error.");
 		if (opts.mode === "local") {
