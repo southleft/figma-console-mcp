@@ -80,7 +80,7 @@ Or add to `~/.claude.json` manually:
 
 Restart Claude Code (`/mcp` to reconnect) — mcp-remote will open a browser for OAuth, and the connection will work correctly.
 
-**Alternative:** If you're using Claude Code, consider using [Local Mode](/setup#local-mode-setup-advanced) instead. It provides the full feature set including the Desktop Bridge plugin, and doesn't require OAuth (uses a Personal Access Token).
+**Alternative:** If you're using Claude Code, consider using [Local Mode](/setup#-npx-setup-recommended) instead. It provides the full feature set including the Desktop Bridge plugin, and doesn't require OAuth (uses a Personal Access Token).
 
 ---
 
