@@ -60,6 +60,30 @@ The reconstruction format returns the node specification directly at the root le
 }
 ```
 
+Auto-layout frames also carry their layout and sizing, including min/max constraints, and each child's position relative to its parent:
+
+```json
+{
+  "name": "Card",
+  "type": "COMPONENT",
+  "x": 0, "y": 0, "width": 320, "height": 56,
+  "layoutMode": "HORIZONTAL",
+  "primaryAxisSizingMode": "AUTO",
+  "counterAxisSizingMode": "AUTO",
+  "itemSpacing": 12,
+  "paddingLeft": 16, "paddingRight": 16, "paddingTop": 8, "paddingBottom": 8,
+  "layoutSizingHorizontal": "HUG",
+  "minWidth": 320,
+  "maxWidth": 640,
+  "children": [
+    { "name": "Body", "type": "FRAME", "x": 16, "y": 8, "width": 252, "height": 40,
+      "layoutSizingHorizontal": "FILL", "minHeight": 40, "maxHeight": 200 }
+  ]
+}
+```
+
+The reconstruction format always reads the node tree from the Figma REST API, so it needs a Figma access token even when the Desktop Bridge plugin is connected.
+
 **Note:** Unlike the metadata format which wraps the response with `fileKey`, `nodeId`, and `source` fields, the reconstruction format returns the raw spec for direct plugin compatibility.
 
 ## Supported Node Types

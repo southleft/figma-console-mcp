@@ -1779,7 +1779,7 @@ figma_get_library_component_by_key({
 - `name`, `description`, `thumbnail_url`, `containing_frame`, `user`, `created_at`, `updated_at`
 - `properties`: `componentPropertyDefinitions` (VARIANT / BOOLEAN / TEXT / INSTANCE_SWAP)
 - `variants[]`: each with `name`, `nodeId`, `key` (the value to pass to `figma_instantiate_component`), and optional `visualSpec`
-- `visualSpec`: root-level fills/strokes/effects/padding/typography
+- `visualSpec`: root-level fills/strokes/effects/padding/typography, plus `sizing` (fixed/hug/fill and min/max width and height)
 - `bounds`: width × height of the component set
 - `compression` (only when stripped): `{ originalSizeKB, finalSizeKB, strippedVisualSpecs: true }`
 - `warnings[]`: non-fatal issues (e.g. variant-key resolution skipped)
@@ -2459,7 +2459,8 @@ figma_get_design_system_kit({
       "visualSpec": {
         "fills": [{ "type": "SOLID", "color": "#4375FF" }],
         "cornerRadius": 8,
-        "layout": { "mode": "HORIZONTAL", "paddingTop": 12, "paddingLeft": 24 }
+        "layout": { "mode": "HORIZONTAL", "paddingTop": 12, "paddingLeft": 24 },
+        "sizing": { "horizontal": "HUG", "vertical": "HUG", "minWidth": 320, "maxWidth": 640 }
       }
     }],
     "summary": { "totalComponents": 12, "totalComponentSets": 5 }

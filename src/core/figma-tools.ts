@@ -8,7 +8,7 @@ import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
 import type { FigmaAPI, FigmaUrlInfo } from "./figma-api.js";
-import { extractFileKey, extractFigmaUrlInfo, formatVariables, formatComponentData, withTimeout } from "./figma-api.js";
+import { extractFileKey, extractFigmaUrlInfo, formatVariables, formatComponentData, withTimeout, normalizeNodeId } from "./figma-api.js";
 import { createChildLogger } from "./logger.js";
 import { identifiedError, withIdentity } from "./identity.js";
 import { EnrichmentService } from "./enrichment/index.js";
@@ -928,10 +928,15 @@ export function registerFigmaAPITools(
 
 				logger.info({ fileKey, depth, nodeIds, enrich, verbosity }, "Fetching file data");
 
-				const fileData = await api.getFile(fileKey, {
-					depth,
-					ids: nodeIds,
-				});
+				const wantsNodes = Array.isArray(nodeIds) && nodeIds.length > 0;
+				// With nodeIds, the document is just the page list (depth 1): the file
+				// endpoint counts depth from the document root, so passing ids + depth
+				// there cut the requested nodes off entirely. The nodes themselves come
+				// from the nodes endpoint, where depth counts from each node.
+				const fileData = await api.getFile(fileKey, wantsNodes ? { depth: 1 } : { depth });
+				const nodesData = wantsNodes
+					? await api.getNodes(fileKey, nodeIds, depth ? { depth } : undefined)
+					: null;
 
 				// Apply verbosity filtering to reduce payload size
 				const filterNode = (node: any, level: "summary" | "standard" | "full"): any => {
@@ -962,6 +967,17 @@ export function registerFigmaAPITools(
 						// Include bounds for layout calculations
 						if (node.absoluteBoundingBox) filtered.absoluteBoundingBox = node.absoluteBoundingBox;
 						if (node.size) filtered.size = node.size;
+
+						// Auto-layout and sizing (fixed/hug/fill, min/max constraints)
+						for (const k of [
+							"layoutMode", "layoutSizingHorizontal", "layoutSizingVertical",
+							"primaryAxisSizingMode", "counterAxisSizingMode", "layoutWrap",
+							"primaryAxisAlignItems", "counterAxisAlignItems", "counterAxisSpacing", "layoutPositioning",
+							"minWidth", "maxWidth", "minHeight", "maxHeight",
+							"paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "itemSpacing",
+						]) {
+							if (node[k] !== undefined && node[k] !== null) filtered[k] = node[k];
+						}
 
 						// Include component/instance info for plugin work
 						if (node.componentId) filtered.componentId = node.componentId;
@@ -996,6 +1012,20 @@ export function registerFigmaAPITools(
 					? filterNode(fileData.document, verbosity || "standard")
 					: fileData.document;
 
+				// Requested nodes, filtered at the same verbosity. A node the API
+				// can't find comes back as null rather than silently disappearing.
+				const filterNodes = (level: "summary" | "standard" | "full") => {
+					if (!nodesData?.nodes) return undefined;
+					const out: Record<string, any> = {};
+					// Iterate the REQUESTED ids (normalized, de-duplicated): getNodes also
+					// keys each node under a dashed alias, which doubled every node.
+					for (const id of [...new Set(nodeIds!.map(normalizeNodeId))]) {
+						const doc = nodesData.nodes[id]?.document;
+						out[id] = doc ? (level === "full" ? doc : filterNode(doc, level)) : null;
+					}
+					return out;
+				};
+
 				let response: any = {
 					fileKey,
 					name: fileData.name,
@@ -1009,9 +1039,9 @@ export function registerFigmaAPITools(
 						? Object.keys(fileData.styles).length
 						: 0,
 					verbosity: verbosity || "standard",
-					...(nodeIds && {
+					...(wantsNodes && {
 						requestedNodes: nodeIds,
-						nodes: fileData.nodes,
+						nodes: filterNodes((verbosity || "standard") as "summary" | "standard" | "full"),
 					}),
 				};
 
@@ -1050,6 +1080,7 @@ export function registerFigmaAPITools(
 						const refiltered = {
 							...finalResponse,
 							document: filterNode(fileData.document, level),
+							...(wantsNodes && { nodes: filterNodes(level) }),
 							verbosity: level,
 						};
 						return refiltered;
@@ -2592,7 +2623,11 @@ export function registerFigmaAPITools(
 				logger.info({ fileKey, nodeId, format, enrich }, "Fetching component data");
 
 				// PRIORITY 1: Try Desktop Bridge plugin UI first (has reliable description field!)
-				if (getDesktopConnector) {
+				// Metadata only. The plugin's GET_COMPONENT result carries no geometry or
+				// layout, so building a reconstruction spec from it produced 50x50
+				// placeholder nodes with no auto-layout or min/max sizing. Reconstruction
+				// always uses the REST node tree below.
+				if (getDesktopConnector && format !== "reconstruction") {
 					try {
 						logger.info({ nodeId }, "Attempting to get component via Desktop Bridge plugin UI");
 
@@ -2612,53 +2647,6 @@ export function registerFigmaAPITools(
 								},
 								"Successfully retrieved component via Desktop Bridge plugin UI!"
 							);
-
-							// Handle reconstruction format
-							if (format === "reconstruction") {
-								const reconstructionSpec = extractNodeSpec(desktopResult.component);
-								const validation = validateReconstructionSpec(reconstructionSpec);
-
-								if (!validation.valid) {
-									logger.warn({ errors: validation.errors }, "Reconstruction spec validation warnings");
-								}
-
-								// Check if this is a COMPONENT_SET - plugin cannot create these
-								if (reconstructionSpec.type === 'COMPONENT_SET') {
-									const variants = listVariants(desktopResult.component);
-
-									return {
-										content: [
-											{
-												type: "text",
-												text: JSON.stringify({
-													error: "COMPONENT_SET_NOT_SUPPORTED",
-													message: "The Figma Component Reconstructor plugin cannot create COMPONENT_SET nodes (variant containers). Please select a specific variant component instead.",
-													componentName: reconstructionSpec.name,
-													availableVariants: variants,
-													instructions: [
-														"1. In Figma, expand the component set to see individual variants",
-														"2. Select the specific variant you want to reconstruct",
-														"3. Copy the node ID of that variant",
-														"4. Use figma_get_component with that variant's node ID"
-													],
-													note: "COMPONENT_SET is automatically created by Figma when you have variants. The plugin can only create individual COMPONENT nodes."
-												}),
-											},
-										],
-									};
-								}
-
-								// Return spec directly for plugin compatibility
-								// Plugin expects name, type, etc. at root level
-								return {
-									content: [
-										{
-											type: "text",
-											text: JSON.stringify(reconstructionSpec),
-										},
-									],
-								};
-							}
 
 							// Handle metadata format (original behavior)
 							let formatted = desktopResult.component;
@@ -2726,6 +2714,13 @@ export function registerFigmaAPITools(
 					api = await getFigmaAPI();
 				} catch (apiError) {
 					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					if (format === "reconstruction") {
+						throw restAuthError(
+							"Cannot build a reconstruction spec. It reads the node tree (sizes, positions, auto-layout, min/max constraints) from the Figma REST API, which needs a Figma access token.",
+							`REST API: ${errorMessage}`,
+							"The Desktop Bridge plugin can't substitute here: its component lookup returns metadata only. For token-free structured data, use figma_get_component_for_development_deep.",
+						);
+					}
 					const dbStatus = getDesktopConnector
 						? "Failed (see logs above)"
 						: "Not available";
@@ -2736,7 +2731,9 @@ export function registerFigmaAPITools(
 					);
 				}
 
-				const componentData = await api.getComponentData(fileKey, nodeId);
+				// Reconstruction needs the whole tree: at depth 4, deeper layers came
+				// back with no children key and were silently rebuilt as leaves.
+				const componentData = await api.getComponentData(fileKey, nodeId, format === "reconstruction" ? null : 4);
 
 				if (!componentData) {
 					throw new Error(`Component not found: ${nodeId}`);
@@ -3655,10 +3652,15 @@ export function registerFigmaAPITools(
 
 				logger.info({ fileKey, depth, nodeIds }, "Fetching file data for plugin development");
 
-				const fileData = await api.getFile(fileKey, {
-					depth,
-					ids: nodeIds,
-				});
+				const wantsNodes = Array.isArray(nodeIds) && nodeIds.length > 0;
+				// With nodeIds, the document is just the page list (depth 1): the file
+				// endpoint counts depth from the document root, so passing ids + depth
+				// there cut the requested nodes off entirely. The nodes themselves come
+				// from the nodes endpoint, where depth counts from each node.
+				const fileData = await api.getFile(fileKey, wantsNodes ? { depth: 1 } : { depth });
+				const nodesData = wantsNodes
+					? await api.getNodes(fileKey, nodeIds, depth ? { depth } : undefined)
+					: null;
 
 				// Filter to plugin-relevant properties only
 				const filterForPlugin = (node: any): any => {
@@ -3726,9 +3728,14 @@ export function registerFigmaAPITools(
 					styles: fileData.styles
 						? Object.keys(fileData.styles).length
 						: 0,
-					...(nodeIds && {
+					...(wantsNodes && {
 						requestedNodes: nodeIds,
-						nodes: fileData.nodes,
+						nodes: Object.fromEntries(
+							[...new Set(nodeIds!.map(normalizeNodeId))].map((id) => {
+								const doc = nodesData?.nodes?.[id]?.document;
+								return [id, doc ? filterForPlugin(doc) : null];
+							}),
+						),
 					}),
 					metadata: {
 						purpose: "plugin_development",

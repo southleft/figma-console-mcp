@@ -32,10 +32,10 @@ export interface CodeSpec {
 		gap?: number;
 		width?: number | string;
 		height?: number | string;
-		minWidth?: number;
-		minHeight?: number;
-		maxWidth?: number;
-		maxHeight?: number;
+		minWidth?: number | string;
+		minHeight?: number | string;
+		maxWidth?: number | string;
+		maxHeight?: number | string;
 		layoutDirection?: "horizontal" | "vertical";
 	};
 

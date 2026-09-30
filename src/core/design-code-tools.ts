@@ -1180,6 +1180,10 @@ function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new M
 		{ key: "counterAxisSpacing", label: "Row gap (wrap)" },
 		{ key: "cornerRadius", label: "Border radius" },
 		{ key: "strokeWeight", label: "Border width" },
+		{ key: "minWidth", label: "Min width" },
+		{ key: "maxWidth", label: "Max width" },
+		{ key: "minHeight", label: "Min height" },
+		{ key: "maxHeight", label: "Max height" },
 	];
 
 	for (const { key, label } of spacingProps) {
@@ -1299,6 +1303,10 @@ const SPACING_COMPARISON_PROPS = [
 	{ key: "counterAxisSpacing", label: "Row gap (wrap)" },
 	{ key: "cornerRadius", label: "Border radius" },
 	{ key: "strokeWeight", label: "Border width" },
+	{ key: "minWidth", label: "Min width" },
+	{ key: "maxWidth", label: "Max width" },
+	{ key: "minHeight", label: "Min height" },
+	{ key: "maxHeight", label: "Max height" },
 ];
 
 /** Cap on variant names spelled out in a single note, so 100-variant sets stay readable */
@@ -1673,7 +1681,7 @@ function compareVisual(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscr
 	}
 }
 
-function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscrepancy[]): void {
+export function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscrepancy[]): void {
 	const cs = codeSpec.spacing;
 	if (!cs) return;
 
@@ -1730,6 +1738,63 @@ function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: ParityDisc
 				designValue: designSpacing.height,
 				codeValue: cs.height,
 				message: `Height mismatch: design=${designSpacing.height}px, code=${cs.height}`,
+			});
+		}
+	}
+
+	// Min/max size constraints. The code spec accepted these but they were never
+	// compared, so a component whose Figma frame had a 320px min-width passed
+	// parity against code with none.
+	for (const key of ["minWidth", "maxWidth", "minHeight", "maxHeight"] as const) {
+		const dVal = typeof node?.[key] === "number" ? (node[key] as number) : undefined;
+		const raw = cs[key] as number | string | undefined;
+		const parsed = typeof raw === "string" ? parseFloat(raw) : raw;
+		// Only px can be compared; a non-px length ("20rem") is reported as-is.
+		const cVal = typeof parsed === "number" && !isNaN(parsed)
+			&& !(typeof raw === "string" && /[a-z%]/i.test(raw.replace(/px\s*$/i, "")))
+			? parsed : undefined;
+		const cUnparsed = raw !== undefined && cVal === undefined ? String(raw) : undefined;
+		const css = key.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`);
+		if (dVal !== undefined && cUnparsed !== undefined) {
+			discrepancies.push({
+				category: "spacing",
+				property: key,
+				severity: "info",
+				designValue: dVal,
+				codeValue: cUnparsed,
+				message: `${css} is ${dVal}px in Figma and ${cUnparsed} in code; not compared (non-px unit)`,
+			});
+		} else if (dVal !== undefined && cVal !== undefined) {
+			if (!numericClose(dVal, cVal, 1)) {
+				discrepancies.push({
+					category: "spacing",
+					property: key,
+					// Same weight as a padding mismatch: a wrong min/max breaks layout.
+					severity: "major",
+					designValue: dVal,
+					codeValue: cVal,
+					message: `${css} mismatch: design=${dVal}px, code=${cVal}px`,
+					suggestion: `Set ${css}: ${dVal}px`,
+				});
+			}
+		} else if (dVal !== undefined) {
+			discrepancies.push({
+				category: "spacing",
+				property: key,
+				severity: "minor",
+				designValue: dVal,
+				codeValue: null,
+				message: `${css} is ${dVal}px in Figma but not set in code`,
+				suggestion: `Add ${css}: ${dVal}px`,
+			});
+		} else if (cVal !== undefined || cUnparsed !== undefined) {
+			discrepancies.push({
+				category: "spacing",
+				property: key,
+				severity: "info",
+				designValue: null,
+				codeValue: cVal ?? cUnparsed ?? null,
+				message: `${css} is ${cVal !== undefined ? `${cVal}px` : cUnparsed} in code but not set in Figma`,
 			});
 		}
 	}
@@ -3714,10 +3779,10 @@ const codeSpecSchema = z.object({
 		gap: z.number().optional(),
 		width: z.union([z.number(), z.string()]).optional(),
 		height: z.union([z.number(), z.string()]).optional(),
-		minWidth: z.number().optional(),
-		minHeight: z.number().optional(),
-		maxWidth: z.number().optional(),
-		maxHeight: z.number().optional(),
+		minWidth: z.union([z.number(), z.string()]).optional().describe("px number or CSS length like '320px'"),
+		minHeight: z.union([z.number(), z.string()]).optional(),
+		maxWidth: z.union([z.number(), z.string()]).optional(),
+		maxHeight: z.union([z.number(), z.string()]).optional(),
 		layoutDirection: z.enum(["horizontal", "vertical"]).optional(),
 	}).optional().describe("Spacing and layout properties from code"),
 	typography: z.object({

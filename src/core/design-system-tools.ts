@@ -51,6 +51,15 @@ interface VisualSpec {
 		primaryAxisAlign?: string;
 		counterAxisAlign?: string;
 	};
+	/** Resizing behavior + min/max constraints (CSS width/min-width/max-width…). */
+	sizing?: {
+		horizontal?: string; // FIXED | HUG | FILL
+		vertical?: string;
+		minWidth?: number;
+		maxWidth?: number;
+		minHeight?: number;
+		maxHeight?: number;
+	};
 	typography?: {
 		fontFamily?: string;
 		fontSize?: number;
@@ -226,6 +235,19 @@ export function extractVisualSpec(node: any): VisualSpec | undefined {
 		if (node.itemSpacing !== undefined) spec.layout.itemSpacing = node.itemSpacing;
 		if (node.primaryAxisAlignItems) spec.layout.primaryAxisAlign = node.primaryAxisAlignItems;
 		if (node.counterAxisAlignItems) spec.layout.counterAxisAlign = node.counterAxisAlignItems;
+		hasData = true;
+	}
+
+	// Sizing: fixed/hug/fill and min/max constraints. These were missing, so a
+	// component with a 320px min-width came out of the kit with no trace of it.
+	const sizing: NonNullable<VisualSpec["sizing"]> = {};
+	if (node.layoutSizingHorizontal) sizing.horizontal = node.layoutSizingHorizontal;
+	if (node.layoutSizingVertical) sizing.vertical = node.layoutSizingVertical;
+	for (const k of ["minWidth", "maxWidth", "minHeight", "maxHeight"] as const) {
+		if (typeof node[k] === "number") sizing[k] = node[k];
+	}
+	if (Object.keys(sizing).length > 0) {
+		spec.sizing = sizing;
 		hasData = true;
 	}
 
@@ -964,6 +986,8 @@ export function registerDesignSystemTools(
 					"   - layout.paddingTop/Right/Bottom/Left → padding\n" +
 					"   - layout.itemSpacing → gap\n" +
 					"   - layout.primaryAxisAlign → justify-content, counterAxisAlign → align-items\n" +
+					"   - sizing.minWidth/maxWidth/minHeight/maxHeight → min-width/max-width/min-height/max-height\n" +
+					"   - sizing.horizontal/vertical: FIXED → explicit size from bounds, HUG → fit-content, FILL → stretch to the parent (flex: 1 on the main axis, align-self: stretch across it)\n" +
 					"   - typography → font-family, font-size, font-weight, line-height, letter-spacing\n" +
 					"   - Variant specs are delta-encoded: one base variant carries the full visualSpec; " +
 					"sibling variants carry 'visualSpecDelta' with ONLY the properties that differ from the base " +

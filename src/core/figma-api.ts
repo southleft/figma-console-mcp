@@ -555,9 +555,10 @@ export class FigmaAPI {
    * Normalizes dashed node IDs ("695-313") to colon form ("695:313") so the
    * response-map lookup matches Figma's colon-keyed response.
    */
-  async getComponentData(fileKey: string, nodeId: string, depth = 4): Promise<any> {
+  async getComponentData(fileKey: string, nodeId: string, depth: number | null = 4): Promise<any> {
     const normalizedId = normalizeNodeId(nodeId);
-    const response = await this.getNodes(fileKey, [normalizedId], { depth });
+    // depth null = the whole subtree (no depth parameter sent)
+    const response = await this.getNodes(fileKey, [normalizedId], depth === null ? undefined : { depth });
     return response.nodes?.[normalizedId] ?? response.nodes?.[nodeId];
   }
 

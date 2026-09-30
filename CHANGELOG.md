@@ -5,13 +5,17 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.40.8] - 2026-09-30
 
-Cloud Mode endpoint fixes. Cloudflare Worker only: nothing changes for npm (Local Mode) users, and **no plugin re-import is needed**.
+Min/max sizing now survives every way of extracting a component as JSON, the reconstruction format returns real geometry again, and Cloud Mode's health check tells the truth. Server-only: **no plugin re-import needed**.
 
 ### Fixed
 
-- **`figma_diagnose` on the `/mcp` endpoint.** Web AI clients in Cloud Mode had no health check. It now reports whether the Desktop Bridge plugin is paired and connected to the cloud relay, which file is active, and how to pair or reconnect.
+- **Min/max width and height were dropped by most extraction tools.** A container with a 320px min-width came out of `figma_get_design_system_kit`, the `reconstruction` format of `figma_get_component`, and `figma_get_file_data` (standard verbosity) with no trace of it. All three now carry `minWidth` / `maxWidth` / `minHeight` / `maxHeight` and the fixed / hug / fill sizing mode (`visualSpec.sizing` in the kit, with the CSS mapping added to its instructions), and `figma_generate_component_doc` lists min/max width and height with their bound tokens. `figma_get_component_for_development` and `figma_get_component_for_development_deep` already had them. Reported by Brett Cooper.
+- **`figma_check_design_parity` now compares min/max sizing.** Its code-side input accepted `minWidth`, `maxWidth`, `minHeight` and `maxHeight` but never compared them, so a component missing its min-width in code passed. A different value is a major discrepancy (the same weight as a padding mismatch), a constraint set in Figma but missing in code is minor, and one set only in code is noted as info. Values may be numbers or CSS lengths: `"320px"` is compared, and a non-px length such as `"20rem"` is reported without guessing a conversion.
+- **The `reconstruction` format returned placeholder geometry whenever the Desktop Bridge plugin was connected.** It was built from the plugin's component lookup, which carries metadata only, so every node came back 50×50 with no auto-layout, padding or sizing. It now always reads the node tree from the REST API. It also reads the whole tree (it stopped at depth 4, and deeper layers were rebuilt as empty leaves), places children relative to their parent (they were all at 0,0, and a group's children are positioned relative to the group's parent, as in Figma), and keeps what a rebuild depends on: alignment, wrap, hidden layers, absolute positioning, grow/stretch, clip content, and grid track counts and gaps. Auto-layout fields the REST API omits at their defaults are filled in, with a missing sizing mode derived from the axis's fixed / hug / fill setting. Rotation is still not carried. Without a Figma token it now says why, instead of suggesting the plugin.
+- **`figma_get_file_data` and `figma_get_file_for_plugin` ignored `nodeIds`.** The file endpoint counts `depth` from the document root, so the requested nodes were cut off and the response carried an empty page list. Requested nodes now come back under `nodes`, filtered at the requested verbosity, once each (a dashed id copied from a URL no longer returns the node twice), with `depth` counted from each node. `standard` verbosity now includes auto-layout, alignment, sizing and min/max fields.
+- **`figma_diagnose` on the `/mcp` endpoint (Cloud Mode).** Web AI clients in Cloud Mode had no health check. It now reports whether the Desktop Bridge plugin is paired and connected to the cloud relay, which file is active, and how to pair or reconnect.
 - **`figma_diagnose` in Cloud Mode no longer reports a missing token.** It always said "No Figma access token detected", even though the endpoint only accepts requests with a valid token. It also reported its version as "cloud" and gave Local Mode advice for plugin problems.
 - **`figma_scan_code_accessibility` is no longer listed in Cloud Mode.** Its HTML parser (JSDOM) cannot run in Cloudflare Workers, so on `/sse` every call failed with "JSDOM is not a constructor" and a misleading "npm install" hint. It remains available in Local Mode.
 
@@ -1450,6 +1454,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.40.8]: https://github.com/southleft/figma-console-mcp/compare/v1.40.7...v1.40.8
 [1.40.7]: https://github.com/southleft/figma-console-mcp/compare/v1.40.6...v1.40.7
 [1.40.6]: https://github.com/southleft/figma-console-mcp/compare/v1.40.5...v1.40.6
 [1.40.5]: https://github.com/southleft/figma-console-mcp/compare/v1.40.4...v1.40.5

@@ -107,7 +107,7 @@ interface FrameNodeSpec extends BaseNodeSpec {
   cornerRadius?: number;
   rectangleCornerRadii?: [number, number, number, number];
   effects?: Effect[];
-  layoutMode?: 'NONE' | 'HORIZONTAL' | 'VERTICAL';
+  layoutMode?: 'NONE' | 'HORIZONTAL' | 'VERTICAL' | 'GRID';
   paddingLeft?: number;
   paddingRight?: number;
   paddingTop?: number;
@@ -117,7 +117,17 @@ interface FrameNodeSpec extends BaseNodeSpec {
   primaryAxisAlignItems?: string;
   counterAxisAlignItems?: string;
   primaryAxisSizingMode?: string;
+  counterAxisSizingMode?: string;
   layoutWrap?: string;
+  minWidth?: number;
+  maxWidth?: number;
+  minHeight?: number;
+  maxHeight?: number;
+  gridRowCount?: number;
+  gridColumnCount?: number;
+  gridRowGap?: number;
+  gridColumnGap?: number;
+  strokesIncludedInLayout?: boolean;
   clipsContent?: boolean;
   variantProperties?: Record<string, string>;
 }
@@ -278,7 +288,7 @@ export function convertEffects(effects: any): Effect[] {
 /**
  * Recursively extract node specification for reconstruction
  */
-export function extractNodeSpec(node: any): NodeSpecification {
+export function extractNodeSpec(node: any, parentBox?: { x: number; y: number } | null): NodeSpecification {
   const spec: any = {
     name: node.name,
     type: node.type,
@@ -293,17 +303,41 @@ export function extractNodeSpec(node: any): NodeSpecification {
     // Children will be processed recursively and also converted if needed
   }
 
-  // Position - provide defaults if missing
+  // Position. Plugin API nodes carry x/y relative to the parent. REST nodes
+  // only carry absoluteBoundingBox, so a child's position is its box minus
+  // the parent's box (previously every REST child was placed at 0,0). The
+  // root is always placed at 0,0.
+  const box = node.absoluteBoundingBox;
+  const hasBox = box && typeof box.x === 'number' && typeof box.y === 'number';
   if ('x' in node && typeof node.x === 'number') {
     spec.x = node.x;
+  } else if (parentBox && hasBox) {
+    spec.x = box.x - parentBox.x;
   } else if (node.type !== 'GROUP' && node.type !== 'SECTION') {
     spec.x = 0;
   }
 
   if ('y' in node && typeof node.y === 'number') {
     spec.y = node.y;
+  } else if (parentBox && hasBox) {
+    spec.y = box.y - parentBox.y;
   } else if (node.type !== 'GROUP' && node.type !== 'SECTION') {
     spec.y = 0;
+  }
+
+  // Hidden layers must stay hidden: a visible copy takes space in auto-layout.
+  if (node.visible === false) spec.visible = false;
+
+  // How this node sits in an auto-layout parent.
+  if (node.layoutPositioning === 'ABSOLUTE') spec.layoutPositioning = 'ABSOLUTE';
+  if (typeof node.layoutGrow === 'number' && node.layoutGrow !== 0) spec.layoutGrow = node.layoutGrow;
+  if (node.layoutAlign && node.layoutAlign !== 'INHERIT') spec.layoutAlign = node.layoutAlign;
+  if (typeof node.clipsContent === 'boolean' && node.type !== 'GROUP') spec.clipsContent = node.clipsContent;
+
+  // Min/max size constraints (auto-layout frames and auto-layout children).
+  // Both APIs use these names; unset is null (Plugin API) or absent (REST).
+  for (const k of ['minWidth', 'maxWidth', 'minHeight', 'maxHeight'] as const) {
+    if (typeof node[k] === 'number') spec[k] = node[k];
   }
 
   // Layout sizing for children in auto-layout parents
@@ -390,21 +424,46 @@ export function extractNodeSpec(node: any): NodeSpecification {
 
   // Layout properties (for FRAME, COMPONENT, INSTANCE)
   // Plugin spec requires: layoutMode, primaryAxisSizingMode, counterAxisSizingMode, itemSpacing, padding*
-  if ('layoutMode' in node && node.layoutMode !== 'NONE') {
+  if ('layoutMode' in node && node.layoutMode && node.layoutMode !== 'NONE') {
     spec.layoutMode = node.layoutMode;
+    const isFlex = node.layoutMode === 'HORIZONTAL' || node.layoutMode === 'VERTICAL';
 
-    // Sizing modes (REQUIRED for plugin spec)
-    if ('primaryAxisSizingMode' in node) spec.primaryAxisSizingMode = node.primaryAxisSizingMode;
-    if ('counterAxisSizingMode' in node) spec.counterAxisSizingMode = node.counterAxisSizingMode;
+    if (isFlex) {
+      // Sizing modes (REQUIRED for plugin spec). The REST API omits fields at
+      // their default. When a mode is missing, derive it from the node's
+      // resizing on that axis (HUG = AUTO, FIXED/FILL = FIXED), which REST
+      // always reports, rather than assuming AUTO.
+      const horizontal = node.layoutMode === 'HORIZONTAL';
+      const axisMode = (sizing: string | undefined) =>
+        sizing === undefined ? 'AUTO' : sizing === 'HUG' ? 'AUTO' : 'FIXED';
+      spec.primaryAxisSizingMode = 'primaryAxisSizingMode' in node
+        ? node.primaryAxisSizingMode
+        : axisMode(horizontal ? node.layoutSizingHorizontal : node.layoutSizingVertical);
+      spec.counterAxisSizingMode = 'counterAxisSizingMode' in node
+        ? node.counterAxisSizingMode
+        : axisMode(horizontal ? node.layoutSizingVertical : node.layoutSizingHorizontal);
 
-    // Spacing
-    if ('itemSpacing' in node) spec.itemSpacing = node.itemSpacing;
+      // Spacing
+      spec.itemSpacing = typeof node.itemSpacing === 'number' ? node.itemSpacing : 0;
+      if (typeof node.counterAxisSpacing === 'number') spec.counterAxisSpacing = node.counterAxisSpacing;
+      if (node.layoutWrap) spec.layoutWrap = node.layoutWrap;
+
+      // Alignment (REST omits MIN, the default)
+      spec.primaryAxisAlignItems = node.primaryAxisAlignItems ?? 'MIN';
+      spec.counterAxisAlignItems = node.counterAxisAlignItems ?? 'MIN';
+    } else {
+      // Grid auto-layout: track counts and gaps instead of flex fields.
+      for (const k of ['gridRowCount', 'gridColumnCount', 'gridRowGap', 'gridColumnGap']) {
+        if (typeof node[k] === 'number') spec[k] = node[k];
+      }
+    }
+    if (node.strokesIncludedInLayout === true) spec.strokesIncludedInLayout = true;
 
     // Padding (all four sides)
-    if ('paddingLeft' in node) spec.paddingLeft = node.paddingLeft;
-    if ('paddingRight' in node) spec.paddingRight = node.paddingRight;
-    if ('paddingTop' in node) spec.paddingTop = node.paddingTop;
-    if ('paddingBottom' in node) spec.paddingBottom = node.paddingBottom;
+    spec.paddingLeft = typeof node.paddingLeft === 'number' ? node.paddingLeft : 0;
+    spec.paddingRight = typeof node.paddingRight === 'number' ? node.paddingRight : 0;
+    spec.paddingTop = typeof node.paddingTop === 'number' ? node.paddingTop : 0;
+    spec.paddingBottom = typeof node.paddingBottom === 'number' ? node.paddingBottom : 0;
   }
 
   // TEXT node specific properties
@@ -460,7 +519,12 @@ export function extractNodeSpec(node: any): NodeSpecification {
 
   // Children (recursive)
   if ('children' in node && Array.isArray(node.children)) {
-    spec.children = node.children.map((child: any) => extractNodeSpec(child));
+    // Groups don't create a coordinate space: in Figma, a group's children
+    // are positioned relative to the group's parent, not the group.
+    const childParentBox = node.type === 'GROUP'
+      ? (parentBox ?? null)
+      : hasBox ? { x: box.x, y: box.y } : null;
+    spec.children = node.children.map((child: any) => extractNodeSpec(child, childParentBox));
   }
 
   return spec;
