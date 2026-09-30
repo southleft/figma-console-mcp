@@ -2221,13 +2221,13 @@ export default {
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Figma Console MCP: a design-system MCP server for Figma and code</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="An open-source MCP server for design systems. 121+ tools give AI assistants two-way token sync between Figma and code, write access to Figma, and repeatable design-code checks.">
+	<meta name="description" content="An open-source MCP server for design systems. 121+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 
 	<!-- Open Graph -->
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="https://figma-console-mcp.southleft.com">
 	<meta property="og:title" content="Figma Console MCP: keep Figma and code on the same design system">
-	<meta property="og:description" content="An open-source MCP server for design systems. 121+ tools give AI assistants two-way token sync between Figma and code, write access to Figma, and repeatable design-code checks.">
+	<meta property="og:description" content="An open-source MCP server for design systems. 121+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 	<meta property="og:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 	<meta property="og:image:width" content="1200">
 	<meta property="og:image:height" content="630">
@@ -2235,7 +2235,7 @@ export default {
 	<!-- Twitter -->
 	<meta name="twitter:card" content="summary_large_image">
 	<meta name="twitter:title" content="Figma Console MCP: keep Figma and code on the same design system">
-	<meta name="twitter:description" content="An open-source MCP server for design systems. 121+ tools give AI assistants two-way token sync between Figma and code, write access to Figma, and repeatable design-code checks.">
+	<meta name="twitter:description" content="An open-source MCP server for design systems. 121+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 	<meta name="twitter:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 
 	<meta name="theme-color" content="#0F766E">
@@ -2250,8 +2250,17 @@ export default {
 	</script>
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+	<!-- Same typefaces as the Mintlify docs site: Inter for text, Paper Mono (OFL) for code. -->
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&display=swap" rel="stylesheet">
+	<link rel="preload" href="https://cdn.jsdelivr.net/gh/paper-design/paper-mono@0.320/fonts/webfonts/PaperMono%5Bwght%5D.woff2" as="font" type="font/woff2" crossorigin>
 	<style>
+		@font-face {
+			font-family: "Paper Mono";
+			src: url("https://cdn.jsdelivr.net/gh/paper-design/paper-mono@0.320/fonts/webfonts/PaperMono%5Bwght%5D.woff2") format("woff2");
+			font-weight: 100 800;
+			font-display: swap;
+		}
+
 		:root {
 			--paper: #F5F7F6;
 			--surface: #FFFFFF;
@@ -2270,9 +2279,9 @@ export default {
 			--code-key: #4A5C58;
 			--code-str: #0F5E57;
 
-			--font-display: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
-			--font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-			--font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+			--font-display: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			--font-body: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			--font-mono: "Paper Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
 			--gutter: clamp(16px, 4vw, 40px);
 			--measure: 1200px;
@@ -2453,7 +2462,7 @@ export default {
 		body.menu-open { overflow: hidden; }
 
 		/* ---------- Shared type ---------- */
-		h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.01em; }
+		h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.025em; }
 		h2 {
 			font-size: clamp(30px, 4.2vw, 44px);
 			line-height: 1.08;
@@ -2488,9 +2497,9 @@ export default {
 		.hero { padding-block: clamp(40px, 6vw, 72px) clamp(48px, 7vw, 80px); }
 		.hero h1 {
 			font-size: clamp(40px, 6.6vw, 84px);
-			line-height: 1;
-			letter-spacing: -0.02em;
-			max-width: 22ch;
+			line-height: 1.02;
+			letter-spacing: -0.035em;
+			max-width: 20ch;
 			text-wrap: balance;
 			margin-bottom: clamp(20px, 3vw, 28px);
 		}
@@ -2641,6 +2650,129 @@ export default {
 			color: var(--ink);
 		}
 
+		/* ---------- Hero: eyebrow, trust line, example session ---------- */
+		.eyebrow {
+			display: inline-block;
+			font-size: 15px;
+			font-weight: 600;
+			color: var(--teal);
+			margin-bottom: 18px;
+		}
+		.trust {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px 22px;
+			list-style: none;
+			margin-top: 22px;
+			font-size: 15px;
+			color: var(--muted);
+		}
+		.trust li { display: inline-flex; align-items: center; gap: 8px; }
+		.trust li::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+
+		.session { margin-top: clamp(40px, 6vw, 64px); }
+		.art-panel {
+			background: var(--surface);
+			border: 1px solid var(--rule-strong);
+			border-radius: 12px;
+			overflow: hidden;
+			min-width: 0;
+		}
+		.session-ask {
+			display: flex;
+			gap: 14px;
+			align-items: baseline;
+			padding: 18px 20px;
+			border-bottom: 1px solid var(--rule);
+			font-size: clamp(17px, 1.8vw, 20px);
+		}
+		.who {
+			flex-shrink: 0;
+			font-size: 13px;
+			font-weight: 600;
+			color: var(--teal-ink);
+			background: var(--teal);
+			padding: 2px 8px;
+			border-radius: 999px;
+		}
+		.session-runs { list-style: none; }
+		.session-runs li {
+			display: grid;
+			grid-template-columns: 20px minmax(0, 20rem) minmax(0, 1fr);
+			gap: 4px 16px;
+			align-items: baseline;
+			padding: 12px 20px;
+			border-top: 1px solid var(--rule);
+			font-size: 15px;
+		}
+		.session-runs li:first-child { border-top: 0; }
+		.session-runs .tick { color: var(--teal); font-weight: 700; }
+		.session-runs code { font-size: 14px; overflow-wrap: anywhere; }
+		.session-runs .res { color: var(--muted); }
+		.session-runs .res b { color: var(--ink); font-weight: 600; }
+		.session figcaption {
+			margin-top: 14px;
+			font-size: 15px;
+			color: var(--muted);
+			max-width: 70ch;
+		}
+
+		/* ---------- Showcase ---------- */
+		.showcase { border-bottom: 1px solid var(--rule); }
+		.show {
+			display: grid;
+			grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+			gap: clamp(24px, 4vw, 56px);
+			align-items: center;
+			padding-block: clamp(36px, 5vw, 56px);
+			border-top: 1px solid var(--rule);
+		}
+		.show:nth-child(even) .show-text { order: 2; }
+		.show.wide { grid-template-columns: minmax(0, 1fr); }
+		.show.wide .show-text { order: 0; max-width: 64ch; }
+		.show h3 { font-size: clamp(24px, 2.8vw, 32px); line-height: 1.12; margin-bottom: 12px; }
+		.show-kicker { font-size: 14px; font-weight: 600; color: var(--teal); margin-bottom: 8px; }
+		.show-text p { max-width: 52ch; }
+		.show-text p + p { margin-top: 12px; }
+		.show-tool code { font-size: 14px; color: var(--muted); }
+		.show figure { margin: 0; min-width: 0; }
+		.show .roundtrip { margin-top: 0; }
+
+		.score-body { padding: 20px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px 28px; align-items: start; }
+		.score-total { display: flex; align-items: baseline; gap: 2px; line-height: 1; }
+		.score-total .big { font-size: 64px; font-weight: 600; letter-spacing: -0.04em; color: var(--teal); }
+		.score-total .of { color: var(--muted); font-size: 16px; }
+		.bars { list-style: none; font-size: 14px; }
+		.bars li { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) 2.2em; gap: 12px; align-items: center; padding-block: 5px; }
+		.bar { height: 8px; border-radius: 999px; background: var(--surface-2); position: relative; overflow: hidden; }
+		.bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--v) * 1%); background: var(--teal); border-radius: 999px; }
+		.bar-num { text-align: right; font-variant-numeric: tabular-nums; }
+		.score-fix { grid-column: 1 / -1; font-size: 14px; color: var(--muted); padding-top: 14px; border-top: 1px solid var(--rule); }
+		.score-fix strong { color: var(--ink); }
+
+		.parity-sum { padding: 14px 20px; font-size: 15px; color: var(--muted); border-bottom: 1px solid var(--rule); }
+		.parity-sum b { color: var(--ink); font-weight: 600; }
+		.table-scroll { overflow-x: auto; }
+		.parity { width: 100%; border-collapse: collapse; font-size: 14px; }
+		.parity th, .parity td { text-align: left; padding: 10px 20px 10px 0; border-top: 1px solid var(--rule); white-space: nowrap; }
+		.parity th:first-child, .parity td:first-child { padding-left: 20px; }
+		.parity thead th { border-top: 0; color: var(--muted); font-weight: 500; }
+		.parity code { font-size: 13px; }
+		.sev { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--rule-strong); }
+		.sev.major { color: var(--sponsor); border-color: currentColor; }
+
+		.doc pre {
+			margin: 0;
+			padding: 18px 20px 20px;
+			font-family: var(--font-mono);
+			font-size: 13px;
+			line-height: 1.7;
+			color: var(--ink);
+			overflow-x: auto;
+		}
+		.doc pre .h { color: var(--teal); font-weight: 600; }
+		.doc pre .m { color: var(--muted); }
+
 		/* ---------- Prompts ---------- */
 		.prompts { list-style: none; border-bottom: 1px solid var(--rule); }
 		.prompt {
@@ -2679,15 +2811,6 @@ export default {
 		.mode .count .unit { color: var(--muted); font-size: 16px; }
 		.mode p { color: var(--muted); font-size: 16px; max-width: 36ch; }
 		.mode p strong { color: var(--ink); font-weight: 600; }
-		.notes {
-			display: grid;
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-			gap: 24px 40px;
-			margin-top: 32px;
-			list-style: none;
-		}
-		.notes li { font-size: 16px; color: var(--muted); max-width: 40ch; }
-		.notes strong { display: block; color: var(--ink); font-weight: 600; margin-bottom: 2px; }
 
 		/* ---------- Start + announcement ---------- */
 		.start {
@@ -2723,7 +2846,7 @@ export default {
 			color: var(--teal);
 		}
 		.announce-icon svg { width: 22px; height: 22px; }
-		.announce h2 { font-family: var(--font-body); font-size: 17px; font-weight: 600; letter-spacing: 0; margin: 0 0 2px; }
+		.announce h2 { font-family: var(--font-body); font-size: 17px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 2px; }
 		.announce p { font-size: 15px; color: var(--muted); }
 		.announce .go { font-size: 15px; font-weight: 600; color: var(--teal); white-space: nowrap; }
 
@@ -2770,7 +2893,12 @@ export default {
 			.modes { grid-template-columns: minmax(0, 1fr); }
 			.mode, .mode + .mode { padding: 24px 0; border-left: 0; }
 			.mode + .mode { border-top: 1px solid var(--rule); }
-			.notes { grid-template-columns: minmax(0, 1fr); }
+			.show, .show.wide { grid-template-columns: minmax(0, 1fr); }
+			.show:nth-child(even) .show-text { order: 0; }
+			.session-runs li { grid-template-columns: 20px minmax(0, 1fr); }
+			.session-runs .res { grid-column: 2; }
+			.score-body { grid-template-columns: minmax(0, 1fr); }
+			.bars li { grid-template-columns: minmax(0, 9rem) minmax(0, 1fr) 2.2em; }
 			.start { grid-template-columns: minmax(0, 1fr); align-items: start; }
 			.announce { flex-direction: column; align-items: flex-start; }
 		}
@@ -2780,6 +2908,9 @@ export default {
 			.btn-row .btn { flex: 1 1 100%; }
 			.logo img { height: 28px; }
 			.rt-code pre { font-size: 12.5px; }
+			.session-runs li { padding-inline: 16px; }
+			.session-runs code { font-size: 12.5px; overflow-wrap: normal; }
+			.bars li { grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr) 2.2em; gap: 10px; }
 		}
 	</style>
 </head>
@@ -2834,8 +2965,9 @@ export default {
 		<!-- Hero -->
 		<section class="hero" aria-labelledby="hero-title">
 			<div class="wrap">
+				<p class="eyebrow">Design-system management for frontier AI models</p>
 				<h1 id="hero-title">Keep Figma and code on the same design system.</h1>
-				<p class="hero-lede">Figma Console MCP is an open-source MCP server for design systems. It syncs tokens <strong>both ways</strong> between Figma and code, <strong>writes</strong> variables and components into your files, runs <strong>checks that score the same way every time</strong>, and gives your AI <strong>exact facts</strong> so the code it writes follows your own stack.</p>
+				<p class="hero-lede">Figma Console MCP gives your AI the tools to run a design system across Figma and code. It <strong>audits</strong> the system and <strong>checks components against their code</strong> with results that score the same way every time, <strong>syncs</strong> Figma and code in both directions, <strong>writes</strong> fixes into your files, and <strong>documents</strong> what's there, so the code it writes follows your own stack.</p>
 				<div class="btn-row">
 					<a href="https://docs.figma-console-mcp.southleft.com" class="btn btn-primary">Read the docs</a>
 					<a href="https://docs.figma-console-mcp.southleft.com/setup" class="btn btn-quiet">Setup guide</a>
@@ -2845,59 +2977,24 @@ export default {
 					</a>
 				</div>
 
-				<figure class="roundtrip" aria-labelledby="rt-caption">
-					<div class="rt-grid">
-						<div class="rt-panel rt-figma">
-							<div class="rt-head"><strong>Figma variable</strong><span>Brand collection</span></div>
-							<div class="rt-body">
-								<div class="rt-name">
-									<span class="swatch" style="--sw:#0F766E" aria-hidden="true"></span>
-									<code>color/brand/primary</code>
-								</div>
-								<table class="rt-modes" aria-label="Values by mode">
-									<tbody>
-										<tr><th scope="row">Light</th><td><span class="swatch sm" style="--sw:#0F766E" aria-hidden="true"></span><code>#0F766E</code></td></tr>
-										<tr><th scope="row">Dark</th><td><span class="swatch sm" style="--sw:#2DD4BF" aria-hidden="true"></span><code>#2DD4BF</code></td></tr>
-									</tbody>
-								</table>
-								<p class="rt-id">ID <span class="id-mark">VariableID:12:48</span></p>
-							</div>
-						</div>
+				<ul class="trust" aria-label="At a glance">
+					<li>Open source, MIT</li>
+					<li>Any Figma plan</li>
+					<li>Any MCP client</li>
+				</ul>
 
-						<ul class="rt-link" aria-label="Tools that move the variable">
-							<li>
-								<span class="dir">Figma to code</span>
-								<span class="rt-glyph" aria-hidden="true">&darr;</span>
-								<svg class="rt-arrow fwd" viewBox="0 0 120 14" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 7h114M108 1l8 6-8 6"/></svg>
-								<code>figma_export_tokens</code>
-							</li>
-							<li>
-								<span class="dir">Code to Figma</span>
-								<span class="rt-glyph" aria-hidden="true">&uarr;</span>
-								<svg class="rt-arrow back" viewBox="0 0 120 14" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 7h114M108 1l8 6-8 6"/></svg>
-								<code>figma_import_tokens</code>
-							</li>
-						</ul>
-
-						<div class="rt-panel rt-code">
-							<div class="rt-head"><strong>tokens.json</strong><span>DTCG</span></div>
-<pre tabindex="0" aria-label="Exported token"><code>{
-  <span class="k">"color"</span>: { <span class="k">"brand"</span>: {
-    <span class="k">"primary"</span>: {
-      <span class="k">"$type"</span>: <span class="s">"color"</span>,
-      <span class="k">"$value"</span>: <span class="s">"#0F766E"</span>,
-      <span class="k">"$extensions"</span>: {
-        <span class="k">"figma-console-mcp"</span>: {
-          <span class="k">"variableId"</span>: <span class="id-mark">"VariableID:12:48"</span>,
-          <span class="k">"modes"</span>: { <span class="k">"Dark"</span>: <span class="s">"#2DD4BF"</span> }
-        }
-      }
-    }
-  } }
-}</code></pre>
-						</div>
+				<figure class="session" aria-labelledby="session-caption">
+					<div class="art-panel">
+						<div class="session-ask"><span class="who">You</span><p>Get the Button component ready for the 3.0 release.</p></div>
+						<ol class="session-runs" aria-label="Tools the AI ran">
+							<li><span class="tick" aria-hidden="true">&#10003;</span><code>figma_audit_design_system_report</code><span class="res">System health <b>84/100</b> across six categories</span></li>
+							<li><span class="tick" aria-hidden="true">&#10003;</span><code>figma_check_design_parity</code><span class="res">Parity with the React component <b>85/100</b>: 1 major, 2 minor, 1 info</span></li>
+							<li><span class="tick" aria-hidden="true">&#10003;</span><code>figma_audit_component_accessibility</code><span class="res"><b>No focus variant</b>, and 2 text colors below 4.5:1</span></li>
+							<li><span class="tick" aria-hidden="true">&#10003;</span><code>figma_set_description</code><span class="res">Wrote descriptions to <b>3 variants</b> in Figma</span></li>
+							<li><span class="tick" aria-hidden="true">&#10003;</span><code>figma_generate_component_doc</code><span class="res"><b>Button.md</b> with tokens per variant, pinned to commit 3f2a91c</span></li>
+						</ol>
 					</div>
-					<figcaption id="rt-caption">Example: the token keeps its Figma variable ID. Edit the value in code, import it, and the same variable updates in Figma instead of a duplicate being created.</figcaption>
+					<figcaption id="session-caption">Example session. One request, five tools from four jobs, and every result is something you can check.</figcaption>
 				</figure>
 			</div>
 		</section>
@@ -2907,26 +3004,41 @@ export default {
 			<div class="wrap">
 				<div class="section-head">
 					<h2 id="pillars-title">What it does</h2>
-					<p class="section-intro">Four jobs, built for teams that maintain a design system in Figma and ship it in code.</p>
+					<p class="section-intro">Four jobs for teams that maintain a design system in Figma and ship it in code. The tools are built to manage the system and keep work true to it, not to draw on the canvas.</p>
 				</div>
 				<ul class="pillars">
+					<li class="pillar">
+						<div class="pillar-head">
+							<h3>Deterministic checks</h3>
+							<p class="claim">Repeatable scores, not vibes.</p>
+						</div>
+						<div class="pillar-body">
+							<p>Checks run as code against your Figma file and your source, so the same input gives the same result. Compare a component's design to its implementation, audit accessibility on both sides, and measure design-system hygiene.</p>
+							<p class="muted">Because the output doesn't drift between runs, you can use it as a review gate or track a component over time.</p>
+						</div>
+						<div>
+							<ul class="facts">
+								<li><span class="group">Design-code parity</span><code>figma_check_design_parity</code></li>
+								<li><span class="group">Accessibility</span><code>figma_lint_design</code><br><code>figma_audit_component_accessibility</code><br><code>figma_scan_code_accessibility</code></li>
+								<li><span class="group">Design-system hygiene</span><code>figma_audit_design_system_report</code><br><code>figma_ds_verify</code></li>
+							</ul>
+						</div>
+					</li>
+
 					<li class="pillar">
 						<div class="pillar-head">
 							<h3>Bidirectional</h3>
 							<p class="claim">Figma to code, and code back to Figma.</p>
 						</div>
 						<div class="pillar-body">
-							<p>Export Figma variables as design tokens, then import tokens back into variables. Exports keep each variable's Figma ID, so the return trip updates the variable you meant instead of adding a copy.</p>
-							<p>Starting from code instead? Extract the design system from a production codebase and push it into Figma variables.</p>
-							<ul class="formats" aria-label="Export formats">
-								<li>DTCG</li><li>CSS</li><li>Tailwind v4</li><li>Tailwind v3</li><li>SCSS</li><li>TypeScript</li><li>JSON</li><li>Style Dictionary</li><li>Tokens Studio</li>
-							</ul>
+							<p>Move the system in both directions. Give code the full spec of any component, sync variables and tokens in 10 formats with their Figma IDs intact, and bring changes made in code back into Figma.</p>
+							<p class="muted">Starting from code instead? Extract the design system from a production codebase and push it into Figma.</p>
 						</div>
 						<div>
 							<p class="facts-label">Tools</p>
 							<ul class="facts">
-								<li><code>figma_export_tokens</code></li>
-								<li><code>figma_import_tokens</code></li>
+								<li><code>figma_get_component_for_development</code></li>
+								<li><code>figma_export_tokens</code> / <code>figma_import_tokens</code></li>
 								<li><code>figma_ds_extract_tokens</code></li>
 							</ul>
 						</div>
@@ -2955,24 +3067,6 @@ export default {
 
 					<li class="pillar">
 						<div class="pillar-head">
-							<h3>Deterministic checks</h3>
-							<p class="claim">Repeatable scores, not vibes.</p>
-						</div>
-						<div class="pillar-body">
-							<p>Checks run as code against your Figma file and your source, so the same input gives the same result. Compare a component's design to its implementation, audit accessibility on both sides, and measure design-system hygiene.</p>
-							<p class="muted">Because the output doesn't drift between runs, you can use it as a review gate or track a component over time.</p>
-						</div>
-						<div>
-							<ul class="facts">
-								<li><span class="group">Design-code parity</span><code>figma_check_design_parity</code></li>
-								<li><span class="group">Accessibility</span><code>figma_lint_design</code><br><code>figma_audit_component_accessibility</code><br><code>figma_scan_code_accessibility</code></li>
-								<li><span class="group">Design-system hygiene</span><code>figma_audit_design_system_report</code><br><code>figma_ds_verify</code></li>
-							</ul>
-						</div>
-					</li>
-
-					<li class="pillar">
-						<div class="pillar-head">
 							<h3>Unbiased code</h3>
 							<p class="claim">Facts about the design, not opinions about your code.</p>
 						</div>
@@ -2993,6 +3087,159 @@ export default {
 			</div>
 		</section>
 
+		<!-- Showcase -->
+		<section class="section" aria-labelledby="work-title">
+			<div class="wrap">
+				<div class="section-head">
+					<h2 id="work-title">See it work</h2>
+					<p class="section-intro">Example output from four of the tools. Each result is structured data your AI can act on and you can review.</p>
+				</div>
+				<div class="showcase">
+					<article class="show">
+						<div class="show-text">
+							<p class="show-kicker">Design-system health</p>
+							<h3>Score the whole system, then fix what it finds</h3>
+							<p>One call scores naming, token architecture, component metadata, accessibility, consistency, and coverage, using the same rules every run. Each finding says how to fix it, and which ones the MCP can fix for you.</p>
+							<p class="show-tool"><code>figma_audit_design_system_report</code></p>
+						</div>
+						<figure aria-label="Example design-system health report">
+							<div class="art-panel">
+								<div class="rt-head"><strong>Design-system health</strong><span>Example file</span></div>
+								<div class="score-body">
+									<p class="score-total"><span class="big">84</span><span class="of">/100</span></p>
+									<ul class="bars">
+										<li><span>Naming &amp; Semantics</span><span class="bar" style="--v:88" aria-hidden="true"></span><span class="bar-num">88</span></li>
+										<li><span>Token Architecture</span><span class="bar" style="--v:91" aria-hidden="true"></span><span class="bar-num">91</span></li>
+										<li><span>Component Metadata</span><span class="bar" style="--v:72" aria-hidden="true"></span><span class="bar-num">72</span></li>
+										<li><span>Accessibility</span><span class="bar" style="--v:79" aria-hidden="true"></span><span class="bar-num">79</span></li>
+										<li><span>Consistency</span><span class="bar" style="--v:86" aria-hidden="true"></span><span class="bar-num">86</span></li>
+										<li><span>Coverage</span><span class="bar" style="--v:88" aria-hidden="true"></span><span class="bar-num">88</span></li>
+									</ul>
+									<p class="score-fix"><strong>Top finding:</strong> 18 components have no description. <code>figma_set_description</code> can add them.</p>
+								</div>
+							</div>
+						</figure>
+					</article>
+
+					<article class="show">
+						<div class="show-text">
+							<p class="show-kicker">Design-code parity</p>
+							<h3>Check a component against its code</h3>
+							<p>Compare a Figma component with its implementation, property by property: color, spacing, typography, tokens, the component API, and accessibility. You get a score and a fix list, not an opinion.</p>
+							<p class="show-tool"><code>figma_check_design_parity</code></p>
+						</div>
+						<figure aria-label="Example parity report">
+							<div class="art-panel">
+								<div class="rt-head"><strong>Button / Primary</strong><span>Figma vs. React</span></div>
+								<p class="parity-sum">Parity <b>85/100</b>. 1 major, 2 minor, 1 info.</p>
+								<div class="table-scroll">
+									<table class="parity">
+										<thead><tr><th scope="col">Severity</th><th scope="col">Property</th><th scope="col">Figma</th><th scope="col">Code</th></tr></thead>
+										<tbody>
+											<tr><td><span class="sev major">major</span></td><td><code>backgroundColor</code></td><td><code>#0F766E</code></td><td><code>#0E7490</code></td></tr>
+											<tr><td><span class="sev">minor</span></td><td><code>borderRadius</code></td><td><code>8px</code></td><td><code>6px</code></td></tr>
+											<tr><td><span class="sev">minor</span></td><td><code>fontWeight</code></td><td><code>600</code></td><td><code>500</code></td></tr>
+											<tr><td><span class="sev">info</span></td><td><code>prop:iconPosition</code></td><td>defined</td><td>missing</td></tr>
+										</tbody>
+									</table>
+								</div>
+							</div>
+						</figure>
+					</article>
+
+					<article class="show">
+						<div class="show-text">
+							<p class="show-kicker">Component documentation</p>
+							<h3>Docs generated from the file and the code</h3>
+							<p>Anatomy, the tokens each variant uses, spacing and typography across sizes, annotations, and a parity section, written as markdown and linked to the commit it describes. Add a changelog from Figma version history and git.</p>
+							<p class="show-tool"><code>figma_generate_component_doc</code></p>
+						</div>
+						<figure aria-label="Example generated component documentation">
+							<div class="art-panel doc">
+								<div class="rt-head"><strong>Button.md</strong><span>Generated</span></div>
+<pre tabindex="0"><code><span class="h"># Button</span>
+<span class="m">Source: src/components/Button.tsx @ 3f2a91c</span>
+
+<span class="h">## Color Tokens</span>
+| Variant   | Background            | Text               |
+|-----------|-----------------------|--------------------|
+| Primary   | color/brand/primary   | color/text/inverse |
+| Secondary | color/surface/raised  | color/text/default |
+| Danger    | color/feedback/danger | color/text/inverse |
+
+<span class="h">## Spacing</span>
+Padding varies by Size: sm 12 / 6, md 16 / 8, lg 20 / 12.
+All values are bound to space/* tokens.</code></pre>
+							</div>
+						</figure>
+					</article>
+
+					<article class="show wide">
+						<div class="show-text">
+							<p class="show-kicker">Two-way token sync</p>
+							<h3>Round-trip tokens without creating duplicates</h3>
+							<p>Export variables to DTCG, CSS, Tailwind, SCSS, TypeScript, JSON, Style Dictionary, or Tokens Studio. Each token keeps its Figma variable ID, so importing an edit updates the variable you meant.</p>
+							<p class="show-tool"><code>figma_export_tokens</code> / <code>figma_import_tokens</code></p>
+						</div>
+						<figure class="roundtrip" aria-labelledby="rt-caption">
+							<div class="rt-grid">
+								<div class="rt-panel rt-figma">
+									<div class="rt-head"><strong>Figma variable</strong><span>Brand collection</span></div>
+									<div class="rt-body">
+										<div class="rt-name">
+											<span class="swatch" style="--sw:#0F766E" aria-hidden="true"></span>
+											<code>color/brand/primary</code>
+										</div>
+										<table class="rt-modes" aria-label="Values by mode">
+											<tbody>
+												<tr><th scope="row">Light</th><td><span class="swatch sm" style="--sw:#0F766E" aria-hidden="true"></span><code>#0F766E</code></td></tr>
+												<tr><th scope="row">Dark</th><td><span class="swatch sm" style="--sw:#2DD4BF" aria-hidden="true"></span><code>#2DD4BF</code></td></tr>
+											</tbody>
+										</table>
+										<p class="rt-id">ID <span class="id-mark">VariableID:12:48</span></p>
+									</div>
+								</div>
+		
+								<ul class="rt-link" aria-label="Tools that move the variable">
+									<li>
+										<span class="dir">Figma to code</span>
+										<span class="rt-glyph" aria-hidden="true">&darr;</span>
+										<svg class="rt-arrow fwd" viewBox="0 0 120 14" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 7h114M108 1l8 6-8 6"/></svg>
+										<code>figma_export_tokens</code>
+									</li>
+									<li>
+										<span class="dir">Code to Figma</span>
+										<span class="rt-glyph" aria-hidden="true">&uarr;</span>
+										<svg class="rt-arrow back" viewBox="0 0 120 14" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 7h114M108 1l8 6-8 6"/></svg>
+										<code>figma_import_tokens</code>
+									</li>
+								</ul>
+		
+								<div class="rt-panel rt-code">
+									<div class="rt-head"><strong>tokens.json</strong><span>DTCG</span></div>
+		<pre tabindex="0" aria-label="Exported token"><code>{
+  <span class="k">"color"</span>: { <span class="k">"brand"</span>: {
+    <span class="k">"primary"</span>: {
+      <span class="k">"$type"</span>: <span class="s">"color"</span>,
+      <span class="k">"$value"</span>: <span class="s">"#0F766E"</span>,
+      <span class="k">"$extensions"</span>: {
+        <span class="k">"figma-console-mcp"</span>: {
+          <span class="k">"variableId"</span>: <span class="id-mark">"VariableID:12:48"</span>,
+          <span class="k">"modes"</span>: { <span class="k">"Dark"</span>: <span class="s">"#2DD4BF"</span> }
+        }
+      }
+    }
+  } }
+}</code></pre>
+								</div>
+							</div>
+							<figcaption id="rt-caption">Example: the token keeps its Figma variable ID. Edit the value in code, import it, and the same variable updates in Figma instead of a duplicate being created.</figcaption>
+						</figure>
+					</article>
+				</div>
+			</div>
+		</section>
+
 		<!-- Example prompts -->
 		<section class="section" aria-labelledby="prompts-title">
 			<div class="wrap">
@@ -3001,12 +3248,12 @@ export default {
 					<p class="section-intro">Each request maps to a named tool, so you can see exactly what ran.</p>
 				</div>
 				<ul class="prompts">
-					<li class="prompt"><q>Export my variables as Tailwind v4 and keep Figma IDs for round-trip.</q><span class="runs">Runs <code>figma_export_tokens</code></span></li>
-					<li class="prompt"><q>Import these tokens into Figma variables.</q><span class="runs">Runs <code>figma_import_tokens</code></span></li>
+					<li class="prompt"><q>How healthy is our design system, and what should we fix first?</q><span class="runs">Runs <code>figma_audit_design_system_report</code></span></li>
 					<li class="prompt"><q>Audit the Button component set for accessibility and give me a score.</q><span class="runs">Runs <code>figma_audit_component_accessibility</code></span></li>
 					<li class="prompt"><q>Check this component's parity against my React code.</q><span class="runs">Runs <code>figma_check_design_parity</code></span></li>
-					<li class="prompt"><q>Generate docs for the Tabs component pinned to my current commit.</q><span class="runs">Runs <code>figma_generate_component_doc</code></span></li>
+					<li class="prompt"><q>What changed in the Card component since the last release?</q><span class="runs">Runs <code>figma_get_changes_since_version</code></span></li>
 					<li class="prompt"><q>Build a Badge component set with size and tone variants.</q><span class="runs">Runs <code>figma_create_component_set</code></span></li>
+					<li class="prompt"><q>Export my variables as Tailwind v4 and keep Figma IDs for round-trip.</q><span class="runs">Runs <code>figma_export_tokens</code></span></li>
 				</ul>
 			</div>
 		</section>
@@ -3035,11 +3282,6 @@ export default {
 						<p><strong>Read-only</strong> access to a file over a hosted URL. Pair the plugin later to add writes.</p>
 					</div>
 				</div>
-				<ul class="notes">
-					<li><strong>Any Figma plan</strong>Variables are read through the Desktop Bridge plugin, so you don't need the Enterprise-only Variables REST API.</li>
-					<li><strong>Any MCP client</strong>Works with Claude, Cursor, and other clients that speak the Model Context Protocol.</li>
-					<li><strong>MIT licensed</strong>Open source on GitHub and published to npm.</li>
-				</ul>
 			</div>
 		</section>
 
