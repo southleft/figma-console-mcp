@@ -6,7 +6,7 @@
 [![Documentation](https://img.shields.io/badge/docs-docs.figma--console--mcp.southleft.com-0D9488)](https://docs.figma-console-mcp.southleft.com)
 [![Sponsor](https://img.shields.io/badge/Sponsor-southleft-ea4aaa?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/southleft)
 
-> **Your design system as an API.** Model Context Protocol server that bridges design and development—giving AI assistants complete access to Figma for **extraction**, **creation**, **debugging**, and **bidirectional token sync**.
+> **Your design system as an API.** A design-system-focused Model Context Protocol server for Figma. It works in both directions (Figma ⇄ code), **writes to Figma**, and runs **deterministic checks** for design-code parity, accessibility, and design-system health. It hands the AI exact tokens, variants, bindings, and states as structured data rather than prescribing a framework or house style, so generated code follows your team's own stack and conventions.
 
 > **🆕 Accuracy & safety fixes (latest v1.40.7):** Seven patches since v1.40.0's Design System Extraction, driven by community reports. Generated component docs now describe every variant accurately — backgrounds, hidden layers and the properties that show them, per-corner radius and border tokens, typography and layer structure across variants, and source links pinned to a commit. `figma_export_tokens` can no longer overwrite a token file from the wrong Figma file, overrides in extended variable collections are visible, and the published package passes `npm audit` cleanly. Server-only — no plugin re-import needed. [See what's new →](CHANGELOG.md#1407---2026-09-27)
 
@@ -25,6 +25,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 - **📌 FigJam boards** - Create stickies, flowcharts, tables, and code blocks on collaborative boards
 - **🎞️ Slides presentations** - Build and manage Figma Slides decks programmatically
 - **♿ Accessibility scanning** - 14 WCAG design checks with conformance level tagging, component scorecards, axe-core code scanning, design-to-code parity
+- **🔍 Design-code parity & component docs** - Deterministic comparison of a Figma component with its code (visual, spacing, typography, tokens, component API, accessibility), and generated component documentation with per-variant tokens and an optional design + git changelog
 - **📋 Design-system health audits** - Lighthouse-style scored audit across naming, tokens, component metadata, accessibility, consistency, and coverage — available as a plain tool for any MCP client (with per-finding auto-fix guidance) and as a visual dashboard app
 - **🛡 Cross-MCP identity** - Every tool response carries `_mcp: "figma-console-mcp"` and errors are prefixed `[figma-console-mcp]` so attribution stays unambiguous in agents running multiple Figma MCPs
 - **☁️ Cloud Write Relay** - Web AI clients (Claude.ai, v0, Replit) can design in Figma via cloud pairing
@@ -55,11 +56,12 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | **Manage design tokens/variables** | ✅ | ✅ | ❌ |
 | **FigJam boards (stickies, flowcharts)** | ✅ | ✅ | ❌ |
 | Real-time monitoring (console, selection) | ✅ | ❌ | ❌ |
+| Codebase → design system extraction (`figma_ds_*`) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **114** | **101** | **9** |
+| **Total tools available** | **121** | **95** after pairing | Read-only subset |
 
-> **Bottom line:** Remote SSE is **read-only** with 9 tools. **Cloud Mode** unlocks write access (101 tools) from web AI clients without Node.js. NPX/Local Git gives the full 121 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** until you pair the plugin. **Cloud Mode** unlocks write access (95 tools) from web AI clients without Node.js. NPX/Local Git gives the full 121 tools with real-time monitoring.
 
 ---
 
@@ -136,7 +138,7 @@ If you're not sure where to put the JSON configuration above, here's where each 
 
 > **Heads-up on plugin updates.** Figma caches plugin files (`code.js` and `ui.html`) at the application level. The MCP server refreshes the files at `~/.figma-console-mcp/plugin/` on every startup, but Figma keeps using its cached copy until you re-import the manifest.
 >
-> **Re-importing is _required_ only when a release notes entry says so** — typically when the plugin adds a new method the server needs (e.g. v1.22.4, v1.10.0). For most upgrades the new server stays wire-compatible with the previous plugin, and re-importing is **optional**: you'll still get every functional change, just not the cosmetic plugin-side touches (status-pill copy, `pluginVersion` reporting).
+> **Re-importing is _required_ only when a release notes entry says so** — typically when the plugin adds a new method the server needs (e.g. v1.22.4, v1.10.0). The plugin files last changed in v1.39.0; if your imported plugin predates that, re-import once. The plugin shows an update banner when the server bundles a newer plugin than the one running. For most upgrades the new server stays wire-compatible with the previous plugin, and re-importing is **optional**: you'll still get every functional change, just not the cosmetic plugin-side touches (status-pill copy, `pluginVersion` reporting).
 >
 > When you do re-import: Plugins → Manage plugins → re-import `~/.figma-console-mcp/plugin/manifest.json`. The stable path never changes, so it's a one-click step.
 
@@ -205,7 +207,7 @@ Then follow [NPX Steps 3-5](#step-3-connect-to-figma-desktop) above.
 
 **Best for:** Quickly evaluating the tool or read-only design data extraction.
 
-**What you get:** 9 read-only tools — view data, take screenshots, read logs, design-code parity. **Cannot create or modify designs.**
+**What you get:** the read-only tools — view file data, components, styles, comments and version history, take screenshots, read logs, check design-code parity. **Cannot create or modify designs.**
 
 #### Claude Desktop (UI Method)
 
@@ -253,7 +255,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 **Best for:** Using Claude.ai, v0, Replit, or Lovable to create and modify Figma designs — no Node.js required.
 
-**What you get:** 101 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
+**What you get:** 95 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
 
 #### Prerequisites
 
@@ -310,7 +312,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **114** | **101** | **114** | **9** (read-only) |
+| **Total tools** | **121** | **95** after pairing | **121** (Local Git) | Read-only subset |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -383,6 +385,7 @@ When you first use design system tools:
 - `figma_diagnose` - Designer-readable health check + setup guidance
 - `figma_reconnect` - Force reconnect to the Desktop Bridge plugin
 - `figma_navigate` - Switch the active file target among connected plugins (Local), or navigate the cloud headless browser (Remote/Cloud)
+- `figma_list_open_files` - List files connected through the Desktop Bridge and which one is active (Local Mode)
 
 ### Console Debugging
 - `figma_get_console_logs` - Retrieve console logs
@@ -392,6 +395,11 @@ When you first use design system tools:
 
 ### Visual Debugging
 - `figma_take_screenshot` - Capture UI screenshots
+- `figma_capture_screenshot` - Render a node from the plugin runtime, reflecting changes that haven't reached the REST API yet
+
+### 👁️ Real-Time Awareness (Local Mode only)
+- `figma_get_selection` - The nodes currently selected in Figma
+- `figma_get_design_changes` - Buffered document-change events, for polling what changed
 
 ### Design System Extraction
 - `figma_get_design_system_kit` - **Full design system in one call** — tokens, components, styles, visual specs
@@ -402,6 +410,7 @@ When you first use design system tools:
 - `figma_get_styles` - Color, text, effect styles
 - `figma_get_file_data` - Full file structure
 - `figma_get_file_for_plugin` - Optimized file data
+- `figma_get_design_system_summary` / `figma_get_token_values` - Compact design-system overview and variable values by mode (Local Mode only)
 - `figma_audit_design_system_report` - **Scored health audit for any MCP client** — six-category report (naming, tokens, metadata, accessibility, consistency, coverage) with per-finding remediation ("can this MCP fix it?"), chunked per-category drill-down, live-first data with disclosed source, 5-minute cache
 
 ### 📚 Shared Library Inspection
@@ -447,7 +456,30 @@ When you first use design system tools:
 
 ### 🔍 Design-Code Parity (All Modes)
 - `figma_check_design_parity` - Compare Figma component specs against code implementation, producing a scored diff report with actionable fix items
-- `figma_generate_component_doc` - Generate platform-agnostic markdown documentation by merging Figma design data with code-side info
+- `figma_generate_component_doc` - Generate platform-agnostic markdown documentation by merging Figma design data with code-side info; the optional `history` parameter adds a changelog from Figma version history and `git log`
+
+### 🔬 Components, Nodes & Deep Analysis (Local Mode + Cloud Mode unless noted)
+- `figma_search_components` / `figma_get_component_details` - Find components (local + library) and get their variants, properties, and keys (Local Mode only)
+- `figma_instantiate_component` / `figma_set_instance_properties` - Place instances and set their TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties
+- `figma_add_component_property` / `figma_edit_component_property` / `figma_delete_component_property` - Manage component properties
+- `figma_create_child`, `figma_move_node`, `figma_resize_node`, `figma_clone_node`, `figma_rename_node`, `figma_delete_node`, `figma_set_text`, `figma_set_fills`, `figma_set_strokes`, `figma_set_image_fill` - Structured node edits, including variable binding on fills and strokes
+- `figma_get_component_for_development_deep` - Full component tree with resolved token names and instance references
+- `figma_analyze_component_set` - A variant set as a state machine, with CSS pseudo-class mappings and per-variant diffs
+
+### ♿ Accessibility (Local Mode + Cloud Mode)
+- `figma_lint_design` - WCAG and design-system lint on the canvas, with AA and best-practice level tagging
+- `figma_audit_component_accessibility` - Component scorecard: state coverage, focus indicators, color-blind simulation
+- `figma_scan_code_accessibility` - axe-core scan of HTML
+
+### 📝 Annotations & Comments
+- `figma_get_annotations` / `figma_set_annotations` / `figma_get_annotation_categories` - Read and write designer annotations (Local Mode + Cloud Mode)
+- `figma_get_comments` / `figma_post_comment` / `figma_delete_comment` - File comments, optionally pinned to a node
+
+### 🕰 Version History
+- `figma_get_file_versions` / `figma_get_file_at_version` - List versions and snapshot a file or node at a past version
+- `figma_diff_versions` / `figma_get_changes_since_version` - Structured diffs, including component property and binding changes
+- `figma_generate_changelog` - Markdown changelog for release notes
+- `figma_blame_node` - Find when, and by whom, a property or variant was introduced
 
 ### 🔁 Token Sync (Local Mode + Cloud Mode)
 - `figma_export_tokens` - **Export Figma variables to design token files in your codebase.** Canonical DTCG JSON (legacy hex dialect by default, or DTCG 2025.10 object colors/dimensions via `dtcgDialect: "2025"`) plus CSS, Tailwind v4/v3, SCSS, TS, JSON, Style Dictionary, and Tokens Studio formats. Diff-aware merge against existing source files (only writes what changed). `tokens.config.json` autodiscovery means zero-arg calls after first setup. Scopes and codeSyntax metadata round-trip via `$extensions`. Replaces Style Dictionary and Tokens Studio's export pipeline for popular styling methods.
@@ -485,6 +517,7 @@ Turn a production codebase into a design system: analyze → extract tokens → 
 - `figjam_create_shape_with_text` - Create flowchart shapes (diamond, ellipse, etc.)
 - `figjam_create_table` - Create tables with cell data
 - `figjam_create_code_block` - Add code snippets with syntax highlighting
+- `figjam_create_section` - Group board content in a section
 - `figjam_auto_arrange` - Arrange nodes in grid, horizontal, or vertical layouts
 - `figjam_get_board_contents` - Read all content from a FigJam board
 - `figjam_get_connections` - Read the connection graph (flowcharts, relationships)
@@ -508,7 +541,7 @@ Turn a production codebase into a design system: analyze → extract tokens → 
 - `figma_set_slides_view_mode` - Toggle grid vs. single-slide view
 - `figma_focus_slide` - Navigate to a specific slide
 
-**📖 [Detailed Tool Documentation](docs/TOOLS.md)**
+**📖 [Detailed Tool Documentation](docs/tools.md)**
 
 ---
 
@@ -586,7 +619,7 @@ Take a screenshot of the current Figma canvas
 Navigate to this file and capture what's on screen
 ```
 
-**📖 [More Use Cases & Examples](docs/USE_CASES.md)**
+**📖 [More Use Cases & Examples](docs/use-cases.md)**
 
 ---
 
@@ -811,36 +844,35 @@ The architecture supports adding new apps with minimal boilerplate — each app 
 
 ## 🚀 Advanced Topics
 
-- **[Setup Guide](docs/SETUP.md)** - Complete setup guide for all MCP clients
-- **[Self-Hosting](docs/SELF_HOSTING.md)** - Deploy your own instance on Cloudflare
-- **[Architecture](docs/ARCHITECTURE.md)** - How it works under the hood
-- **[OAuth Setup](docs/OAUTH_SETUP.md)** - Configure OAuth for self-hosted deployments
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[Setup Guide](docs/setup.md)** - Complete setup guide for all MCP clients
+- **[Self-Hosting](docs/self-hosting.md)** - Deploy your own instance on Cloudflare
+- **[Architecture](docs/architecture.md)** - How it works under the hood
+- **[OAuth Setup](docs/oauth-setup.md)** - Configure OAuth for self-hosted deployments
+- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 
 ---
 
-## 🤝 vs. Figma Official MCP
+## 🤝 vs. Figma's Official MCP Server
 
-**Figma Console MCP (This Project)** - Debugging, data extraction, and design creation
-- ✅ Real-time console logs from Figma plugins
-- ✅ Screenshot capture and visual debugging
-- ✅ Error stack traces and runtime monitoring
-- ✅ Raw design data extraction (JSON)
-- ✅ FigJam board creation and reading (stickies, flowcharts, tables)
-- ✅ Works remotely or locally
+The two servers are complementary, and both can run in the same MCP client.
 
-**Figma Official Dev Mode MCP** - Code generation
-- ✅ Generates React/HTML code from designs
-- ✅ Tailwind/CSS class generation
-- ✅ Component boilerplate scaffolding
+**Figma's official MCP server** is hosted by Figma. It focuses on design-to-code context (`get_design_context`), Code Connect, library search, and creating content in Figma: it writes through `use_figma`, creates files, generates FigJam diagrams, and works with motion and shaders.
 
-**Use both together** for the complete workflow: generate code with Official MCP, then debug and extract data with Console MCP.
+**Figma Console MCP** focuses on design-system operations:
+- Deterministic checks: design-code parity, accessibility (canvas and code), and design-system health
+- Token export in 10 formats and DTCG import with round-trip variable IDs
+- Variable reads and writes on any Figma plan through the Desktop Bridge plugin
+- Component documentation with design and code history, and version-history diffs
+- Codebase → design system extraction
+- Plugin console capture, selection tracking, and multi-file execution (Local Mode)
+
+**📖 [Full comparison](https://docs.figma-console-mcp.southleft.com/figma-mcp-vs-figma-console-mcp)**
 
 ---
 
 ## 🛤️ Roadmap
 
-**Current Status:** v1.40.7 (Stable) - Production-ready. Latest: a clearer Color Tokens table in generated docs — layers revealed by a boolean property are printed once under that property, and stroke/fill rows name the nested instance they belong to (server-only, no plugin re-import). On top of v1.40.6's overrides in extended variable collections are visible (previously reported as nonexistent), and a third round of generated-doc fidelity fixes — radius tokens read per corner, boolean props compared in Design-Code Parity, source links pinned to a commit, hidden layers linked to the property that shows them (server-only, no plugin re-import). On top of v1.40.5's clean dependency audit for the npm package — Worker-only dependencies (`@cloudflare/puppeteer`, which pulled in a high-severity `extract-zip` advisory with no upstream fix, and `agents`) no longer install for npm users, so `npm install figma-console-mcp` audits at 0 vulnerabilities and is 64 MB instead of 173 MB; the server also reports its real version to MCP clients instead of `0.1.0` (server-only, no plugin re-import). On top of v1.40.4's fixes found by live-testing v1.40.3 on hard production components — tools given a `fileUrl` now read variables, descriptions and annotations from THAT file rather than whichever file is active (previously every token name could vanish, or on an id collision come from the wrong file; `figma_get_component` could return a different component), a tool result over 16 MB no longer disconnects the server, anatomy labels sizing by the layout's real axes, and the icon/typography/anatomy output stays readable on large components (server-only, no plugin re-import). On top of v1.40.3's fidelity fixes for generated component docs on harder components — hidden layers are labeled instead of documented as rendered, one-sided borders report the weight that actually renders, typography and layer structure are compared across every variant instead of read from the first, gradients/shadows/opacity are no longer silently dropped, truncated trees say so, and `SLOT` properties are listed (server-only, no plugin re-import). On top of v1.40.2's data-loss fix for `figma_export_tokens` — with a different file active in Figma than intended, an export could replace a real token file with an empty one (or with another file's tokens) and report success; exports now refuse to write when a requested collection is missing, when the export is empty, when the target was generated from a different Figma file, or when overwriting would destroy tokens the export doesn't manage, and `strategy: "merge"` — documented as preserving code-only tokens but never implemented — is now a genuinely safe default (server-only, no plugin re-import). On top of v1.40.1's accuracy fixes for generated component docs across variants — a descendant's fill (typically an icon's) could be documented as a variant's Background, Color Token headings kept only a property literally named `Variant`, spacing was read from the first variant alone, and icons were only detected by layer name — plus `figma_export_tokens` accepting a file path as `outputPath` instead of failing with a raw `EEXIST` or silently creating a directory (server-only, no plugin re-import). On top of v1.40.0's design system extraction from production codebases — seven Local-Mode `figma_ds_*` tools that scan one or more apps (framework/styling/vendor detection, usage-ranked component inventory classified vendored/wrapped/pure-vendor/bespoke, variant inference from real call sites, duplicate detection, and an architecture pass separating UI-kit specializations from the missing generic primitives), mine the de-facto styling into DTCG tokens with per-token provenance (multi-mode CSS custom properties, SCSS, Tailwind config, shadcn HSL triples, utility-class frequency mining valued from the app's own theme), scaffold the design-system package with showcase docs pages, wire a fresh Storybook workshop to the app's real theme layers and fonts, deep-extract components for porting with CSF3 story scaffolds, verify with deterministic fidelity evals, and persist porting progress across sessions — the extracted tokens import straight into Figma variables via `figma_import_tokens`. On top of v1.39.1's fix for a plugin-update banner that could never be cleared — an older server instance nagging a newer plugin to re-import, which only ever installs the same or a newer plugin. On top of v1.39.0's multi-file execution — `figma_execute_across_files` runs one script against several Desktop Bridge-connected files concurrently (four files x 2s of work in ~3s, not ~8s), and `figma_execute` takes an optional `fileKey` to target a single file without moving the active file or releasing target lock; targeting must be explicit (`fileKeys` or `allFiles: true`), so nothing fans out to files you did not name. From community PR #107 by @Wolfr. Ships with a relay fix: `handleResult()` in the plugin's ui.html rebuilt each response field by field and silently dropped `resultAnalysis` and `fileContext`, so the `resultAnalysis.warning` check that `figma_execute`'s own description tells callers to perform has never been possible (re-import `manifest.json` for those two fields; everything else works without it). On top of v1.38.2's connection-stability fix — the server's own orphan reaper was terminating healthy MCP servers because its liveness probe used an IPv4 literal while the server binds the IPv6 loopback, which turned every kill-safety gate into a rubber stamp; this was the cause of recurring "Server disconnected" errors across all MCP clients. Alongside v1.38.1's fix for the shared-library variable tools, which had silently reported zero collections since v1.29.0 and reported failed imports as successes. On top of v1.38.0's ongoing component changelogs in generated docs — `figma_generate_component_doc` takes an opt-in `history` parameter that pulls per-component **design history** from Figma version history (each version diffed and scoped to that component, so renames, added properties, and token bindings show up as rows) alongside **code history** from `git log` on the component's source files, rendered as a `## History` section with design, code, and release-note tables. Prefers labeled versions, falls back to auto-saves when a file has none, and is off by default so existing calls are unchanged (server-only, no plugin re-import). On top of v1.37.x's design-system health audit for every client — `figma_audit_design_system_report` runs the dashboard's deterministic six-category scoring engine and returns the report as data with per-finding remediation, live-first fileKey-verified data (source disclosed), chunked per-category drill-down, and a 5-minute cache (server-only, no plugin re-import). On top of v1.36.0's target lock for multi-file parallel work — — `figma_navigate` takes a `lock: true` flag that pins the active file so an AI agent can work in one file while you work in another without commands routing to the wrong file. On top of v1.35.0's Figma Slots write support — create, inspect, populate, and reset Slots (GA at Config 2026) via 5 new tools (`figma_create_slot`, `figma_get_slots`, `figma_append_to_slot`, `figma_reset_slot`, `figma_add_slot_property`), live-validated against the GA Plugin API and based on community PR #77. On top of v1.34.0's Bidirectional Token Sync v2 + DTCG 2025.10 — `figma_import_tokens` applies the complete diff plan (creates missing collections/variables, applies renames, writes real `VARIABLE_ALIAS` references, and deletes only under explicit `replace`), `figma_export_tokens` speaks the DTCG 2025.10 dialect on request (legacy default byte-identical), variable scopes/codeSyntax round-trip via `$extensions`, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and `figma_create_component_set` builds a full variant set from an axes matrix in one call. On top of the v1.33.x line: version-handshake fix (re-import banner only fires when plugin files actually changed), security dependency sweep, and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **121 tools** (Local) / **101 tools** (Cloud) / **9 tools** (Remote read-only), Comments API, cross-MCP identity disambiguation, and MCP Apps.
+**Current Status:** v1.40.7 (Stable) - Production-ready. Latest: a clearer Color Tokens table in generated docs — layers revealed by a boolean property are printed once under that property, and stroke/fill rows name the nested instance they belong to (server-only, no plugin re-import). On top of v1.40.6's overrides in extended variable collections are visible (previously reported as nonexistent), and a third round of generated-doc fidelity fixes — radius tokens read per corner, boolean props compared in Design-Code Parity, source links pinned to a commit, hidden layers linked to the property that shows them (server-only, no plugin re-import). On top of v1.40.5's clean dependency audit for the npm package — Worker-only dependencies (`@cloudflare/puppeteer`, which pulled in a high-severity `extract-zip` advisory with no upstream fix, and `agents`) no longer install for npm users, so `npm install figma-console-mcp` audits at 0 vulnerabilities and is 64 MB instead of 173 MB; the server also reports its real version to MCP clients instead of `0.1.0` (server-only, no plugin re-import). On top of v1.40.4's fixes found by live-testing v1.40.3 on hard production components — tools given a `fileUrl` now read variables, descriptions and annotations from THAT file rather than whichever file is active (previously every token name could vanish, or on an id collision come from the wrong file; `figma_get_component` could return a different component), a tool result over 16 MB no longer disconnects the server, anatomy labels sizing by the layout's real axes, and the icon/typography/anatomy output stays readable on large components (server-only, no plugin re-import). On top of v1.40.3's fidelity fixes for generated component docs on harder components — hidden layers are labeled instead of documented as rendered, one-sided borders report the weight that actually renders, typography and layer structure are compared across every variant instead of read from the first, gradients/shadows/opacity are no longer silently dropped, truncated trees say so, and `SLOT` properties are listed (server-only, no plugin re-import). On top of v1.40.2's data-loss fix for `figma_export_tokens` — with a different file active in Figma than intended, an export could replace a real token file with an empty one (or with another file's tokens) and report success; exports now refuse to write when a requested collection is missing, when the export is empty, when the target was generated from a different Figma file, or when overwriting would destroy tokens the export doesn't manage, and `strategy: "merge"` — documented as preserving code-only tokens but never implemented — is now a genuinely safe default (server-only, no plugin re-import). On top of v1.40.1's accuracy fixes for generated component docs across variants — a descendant's fill (typically an icon's) could be documented as a variant's Background, Color Token headings kept only a property literally named `Variant`, spacing was read from the first variant alone, and icons were only detected by layer name — plus `figma_export_tokens` accepting a file path as `outputPath` instead of failing with a raw `EEXIST` or silently creating a directory (server-only, no plugin re-import). On top of v1.40.0's design system extraction from production codebases — seven Local-Mode `figma_ds_*` tools that scan one or more apps (framework/styling/vendor detection, usage-ranked component inventory classified vendored/wrapped/pure-vendor/bespoke, variant inference from real call sites, duplicate detection, and an architecture pass separating UI-kit specializations from the missing generic primitives), mine the de-facto styling into DTCG tokens with per-token provenance (multi-mode CSS custom properties, SCSS, Tailwind config, shadcn HSL triples, utility-class frequency mining valued from the app's own theme), scaffold the design-system package with showcase docs pages, wire a fresh Storybook workshop to the app's real theme layers and fonts, deep-extract components for porting with CSF3 story scaffolds, verify with deterministic fidelity evals, and persist porting progress across sessions — the extracted tokens import straight into Figma variables via `figma_import_tokens`. On top of v1.39.1's fix for a plugin-update banner that could never be cleared — an older server instance nagging a newer plugin to re-import, which only ever installs the same or a newer plugin. On top of v1.39.0's multi-file execution — `figma_execute_across_files` runs one script against several Desktop Bridge-connected files concurrently (four files x 2s of work in ~3s, not ~8s), and `figma_execute` takes an optional `fileKey` to target a single file without moving the active file or releasing target lock; targeting must be explicit (`fileKeys` or `allFiles: true`), so nothing fans out to files you did not name. From community PR #107 by @Wolfr. Ships with a relay fix: `handleResult()` in the plugin's ui.html rebuilt each response field by field and silently dropped `resultAnalysis` and `fileContext`, so the `resultAnalysis.warning` check that `figma_execute`'s own description tells callers to perform has never been possible (re-import `manifest.json` for those two fields; everything else works without it). On top of v1.38.2's connection-stability fix — the server's own orphan reaper was terminating healthy MCP servers because its liveness probe used an IPv4 literal while the server binds the IPv6 loopback, which turned every kill-safety gate into a rubber stamp; this was the cause of recurring "Server disconnected" errors across all MCP clients. Alongside v1.38.1's fix for the shared-library variable tools, which had silently reported zero collections since v1.29.0 and reported failed imports as successes. On top of v1.38.0's ongoing component changelogs in generated docs — `figma_generate_component_doc` takes an opt-in `history` parameter that pulls per-component **design history** from Figma version history (each version diffed and scoped to that component, so renames, added properties, and token bindings show up as rows) alongside **code history** from `git log` on the component's source files, rendered as a `## History` section with design, code, and release-note tables. Prefers labeled versions, falls back to auto-saves when a file has none, and is off by default so existing calls are unchanged (server-only, no plugin re-import). On top of v1.37.x's design-system health audit for every client — `figma_audit_design_system_report` runs the dashboard's deterministic six-category scoring engine and returns the report as data with per-finding remediation, live-first fileKey-verified data (source disclosed), chunked per-category drill-down, and a 5-minute cache (server-only, no plugin re-import). On top of v1.36.0's target lock for multi-file parallel work — — `figma_navigate` takes a `lock: true` flag that pins the active file so an AI agent can work in one file while you work in another without commands routing to the wrong file. On top of v1.35.0's Figma Slots write support — create, inspect, populate, and reset Slots (GA at Config 2026) via 5 new tools (`figma_create_slot`, `figma_get_slots`, `figma_append_to_slot`, `figma_reset_slot`, `figma_add_slot_property`), live-validated against the GA Plugin API and based on community PR #77. On top of v1.34.0's Bidirectional Token Sync v2 + DTCG 2025.10 — `figma_import_tokens` applies the complete diff plan (creates missing collections/variables, applies renames, writes real `VARIABLE_ALIAS` references, and deletes only under explicit `replace`), `figma_export_tokens` speaks the DTCG 2025.10 dialect on request (legacy default byte-identical), variable scopes/codeSyntax round-trip via `$extensions`, `figma_setup_design_tokens` accepts alias values via DTCG brace references, and `figma_create_component_set` builds a full variant set from an axes matrix in one call. On top of the v1.33.x line: version-handshake fix (re-import banner only fires when plugin files actually changed), security dependency sweep, and the v1.33.0 connection UX overhaul (honest status pill derived from live connection state, `/health` auto-discovery with self-healing reconnect) + a 33-fix full-codebase audit (lossless DTCG multi-mode round-trips, cross-collection alias resolution, branch-URL correctness across REST tools, cache-poisoning and CSWSH fixes, bridge-first screenshots). Built on WCAG-accurate accessibility auditing (line height below 1.5× is no longer mis-flagged as a failure; readability hints decoupled from conformance checks and scoped to multi-line text; code-side WCAG 1.4.12 check), a self-healing Desktop Bridge connection (zombie-process reaper + auto-reconnect watchdog — fixes the recurring "not connected until restart" bug), native variable binding on fills/strokes + typography control in the write tools, shared-library inspection (key-based component resolution + library variable read/import without Enterprise plan), 10-format token export pipeline (DTCG, CSS, Tailwind v4, Tailwind v3, SCSS, TS module, JSON flat/nested, Style Dictionary v3, Tokens Studio), bidirectional Figma↔code token sync, version history & time-series awareness, FigJam + Slides support, Cloud Write Relay, Design System Kit, WebSocket-only connectivity, smart multi-file tracking, **121 tools** (Local) / **95 tools** (Cloud) / read-only subset (Remote), Comments API, cross-MCP identity disambiguation, and MCP Apps.
 
 **Recent Releases:**
 - [x] **v1.40.7** - Color Tokens readability: a layer shown by a boolean property is printed once under that property when identical across variants (kept per variant when it differs); paints on nested instances carry the instance's variant, and same-named fills/strokes are qualified by instance. Server-only. Reported by Robin Di Capua.
@@ -914,7 +946,7 @@ npm run dev
 npm run build
 ```
 
-**📖 [Development Guide](docs/ARCHITECTURE.md)**
+**📖 [Development Guide](docs/architecture.md)**
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: "Figma Console MCP"
-description: "Your design system as an API. Connect AI to Figma for extraction, creation, debugging, and token sync."
+description: "A design-system-focused MCP server for Figma: bidirectional Figma-code sync, writes to Figma, and deterministic checks for parity, accessibility, and design-system health."
 ---
 
 <Note>
@@ -11,20 +11,20 @@ description: "Your design system as an API. Connect AI to Figma for extraction, 
 
 Design systems shouldn't be static documents locked in a visual tool. They should be **queryable**, **programmable**, and **always in sync** with your codebase.
 
-Figma Console MCP bridges the gap between design and development—giving AI assistants complete access to your Figma files for extraction, creation, and debugging.
+Figma Console MCP is a design-system-focused MCP server. It connects AI assistants to Figma through the Desktop Bridge plugin and the REST API, so they can read your design system, change it, and check it against your code.
 
-<Columns cols={4}>
-  <Card title="Extract" icon="download">
-    Variables, styles, and components as structured data
+<Columns cols={2}>
+  <Card title="Bidirectional" icon="arrows-rotate">
+    Figma ⇄ code. Export variables to 10 token formats and import DTCG edits back with round-trip IDs, extract a design system from an existing codebase, and compare components with their code.
   </Card>
-  <Card title="Sync" icon="arrows-rotate">
-    Bidirectional token sync between Figma and your codebase
+  <Card title="Writes to Figma" icon="wand-magic-sparkles">
+    Variables, components and component sets, Slots, annotations, FigJam boards, and Slides, plus any Plugin API code through `figma_execute`.
   </Card>
-  <Card title="Create" icon="wand-magic-sparkles">
-    Design files, FigJam boards, and Slides presentations
+  <Card title="Deterministic checks" icon="list-check">
+    Rule-based checks that return the same result every run: design-code parity, accessibility on the canvas and in code, and design-system health.
   </Card>
-  <Card title="Audit" icon="universal-access">
-    Accessibility scanning across design and code
+  <Card title="Facts, not guesses" icon="scale-balanced">
+    Exact token names and values, variants, variable bindings, and states as structured, verifiable data. The server doesn't prescribe a framework or house style, so the AI writes code in your team's own stack and conventions instead of guessing values from a screenshot.
   </Card>
 </Columns>
 
@@ -162,12 +162,30 @@ Real component data. Real token values. Real code that uses your actual design s
   <Accordion title="Design Creation" icon="paintbrush">
     Execute Figma Plugin API code directly. Build, modify, and organize components programmatically.
 
-    - `figma_execute` — Run any Plugin API code
+    - `figma_execute` — Run any Plugin API code, optionally in a specific connected file via `fileKey` (Local Mode)
+    - `figma_execute_across_files` — Run the same script in several connected files at once (Local Mode)
     - `figma_create_component_set` — Build a full variant set from an axes matrix (or combine existing components) in one call — variant keys returned, ready to instantiate
     - `figma_arrange_component_set` — Organize variants with labels
     - `figma_create_slot` / `figma_append_to_slot` — Add slots to components and populate them on instances (Figma Slots, GA at Config 2026), plus `figma_get_slots`, `figma_reset_slot`, and `figma_add_slot_property`
     - `figma_create_variable` — Add design tokens
-    - Plus 20+ node manipulation tools
+    - Plus dedicated tools for creating, moving, resizing, cloning, renaming, and deleting nodes, and for text, fills, strokes, image fills, instance properties, and component properties
+  </Accordion>
+
+  <Accordion title="Design-Code Parity & Documentation" icon="code-compare">
+    Compare a Figma component with its code implementation and generate documentation from both.
+
+    - `figma_check_design_parity` — Deterministic comparison of a Figma component with its code: visual properties, spacing, typography, token usage, component API, accessibility, and metadata, with a parity score and a fix list
+    - `figma_generate_component_doc` — Markdown component documentation: anatomy, per-variant color, spacing, and typography tokens, annotations, and a parity section. The optional `history` parameter adds a changelog from Figma version history and `git log`
+    - `figma_get_component_for_development_deep` / `figma_analyze_component_set` — Full component trees with resolved token names, and variant sets as state machines with CSS pseudo-class mappings
+  </Accordion>
+
+  <Accordion title="Version History" icon="clock-rotate-left">
+    Work with a file's Figma version history.
+
+    - `figma_get_file_versions` / `figma_get_file_at_version` — List versions and snapshot a file or node at a past version
+    - `figma_diff_versions` / `figma_get_changes_since_version` — Structured diffs, including component property and binding changes
+    - `figma_generate_changelog` — Markdown changelog for release notes
+    - `figma_blame_node` — Find when, and by whom, a property or variant was introduced
   </Accordion>
 
   <Accordion title="Token Sync" icon="arrows-rotate">
@@ -233,12 +251,12 @@ Real component data. Real token values. Real code that uses your actual design s
     All tools including real-time monitoring. Requires Node.js and a Figma token.
   </Card>
   <Card title="Cloud Mode" icon="cloud-arrow-up" href="/setup#-cloud-mode-web-ai-clients">
-    **Web AI clients — 101 tools**
+    **Web AI clients — 95 tools**
 
     Full write access from Claude.ai, v0, Replit, or Lovable. Pair with a code — no Node.js needed.
   </Card>
   <Card title="Remote (Read-Only)" icon="cloud" href="/setup#-remote-mode-read-only-exploration">
-    **Quick exploration — 9 tools**
+    **Quick exploration — read-only**
 
     Zero setup, just paste a URL. Read design data and take screenshots.
   </Card>

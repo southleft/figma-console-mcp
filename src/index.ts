@@ -2205,1250 +2205,945 @@ export default {
 		return await fetch(proxyRequest);
 	}
 
-	// Root path - serve landing page with editorial layout and light/dark mode
+	// Root path - serve the landing page (editorial layout, light/dark themes).
+	// `version` below is kept current by scripts/release.sh (it rewrites every
+	// `version: "x.y.z"` in this file). Tool counts in the copy are tracked by
+	// scripts/update-tool-counts.mjs (meta descriptions, the class="number"
+	// Local count and the data-mode="cloud" Cloud count). Remote has no count:
+	// it is the same hosted endpoint before pairing, so it is described, not counted.
 	if (url.pathname === "/") {
+		const landing = { version: "1.40.7" };
 		return new Response(
 			`<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Figma Console MCP - The Most Comprehensive MCP Server for Figma</title>
+	<title>Figma Console MCP: a design-system MCP server for Figma and code</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="Turn your Figma design system into a living API. 121+ tools give AI assistants deep access to design tokens, component specs, variables, and programmatic design creation.">
+	<meta name="description" content="An open-source MCP server for design systems. 121+ tools give AI assistants two-way token sync between Figma and code, write access to Figma, and repeatable design-code checks.">
 
 	<!-- Open Graph -->
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="https://figma-console-mcp.southleft.com">
-	<meta property="og:title" content="Figma Console MCP - Turn Your Design System Into a Living API">
-	<meta property="og:description" content="The most comprehensive MCP server for Figma. 121+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
+	<meta property="og:title" content="Figma Console MCP: keep Figma and code on the same design system">
+	<meta property="og:description" content="An open-source MCP server for design systems. 121+ tools give AI assistants two-way token sync between Figma and code, write access to Figma, and repeatable design-code checks.">
 	<meta property="og:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 	<meta property="og:image:width" content="1200">
 	<meta property="og:image:height" content="630">
 
 	<!-- Twitter -->
 	<meta name="twitter:card" content="summary_large_image">
-	<meta name="twitter:title" content="Figma Console MCP - Turn Your Design System Into a Living API">
-	<meta name="twitter:description" content="The most comprehensive MCP server for Figma. 121+ tools give AI assistants deep access to design tokens, components, variables, and programmatic design creation.">
+	<meta name="twitter:title" content="Figma Console MCP: keep Figma and code on the same design system">
+	<meta name="twitter:description" content="An open-source MCP server for design systems. 121+ tools give AI assistants two-way token sync between Figma and code, write access to Figma, and repeatable design-code checks.">
 	<meta name="twitter:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 
-	<meta name="theme-color" content="#0D9488">
+	<meta name="theme-color" content="#0F766E">
+	<script>
+		// Set the theme before first paint: stored choice, else the system setting.
+		(function () {
+			var stored = null;
+			try { stored = localStorage.getItem('theme'); } catch (e) {}
+			var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+			document.documentElement.setAttribute('data-theme', stored === 'light' || stored === 'dark' ? stored : (prefersDark ? 'dark' : 'light'));
+		})();
+	</script>
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 	<style>
 		:root {
-			--color-primary: #0D9488;
-			--color-primary-light: #14B8A6;
-			--color-primary-dark: #0F766E;
-			--color-bg: #0F0F0F;
-			--color-bg-elevated: #161616;
-			--color-bg-card: #1A1A1A;
-			--color-border: #2A2A2A;
-			--color-border-hover: #3A3A3A;
-			--color-rule: #2A2A2A;
-			--color-text: #FAFAFA;
-			--color-text-secondary: #A1A1A1;
-			--color-text-tertiary: #666666;
-			--font-mono: "JetBrains Mono", "SF Mono", Monaco, monospace;
-			--radius-sm: 6px;
-			--radius-md: 10px;
-			--radius-lg: 16px;
-			--transition: 0.2s ease;
+			--paper: #F5F7F6;
+			--surface: #FFFFFF;
+			--surface-2: #EAF0EE;
+			--ink: #10201D;
+			--muted: #4A5C58;
+			--rule: #D6DFDC;
+			--rule-strong: #B7C6C2;
+			--teal: #0F766E;
+			--teal-ink: #FFFFFF;
+			--teal-hover: #0B5F58;
+			--mark: rgba(15, 118, 110, 0.16);
+			--mark-edge: #0F766E;
+			--sponsor: #B8327F;
+			--focus: #0F766E;
+			--code-key: #4A5C58;
+			--code-str: #0F5E57;
+
+			--font-display: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+			--font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			--font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+			--gutter: clamp(16px, 4vw, 40px);
+			--measure: 1200px;
+			--radius: 8px;
+			color-scheme: light;
 		}
 
-		[data-theme="light"] {
-			--color-bg: #FAFAFA;
-			--color-bg-elevated: #FFFFFF;
-			--color-bg-card: #FFFFFF;
-			--color-border: #E5E5E5;
-			--color-border-hover: #D4D4D4;
-			--color-rule: #E5E5E5;
-			--color-text: #171717;
-			--color-text-secondary: #525252;
-			--color-text-tertiary: #A3A3A3;
+		@media (prefers-color-scheme: dark) {
+			:root:not([data-theme="light"]) {
+				--paper: #0C1413;
+				--surface: #121D1B;
+				--surface-2: #182624;
+				--ink: #E6EFEC;
+				--muted: #9AB0AA;
+				--rule: #243532;
+				--rule-strong: #35504B;
+				--teal: #2DD4BF;
+				--teal-ink: #04211D;
+				--teal-hover: #5EEAD4;
+				--mark: rgba(45, 212, 191, 0.18);
+				--mark-edge: #2DD4BF;
+				--sponsor: #E27AB5;
+				--focus: #5EEAD4;
+				--code-key: #9AB0AA;
+				--code-str: #7FE3D3;
+				color-scheme: dark;
+			}
 		}
 
-		* { margin: 0; padding: 0; box-sizing: border-box; }
-
-		html {
-			scroll-behavior: smooth;
+		:root[data-theme="dark"] {
+			--paper: #0C1413;
+			--surface: #121D1B;
+			--surface-2: #182624;
+			--ink: #E6EFEC;
+			--muted: #9AB0AA;
+			--rule: #243532;
+			--rule-strong: #35504B;
+			--teal: #2DD4BF;
+			--teal-ink: #04211D;
+			--teal-hover: #5EEAD4;
+			--mark: rgba(45, 212, 191, 0.18);
+			--mark-edge: #2DD4BF;
+			--sponsor: #E27AB5;
+			--focus: #5EEAD4;
+			--code-key: #9AB0AA;
+			--code-str: #7FE3D3;
+			color-scheme: dark;
 		}
+
+		*, *::before, *::after { box-sizing: border-box; }
+		* { margin: 0; padding: 0; }
+
+		html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+		@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 		body {
-			font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-			background: var(--color-bg);
-			color: var(--color-text);
+			font-family: var(--font-body);
+			font-size: 17px;
 			line-height: 1.6;
+			background: var(--paper);
+			color: var(--ink);
 			min-height: 100vh;
-			transition: background var(--transition), color var(--transition);
+			-webkit-font-smoothing: antialiased;
 		}
 
-		a { color: inherit; text-decoration: none; }
+		a { color: inherit; }
+		img { max-width: 100%; }
+		code { font-family: var(--font-mono); font-size: 0.88em; }
 
-		/* Header */
-		.header {
+		:focus-visible {
+			outline: 2px solid var(--focus);
+			outline-offset: 3px;
+			border-radius: 3px;
+		}
+
+		.skip-link {
+			position: absolute;
+			left: var(--gutter);
+			top: -60px;
+			z-index: 2000;
+			padding: 10px 14px;
+			background: var(--teal);
+			color: var(--teal-ink);
+			font-weight: 600;
+			text-decoration: none;
+			border-radius: var(--radius);
+		}
+		.skip-link:focus { top: 12px; }
+
+		.wrap {
+			max-width: var(--measure);
+			margin: 0 auto;
+			padding-inline: var(--gutter);
+		}
+
+		/* ---------- Header ---------- */
+		.site-header {
 			position: sticky;
 			top: 0;
 			z-index: 100;
-			padding: 16px 32px;
+			background: var(--paper);
+			border-bottom: 1px solid var(--rule);
+		}
+		.site-header .wrap {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 16px;
+			padding-block: 14px;
+		}
+		.logo { display: inline-flex; align-items: center; }
+		.logo img { height: 32px; width: auto; display: block; }
+		.logo .for-light { display: none; }
+		[data-theme="light"] .logo .for-light { display: block; }
+		[data-theme="light"] .logo .for-dark { display: none; }
+
+		.header-right { display: flex; align-items: center; gap: 20px; }
+		.nav { display: flex; align-items: center; gap: 22px; }
+		.nav a, .footer-links a {
+			font-size: 15px;
+			font-weight: 500;
+			color: var(--muted);
+			text-decoration: none;
+		}
+		.nav a:hover, .footer-links a:hover { color: var(--ink); }
+		.nav a.sponsor, .footer-links a.sponsor, .mobile-nav a.sponsor {
+			color: var(--sponsor);
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+		}
+		.sponsor svg { width: 14px; height: 14px; fill: currentColor; }
+
+		.icon-btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 40px;
+			height: 40px;
+			background: transparent;
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--radius);
+			color: var(--ink);
+			cursor: pointer;
+		}
+		.icon-btn:hover { background: var(--surface-2); }
+		.icon-btn svg { width: 18px; height: 18px; }
+		.theme-toggle .sun { display: none; }
+		[data-theme="dark"] .theme-toggle .sun { display: block; }
+		[data-theme="dark"] .theme-toggle .moon { display: none; }
+		.menu-btn { display: none; }
+
+		/* ---------- Mobile menu ---------- */
+		.mobile-menu {
+			position: fixed;
+			inset: 0;
+			z-index: 1000;
+			background: var(--paper);
+			padding: 16px var(--gutter);
+			display: flex;
+			flex-direction: column;
+		}
+		.mobile-menu-head {
 			display: flex;
 			justify-content: space-between;
 			align-items: center;
-			background: var(--color-bg);
-			border-bottom: 1px solid var(--color-rule);
-			backdrop-filter: blur(12px);
-			transition: background var(--transition), border-color var(--transition);
-		}
-
-		.logo img {
-			height: 35px;
-			transition: opacity var(--transition);
-		}
-
-		.logo img:hover { opacity: 0.8; }
-
-		.header-right {
-			display: flex;
-			align-items: center;
-			gap: 24px;
-		}
-
-		.nav {
-			display: flex;
-			gap: 24px;
-			align-items: center;
-		}
-
-		.nav a {
-			color: var(--color-text-secondary);
-			font-size: 14px;
-			font-weight: 500;
-			transition: color var(--transition);
-		}
-
-		.nav a:hover { color: var(--color-text); }
-
-		.nav a.sponsor-link {
-			color: #db61a2;
-			display: flex;
-			align-items: center;
-			gap: 5px;
-		}
-		.nav a.sponsor-link:hover { color: #ea4aaa; }
-		.nav a.sponsor-link svg { width: 14px; height: 14px; fill: currentColor; }
-
-		.theme-toggle {
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			width: 36px;
-			height: 36px;
-			background: transparent;
-			border: 1px solid var(--color-border);
-			border-radius: var(--radius-sm);
-			cursor: pointer;
-			color: var(--color-text-secondary);
-			transition: all var(--transition);
-		}
-
-		.theme-toggle:hover {
-			border-color: var(--color-border-hover);
-			color: var(--color-text);
-		}
-
-		.theme-toggle svg { width: 18px; height: 18px; }
-		.theme-toggle .sun { display: none; }
-		[data-theme="light"] .theme-toggle .moon { display: none; }
-		[data-theme="light"] .theme-toggle .sun { display: block; }
-
-		/* Main layout */
-		.main {
-			max-width: 1280px;
-			margin: 0 auto;
-			padding: 64px 32px 80px;
-		}
-
-		/* Section dividers */
-		.section-rule {
-			border: none;
-			border-top: 1px solid var(--color-rule);
-			margin: 72px 0;
-		}
-
-		/* Grid layout */
-		.grid {
-			display: grid;
-			grid-template-columns: repeat(12, 1fr);
-			gap: 48px 48px;
-		}
-
-		.grid-cell {
-			transition: all var(--transition);
-		}
-
-		/* Rule-based separators for grid cells */
-		.grid-cell.rule-left {
-			padding-left: 48px;
-			border-left: 1px solid var(--color-rule);
-		}
-
-		.grid-cell.rule-top {
-			padding-top: 32px;
-			border-top: 1px solid var(--color-rule);
-		}
-
-		/* Hero section */
-		.hero-cell {
-			grid-column: span 7;
-			padding-right: 48px;
-		}
-
-		.badge {
-			display: inline-block;
-			width: fit-content;
-			color: var(--color-text-secondary);
-			font-size: 11px;
-			font-weight: 600;
-			text-transform: uppercase;
-			letter-spacing: 0.5px;
-			margin-bottom: 20px;
-		}
-
-		h1 {
-			font-size: 48px;
-			font-weight: 700;
-			letter-spacing: -0.03em;
-			line-height: 1.1;
-			margin-bottom: 20px;
-		}
-
-		.highlight {
-			color: var(--color-primary-light);
-		}
-
-		.hero-subtitle {
-			font-size: 18px;
-			color: var(--color-text-secondary);
-			line-height: 1.7;
-			max-width: 560px;
 			margin-bottom: 32px;
 		}
-
-		.cta-row {
-			display: flex;
-			gap: 12px;
-			flex-wrap: wrap;
+		.mobile-nav { display: flex; flex-direction: column; }
+		.mobile-nav a {
+			padding: 16px 0;
+			font-size: 19px;
+			font-weight: 500;
+			text-decoration: none;
+			border-bottom: 1px solid var(--rule);
 		}
+		.mobile-menu[hidden] { display: none; }
+		body.menu-open { overflow: hidden; }
 
+		/* ---------- Shared type ---------- */
+		h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.01em; }
+		h2 {
+			font-size: clamp(30px, 4.2vw, 44px);
+			line-height: 1.08;
+			margin-bottom: 14px;
+		}
+		.section-intro { color: var(--muted); max-width: 60ch; }
+		.section { padding-block: clamp(56px, 9vw, 104px); border-top: 1px solid var(--rule); }
+		.section-head { margin-bottom: clamp(28px, 5vw, 48px); }
+
+		/* ---------- Buttons ---------- */
+		.btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
 		.btn {
 			display: inline-flex;
 			align-items: center;
+			justify-content: center;
 			gap: 8px;
-			padding: 12px 20px;
-			border-radius: var(--radius-sm);
-			font-weight: 500;
-			font-size: 14px;
-			transition: all var(--transition);
-			border: none;
-			cursor: pointer;
-		}
-
-		.btn svg { width: 16px; height: 16px; }
-
-		.btn-primary {
-			background: var(--color-primary);
-			color: #FFFFFF;
-		}
-
-		.btn-primary:hover { background: var(--color-primary-dark); }
-
-		.btn-secondary {
-			background: transparent;
-			color: var(--color-text);
-			border: 1px solid var(--color-border);
-		}
-
-		.btn-secondary:hover {
-			border-color: var(--color-border-hover);
-			background: var(--color-bg-elevated);
-		}
-
-		/* Hero right - capabilities showcase */
-		.showcase-cell {
-			grid-column: span 5;
-		}
-
-		.showcase-label {
-			font-size: 11px;
+			min-height: 46px;
+			padding: 11px 20px;
+			border-radius: var(--radius);
+			font-size: 16px;
 			font-weight: 600;
-			text-transform: uppercase;
-			letter-spacing: 0.5px;
-			color: var(--color-text-tertiary);
-			margin-bottom: 16px;
+			text-decoration: none;
+			border: 1px solid transparent;
 		}
+		.btn svg { width: 17px; height: 17px; flex-shrink: 0; }
+		.btn-primary { background: var(--teal); color: var(--teal-ink); }
+		.btn-primary:hover { background: var(--teal-hover); }
+		.btn-quiet { border-color: var(--rule-strong); color: var(--ink); background: transparent; }
+		.btn-quiet:hover { background: var(--surface-2); }
 
-		.showcase-stat {
+		/* ---------- Hero ---------- */
+		.hero { padding-block: clamp(40px, 6vw, 72px) clamp(48px, 7vw, 80px); }
+		.hero h1 {
+			font-size: clamp(40px, 6.6vw, 84px);
+			line-height: 1;
+			letter-spacing: -0.02em;
+			max-width: 22ch;
+			text-wrap: balance;
+			margin-bottom: clamp(20px, 3vw, 28px);
+		}
+		.hero-lede {
+			font-size: clamp(18px, 1.9vw, 21px);
+			line-height: 1.55;
+			color: var(--muted);
+			max-width: 62ch;
+			margin-bottom: 32px;
+		}
+		.hero-lede strong { color: var(--ink); font-weight: 600; }
+
+		/* Round-trip specimen: the one loud element on the page */
+		.roundtrip { margin-top: clamp(48px, 7vw, 72px); }
+		.rt-grid {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(150px, auto) minmax(0, 1.25fr);
+			align-items: center;
+			gap: 0;
+		}
+		.rt-panel {
+			background: var(--surface);
+			border: 1px solid var(--rule-strong);
+			border-radius: 12px;
+			overflow: hidden;
+			min-width: 0;
+		}
+		.rt-head {
 			display: flex;
+			justify-content: space-between;
 			align-items: baseline;
 			gap: 12px;
-			margin-bottom: 24px;
+			padding: 12px 16px;
+			border-bottom: 1px solid var(--rule);
+			font-size: 14px;
+			color: var(--muted);
 		}
-
-		.showcase-stat .number {
-			font-size: 56px;
-			font-weight: 700;
-			color: var(--color-primary-light);
-			line-height: 1;
-		}
-
-		.showcase-stat .label {
-			font-size: 16px;
-			color: var(--color-text-secondary);
-		}
-
-		.capability-list {
-			display: grid;
-			grid-template-columns: 1fr 1fr;
-			gap: 10px;
-		}
-
-		.capability-item {
+		.rt-head strong { color: var(--ink); font-weight: 600; }
+		.rt-body { padding: 18px 16px 20px; }
+		.rt-name {
 			display: flex;
 			align-items: center;
-			gap: 10px;
-			padding: 10px 14px;
-			background: var(--color-bg-elevated);
-			border: 1px solid var(--color-border);
-			border-radius: var(--radius-md);
-			font-size: 13px;
-			color: var(--color-text-secondary);
-			transition: all var(--transition);
+			gap: 12px;
+			margin-bottom: 16px;
 		}
-
-		.capability-item:hover {
-			border-color: var(--color-primary);
-			color: var(--color-text);
-		}
-
-		.capability-item svg {
-			width: 18px;
-			height: 18px;
-			color: var(--color-primary-light);
+		.rt-name code { font-size: 16px; font-weight: 500; color: var(--ink); word-break: break-all; }
+		.swatch {
+			width: 28px;
+			height: 28px;
+			border-radius: 6px;
+			background: var(--sw);
+			box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 			flex-shrink: 0;
 		}
-
-		/* Value proposition section */
-		.value-cell {
-			grid-column: span 12;
-			text-align: center;
-			padding: 64px 48px;
-			position: relative;
-			background: linear-gradient(135deg, rgba(13, 148, 136, 0.06) 0%, rgba(13, 148, 136, 0.02) 50%, transparent 100%);
-			border-radius: var(--radius-lg);
-			border: 1px solid rgba(13, 148, 136, 0.1);
-		}
-
-		.value-cell::before {
-			content: '';
-			position: absolute;
-			top: -1px;
-			left: 50%;
-			transform: translateX(-50%);
-			width: 120px;
-			height: 3px;
-			background: linear-gradient(90deg, transparent, var(--color-primary-light), transparent);
-			border-radius: 2px;
-		}
-
-		.value-cell h2 {
-			font-size: 36px;
-			font-weight: 700;
-			margin-bottom: 16px;
-			letter-spacing: -0.03em;
-			background: linear-gradient(135deg, var(--color-text) 0%, var(--color-primary-light) 100%);
-			-webkit-background-clip: text;
-			-webkit-text-fill-color: transparent;
-			background-clip: text;
-		}
-
-		[data-theme="light"] .value-cell h2 {
-			background: linear-gradient(135deg, var(--color-text) 0%, var(--color-primary-dark) 100%);
-			-webkit-background-clip: text;
-			-webkit-text-fill-color: transparent;
-			background-clip: text;
-		}
-
-		.value-cell p {
-			font-size: 18px;
-			color: var(--color-text-secondary);
-			max-width: 680px;
-			margin: 0 auto;
-			line-height: 1.7;
-		}
-
-		/* Capabilities grid */
-		.capability-card {
-			grid-column: span 3;
-		}
-
-		.capability-icon {
-			width: 44px;
-			height: 44px;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			background: rgba(13, 148, 136, 0.12);
-			border-radius: var(--radius-md);
-			color: var(--color-primary-light);
-			margin-bottom: 16px;
-		}
-
-		.capability-icon svg { width: 22px; height: 22px; }
-
-		.capability-card h3 {
-			font-size: 17px;
-			font-weight: 600;
-			margin-bottom: 10px;
-		}
-
-		.capability-card p {
-			font-size: 14px;
-			color: var(--color-text-secondary);
-			line-height: 1.7;
-		}
-
-		/* Prompt showcase */
-		.prompts-cell {
-			grid-column: span 6;
-		}
-
-		.section-header {
-			display: flex;
-			align-items: center;
-			gap: 12px;
-			margin-bottom: 24px;
-		}
-
-		.section-header-icon {
-			width: 40px;
-			height: 40px;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			background: rgba(13, 148, 136, 0.12);
-			border-radius: var(--radius-md);
-			color: var(--color-primary-light);
-		}
-
-		.section-header-icon svg {
-			width: 20px;
-			height: 20px;
-		}
-
-		.section-header h3 {
-			font-size: 18px;
-			font-weight: 600;
-		}
-
-		.prompt-list {
-			display: flex;
-			flex-direction: column;
-			gap: 12px;
-		}
-
-		.prompt-item {
-			display: flex;
-			align-items: center;
-			gap: 12px;
-			padding: 14px 16px;
-			background: var(--color-bg-elevated);
-			border: 1px solid var(--color-border);
-			border-radius: var(--radius-md);
+		.swatch.sm { width: 16px; height: 16px; border-radius: 4px; }
+		.rt-modes { width: 100%; border-collapse: collapse; font-size: 15px; margin-bottom: 16px; }
+		.rt-modes th, .rt-modes td { text-align: left; padding: 9px 0; border-top: 1px solid var(--rule); font-weight: 400; }
+		.rt-modes th { color: var(--muted); width: 42%; }
+		.rt-modes td { display: flex; align-items: center; gap: 10px; }
+		.rt-modes td code { font-size: 14px; }
+		.rt-id { font-size: 14px; color: var(--muted); }
+		.id-mark {
 			font-family: var(--font-mono);
-			font-size: 13px;
-			color: var(--color-text-secondary);
-			transition: all var(--transition);
+			font-size: 13.5px;
+			color: var(--ink);
+			background: var(--mark);
+			box-shadow: inset 0 -2px 0 var(--mark-edge);
+			padding: 2px 4px;
+			border-radius: 3px;
 		}
 
-		.prompt-item:hover {
-			border-color: var(--color-primary);
-			color: var(--color-text);
+		.rt-code pre {
+			margin: 0;
+			padding: 18px 16px 20px;
+			font-family: var(--font-mono);
+			font-size: 13.5px;
+			line-height: 1.65;
+			color: var(--ink);
+			overflow-x: auto;
+			tab-size: 2;
 		}
+		.rt-code pre .k { color: var(--code-key); }
+		.rt-code pre .s { color: var(--code-str); }
+		.rt-code pre .id-mark { font-size: inherit; color: var(--ink); }
 
-		.prompt-item svg {
-			width: 16px;
-			height: 16px;
-			color: var(--color-primary-light);
-			flex-shrink: 0;
-		}
-
-		/* Audience cells */
-		.audience-cell {
-			grid-column: span 6;
-			padding: 24px 0;
-		}
-
-		.audience-header {
-			display: flex;
-			align-items: center;
-			gap: 12px;
-			margin-bottom: 28px;
-		}
-
-		.audience-icon {
-			width: 40px;
-			height: 40px;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			background: rgba(13, 148, 136, 0.12);
-			border-radius: var(--radius-md);
-			color: var(--color-primary-light);
-		}
-
-		.audience-icon svg { width: 20px; height: 20px; }
-
-		.audience-header h3 {
-			font-size: 18px;
-			font-weight: 600;
-		}
-
-		.audience-list {
-			list-style: none;
+		.rt-link {
 			display: flex;
 			flex-direction: column;
-			gap: 24px;
+			justify-content: center;
+			gap: 18px;
+			padding: 16px 22px;
+			list-style: none;
+		}
+		.rt-link li { display: flex; flex-direction: column; gap: 4px; }
+		.rt-link code { font-size: 12.5px; color: var(--ink); }
+		.rt-link .dir { font-size: 13px; color: var(--muted); }
+		.rt-arrow { display: block; width: 100%; height: 14px; color: var(--teal); }
+		.rt-arrow.back { transform: scaleX(-1); }
+		.rt-glyph { display: none; }
+		.roundtrip figcaption {
+			margin-top: 16px;
+			font-size: 15px;
+			color: var(--muted);
+			max-width: 70ch;
 		}
 
-		.audience-list li {
-			display: flex;
-			align-items: flex-start;
-			gap: 12px;
-			font-size: 14px;
-			color: var(--color-text-secondary);
+		/* One orchestrated moment: the shared ID lights up in both panels once on load */
+		@media (prefers-reduced-motion: no-preference) {
+			.roundtrip .id-mark { animation: mark-in 700ms ease-out 500ms both; }
+			.roundtrip .rt-arrow path { stroke-dasharray: 120; animation: draw 700ms ease-out 200ms both; }
+			@keyframes mark-in {
+				from { background: transparent; box-shadow: inset 0 0 0 var(--mark-edge); }
+			}
+			@keyframes draw { from { stroke-dashoffset: 120; } to { stroke-dashoffset: 0; } }
 		}
 
-		.audience-list li svg {
-			width: 18px;
-			height: 18px;
-			color: var(--color-primary);
-			flex-shrink: 0;
-			margin-top: 1px;
+		/* ---------- Pillars ---------- */
+		.pillars { list-style: none; border-bottom: 1px solid var(--rule); }
+		.pillar {
+			display: grid;
+			grid-template-columns: minmax(0, 3.2fr) minmax(0, 4.6fr) minmax(0, 4.2fr);
+			gap: clamp(20px, 3vw, 40px);
+			padding-block: clamp(28px, 4vw, 40px);
+			border-top: 1px solid var(--rule);
 		}
-
-		/* Getting started CTA */
-		.getting-started-cell {
-			grid-column: span 12;
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			padding: 40px 48px;
-			background: var(--color-bg-elevated);
-			border: 1px solid var(--color-border);
-			border-radius: var(--radius-lg);
-			margin-top: 32px;
-		}
-
-		.getting-started-content h3 {
-			font-size: 20px;
-			font-weight: 600;
+		.pillar h3 {
+			font-size: clamp(26px, 3vw, 34px);
+			line-height: 1.1;
 			margin-bottom: 8px;
 		}
-
-		.getting-started-content p {
+		.pillar .claim { font-size: 18px; color: var(--teal); font-weight: 500; line-height: 1.4; }
+		[data-theme="light"] .pillar .claim { color: var(--teal); }
+		.pillar-body p { color: var(--ink); max-width: 58ch; }
+		.pillar-body p + p { margin-top: 12px; }
+		.pillar-body .muted { color: var(--muted); }
+		.facts { list-style: none; font-size: 15px; }
+		.facts-label { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+		.facts li { padding-block: 5px; border-top: 1px solid var(--rule); }
+		.facts li:first-child { border-top: 0; padding-top: 0; }
+		.facts code { font-size: 13.5px; overflow-wrap: anywhere; }
+		.facts .group { display: block; font-size: 14px; color: var(--muted); }
+		.formats { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin-top: 16px; }
+		.formats li {
 			font-size: 14px;
-			color: var(--color-text-secondary);
-			max-width: 480px;
+			padding: 3px 10px;
+			border: 1px solid var(--rule-strong);
+			border-radius: 999px;
+			color: var(--ink);
 		}
 
-		.getting-started-actions {
-			display: flex;
-			gap: 12px;
+		/* ---------- Prompts ---------- */
+		.prompts { list-style: none; border-bottom: 1px solid var(--rule); }
+		.prompt {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+			gap: 8px 32px;
+			align-items: baseline;
+			padding-block: 20px;
+			border-top: 1px solid var(--rule);
 		}
+		.prompt q {
+			font-size: clamp(19px, 2.1vw, 23px);
+			line-height: 1.35;
+		}
+		.prompt .runs { font-size: 14px; color: var(--muted); }
+		.prompt .runs code { font-size: 14px; color: var(--ink); word-break: break-word; }
 
-		/* Blog CTA */
-		.blog-cell {
-			grid-column: span 12;
+		/* ---------- Modes ---------- */
+		.modes {
+			display: grid;
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			border-top: 1px solid var(--rule);
+			border-bottom: 1px solid var(--rule);
+		}
+		.mode { padding: 28px 28px 32px 0; }
+		.mode + .mode { padding-left: 28px; border-left: 1px solid var(--rule); }
+		.mode h3 { font-size: 26px; margin-bottom: 4px; }
+		.mode .count { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+		.mode .count > span:first-child {
+			font-family: var(--font-display);
+			font-weight: 600;
+			font-size: clamp(44px, 5.4vw, 64px);
+			line-height: 1;
+			color: var(--teal);
+		}
+		.mode .count .unit { color: var(--muted); font-size: 16px; }
+		.mode p { color: var(--muted); font-size: 16px; max-width: 36ch; }
+		.mode p strong { color: var(--ink); font-weight: 600; }
+		.notes {
+			display: grid;
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			gap: 24px 40px;
+			margin-top: 32px;
+			list-style: none;
+		}
+		.notes li { font-size: 16px; color: var(--muted); max-width: 40ch; }
+		.notes strong { display: block; color: var(--ink); font-weight: 600; margin-bottom: 2px; }
+
+		/* ---------- Start + announcement ---------- */
+		.start {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			gap: 24px 48px;
+			align-items: end;
+		}
+		.start p { color: var(--muted); max-width: 56ch; }
+		.announce {
 			display: flex;
 			align-items: center;
 			justify-content: space-between;
-			padding: 32px 0;
-			border-top: 1px solid var(--color-rule);
-			margin-top: 40px;
-		}
-
-		.blog-content {
-			display: flex;
-			align-items: center;
 			gap: 16px;
+			margin-top: clamp(40px, 6vw, 64px);
+			padding: 20px 22px;
+			border: 1px solid var(--rule-strong);
+			border-radius: 12px;
+			background: var(--surface);
+			text-decoration: none;
 		}
-
-		.blog-icon {
+		.announce:hover { border-color: var(--teal); }
+		.announce-text { display: flex; align-items: center; gap: 16px; }
+		.announce-icon {
 			width: 44px;
 			height: 44px;
+			flex-shrink: 0;
 			display: flex;
 			align-items: center;
 			justify-content: center;
-			background: rgba(13, 148, 136, 0.12);
-			border-radius: var(--radius-md);
-			color: var(--color-primary-light);
+			border-radius: 10px;
+			background: var(--mark);
+			color: var(--teal);
 		}
+		.announce-icon svg { width: 22px; height: 22px; }
+		.announce h2 { font-family: var(--font-body); font-size: 17px; font-weight: 600; letter-spacing: 0; margin: 0 0 2px; }
+		.announce p { font-size: 15px; color: var(--muted); }
+		.announce .go { font-size: 15px; font-weight: 600; color: var(--teal); white-space: nowrap; }
 
-		.blog-icon svg { width: 22px; height: 22px; }
-
-		.blog-text h4 {
+		/* ---------- Footer ---------- */
+		.site-footer { border-top: 1px solid var(--rule); }
+		.site-footer .wrap {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			flex-wrap: wrap;
+			gap: 16px 32px;
+			padding-block: 28px;
 			font-size: 15px;
-			font-weight: 600;
-			margin-bottom: 2px;
+			color: var(--muted);
 		}
+		.site-footer p a { color: var(--ink); }
+		.footer-links { display: flex; flex-wrap: wrap; gap: 20px; }
 
-		.blog-text p {
-			font-size: 13px;
-			color: var(--color-text-secondary);
-		}
-
-		.blog-link {
-			display: flex;
-			align-items: center;
-			gap: 8px;
-			color: var(--color-primary-light);
-			font-size: 14px;
-			font-weight: 500;
-			transition: gap var(--transition);
-		}
-
-		.blog-link:hover { gap: 12px; }
-		.blog-link svg { width: 16px; height: 16px; }
-
-		/* Footer */
-		.footer {
-			max-width: 1280px;
-			margin: 0 auto;
-			padding: 24px 32px;
-			display: flex;
-			justify-content: space-between;
-			align-items: center;
-			border-top: 1px solid var(--color-rule);
-			color: var(--color-text-tertiary);
-			font-size: 13px;
-		}
-
-		.footer a {
-			color: var(--color-text-secondary);
-			transition: color var(--transition);
-		}
-
-		.footer a:hover { color: var(--color-text); }
-
-		.footer-links {
-			display: flex;
-			gap: 24px;
-		}
-
-		/* Mobile nav */
-		.mobile-menu-btn {
-			display: none;
-			align-items: center;
-			justify-content: center;
-			width: 36px;
-			height: 36px;
-			background: transparent;
-			border: none;
-			cursor: pointer;
-			color: var(--color-text);
-		}
-
-		.mobile-menu-btn svg { width: 24px; height: 24px; }
-
-		/* Mobile menu overlay */
-		.mobile-menu {
-			display: none;
-			position: fixed;
-			top: 0;
-			left: 0;
-			right: 0;
-			bottom: 0;
-			background: var(--color-bg);
-			z-index: 1000;
-			padding: 20px;
-			flex-direction: column;
-		}
-
-		.mobile-menu.active {
-			display: flex;
-		}
-
-		.mobile-menu-header {
-			display: flex;
-			justify-content: space-between;
-			align-items: center;
-			margin-bottom: 48px;
-		}
-
-		.mobile-menu-close {
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			width: 36px;
-			height: 36px;
-			background: transparent;
-			border: none;
-			cursor: pointer;
-			color: var(--color-text);
-		}
-
-		.mobile-menu-close svg { width: 24px; height: 24px; }
-
-		.mobile-menu-nav {
-			display: flex;
-			flex-direction: column;
-			gap: 8px;
-		}
-
-		.mobile-menu-nav a {
-			display: block;
-			padding: 16px 0;
-			font-size: 18px;
-			font-weight: 500;
-			color: var(--color-text);
-			border-bottom: 1px solid var(--color-border);
-			transition: color var(--transition);
-		}
-
-		.mobile-menu-nav a:hover {
-			color: var(--color-primary-light);
-		}
-
-		body.menu-open {
-			overflow: hidden;
-		}
-
-		/* Responsive */
-		@media (max-width: 1024px) {
-			.hero-cell {
-				grid-column: span 12;
-				padding-right: 0;
-				padding-bottom: 40px;
-				border-bottom: 1px solid var(--color-rule);
+		/* ---------- Responsive ---------- */
+		@media (max-width: 1020px) {
+			.rt-grid { grid-template-columns: minmax(0, 1fr); }
+			.rt-link {
+				flex-direction: row;
+				flex-wrap: wrap;
+				justify-content: flex-start;
+				gap: 8px 28px;
+				padding: 14px 4px;
 			}
-			.showcase-cell {
-				grid-column: span 12;
-				padding-left: 0;
-				padding-top: 40px;
-				border-left: none;
-			}
-			.capability-card {
-				grid-column: span 6;
-			}
-			.capability-card.rule-left {
-				padding-left: 0;
-				border-left: none;
-			}
-			.capability-card:nth-child(odd) {
-				padding-left: 0;
-				border-left: none;
-			}
-			.capability-card:nth-child(even) {
-				padding-left: 32px;
-				border-left: 1px solid var(--color-rule);
-			}
-			.prompts-cell { grid-column: span 12; }
-			.audience-cell {
-				grid-column: span 6;
-				padding-left: 0;
-			}
-			.audience-cell.rule-left {
-				padding-left: 32px;
-				border-left: 1px solid var(--color-rule);
-			}
-			h1 { font-size: 40px; }
-			.value-cell { padding: 48px 32px; }
-			.value-cell h2 { font-size: 30px; }
-			.section-rule { margin: 56px 0; }
-			.getting-started-cell {
-				flex-direction: column;
-				gap: 24px;
-				text-align: center;
-			}
-			.getting-started-content p {
-				max-width: 100%;
-			}
+			.rt-link li { flex-direction: row; align-items: center; gap: 10px; }
+			.rt-link .dir { order: 2; }
+			.rt-link code { order: 3; }
+			.rt-arrow { display: none; }
+			.rt-glyph { display: inline-block; order: 1; width: 1.2em; text-align: center; font-size: 20px; line-height: 1; color: var(--teal); }
+			.pillar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+			.pillar-head { grid-column: 1 / -1; }
 		}
 
-		@media (max-width: 768px) {
-			.header { padding: 12px 20px; }
+		@media (max-width: 800px) {
 			.nav { display: none; }
-			.mobile-menu-btn { display: flex; }
-			.main { padding: 32px 20px; }
-			.grid { gap: 32px; }
-
-			/* Remove all vertical rules and left padding on mobile */
-			.grid-cell.rule-left {
-				padding-left: 0;
-				border-left: none;
-			}
-
-			.hero-cell {
-				padding-right: 0;
-				padding-bottom: 32px;
-			}
-			.showcase-cell {
-				padding-top: 32px;
-			}
-			.capability-list {
-				grid-template-columns: 1fr;
-			}
-			.capability-card {
-				grid-column: span 12;
-				padding: 0 !important;
-				border: none !important;
-			}
-			.audience-cell {
-				grid-column: span 12;
-				padding: 0 !important;
-			}
-			.audience-cell.rule-left {
-				padding-top: 32px !important;
-				margin-top: 8px;
-				border-top: 1px solid var(--color-rule);
-			}
-			h1 { font-size: 34px; }
-			.hero-subtitle { font-size: 16px; }
-			.showcase-stat .number { font-size: 48px; }
-			.value-cell { padding: 40px 24px; }
-			.value-cell h2 { font-size: 26px; }
-			.value-cell p { font-size: 16px; }
-			.section-rule { margin: 48px 0; }
-			.blog-cell {
-				flex-direction: column;
-				gap: 16px;
-				text-align: center;
-			}
-			.blog-content { flex-direction: column; }
-			.footer {
-				flex-direction: column;
-				gap: 16px;
-				text-align: center;
-			}
-			.getting-started-cell {
-				padding: 24px;
-			}
-			.getting-started-actions {
-				flex-direction: column;
-				width: 100%;
-			}
-			.getting-started-actions .btn {
-				justify-content: center;
-			}
+			.menu-btn { display: inline-flex; }
+			.header-right { gap: 10px; }
+			.pillar { grid-template-columns: minmax(0, 1fr); }
+			.prompt { grid-template-columns: minmax(0, 1fr); }
+			.modes { grid-template-columns: minmax(0, 1fr); }
+			.mode, .mode + .mode { padding: 24px 0; border-left: 0; }
+			.mode + .mode { border-top: 1px solid var(--rule); }
+			.notes { grid-template-columns: minmax(0, 1fr); }
+			.start { grid-template-columns: minmax(0, 1fr); align-items: start; }
+			.announce { flex-direction: column; align-items: flex-start; }
 		}
 
 		@media (max-width: 480px) {
-			.cta-row { flex-direction: column; }
-			.btn { justify-content: center; }
+			body { font-size: 16px; }
+			.btn-row .btn { flex: 1 1 100%; }
+			.logo img { height: 28px; }
+			.rt-code pre { font-size: 12.5px; }
 		}
 	</style>
 </head>
 <body>
-	<header class="header">
-		<a href="/" class="logo">
-			<img src="https://docs.figma-console-mcp.southleft.com/logo/light.svg" alt="Figma Console MCP" class="logo-dark">
-			<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP" class="logo-light" style="display: none;">
-		</a>
-		<div class="header-right">
-			<nav class="nav">
-				<a href="https://docs.figma-console-mcp.southleft.com">Documentation</a>
-				<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
-				<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
-				<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">Blog</a>
-				<a href="https://github.com/sponsors/southleft" class="sponsor-link"><svg viewBox="0 0 16 16"><path d="M4.25 2.5c-1.336 0-2.75 1.164-2.75 3 0 2.15 1.58 4.144 3.365 5.682A20.6 20.6 0 0 0 8 13.393a20.6 20.6 0 0 0 3.135-2.211C12.92 9.644 14.5 7.65 14.5 5.5c0-1.836-1.414-3-2.75-3-1.373 0-2.609.986-3.029 2.456a.749.749 0 0 1-1.442 0C6.859 3.486 5.623 2.5 4.25 2.5"/></svg>Sponsor</a>
-			</nav>
-			<button class="theme-toggle" aria-label="Toggle theme">
-				<svg class="moon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-				<svg class="sun" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-			</button>
-			<button class="mobile-menu-btn" aria-label="Menu">
-				<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-			</button>
+	<a class="skip-link" href="#main">Skip to content</a>
+
+	<header class="site-header">
+		<div class="wrap">
+			<a href="/" class="logo" aria-label="Figma Console MCP home">
+				<img src="https://docs.figma-console-mcp.southleft.com/logo/light.svg" alt="Figma Console MCP" class="for-dark" width="180" height="32">
+				<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP" class="for-light" width="180" height="32">
+			</a>
+			<div class="header-right">
+				<nav class="nav" aria-label="Primary">
+					<a href="https://docs.figma-console-mcp.southleft.com">Docs</a>
+					<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
+					<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
+					<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">Blog</a>
+					<a href="https://github.com/sponsors/southleft" class="sponsor"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.25 2.5c-1.336 0-2.75 1.164-2.75 3 0 2.15 1.58 4.144 3.365 5.682A20.6 20.6 0 0 0 8 13.393a20.6 20.6 0 0 0 3.135-2.211C12.92 9.644 14.5 7.65 14.5 5.5c0-1.836-1.414-3-2.75-3-1.373 0-2.609.986-3.029 2.456a.749.749 0 0 1-1.442 0C6.859 3.486 5.623 2.5 4.25 2.5"/></svg>Sponsor</a>
+				</nav>
+				<button type="button" class="icon-btn theme-toggle" aria-label="Switch color theme">
+					<svg class="moon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+					<svg class="sun" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+				</button>
+				<button type="button" class="icon-btn menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu">
+					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+				</button>
+			</div>
 		</div>
 	</header>
 
-	<!-- Mobile Menu -->
-	<div class="mobile-menu" id="mobileMenu">
-		<div class="mobile-menu-header">
-			<a href="/" class="logo">
-				<img src="https://docs.figma-console-mcp.southleft.com/logo/light.svg" alt="Figma Console MCP" class="logo-dark">
-				<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP" class="logo-light" style="display: none;">
+	<div class="mobile-menu" id="mobileMenu" role="dialog" aria-modal="true" aria-label="Menu" hidden>
+		<div class="mobile-menu-head">
+			<a href="/" class="logo" aria-label="Figma Console MCP home">
+				<img src="https://docs.figma-console-mcp.southleft.com/logo/light.svg" alt="Figma Console MCP" class="for-dark" width="180" height="32">
+				<img src="https://docs.figma-console-mcp.southleft.com/logo/dark.svg" alt="Figma Console MCP" class="for-light" width="180" height="32">
 			</a>
-			<button class="mobile-menu-close" aria-label="Close menu">
-				<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
+			<button type="button" class="icon-btn menu-close" aria-label="Close menu">
+				<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18L18 6M6 6l12 12"/></svg>
 			</button>
 		</div>
-		<nav class="mobile-menu-nav">
-			<a href="https://docs.figma-console-mcp.southleft.com">Documentation</a>
-			<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
-			<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
-			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">Blog</a>
-			<a href="https://github.com/sponsors/southleft" style="color: #db61a2;">♥ Sponsor</a>
-		</nav>
-	</div>
-
-	<main class="main">
-		<div class="grid">
-			<!-- Hero -->
-			<div class="grid-cell hero-cell">
-				<div class="badge">Model Context Protocol</div>
-				<h1>Your design system, now a <span class="highlight">living API</span></h1>
-				<p class="hero-subtitle">The most comprehensive MCP server for Figma. Give AI assistants deep access to your design tokens, components, and variables. Read, query, and even create designs programmatically through natural language.</p>
-				<div class="cta-row">
-					<a href="https://docs.figma-console-mcp.southleft.com" class="btn btn-primary">
-						Read the Docs
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-					</a>
-					<a href="https://github.com/southleft/figma-console-mcp" class="btn btn-secondary">
-						<svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-						View on GitHub
-					</a>
-				</div>
-			</div>
-
-			<!-- Capabilities showcase -->
-			<div class="grid-cell showcase-cell rule-left">
-				<div class="showcase-label">What AI Can Access</div>
-				<div class="showcase-stat">
-					<span class="number">121+</span>
-					<span class="label">MCP tools for Figma</span>
-				</div>
-				<div class="capability-list">
-					<div class="capability-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
-						<span>Design tokens and variables</span>
-					</div>
-					<div class="capability-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-						<span>Component specs and properties</span>
-					</div>
-					<div class="capability-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-						<span>Programmatic design creation</span>
-					</div>
-					<div class="capability-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-						<span>WCAG accessibility linting</span>
-					</div>
-					<div class="capability-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
-						<span>Cloud relay for web AI clients</span>
-					</div>
-					<div class="capability-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-						<span>Visual debugging and screenshots</span>
-					</div>
-					<div class="capability-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
-						<span>Design annotations and dev specs</span>
-					</div>
-					<div class="capability-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="4" rx="1"/><rect x="2" y="9" width="9" height="4" rx="1"/><rect x="13" y="9" width="9" height="4" rx="1"/><rect x="2" y="15" width="20" height="4" rx="1"/></svg>
-						<span>FigJam boards and Slides presentations</span>
-					</div>
-				</div>
-			</div>
-		</div>
-
-		<hr class="section-rule">
-
-		<!-- Value proposition -->
-		<div class="grid">
-			<div class="grid-cell value-cell">
-				<h2>Design system intelligence for AI assistants</h2>
-				<p>Whether you're maintaining a component library, implementing designs in code, or building Figma plugins, this MCP server gives AI the deep context it needs.</p>
-			</div>
-		</div>
-
-		<hr class="section-rule">
-
-		<!-- Capabilities detail -->
-		<div class="grid">
-			<div class="grid-cell capability-card">
-				<div class="capability-icon">
-					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
-				</div>
-				<h3>Design Tokens</h3>
-				<p>Extract colors, typography, spacing, and effects. Export as CSS custom properties, Tailwind config, or Sass variables.</p>
-			</div>
-
-			<div class="grid-cell capability-card rule-left">
-				<div class="capability-icon">
-					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-				</div>
-				<h3>Component Specs</h3>
-				<p>Get detailed layout, spacing, variants, and property data for any component in your design system.</p>
-			</div>
-
-			<div class="grid-cell capability-card rule-left">
-				<div class="capability-icon">
-					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-				</div>
-				<h3>Programmatic Design</h3>
-				<p>Create and modify variables, build component variants, and generate design elements through natural language.</p>
-			</div>
-
-			<div class="grid-cell capability-card rule-left">
-				<div class="capability-icon">
-					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-				</div>
-				<h3>Visual Debugging</h3>
-				<p>Capture screenshots, inspect node properties, and track selection changes. Let AI analyze your designs and suggest improvements.</p>
-			</div>
-		</div>
-
-		<hr class="section-rule">
-
-		<div class="grid">
-			<!-- Example Prompts -->
-			<div class="grid-cell prompts-cell">
-				<div class="section-header">
-					<div class="section-header-icon">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-					</div>
-					<h3>What you can ask</h3>
-				</div>
-				<div class="prompt-list">
-					<div class="prompt-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"Extract all color variables as Tailwind config"</span>
-					</div>
-					<div class="prompt-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"Get the Button component specs from my design system"</span>
-					</div>
-					<div class="prompt-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"Create a dark mode version of my color variables"</span>
-					</div>
-					<div class="prompt-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"Check my design for accessibility issues"</span>
-					</div>
-					<div class="prompt-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"Connect to my Figma plugin and create a card component"</span>
-					</div>
-					<div class="prompt-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"Create a retrospective board with colored stickies on FigJam"</span>
-					</div>
-					<div class="prompt-item">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-						<span>"List my slides and set a dissolve transition on each one"</span>
-					</div>
-				</div>
-			</div>
-
-			<!-- For Designers -->
-			<div class="grid-cell audience-cell rule-left">
-				<div class="audience-header">
-					<div class="audience-icon">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-					</div>
-					<h3>For Designers</h3>
-				</div>
-				<ul class="audience-list">
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Generate design token documentation automatically</span>
-					</li>
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Create component variants with AI assistance</span>
-					</li>
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Lint designs for accessibility and quality issues</span>
-					</li>
-				</ul>
-			</div>
-		</div>
-
-		<div class="grid" style="margin-top: 48px;">
-			<!-- For Engineers -->
-			<div class="grid-cell audience-cell">
-				<div class="audience-header">
-					<div class="audience-icon">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-					</div>
-					<h3>For Engineers</h3>
-				</div>
-				<ul class="audience-list">
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Extract tokens as CSS, Tailwind, or Sass variables</span>
-					</li>
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Get accurate component specs for implementation</span>
-					</li>
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Query your design system via MCP-enabled AI tools</span>
-					</li>
-				</ul>
-			</div>
-
-			<!-- For Teams -->
-			<div class="grid-cell audience-cell rule-left">
-				<div class="audience-header">
-					<div class="audience-icon">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-					</div>
-					<h3>For Teams of All Sizes</h3>
-				</div>
-				<ul class="audience-list">
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Indie developers to enterprise design systems</span>
-					</li>
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Local mode for development, remote for production</span>
-					</li>
-					<li>
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-						<span>Works with Claude, Cursor, and any MCP client</span>
-					</li>
-				</ul>
-			</div>
-		</div>
-
-		<!-- Getting Started CTA -->
-		<div class="grid">
-			<div class="grid-cell getting-started-cell">
-				<div class="getting-started-content">
-					<h3>Ready to get started?</h3>
-					<p>Three ways to connect: local mode for full capabilities, cloud mode for web AI clients like Claude.ai and v0, or remote mode for quick read-only access. Our docs will guide you through the right path.</p>
-				</div>
-				<div class="getting-started-actions">
-					<a href="https://docs.figma-console-mcp.southleft.com/setup" class="btn btn-primary">
-						View Setup Guide
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-					</a>
-					<a href="https://docs.figma-console-mcp.southleft.com/tools" class="btn btn-secondary">
-						Explore Tools
-					</a>
-				</div>
-			</div>
-		</div>
-
-		<div class="grid">
-			<!-- Blog CTA -->
-			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/" class="grid-cell blog-cell">
-				<div class="blog-content">
-					<div class="blog-icon">
-						<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-					</div>
-					<div class="blog-text">
-						<h4>Read the announcement</h4>
-						<p>AI-Powered Design System Management with Figma Console MCP</p>
-					</div>
-				</div>
-				<span class="blog-link">
-					Read article
-					<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-				</span>
-			</a>
-		</div>
-	</main>
-
-	<footer class="footer">
-		<p>MIT License. Built by <a href="https://southleft.com">Southleft</a></p>
-		<div class="footer-links">
+		<nav class="mobile-nav" aria-label="Primary">
 			<a href="https://docs.figma-console-mcp.southleft.com">Docs</a>
 			<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
 			<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
-			<a href="https://github.com/sponsors/southleft" style="color: #db61a2;">♥ Sponsor</a>
+			<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/">Blog</a>
+			<a href="https://github.com/sponsors/southleft" class="sponsor">Sponsor</a>
+		</nav>
+	</div>
+
+	<main id="main">
+		<!-- Hero -->
+		<section class="hero" aria-labelledby="hero-title">
+			<div class="wrap">
+				<h1 id="hero-title">Keep Figma and code on the same design system.</h1>
+				<p class="hero-lede">Figma Console MCP is an open-source MCP server for design systems. It syncs tokens <strong>both ways</strong> between Figma and code, <strong>writes</strong> variables and components into your files, runs <strong>checks that score the same way every time</strong>, and gives your AI <strong>exact facts</strong> so the code it writes follows your own stack.</p>
+				<div class="btn-row">
+					<a href="https://docs.figma-console-mcp.southleft.com" class="btn btn-primary">Read the docs</a>
+					<a href="https://docs.figma-console-mcp.southleft.com/setup" class="btn btn-quiet">Setup guide</a>
+					<a href="https://github.com/southleft/figma-console-mcp" class="btn btn-quiet">
+						<svg fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+						GitHub
+					</a>
+				</div>
+
+				<figure class="roundtrip" aria-labelledby="rt-caption">
+					<div class="rt-grid">
+						<div class="rt-panel rt-figma">
+							<div class="rt-head"><strong>Figma variable</strong><span>Brand collection</span></div>
+							<div class="rt-body">
+								<div class="rt-name">
+									<span class="swatch" style="--sw:#0F766E" aria-hidden="true"></span>
+									<code>color/brand/primary</code>
+								</div>
+								<table class="rt-modes" aria-label="Values by mode">
+									<tbody>
+										<tr><th scope="row">Light</th><td><span class="swatch sm" style="--sw:#0F766E" aria-hidden="true"></span><code>#0F766E</code></td></tr>
+										<tr><th scope="row">Dark</th><td><span class="swatch sm" style="--sw:#2DD4BF" aria-hidden="true"></span><code>#2DD4BF</code></td></tr>
+									</tbody>
+								</table>
+								<p class="rt-id">ID <span class="id-mark">VariableID:12:48</span></p>
+							</div>
+						</div>
+
+						<ul class="rt-link" aria-label="Tools that move the variable">
+							<li>
+								<span class="dir">Figma to code</span>
+								<span class="rt-glyph" aria-hidden="true">&darr;</span>
+								<svg class="rt-arrow fwd" viewBox="0 0 120 14" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 7h114M108 1l8 6-8 6"/></svg>
+								<code>figma_export_tokens</code>
+							</li>
+							<li>
+								<span class="dir">Code to Figma</span>
+								<span class="rt-glyph" aria-hidden="true">&uarr;</span>
+								<svg class="rt-arrow back" viewBox="0 0 120 14" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 7h114M108 1l8 6-8 6"/></svg>
+								<code>figma_import_tokens</code>
+							</li>
+						</ul>
+
+						<div class="rt-panel rt-code">
+							<div class="rt-head"><strong>tokens.json</strong><span>DTCG</span></div>
+<pre tabindex="0" aria-label="Exported token"><code>{
+  <span class="k">"color"</span>: { <span class="k">"brand"</span>: {
+    <span class="k">"primary"</span>: {
+      <span class="k">"$type"</span>: <span class="s">"color"</span>,
+      <span class="k">"$value"</span>: <span class="s">"#0F766E"</span>,
+      <span class="k">"$extensions"</span>: {
+        <span class="k">"figma-console-mcp"</span>: {
+          <span class="k">"variableId"</span>: <span class="id-mark">"VariableID:12:48"</span>,
+          <span class="k">"modes"</span>: { <span class="k">"Dark"</span>: <span class="s">"#2DD4BF"</span> }
+        }
+      }
+    }
+  } }
+}</code></pre>
+						</div>
+					</div>
+					<figcaption id="rt-caption">Example: the token keeps its Figma variable ID. Edit the value in code, import it, and the same variable updates in Figma instead of a duplicate being created.</figcaption>
+				</figure>
+			</div>
+		</section>
+
+		<!-- Pillars -->
+		<section class="section" aria-labelledby="pillars-title">
+			<div class="wrap">
+				<div class="section-head">
+					<h2 id="pillars-title">What it does</h2>
+					<p class="section-intro">Four jobs, built for teams that maintain a design system in Figma and ship it in code.</p>
+				</div>
+				<ul class="pillars">
+					<li class="pillar">
+						<div class="pillar-head">
+							<h3>Bidirectional</h3>
+							<p class="claim">Figma to code, and code back to Figma.</p>
+						</div>
+						<div class="pillar-body">
+							<p>Export Figma variables as design tokens, then import tokens back into variables. Exports keep each variable's Figma ID, so the return trip updates the variable you meant instead of adding a copy.</p>
+							<p>Starting from code instead? Extract the design system from a production codebase and push it into Figma variables.</p>
+							<ul class="formats" aria-label="Export formats">
+								<li>DTCG</li><li>CSS</li><li>Tailwind v4</li><li>Tailwind v3</li><li>SCSS</li><li>TypeScript</li><li>JSON</li><li>Style Dictionary</li><li>Tokens Studio</li>
+							</ul>
+						</div>
+						<div>
+							<p class="facts-label">Tools</p>
+							<ul class="facts">
+								<li><code>figma_export_tokens</code></li>
+								<li><code>figma_import_tokens</code></li>
+								<li><code>figma_ds_extract_tokens</code></li>
+							</ul>
+						</div>
+					</li>
+
+					<li class="pillar">
+						<div class="pillar-head">
+							<h3>Writes to Figma</h3>
+							<p class="claim">Changes land in the file, not in a chat reply.</p>
+						</div>
+						<div class="pillar-body">
+							<p>Create and edit variables and collections, components and component sets with variants, slots, and annotations. Build FigJam boards and Slides decks.</p>
+							<p class="muted">When no structured tool fits, run Plugin API code directly, in one file or across several open files at once.</p>
+						</div>
+						<div>
+							<p class="facts-label">Tools</p>
+							<ul class="facts">
+								<li><code>figma_batch_create_variables</code></li>
+								<li><code>figma_create_component_set</code></li>
+								<li><code>figma_create_slot</code></li>
+								<li><code>figma_set_annotations</code></li>
+								<li><code>figma_execute_across_files</code></li>
+							</ul>
+						</div>
+					</li>
+
+					<li class="pillar">
+						<div class="pillar-head">
+							<h3>Deterministic checks</h3>
+							<p class="claim">Repeatable scores, not vibes.</p>
+						</div>
+						<div class="pillar-body">
+							<p>Checks run as code against your Figma file and your source, so the same input gives the same result. Compare a component's design to its implementation, audit accessibility on both sides, and measure design-system hygiene.</p>
+							<p class="muted">Because the output doesn't drift between runs, you can use it as a review gate or track a component over time.</p>
+						</div>
+						<div>
+							<ul class="facts">
+								<li><span class="group">Design-code parity</span><code>figma_check_design_parity</code></li>
+								<li><span class="group">Accessibility</span><code>figma_lint_design</code><br><code>figma_audit_component_accessibility</code><br><code>figma_scan_code_accessibility</code></li>
+								<li><span class="group">Design-system hygiene</span><code>figma_audit_design_system_report</code><br><code>figma_ds_verify</code></li>
+							</ul>
+						</div>
+					</li>
+
+					<li class="pillar">
+						<div class="pillar-head">
+							<h3>Unbiased code</h3>
+							<p class="claim">Facts about the design, not opinions about your code.</p>
+						</div>
+						<div class="pillar-body">
+							<p>Your AI gets structured, verifiable data: exact tokens, variants, variable bindings, and states, plus component docs generated from the file and pinned to a commit.</p>
+							<p class="muted">It isn't handed a framework or a house style, so the code it writes follows your team's stack and conventions.</p>
+						</div>
+						<div>
+							<p class="facts-label">Tools</p>
+							<ul class="facts">
+								<li><code>figma_get_component_for_development_deep</code></li>
+								<li><code>figma_analyze_component_set</code></li>
+								<li><code>figma_generate_component_doc</code></li>
+							</ul>
+						</div>
+					</li>
+				</ul>
+			</div>
+		</section>
+
+		<!-- Example prompts -->
+		<section class="section" aria-labelledby="prompts-title">
+			<div class="wrap">
+				<div class="section-head">
+					<h2 id="prompts-title">Ask in plain language</h2>
+					<p class="section-intro">Each request maps to a named tool, so you can see exactly what ran.</p>
+				</div>
+				<ul class="prompts">
+					<li class="prompt"><q>Export my variables as Tailwind v4 and keep Figma IDs for round-trip.</q><span class="runs">Runs <code>figma_export_tokens</code></span></li>
+					<li class="prompt"><q>Import these tokens into Figma variables.</q><span class="runs">Runs <code>figma_import_tokens</code></span></li>
+					<li class="prompt"><q>Audit the Button component set for accessibility and give me a score.</q><span class="runs">Runs <code>figma_audit_component_accessibility</code></span></li>
+					<li class="prompt"><q>Check this component's parity against my React code.</q><span class="runs">Runs <code>figma_check_design_parity</code></span></li>
+					<li class="prompt"><q>Generate docs for the Tabs component pinned to my current commit.</q><span class="runs">Runs <code>figma_generate_component_doc</code></span></li>
+					<li class="prompt"><q>Build a Badge component set with size and tone variants.</q><span class="runs">Runs <code>figma_create_component_set</code></span></li>
+				</ul>
+			</div>
+		</section>
+
+		<!-- Modes -->
+		<section class="section" aria-labelledby="modes-title">
+			<div class="wrap">
+				<div class="section-head">
+					<h2 id="modes-title">Three ways to run it</h2>
+					<p class="section-intro">Pick the mode that matches your AI client. The setup guide walks through each one.</p>
+				</div>
+				<div class="modes">
+					<div class="mode">
+						<h3>Local</h3>
+						<p class="count"><span class="number">121+</span><span class="unit">tools</span></p>
+						<p><strong>Everything</strong>, including writes, checks, and design-system extraction. Runs with npx next to Figma Desktop and the Desktop Bridge plugin.</p>
+					</div>
+					<div class="mode">
+						<h3>Cloud</h3>
+						<p class="count"><span data-mode="cloud">95</span><span class="unit">tools</span></p>
+						<p><strong>For web AI clients</strong> such as Claude.ai. Pair the Desktop Bridge plugin with a code and keep write access.</p>
+					</div>
+					<div class="mode">
+						<h3>Remote</h3>
+						<p class="count"><span class="number">0</span><span class="unit">installs</span></p>
+						<p><strong>Read-only</strong> access to a file over a hosted URL. Pair the plugin later to add writes.</p>
+					</div>
+				</div>
+				<ul class="notes">
+					<li><strong>Any Figma plan</strong>Variables are read through the Desktop Bridge plugin, so you don't need the Enterprise-only Variables REST API.</li>
+					<li><strong>Any MCP client</strong>Works with Claude, Cursor, and other clients that speak the Model Context Protocol.</li>
+					<li><strong>MIT licensed</strong>Open source on GitHub and published to npm.</li>
+				</ul>
+			</div>
+		</section>
+
+		<!-- Get started -->
+		<section class="section" aria-labelledby="start-title">
+			<div class="wrap">
+				<div class="start">
+					<div>
+						<h2 id="start-title">Set it up</h2>
+						<p>The setup guide helps you choose a mode, connect your AI client, and run your first request against a Figma file.</p>
+					</div>
+					<div class="btn-row">
+						<a href="https://docs.figma-console-mcp.southleft.com/setup" class="btn btn-primary">View setup guide</a>
+						<a href="https://docs.figma-console-mcp.southleft.com/tools" class="btn btn-quiet">Browse all tools</a>
+					</div>
+				</div>
+
+				<a href="https://southleft.com/insights/ai/figma-console-mcp-ai-powered-design-system-management/" class="announce">
+					<div class="announce-text">
+						<span class="announce-icon" aria-hidden="true">
+							<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+						</span>
+						<div>
+							<h2>Read the announcement</h2>
+							<p>AI-Powered Design System Management with Figma Console MCP</p>
+						</div>
+					</div>
+					<span class="go">Read article</span>
+				</a>
+			</div>
+		</section>
+	</main>
+
+	<footer class="site-footer">
+		<div class="wrap">
+			<p>Version ${landing.version}. MIT License. Built by <a href="https://southleft.com">Southleft</a>.</p>
+			<nav class="footer-links" aria-label="Footer">
+				<a href="https://docs.figma-console-mcp.southleft.com">Docs</a>
+				<a href="https://github.com/southleft/figma-console-mcp">GitHub</a>
+				<a href="https://www.npmjs.com/package/figma-console-mcp">npm</a>
+				<a href="https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md">Changelog</a>
+				<a href="https://github.com/sponsors/southleft" class="sponsor">Sponsor</a>
+			</nav>
 		</div>
 	</footer>
 
 	<script>
-		// Theme toggle with system preference detection
-		(function() {
-			const html = document.documentElement;
-			const toggle = document.querySelector('.theme-toggle');
-			const logosDark = document.querySelectorAll('.logo-dark');
-			const logosLight = document.querySelectorAll('.logo-light');
+		// Theme toggle: remembers an explicit choice; otherwise follows the system.
+		(function () {
+			var root = document.documentElement;
+			var toggle = document.querySelector('.theme-toggle');
+			var media = window.matchMedia('(prefers-color-scheme: dark)');
 
-			function getSystemTheme() {
-				return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+			function stored() {
+				try { return localStorage.getItem('theme'); } catch (e) { return null; }
+			}
+			function label(theme) {
+				toggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+			}
+			function apply(theme, remember) {
+				root.setAttribute('data-theme', theme);
+				label(theme);
+				if (remember) { try { localStorage.setItem('theme', theme); } catch (e) {} }
 			}
 
-			function getStoredTheme() {
-				return localStorage.getItem('theme');
-			}
-
-			function setTheme(theme) {
-				html.setAttribute('data-theme', theme);
-				localStorage.setItem('theme', theme);
-				updateLogos(theme);
-			}
-
-			function updateLogos(theme) {
-				logosDark.forEach(logo => {
-					logo.style.display = theme === 'light' ? 'none' : 'block';
-				});
-				logosLight.forEach(logo => {
-					logo.style.display = theme === 'light' ? 'block' : 'none';
-				});
-			}
-
-			// Initialize theme
-			const storedTheme = getStoredTheme();
-			const initialTheme = storedTheme || getSystemTheme();
-			setTheme(initialTheme);
-
-			// Listen for system theme changes
-			window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
-				if (!getStoredTheme()) {
-					setTheme(e.matches ? 'light' : 'dark');
-				}
+			label(root.getAttribute('data-theme') || 'light');
+			media.addEventListener('change', function (e) {
+				if (!stored()) apply(e.matches ? 'dark' : 'light', false);
 			});
-
-			// Toggle button
-			toggle.addEventListener('click', () => {
-				const currentTheme = html.getAttribute('data-theme');
-				setTheme(currentTheme === 'light' ? 'dark' : 'light');
+			toggle.addEventListener('click', function () {
+				apply(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark', true);
 			});
 		})();
 
-		// Mobile menu toggle
-		(function() {
-			const menuBtn = document.querySelector('.mobile-menu-btn');
-			const menu = document.getElementById('mobileMenu');
-			const closeBtn = document.querySelector('.mobile-menu-close');
-			const menuLinks = document.querySelectorAll('.mobile-menu-nav a');
+		// Mobile menu: modal dialog with focus handling and Escape to close.
+		(function () {
+			var openBtn = document.querySelector('.menu-btn');
+			var menu = document.getElementById('mobileMenu');
+			var closeBtn = menu.querySelector('.menu-close');
 
-			function openMenu() {
-				menu.classList.add('active');
+			function open() {
+				menu.hidden = false;
 				document.body.classList.add('menu-open');
+				openBtn.setAttribute('aria-expanded', 'true');
+				closeBtn.focus();
 			}
-
-			function closeMenu() {
-				menu.classList.remove('active');
+			function close() {
+				menu.hidden = true;
 				document.body.classList.remove('menu-open');
+				openBtn.setAttribute('aria-expanded', 'false');
+				openBtn.focus();
 			}
 
-			menuBtn.addEventListener('click', openMenu);
-			closeBtn.addEventListener('click', closeMenu);
-
-			// Close menu when clicking a link
-			menuLinks.forEach(link => {
-				link.addEventListener('click', closeMenu);
-			});
-
-			// Close menu on escape key
-			document.addEventListener('keydown', (e) => {
-				if (e.key === 'Escape' && menu.classList.contains('active')) {
-					closeMenu();
+			openBtn.addEventListener('click', open);
+			closeBtn.addEventListener('click', close);
+			menu.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', close); });
+			document.addEventListener('keydown', function (e) {
+				if (menu.hidden) return;
+				if (e.key === 'Escape') { close(); return; }
+				if (e.key === 'Tab') {
+					var items = menu.querySelectorAll('a, button');
+					var first = items[0], last = items[items.length - 1];
+					if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+					else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 				}
 			});
 		})();

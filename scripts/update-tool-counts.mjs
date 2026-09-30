@@ -17,7 +17,8 @@
  *   node scripts/update-tool-counts.mjs                # apply + verify
  *   node scripts/update-tool-counts.mjs --dry-run      # show changes only
  *   node scripts/update-tool-counts.mjs --verify       # audit only (Phase 3.5 Block D); exit 1 on any inconsistency
- *   node scripts/update-tool-counts.mjs --local 107 --remote 9 --cloud 96   # override auto-detection
+ *   node scripts/update-tool-counts.mjs --local 121 --cloud 95   # override auto-detection
+ *   node scripts/update-tool-counts.mjs --print-counts           # print "LOCAL CLOUD" (used by release.sh)
  *
  * Verify mode checks two things:
  *   1. Every MANIFEST entry matches exactly `expect` times and carries its
@@ -75,32 +76,40 @@ function countNames(files, re = TOOL_NAME_RE) {
   return names;
 }
 
-function detectRemote() {
-  // Remote/SSE mode (no plugin pairing): REST-backed read tools in figma-tools.ts
-  return countUniqueToolNames([join(ROOT, "src/core/figma-tools.ts")], /"figma_[a-z_]+"/g);
-}
-
 function detectCloud() {
-  // Cloud Mode after pairing: every registrar invoked by src/index.ts plus its
-  // own direct registrations. Mirror the register*() calls in src/index.ts.
-  const files = [
-    "src/core/write-tools.ts",
-    "src/core/figma-tools.ts",
-    "src/core/design-system-tools.ts",
-    "src/core/comment-tools.ts",
-    "src/core/design-code-tools.ts",
-    "src/core/figjam-tools.ts",
-    "src/core/slides-tools.ts",
-    "src/core/annotation-tools.ts",
-    "src/core/deep-component-tools.ts",
-    "src/core/version-tools.ts",
-    "src/core/accessibility-tools.ts",
-    "src/core/diagnose-tool.ts",
-    "src/core/tokens-tools.ts",
-    "src/core/slot-tools.ts",
-    "src/index.ts",
-  ].map((f) => join(ROOT, f));
-  return countUniqueToolNames(files);
+  // Cloud Mode = the stateless /mcp endpoint the setup docs point web AI
+  // clients at (PAT or OAuth bearer, then pair the plugin for writes).
+  // Derived from src/index.ts itself so it cannot drift from the code again:
+  // a hand-maintained file list here missed library-tools.ts and overstated
+  // nothing but understated by three for several releases.
+  //   1. take the `if (url.pathname === "/mcp")` block,
+  //   2. resolve every register*() it calls through the import lines,
+  //   3. add its direct statelessServer.tool("…") registrations.
+  // Live-checked against tools/list: /mcp = 95, /sse = 104 at v1.40.7.
+  const indexPath = join(ROOT, "src/index.ts");
+  const src = readFileSync(indexPath, "utf8");
+  const blockStart = src.indexOf('if (url.pathname === "/mcp")');
+  const blockEnd = src.indexOf("statelessServer.connect(", blockStart);
+  if (blockStart < 0 || blockEnd < 0) {
+    throw new Error("detectCloud: could not locate the /mcp block in src/index.ts — update the parser");
+  }
+  const block = src.slice(blockStart, blockEnd);
+  const importOf = new Map();
+  for (const m of src.matchAll(/import\s*\{([^}]+)\}\s*from\s*"\.\/(core\/[^"]+)\.js"/g)) {
+    for (const name of m[1].split(",").map((x) => x.trim()).filter(Boolean)) {
+      importOf.set(name, join(ROOT, "src", m[2] + ".ts"));
+    }
+  }
+  const called = new Set([...block.matchAll(/\b(register[A-Za-z]+)\(/g)].map((m) => m[1]));
+  const files = new Set();
+  for (const fn of called) {
+    const f = importOf.get(fn);
+    if (!f) throw new Error(`detectCloud: ${fn}() is called in /mcp but not imported from ./core — update the parser`);
+    files.add(f);
+  }
+  const names = countNames([...files]);
+  for (const m of block.matchAll(/statelessServer\.(?:tool|registerTool)\(\s*("fig(?:ma|jam)_[a-z_]+")/g)) names.add(m[1]);
+  return names.size;
 }
 
 // ── Manifest ────────────────────────────────────────────────────────────────
@@ -111,56 +120,44 @@ function detectCloud() {
 
 const MANIFEST = [
   // README.md
-  { file: "README.md", mode: "remote", pattern: "read-only** with {{N}} tools", expect: 1 },
   { file: "README.md", mode: "cloud", pattern: "write access ({{N}} tools)", expect: 1 },
   { file: "README.md", mode: "local", pattern: "full {{N}} tools", expect: 2 }, // bottom-line + key-insight blockquotes
   { file: "README.md", mode: "local", pattern: "All {{N}} tools including", expect: 1 },
   { file: "README.md", mode: "local", pattern: "All {{N}} tools work through", expect: 1 },
   { file: "README.md", mode: "local", pattern: "Same {{N}} tools as NPX", expect: 1 },
   { file: "README.md", mode: "cloud", pattern: "{{N}} tools including full write", expect: 1 },
-  { file: "README.md", mode: "remote", pattern: "{{N}} read-only tools", expect: 1 },
   { file: "README.md", mode: "local", pattern: "**{{N}} tools** (Local)", expect: 1 }, // roadmap Current Status
   { file: "README.md", mode: "cloud", pattern: "**{{N}} tools** (Cloud)", expect: 1 },
-  { file: "README.md", mode: "remote", pattern: "**{{N}} tools** (Remote read-only)", expect: 1 },
 
   // docs/architecture.md
   { file: "docs/architecture.md", mode: "local", pattern: "All {{N}} tools work through", expect: 2 },
   { file: "docs/architecture.md", mode: "local", pattern: "({{N}} tools in Local Mode", expect: 1 },
-  { file: "docs/architecture.md", mode: "remote", pattern: ", {{N}} in Remote Mode", expect: 1 },
 
   // docs/mode-comparison.md
-  { file: "docs/mode-comparison.md", mode: "remote", pattern: "read-only ({{N}} tools)", expect: 1 },
   { file: "docs/mode-comparison.md", mode: "cloud", pattern: "write access ({{N}} tools)", expect: 1 },
   { file: "docs/mode-comparison.md", mode: "local", pattern: "everything ({{N}} tools)", expect: 1 },
   { file: "docs/mode-comparison.md", mode: "local", pattern: "**All {{N}} tools** including design creation", expect: 2 },
   { file: "docs/mode-comparison.md", mode: "local", pattern: "All {{N}} tools including design creation", expect: 1 }, // plain (summary bullet)
   { file: "docs/mode-comparison.md", mode: "cloud", pattern: "**{{N}} tools** — full write access", expect: 1 },
-  { file: "docs/mode-comparison.md", mode: "remote", pattern: "Only {{N}} tools", expect: 1 },
-  { file: "docs/mode-comparison.md", mode: "remote", pattern: "{{N}} read-only tools", expect: 1 },
   { file: "docs/mode-comparison.md", mode: "cloud", pattern: "{{N}} tools available after pairing", expect: 1 },
   { file: "docs/mode-comparison.md", mode: "local", pattern: "All {{N}} tools work through", expect: 2 }, // WebSocket + WebSocket transport
   { file: "docs/mode-comparison.md", mode: "cloud", pattern: "{{N}} tools with full write access", expect: 1 },
   { file: "docs/mode-comparison.md", mode: "local", pattern: "Full {{N}} tools including real-time", expect: 1 },
   { file: "docs/mode-comparison.md", mode: "cloud", pattern: "{{N}} tools are available", expect: 1 },
-  { file: "docs/mode-comparison.md", mode: "remote", pattern: "**Remote (read-only):** {{N}} tools", expect: 1 },
   { file: "docs/mode-comparison.md", mode: "cloud", pattern: "**Cloud Mode:** {{N}} tools", expect: 1 },
   { file: "docs/mode-comparison.md", mode: "local", pattern: "**Local Mode (NPX/Git):** {{N}} tools", expect: 1 },
 
   // docs/introduction.md
   { file: "docs/introduction.md", mode: "local", pattern: "Get all {{N}} tools", expect: 1 },
   { file: "docs/introduction.md", mode: "cloud", pattern: "write access ({{N}} tools)", expect: 1 },
-  { file: "docs/introduction.md", mode: "remote", pattern: "read-only ({{N}} tools)", expect: 1 },
-  { file: "docs/introduction.md", mode: "remote", pattern: "read-only** ({{N}} tools)", expect: 1 }, // wrote Cloud's count here in v1.34.0
   { file: "docs/introduction.md", mode: "local", pattern: "Complete reference for {{N}} tools", expect: 1 },
 
   // docs/setup.md
-  { file: "docs/setup.md", mode: "remote", pattern: "read-only** with {{N}} tools", expect: 1 },
   { file: "docs/setup.md", mode: "cloud", pattern: "write access** ({{N}} tools)", expect: 1 },
   { file: "docs/setup.md", mode: "local", pattern: "everything** ({{N}} tools)", expect: 1 }, // wrote Cloud's count here in v1.34.0
   { file: "docs/setup.md", mode: "local", pattern: "All {{N}} tools including", expect: 1 },
   { file: "docs/setup.md", mode: "local", pattern: "Same {{N}} tools as NPX", expect: 1 },
   { file: "docs/setup.md", mode: "cloud", pattern: "{{N}} tools — full write access", expect: 1 },
-  { file: "docs/setup.md", mode: "remote", pattern: "{{N}} read-only tools", expect: 1 },
 
   // docs/use-cases.md
   { file: "docs/use-cases.md", mode: "local", pattern: "all {{N}} tools", expect: 1 },
@@ -168,12 +165,11 @@ const MANIFEST = [
   // docs/index.mdx (setup cards + tools card)
   { file: "docs/index.mdx", mode: "local", pattern: "Full capabilities — {{N}} tools", expect: 1 },
   { file: "docs/index.mdx", mode: "cloud", pattern: "Web AI clients — {{N}} tools", expect: 1 },
-  { file: "docs/index.mdx", mode: "remote", pattern: "Quick exploration — {{N}} tools", expect: 1 },
   { file: "docs/index.mdx", mode: "local", pattern: "Complete reference for {{N}} tools", expect: 1 },
 
   // docs/tools.md (top note covers all three modes in one sentence)
   { file: "docs/tools.md", mode: "local", pattern: "**{{N}} tools** with full read/write", expect: 1 },
-  { file: "docs/tools.md", mode: "remote", pattern: "**{{N}} read-only tools**", expect: 1 },
+  { file: "docs/tools.md", mode: "local", pattern: "all {{N}} MCP tools", expect: 1 }, // frontmatter description (Mintlify page subtitle)
   { file: "docs/tools.md", mode: "cloud", pattern: "**{{N}} tools** (including full write access)", expect: 1 },
 
   // docs/mint.json (og:description)
@@ -187,6 +183,21 @@ const MANIFEST = [
   // src/index.ts (landing page HTML + meta descriptions — Local count with +)
   { file: "src/index.ts", mode: "local", pattern: "{{N}}+ tools give AI assistants", expect: 3 },
   { file: "src/index.ts", mode: "local", pattern: '"number">{{N}}+<', expect: 1 },
+  { file: "src/index.ts", mode: "cloud", pattern: 'data-mode="cloud">{{N}}<', expect: 1 }, // landing page Cloud card
+  // Comparison-table cells (bold counts without the word "tools" — the sweep
+  // below now catches these; they sat at a stale Cloud count until v1.40.7).
+  { file: "README.md", mode: "local", pattern: "| **Total tools available** | **{{N}}** |", expect: 1 },
+  { file: "README.md", mode: "cloud", pattern: "| **{{N}}** after pairing |", expect: 2 },
+  { file: "README.md", mode: "local", pattern: "| **Total tools** | **{{N}}** |", expect: 1 },
+  { file: "README.md", mode: "local", pattern: "| **{{N}}** (Local Git) |", expect: 1 },
+  { file: "docs/setup.md", mode: "local", pattern: "| **Total tools available** | **{{N}}** |", expect: 1 },
+  { file: "docs/setup.md", mode: "cloud", pattern: "| **{{N}}** after pairing |", expect: 1 },
+  { file: "docs/introduction.md", mode: "local", pattern: "| **Total tools** | **{{N}}** |", expect: 1 },
+  { file: "docs/introduction.md", mode: "cloud", pattern: "| **{{N}}** after pairing |", expect: 1 },
+  { file: "docs/mode-comparison.md", mode: "local", pattern: "| **Local Mode** (NPX or Git) | **{{N}}** |", expect: 1 },
+  { file: "docs/mode-comparison.md", mode: "cloud", pattern: "| **Cloud Mode** (Remote + Relay) | **{{N}}** |", expect: 1 },
+  { file: "docs/mode-comparison.md", mode: "cloud", pattern: "| {{N}} (read/write) |", expect: 1 },
+  { file: "docs/mode-comparison.md", mode: "local", pattern: "{{N}} (full)", expect: 2 },
 ];
 
 // Intentional counts the sweep must NOT flag (historical or third-party).
@@ -194,14 +205,19 @@ const MANIFEST = [
 const ALLOWLIST = [
   { file: "README.md", pattern: "15 tools for managing presentations" }, // v1.17.0 roadmap entry (historical)
   { file: "README.md", pattern: "9 tools for creating and reading FigJam boards" }, // v1.16.0 roadmap entry (historical)
-  { file: "docs/figma-mcp-vs-figma-console-mcp.md", pattern: "16 tools. REST API" }, // Figma's NATIVE MCP tool count, not ours
   { file: "docs/figma-mcp-vs-figma-console-mcp.md", pattern: "7 tools, Local Mode" }, // v1.40.0 DS-extraction feature-specific count (not a mode count)
+  { file: "src/index.ts", pattern: '"number">0<' }, // landing page Remote card: "0 installs", not a tool count
 ];
 
 // Sweep shapes: any numeric tool-count reference in a covered file must be
 // classified by MANIFEST or ALLOWLIST, or verify fails.
 const SWEEP_RES = [
-  /\d{1,3}\+? ?(?:read-only )?tools?\b/g,
+  // "MCP tools" too: "all 107 MCP tools" in docs/tools.md escaped this sweep and
+  // sat stale for 14 tools' worth of releases.
+  /\d{1,3}\+? ?(?:read-only |MCP )?tools?\b/g,
+  // Bold numbers in table cells ("| **121** |") and "N (read/write)" style cells.
+  /\| \*\*\d{2,3}\*\*/g,
+  /\| \d{2,3} \((?:read\/write|full)\)/g,
   /"number">\d{1,3}\+?</g,
   /\d{1,3} in Remote\b/g,
 ];
@@ -226,11 +242,18 @@ const DRY_RUN = args.includes("--dry-run");
 
 const counts = {
   local: flag("--local") ?? detectLocal(),
-  remote: flag("--remote") ?? detectRemote(),
   cloud: flag("--cloud") ?? detectCloud(),
 };
 
-console.log(`Tool counts: local=${counts.local} cloud=${counts.cloud} remote=${counts.remote}`);
+// --print-counts: emit "LOCAL CLOUD" and exit. scripts/release.sh reads its
+// counts from here so there is exactly one counter (it used to keep its own
+// grep list, which would have reverted a corrected Cloud count on release).
+if (args.includes("--print-counts")) {
+  console.log(`${counts.local} ${counts.cloud}`);
+  process.exit(0);
+}
+
+console.log(`Tool counts: local=${counts.local} cloud=${counts.cloud}`);
 
 const files = [...new Set(MANIFEST.map((e) => e.file))];
 const contents = new Map(files.map((f) => [f, readFileSync(join(ROOT, f), "utf8")]));

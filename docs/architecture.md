@@ -104,7 +104,7 @@ flowchart TB
 The main server implements the Model Context Protocol with stdio transport for local mode.
 
 **Key Responsibilities:**
-- Tool registration (121 tools in Local Mode, 9 in Remote Mode)
+- Tool registration (121 tools in Local Mode, 95 in Cloud Mode)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication via WebSocket
@@ -121,6 +121,10 @@ The main server implements the Model Context Protocol with stdio transport for l
 | Variables | `figma_create_variable`, `figma_update_variable`, etc. | WebSocket (Plugin) |
 | Token Sync | `figma_export_tokens`, `figma_import_tokens` | Plugin read + Plugin write |
 | Real-Time | `figma_get_selection`, `figma_get_design_changes` | WebSocket |
+| Multi-File | `figma_list_open_files`, `figma_execute_across_files` | WebSocket (one plugin connection per file) |
+| Parity & Docs | `figma_check_design_parity`, `figma_generate_component_doc` | REST API + WebSocket (Plugin) |
+| Audits | `figma_lint_design`, `figma_audit_component_accessibility`, `figma_audit_design_system_report` | WebSocket (Plugin) + REST API |
+| Codebase Extraction | `figma_ds_analyze` … `figma_ds_verify` (seven tools) | Local filesystem |
 
 ---
 

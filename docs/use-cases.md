@@ -409,7 +409,7 @@ or
 1. AI generates a 6-character pairing code (valid for 5 minutes)
 2. You enter the code in the Desktop Bridge plugin's Cloud Mode section
 3. The plugin connects to the cloud relay — you're paired
-4. All 93 Cloud Mode tools — including write/create tools — are now available through the cloud relay
+4. All Cloud Mode tools — including write/create tools — are now available through the cloud relay
 
 **Follow-up prompts:**
 - "Create a card component with an image, title, and description"
@@ -604,23 +604,25 @@ or
 
 ## 🔄 Integration with Other Tools
 
-### With Figma Official Dev Mode MCP
+### With Figma's Official MCP Server
+
+Figma's official MCP server provides design context for code generation and Code Connect mappings. Console MCP can check the result against the design and the token set.
 
 **Workflow:**
-1. Use Figma Dev Mode MCP to generate component code
-2. Use Figma Console MCP to get design token values
-3. Replace hardcoded values with tokens
-4. Use Console MCP to debug when integrated
+1. Generate component code with the official server's `get_design_context` (and Code Connect, if your team uses it)
+2. Ask Console MCP for the component's token names and values (`figma_get_component_for_development_deep` or `figma_get_variables`)
+3. Replace any hardcoded values with tokens
+4. Run `figma_check_design_parity` to confirm the implementation matches the Figma component
 
 **Example:**
 ```
-// Step 1: Dev Mode MCP generates
+// Generated code contains a raw value
 <Button className="bg-[#4375ff]">Click me</Button>
 
-// Step 2: Console MCP provides token
+// Console MCP returns the bound token
 --color-primary: #4375FF
 
-// Step 3: You refactor
+// You refactor to the token
 <Button className="bg-primary">Click me</Button>
 ```
 
@@ -631,7 +633,7 @@ or
 See also:
 - [Tool Documentation](tools) - Complete API reference for all 121 tools
 - [Architecture Overview](architecture) - Understanding deployment modes
-- [Example Prompts](../README.md#example-prompts) - Quick prompt examples
+- [Example Prompts](https://github.com/southleft/figma-console-mcp#-example-prompts) - Quick prompt examples on GitHub
 - [Troubleshooting](troubleshooting) - Solutions to common issues
 
 ---

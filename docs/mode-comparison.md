@@ -36,11 +36,13 @@ The MCP server has **three execution modes** and **four setup methods**:
 
 | Mode | Tools Available | Write Access | Needs Node.js | Real-time |
 |------|-----------------|--------------|---------------|-----------|
-| **Local Mode** (NPX or Git) | **114** | Yes | Yes | Yes |
-| **Cloud Mode** (Remote + Relay) | **101** | Yes | No | No |
-| **Remote Mode** (read-only) | **9** | No | No | No |
+| **Local Mode** (NPX or Git) | **121** | Yes | Yes | Yes |
+| **Cloud Mode** (Remote + Relay) | **95** | Yes | No | No |
+| **Remote Mode** (read-only) | Read-only subset | No | No | No |
 
-> **Bottom line:** Remote mode is read-only (9 tools). Cloud Mode adds write access (101 tools) without Node.js. Local has everything (121 tools) including real-time monitoring.
+> **Bottom line:** Remote mode is read-only until you pair the plugin. Cloud Mode adds write access (95 tools) without Node.js. Local has everything (121 tools) including real-time monitoring.
+
+> **Two hosted endpoints.** The Cloud Mode count is for the `/mcp` endpoint that web AI clients use. The `/sse` endpoint that Claude Desktop and Claude Code connect to also lists the console-log, screenshot, navigation, status, and diagnostic tools and the code accessibility scan. Remote mode is either endpoint before you pair the plugin.
 
 ### Use NPX Setup (Recommended for Most Users)
 - ✅ **All 121 tools** including design creation and real-time monitoring
@@ -50,7 +52,7 @@ The MCP server has **three execution modes** and **four setup methods**:
 - ⚠️ Requires Node.js 18+ and `FIGMA_ACCESS_TOKEN` (manual, one-time)
 
 ### Use Cloud Mode (Web AI Clients)
-- ✅ **101 tools** — full write access (create, edit, delete) plus REST API reads
+- ✅ **95 tools** — full write access (create, edit, delete) plus REST API reads
 - ✅ No Node.js required — only Figma Desktop with the Desktop Bridge plugin
 - ✅ Works with Claude.ai, v0, Replit, Lovable, any MCP-capable web platform
 - ✅ Variables without Enterprise plan (via Plugin API)
@@ -68,7 +70,7 @@ The MCP server has **three execution modes** and **four setup methods**:
 - ✅ **TRUE zero-setup** - Just paste a URL
 - ✅ **OAuth authentication** - No manual tokens
 - ✅ Works without Figma Desktop restart
-- ❌ **Only 9 tools** — cannot create or modify designs
+- ❌ **Read-only** — cannot create or modify designs
 - ❌ Cannot use Desktop Bridge plugin
 - ❌ Variables require Enterprise plan
 
@@ -88,7 +90,7 @@ The MCP server has **three execution modes** and **four setup methods**:
 | **Desktop Bridge** | ❌ Not available | ✅ Required for relay | ✅ Available | ✅ Available |
 | **Node.js Required** | No | No | Yes | Yes |
 | **Source Access** | No | No | No | Yes |
-| **Tools** | 9 (read-only) | 93 (read/write) | 101 (full) | 101 (full) |
+| **Tools** | Read-only subset | 95 (read/write) | 121 (full) | 121 (full) |
 | **Use Case** | Quick evaluation | Web AI clients | Most users | Developers |
 
 ---
@@ -101,7 +103,11 @@ The MCP server has **three execution modes** and **four setup methods**:
 | **Design Creation (write)** | ❌ | ✅ | ✅ | Cloud via relay, Local via WebSocket |
 | **Variable Management** | ⚠️ | ✅ | ✅ | Remote requires Enterprise. Cloud/Local use Plugin API (any plan) |
 | **Screenshots** | ✅ | ✅ | ✅ | All use Figma REST API |
-| **Design System Extraction** | ✅ | ✅ | ✅ | Variables, components, styles via Figma API |
+| **Design System Reads** | ✅ | ✅ | ✅ | Variables, components, styles via Figma API |
+| **Codebase → Design System Extraction** (`figma_ds_*`) | ❌ | ❌ | ✅ | Local-only — reads and writes your local filesystem |
+| **Design-System Health Report** (`figma_audit_design_system_report`) | ❌ | ❌ | ✅ | Local-only |
+| **Component Search & Summaries** (`figma_search_components`, `figma_get_component_details`, `figma_get_design_system_summary`, `figma_get_token_values`) | ❌ | ❌ | ✅ | Local-only; Cloud Mode can use `figma_get_design_system_kit` and the library tools |
+| **Multi-File Execution** (`figma_execute_across_files`, `fileKey` targeting) | ❌ | ❌ | ✅ | Cloud Mode pairs with one plugin instance |
 | **Desktop Bridge Plugin** | ❌ | ✅ (required) | ✅ | Plugin required for Cloud relay and Local write access |
 | **Real-time Selection Tracking** | ❌ | ❌ | ✅ | Local-only — requires persistent WebSocket |
 | **Document Change Monitoring** | ❌ | ❌ | ✅ | Local-only — requires persistent WebSocket |
@@ -141,7 +147,7 @@ Figma Files & Design Data
 - Cannot access `localhost` on your machine
 - OAuth tokens stored in Cloudflare KV
 - ~10-30s cold start for first request
-- 9 read-only tools (REST API reads, console/screenshot/navigate via headless browser)
+- Read-only tools (REST API reads, console/screenshot/navigate via headless browser)
 
 ### Cloud Mode Architecture (Read/Write via Relay)
 ```
@@ -162,7 +168,7 @@ Figma Design Data
 - No Node.js required — relay runs entirely in Cloudflare Workers
 - Desktop Bridge plugin connects to the cloud relay via WebSocket
 - Pairing flow: AI generates 6-character code → user enters in plugin → connected
-- 101 tools available after pairing — write/manipulation + REST API reads + design system + slides + figjam + annotations + comments + version history
+- 95 tools available after pairing — write/manipulation + REST API reads + design system + slides + figjam + annotations + comments + version history
 - Variables work on any Figma plan (uses Plugin API, not Enterprise REST API)
 - Pairing code expires after 5 minutes
 
@@ -247,7 +253,7 @@ Variables & Components Data
 2. Tell your AI to connect to your Figma plugin (natural language)
 3. AI generates a 6-character pairing code
 4. In the Desktop Bridge plugin, toggle "Cloud Mode" and enter the code
-5. Done ✅ — 101 tools with full write access
+5. Done ✅ — 95 tools with full write access
 
 ### NPX
 **Prerequisites:**
@@ -385,7 +391,7 @@ The Desktop Bridge Plugin is the bridge between Figma and the MCP server. It com
 
 **Local Mode Transport:** The server automatically selects an available port in the range 9223–9232, supporting multiple simultaneous MCP instances. All 121 tools work through the WebSocket transport.
 
-**Cloud Mode Transport:** The plugin connects to the Cloudflare relay after pairing. Write operations are relayed from the cloud MCP server through the Durable Object to the plugin. 101 tools are available.
+**Cloud Mode Transport:** The plugin connects to the Cloudflare relay after pairing. Write operations are relayed from the cloud MCP server through the Durable Object to the plugin. 95 tools are available.
 
 ### Plugin Does NOT Work with Remote Read-Only Mode
 
@@ -403,13 +409,15 @@ Remote read-only mode runs in Cloudflare Workers which cannot connect to `localh
 ### Switch from Remote (read-only) → NPX/Local Git if:
 - ❌ You need real-time selection tracking or document change monitoring
 - ❌ You're developing Figma plugins (need console log streaming)
-- ❌ You need the full 94-tool set
+- ❌ You need the full Local Mode tool set
 - ❌ You need offline access
 
 ### Switch from Cloud Mode → NPX/Local Git if:
 - ❌ You need real-time selection tracking or document changes
 - ❌ You need console log streaming
 - ❌ You need MCP Apps (Token Browser, Design System Dashboard)
+- ❌ You want to extract a design system from a codebase (`figma_ds_*` tools)
+- ❌ You need the design-system health report, component search, or multi-file execution
 - ❌ Connection drops between AI turns are disruptive to your workflow
 
 ### Switch from NPX/Local Git → Cloud Mode if:
@@ -508,8 +516,8 @@ All setup methods are completely free:
 - You don't need design creation capabilities
 
 **Key Takeaway:** The three modes offer a clear capability progression:
-- **Remote (read-only):** 9 tools — view data, screenshots, design system extraction
-- **Cloud Mode:** 101 tools — adds full write access (create, edit, delete) via relay
+- **Remote (read-only):** view data, screenshots, design system extraction
+- **Cloud Mode:** 95 tools — adds full write access (create, edit, delete) via relay
 - **Local Mode (NPX/Git):** 121 tools — adds real-time monitoring (selection, changes, console)
 
 The difference is not just authentication, but **fundamental capabilities**:

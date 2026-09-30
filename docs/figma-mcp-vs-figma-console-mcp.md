@@ -1,25 +1,28 @@
 ---
 title: "Figma MCP vs. Figma Console MCP"
 sidebarTitle: "Figma MCP vs. Console MCP"
-description: "An objective comparison of Figma's official MCP server and Figma Console MCP — shared capabilities, real differences, and when to use which."
+description: "How Figma's official MCP server and Figma Console MCP differ, where they overlap, and how to use them together."
 ---
 
-Both tools can now read and write to Figma. Both support skills and guided workflows. So what's actually different?
+Figma's official MCP server and Figma Console MCP both connect AI assistants to Figma, and both can read from and write to Figma files. They were built for different jobs, and many teams run both in the same MCP client.
 
-The short answer: **approach** and **audience**. The Figma MCP is a task-driven agent tool optimized for code-to-canvas workflows. Figma Console MCP is a design system ecosystem tool built to keep design and development in sync. They overlap significantly, and they work well together.
+- **The official Figma MCP server** is Figma's hosted server. It focuses on design-to-code context, Code Connect, and creating content in Figma: design files, FigJam diagrams, motion, and shaders.
+- **Figma Console MCP** is an open-source server focused on design-system operations: deterministic audits and design-code parity checks, token sync with round-trip IDs, component documentation, version-history diffs, extracting a design system from a codebase, and plugin console debugging.
+
+This page reflects both servers as of September 2026. Figma's server changes often, so check [Figma's documentation](https://developers.figma.com/docs/figma-mcp-server/) for its current capabilities.
 
 ---
 
-## The Short Version
+## At a Glance
 
 <Columns cols={2}>
   <Card title="Figma MCP (Official)" icon="figma">
-    **Made by Figma, Inc.** — A design agent platform. Reads designs, generates code, captures web pages, and now writes to the canvas via `use_figma`. Skills guide agent behavior for consistent results.
+    **Made by Figma.** A hosted server you sign in to with OAuth. It provides design context for code generation, Code Connect mappings, library search, and writes to Figma through `use_figma`, which runs Plugin API JavaScript. It can also create files, generate FigJam diagrams, and work with motion, shaders, and generative plugins.
 
-    16 tools. REST API + `use_figma`. Closed source.
+    Tool surface: about 40 as of September 2026, including Weave tools for running AI models and tools.
   </Card>
   <Card title="Figma Console MCP" icon="terminal">
-    **Made by Southleft** — A design system management platform. 107 dedicated tools for reading, writing, managing tokens, analyzing parity, and bridging the gap between designers and developers.
+    **Made by Southleft.** A design-system-focused server that runs on your machine (or in Cloud Mode) and talks to Figma through the Desktop Bridge plugin and the REST API. Most operations are dedicated, schema-validated tools rather than generated scripts, and it also runs arbitrary Plugin API code through `figma_execute`.
 
     121 tools. Plugin API + REST API. Open source (MIT).
   </Card>
@@ -29,116 +32,89 @@ The short answer: **approach** and **audience**. The Figma MCP is a task-driven 
 
 ## Shared Ground
 
-With Figma's March 2026 `use_figma` update, both tools now share a significant set of capabilities:
+Both servers can do the following. How they do it differs: the official server usually does it through a general tool such as `use_figma` plus a skill, and Console MCP usually has a dedicated tool for it.
 
 | Capability | Figma MCP | Console MCP |
-|---|:---:|:---:|
-| Read file structure, components, styles | Yes | Yes |
-| Export screenshots | Yes | Yes |
-| Read variables / design tokens | Yes | Yes |
-| Search design system assets across libraries | Yes | Yes |
-| Create frames, shapes, text nodes | Yes (via `use_figma`) | Yes (dedicated tools) |
-| Create components and component sets | Yes (via `use_figma`) | Yes — `figma_create_component_set` builds a full variant set from an axes matrix in one call |
-| Modify auto-layout, fills, strokes | Yes (via `use_figma`) | Yes (dedicated tools) |
-| Create and manage variables | Yes (via `use_figma`) | Yes (11 dedicated tools) |
-| Resize, move, clone, delete nodes | Yes (via `use_figma`) | Yes (dedicated tools) |
-| Execute arbitrary Plugin API JavaScript | No | Yes (`figma_execute`) |
-| Structured create/edit/delete operations | Yes (`use_figma`) | Yes (dedicated tools) |
-| Skills (markdown workflow guides) | Yes | Yes |
-
-Both support skills — markdown instruction files that teach agents patterns, gotchas, and workflows before executing tool calls. Skills are a Claude Code feature, not specific to either MCP server. The key difference is in how write access is surfaced: Figma MCP uses a single server-side `use_figma` tool that handles structured operations through Figma's cloud. Figma Console MCP uses a WebSocket Desktop Bridge to execute Plugin API calls directly, exposing 107 purpose-built tools with schema validation.
+|---|---|---|
+| Read file structure, components, and styles | `get_metadata`, `get_design_context` | `figma_get_file_data`, `figma_get_component`, `figma_get_styles`, and others |
+| Screenshots | `get_screenshot` | `figma_take_screenshot`, `figma_capture_screenshot` |
+| Read variables | `get_variable_defs` | `figma_get_variables`, `figma_get_token_values` |
+| Search design-system assets | `search_design_system`, `get_libraries` | `figma_search_components`, library component and variable tools |
+| Run Plugin API JavaScript (writes to Figma) | `use_figma` | `figma_execute` |
+| Read FigJam boards | `get_figjam` | `figjam_get_board_contents`, `figjam_get_connections` |
+| Skills (markdown workflow guides for agents) | Yes (`get_figma_skill`, plus skills in Figma's plugin) | Yes |
 
 ---
 
-## Where They Diverge
+## What the Official Figma MCP Is Built For
 
-### Tooling Philosophy
+These are areas where the official server has first-party capabilities that Console MCP does not provide:
 
-This is the most fundamental difference and it shapes everything else.
-
-**Figma MCP** provides one powerful generic tool (`use_figma`) that handles structured create, edit, delete, and inspect operations through Figma's cloud infrastructure. Skills (markdown instruction files) guide the agent's behavior, teaching it patterns like font loading, color ranges (0-1 not 0-255), and auto-layout ordering.
-
-**Figma Console MCP** provides 107 purpose-built tools, each with its own schema, validation, error messages, and AI guidance. Instead of writing `figma.createFrame()` code, you call `figma_create_child` with structured parameters. Instead of scripting a variable loop, you call `figma_batch_create_variables` with a JSON array of 100 tokens.
-
-| Aspect | Figma MCP | Console MCP |
-|---|---|---|
-| **Write approach** | 1 generic tool + skills | 107 specialized tools |
-| **Variable creation** | One-at-a-time via `use_figma` | `figma_batch_create_variables` (100/call) |
-| **Error handling** | Agent must interpret raw JS errors | Tool-specific error messages with suggestions |
-| **Validation** | Skills teach patterns, agent must follow | Schema-validated inputs, type-checked params |
-| **Batch operations** | Agent scripts loops manually | 10-50x faster atomic batch tools |
-
-**Why this matters:** For a single component, both approaches work fine. For a design system with 500 tokens across 4 modes, dedicated tools with batch operations are dramatically faster and more reliable than repeated code execution.
-
-### Design System Management
-
-Figma Console MCP was built for design system teams. These tools have no equivalent in Figma MCP:
-
-| Capability | Figma MCP | Console MCP |
-|---|:---:|:---:|
-| Batch create variables (up to 100/call) | No | Yes |
-| Batch update variables (up to 100/call) | No | Yes |
-| Atomic token system setup (collection + modes + variables) | No | Yes |
-| Design-code parity analysis (8 dimensions) | No | Yes |
-| AI-complete component documentation | No | Yes |
-| Design system health scoring | No | Yes |
-| Token enrichment and dependency mapping | No | Yes |
-| Hardcoded value detection | No | Yes |
-| Per-variant color token analysis | No | Yes |
-| Component reconstruction specifications | No | Yes |
-| Design linting | No | Yes |
-| Design annotations (read, write, clear) | No | Yes (3 dedicated tools) |
-| Annotation-enriched component docs | No | Yes |
-| Bidirectional Figma↔code token sync (DTCG canonical, legacy + 2025.10 dialects) | No | Yes (`figma_export_tokens` / `figma_import_tokens`) |
-| Extract a design system FROM a production codebase (tokens, components, Storybook, Figma round-trip) | No | Yes (`figma_ds_analyze` → `figma_ds_verify`, 7 tools, Local Mode) |
-| Replaces Style Dictionary + Tokens Studio export pipeline | No | Yes (10 formats: DTCG, CSS, Tailwind v4/v3, SCSS, TS, JSON ×2, Style Dictionary v3, Tokens Studio) |
-| Import applies creates / renames / alias writes / replace-gated deletes | No | Yes (full apply phase) |
-| Round-trip safe — preserves Figma variable IDs in `$extensions` | No | Yes |
-| Diff-aware merge (only writes changed values) | No | Yes |
-
-### Code-to-Design Bridge (Figma MCP Strengths)
-
-These are Figma MCP's genuine differentiators:
-
-| Capability | Figma MCP | Console MCP |
-|---|:---:|:---:|
-| Code Connect (map components to code) | Yes (first-party) | No |
-| AI-suggested Code Connect mappings | Yes | No |
-| Framework-specific code output (React, Vue, etc.) | Yes (built-in) | Via AI interpretation |
-| Design system rules generation | Yes | No |
-| Capture live web pages into Figma layers | Yes (`generate_figma_design`) | No |
-| Create FigJam diagrams from Mermaid syntax | Yes (`generate_diagram`) | No |
-| Create new blank Figma files | Yes (`create_new_file`) | No |
-| Figma community skills page | Yes | No |
+| Capability | Official tools |
+|---|---|
+| Design context for code generation | `get_design_context`, `get_metadata`, `get_screenshot` |
+| Code Connect: map Figma components to code components | `get_code_connect_map`, `add_code_connect_map`, `get_code_connect_suggestions`, `send_code_connect_mappings`, and related tools |
+| Create new Figma, FigJam, and Slides files | `create_new_file` |
+| Generate FigJam diagrams from Mermaid | `generate_diagram` |
+| Motion context and video export | `get_motion_context`, `export_video` |
+| Create and edit shaders | `create_shader`, `update_shader`, `get_shader`, `list_shaders`, `list_file_shaders` |
+| Generative plugins | `create_generative_plugin`, `update_generative_plugin`, and related tools |
+| Upload and download assets | `upload_assets`, `download_assets` |
+| Hosted by Figma, OAuth sign-in, no local install | — |
 
 <Note>
-Code Connect is a significant advantage for teams that want to map Figma components directly to their codebase components. This creates a bridge where the AI knows which code component corresponds to each design component — making code generation more accurate.
+Code Connect is the main reason to reach for the official server when generating code. It tells the AI which code component corresponds to each Figma component, so generated code uses your real components instead of recreating them.
 </Note>
 
-### Real-Time Awareness
+---
 
-Figma Console MCP's Desktop Bridge provides live awareness that has no equivalent in Figma MCP:
+## What Figma Console MCP Is Built For
 
-| Capability | Figma MCP | Console MCP |
-|---|:---:|:---:|
-| Track what the user has selected | No | Yes, in real time |
-| Monitor document changes as they happen | No | Yes |
-| Track page navigation events | No | Yes |
-| Stream console logs from Desktop Bridge | No | Yes |
-| Live plugin reload for development | No | Yes |
-| Multi-file connection tracking | No | Yes |
-| Connection health diagnostics | No | Yes |
+Console MCP concentrates on operating a design system across Figma and code. Each of these has dedicated tools:
 
-### FigJam, Slides, Comments, and Annotations
+### Deterministic checks
 
-| Capability | Figma MCP | Console MCP |
-|---|:---:|:---:|
-| Read FigJam boards | Yes | Yes |
-| Create FigJam diagrams (Mermaid) | Yes | No |
-| Structured FigJam tools (stickies, connectors, tables, etc.) | No | Yes (9 dedicated tools) |
-| Figma Slides (create, edit, manage) | No | Yes (15 dedicated tools) |
-| File comments (read, post, delete) | No | Yes |
-| Design annotations (read, write, clear, categories) | No | Yes (3 dedicated tools) |
+Rule-based checks that return the same result for the same input, so they can gate a merge or a release:
+
+- **Accessibility**: `figma_lint_design` (WCAG checks on the canvas), `figma_audit_component_accessibility` (state, focus, and color-blind scorecard for a component), and `figma_scan_code_accessibility` (axe-core scan of HTML).
+- **Design-code parity**: `figma_check_design_parity` compares a Figma component with its code implementation and reports each discrepancy.
+- **Design-system health**: `figma_audit_design_system_report` scores naming, token architecture, component metadata, accessibility, consistency, and coverage, and says which findings the MCP can fix.
+- **Extracted-system fidelity**: `figma_ds_verify` checks that tokens extracted from a codebase parse, resolve, and are ready to import into Figma.
+
+### Bidirectional token sync
+
+- `figma_export_tokens` writes Figma variables to 10 formats: DTCG JSON (legacy or 2025.10 dialect), CSS custom properties, Tailwind v4 and v3, SCSS, TypeScript, flat and nested JSON, Style Dictionary v3, and Tokens Studio.
+- `figma_import_tokens` applies DTCG JSON back to Figma: value updates, new collections and variables, renames matched by the Figma variable ID stored in `$extensions`, alias writes, and deletes only under `strategy: "replace"`.
+- Export refuses to overwrite a token file generated from a different Figma file, or one that would lose tokens the export doesn't manage.
+
+### Variables on any Figma plan
+
+Figma's Variables REST API requires an Enterprise plan. Console MCP reads and writes variables through the Plugin API in the Desktop Bridge plugin, so variable tools work on every plan, including batch creates and updates of up to 100 variables per call.
+
+### Component documentation and history
+
+- `figma_generate_component_doc` produces markdown documentation from Figma and your code: anatomy, per-variant color, spacing, and typography tokens, annotations, a design-code parity section, and (with the `history` option) a changelog built from Figma version history and `git log`.
+- Version-history tools (`figma_get_file_versions`, `figma_diff_versions`, `figma_generate_changelog`, `figma_blame_node`) diff snapshots and find when, and by whom, a property or variant was introduced.
+
+### Codebase → design system → Figma
+
+Seven `figma_ds_*` tools (Local Mode) analyze a production codebase, extract its styling as DTCG tokens with per-token provenance, scaffold a design-system package with Storybook, and verify it. The extracted tokens import into Figma variables with `figma_import_tokens`.
+
+### Plugin debugging and live file awareness (Local Mode)
+
+Console log capture from the Desktop Bridge plugin (`figma_get_console_logs`, `figma_watch_console`), the current selection (`figma_get_selection`), buffered document changes (`figma_get_design_changes`), multi-file targeting and `figma_execute_across_files`, and a plain-language health check (`figma_diagnose`).
+
+### Other dedicated tools
+
+Structured tools for variables, components and component sets (`figma_create_component_set`), Slots, node editing, annotations, comments, FigJam, and Slides. See the [Tools Reference](/tools).
+
+---
+
+## Structured Tools and Scripted Writes
+
+Both servers can change a Figma file by running Plugin API code: `use_figma` on the official server, `figma_execute` in Console MCP. Console MCP also provides dedicated tools for common operations. For example, `figma_batch_create_variables` takes a JSON array of variables, and `figma_create_component_set` builds a variant set from an axes matrix. Their inputs are schema-validated and their errors name the problem.
+
+Neither approach is universally better. A script is flexible and handles one-off changes. A dedicated tool is predictable and easier to review, which matters most for repeated design-system operations such as syncing hundreds of tokens across modes.
 
 ---
 
@@ -146,43 +122,13 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 
 | | Figma MCP | Console MCP |
 |---|---|---|
-| **Connection method** | REST API + server-side `use_figma` via Figma's cloud | WebSocket Desktop Bridge + REST API |
-| **Runs where** | Figma's cloud or Desktop App | Your machine (`npx`) or self-hosted cloud |
-| **Authentication** | OAuth (browser popup) | Personal Access Token |
-| **Source code** | Closed source | Open source (MIT) |
-| **Transport** | Streamable HTTP | stdio (local) or SSE/HTTP (remote) |
+| **Runs where** | Hosted by Figma | Your machine (`npx` or a git clone), Southleft's hosted Cloud Mode, or your own Cloudflare deployment |
+| **Connection to Figma** | Figma's service | Desktop Bridge plugin over WebSocket, plus the Figma REST API |
+| **Authentication** | OAuth | Personal access token; OAuth for the hosted remote endpoints |
+| **Web AI clients** | Any client that supports remote MCP servers | Cloud Mode: Yes (95 tools) after pairing the Desktop Bridge plugin |
+| **Source code** | Operated by Figma | Open source (MIT), self-hostable |
 
----
-
-## Access and Pricing
-
-| | Figma MCP | Console MCP |
-|---|---|---|
-| **Pricing** | Usage-based (becoming a paid feature) | Free (MIT license) |
-| **Rate limits** | Yes (plan-dependent) | No |
-| **Open source** | No | Yes |
-| **Self-hostable** | No | Yes |
-| **Supported MCP clients** | 11+ approved clients | Any MCP client |
-| **Cloud mode (web AI clients)** | N/A | Yes (Claude.ai, v0, Lovable, Replit) |
-
----
-
-## The Numbers
-
-| Metric | Figma MCP | Console MCP |
-|---|:---:|:---:|
-| **Total tools** | 16 | 94 |
-| **Read tools** | ~10 | ~22 |
-| **Write/create tools** | 1 (`use_figma`) | 35+ dedicated tools |
-| **Variable management** | Via `use_figma` | 11 dedicated tools |
-| **Component management** | Via `use_figma` | 5+ dedicated tools |
-| **Node manipulation** | Via `use_figma` | 11+ dedicated tools |
-| **Annotation tools** | 0 | 3 dedicated tools |
-| **Real-time awareness** | 0 | 2 |
-| **Debugging tools** | 0 | 5 |
-| **FigJam tools** | 2 (read + diagram) | 9 structured tools |
-| **Code Connect tools** | 5 | 0 |
-| **Parity / documentation** | 0 | 3 |
+For Figma's current plan requirements and usage limits, see [Figma's documentation](https://developers.figma.com/docs/figma-mcp-server/). Figma Console MCP is free. It calls the Figma REST API with your own token, so Figma's REST API rate limits apply.
 
 ---
 
@@ -190,85 +136,63 @@ Figma Console MCP's Desktop Bridge provides live awareness that has no equivalen
 
 <Tabs>
   <Tab title="Product Engineers">
-    ### For engineers building from designs:
+    **The official Figma MCP** fits when:
+    - You want design context for implementing a screen or component
+    - You use Code Connect to map Figma components to your codebase
+    - You want a hosted server with no local install
 
-    **Figma MCP** is the natural choice when:
-    - You want structured, framework-specific code output from Figma designs
-    - You're using Code Connect to map design components to your codebase
-    - You want to capture a running web app into Figma for review
-    - You want zero-setup with Figma's hosted infrastructure
-
-    **Figma Console MCP** is the better choice when:
-    - You need to check if your coded components match the Figma specs (parity analysis)
-    - You want to push design token changes back to Figma from code
-    - You need AI-generated component documentation with token mappings
-    - You want unlimited usage without rate limits
-    - You want to self-host or audit the source code
+    **Figma Console MCP** fits when:
+    - You need to check whether coded components match their Figma specs
+    - You want design tokens exported to your stack's format, or code-side token edits pushed back to Figma
+    - You want generated component documentation with token mappings and a design and code changelog
+    - You want to self-host or read the source
   </Tab>
-  <Tab title="Product Designers">
-    ### For designers managing design systems:
+  <Tab title="Designers and Design System Teams">
+    **The official Figma MCP** fits when:
+    - You want an agent to create designs, files, or FigJam diagrams
+    - You work with motion or shaders
 
-    **Figma MCP** is useful when:
-    - You want an agent to create designs from code references
-    - You want to generate FigJam diagrams from text descriptions
-    - You want to capture a live website into your Figma file for reference
-
-    **Figma Console MCP** is the better choice when:
-    - You manage a design system with hundreds of tokens across multiple modes
-    - You need batch operations (create 100 variables in one call)
-    - You want real-time awareness of what's happening in your file
-    - You want design system health scoring and linting
-    - You want to audit design-code drift with automated parity checks
-    - You need structured FigJam tools or Slides support
-    - You want to read or write design annotations (interaction specs, accessibility notes, animation timings)
-    - You want to post review comments directly on components
+    **Figma Console MCP** fits when:
+    - You maintain token collections with many modes and want batch, schema-validated variable operations
+    - You want repeatable accessibility and design-system health audits
+    - You want to audit design-code drift
+    - You want version-history diffs, changelogs, or blame for components
+    - You want to read or write annotations, or post review comments on components
   </Tab>
-  <Tab title="Use Both Together">
-    ### The best workflow uses both
+  <Tab title="Using Both">
+    Both servers can be configured in the same MCP client. One workflow:
 
-    They're complementary, not competitive:
-
-    1. **System setup**: Use Figma Console MCP to build your token architecture, create component variants with proper variable bindings, and organize your design system
-    2. **Design creation**: Use either — Figma MCP for agent-guided design creation, or Console MCP's dedicated tools for systematic component building
-    3. **Code generation**: Use Figma MCP's Code Connect and `get_design_context` for framework-specific code output from your designs
-    4. **Maintenance**: Use Figma Console MCP's parity analysis to catch drift, then use either tool to fix discrepancies
-    5. **Documentation**: Use Console MCP to generate component documentation (including design annotations for animation timings, interaction specs, and accessibility requirements), then use Figma MCP's design system rules to keep AI code generation consistent
-
-    Both servers can be configured in the same MCP client simultaneously.
+    1. **Set up the system** with Console MCP: token collections and modes, component sets with variable bindings, and a health audit.
+    2. **Generate code** with the official server's `get_design_context` and Code Connect.
+    3. **Check the result** with Console MCP's parity and accessibility tools, then fix discrepancies with either server.
+    4. **Document** components with `figma_generate_component_doc`.
   </Tab>
 </Tabs>
 
 ---
 
-## Quick Reference Card
+## Quick Reference
 
 | Question | Figma MCP | Console MCP |
 |---|---|---|
 | *Can it read my designs?* | Yes | Yes |
-| *Can it write to my designs?* | Yes (via `use_figma`) | Yes (101 tools) |
-| *Can it manage variables?* | Yes (via code execution) | Yes (11 dedicated tools + batch) |
-| *Can it run arbitrary plugin code?* | No | Yes (`figma_execute`) |
-| *Does it know what I selected?* | No | Yes, in real time |
-| *Does it have Code Connect?* | Yes (first-party) | No |
-| *Does it have batch operations?* | No | Yes (10-50x faster) |
-| *Does it analyze design-code parity?* | No | Yes (8 dimensions) |
-| *Does it have rate limits?* | Yes (plan-dependent) | No |
-| *Is it open source?* | No | Yes (MIT) |
-| *Can I self-host it?* | No | Yes |
-| *Who made it?* | Figma, Inc. | Southleft |
+| *Can it write to my designs?* | Yes (`use_figma`) | Yes (dedicated tools and `figma_execute`) |
+| *Does it have Code Connect?* | Yes | No |
+| *Can it create new files?* | Yes (`create_new_file`) | No |
+| *Does it export tokens to code formats and import them back?* | Not as dedicated tools | Yes (10 export formats, DTCG import) |
+| *Does it compare a Figma component with its code?* | Not as a dedicated tool | Yes (`figma_check_design_parity`) |
+| *Where does it run?* | Hosted by Figma | Your machine, Cloud Mode, or your own deployment |
+| *Is the source available?* | See Figma's documentation | Yes (MIT) |
+| *Who makes it?* | Figma | Southleft |
 
 ---
 
-## A Note on the Evolution
+## How This Page Has Changed
 
-When we first published this comparison in early 2025, the Figma MCP was a read-only, design-to-code tool. The landscape has changed significantly since then. Figma's addition of `use_figma` is a meaningful step toward making the Figma canvas programmable by AI agents.
-
-Figma Console MCP's role has also evolved. Where we once differentiated primarily on write access, our focus has sharpened on what we do best: design system ecosystem management, design-code parity, and bridging the gap between design and development disciplines.
-
-Both tools are better together. Use the one that fits your workflow, or use both.
+When this comparison was first written, the official Figma MCP was read-only and focused on design-to-code, and write access was the main difference between the two servers. That is no longer true. The official server now writes to Figma, creates files, and covers motion, shaders, and diagrams. Console MCP's focus has narrowed to design-system operations. This page was rewritten in September 2026 to reflect both.
 
 <Note>
-**Figma Console MCP** is built by [Southleft](https://southleft.com), a design and development studio. It is not affiliated with Figma, Inc. The official **Figma MCP** is built and maintained by the Figma team.
+**Figma Console MCP** is an open-source project built by [Southleft](https://southleft.com). It is not a Figma product and is not supported by Figma. The official **Figma MCP server** is built and maintained by Figma.
 </Note>
 
 ---
@@ -277,9 +201,9 @@ Both tools are better together. Use the one that fits your workflow, or use both
 
 <Columns cols={2}>
   <Card title="Set Up Figma Console MCP" icon="rocket" href="/setup">
-    Full 121 tool access in ~10 minutes. Manage your design system with AI.
+    Full 121 tool access in about 10 minutes.
   </Card>
   <Card title="Set Up Figma MCP (Official)" icon="figma" href="https://developers.figma.com/docs/figma-mcp-server/">
-    Figma's official documentation for their MCP server.
+    Figma's documentation for its MCP server.
   </Card>
 </Columns>

@@ -60,7 +60,7 @@ Browse all design tokens from your Figma file in an interactive table.
 Browse the design tokens in the current file
 ```
 
-The AI calls `figma_browse_tokens` which returns a brief summary to the conversation and renders the full interactive Token Browser inline. The tool auto-detects the current file from your connected browser tab — no URL required.
+The AI calls `figma_browse_tokens` which returns a brief summary to the conversation and renders the full interactive Token Browser inline. The tool uses the file currently connected through the Desktop Bridge plugin — no URL required.
 
 ### Design System Dashboard
 
@@ -79,7 +79,7 @@ Audit your design system with a Lighthouse-style health scorecard rendered inlin
 Audit the design system in the current file
 ```
 
-The AI calls `figma_audit_design_system` which returns a brief text summary and renders the full interactive dashboard inline. The tool auto-detects the current file from your connected browser tab — no URL required. The dashboard scores six categories:
+The AI calls `figma_audit_design_system` which returns a brief text summary and renders the full interactive dashboard inline. The tool uses the file currently connected through the Desktop Bridge plugin — no URL required. The same scoring engine is available without MCP Apps as `figma_audit_design_system_report`, which returns the report as data to any MCP client. The dashboard scores six categories:
 
 | Category | Weight | What it checks |
 |----------|--------|---------------|

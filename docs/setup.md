@@ -34,10 +34,11 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | Variables without Enterprise | ✅ | ✅ | ❌ |
 | Real-time selection/change tracking | ✅ | ❌ | ❌ |
 | Console log streaming | ✅ | ❌ | ❌ |
+| Codebase → design system extraction (`figma_ds_*`) | ✅ | ❌ | ❌ |
 | Requires Node.js | Yes | No | No |
-| **Total tools available** | **114** | **101** | **9** |
+| **Total tools available** | **121** | **95** after pairing | Read-only subset |
 
-> **Bottom line:** Remote mode is **read-only** with 9 tools. Cloud Mode adds **write access** (101 tools) without Node.js. Local (NPX/Git) has **everything** (121 tools) including real-time monitoring.
+> **Bottom line:** Remote mode is **read-only** until you pair the plugin. Cloud Mode adds **write access** (95 tools) without Node.js. Local (NPX/Git) has **everything** (121 tools) including real-time monitoring.
 
 ---
 
@@ -206,7 +207,7 @@ The Desktop Bridge Plugin connects via WebSocket — no special Figma launch fla
 
 > **About plugin updates.** Figma caches plugin files (`code.js` and `ui.html`) at the application level. The MCP server keeps the stable path at `~/.figma-console-mcp/plugin/` in sync with the running build on every startup, but Figma uses its cached copy until you re-import.
 >
-> **Re-importing is _required_ only when the release notes call it out** (typically when the plugin adds a new method the server needs — e.g. v1.22.4 and v1.10.0). For wire-compatible upgrades, re-importing is optional and only refreshes plugin-side cosmetic touches (status-pill copy, `pluginVersion` reporting). When you do re-import: Plugins → Manage plugins → re-import `~/.figma-console-mcp/plugin/manifest.json`.
+> **Re-importing is _required_ only when the release notes call it out** (typically when the plugin adds a new method the server needs — e.g. v1.22.4 and v1.10.0). The plugin files last changed in v1.39.0; if your imported plugin predates that, re-import once. The plugin shows an update banner when the server bundles a newer plugin than the one running. For wire-compatible upgrades, re-importing is optional and only refreshes plugin-side cosmetic touches (status-pill copy, `pluginVersion` reporting). When you do re-import: Plugins → Manage plugins → re-import `~/.figma-console-mcp/plugin/manifest.json`.
 
 > **Alternative path:** If `~/.figma-console-mcp/plugin/` doesn't exist yet (first run), you can find the path by running `npx figma-console-mcp@latest --print-path` or checking the `pluginPath` field in `figma_get_status`.
 
@@ -360,7 +361,7 @@ Then restart Claude Desktop.
 
 **Best for:** Claude.ai, v0, Replit, Lovable, and any MCP-capable web platform that needs to create and modify Figma designs.
 
-**What you get:** 101 tools — full write access (create frames, components, variables, edit designs) plus REST API reads, design system extraction, comments, version history, slides, FigJam, and annotations. This is Remote Mode upgraded with the Cloud Write Relay.
+**What you get:** 95 tools — full write access (create frames, components, variables, edit designs) plus REST API reads, design system extraction, comments, version history, slides, FigJam, and annotations. This is Remote Mode upgraded with the Cloud Write Relay.
 
 **What you don't get vs Local:** Real-time selection tracking, document change monitoring, and console log streaming (these require a local WebSocket connection).
 
@@ -445,7 +446,7 @@ How to add this depends on your platform:
 
 **Best for:** Quickly evaluating the tool or read-only design data extraction without any plugin setup.
 
-**What you get:** 9 read-only tools for viewing design data, taking screenshots, reading console logs, and design system extraction.
+**What you get:** the read-only tools for viewing design data, taking screenshots, reading console logs, and design system extraction.
 
 > **Want write access?** See [Cloud Mode](#-cloud-mode-web-ai-clients) above — same remote endpoint, plus Desktop Bridge pairing for full design creation.
 

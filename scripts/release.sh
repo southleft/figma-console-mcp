@@ -8,12 +8,12 @@ set -euo pipefail
 # Run BEFORE manual content edits (banners, changelog entries).
 #
 # Tool counts are auto-detected from the source code unless
-# overridden with --local-tools / --remote-tools / --cloud-tools.
+# overridden with --local-tools / --cloud-tools.
 #
 # Usage:
 #   ./scripts/release.sh --version 1.14.0
 #   ./scripts/release.sh --version 1.14.0 --dry-run
-#   ./scripts/release.sh --version 1.14.0 --local-tools 60 --remote-tools 22 --cloud-tools 44
+#   ./scripts/release.sh --version 1.14.0 --local-tools 121 --cloud-tools 95
 # ─────────────────────────────────────────────────────────
 
 # ── Colors ──────────────────────────────────────────────
@@ -34,7 +34,6 @@ fi
 # ── Argument parsing ────────────────────────────────────
 VERSION=""
 LOCAL_TOOLS=""
-REMOTE_TOOLS=""
 CLOUD_TOOLS=""
 DRY_RUN=false
 GH_RELEASE=""  # "auto" (default), "yes" (--release), "no" (--no-release)
@@ -43,18 +42,16 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --version)      VERSION="$2";       shift 2 ;;
     --local-tools)  LOCAL_TOOLS="$2";   shift 2 ;;
-    --remote-tools) REMOTE_TOOLS="$2";  shift 2 ;;
     --cloud-tools)  CLOUD_TOOLS="$2";   shift 2 ;;
     --dry-run)      DRY_RUN=true;       shift ;;
     --release)      GH_RELEASE="yes";   shift ;;
     --no-release)   GH_RELEASE="no";    shift ;;
     -h|--help)
-      echo "Usage: ./scripts/release.sh --version X.Y.Z [--local-tools N] [--remote-tools M] [--cloud-tools C] [--dry-run]"
+      echo "Usage: ./scripts/release.sh --version X.Y.Z [--local-tools N] [--cloud-tools C] [--dry-run]"
       echo ""
       echo "Options:"
       echo "  --version       New version number (required, e.g., 1.14.0)"
       echo "  --local-tools   Override local mode tool count (auto-detected from source if omitted)"
-      echo "  --remote-tools  Override remote mode tool count (auto-detected if omitted)"
       echo "  --cloud-tools   Override cloud mode tool count (auto-detected if omitted)"
       echo "  --dry-run       Show what would change without modifying files"
       echo "  --release       Create GitHub Release (auto for minor/major, skip for patch)"
@@ -103,68 +100,24 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# ── Auto-detect tool counts from source code ────────────
-auto_count_local() {
-  # All unique figma_* and figjam_* tool names in local mode sources (core + local.ts),
-  # plus plain (non-app) tools registered inside MCP App modules. Only names
-  # passed to server.tool(...) count — registerAppTool(...) names are app-only
-  # (invisible to standard MCP clients) and must NOT inflate the local count.
-  {
-    grep -roh '"fig\(ma\|jam\)_[a-z_]*"' \
-      "$ROOT/src/core/" "$ROOT/src/local.ts" 2>/dev/null
-    grep -rA1 'server\.tool(' "$ROOT/src/apps/" 2>/dev/null \
-      | grep -oh '"fig\(ma\|jam\)_[a-z_]*"'
-  } | sort -u | wc -l | tr -d ' '
-}
-
-auto_count_remote() {
-  # Remote/SSE mode (no plugin pairing): the REST-API-backed read tools that
-  # work over OAuth alone, without a paired Desktop Bridge plugin. These all
-  # live in figma-tools.ts. This count gets surfaced as the "N read-only
-  # tools" claim across the docs.
-  grep -roh '"figma_[a-z_]*"' \
-    "$ROOT/src/core/figma-tools.ts" \
-    2>/dev/null | sort -u | wc -l | tr -d ' '
-}
-
-auto_count_cloud() {
-  # Cloud mode (Cloud Mode after pairing): every registrar invoked by src/index.ts
-  # plus index.ts's own direct tool registrations. Mirror this list with the
-  # actual register*() calls in src/index.ts.
-  grep -roh '"fig\(ma\|jam\)_[a-z_]*"' \
-    "$ROOT/src/core/write-tools.ts" \
-    "$ROOT/src/core/figma-tools.ts" \
-    "$ROOT/src/core/design-system-tools.ts" \
-    "$ROOT/src/core/comment-tools.ts" \
-    "$ROOT/src/core/design-code-tools.ts" \
-    "$ROOT/src/core/figjam-tools.ts" \
-    "$ROOT/src/core/slides-tools.ts" \
-    "$ROOT/src/core/annotation-tools.ts" \
-    "$ROOT/src/core/deep-component-tools.ts" \
-    "$ROOT/src/core/version-tools.ts" \
-    "$ROOT/src/core/accessibility-tools.ts" \
-    "$ROOT/src/core/diagnose-tool.ts" \
-    "$ROOT/src/core/tokens-tools.ts" \
-    "$ROOT/src/core/slot-tools.ts" \
-    "$ROOT/src/index.ts" \
-    2>/dev/null | sort -u | wc -l | tr -d ' '
-}
-
-if [[ -z "$LOCAL_TOOLS" ]]; then
-  LOCAL_TOOLS=$(auto_count_local)
+# ── Tool counts ─────────────────────────────────────────
+# One counter: scripts/update-tool-counts.mjs. Cloud is derived from the /mcp
+# block of src/index.ts. Remote has no count — it is the hosted endpoint before
+# pairing and the docs describe it rather than count it.
+if [[ -z "$LOCAL_TOOLS" || -z "$CLOUD_TOOLS" ]]; then
+  read -r DETECTED_LOCAL DETECTED_CLOUD < <(node "$SCRIPT_DIR/update-tool-counts.mjs" --print-counts)
+  LOCAL_TOOLS="${LOCAL_TOOLS:-$DETECTED_LOCAL}"
+  CLOUD_TOOLS="${CLOUD_TOOLS:-$DETECTED_CLOUD}"
 fi
-if [[ -z "$REMOTE_TOOLS" ]]; then
-  REMOTE_TOOLS=$(auto_count_remote)
-fi
-if [[ -z "$CLOUD_TOOLS" ]]; then
-  CLOUD_TOOLS=$(auto_count_cloud)
+if [[ -z "$LOCAL_TOOLS" || -z "$CLOUD_TOOLS" ]]; then
+  echo "Could not detect tool counts (scripts/update-tool-counts.mjs --print-counts failed)" >&2
+  exit 1
 fi
 
 # ── Preflight ───────────────────────────────────────────
 echo -e "${BOLD}${CYAN}Figma Console MCP — Release Script${NC}"
 echo -e "${CYAN}Version: ${BOLD}$VERSION${NC}"
 echo -e "${CYAN}Local tools:  ${BOLD}$LOCAL_TOOLS${NC} (auto-detected from source)"
-echo -e "${CYAN}Remote tools: ${BOLD}$REMOTE_TOOLS${NC} (auto-detected from source)"
 echo -e "${CYAN}Cloud tools:  ${BOLD}$CLOUD_TOOLS${NC} (auto-detected from source)"
 echo ""
 
@@ -285,15 +238,15 @@ else
   echo -e "  ${CYAN}SKIP${NC} figma-desktop-bridge/code.js — no plugin file changes since v$CURRENT_VERSION (server-only release; keeping PLUGIN_VERSION so connected plugins aren't falsely flagged stale)"
 fi
 
-# ── 4. Tool counts (Local / Remote / Cloud) ────────────
+# ── 4. Tool counts (Local / Cloud) ────────────
 # Delegated to scripts/update-tool-counts.mjs — a manifest that knows the MODE
 # of every count reference explicitly ({file, pattern, mode} entries). This
 # replaced the old sed approach, which shipped wrong-mode counts in three
 # consecutive releases (v1.33.0, v1.33.1, v1.34.0). The script self-audits
 # after applying (Phase 3.5 Block D) and exits nonzero on any wrong-mode
 # count or unclassified "N tools" reference.
-echo -e "${BOLD}4. Tool counts (local/remote/cloud) — update-tool-counts.mjs${NC}"
-COUNT_ARGS=(--local "$LOCAL_TOOLS" --remote "$REMOTE_TOOLS" --cloud "$CLOUD_TOOLS")
+echo -e "${BOLD}4. Tool counts (local/cloud) — update-tool-counts.mjs${NC}"
+COUNT_ARGS=(--local "$LOCAL_TOOLS" --cloud "$CLOUD_TOOLS")
 if $DRY_RUN; then
   COUNT_ARGS+=(--dry-run)
 fi
@@ -455,8 +408,7 @@ echo ""
 
 echo -e "${CYAN}Tool counts applied:${NC}"
 echo -e "  Local:  ${BOLD}${LOCAL_TOOLS}+${NC} tools (NPX/Local Git)"
-echo -e "  Cloud:  ${BOLD}${CLOUD_TOOLS}${NC} tools (Cloud Write Relay)"
-echo -e "  Remote: ${BOLD}${REMOTE_TOOLS}${NC} tools (SSE read-only)"
+echo -e "  Cloud:  ${BOLD}${CLOUD_TOOLS}${NC} tools (/mcp endpoint after pairing)"
 echo ""
 
 # ── Remaining manual steps ──────────────────────────────

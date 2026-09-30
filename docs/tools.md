@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 107 MCP tools, including parameters, return values, and usage examples."
+description: "Complete API reference for all 121 MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **121 tools** with full read/write capabilities and real-time monitoring. Remote Mode provides **9 read-only tools** by default, or **101 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing).
+> **Note:** Local Mode (NPX/Git) provides **121 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **95 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools along with `figma_diagnose` and `figma_scan_code_accessibility`. The `/sse` endpoint lists them.
 
 ## Quick Reference
 
@@ -16,11 +16,16 @@ This guide provides detailed documentation for each tool, including when to use 
 | **🧭 Navigation** | `figma_navigate` | Open a Figma URL and start monitoring | All |
 | | `figma_get_status` | Check browser and monitoring status | All |
 | | `figma_reconnect` | Reconnect to Figma Desktop | Local |
+| | `figma_list_open_files` | List files connected via the Desktop Bridge and which one is active | Local |
+| | `figma_diagnose` | Plain-language health check: server identity, plugin connection, file, token | Local / Cloud |
 | **📋 Console** | `figma_get_console_logs` | Retrieve console logs with filters | All |
 | | `figma_watch_console` | Stream logs in real-time | All |
 | | `figma_clear_console` | Clear log buffer | All |
 | **🔍 Debugging** | `figma_take_screenshot` | Capture UI screenshots | All |
 | | `figma_reload_plugin` | Reload current page | All |
+| | `figma_capture_screenshot` | Render a node from the plugin runtime (reflects unsaved changes) | Local / Cloud |
+| **👁️ Real-Time Awareness** | `figma_get_selection` | Get the nodes currently selected in Figma | Local |
+| | `figma_get_design_changes` | Get buffered document-change events | Local |
 | **🔁 Token Sync** | `figma_export_tokens` | Export Figma variables to DTCG JSON + CSS (replaces Style Dictionary) | Local / Cloud |
 | | `figma_import_tokens` | Push code-side token edits back to Figma (diff-aware merge) | Local / Cloud |
 | **🧬 Design System Extraction** | `figma_ds_analyze` | Scan production codebase(s): component inventory, classification, architecture | Local |
@@ -39,8 +44,8 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_get_file_for_plugin` | File data optimized for plugins | All |
 | | `figma_get_design_system_kit` | **Full design system in one call** (tokens, components, styles, visual specs) | All |
 | | `figma_audit_design_system_report` | **Scored six-category health audit** with per-finding remediation, chunked drill-down, live-first data | Local |
-| | `figma_get_design_system_summary` | Overview of design system | Local / Cloud |
-| | `figma_get_token_values` | Get variable values by mode | Local / Cloud |
+| | `figma_get_design_system_summary` | Overview of design system | Local |
+| | `figma_get_token_values` | Get variable values by mode | Local |
 | **✏️ Design Creation** | `figma_execute` | Run Figma Plugin API code | Local / Cloud |
 | | `figma_execute_across_files` | **Run the same code in several connected files at once**, concurrently | Local |
 | | `figma_create_component_set` | **Create a component set with variants in one call** — axes matrix or existing components | Local / Cloud |
@@ -51,11 +56,12 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_append_to_slot` | **Populate an instance's slot** — clone a node or create content | Local / Cloud |
 | | `figma_reset_slot` | Clear a slot's content on an instance | Local / Cloud |
 | | `figma_add_slot_property` | Retrofit an existing frame as a slot (manual SLOT binding) | Local / Cloud |
-| **🧩 Components** | `figma_search_components` | Find components by name (local + library) | Local / Cloud |
+| **🧩 Components** | `figma_search_components` | Find components by name (local + library) | Local |
 | | `figma_get_library_components` | Discover components from published libraries | Local |
 | | `figma_get_library_component_by_key` | **Resolve any component key to full props + variants + visual specs** — no library URL needed | Local / Cloud |
-| | `figma_get_component_details` | Get component details | Local / Cloud |
+| | `figma_get_component_details` | Get component details | Local |
 | | `figma_instantiate_component` | Create component instance (local + library) | Local / Cloud |
+| | `figma_set_instance_properties` | Set TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties on an instance | Local / Cloud |
 | **📚 Shared Library Variables** | `figma_get_library_variables` | List variables from subscribed libraries (no Enterprise plan needed) | Local / Cloud |
 | | `figma_import_library_variable` | Import a library variable into the current file | Local / Cloud |
 | | `figma_add_component_property` | Add component property | Local / Cloud |
@@ -101,9 +107,27 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figjam_create_shape_with_text` | Create a labeled shape (diamond, ellipse, etc.) | Local / Cloud |
 | | `figjam_create_table` | Create a table with cell data | Local / Cloud |
 | | `figjam_create_code_block` | Create a code block | Local / Cloud |
+| | `figjam_create_section` | Create a section to group board content | Local / Cloud |
 | | `figjam_auto_arrange` | Arrange nodes in grid/row/column layout | Local / Cloud |
 | | `figjam_get_board_contents` | Read all content from a FigJam board | Local / Cloud |
 | | `figjam_get_connections` | Read the connection graph | Local / Cloud |
+| **🎞️ Slides** | `figma_list_slides` | List slides with order, names, and skip status | Local / Cloud |
+| | `figma_get_slide_content` | Read a slide's content tree | Local / Cloud |
+| | `figma_get_slide_grid` | Read the deck's 2D grid layout | Local / Cloud |
+| | `figma_get_slide_transition` | Read a slide's transition | Local / Cloud |
+| | `figma_get_focused_slide` | Get the slide focused in single-slide view | Local / Cloud |
+| | `figma_create_slide` | Add a blank slide | Local / Cloud |
+| | `figma_delete_slide` | Delete a slide | Local / Cloud |
+| | `figma_duplicate_slide` | Duplicate a slide with its content | Local / Cloud |
+| | `figma_reorder_slides` | Move slides to new positions | Local / Cloud |
+| | `figma_set_slide_transition` | Set a slide's transition style, easing, and duration | Local / Cloud |
+| | `figma_skip_slide` | Skip or unskip a slide in presentation mode | Local / Cloud |
+| | `figma_add_text_to_slide` | Add text to a slide | Local / Cloud |
+| | `figma_add_shape_to_slide` | Add a shape to a slide | Local / Cloud |
+| | `figma_set_slide_background` | Set a slide's background color | Local / Cloud |
+| | `figma_get_text_styles` | List local text styles with IDs and font info | Local / Cloud |
+| | `figma_set_slides_view_mode` | Switch between grid and single-slide view | Local / Cloud |
+| | `figma_focus_slide` | Navigate to a slide in the editor | Local / Cloud |
 | **🕒 Version History** | `figma_get_file_versions` | List version history with author/label/timestamp metadata | All |
 | | `figma_get_file_at_version` | Snapshot a file (or specific nodes) at a past version | All |
 | | `figma_diff_versions` | Structured diff between two versions: page changes, component property/binding deltas | All |
@@ -111,6 +135,8 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_generate_changelog` | Markdown changelog with author enrichment, ready for release notes | All |
 | | `figma_blame_node` | Binary-search blame walker: find when (and by whom) a property/variant was introduced | All |
 | **☁️ Cloud Relay** | `figma_pair_plugin` | Generate pairing code for Desktop Bridge | Cloud |
+
+Slides tools are documented in the [Slides guide](/slides). MCP Apps (`figma_browse_tokens`, `figma_audit_design_system`) are Local Mode tools that register only when `ENABLE_MCP_APPS=true`; see [MCP Apps](/mcp-apps).
 
 ---
 
@@ -192,6 +218,36 @@ figma_get_status()
 **Best Practice:**
 - Call this tool first when starting a session in local mode
 - If `setup.valid` is false, guide user to install and run the Desktop Bridge Plugin
+
+---
+
+### `figma_list_open_files`
+
+List every Figma file that currently has the Desktop Bridge plugin open, and show which one is the active target for tool calls.
+
+**Mode:** Local
+
+**Usage:**
+```javascript
+figma_list_open_files()
+```
+
+**Returns:** `activeFileKey`, `targetLocked` (whether `figma_navigate({ lock: true })` has pinned the target), and a `files` array with each file's `fileName`, `fileKey`, `currentPage`, `isActive`, and URL. Use the file keys with `figma_execute({ fileKey })` or `figma_execute_across_files({ fileKeys })`, and `figma_navigate` to switch the active file.
+
+---
+
+### `figma_diagnose`
+
+A plain-language health check. Reports which server is answering, whether the Desktop Bridge plugin is connected and to which file, and the state of the Figma token, and helps tell this server's errors apart from errors raised by another Figma-related MCP server in the same client.
+
+**Mode:** Local / Cloud
+
+**Usage:**
+```javascript
+figma_diagnose({
+  verbose: false   // true adds the raw structured plugin and token state
+})
+```
 
 ---
 
@@ -322,6 +378,57 @@ figma_reload_plugin({
 **Returns:**
 - Reload status
 - New page URL (if changed)
+
+---
+
+### `figma_capture_screenshot`
+
+Render a node (or the current page) through the plugin's `exportAsync`. Unlike `figma_take_screenshot`, which uses the REST API and reflects the saved cloud state, this captures the current state in the plugin runtime, so use it to check a change immediately after making it.
+
+**Mode:** Local / Cloud
+
+**Usage:**
+```javascript
+figma_capture_screenshot({
+  nodeId: '1:234',   // optional; defaults to the current page
+  format: 'PNG',     // PNG (default), JPG, or SVG
+  scale: 1           // 0.5–4; the longest side is capped at 1568px
+})
+```
+
+---
+
+## 👁️ Real-Time Awareness Tools
+
+These tools read events the Desktop Bridge plugin pushes to the local server over its persistent WebSocket connection, so they are available in Local Mode only.
+
+### `figma_get_selection`
+
+Get the nodes currently selected in Figma: IDs, names, types, and dimensions. Use it to act on what the user is pointing at instead of asking them to describe it.
+
+**Mode:** Local
+
+**Usage:**
+```javascript
+figma_get_selection({
+  verbose: false   // true adds fills, strokes, and styles for each node
+})
+```
+
+### `figma_get_design_changes`
+
+Get recent document-change events buffered by the server: which nodes changed, whether styles changed, and change counts. The buffer holds up to 200 events.
+
+**Mode:** Local
+
+**Usage:**
+```javascript
+figma_get_design_changes({
+  since: 1727700000000,  // optional Unix ms timestamp; only newer events
+  count: 20,             // optional; return the last N events
+  clear: false           // true empties the buffer after reading (for polling)
+})
+```
 
 ---
 
@@ -673,7 +780,7 @@ figma_ds_status({
 
 > **⚠️ All Design System tools require `FIGMA_ACCESS_TOKEN`** configured in your MCP client.
 >
-> See [Installation Guide](../README.md#step-2-add-your-figma-access-token-for-design-system-tools) for setup instructions.
+> See the [Setup Guide](/setup) for setup instructions.
 
 ### `figma_get_variables`
 
@@ -1535,6 +1642,8 @@ figma_setup_design_tokens({
 
 Search for components by name or description. Supports both local file search and cross-file published library search.
 
+**Mode:** Local (not available in Cloud Mode)
+
 **When to Use:**
 - Finding existing components to instantiate
 - Discovering available UI building blocks
@@ -1764,6 +1873,8 @@ await figma_set_fills({
 
 Get detailed information about a specific component.
 
+**Mode:** Local (not available in Cloud Mode)
+
 **Usage:**
 ```javascript
 figma_get_component_details({
@@ -1809,6 +1920,27 @@ figma_instantiate_component({
 
 **Returns:**
 - Created instance with node ID
+
+---
+
+### `figma_set_instance_properties`
+
+Set component properties on an instance. Use this instead of editing an instance's text layers directly: components expose TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties that control their content.
+
+**Mode:** Local / Cloud
+
+**Usage:**
+```javascript
+figma_set_instance_properties({
+  nodeId: '1:234',          // must be an INSTANCE node
+  properties: {
+    'Label': 'Save',        // TEXT or VARIANT: string
+    'Show Icon': false      // BOOLEAN: boolean
+  }
+})
+```
+
+The tool adds the `#nodeId` suffix Figma uses for TEXT, BOOLEAN, and INSTANCE_SWAP property names. Slot content can't be set this way; use `figma_append_to_slot`.
 
 ---
 
@@ -2347,6 +2479,8 @@ figma_get_design_system_kit({
 
 Get a high-level overview of the design system in the current file.
 
+**Mode:** Local (not available in Cloud Mode)
+
 **Usage:**
 ```javascript
 figma_get_design_system_summary()
@@ -2363,6 +2497,8 @@ figma_get_design_system_summary()
 ### `figma_get_token_values`
 
 Get all variable values organized by collection and mode.
+
+**Mode:** Local (not available in Cloud Mode)
 
 **Usage:**
 ```javascript
@@ -3230,6 +3366,22 @@ Create a code block for sharing snippets and technical documentation.
 | `language` | string | No       | JAVASCRIPT, PYTHON, TYPESCRIPT, JSON, HTML, CSS, etc. |
 | `x`        | number | No       | X position |
 | `y`        | number | No       | Y position |
+
+### `figjam_create_section`
+
+Create a section to group related content on a board.
+
+**Mode:** Local / Cloud
+
+**Parameters:**
+| Parameter   | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| `name`      | string | No       | Section title |
+| `x`         | number | No       | X position |
+| `y`         | number | No       | Y position |
+| `width`     | number | No       | Width in pixels (default 1000) |
+| `height`    | number | No       | Height in pixels (default 800) |
+| `fillColor` | string | No       | Hex fill color, e.g. `#F5F5F5` |
 
 ### `figjam_auto_arrange`
 

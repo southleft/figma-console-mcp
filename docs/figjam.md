@@ -1,6 +1,6 @@
 ---
 title: "FigJam Support"
-description: "AI agents can now create and read FigJam boards — sticky notes, flowcharts, tables, code blocks, and more. A complete guide to the 9 FigJam tools."
+description: "AI agents can now create and read FigJam boards — sticky notes, flowcharts, tables, code blocks, and more. A complete guide to the 10 FigJam tools."
 ---
 
 # AI Meets Collaborative Whiteboarding
@@ -46,7 +46,7 @@ AI assistants connected through Figma Console MCP can now interact with FigJam b
 
 ---
 
-## The 9 FigJam Tools
+## The 10 FigJam Tools
 
 Every tool is available in both **Local Mode** and **Cloud Mode**.
 
@@ -58,6 +58,7 @@ Every tool is available in both **Local Mode** and **Cloud Mode**.
 | `figjam_create_shape_with_text` | Create a labeled shape for flowcharts and diagrams |
 | `figjam_create_table` | Create a table with rows, columns, and pre-populated cell data |
 | `figjam_create_code_block` | Add a code snippet with language syntax highlighting |
+| `figjam_create_section` | Create a section to group related content on the board |
 | `figjam_auto_arrange` | Arrange nodes in grid, horizontal, or vertical layouts |
 | `figjam_get_board_contents` | Read all content from a FigJam board with type-specific data |
 | `figjam_get_connections` | Read the full connection graph — edges, labels, and connected nodes |
@@ -190,9 +191,9 @@ The AI calls `figjam_get_connections` to return the complete edge list with star
 
 ### Editor Type Detection
 
-The Desktop Bridge plugin reports `figma.editorType` when it connects to the MCP server. When the plugin is running inside a FigJam board, the server automatically makes all 9 FigJam tools available. When running in a Figma Design file, the FigJam tools are hidden and runtime guards prevent accidental use.
+The Desktop Bridge plugin reports `figma.editorType` when it connects to the MCP server. The 10 FigJam tools are always listed. When the plugin is running inside a FigJam board they act on the board. When it is running in a Figma Design file, a runtime guard in the plugin returns an error instead of changing anything.
 
-This means there is no configuration toggle or mode switch. The tools appear based on context.
+There is no configuration toggle or mode switch.
 
 ### Same Plugin, New Canvas
 
