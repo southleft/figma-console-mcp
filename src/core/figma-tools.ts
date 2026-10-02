@@ -686,7 +686,7 @@ function evictOldestCacheEntry(
  * @param collectionsMap Map of collections by ID for mode info
  * @returns Variables with added resolvedValuesByMode field
  */
-function resolveVariableAliases(
+export function resolveVariableAliases(
 	variables: any[],
 	allVariablesMap: Map<string, any>,
 	collectionsMap: Map<string, any>
@@ -773,6 +773,25 @@ function resolveVariableAliases(
 			return {
 				resolved: result.resolved,
 				aliasChain: [targetVar.name, ...(result.aliasChain || [])]
+			};
+		}
+
+		// Composed color ("grey/900 at 50%"): { color, opacity }, opacity a
+		// percent, either part possibly an alias. Figma applies the opacity only
+		// to a fully opaque color; a semi-transparent color keeps its own alpha.
+		if (resolvedType === 'COLOR' && value && typeof value === 'object' && 'color' in value && 'opacity' in value && !('r' in value)) {
+			const color = resolveValue(value.color, 'COLOR', new Set(visited), depth + 1);
+			const opacity = resolveValue(value.opacity, 'FLOAT', new Set(visited), depth + 1);
+			const chain = [...(color.aliasChain || []), ...(opacity.aliasChain || [])];
+			if (typeof color.resolved !== 'string' || typeof opacity.resolved !== 'number') {
+				return { resolved: null, aliasChain: chain };
+			}
+			const hex = color.resolved.toUpperCase();
+			if (hex.length === 9) return { resolved: hex, aliasChain: chain };
+			const alpha = Math.round(Math.max(0, Math.min(1, opacity.resolved / 100)) * 255);
+			return {
+				resolved: alpha >= 255 ? hex : `${hex}${alpha.toString(16).padStart(2, '0').toUpperCase()}`,
+				aliasChain: chain,
 			};
 		}
 

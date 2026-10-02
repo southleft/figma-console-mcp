@@ -21,6 +21,7 @@
  * variables since SCSS variables hold a single value.
  */
 
+import { renderComposed, composedFallbackNote, num, referenceInExport } from "./composed-color.js";
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
 import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
@@ -186,6 +187,23 @@ function emitSassLines(
 ): void {
   const sassName = varName(token.path, prefix);
 
+  // Composed color ("grey/900 at 50%") → rgba($primitive, alpha).
+  if (value.composed) {
+    const r = renderComposed(value.composed, {
+      ref: (reference) => referenceInExport(reference, tokenIndex)
+        ? varName(referenceTargetPath(reference, tokenIndex), prefix)
+        : null,
+      colorLiteral: (hex) => formatScssLiteral(hex, "color"),
+      build: (color, op) => `rgba(${color}, ${"percent" in op ? num(op.percent / 100) : `(${op.ref} * 0.01)`})`,
+    });
+    if (r.kind === "expression") {
+      out.push(`${sassName}: ${r.text};`);
+      return;
+    }
+    warnings.push(composedFallbackNote(token.path, "SCSS", r.reason, value));
+    if (value.literal === undefined) return;
+  }
+
   if (value.reference) {
     const bareRef = value.reference.replace(/^\{|\}$/g, "");
     const libMatch = bareRef.match(/^__library:(.+)$/);
@@ -237,6 +255,24 @@ function scssValueFor(
   tokenIndex: Map<string, Token>,
   _warnings: string[],
 ): string | null {
+  if (value.composed && value.literal !== undefined) {
+    // Mode-map entries: a bare $primitive always holds the primitive's
+    // PRIMARY mode, so an expression here would show the wrong mode's color.
+    // The per-mode resolved color is exact.
+    return formatScssLiteral(value.literal, token.type);
+  }
+  if (value.composed) {
+    const r = renderComposed(value.composed, {
+      ref: (reference) => referenceInExport(reference, tokenIndex)
+        ? varName(referenceTargetPath(reference, tokenIndex), prefix)
+        : null,
+      colorLiteral: (hex) => formatScssLiteral(hex, "color"),
+      build: (color, op) => `rgba(${color}, ${"percent" in op ? num(op.percent / 100) : `(${op.ref} * 0.01)`})`,
+    });
+    if (r.kind === "expression") return r.text;
+    if (value.literal === undefined) return null;
+    return formatScssLiteral(value.literal, token.type);
+  }
   if (value.reference) {
     const bareRef = value.reference.replace(/^\{|\}$/g, "");
     if (bareRef.startsWith("__library:") || bareRef === "unknown") return null;

@@ -112,6 +112,34 @@ export interface TokenValue {
    * diff samples strip it via stripRawColorFromValues).
    */
   rawColor?: { r: number; g: number; b: number; a: number };
+  /**
+   * A Figma "composed color" (Figma's VariableComposedColor): a color plus a
+   * separate opacity, where the color, the opacity, or both are variable
+   * aliases — "grey/900 at 50%". `literal` / `rawColor` alongside it hold the
+   * RESOLVED color (what Figma renders), so formats that can't express the
+   * composition still emit the right color; formats that can (CSS
+   * color-mix, SCSS rgba, LESS fade, Tokens Studio alpha modifier, DTCG
+   * $extensions) keep the link to the primitive.
+   */
+  composed?: ComposedColor;
+}
+
+/**
+ * Color + opacity composition. `opacity` is a PERCENT (0–100), matching
+ * Figma's own unit (an opacity of 50 renders at alpha 0.5), including when it
+ * is bound to a number variable whose value is the percentage.
+ */
+export interface ComposedColor {
+  color: { reference: string } | { literal: string };
+  opacity: { reference: string } | { literal: number };
+  /**
+   * True when the color part resolves to a fully opaque color in this mode.
+   * Figma applies the opacity only then; a semi-transparent primitive keeps
+   * its own alpha and the opacity is ignored (observed in Figma, 2026-10).
+   * Expression outputs (color-mix, rgba(), fade()) are only equivalent when
+   * this is true, so formatters fall back to the resolved literal otherwise.
+   */
+  colorOpaque?: boolean;
 }
 
 /**
@@ -126,6 +154,12 @@ export interface TokenValue {
 export interface FigmaMcpExtensions {
   /** Figma variable ID (`VariableID:1234:5678`). Survives renames. */
   variableId?: string;
+  /**
+   * Per-mode color + opacity for a Figma composed color ("grey/900 at 50%").
+   * `color` is a DTCG reference or a hex literal; `opacity` is a percent or a
+   * reference to a number token. The token's `$value` is the resolved color.
+   */
+  composedColor?: Record<string, { color: string; opacity: number | string }>;
   /** Figma collection ID. Used to route the variable to the right collection. */
   collectionId?: string;
   /**

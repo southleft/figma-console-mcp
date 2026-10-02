@@ -36,6 +36,7 @@
  * — they just don't generate Tailwind utility classes.
  */
 
+import { renderComposed, composedFallbackNote, num, referenceInExport } from "./composed-color.js";
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
 import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
@@ -193,6 +194,28 @@ function emitTailwindTokenLines(
   warnings: string[],
 ): void {
   const cssName = `--${prefix}${pathToTailwindName(token.path, token.type)}`;
+
+  // Composed color ("grey/900 at 50%") → color-mix so it follows the primitive.
+  if (value.composed) {
+    const r = renderComposed(value.composed, {
+      ref: (reference) => {
+        if (!referenceInExport(reference, tokenIndex)) return null;
+        const refPath = referenceTargetPath(reference, tokenIndex);
+        // Name the target in ITS namespace (an opacity points at a number token).
+        const target = lookupTarget(reference, tokenIndex);
+        return `var(--${prefix}${pathToTailwindName(refPath, target?.type ?? token.type)})`;
+      },
+      colorLiteral: (hex) => formatValue(hex, "color"),
+      build: (color, op) =>
+        `color-mix(in srgb, ${color} ${"percent" in op ? `${num(op.percent)}%` : `calc(${op.ref} * 1%)`}, transparent)`,
+    });
+    if (r.kind === "expression") {
+      out.push(`  ${cssName}: ${r.text};`);
+      return;
+    }
+    warnings.push(composedFallbackNote(token.path, "Tailwind v4", r.reason, value));
+    if (value.literal === undefined) return;
+  }
 
   if (value.reference) {
     // Cross-library alias: skip with a comment.
@@ -372,4 +395,10 @@ function withPx(v: unknown): string {
   if (typeof v === "number") return `${v}px`;
   if (typeof v === "string") return v;
   return "";
+}
+
+/** The token a reference points at (set-qualified or bare), if it's in the index. */
+function lookupTarget(reference: string, tokenIndex: Map<string, Token>): Token | undefined {
+  const bare = reference.replace(/^\{|\}$/g, "");
+  return tokenIndex.get(bare);
 }

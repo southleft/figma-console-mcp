@@ -16,11 +16,24 @@ const MAX_EXAMPLES = 5;
  * Check if a value entry is a variable alias reference.
  */
 function isAlias(value: unknown): boolean {
-	return (
-		typeof value === "object" &&
-		value !== null &&
-		(value as Record<string, unknown>).type === "VARIABLE_ALIAS"
-	);
+	return aliasTargetId(value) !== null;
+}
+
+/**
+ * The variable a value points at: a plain alias's target, or for a composed
+ * color ({ color, opacity } — "grey/900 at 50%") the color's target, else the
+ * opacity's. A composed color that references a primitive IS alias usage.
+ */
+function aliasTargetId(value: unknown): string | null {
+	if (typeof value !== "object" || value === null) return null;
+	const v = value as Record<string, any>;
+	if (v.type === "VARIABLE_ALIAS" && typeof v.id === "string") return v.id;
+	if ("color" in v && "opacity" in v) {
+		for (const part of [v.color, v.opacity]) {
+			if (part && part.type === "VARIABLE_ALIAS" && typeof part.id === "string") return part.id;
+		}
+	}
+	return null;
 }
 
 /** Check if variable data was unavailable (vs. genuinely empty). */
@@ -295,7 +308,7 @@ function traceAliasDepth(
 
 	for (const value of values) {
 		if (isAlias(value)) {
-			const targetId = (value as { type: string; id: string }).id;
+			const targetId = aliasTargetId(value) as string;
 			if (visited.has(targetId)) continue; // Prevent circular references
 
 			const target = variableMap.get(targetId);

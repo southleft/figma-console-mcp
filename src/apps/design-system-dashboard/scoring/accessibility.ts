@@ -104,7 +104,22 @@ function extractColorValues(
 		if (!variable?.valuesByMode || depth > 8) return null;
 		for (const value of Object.values(variable.valuesByMode)) {
 			if (isDirectColor(value)) return value;
-			const v = value as Record<string, unknown>;
+			const v = value as Record<string, any>;
+			// Composed color ({ color, opacity } — "grey/900 at 50%"): Figma
+			// applies the opacity percent to an opaque color, so the result is
+			// only usable for contrast when the opacity is ~100%.
+			if (v && typeof v === "object" && "color" in v && "opacity" in v) {
+				const base = isDirectColor(v.color)
+					? v.color
+					: v.color?.type === "VARIABLE_ALIAS" && byId.get(v.color.id)
+						? resolve(byId.get(v.color.id), depth + 1)
+						: null;
+				if (base && typeof v.opacity === "number" && (base.a ?? 1) >= 0.99) {
+					return { ...base, a: v.opacity / 100 };
+				}
+				if (base && (base.a ?? 1) < 0.99) return base;
+				continue;
+			}
 			if (v?.type === "VARIABLE_ALIAS" && typeof v.id === "string") {
 				const target = byId.get(v.id);
 				const resolved = target ? resolve(target, depth + 1) : null;

@@ -371,7 +371,16 @@ function renderToken(
   if (token.extensions) {
     for (const [vendor, payload] of Object.entries(token.extensions)) {
       if (vendor === FIGMA_MCP_EXTENSION_KEY) {
-        mergeExtension(result, vendor, payload as Record<string, unknown>);
+        let ours = payload as Record<string, unknown>;
+        // A per-mode file carries only ITS mode's composition — otherwise every
+        // mode file repeats all modes and the last one read wins on import.
+        const composed = ours?.composedColor as Record<string, unknown> | undefined;
+        if (fileMode && composed && typeof composed === "object") {
+          const own = composed[fileMode];
+          const { composedColor: _all, ...rest } = ours;
+          ours = own !== undefined ? { ...rest, composedColor: { [fileMode]: own } } : rest;
+        }
+        mergeExtension(result, vendor, ours);
       } else {
         mergeExtension(result, vendor, payload);
       }

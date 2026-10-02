@@ -479,6 +479,48 @@ export function rgbToHex(color: { r: number; g: number; b: number }): string {
 }
 
 /**
+ * Build a resolver from a raw Figma color value to the hex Figma renders in
+ * each collection's default mode. Follows aliases and composed colors
+ * ({ color, opacity } — opacity a percent, applied only to an opaque color).
+ * Plain figmaColorToHex can't follow aliases, so an aliased color came out as
+ * #000000.
+ */
+export function makeFigmaColorResolver(
+	variables: Array<{ id: string; variableCollectionId?: string; valuesByMode?: Record<string, any> }>,
+	collections: Array<{ id: string; defaultModeId?: string }>,
+): (value: any) => string {
+	const byId = new Map(variables.map((v) => [v.id, v]));
+	const defaultMode = new Map(collections.map((c) => [c.id, c.defaultModeId]));
+	const valueOf = (id: string): any => {
+		const v = byId.get(id);
+		if (!v?.valuesByMode) return undefined;
+		const mode = (v.variableCollectionId && defaultMode.get(v.variableCollectionId)) || Object.keys(v.valuesByMode)[0];
+		return v.valuesByMode[mode];
+	};
+	const resolve = (value: any, depth: number): any => {
+		if (depth > 20 || value === undefined || value === null) return undefined;
+		if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') return resolve(valueOf(value.id), depth + 1);
+		if (typeof value === 'object' && 'color' in value && 'opacity' in value && !('r' in value)) {
+			const color = resolve(value.color, depth + 1);
+			const opacity = resolve(value.opacity, depth + 1);
+			if (!color || typeof color !== 'object' || !('r' in color) || typeof opacity !== 'number') return undefined;
+			const a = color.a ?? 1;
+			return { ...color, a: a < 1 ? a : Math.max(0, Math.min(1, opacity / 100)) };
+		}
+		return value;
+	};
+	return (value: any) => {
+		const resolved = resolve(value, 0);
+		if (resolved && typeof resolved === 'object' && 'r' in resolved) {
+			const hex = rgbToHex(resolved);
+			const a = resolved.a ?? 1;
+			return a < 1 ? `${hex}${Math.round(a * 255).toString(16).padStart(2, '0').toUpperCase()}` : hex;
+		}
+		return figmaColorToHex(resolved);
+	};
+}
+
+/**
  * Parse a Figma color value to hex
  */
 export function figmaColorToHex(value: any): string {

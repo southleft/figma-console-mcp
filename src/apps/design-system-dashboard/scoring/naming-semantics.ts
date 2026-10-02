@@ -120,8 +120,13 @@ function scoreVariableNaming(data: DesignSystemRawData): Finding {
 	const rawByCollection = new Map<string, number>();
 	for (const v of data.variables) {
 		for (const value of Object.values(v.valuesByMode ?? {})) {
-			const val = value as Record<string, unknown> | null;
-			if (val?.type !== "VARIABLE_ALIAS") {
+			const val = value as Record<string, any> | null;
+			// A composed color ("grey/900 at 50%") that references a variable is
+			// an alias, not a raw primitive value.
+			const composedAlias =
+				!!val && typeof val === "object" && "color" in val && "opacity" in val &&
+				(val.color?.type === "VARIABLE_ALIAS" || val.opacity?.type === "VARIABLE_ALIAS");
+			if (val?.type !== "VARIABLE_ALIAS" && !composedAlias) {
 				const key = v.variableCollectionId ?? "?";
 				rawByCollection.set(key, (rawByCollection.get(key) ?? 0) + 1);
 			}

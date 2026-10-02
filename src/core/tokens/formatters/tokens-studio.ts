@@ -39,6 +39,7 @@
  *     and the figma-console-mcp metadata stamped onto it.
  */
 
+import { renderComposed, composedFallbackNote, num, referenceInExport } from "./composed-color.js";
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
 import { FIGMA_MCP_EXTENSION_KEY } from "../types.js";
 import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
@@ -117,7 +118,35 @@ function renderSetFile(
     const value = token.values[mode];
     if (!value) continue;
 
-    const tsValue = tsValueFor(value, token, tokenIndex, warnings);
+    // Composed color ("grey/900 at 50%") → the primitive reference plus Tokens
+    // Studio's alpha modifier, so the token keeps following its primitive.
+    let tsValue: unknown;
+    let modify: Record<string, unknown> | undefined;
+    if (value.composed) {
+      const ref = (reference: string) => referenceInExport(reference, tokenIndex)
+        ? `{${referenceTargetPath(reference, tokenIndex).join(".")}}`
+        : null;
+      const r = renderComposed(value.composed, {
+        ref,
+        colorLiteral: (hex) => hex,
+        build: (color, op) => {
+          modify = {
+            type: "alpha",
+            value: "percent" in op ? num(op.percent / 100) : `${op.ref} / 100`,
+            space: "srgb",
+          };
+          return color;
+        },
+      });
+      if (r.kind === "expression") {
+        tsValue = r.text;
+      } else {
+        warnings.push(composedFallbackNote(token.path, "Tokens Studio", r.reason, value));
+        tsValue = value.literal;
+      }
+    } else {
+      tsValue = tsValueFor(value, token, tokenIndex, warnings);
+    }
     if (tsValue === undefined) continue;
 
     // Walk path creating nested groups.
@@ -135,6 +164,7 @@ function renderSetFile(
       type: tsTypeFor(token),
     };
     if (token.description) leaf.description = token.description;
+    if (modify) leaf.$extensions = { "studio.tokens": { modify } };
     cursor[leafKey] = leaf;
   }
 

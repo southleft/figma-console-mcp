@@ -5,6 +5,30 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.40.9] - 2026-10-02
+
+Support for Figma's composed colors: a color variable set to another color at an opacity ("grey/900 at 50%"). Server-only: **no plugin re-import needed**.
+
+### Fixed
+
+- **`figma_export_tokens` failed on color variables bound to another color with an opacity.** Figma stores these as a color plus a separate opacity, either of which can be a variable. The export knew only plain colors and plain aliases: JSON formats dropped the token with "COLOR value isn't an RGB object", and CSS wrote `--overlay: [object Object];`. Each format now keeps the link to the primitive where it can express one, and writes the color Figma renders where it can't:
+  - CSS and Tailwind v4: `color-mix(in srgb, var(--grey-900) 50%, transparent)`, or `calc(var(--opacity-50) * 1%)` when the opacity is a variable.
+  - SCSS: `rgba($grey-900, 0.5)`.
+  - Tokens Studio: the primitive reference with an `alpha` modifier.
+  - DTCG: `$value` is the resolved color, and `$extensions["figma-console-mcp"].composedColor` records each mode's color and opacity.
+  - TypeScript, JSON, Tailwind v3 and Style Dictionary v3: the resolved color.
+  
+  Reported by Isabella Minzly.
+- **`figma_import_tokens` writes the composition back.** A DTCG file's `composedColor` is applied as Figma's color + opacity value on update and on create, including references to variables created in the same import, so the token stays linked to its primitive instead of being flattened. Editing only `$value` (and not `composedColor`) imports the new color as a plain value, with a warning. An unchanged export re-imports as unchanged.
+- **Composed colors were mis-read elsewhere.** `figma_get_variables` with `resolveAliases` returned the raw value as the "resolved" color, the design-system audit counted these colors as raw values instead of aliases, contrast checks skipped them, and the token browser showed them as black. All now resolve them.
+- **The design-system summary turned every aliased color into `#000000`** (`figma_get_design_system_summary`, `figma_get_token_values`). Aliases are now followed.
+
+### Changed
+
+- **A number variable scoped only to Opacity, or used as a composed color's opacity, exports as a unitless number** (`50`), where it was a dimension (`50px`). The `px` value was wrong for an opacity and made the color expressions that reference it invalid.
+
+Notes: Figma stores the opacity as a percent (50 = 50%). When the color part is already semi-transparent, Figma keeps that color's alpha and ignores the opacity; exports match what Figma renders and say so in a warning.
+
 ## [1.40.8] - 2026-09-30
 
 Min/max sizing now survives every way of extracting a component as JSON, the reconstruction format returns real geometry again, and Cloud Mode's health check tells the truth. Server-only: **no plugin re-import needed**.
@@ -1454,6 +1478,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.40.9]: https://github.com/southleft/figma-console-mcp/compare/v1.40.8...v1.40.9
 [1.40.8]: https://github.com/southleft/figma-console-mcp/compare/v1.40.7...v1.40.8
 [1.40.7]: https://github.com/southleft/figma-console-mcp/compare/v1.40.6...v1.40.7
 [1.40.6]: https://github.com/southleft/figma-console-mcp/compare/v1.40.5...v1.40.6

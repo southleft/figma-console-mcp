@@ -376,6 +376,20 @@ function fmtCell(type: string, value: any, allVars: any[]): string {
 		return `<span class="alias-ref alias-unresolved" title="Unresolved reference: ${escAttr(String(value.id))}">→ ref</span>`;
 	}
 
+	// Composed color ("grey/900 at 50%"): { color, opacity }, opacity a percent.
+	if (isComposedColor(value)) {
+		const part = (p: any, fallback: string): string => {
+			if (isAlias(p)) {
+				const t = resolveAlias(p.id, allVars);
+				return t ? (t.name.split("/").pop() || t.name) : "ref";
+			}
+			return fallback;
+		};
+		const colorText = part(value.color, typeof value.color === "object" && value.color ? colorToHex(value.color) : "?");
+		const opacityText = part(value.opacity, `${value.opacity}%`);
+		return `<span class="alias-ref" title="Color at an opacity">→ ${esc(colorText)} · ${esc(opacityText)}</span>`;
+	}
+
 	if (type === "COLOR" && typeof value === "object" && value !== null) {
 		const hex = colorToHex(value);
 		const rgba = colorToRgba(value);
@@ -409,7 +423,7 @@ function fmtCell(type: string, value: any, allVars: any[]): string {
 
 /** Build data-copy and title attributes for click-to-copy on value cells. */
 function copyAttr(type: string, value: any): string {
-	if (isAlias(value)) return "";
+	if (isAlias(value) || isComposedColor(value)) return "";
 	let text: string;
 	if (type === "COLOR" && typeof value === "object" && value !== null) {
 		text = colorToHex(value);
@@ -443,6 +457,10 @@ function resolveAlias(aliasId: string, allVars: any[]): any | null {
 	}
 
 	return null;
+}
+
+function isComposedColor(value: any): boolean {
+	return typeof value === "object" && value !== null && "color" in value && "opacity" in value && !("r" in value);
 }
 
 function isAlias(value: any): boolean {

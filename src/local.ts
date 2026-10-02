@@ -1791,7 +1791,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			const {
 				DesignSystemManifestCache,
 				createEmptyManifest,
-				figmaColorToHex,
+				makeFigmaColorResolver,
 			} = await import("./core/design-system-manifest.js");
 
 			const cache = DesignSystemManifestCache.getInstance();
@@ -1831,6 +1831,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							defaultModeId: collection.defaultModeId,
 						});
 					}
+					const colorHex = makeFigmaColorResolver(variablesResult.data.variables || [], manifest.collections);
 					for (const variable of variablesResult.data.variables || []) {
 						const tokenName = variable.name;
 						const defaultModeId = manifest.collections.find(
@@ -1843,7 +1844,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						if (variable.resolvedType === "COLOR") {
 							manifest.tokens.colors[tokenName] = {
 								name: tokenName,
-								value: figmaColorToHex(defaultValue),
+								value: colorHex(defaultValue),
 								variableId: variable.id,
 								scopes: variable.scopes,
 							};
@@ -1975,7 +1976,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					const {
 						DesignSystemManifestCache,
 						createEmptyManifest,
-						figmaColorToHex,
+						makeFigmaColorResolver,
 						getCategories,
 						getTokenSummary,
 					} = await import("./core/design-system-manifest.js");
@@ -2041,6 +2042,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									defaultModeId: collection.defaultModeId,
 								});
 							}
+							const colorHex = makeFigmaColorResolver(variablesResult.data.variables || [], manifest.collections);
 							for (const variable of variablesResult.data.variables || []) {
 								const tokenName = variable.name;
 								const defaultModeId = manifest.collections.find(
@@ -2053,7 +2055,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								if (variable.resolvedType === "COLOR") {
 									manifest.tokens.colors[tokenName] = {
 										name: tokenName,
-										value: figmaColorToHex(defaultValue),
+										value: colorHex(defaultValue),
 										variableId: variable.id,
 										scopes: variable.scopes,
 									};

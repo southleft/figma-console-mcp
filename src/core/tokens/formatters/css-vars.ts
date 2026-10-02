@@ -19,6 +19,7 @@
  *   - splitByCollection emits one file per set.
  */
 
+import { renderComposed, composedFallbackNote, num, referenceInExport } from "./composed-color.js";
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
 import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
@@ -216,6 +217,24 @@ function emitTokenLines(
   // normalize spaces, dots, and other special characters that show up in
   // real Figma variable names (e.g. "tailwind colors/purple/50").
   const cssName = `--${prefix}${pathToCssName(token.path)}`;
+
+  // Composed color ("grey/900 at 50%") → color-mix so it follows the primitive.
+  if (value.composed) {
+    const r = renderComposed(value.composed, {
+      ref: (reference) => referenceInExport(reference, tokenIndex)
+        ? `var(--${prefix}${pathToCssName(referenceTargetPath(reference, tokenIndex))})`
+        : null,
+      colorLiteral: (hex) => formatCssValue(hex, "color"),
+      build: (color, op) =>
+        `color-mix(in srgb, ${color} ${"percent" in op ? `${num(op.percent)}%` : `calc(${op.ref} * 1%)`}, transparent)`,
+    });
+    if (r.kind === "expression") {
+      out.push(`  ${cssName}: ${r.text};`);
+      return;
+    }
+    warnings.push(composedFallbackNote(token.path, "CSS", r.reason, value));
+    if (value.literal === undefined) return;
+  }
 
   if (value.reference) {
     // Detect the cross-library alias sentinel ({__library:VariableID:...}).

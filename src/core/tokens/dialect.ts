@@ -189,6 +189,23 @@ export function dimensionLiteralTo2025(
 export function canonicalizeTokenValueForComparison(v: unknown): unknown {
   if (v === null || typeof v !== "object" || Array.isArray(v)) return v;
   const obj = v as Record<string, unknown>;
+  // Composed color: the composition IS the value; the literal beside it is a
+  // derived snapshot (and colorOpaque a Figma-side detail), so compare only
+  // the color + opacity parts. Otherwise a re-resolved primitive would make
+  // every composed token look edited.
+  const composed = obj.composed as
+    | { color?: Record<string, unknown>; opacity?: Record<string, unknown> }
+    | undefined;
+  if (composed && typeof composed === "object") {
+    const color = composed.color ?? {};
+    const hex = "literal" in color ? colorLiteralToCanonicalHex(color.literal) : null;
+    return {
+      composed: {
+        color: "reference" in color ? { reference: color.reference } : { literal: hex ?? color.literal },
+        opacity: composed.opacity,
+      },
+    };
+  }
   if (!("literal" in obj) && !("reference" in obj)) return v;
   const { rawColor: _rawColor, ...rest } = obj;
   if (rest.literal !== undefined) {

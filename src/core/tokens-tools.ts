@@ -46,6 +46,7 @@ import {
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { createChildLogger } from "./logger.js";
+import type { ComposedColor } from "./tokens/types.js";
 import { augmentWithExtendedCollections, countOverrides } from "./extended-collections.js";
 import {
   buildTokenLookup,
@@ -70,7 +71,7 @@ const logger = createChildLogger({ component: "tokens-tools" });
  * on every exported token document. Kept in sync with package.json by
  * scripts/release.sh — see step 3 of the release flow.
  */
-const MCP_VERSION = "1.40.8";
+const MCP_VERSION = "1.40.9";
 
 const EXPORT_TOOL_DESCRIPTION = `Export Figma variables to design token files in your codebase. Bidirectional with figma_import_tokens — together they replace Style Dictionary and Tokens Studio's export pipeline for the popular styling methods.
 
@@ -382,7 +383,8 @@ async function handleExport(
           ),
         });
       }
-      allWarnings.push(...result.warnings);
+      // Formatters warn once per (token, mode); keep each message once.
+      for (const w of result.warnings) if (!allWarnings.includes(w)) allWarnings.push(w);
     } catch (err) {
       // Non-DTCG formatters throw NotImplementedError. Surface it without
       // bailing on the other targets.
@@ -1775,6 +1777,9 @@ interface ApplyResult {
  */
 type AliasIdResolution = { id: string } | { pending: string } | null;
 
+/** One part of a composed color on import: a reference to resolve, or a value. */
+type ComposedPart<T> = { reference: string } | { value: T };
+
 /**
  * Build a resolver that maps a DTCG alias reference (set-qualified
  * `{theme.color.primary}`, bare `{color.primary}` when unambiguous, or the
@@ -1914,13 +1919,44 @@ function buildCollectionModeMap(
  * Exported for test coverage of the value-conversion edge cases.
  */
 export function tokenValueToFigma(
-  value: { literal?: unknown; reference?: string },
+  value: { literal?: unknown; reference?: string; composed?: ComposedColor },
   resolvedType: VariableUpdate["resolvedType"],
 ):
   | { kind: "value"; value: unknown }
   | { kind: "skip-alias"; reference: string }
+  | { kind: "composed"; color: ComposedPart<{ r: number; g: number; b: number; a: number }>; opacity: ComposedPart<number> }
   | { kind: "skip-empty" }
   | { kind: "skip-invalid"; reason: string } {
+  // Composed color ("grey/900 at 50%"): the caller resolves the reference
+  // part(s) and writes Figma's { color, opacity } value, keeping the link to
+  // the primitive instead of flattening it to the resolved literal.
+  if (resolvedType === "COLOR" && value.composed) {
+    const c = value.composed;
+    let color: ComposedPart<{ r: number; g: number; b: number; a: number }>;
+    if ("reference" in c.color) {
+      color = { reference: c.color.reference };
+    } else {
+      try {
+        color = { value: hexToRgba(c.color.literal) };
+      } catch (err) {
+        return { kind: "skip-invalid", reason: `cannot convert composed color ${JSON.stringify(c.color.literal)} to a Figma color` };
+      }
+    }
+    let opacity: ComposedPart<number>;
+    if ("reference" in c.opacity) {
+      opacity = { reference: c.opacity.reference };
+    } else {
+      const pct = Number(c.opacity.literal);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        return { kind: "skip-invalid", reason: `composed opacity ${JSON.stringify(c.opacity.literal)} is not a percent between 0 and 100` };
+      }
+      opacity = { value: pct };
+    }
+    if (!("reference" in color) && !("reference" in opacity)) {
+      return { kind: "skip-invalid", reason: "a composed color needs its color or its opacity to be a variable reference (Figma rejects two literals)" };
+    }
+    return { kind: "composed", color, opacity };
+  }
   if (value.reference) {
     // References aren't converted here — the caller resolves them to a
     // Figma variable ID via its alias-ID resolver and writes a real
@@ -2216,6 +2252,25 @@ function buildUpdatePayloads(
         continue;
       }
       const conversion = tokenValueToFigma(value as any, resolvedType);
+      if (conversion.kind === "composed") {
+        const part = (p: ComposedPart<unknown>) => {
+          if ("value" in p) return { ok: true as const, v: p.value };
+          const r = resolveAliasId?.(p.reference);
+          return r && "id" in r
+            ? { ok: true as const, v: { type: "VARIABLE_ALIAS", id: r.id } }
+            : { ok: false as const, ref: p.reference };
+        };
+        const color = part(conversion.color);
+        const opacity = part(conversion.opacity);
+        if (!color.ok || !opacity.ok) {
+          warnings.push(
+            `Skipped ${entry.path} (mode "${modeName}") — composed color reference "${!color.ok ? color.ref : (opacity as { ref: string }).ref}" could not be resolved to a Figma variable.`,
+          );
+          continue;
+        }
+        valuesByMode[modeId] = { color: color.v, opacity: opacity.v };
+        continue;
+      }
       if (conversion.kind === "skip-alias") {
         // Alias-target update: resolve the reference to a Figma variable ID
         // and write it as a native variable alias. Creates run before
@@ -2430,6 +2485,13 @@ type CreateValueEntry = {
   | { kind: "literal"; value: unknown }
   | { kind: "alias"; targetId: string }
   | { kind: "alias-pending"; targetKey: string }
+  // Composed color: each part is a value, an existing variable id, or the key
+  // of a variable created in this batch (resolved in pass 2).
+  | {
+      kind: "composed";
+      color: { value?: unknown; targetId?: string; targetKey?: string };
+      opacity: { value?: unknown; targetId?: string; targetKey?: string };
+    }
 );
 
 interface CreateVariableDef {
@@ -2601,6 +2663,24 @@ export function buildCreatePlan(
         );
         continue;
       }
+      if (conversion.kind === "composed") {
+        const part = (p: ComposedPart<unknown>) => {
+          if ("value" in p) return { value: p.value };
+          const r = resolveAliasId(p.reference);
+          if (!r) return null;
+          return "id" in r ? { targetId: r.id } : { targetKey: r.pending };
+        };
+        const color = part(conversion.color);
+        const opacity = part(conversion.opacity);
+        if (!color || !opacity) {
+          warnings.push(
+            `Skipped ${entry.path} (mode "${modeName}") — a composed color reference could not be resolved to an existing or newly-created Figma variable.`,
+          );
+          continue;
+        }
+        values.push({ ...modeKeying, kind: "composed", color, opacity });
+        continue;
+      }
       if (conversion.kind !== "value") continue; // skip-empty / skip-alias (handled above)
       values.push({ ...modeKeying, kind: "literal", value: conversion.value });
     }
@@ -2726,6 +2806,9 @@ async function applyCreates(
           if (val.kind === 'literal') {
             try { variable.setValueForMode(modeId, val.value); appliedModes++; }
             catch (err) { valueErrors.push('mode ' + modeId + ': ' + String(err && err.message || err)); }
+          } else if (val.kind === 'composed') {
+            // Composed colors apply in pass 2 too (a part may target a new variable).
+            pendingAliases.push({ variable: variable, key: def.key, modeId: modeId, composed: { color: val.color, opacity: val.opacity } });
           } else {
             // Alias values apply in pass 2, after ALL variables exist.
             pendingAliases.push({ variable: variable, key: def.key, modeId: modeId, targetId: val.targetId || null, targetKey: val.targetKey || null });
@@ -2782,6 +2865,25 @@ async function applyCreates(
     // Pass 2 — alias values. Targets are either pre-resolved IDs or keys of
     // variables created above (createdIds).
     for (const pa of pendingAliases) {
+      if (pa.composed) {
+        try {
+          const part = (p) => {
+            if (p.value !== undefined) return { ok: true, v: p.value };
+            const id = p.targetId || (p.targetKey ? createdIds[p.targetKey] : null);
+            return id ? { ok: true, v: { type: 'VARIABLE_ALIAS', id: id } } : { ok: false, key: p.targetKey || 'unknown' };
+          };
+          const c = part(pa.composed.color);
+          const o = part(pa.composed.opacity);
+          if (!c.ok || !o.ok) {
+            aliasFailures.push({ key: pa.key, error: 'composed color target was not created: ' + (!c.ok ? c.key : o.key) });
+            continue;
+          }
+          pa.variable.setValueForMode(pa.modeId, { color: c.v, opacity: o.v });
+        } catch (err) {
+          aliasFailures.push({ key: pa.key, error: 'composed color: ' + String(err && err.message || err) });
+        }
+        continue;
+      }
       try {
         const targetId = pa.targetId || (pa.targetKey ? createdIds[pa.targetKey] : null);
         if (!targetId) {

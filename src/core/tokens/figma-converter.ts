@@ -18,6 +18,7 @@ import type {
   TokenSet,
   TokenType,
   TokenValue,
+  ComposedColor,
 } from "./types.js";
 import { slugifySetName } from "./alias-resolver.js";
 import { stripRawColorFromValues } from "./dialect.js";
@@ -69,7 +70,9 @@ type FigmaValue =
   | string // STRING
   | boolean // BOOLEAN
   | FigmaEasingValue // EASING
-  | VariableAlias;
+  | VariableAlias
+  // COLOR composed of a color and an opacity percent, at least one an alias
+  | { color: { r: number; g: number; b: number; a?: number } | VariableAlias; opacity: number | VariableAlias };
 
 interface VariableAlias {
   type: "VARIABLE_ALIAS";
@@ -121,6 +124,29 @@ export function convertFigmaVariablesToDocument(
   // alias can target a variable in a collection outside the export scope.
   const collectionNameById = new Map<string, string>();
   for (const c of payload.collections) collectionNameById.set(c.id, c.name);
+  // Default mode per collection, for resolving aliases that cross into a
+  // collection with different modes (composed colors need a resolved value).
+  const defaultModes = new Map<string, string>();
+  for (const c of payload.collections) if (c.modes?.[0]) defaultModes.set(c.id, c.modes[0].modeId);
+  defaultModeRegistry.set(variableById, defaultModes);
+  // Mode names per collection, so a cross-collection alias resolves to the
+  // target mode of the SAME NAME (as formatters resolve aliases), falling
+  // back to the target collection's default mode.
+  const modeNames = new Map<string, Map<string, string>>();
+  for (const c of payload.collections) {
+    modeNames.set(c.id, new Map((c.modes ?? []).map((m) => [m.modeId, m.name])));
+  }
+  modeNameRegistry.set(variableById, modeNames);
+  // Number variables used as a composed color's opacity are percents, never
+  // dimensions — typing them "dimension" emitted "50px" and broke the
+  // color-mix/rgba expressions that reference them.
+  const opacityVarIds = new Set<string>();
+  for (const v of payload.variables) {
+    for (const val of Object.values(v.valuesByMode ?? {})) {
+      if (isComposedColor(val) && isVariableAlias(val.opacity)) opacityVarIds.add(val.opacity.id);
+    }
+  }
+  opacityVarRegistry.set(variableById, opacityVarIds);
 
   // Filter collections per scope.
   const wantedCollections = opts.collectionIds?.length
@@ -234,7 +260,11 @@ function convertVariable(
   const { path, strippedTypeSuffix } = variableTokenPath(variable, opts);
 
   // Map resolvedType to TokenType.
-  const type = mapResolvedType(variable.resolvedType, variable.name, warnings);
+  const isOpacity =
+    variable.resolvedType === "FLOAT" &&
+    ((variable.scopes?.length === 1 && variable.scopes[0] === "OPACITY") ||
+      !!opacityVarRegistry.get(variableById)?.has(variable.id));
+  const type = isOpacity ? "number" : mapResolvedType(variable.resolvedType, variable.name, warnings);
 
   // Convert each (mode → value) pair to our TokenValue shape, filtered by
   // the wanted modes. Spring easings can't be expressed in DTCG — their
@@ -253,6 +283,7 @@ function convertVariable(
       rawValue,
       variable,
       mode.name,
+      mode.modeId,
       variableById,
       collectionNameById,
       opts,
@@ -263,6 +294,17 @@ function convertVariable(
     );
   }
 
+  // Composed colors: record each mode's color + opacity so DTCG consumers and
+  // figma_import_tokens can rebuild the link ($value holds the resolved color).
+  const composedByMode: Record<string, { color: string; opacity: number | string }> = {};
+  for (const [modeName, v] of Object.entries(values)) {
+    if (!v.composed) continue;
+    composedByMode[modeName] = {
+      color: "reference" in v.composed.color ? v.composed.color.reference : v.composed.color.literal,
+      opacity: "reference" in v.composed.opacity ? v.composed.opacity.reference : v.composed.opacity.literal,
+    };
+  }
+
   return {
     path,
     type,
@@ -270,6 +312,7 @@ function convertVariable(
     values,
     extensions: {
       "figma-console-mcp": {
+        ...(Object.keys(composedByMode).length > 0 ? { composedColor: composedByMode } : {}),
         variableId: variable.id,
         collectionId: variable.variableCollectionId,
         // The Figma-native type is what import needs to decide writability
@@ -369,6 +412,7 @@ function convertValue(
   rawValue: FigmaValue,
   variable: FigmaVariable,
   modeName: string,
+  modeId: string,
   variableById: Map<string, FigmaVariable>,
   collectionNameById: Map<string, string>,
   opts: ConvertOptions,
@@ -376,6 +420,38 @@ function convertValue(
   onSpring: (spring: Record<string, unknown>) => void,
 ): TokenValue {
   const resolvedType = variable.resolvedType;
+
+  // Composed color: a color and an opacity, at least one of them an alias
+  // ("grey/900 at 50%"). Keep both parts and carry the resolved color as the
+  // literal so every format has a correct fallback.
+  if (resolvedType === "COLOR" && isComposedColor(rawValue)) {
+    const ref = (alias: VariableAlias) =>
+      convertValue(alias, variable, modeName, modeId, variableById, collectionNameById, opts, warnings, onSpring).reference;
+    const colorPart: ComposedColor["color"] = isVariableAlias(rawValue.color)
+      ? { reference: ref(rawValue.color) ?? "{unknown}" }
+      : { literal: rgbaToHex(rawValue.color as { r: number; g: number; b: number; a?: number }) };
+    const opacityPart: ComposedColor["opacity"] = isVariableAlias(rawValue.opacity)
+      ? { reference: ref(rawValue.opacity) ?? "{unknown}" }
+      : { literal: Number(rawValue.opacity) };
+    const colorResolved = resolveFigmaValue(rawValue.color, variable, modeId, variableById);
+    const resolved = resolveFigmaValue(rawValue, variable, modeId, variableById);
+    const composed: ComposedColor = { color: colorPart, opacity: opacityPart };
+    if (isRgb(colorResolved)) composed.colorOpaque = (colorResolved.a ?? 1) >= 1;
+    if (isRgb(resolved)) {
+      return {
+        literal: rgbaToHex(resolved),
+        rawColor: { r: resolved.r, g: resolved.g, b: resolved.b, a: resolved.a ?? 1 },
+        composed,
+      };
+    }
+    warnings.push(
+      `Color "${variable.name}" (mode "${modeName}") combines a color and an opacity, but one part points at a variable outside this file (likely a library) — exported without a resolved fallback color.`,
+    );
+    // No resolved color: keep the color part as an alias so formats that
+    // can't express the composition emit a reference (or their usual
+    // cross-library skip) instead of an empty value.
+    return "reference" in colorPart ? { reference: colorPart.reference, composed } : { composed };
+  }
 
   // Alias references: convert variable ID → path-based reference for DTCG.
   if (isVariableAlias(rawValue)) {
@@ -483,6 +559,73 @@ function convertValue(
   }
   // STRING and fallthrough.
   return { literal: typeof rawValue === "string" ? rawValue : String(rawValue) };
+}
+
+/**
+ * Default mode per collection, keyed by the variableById map of one
+ * conversion run (avoids threading another parameter through every helper).
+ */
+const defaultModeRegistry = new WeakMap<Map<string, FigmaVariable>, Map<string, string>>();
+/** collectionId → (modeId → mode name), per conversion run. */
+const modeNameRegistry = new WeakMap<Map<string, FigmaVariable>, Map<string, Map<string, string>>>();
+/** Ids of FLOAT variables some composed color uses as its opacity. */
+const opacityVarRegistry = new WeakMap<Map<string, FigmaVariable>, Set<string>>();
+
+type Rgba = { r: number; g: number; b: number; a?: number };
+
+function isRgb(value: unknown): value is Rgba {
+  return typeof value === "object" && value !== null && "r" in value && "g" in value && "b" in value;
+}
+
+/** Figma's VariableComposedColor: { color: RGB|RGBA|alias, opacity: number|alias }. */
+function isComposedColor(value: unknown): value is { color: unknown; opacity: unknown } {
+  return typeof value === "object" && value !== null && "color" in value && "opacity" in value && !("r" in value);
+}
+
+/**
+ * Resolve a raw Figma value to what Figma renders, following aliases.
+ * An alias into the SAME collection keeps the mode; into another collection
+ * it uses that collection's default mode. A composed color applies its
+ * opacity (a percent) only when the color is fully opaque — a
+ * semi-transparent color keeps its own alpha, which is what Figma does.
+ * Returns undefined when a hop leaves the file (library variable) or loops.
+ */
+function resolveFigmaValue(
+  raw: unknown,
+  owner: FigmaVariable,
+  modeId: string,
+  variableById: Map<string, FigmaVariable>,
+  depth = 0,
+): unknown {
+  if (depth > 20) return undefined;
+  if (isVariableAlias(raw)) {
+    const target = variableById.get(raw.id);
+    if (!target) return undefined;
+    let targetMode = modeId;
+    if (target.variableCollectionId !== owner.variableCollectionId || target.valuesByMode[modeId] === undefined) {
+      // Same mode NAME in the target collection if it has one (matching how
+      // formatters resolve aliases), else that collection's default mode.
+      const names = modeNameRegistry.get(variableById);
+      const ownerModeName = names?.get(owner.variableCollectionId)?.get(modeId);
+      const sameName = ownerModeName
+        ? [...(names?.get(target.variableCollectionId)?.entries() ?? [])].find(([, n]) => n === ownerModeName)?.[0]
+        : undefined;
+      const defaults = defaultModeRegistry.get(variableById);
+      targetMode =
+        (sameName && target.valuesByMode[sameName] !== undefined ? sameName : undefined) ??
+        defaults?.get(target.variableCollectionId) ??
+        Object.keys(target.valuesByMode)[0];
+    }
+    return resolveFigmaValue(target.valuesByMode[targetMode], target, targetMode, variableById, depth + 1);
+  }
+  if (isComposedColor(raw)) {
+    const color = resolveFigmaValue(raw.color, owner, modeId, variableById, depth + 1);
+    const opacity = resolveFigmaValue(raw.opacity, owner, modeId, variableById, depth + 1);
+    if (!isRgb(color) || typeof opacity !== "number") return undefined;
+    const baseAlpha = color.a ?? 1;
+    return { r: color.r, g: color.g, b: color.b, a: baseAlpha < 1 ? baseAlpha : Math.max(0, Math.min(1, opacity / 100)) };
+  }
+  return raw;
 }
 
 function isVariableAlias(value: unknown): value is VariableAlias {

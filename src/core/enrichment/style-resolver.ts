@@ -151,6 +151,38 @@ export class StyleValueResolver {
 				return resolvedValue;
 			}
 
+			// Composed color ("grey/900 at 50%"): { color, opacity }, opacity a
+			// percent, either part possibly an alias. Figma applies the opacity
+			// only to a fully opaque color.
+			if (
+				variable.resolvedType === "COLOR" &&
+				value !== null && typeof value === "object" &&
+				"color" in value && "opacity" in value && !("r" in value)
+			) {
+				const part = async (p: any, type: string): Promise<any> => {
+					if (p && typeof p === "object" && p.type === "VARIABLE_ALIAS") {
+						const target = allVariables.get(p.id);
+						return target
+							? this.resolveVariableValue(target, allVariables, maxDepth, currentDepth + 1, modeId)
+							: null;
+					}
+					return this.formatVariableValue(p, type);
+				};
+				const hex = await part(value.color, "COLOR");
+				const opacity = await part(value.opacity, "FLOAT");
+				let composed: string | null = null;
+				if (typeof hex === "string" && typeof opacity === "number") {
+					if (hex.length === 9) {
+						composed = hex;
+					} else {
+						const a = Math.round(Math.max(0, Math.min(1, opacity / 100)) * 255);
+						composed = a >= 255 ? hex : `${hex}${a.toString(16).padStart(2, "0").toUpperCase()}`;
+					}
+				}
+				this.variableCache.set(cacheKey, composed);
+				return composed;
+			}
+
 			// Direct value - format based on type
 			const formattedValue = this.formatVariableValue(
 				value,

@@ -178,10 +178,18 @@ export class RelationshipMapper {
 	): VariableDependency[] {
 		const dependencies: VariableDependency[] = [];
 
-		// Check all modes for variable aliases
-		for (const [modeId, value] of Object.entries(
-			variable.valuesByMode || {},
-		)) {
+		// Check all modes for variable aliases. A composed color ({ color,
+		// opacity } — "grey/900 at 50%") depends on each part that is an alias.
+		const aliasRefs: Array<[string, any]> = [];
+		for (const [modeId, value] of Object.entries(variable.valuesByMode || {})) {
+			const v = value as any;
+			if (v && typeof v === "object" && "color" in v && "opacity" in v && !("r" in v)) {
+				aliasRefs.push([modeId, v.color], [modeId, v.opacity]);
+			} else {
+				aliasRefs.push([modeId, v]);
+			}
+		}
+		for (const [modeId, value] of aliasRefs) {
 			if (
 				typeof value === "object" &&
 				value !== null &&

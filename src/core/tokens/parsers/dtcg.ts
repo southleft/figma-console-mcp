@@ -283,6 +283,43 @@ function extractToken(
     }
   }
 
+  // Figma composed colors ("grey/900 at 50%"): rebuild each mode's color +
+  // opacity from the extension. `$value` stays as the resolved fallback; the
+  // composition is what figma_import_tokens writes back.
+  const composedExt = mcpExt?.composedColor;
+  const lastSynced = mcpExt?.lastSyncedValue as Record<string, any> | undefined;
+  if (composedExt && typeof composedExt === "object" && !Array.isArray(composedExt)) {
+    for (const [modeName, part] of Object.entries(composedExt as Record<string, unknown>)) {
+      // A per-mode file owns only its own mode.
+      if (fileMode && modeName !== fileMode) continue;
+      const p = part as { color?: unknown; opacity?: unknown } | null;
+      if (!p || typeof p.color !== "string" || (typeof p.opacity !== "number" && typeof p.opacity !== "string")) continue;
+      const color = parseDtcgReference(p.color) ? { reference: p.color } : { literal: p.color };
+      const opacity = typeof p.opacity === "number"
+        ? { literal: p.opacity }
+        : parseDtcgReference(p.opacity) ? { reference: p.opacity } : { literal: Number(p.opacity) };
+      if ("literal" in opacity && !Number.isFinite(opacity.literal)) continue;
+      // `$value` is a resolved snapshot of the composition. If it was edited
+      // while the composition is still what was last synced, the user changed
+      // the color itself: import it as a plain color instead of silently
+      // writing the old composition back.
+      const prev = lastSynced?.[modeName];
+      const current = values[modeName]?.literal;
+      if (
+        prev?.composed && typeof prev.literal === "string" && typeof current === "string" &&
+        current.toUpperCase() !== prev.literal.toUpperCase() &&
+        JSON.stringify(prev.composed.color) === JSON.stringify(color) &&
+        JSON.stringify(prev.composed.opacity) === JSON.stringify(opacity)
+      ) {
+        warnings.push(
+          `Token ${path.join(".")} (mode "${modeName}"): $value was edited but its composedColor wasn't — importing ${current} as a plain color, replacing the color + opacity link. To keep the link, edit composedColor instead.`,
+        );
+        continue;
+      }
+      values[modeName] = { ...(values[modeName] ?? {}), composed: { color, opacity } };
+    }
+  }
+
   // Preserve all other vendor extensions verbatim.
   let extensions: Token["extensions"];
   if (ext && typeof ext === "object") {
