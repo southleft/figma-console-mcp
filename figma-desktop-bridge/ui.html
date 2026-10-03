@@ -945,19 +945,38 @@
     };
 
     // Set image fill on nodes — decodes base64 in browser context (atob available here)
-    // then sends raw bytes to plugin where figma.createImage() is called
-    window.setImageFill = (nodeIds, imageData, scaleMode) => {
-      // Decode base64 to Uint8Array in browser context where atob() is available
-      var binaryStr = atob(imageData);
+    // then sends raw bytes to plugin where figma.createImage() is called.
+    // Empty nodeIds inserts a new image-sized rectangle on the current page.
+    window.setImageFill = (nodeIds, imageData, scaleMode, name) => {
+      if (!imageData || typeof imageData !== 'string') {
+        return Promise.resolve({ success: false, error: 'imageData is required' });
+      }
+      var payload = imageData;
+      var dataUrlMarker = payload.indexOf('base64,');
+      if (payload.slice(0, 5).toLowerCase() === 'data:' && dataUrlMarker !== -1) {
+        payload = payload.slice(dataUrlMarker + 7);
+      }
+      payload = payload.replace(/\s/g, '');
+      var binaryStr;
+      try {
+        binaryStr = atob(payload);
+      } catch (err) {
+        return Promise.resolve({
+          success: false,
+          error: 'imageData is not valid base64. Pass PNG/JPEG/GIF bytes as base64, or in Local Mode an absolute file path. Clipboard paste is not supported.'
+        });
+      }
       var bytes = new Uint8Array(binaryStr.length);
       for (var i = 0; i < binaryStr.length; i++) {
         bytes[i] = binaryStr.charCodeAt(i);
       }
+      var ids = Array.isArray(nodeIds) ? nodeIds : (nodeIds ? [nodeIds] : []);
       // Send as plain Array (postMessage can't always transfer typed arrays cleanly)
       return window.sendPluginCommand('SET_IMAGE_FILL', {
-        nodeIds: Array.isArray(nodeIds) ? nodeIds : [nodeIds],
+        nodeIds: ids,
         imageBytes: Array.from(bytes),
-        scaleMode: scaleMode || 'FILL'
+        scaleMode: scaleMode || 'FILL',
+        name: name
       }, 60000)
         .catch(function(err) { return { success: false, error: err.message || String(err) }; });
     };
@@ -1111,7 +1130,7 @@
         'SET_TEXT_CONTENT': function(params) { return window.setTextContent(params.nodeId, params.text, params); },
         'CREATE_CHILD_NODE': function(params) { return window.createChildNode(params.parentId, params.nodeType, params.properties); },
         'CAPTURE_SCREENSHOT': function(params) { return window.captureScreenshot(params.nodeId, params); },
-        'SET_IMAGE_FILL': function(params) { return window.setImageFill(params.nodeIds || params.nodeId, params.imageData, params.scaleMode); },
+        'SET_IMAGE_FILL': function(params) { return window.setImageFill(params.nodeIds || params.nodeId, params.imageData, params.scaleMode, params.name); },
         'SET_INSTANCE_PROPERTIES': function(params) { return window.setInstanceProperties(params.nodeId, params.properties); },
         'LINT_DESIGN': function(params) { return window.lintDesign(params.nodeId, params.rules, params.maxDepth, params.maxFindings); },
         'AUDIT_COMPONENT_ACCESSIBILITY': function(params) { return window.auditComponentAccessibility(params.nodeId, params.targetSize); },
