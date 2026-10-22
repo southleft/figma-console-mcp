@@ -31,11 +31,14 @@ export function createLogger(level: LogLevel = 'info'): pino.Logger {
   // When stdout is not a TTY, we're likely in MCP stdio mode
   const isMCPStdio = !process.stdout.isTTY;
 
-  // MCP stdio mode: NO pretty printing, stderr only
+  // MCP stdio mode: NO pretty printing, stderr only.
+  // Sync writes: with sync: false pino flushes leftover lines on exit, and once
+  // the client is gone that flush retries EPIPE forever (sonic-boom 4.x), so the
+  // process never exits. Sync mode has no exit flush and stops logging on EPIPE.
   if (isMCPStdio) {
     return pino(
       { level: process.env.LOG_LEVEL || level },
-      pino.destination({ dest: 2, sync: false })
+      pino.destination({ dest: 2, sync: true })
     );
   }
 
