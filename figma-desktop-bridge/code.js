@@ -1196,6 +1196,16 @@ figma.ui.onmessage = async (msg) => {
           }
         }
 
+        // No stroked/frame child: the variant itself carries the visuals
+        // (e.g. a button whose fill sits on the component).
+        if (!mainChild) mainChild = variant;
+
+        // Geometry and structure, so variants that differ in size or content
+        // (2 icons vs 6 icons) don't diff as identical (#121).
+        sig.width = Math.round(variant.width * 100) / 100;
+        sig.height = Math.round(variant.height * 100) / 100;
+        sig.children = variant.children ? variant.children.map(function(c) { return c.name; }) : [];
+
         if (mainChild) {
               var child = mainChild;
               // This is the main interactive frame
@@ -1312,13 +1322,39 @@ figma.ui.onmessage = async (msg) => {
       var stateMachine = { states: {}, defaultState: null, cssMapping: {} };
       var defaultSig = null;
 
-      // Find the default variant (first size, default state)
-      for (var di = 0; di < variants.length; di++) {
-        var vName = variants[di].name;
-        if (vName.indexOf('state=default') !== -1 && (sizeAxis ? vName.indexOf(sizeAxis + '=') !== -1 : true)) {
-          // Pick the first default state variant
-          if (!defaultVariant || vName.indexOf('large') !== -1) {
-            defaultVariant = variants[di];
+      // Find the default variant (#121). Start from Figma's own default (the
+      // set's top-left variant). With a state axis, prefer the variant that
+      // matches it on every other axis but is in a resting state. Variant
+      // names are "Axis=Value, ..." in the author's casing, so compare values
+      // case-insensitively.
+      function parseAxes(name) {
+        var out = {};
+        var segs = name.split(',');
+        for (var si = 0; si < segs.length; si++) {
+          var kv = segs[si].split('=');
+          if (kv.length === 2) out[kv[0].trim()] = kv[1].trim();
+        }
+        return out;
+      }
+      var figmaDefault = null;
+      try { figmaDefault = node.defaultVariant || null; } catch (e) {}
+      if (!figmaDefault && variants.length > 0) figmaDefault = variants[0];
+      defaultVariant = figmaDefault;
+      if (stateAxis && figmaDefault) {
+        var restingStates = ['default', 'rest', 'resting', 'enabled', 'idle', 'normal', 'base'];
+        var baseAxes = parseAxes(figmaDefault.name);
+        var currentState = (baseAxes[stateAxis] || '').toLowerCase();
+        if (restingStates.indexOf(currentState) === -1) {
+          for (var di = 0; di < variants.length; di++) {
+            var cand = parseAxes(variants[di].name);
+            var sameOtherAxes = true;
+            for (var bk in baseAxes) {
+              if (bk !== stateAxis && cand[bk] !== baseAxes[bk]) { sameOtherAxes = false; break; }
+            }
+            if (sameOtherAxes && restingStates.indexOf((cand[stateAxis] || '').toLowerCase()) !== -1) {
+              defaultVariant = variants[di];
+              break;
+            }
           }
         }
       }
@@ -1352,6 +1388,18 @@ figma.ui.onmessage = async (msg) => {
           if (sig.textToken !== defaultSig.textToken) diff.textToken = sig.textToken || sig.textHex;
           if (sig.opacity !== defaultSig.opacity) diff.opacity = sig.opacity;
           if (JSON.stringify(sig.effects) !== JSON.stringify(defaultSig.effects)) diff.effects = sig.effects;
+          if (sig.width !== defaultSig.width) diff.width = sig.width;
+          if (sig.height !== defaultSig.height) diff.height = sig.height;
+          if (sig.fillHex !== defaultSig.fillHex && !diff.fillToken) diff.fillHex = sig.fillHex;
+          if (sig.strokeHex !== defaultSig.strokeHex && !diff.strokeToken) diff.strokeHex = sig.strokeHex;
+          if (sig.textHex !== defaultSig.textHex && !diff.textToken) diff.textHex = sig.textHex;
+          if (JSON.stringify(sig.children) !== JSON.stringify(defaultSig.children)) {
+            diff.children = {
+              count: sig.children.length,
+              added: sig.children.filter(function(n) { return defaultSig.children.indexOf(n) === -1; }),
+              removed: defaultSig.children.filter(function(n) { return sig.children.indexOf(n) === -1; })
+            };
+          }
           // Visibility changes not in default
           var dvKeys = Object.keys(defaultSig.visibilityChanges);
           var svKeys = Object.keys(sig.visibilityChanges);
@@ -1384,7 +1432,9 @@ figma.ui.onmessage = async (msg) => {
       }
 
       if (defaultVariant) {
-        stateMachine.defaultState = 'default';
+        var defaultAxes = parseAxes(defaultVariant.name);
+        stateMachine.defaultState = stateAxis ? (defaultAxes[stateAxis] || 'default') : 'default';
+        stateMachine.defaultVariant = { id: defaultVariant.id, name: defaultVariant.name };
         stateMachine.defaultSignature = defaultSig;
       }
 
@@ -1733,6 +1783,8 @@ figma.ui.onmessage = async (msg) => {
 
       // Helper to extract component set data with all variants
       function extractComponentSetData(node) {
+        // The getter recomputes on every access; read it once per set
+        var setPropDefs = node.componentPropertyDefinitions;
         var variantAxes = {};
         var variants = [];
 
@@ -1795,8 +1847,8 @@ figma.ui.onmessage = async (msg) => {
           variantAxes: axes,
           variants: variants,
           defaultVariant: variants.length > 0 ? variants[0] : null,
-          properties: node.componentPropertyDefinitions ? Object.keys(node.componentPropertyDefinitions).map(function(propName) {
-            var propDef = node.componentPropertyDefinitions[propName];
+          properties: setPropDefs ? Object.keys(setPropDefs).map(function(propName) {
+            var propDef = setPropDefs[propName];
             return {
               name: propName,
               type: propDef.type,
@@ -1807,60 +1859,30 @@ figma.ui.onmessage = async (msg) => {
         };
       }
 
-      // Recursively search for components
-      function findComponents(node) {
-        if (!node) return;
-
-        if (node.type === 'COMPONENT_SET') {
-          componentSets.push(extractComponentSetData(node));
-        } else if (node.type === 'COMPONENT') {
-          // Only add standalone components (not variants inside component sets)
-          if (!node.parent || node.parent.type !== 'COMPONENT_SET') {
-            components.push(extractComponentData(node, false));
-          }
-        }
-
-        // Recurse into children — skip unresolvable slot sublayers
-        if (node.children) {
-          node.children.forEach(function(child) {
-            try { findComponents(child); } catch (e) { /* slot sublayer — skip */ }
-          });
-        }
-      }
-
       // Load all pages first (required before accessing children)
       console.log('🌉 [Desktop Bridge] Loading all pages...');
       await figma.loadAllPagesAsync();
 
-      // Process pages in batches with event loop yields to prevent UI freeze
-      // This is critical for large design systems that could otherwise crash
-      var pages = figma.root.children;
-      var PAGE_BATCH_SIZE = 3;  // Process 3 pages at a time
-      var totalPages = pages.length;
-
-      console.log('🌉 [Desktop Bridge] Processing ' + totalPages + ' pages in batches of ' + PAGE_BATCH_SIZE + '...');
-
-      for (var pageIndex = 0; pageIndex < totalPages; pageIndex += PAGE_BATCH_SIZE) {
-        var batchEnd = Math.min(pageIndex + PAGE_BATCH_SIZE, totalPages);
-        var batchPages = [];
-        for (var j = pageIndex; j < batchEnd; j++) {
-          batchPages.push(pages[j]);
-        }
-
-        // Process this batch of pages
-        batchPages.forEach(function(page) {
-          findComponents(page);
-        });
-
-        // Log progress for large files
-        if (totalPages > PAGE_BATCH_SIZE) {
-          console.log('🌉 [Desktop Bridge] Processed pages ' + (pageIndex + 1) + '-' + batchEnd + ' of ' + totalPages + ' (found ' + components.length + ' components so far)');
-        }
-
-        // Yield to event loop between batches to prevent UI freeze and allow cancellation
-        if (batchEnd < totalPages) {
-          await new Promise(function(resolve) { setTimeout(resolve, 0); });
-        }
+      // Native search instead of a JS walk over every node (#120): the walk
+      // crossed into the Plugin API for each of the file's nodes, including
+      // every layer inside every instance (89k nodes: 1.7s vs 0.13s here, and
+      // far worse on heavier files).
+      var found = figma.root.findAllWithCriteria({ types: ['COMPONENT_SET', 'COMPONENT'] });
+      console.log('🌉 [Desktop Bridge] Found ' + found.length + ' component nodes; extracting...');
+      for (var fi = 0; fi < found.length; fi++) {
+        var fnode = found[fi];
+        try {
+          if (fnode.type === 'COMPONENT_SET') {
+            componentSets.push(extractComponentSetData(fnode));
+          } else if (!fnode.parent || fnode.parent.type !== 'COMPONENT_SET') {
+            // Standalone components only (variants are reported under their set)
+            components.push(extractComponentData(fnode, false));
+          }
+        } catch (e) { /* unresolvable slot sublayer — skip */ }
+        // No setTimeout yields here: plugin timers are throttled when Figma is
+        // in the background (up to ~1/min under Chromium's intensive
+        // throttling), so a handful of yields turned a ~1.5s extraction into
+        // the 300s timeout reported in #120.
       }
 
       console.log('🌉 [Desktop Bridge] Found ' + components.length + ' components and ' + componentSets.length + ' component sets');
