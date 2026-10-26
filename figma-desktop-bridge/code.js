@@ -1269,10 +1269,40 @@ figma.ui.onmessage = async (msg) => {
         // not on any child).
         sig.variantOpacity = variant.opacity < 1 ? Math.round(variant.opacity * 100) / 100 : null;
 
+        // Fill and stroke on the variant itself. A button's background usually
+        // sits here while the main layer picked above is its label frame, so
+        // without these a hover that only changes the background diffs as
+        // no change.
+        sig.variantFill = null;
+        sig.variantStroke = null;
+        try {
+          var vbv = variant.boundVariables || {};
+          sig.variantFill = resolveBoundColor(vbv.fills) || (variant.fills && variant.fills.length > 0 && variant.fills[0].color ? colorHex(variant.fills[0].color) : null);
+          sig.variantStroke = resolveBoundColor(vbv.strokes) || (variant.strokes && variant.strokes.length > 0 && variant.strokes[0].color ? colorHex(variant.strokes[0].color) : null);
+        } catch(e) {}
+
         // Nested layers, keyed by path. State changes often sit below the
         // first child (a checked radio swaps the icon instance; its vector's
         // fill token changes), which the fields above never see. Only used
         // for diffing — stripped from the response.
+        // Auto-layout on the variant itself, so axes like Alignment or Density
+        // that only change layout don't diff as identical. Diff-only.
+        sig._layout = null;
+        try {
+          if (variant.layoutMode && variant.layoutMode !== 'NONE') {
+            sig._layout = {
+              layoutMode: variant.layoutMode,
+              primaryAxisAlignItems: variant.primaryAxisAlignItems,
+              counterAxisAlignItems: variant.counterAxisAlignItems,
+              itemSpacing: variant.itemSpacing,
+              paddingTop: variant.paddingTop,
+              paddingRight: variant.paddingRight,
+              paddingBottom: variant.paddingBottom,
+              paddingLeft: variant.paddingLeft
+            };
+          }
+        } catch(e) {}
+
         sig._layers = {};
         var layerCount = 0;
         async function walkLayers(parent, prefix, depth) {
@@ -1472,10 +1502,30 @@ figma.ui.onmessage = async (msg) => {
               diff.visibilityChanges[vk] = sig._visible[vk];
             }
           }
-          if (sig._mainPath && sig.variantOpacity !== defaultSig.variantOpacity) diff.variantOpacity = sig.variantOpacity === null ? 1 : sig.variantOpacity;
+          if ((sig._mainPath || defaultSig._mainPath) && sig.variantOpacity !== defaultSig.variantOpacity) diff.variantOpacity = sig.variantOpacity === null ? 1 : sig.variantOpacity;
+          // When both use the variant as the main layer, fillToken/strokeToken
+          // above already report these.
+          if (sig._mainPath || defaultSig._mainPath) {
+            if (sig.variantFill !== defaultSig.variantFill) diff.variantFill = sig.variantFill;
+            if (sig.variantStroke !== defaultSig.variantStroke) diff.variantStroke = sig.variantStroke;
+          }
 
           // Nested layer changes, skipping values the fields above already
           // report so one change isn't listed twice.
+          if (sig._layout || defaultSig._layout) {
+            var la = sig._layout || {};
+            var lb = defaultSig._layout || {};
+            var layoutDiff = null;
+            var layoutKeys = ['layoutMode', 'primaryAxisAlignItems', 'counterAxisAlignItems', 'itemSpacing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'];
+            for (var lk = 0; lk < layoutKeys.length; lk++) {
+              if (la[layoutKeys[lk]] !== lb[layoutKeys[lk]]) {
+                if (!layoutDiff) layoutDiff = {};
+                layoutDiff[layoutKeys[lk]] = la[layoutKeys[lk]] === undefined ? null : la[layoutKeys[lk]];
+              }
+            }
+            if (layoutDiff) diff.layout = layoutDiff;
+          }
+
           var layerProps = ['fill', 'stroke', 'strokeWeight', 'opacity', 'visible', 'component'];
           for (var lp in sig._layers) {
             var dl = defaultSig._layers[lp];

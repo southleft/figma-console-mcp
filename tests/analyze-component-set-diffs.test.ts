@@ -140,6 +140,33 @@ describe("ANALYZE_COMPONENT_SET variant diffs", () => {
 		expect(Object.keys(r.stateMachine.defaultSignature).some((k) => k.startsWith("_"))).toBe(false);
 	});
 
+	it("reports a background fill on the variant when the main layer is a child frame", async () => {
+		// FDS Evals Button: background on the variant, label in a "Label" frame.
+		const mk = (state: string, fill: string) =>
+			variant(`state=${state}`, [layer("Label", { children: [layer("Button", { type: "TEXT", fill: "v:default" })] })], {
+				fill,
+			});
+		const { byName } = await run([mk("default", "v:bg"), mk("hover", "v:hover")], { state: ["default", "hover"] });
+		expect(byName["state=hover"].diffFromDefault).toEqual({ variantFill: "content/weak-hover" });
+	});
+
+	it("reports auto-layout changes on the variant", async () => {
+		// FDS Evals Button Group: Alignment=Center only changes primaryAxisAlignItems.
+		const mk = (align: string) =>
+			Object.assign(variant(`Alignment=${align}`, [layer("Items")]), {
+				layoutMode: "HORIZONTAL",
+				primaryAxisAlignItems: align === "Center" ? "CENTER" : "MIN",
+				counterAxisAlignItems: "CENTER",
+				itemSpacing: 12,
+				paddingTop: 0,
+				paddingRight: 0,
+				paddingBottom: 0,
+				paddingLeft: 0,
+			});
+		const { byName } = await run([mk("Default"), mk("Center")], { Alignment: ["Default", "Center"] });
+		expect(byName["Alignment=Center"].diffFromDefault).toEqual({ layout: { primaryAxisAlignItems: "CENTER" } });
+	});
+
 	it("does not list the main layer's fill twice", async () => {
 		const mk = (state: string, fill: string) =>
 			variant(`state=${state}`, [layer("Container", { fill, children: [layer("Label", { type: "TEXT" })] })]);
