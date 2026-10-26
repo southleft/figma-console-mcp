@@ -22,6 +22,9 @@ import { join } from 'path';
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
 import type { ConsoleLogEntry } from './types/index.js';
+import { isExecuteTimeoutReport, type LateExecuteResult } from './figma-connector.js';
+
+export type { LateExecuteResult };
 
 // Read version from package.json using the resolved package root.
 // PACKAGE_ROOT uses import.meta.url in ESM (production) and __dirname in CJS (Jest).
@@ -194,6 +197,32 @@ export interface MetadataChangeEntry {
   timestamp: number;
 }
 
+/** An EXECUTE_CODE this server sent that may still produce a late result. */
+interface IssuedExecution {
+  fileKey: string;
+  codePreview: string;
+  timeoutMs?: number;
+  sentAt: number;
+}
+
+/**
+ * Late results above this size are kept without their value: they come back
+ * inside a later, unrelated tool response.
+ */
+export const MAX_LATE_RESULT_BYTES = 8 * 1024;
+
+/** First ~120 characters of a script, whitespace collapsed. */
+function previewCode(code: unknown): string {
+  const flat = String(code ?? '').replace(/\s+/g, ' ').trim();
+  return flat.length > 120 ? flat.slice(0, 120) + '…' : flat;
+}
+
+/** The EXECUTE_CODE result carried by a response, error responses included. */
+function executeResponsePayload(message: any): any {
+  return message.error ? { success: false, error: message.error } : message.result;
+}
+
+
 /**
  * Per-file client connection state.
  * Each Figma file with the Desktop Bridge plugin open gets its own ClientConnection.
@@ -235,6 +264,15 @@ export class FigmaWebSocketServer extends EventEmitter {
   private _startedAt = Date.now();
   private consoleBufferSize = 1000;
   private documentChangeBufferSize = 200;
+  /**
+   * EXECUTE_CODE requests (sent with trackLateResult) that can still produce
+   * a late result, by request id. Late outcomes for anything else are ignored.
+   */
+  private issuedExecutions: Map<string, IssuedExecution> = new Map();
+  private issuedExecutionsLimit = 200;
+  /** Late EXECUTE_CODE outcomes not yet handed to a caller (see drainLateExecuteResults). */
+  private lateExecuteResults: LateExecuteResult[] = [];
+  private lateExecuteResultsLimit = 10;
   /** Heartbeat interval for detecting dead connections via ping/pong */
   private _heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -478,6 +516,11 @@ export class FigmaWebSocketServer extends EventEmitter {
         clearTimeout(pending.timeoutId);
         this.pendingRequests.delete(message.id);
 
+        // Only a timed-out run can still produce a late result.
+        if (!isExecuteTimeoutReport(executeResponsePayload(message))) {
+          this.issuedExecutions.delete(message.id);
+        }
+
         if (message.error) {
           pending.reject(new Error(message.error));
         } else {
@@ -485,6 +528,33 @@ export class FigmaWebSocketServer extends EventEmitter {
         }
         return;
       }
+    }
+
+    // Response to an EXECUTE_CODE this server already gave up on (its own
+    // timer fired first). It used to fall through to "Unhandled WebSocket
+    // message" at debug level and vanish; keep a real outcome as a late result.
+    if (message.id && !message.type && !this.pendingRequests.has(message.id) && this.issuedExecutions.has(message.id)) {
+      const issued = this.issuedExecutions.get(message.id)!;
+      const sender = this.findClientByWs(ws);
+      if (sender?.fileKey !== issued.fileKey) {
+        logger.warn({ id: message.id }, 'Ignoring late EXECUTE_CODE response from a socket other than the targeted file');
+        return;
+      }
+      const payload = executeResponsePayload(message);
+      if (isExecuteTimeoutReport(payload)) {
+        // Another hop's timeout report: no outcome yet. If the script
+        // finishes, the plugin sends it as EXECUTE_CODE_LATE_RESULT.
+        logger.debug({ id: message.id }, 'Late EXECUTE_CODE timeout report — waiting for the outcome');
+        return;
+      }
+      this.recordLateExecuteResult(message.id, issued, {
+        success: payload?.success !== false,
+        result: payload?.result,
+        error: payload?.error,
+        durationMs: Date.now() - issued.sentAt,
+        timeoutMs: issued.timeoutMs,
+      });
+      return;
     }
 
     // Unsolicited data from plugin (FILE_INFO, events, forwarded data)
@@ -584,6 +654,26 @@ export class FigmaWebSocketServer extends EventEmitter {
           found.client.lastActivity = Date.now();
         }
         this.emit('consoleLog', entry);
+      }
+
+      // A timed-out EXECUTE_CODE script finished after all. Keep it only if
+      // this server is tracking the request, and only from the file it
+      // targeted.
+      if (message.type === 'EXECUTE_CODE_LATE_RESULT' && message.data) {
+        const data = message.data;
+        const issued = typeof data.executionId === 'string' ? this.issuedExecutions.get(data.executionId) : undefined;
+        const sender = this.findClientByWs(ws);
+        if (issued && sender?.fileKey === issued.fileKey) {
+          this.recordLateExecuteResult(data.executionId, issued, {
+            success: data.success !== false,
+            result: data.result,
+            error: typeof data.error === 'string' ? data.error : undefined,
+            durationMs: typeof data.durationMs === 'number' ? data.durationMs : Date.now() - issued.sentAt,
+            timeoutMs: typeof data.timeoutMs === 'number' ? data.timeoutMs : issued.timeoutMs,
+          });
+        } else {
+          logger.debug({ executionId: data.executionId }, 'Late EXECUTE_CODE result for a request this server did not issue — ignoring');
+        }
       }
 
       this.emit('pluginMessage', message);
@@ -802,7 +892,13 @@ export class FigmaWebSocketServer extends EventEmitter {
    * Send a command to a plugin UI and wait for the response.
    * By default targets the active file. Pass targetFileKey to target a specific file.
    */
-  sendCommand(method: string, params: Record<string, any> = {}, timeoutMs = 15000, targetFileKey?: string): Promise<any> {
+  sendCommand(
+    method: string,
+    params: Record<string, any> = {},
+    timeoutMs = 15000,
+    targetFileKey?: string,
+    options?: { trackLateResult?: boolean }
+  ): Promise<any> {
     return new Promise((resolve, reject) => {
       const fileKey = targetFileKey || this._activeFileKey;
 
@@ -818,11 +914,14 @@ export class FigmaWebSocketServer extends EventEmitter {
       }
 
       const id = `ws_${++this.requestIdCounter}_${Date.now()}`;
+      const trackLateResult = method === 'EXECUTE_CODE' && options?.trackLateResult === true;
 
       const timeoutId = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          reject(new Error(`WebSocket command ${method} timed out after ${timeoutMs}ms`));
+          // Name the run, so a late result can be matched to this error.
+          const suffix = trackLateResult && this.issuedExecutions.has(id) ? ` (executionId ${id})` : '';
+          reject(new Error(`WebSocket command ${method} timed out after ${timeoutMs}ms${suffix}`));
         }
       }, timeoutMs);
 
@@ -835,11 +934,24 @@ export class FigmaWebSocketServer extends EventEmitter {
         targetFileKey: fileKey,
       });
 
+      if (trackLateResult) {
+        this.issuedExecutions.set(id, {
+          fileKey,
+          codePreview: previewCode(params.code),
+          timeoutMs: typeof params.timeout === 'number' ? params.timeout : undefined,
+          sentAt: Date.now(),
+        });
+        while (this.issuedExecutions.size > this.issuedExecutionsLimit) {
+          this.issuedExecutions.delete(this.issuedExecutions.keys().next().value as string);
+        }
+      }
+
       const message = JSON.stringify({ id, method, params });
       try {
         client.ws.send(message);
       } catch (sendError) {
         this.pendingRequests.delete(id);
+        this.issuedExecutions.delete(id);
         clearTimeout(timeoutId);
         reject(new Error(`Failed to send WebSocket command ${method}: ${sendError instanceof Error ? sendError.message : String(sendError)}`));
         return;
@@ -1059,6 +1171,64 @@ export class FigmaWebSocketServer extends EventEmitter {
     const count = client.consoleLogs.length;
     client.consoleLogs = [];
     return count;
+  }
+
+  /**
+   * Return the late EXECUTE_CODE outcomes received since the last call, and
+   * forget them. figma_execute attaches these to its next response.
+   */
+  drainLateExecuteResults(): LateExecuteResult[] {
+    const results = this.lateExecuteResults;
+    this.lateExecuteResults = [];
+    return results;
+  }
+
+  private recordLateExecuteResult(
+    executionId: string,
+    issued: IssuedExecution,
+    outcome: { success: boolean; result?: any; error?: string; durationMs?: number; timeoutMs?: number }
+  ): void {
+    // One outcome per run.
+    this.issuedExecutions.delete(executionId);
+
+    const entry: LateExecuteResult = {
+      executionId,
+      fileKey: issued.fileKey,
+      codePreview: issued.codePreview,
+      success: outcome.success,
+      error: outcome.error,
+      durationMs: outcome.durationMs,
+      timeoutMs: outcome.timeoutMs,
+      receivedAt: Date.now(),
+    };
+
+    // The value comes back inside a later, unrelated tool response — don't let
+    // a large one crowd that response out.
+    if (outcome.result !== undefined) {
+      let bytes = Infinity;
+      try {
+        bytes = Buffer.byteLength(JSON.stringify(outcome.result) ?? '', 'utf8');
+      } catch {
+        // not serializable — treated as too large
+      }
+      if (bytes <= MAX_LATE_RESULT_BYTES) {
+        entry.result = outcome.result;
+      } else {
+        entry.resultOmitted = `The returned value (${Number.isFinite(bytes) ? bytes + ' bytes' : 'not serializable'}) was not kept; late results keep values up to ${MAX_LATE_RESULT_BYTES} bytes.`;
+      }
+    }
+
+    this.lateExecuteResults.push(entry);
+    if (this.lateExecuteResults.length > this.lateExecuteResultsLimit) {
+      const dropped = this.lateExecuteResults.shift();
+      logger.warn({ executionId: dropped?.executionId }, 'Late EXECUTE_CODE result buffer full — dropped the oldest');
+    }
+
+    logger.warn(
+      { executionId, fileKey: issued.fileKey, success: entry.success, durationMs: entry.durationMs, timeoutMs: entry.timeoutMs },
+      'EXECUTE_CODE finished after its timeout — outcome kept as a late result'
+    );
+    this.emit('lateExecuteResult', entry);
   }
 
   /**

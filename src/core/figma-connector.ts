@@ -5,6 +5,48 @@
  * Allows getDesktopConnector() to return the active WebSocket transport.
  */
 
+/**
+ * The outcome of a figma_execute script that finished AFTER its request was
+ * already answered with a timeout. The plugin cannot cancel a running script,
+ * so a timed-out figma_execute usually keeps going and applies its changes;
+ * figma_execute returns these as `lateResults` on the next call.
+ */
+export interface LateExecuteResult {
+  /** The request id named in the timeout error. */
+  executionId: string;
+  fileKey: string;
+  /** Start of the script, whitespace-collapsed, so the caller can tell which run this was. */
+  codePreview: string;
+  success: boolean;
+  result?: any;
+  /** Set instead of `result` when the value was too large to keep. */
+  resultOmitted?: string;
+  error?: string;
+  /** How long the script actually ran, when known. */
+  durationMs?: number;
+  timeoutMs?: number;
+  receivedAt: number;
+}
+
+export interface ExecuteCodeOptions {
+  /**
+   * Keep this run's outcome if it arrives after the timeout, for
+   * drainLateExecuteResults(). For user scripts (figma_execute); internal
+   * callers leave it off so their late outcomes are not handed to the user.
+   */
+  reportLateResult?: boolean;
+}
+
+/** The timeout messages of the plugin (code.js) and its UI hop (ui.html), for plugins that predate the `timedOut` flag. */
+const PLUGIN_TIMEOUT_MESSAGE = /^(?:Error: )?Execution timed out after \d+ms|^EXECUTE_CODE request timed out after \d+ms/;
+
+/** True for an EXECUTE_CODE result that only reports a plugin-side timeout and carries no outcome of its own. */
+export function isExecuteTimeoutReport(payload: any): boolean {
+  if (!payload || payload.success !== false) return false;
+  if (payload.timedOut === true) return true;
+  return typeof payload.error === 'string' && PLUGIN_TIMEOUT_MESSAGE.test(payload.error);
+}
+
 export interface IFigmaConnector {
   // Lifecycle
   initialize(): Promise<void>;
@@ -14,7 +56,12 @@ export interface IFigmaConnector {
   executeInPluginContext<T = any>(code: string): Promise<T>;
   getVariablesFromPluginUI(fileKey?: string): Promise<any>;
   getVariables(fileKey?: string): Promise<any>;
-  executeCodeViaUI(code: string, timeoutMs?: number, fileKey?: string): Promise<any>;
+  executeCodeViaUI(code: string, timeoutMs?: number, fileKey?: string, options?: ExecuteCodeOptions): Promise<any>;
+  /**
+   * Outcomes of timed-out scripts run with `reportLateResult` that finished
+   * afterwards, since the last call. Optional: Cloud Mode doesn't receive them.
+   */
+  drainLateExecuteResults?(): LateExecuteResult[];
 
   // Variable operations
   updateVariable(variableId: string, modeId: string, value: any): Promise<any>;

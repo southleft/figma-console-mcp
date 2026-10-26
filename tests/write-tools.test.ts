@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { registerWriteTools } from "../src/core/write-tools";
+import { EXECUTE_LATE_RESULTS_HINT, EXECUTE_TIMEOUT_HINT, registerWriteTools } from "../src/core/write-tools";
 import {
 	componentSetTimeoutMs,
 	componentSetVariantCount,
@@ -129,21 +129,21 @@ describe("Write Tools", () => {
 			const tool = server._getTool("figma_execute");
 			await tool.handler({ code: "return 1", timeout: 99999 });
 
-			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 30000, undefined);
+			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 30000, undefined, { reportLateResult: true });
 		});
 
 		it("passes through smaller timeouts unchanged", async () => {
 			const tool = server._getTool("figma_execute");
 			await tool.handler({ code: "return 1", timeout: 3000 });
 
-			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 3000, undefined);
+			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 3000, undefined, { reportLateResult: true });
 		});
 
 		it("passes fileKey through to target a specific connected file", async () => {
 			const tool = server._getTool("figma_execute");
 			await tool.handler({ code: "return 1", timeout: 3000, fileKey: "file-b" });
 
-			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 3000, "file-b");
+			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 3000, "file-b", { reportLateResult: true });
 		});
 
 		it("returns resultAnalysis and fileContext in response", async () => {
@@ -164,6 +164,116 @@ describe("Write Tools", () => {
 			expect(result.isError).toBe(true);
 			const parsed = parseResult(result);
 			expect(parsed.hint).toContain("Desktop Bridge");
+		});
+
+		describe("timeouts and late results", () => {
+			const PLUGIN_TIMEOUT = {
+				success: false,
+				timedOut: true,
+				error: "Error: Execution timed out after 5000ms (executionId ws_3_1). The script was not stopped and may still finish.",
+			};
+
+			/** A Local Mode connector: it can hand out late results. */
+			function setupLocal(overrides: Record<string, jest.Mock> = {}) {
+				const connector = createMockConnector({ drainLateExecuteResults: jest.fn().mockReturnValue([]), ...overrides });
+				const localServer = createMockServer();
+				registerWriteTools(localServer as any, async () => connector as any);
+				return { connector, tool: localServer._getTool("figma_execute") };
+			}
+
+			it("says a plugin-side timeout did not stop the script, and where its outcome will show up", async () => {
+				const { tool } = setupLocal({ executeCodeViaUI: jest.fn().mockResolvedValue(PLUGIN_TIMEOUT) });
+				const parsed = parseResult(await tool.handler({ code: "slow()", timeout: 5000 }));
+
+				expect(parsed.success).toBe(false);
+				expect(parsed.hint).toBe(`${EXECUTE_TIMEOUT_HINT} ${EXECUTE_LATE_RESULTS_HINT}`);
+				expect(parsed.hint).toContain("was not stopped");
+				expect(parsed.hint).toContain("lateResults");
+				expect(parsed.hint).toContain("loadFontAsync");
+			});
+
+			it("recognises a timeout report from a plugin that predates the timedOut flag", async () => {
+				const { tool } = setupLocal({
+					executeCodeViaUI: jest.fn().mockResolvedValue({ success: false, error: "Error: Execution timed out after 5000ms" }),
+				});
+				const parsed = parseResult(await tool.handler({ code: "slow()", timeout: 5000 }));
+				expect(parsed.hint).toContain("was not stopped");
+			});
+
+			it("says the same when the server-side timer fires first", async () => {
+				const { tool } = setupLocal({
+					executeCodeViaUI: jest.fn().mockRejectedValue(
+						new Error("WebSocket command EXECUTE_CODE timed out after 7000ms (executionId ws_3_1)"),
+					),
+				});
+				const result = await tool.handler({ code: "slow()", timeout: 5000 });
+
+				expect(result.isError).toBe(true);
+				expect(parseResult(result).hint).toBe(`${EXECUTE_TIMEOUT_HINT} ${EXECUTE_LATE_RESULTS_HINT}`);
+			});
+
+			it("does not promise lateResults where they can't arrive (Cloud Mode)", async () => {
+				// The default mock connector has no drainLateExecuteResults, like the cloud connector.
+				mockConnector.executeCodeViaUI.mockResolvedValue(PLUGIN_TIMEOUT);
+				const parsed = parseResult(await server._getTool("figma_execute").handler({ code: "slow()", timeout: 5000 }));
+
+				expect(parsed.hint).toBe(EXECUTE_TIMEOUT_HINT);
+				expect(parsed.hint).not.toContain("lateResults");
+				expect(parsed.lateResults).toBeUndefined();
+			});
+
+			it("adds no timeout hint to a script's own error that mentions a timeout", async () => {
+				mockConnector.executeCodeViaUI.mockResolvedValue({ success: false, error: "Error: fetch timed out after 300ms" });
+				const parsed = parseResult(await server._getTool("figma_execute").handler({ code: "x", timeout: 5000 }));
+				expect(parsed.hint).toBeUndefined();
+			});
+
+			it("adds no hint to ordinary results", async () => {
+				const tool = server._getTool("figma_execute");
+				const parsed = parseResult(await tool.handler({ code: "return 42", timeout: 5000 }));
+
+				expect(parsed.hint).toBeUndefined();
+				expect(parsed.lateResults).toBeUndefined();
+			});
+
+			it("returns late results received since the last call, once", async () => {
+				const late = [
+					{ executionId: "ws_3_1", fileKey: "abc", codePreview: "slow()", success: true, result: { done: true }, durationMs: 59242, timeoutMs: 29000, receivedAt: 1 },
+				];
+				const drainLateExecuteResults = jest.fn().mockReturnValueOnce(late).mockReturnValue([]);
+				const connector = createMockConnector({ drainLateExecuteResults });
+				const localServer = createMockServer();
+				registerWriteTools(localServer as any, async () => connector as any);
+				const tool = localServer._getTool("figma_execute");
+
+				const first = parseResult(await tool.handler({ code: "return 1", timeout: 5000 }));
+				expect(first.lateResults).toEqual(late);
+				expect(first.result).toEqual({ id: "1:1" });
+
+				const second = parseResult(await tool.handler({ code: "return 1", timeout: 5000 }));
+				expect(second.lateResults).toBeUndefined();
+			});
+
+			it("returns late results on the error path too", async () => {
+				const late = [{ executionId: "ws_4_1", fileKey: "abc", codePreview: "x", success: false, error: "TypeError: boom", receivedAt: 1 }];
+				const connector = createMockConnector({
+					executeCodeViaUI: jest.fn().mockRejectedValue(new Error("No WebSocket client connected")),
+					drainLateExecuteResults: jest.fn().mockReturnValue(late),
+				});
+				const localServer = createMockServer();
+				registerWriteTools(localServer as any, async () => connector as any);
+
+				const result = await localServer._getTool("figma_execute").handler({ code: "x", timeout: 5000 });
+				expect(result.isError).toBe(true);
+				expect(parseResult(result).lateResults).toEqual(late);
+			});
+
+			it("tells callers in the tool description", () => {
+				const { description } = server._getTool("figma_execute");
+				expect(description).toContain("**TIMEOUTS:**");
+				expect(description).toContain("lateResults");
+				expect(description).toContain("loadFontAsync");
+			});
 		});
 	});
 

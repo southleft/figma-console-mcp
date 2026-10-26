@@ -1,8 +1,46 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import {
+	isExecuteTimeoutReport,
+	type IFigmaConnector,
+	type LateExecuteResult,
+} from "./figma-connector.js";
 import { createChildLogger } from "./logger.js";
 
 const logger = createChildLogger({ component: "write-tools" });
+
+/**
+ * Returned with a figma_execute timeout. The plugin cannot cancel a running
+ * script, so "timed out" means "stopped waiting", not "stopped": the code
+ * usually keeps running and its changes still land.
+ */
+export const EXECUTE_TIMEOUT_HINT =
+	"The script was not stopped: the Desktop Bridge cannot cancel running plugin code, so it may still be running and its changes may still land. " +
+	"Check the document before retrying, and keep scripts idempotent. A common cause is awaiting figma.loadFontAsync() inside a loop: load each font once, before the loop.";
+
+/** Added to the hint where late results can arrive (Local Mode). */
+export const EXECUTE_LATE_RESULTS_HINT =
+	"If it finishes, its outcome comes back in lateResults on your next figma_execute call (needs the current Desktop Bridge plugin).";
+
+/** The server's own timer for an EXECUTE_CODE request (websocket-server sendCommand). */
+const SERVER_TIMEOUT_MESSAGE = /^WebSocket command EXECUTE_CODE timed out after \d+ms/;
+
+function supportsLateResults(connector: IFigmaConnector | undefined): boolean {
+	return typeof connector?.drainLateExecuteResults === "function";
+}
+
+function executeTimeoutHint(connector: IFigmaConnector | undefined): string {
+	return supportsLateResults(connector)
+		? `${EXECUTE_TIMEOUT_HINT} ${EXECUTE_LATE_RESULTS_HINT}`
+		: EXECUTE_TIMEOUT_HINT;
+}
+
+/** Late outcomes received since the last call, or undefined when there are none (or the transport can't receive them). */
+function drainLateResults(connector: IFigmaConnector | undefined): LateExecuteResult[] | undefined {
+	if (!connector?.drainLateExecuteResults) return undefined;
+	const late = connector.drainLateExecuteResults();
+	return late.length > 0 ? late : undefined;
+}
 
 /**
  * Register write/manipulation tools that require a Desktop Bridge connector.
@@ -23,6 +61,8 @@ export function registerWriteTools(
 **COMPONENT INSTANCES:** For instances (node.type === 'INSTANCE'), use figma_set_instance_properties — direct text editing FAILS SILENTLY. Check instance.componentProperties for available props (may have #nodeId suffixes).
 
 **RESULT ANALYSIS:** Check resultAnalysis.warning for silent failures (empty arrays, null returns).
+
+**TIMEOUTS:** A timeout does not stop the script: it keeps running in Figma and may still change the document. Local Mode returns its eventual outcome in lateResults on the next figma_execute call. Keep scripts idempotent, and load fonts once up front (await figma.loadFontAsync per family/style before any loop), not per node.
 
 **VALIDATION:** After creating/modifying visuals: screenshot with figma_capture_screenshot, check alignment/spacing/proportions, iterate up to 3x.
 
@@ -59,12 +99,14 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 				),
 		},
 		async ({ code, timeout, fileKey }) => {
+			let connector: IFigmaConnector | undefined;
 			try {
-				const connector = await getDesktopConnector();
+				connector = (await getDesktopConnector()) as IFigmaConnector;
 				const result = await connector.executeCodeViaUI(
 					code,
 					Math.min(timeout, 30000),
 					fileKey,
+					{ reportLateResult: true },
 				);
 
 				return {
@@ -76,8 +118,14 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 									success: result.success,
 									result: result.result,
 									error: result.error,
+									hint: isExecuteTimeoutReport(result)
+										? executeTimeoutHint(connector)
+										: undefined,
 									resultAnalysis: result.resultAnalysis,
 									fileContext: result.fileContext,
+									// Outcomes of earlier timed-out scripts that finished since
+									// the last call.
+									lateResults: drainLateResults(connector),
 									timestamp: Date.now(),
 								},
 							),
@@ -89,16 +137,19 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					{ error },
 					"Failed to execute code in Figma plugin context",
 				);
+				const message = error instanceof Error ? error.message : String(error);
 				return {
 					content: [
 						{
 							type: "text" as const,
 							text: JSON.stringify(
 								{
-									error:
-										error instanceof Error ? error.message : String(error),
+									error: message,
 									message: "Failed to execute code in Figma plugin context",
-									hint: "Make sure the Desktop Bridge plugin is running in Figma",
+									hint: SERVER_TIMEOUT_MESSAGE.test(message)
+										? executeTimeoutHint(connector)
+										: "Make sure the Desktop Bridge plugin is running in Figma",
+									lateResults: drainLateResults(connector),
 								},
 							),
 						},

@@ -651,7 +651,9 @@
         const timeoutId = setTimeout(() => {
           if (window.__figmaPendingRequests.has(requestId)) {
             window.__figmaPendingRequests.delete(requestId);
-            reject(new Error(type + ' request timed out after ' + timeoutMs + 'ms'));
+            var timeoutError = new Error(type + ' request timed out after ' + timeoutMs + 'ms');
+            timeoutError.timedOut = true;
+            reject(timeoutError);
           }
         }, timeoutMs);
 
@@ -673,10 +675,81 @@
     // VARIABLE OPERATIONS
     // ============================================================================
 
-    window.executeCode = (code, timeout) => {
-      return window.sendPluginCommand('EXECUTE_CODE', { code: code, timeout: timeout || 5000 }, (timeout || 5000) + 2000)
-        .catch(function(err) { return { success: false, error: err.message || String(err) }; });
+    // executionId is the MCP server's request id. code.js tags a result that
+    // arrives after the timeout with it, so the server can match the late
+    // result to the request it already answered.
+    window.executeCode = (code, timeout, executionId) => {
+      var params = { code: code, timeout: timeout || 5000 };
+      if (executionId) params.executionId = executionId;
+      return window.sendPluginCommand('EXECUTE_CODE', params, (timeout || 5000) + 2000)
+        .catch(function(err) {
+          return {
+            success: false,
+            error: (err.message || String(err)) + (executionId ? ' (executionId ' + executionId + ')' : ''),
+            timedOut: err.timedOut === true
+          };
+        });
     };
+
+    // ============================================================================
+    // LATE EXECUTE_CODE RESULTS
+    // A timed-out script keeps running (nothing can cancel it) and may finish
+    // later. Its outcome goes back only to the server connection that sent the
+    // request: the connection pool can also hold other local servers and the
+    // cloud relay, which have no use for it.
+    // ============================================================================
+    var executionSockets = new Map(); // executionId -> WebSocket that sent the EXECUTE_CODE
+    var EXECUTION_SOCKETS_LIMIT = 50;
+
+    function rememberExecutionSocket(executionId, socket) {
+      executionSockets.delete(executionId);
+      executionSockets.set(executionId, socket);
+      while (executionSockets.size > EXECUTION_SOCKETS_LIMIT) {
+        executionSockets.delete(executionSockets.keys().next().value);
+      }
+    }
+
+    // Called with the response sent for an EXECUTE_CODE. Anything but a
+    // timeout is final: no late result can follow, so stop tracking it.
+    function settleExecutionSocket(executionId, result) {
+      if (!(result && result.timedOut)) executionSockets.delete(executionId);
+    }
+
+    function forwardLateExecuteResult(msg) {
+      var socket = executionSockets.get(msg.executionId);
+      executionSockets.delete(msg.executionId);
+      if (!socket || socket.readyState !== 1) {
+        console.warn('[MCP Bridge] Dropping late EXECUTE_CODE result (executionId ' + msg.executionId + '): the server that sent it is no longer connected');
+        return;
+      }
+      try {
+        socket.send(JSON.stringify({
+          type: 'EXECUTE_CODE_LATE_RESULT',
+          data: {
+            executionId: msg.executionId,
+            success: msg.success,
+            result: msg.result,
+            error: msg.error,
+            durationMs: msg.durationMs,
+            timeoutMs: msg.timeoutMs
+          }
+        }));
+      } catch (e) {
+        console.warn('[MCP Bridge] Could not send late EXECUTE_CODE result (executionId ' + msg.executionId + '): ' + (e && e.message ? e.message : String(e)));
+      }
+    }
+
+    // An EXECUTE_CODE_RESULT nobody here is waiting for: this hop's own timer
+    // already answered the server, because the plugin was too busy to report
+    // its timeout in time. The script finished anyway, so forward its outcome
+    // as a late result. A plugin-side timeout report (timedOut) carries no
+    // outcome; the real one follows as EXECUTE_CODE_LATE_RESULT.
+    // Returns true when the message was handled here.
+    function relayExecuteResultIfLate(msg, pendingRequests) {
+      if (pendingRequests.has(msg.requestId)) return false;
+      if (msg.executionId && !msg.timedOut) forwardLateExecuteResult(msg);
+      return true;
+    }
 
     window.updateVariable = (variableId, modeId, value) => {
       return window.sendPluginCommand('UPDATE_VARIABLE', { variableId: variableId, modeId: modeId, value: value })
@@ -1055,7 +1128,7 @@
 
       // Method-to-function mapping
       var methodMap = {
-        'EXECUTE_CODE': function(params) { return window.executeCode(params.code, params.timeout); },
+        'EXECUTE_CODE': function(params, requestId) { return window.executeCode(params.code, params.timeout, requestId); },
         'UPDATE_VARIABLE': function(params) { return window.updateVariable(params.variableId, params.modeId, params.value); },
         'CREATE_VARIABLE': function(params) { return window.createVariable(params.name, params.collectionId, params.resolvedType, params); },
         'DELETE_VARIABLE': function(params) { return window.deleteVariable(params.variableId); },
@@ -1490,9 +1563,16 @@
               return;
             }
 
-            // Call the handler (returns a Promise) and send back the result
-            Promise.resolve(handler(message.params || {}))
+            // A late EXECUTE_CODE result goes back to this socket only.
+            var isExecute = message.method === 'EXECUTE_CODE';
+            if (isExecute) rememberExecutionSocket(message.id, activeWs);
+
+            // Call the handler (returns a Promise) and send back the result.
+            // The request id is passed along for handlers that report late
+            // results (EXECUTE_CODE); the others ignore it.
+            Promise.resolve(handler(message.params || {}, message.id))
               .then(function(result) {
+                if (isExecute) settleExecutionSocket(message.id, result);
                 if (activeWs.readyState === 1) {
                   activeWs.send(JSON.stringify({ id: message.id, result: result }));
                 }
@@ -2442,7 +2522,11 @@
             if (msg.fileContext !== undefined) result.fileContext = msg.fileContext;
             request.resolve(result);
           } else {
-            request.resolve({ success: false, error: msg.error || 'Unknown error' });
+            var failure = { success: false, error: msg.error || 'Unknown error' };
+            // EXECUTE_CODE: the plugin stopped waiting, but the script may
+            // still finish (see LATE EXECUTE_CODE RESULTS).
+            if (msg.timedOut) failure.timedOut = true;
+            request.resolve(failure);
           }
           window.__figmaPendingRequests.delete(msg.requestId);
         }
@@ -2482,7 +2566,11 @@
 
         // Variable operations
         case 'EXECUTE_CODE_RESULT':
+          if (relayExecuteResultIfLate(msg, window.__figmaPendingRequests)) break;
           handleResult('EXECUTE_CODE', 'result');
+          break;
+        case 'EXECUTE_CODE_LATE_RESULT':
+          forwardLateExecuteResult(msg);
           break;
         case 'UPDATE_VARIABLE_RESULT':
           handleResult('UPDATE_VARIABLE', 'variable');

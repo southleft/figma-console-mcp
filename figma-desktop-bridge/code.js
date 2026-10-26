@@ -485,6 +485,47 @@ async function resolveSlotNode(params) {
   throw new Error('Provide slotId OR (instanceId + slotName)');
 }
 
+// EXECUTE_CODE's timeout cannot stop the script: the bridge has no way to
+// cancel a running plugin promise, so after the timeout is reported the code
+// keeps running and usually finishes, with its document changes applied.
+// Its outcome used to be discarded silently. Report it instead: as
+// EXECUTE_CODE_LATE_RESULT, which ui.html relays to the MCP server that sent
+// the request (figma_execute returns it as `lateResults` on the next call),
+// and as a console warning.
+function reportLateExecuteResult(codePromise, info) {
+  function post(payload) {
+    var durationMs = Date.now() - info.startedAt;
+    payload.type = 'EXECUTE_CODE_LATE_RESULT';
+    payload.executionId = info.executionId;
+    payload.durationMs = durationMs;
+    payload.timeoutMs = info.timeoutMs;
+    payload.fileContext = { fileName: figma.root.name, fileKey: figma.fileKey || null };
+    console.warn('🌉 [Desktop Bridge] Late EXECUTE_CODE result (executionId ' + info.executionId + '): ' +
+      (payload.success ? 'finished' : 'failed') + ' after ' + durationMs + 'ms, past its ' + info.timeoutMs + 'ms timeout' +
+      (payload.success ? '' : ' — ' + payload.error));
+    try {
+      figma.ui.postMessage(payload);
+    } catch (postError) {
+      // The value could not be posted (e.g. not serializable); say so instead.
+      figma.ui.postMessage({
+        type: 'EXECUTE_CODE_LATE_RESULT',
+        executionId: info.executionId,
+        success: false,
+        error: 'Late result could not be sent: ' + (postError && postError.message ? postError.message : String(postError)),
+        durationMs: durationMs,
+        timeoutMs: info.timeoutMs
+      });
+    }
+  }
+  codePromise.then(function(value) {
+    post({ success: true, result: value });
+  }, function(error) {
+    var errorName = error && error.name ? error.name : 'Error';
+    var errorMsg = error && error.message ? error.message : String(error);
+    post({ success: false, error: errorName + ': ' + errorMsg });
+  });
+}
+
 // Listen for requests from UI (e.g., component data requests, write operations)
 figma.ui.onmessage = async (msg) => {
 
@@ -492,6 +533,14 @@ figma.ui.onmessage = async (msg) => {
   // EXECUTE_CODE - Arbitrary code execution (Power Tool)
   // ============================================================================
   if (msg.type === 'EXECUTE_CODE') {
+    // Names this run in a late result. ui.html passes the MCP server's request
+    // id so the server can match it; older ui.html builds don't, so fall back
+    // to this hop's own id.
+    var execId = msg.executionId || msg.requestId;
+    var execStartedAt = Date.now();
+    var execTimer = null;
+    var execTimedOut = false;
+    var codePromise = null;
     try {
       console.log('🌉 [Desktop Bridge] Executing code, length:', msg.code.length);
 
@@ -508,12 +557,13 @@ figma.ui.onmessage = async (msg) => {
       // Execute with timeout
       var timeoutMs = msg.timeout || 5000;
       var timeoutPromise = new Promise(function(_, reject) {
-        setTimeout(function() {
-          reject(new Error('Execution timed out after ' + timeoutMs + 'ms'));
+        execTimer = setTimeout(function() {
+          execTimedOut = true;
+          reject(new Error('Execution timed out after ' + timeoutMs + 'ms (executionId ' + execId + '). ' +
+            'The script was not stopped and may still finish.'));
         }, timeoutMs);
       });
 
-      var codePromise;
       try {
         // eval returns the Promise from the async IIFE
         codePromise = eval(wrappedCode);
@@ -521,19 +571,29 @@ figma.ui.onmessage = async (msg) => {
         // Log the actual syntax error message
         var syntaxErrorMsg = syntaxError && syntaxError.message ? syntaxError.message : String(syntaxError);
         console.error('🌉 [Desktop Bridge] Syntax error in code:', syntaxErrorMsg);
+        // The timer is already running; without this it fires later and
+        // rejects with nobody listening.
+        clearTimeout(execTimer);
         figma.ui.postMessage({
           type: 'EXECUTE_CODE_RESULT',
           requestId: msg.requestId,
+          executionId: execId,
           success: false,
           error: 'Syntax error: ' + syntaxErrorMsg
         });
         return;
       }
 
-      var result = await Promise.race([
-        codePromise,
-        timeoutPromise
-      ]);
+      var result;
+      try {
+        result = await Promise.race([
+          codePromise,
+          timeoutPromise
+        ]);
+      } finally {
+        // Code that settles first must not leave the timer pending.
+        clearTimeout(execTimer);
+      }
 
       console.log('🌉 [Desktop Bridge] Code executed successfully, result type:', typeof result);
 
@@ -575,6 +635,9 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({
         type: 'EXECUTE_CODE_RESULT',
         requestId: msg.requestId,
+        // Read by ui.html itself (not relayed): if its own timer already
+        // answered the server, it forwards this as a late result.
+        executionId: execId,
         success: true,
         result: result,
         resultAnalysis: resultAnalysis,
@@ -600,9 +663,21 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({
         type: 'EXECUTE_CODE_RESULT',
         requestId: msg.requestId,
+        executionId: execId,
         success: false,
+        // A timeout report carries no outcome: the real one follows as
+        // EXECUTE_CODE_LATE_RESULT, so ui.html never relays this one late.
+        timedOut: execTimedOut,
         error: errorName + ': ' + errorMsg
       });
+
+      if (execTimedOut && codePromise) {
+        reportLateExecuteResult(codePromise, {
+          executionId: execId,
+          startedAt: execStartedAt,
+          timeoutMs: timeoutMs
+        });
+      }
     }
   }
 

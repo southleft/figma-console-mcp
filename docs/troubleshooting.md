@@ -155,6 +155,10 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 **Cause:** Plugin may be running in a different Figma file than expected.
 **Fix:** The MCP server routes commands to the active file. Make sure the Desktop Bridge Plugin is running in the file you want to work with. Use `figma_get_status` to see which file is connected.
 
+#### `figma_execute` Timed Out, but the Changes Appeared Anyway
+**Cause:** A timeout stops waiting for the script, not the script itself — the plugin cannot cancel running code. Long scripts on large files (especially ones that `await figma.loadFontAsync()` inside a loop) can outlive the timeout and finish afterwards.
+**Fix:** Check the document before retrying, and make scripts idempotent. In Local Mode, the script's eventual outcome is returned in `lateResults` on the next `figma_execute` call. Load each font once before any loop, and split very long scripts into smaller calls.
+
 ---
 
 ### The Simplest Workflow - No Navigation Needed!

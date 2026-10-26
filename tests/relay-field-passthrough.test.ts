@@ -112,7 +112,9 @@ describe("Desktop Bridge relay field passthrough", () => {
 	//   requestId — used to look up the pending request
 	//   success   — branches success vs error
 	//   result    — arrives as the `dataKey` argument ('result' for EXECUTE_CODE)
-	const STRUCTURAL = new Set(["type", "requestId", "success", "result"]);
+	//   executionId — read by ui.html itself to route a late result; a
+	//               successful result has none, so it is not relayed
+	const STRUCTURAL = new Set(["type", "requestId", "success", "result", "executionId"]);
 
 	it("relays every field code.js sends on a successful EXECUTE_CODE", () => {
 		const sent = executeCodeSuccessKeys();

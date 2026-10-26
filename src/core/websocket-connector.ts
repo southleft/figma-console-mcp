@@ -8,7 +8,7 @@
  * Data flow: MCP Server ←WebSocket→ ui.html ←postMessage→ code.js ←figma.*→ Figma
  */
 
-import type { IFigmaConnector } from './figma-connector.js';
+import type { ExecuteCodeOptions, IFigmaConnector, LateExecuteResult } from './figma-connector.js';
 import type { FigmaWebSocketServer } from './websocket-server.js';
 import { createChildLogger } from './logger.js';
 
@@ -120,11 +120,17 @@ export class WebSocketConnector implements IFigmaConnector {
     return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: 30000 }, 32000, fileKey);
   }
 
-  async executeCodeViaUI(code: string, timeoutMs = 5000, fileKey?: string): Promise<any> {
+  async executeCodeViaUI(code: string, timeoutMs = 5000, fileKey?: string, options?: ExecuteCodeOptions): Promise<any> {
     // fileKey is optional — when passed, routes to that specific connected
     // client instead of the active file (see sendCommand's targetFileKey),
     // so code can run against a non-active file without switching to it.
-    return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: timeoutMs }, timeoutMs + 2000, fileKey);
+    return this.wsServer.sendCommand('EXECUTE_CODE', { code, timeout: timeoutMs }, timeoutMs + 2000, fileKey, {
+      trackLateResult: options?.reportLateResult === true,
+    });
+  }
+
+  drainLateExecuteResults(): LateExecuteResult[] {
+    return this.wsServer.drainLateExecuteResults();
   }
 
   // ============================================================================

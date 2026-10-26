@@ -1135,6 +1135,9 @@ figma_execute({
 - Whatever the code returns (use `return` statement)
 - Execution success/failure status
 - `fileContext` — the file name and key **as reported by the plugin that ran the code**, so you can confirm it executed where you intended
+- `lateResults` (**Local Mode**, only when there are any) — outcomes of earlier calls that **timed out but kept running and finished afterwards**. Each entry has the `executionId` named in that call's timeout error, a `codePreview` (the start of the script), `success`, `result` or `error`, and `durationMs`. Values over 8 KB are left out (`resultOmitted`)
+
+**Timeouts:** a timeout stops the *wait*, not the script. The plugin cannot cancel running code, so a timed-out script usually keeps going and its changes still land. In Local Mode its outcome comes back in `lateResults` on the next `figma_execute` call (this needs the current Desktop Bridge plugin). Check the document before retrying, and keep long scripts idempotent.
 
 **Best Practices:**
 1. **Always use `await` for async operations** (loadFontAsync, getNodeByIdAsync)
@@ -1142,6 +1145,7 @@ figma_execute({
 3. **Position elements** relative to viewport center for visibility
 4. **Select created elements** so users can see them immediately
 5. **Use try/catch** for error handling in complex operations
+6. **Load fonts once, up front** — `await figma.loadFontAsync(...)` once per family/style before any loop, not once per text node. Per-node loading in a loop is the usual cause of timeouts on large files
 
 **Common Patterns:**
 
