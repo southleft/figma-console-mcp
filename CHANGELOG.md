@@ -5,6 +5,15 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.2] - 2026-10-26
+
+Server-only: **no plugin re-import needed** beyond v1.41.1's.
+
+### Fixed
+
+- **`figma_get_design_system_summary` and `figma_get_token_values` reported 0 tokens on every file.** They read the variables response from the wrong field, so the token half of the design-system cache was always empty, even on a file with 15,206 variables. Those tokens now come through: 6,443 color and number tokens for that file. This was the `{}` from `figma_get_token_values` reported in #120.
+
+
 ## [1.41.1] - 2026-10-26
 
 Fixes for component analysis, component loading on large files, and variable paging. **Re-import the Desktop Bridge plugin** (Plugins → Development → Import plugin from manifest → `~/.figma-console-mcp/plugin/manifest.json`) to get the component fixes. Everything else works without it.
@@ -1536,6 +1545,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.41.2]: https://github.com/southleft/figma-console-mcp/compare/v1.41.1...v1.41.2
 [1.41.1]: https://github.com/southleft/figma-console-mcp/compare/v1.41.0...v1.41.1
 [1.41.0]: https://github.com/southleft/figma-console-mcp/compare/v1.40.9...v1.41.0
 [1.40.9]: https://github.com/southleft/figma-console-mcp/compare/v1.40.8...v1.40.9
