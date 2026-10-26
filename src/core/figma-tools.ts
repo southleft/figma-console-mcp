@@ -1241,16 +1241,14 @@ export function registerFigmaAPITools(
 				.int()
 				.min(1)
 				.optional()
-				.default(1)
-				.describe("Page number for paginated results (1-based). Use when response is too large (>1MB). Each page returns up to 50 variables."),
+				.describe("Page number for paginated results (1-based, default 1). Applies to format='filtered' (always paginated, 50 per page by default) and to format='full' when page or pageSize is given. Use when the response is too large."),
 			pageSize: z
 				.number()
 				.int()
 				.min(1)
 				.max(100)
 				.optional()
-				.default(50)
-				.describe("Number of variables per page (1-100). Default: 50. Smaller values reduce response size."),
+				.describe("Number of variables per page (1-100, default 50). Giving page or pageSize with format='full' paginates the full dataset; the response then includes a `pagination` object."),
 			resolveAliases: z
 				.boolean()
 				.optional()
@@ -1552,7 +1550,14 @@ export function registerFigmaAPITools(
 							);
 						}
 					} else {
-						// format === 'full'
+						// format === 'full'. Honor explicit paging (#98) — it used to be
+						// silently ignored here, returning everything with no
+						// pagination object.
+						if (page !== undefined || pageSize !== undefined) {
+							const paginated = paginateVariables(responseData, page || 1, pageSize || 50);
+							responseData = paginated.data;
+							paginationInfo = paginated.pagination;
+						}
 						// Check if we need to auto-summarize
 						const estimatedTokens = estimateTokens(responseData);
 						if (estimatedTokens > 25000) {
@@ -1872,18 +1877,21 @@ export function registerFigmaAPITools(
 
 						// Apply pagination if requested
 						let paginationInfo;
-						if (pageSize) {
-							const startIdx = (page - 1) * pageSize;
-							const endIdx = startIdx + pageSize;
+						if (page !== undefined || pageSize !== undefined) {
+							const currentPage = page || 1;
+							const size = pageSize || 50;
+							const startIdx = (currentPage - 1) * size;
+							const endIdx = startIdx + size;
 							const totalVars = localFormatted.variables.length;
 
+							// Same shape as paginateVariables() so every backend agrees (#99)
 							paginationInfo = {
-								page,
-								pageSize,
-								totalItems: totalVars,
-								totalPages: Math.ceil(totalVars / pageSize),
+								currentPage,
+								pageSize: size,
+								totalVariables: totalVars,
+								totalPages: Math.ceil(totalVars / size),
 								hasNextPage: endIdx < totalVars,
-								hasPrevPage: page > 1,
+								hasPrevPage: currentPage > 1,
 							};
 
 							localFormatted.variables = localFormatted.variables.slice(startIdx, endIdx);
@@ -2118,6 +2126,7 @@ export function registerFigmaAPITools(
 
 							// Apply format logic
 							let responseData = dataForCache;
+							let paginationInfo: any = null;
 
 							if (format === 'summary') {
 								responseData = generateSummary(dataForCache);
@@ -2139,7 +2148,6 @@ export function registerFigmaAPITools(
 								);
 
 								// Apply pagination (CRITICAL - was missing!)
-								let paginationInfo: any = null;
 								const paginated = paginateVariables(
 									responseData,
 									page || 1,
@@ -2202,7 +2210,12 @@ export function registerFigmaAPITools(
 									return c; // standard/full
 								});
 							} else {
-								// format === 'full'
+								// format === 'full' — honor explicit paging (#98)
+								if (page !== undefined || pageSize !== undefined) {
+									const paginated = paginateVariables(responseData, page || 1, pageSize || 50);
+									responseData = paginated.data;
+									paginationInfo = paginated.pagination;
+								}
 								// Check if we need to auto-summarize
 								const estimatedTokens = estimateTokens(responseData);
 								if (estimatedTokens > 25000) {
@@ -2263,6 +2276,7 @@ export function registerFigmaAPITools(
 									source: 'desktop_connection',
 									totalVariables: responseData.variables?.length || 0,
 									totalCollections: responseData.variableCollections?.length || 0,
+									...(paginationInfo && { pagination: paginationInfo }),
 								};
 
 								const content: any[] = [
@@ -2307,6 +2321,7 @@ export function registerFigmaAPITools(
 												format: format || 'full',
 												timestamp: dataForCache.timestamp,
 												data: responseData,
+												...(paginationInfo && { pagination: paginationInfo }),
 												cached: false,
 											}
 										),
