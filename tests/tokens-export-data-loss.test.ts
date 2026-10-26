@@ -60,7 +60,7 @@ describe("figma_export_tokens — never silently destroys an existing file", () 
 		const server = { tool: (_n: string, _d: string, _s: any, h: any) => { handler = h; } };
 		registerExportTokensTool(
 			server as any,
-			async () => ({ getVariablesFromPluginUI: async () => focused }),
+			async () => ({ getVariablesFromPluginUI: async () => focused, getVariables: async () => focused }),
 			{ resolveFileName: (k) => FILE_NAMES[k] },
 		);
 	});

@@ -99,7 +99,7 @@ const IMPORT_TOOL_DESCRIPTION = `Push design tokens from your codebase into Figm
 
 ACCEPTS: DTCG JSON (canonical, fully supported including round-trip metadata preservation). Tokens Studio JSON, CSS custom properties, Tailwind v4 @theme, SCSS, and Style Dictionary v3 are scaffolded but return a NotImplementedError — convert to DTCG first via figma_export_tokens or hand-author DTCG. Use \`format: "auto"\` to sniff the input.
 
-APPLY PHASE (full bidirectional sync): toCreate entries create missing collections (with the token file's full mode list) and missing variables in one batched plugin round-trip — literal values first, alias values in a second pass so aliases between newly-created variables resolve. toUpdate entries push value updates in a batched round-trip, INCLUDING alias-target updates: when a token's value is a reference, it's written as a Figma variable alias if the reference resolves to an existing or just-created variable (unresolvable references skip with a warning). toDelete entries are STRICTLY gated behind \`strategy: "replace"\` — in replace mode, Figma variables absent from the token file are permanently deleted (a loud warning lists the count); merge (default) preserves them and only reports. TIMING/EASING variables cannot be created or written via the Plugin API and are skipped with a warning. Variable scopes and per-platform codeSyntax (from \`$extensions["figma-console-mcp"].scopes/.codeSyntax\`) are diffed and applied too — absent fields mean "no opinion" (Figma-side metadata is preserved), an explicit value is authoritative. Partial-success semantics: per-item errors surface in applyResult.errors[] without failing the batch.
+APPLY PHASE (full bidirectional sync): toCreate entries create missing collections (with the token file's full mode list) and missing variables in one batched plugin round-trip — literal values first, alias values in a second pass so aliases between newly-created variables resolve. toUpdate entries push value updates in a batched round-trip, INCLUDING alias-target updates: when a token's value is a reference, it's written as a Figma variable alias if the reference resolves to an existing or just-created variable (unresolvable references skip with a warning). toDelete entries are STRICTLY gated behind \`strategy: "replace"\` — in replace mode, Figma variables absent from the token file are permanently deleted (a loud warning lists the count); merge (default) preserves them and only reports. Deletes only ever touch collections the token files contain: variables in collections the import doesn't include are left alone. An import that parses 0 tokens is refused, and the diff is computed against live Figma state. TIMING/EASING variables cannot be created or written via the Plugin API and are skipped with a warning. Variable scopes and per-platform codeSyntax (from \`$extensions["figma-console-mcp"].scopes/.codeSyntax\`) are diffed and applied too — absent fields mean "no opinion" (Figma-side metadata is preserved), an explicit value is authoritative. Partial-success semantics: per-item errors surface in applyResult.errors[] without failing the batch.
 
 DIFF-AWARE: Default \`strategy: "merge"\` diffs against current Figma state and applies only deltas. The hacked-color scenario — designer edits one hex value in their CSS — produces exactly one Figma API update, not a full collection rewrite. Match priority: Figma variable ID (in \`$extensions["figma-console-mcp"].variableId\`), then exact token path, then value fingerprint.
 
@@ -244,9 +244,9 @@ async function handleExport(
     ? null
     : loadTokensConfig({ explicitPath: args.configPath });
 
-  // 2. Fetch variables from Figma via the desktop connector. The connector's
-  //    getVariablesFromPluginUI returns the plugin's cached variable data
-  //    (instant, all plans, full Plugin API fidelity).
+  // 2. Fetch variables from Figma via the desktop connector — LIVE from the
+  //    Plugin API (#91). The plugin's load-time snapshot misses renames and
+  //    codeSyntax edits made after the plugin opened; it's only a fallback.
   const connector = await getDesktopConnector();
   // We don't have a specific fileKey here unless the caller passed one in
   // config; pass undefined to let the connector use the currently-connected
@@ -255,10 +255,17 @@ async function handleExport(
     ? extractFileKey(loaded.config.figmaFile)
     : undefined;
 
-  const raw = await connector.getVariablesFromPluginUI(fileKey);
-
-  // Unwrap the plugin's response — same logic as the existing figma_get_variables.
-  const variableData = raw?.result?.variables ? raw.result : raw;
+  const staleWarnings: string[] = [];
+  let variableData: any;
+  try {
+    variableData = await readVariablesLive(connector, fileKey);
+  } catch (liveErr) {
+    const raw = await connector.getVariablesFromPluginUI(fileKey);
+    variableData = raw?.result?.variables ? raw.result : raw;
+    staleWarnings.push(
+      `Variables were read from the Desktop Bridge plugin's snapshot taken when it opened, because the live read failed (${liveErr instanceof Error ? liveErr.message : String(liveErr)}). Renames and codeSyntax changes made since then may be missing — reopen the plugin and export again to be sure.`,
+    );
+  }
 
   if (!variableData?.variables) {
     throw new Error(
@@ -345,7 +352,7 @@ async function handleExport(
     content: string;
     splitByCollection: boolean;
   }> = [];
-  const allWarnings: string[] = [...extensionWarnings, ...warnings];
+  const allWarnings: string[] = [...staleWarnings, ...extensionWarnings, ...warnings];
   if (
     args.scope === "collection" &&
     !(Array.isArray(args.collectionIds) && args.collectionIds.length > 0)
@@ -624,13 +631,26 @@ async function handleImport(
   //    tokens within sets are combined by path).
   const merged = mergeDocuments(documents);
 
+  // Fail closed on an empty import (#122). Parsing nothing would diff every
+  // Figma variable as "removed in code" and, under replace, delete them all.
+  const parsedTokenCount = merged.sets.reduce((n, set) => n + set.tokens.length, 0);
+  if (parsedTokenCount === 0) {
+    throw new Error(
+      `[figma-console-mcp] Nothing was imported or changed: ${inputFiles.length} input file(s) produced 0 tokens. ` +
+        (inputFiles.length === 0
+          ? "No token files were found."
+          : `Files read: ${inputFiles.map((f) => f.path).slice(0, 5).join(", ")}. Check that they are token files in the expected format.`),
+    );
+  }
+
   // 5. Fetch current Figma state for diffing.
   const connector = await getDesktopConnector();
   const fileKey = loaded?.config?.figmaFile
     ? extractFileKey(loaded.config.figmaFile)
     : undefined;
-  const raw = await connector.getVariablesFromPluginUI(fileKey);
-  const variableData = raw?.result?.variables ? raw.result : raw;
+  // Diff against LIVE Figma state (#91): a stale snapshot would turn a rename
+  // made in Figma into a delete + create under replace. No snapshot fallback.
+  const variableData = await readVariablesLive(connector, fileKey);
   const figmaPayload = normalizeFigmaPayload(variableData ?? { variables: [], variableCollections: [] });
   const { document: figmaDoc } = convertFigmaVariablesToDocument(figmaPayload, {
     figmaFileKey: fileKey,
@@ -639,6 +659,19 @@ async function handleImport(
 
   // 6. Compute the diff plan.
   const diff = computeDiffPlan(figmaDoc, merged);
+
+  // Scope deletes to collections the token files actually contain (#122).
+  // A token file that only covers "Colors" says nothing about "Spacing", so
+  // replace must not read it as "delete every Spacing variable".
+  const inputSetNames = new Set(merged.sets.map((set) => set.name));
+  const outOfScopeDeletes = diff.toDelete.filter((e) => !inputSetNames.has(e.path.split("::")[0]));
+  if (outOfScopeDeletes.length > 0) {
+    diff.toDelete = diff.toDelete.filter((e) => inputSetNames.has(e.path.split("::")[0]));
+    const skippedSets = [...new Set(outOfScopeDeletes.map((e) => e.path.split("::")[0]))];
+    parseWarnings.push(
+      `${outOfScopeDeletes.length} Figma variable(s) in collection(s) the token files don't include were left alone and are not candidates for deletion: ${skippedSets.slice(0, 10).join(", ")}${skippedSets.length > 10 ? ", …" : ""}. To remove them, include those collections in the import or delete them in Figma.`,
+    );
+  }
 
   const dryRun = args.dryRun === true || args.strategy === "dry-run";
   const strategy: "merge" | "replace" =
@@ -843,7 +876,7 @@ async function handleImport(
                 : undefined,
             inputFileCount: inputFiles.length,
             parsedSetCount: merged.sets.length,
-            parsedTokenCount: merged.sets.reduce((n, s) => n + s.tokens.length, 0),
+            parsedTokenCount,
             diff: slimDiff,
             applyResult: applyResult
               ? {
@@ -869,6 +902,20 @@ async function handleImport(
 // ============================================================================
 // HELPERS
 // ============================================================================
+
+/**
+ * Read local variables live through the Plugin API (EXECUTE_CODE), unwrapped
+ * to the same shape as the plugin's VARIABLES_DATA snapshot.
+ */
+async function readVariablesLive(connector: any, fileKey?: string): Promise<any> {
+  const raw = await connector.getVariables(fileKey);
+  const data = raw?.result?.variables ? raw.result : raw;
+  if (!data || data.success === false || !Array.isArray(data.variables)) {
+    const reason = data?.error || raw?.error || "no variable data returned";
+    throw new Error(`live variable read failed: ${reason}`);
+  }
+  return data;
+}
 
 /**
  * Extract a Figma file key from a URL or return the string as-is if it's
@@ -1371,12 +1418,20 @@ function collectInputFiles(
   const pattern = loaded.config.source.pattern ?? "*.tokens.json";
   const suffix = pattern.replace(/^\*/, "");
   const entries = readdirSync(sourceDir);
-  return entries
-    .filter((e: string) => e.endsWith(suffix))
-    .map((name: string) => {
-      const full = join(sourceDir, name);
-      return { path: full, content: readFileSync(full, "utf-8") };
-    });
+  const matched = entries.filter((e: string) => e.endsWith(suffix));
+  if (matched.length === 0) {
+    const jsonFiles = entries.filter((e: string) => e.endsWith(".json"));
+    throw new Error(
+      `[figma-console-mcp] Nothing was imported or changed: no files in ${sourceDir} match source.pattern "${pattern}"` +
+        (jsonFiles.length > 0
+          ? ` (JSON files there: ${jsonFiles.slice(0, 5).join(", ")}). Rename them to end in "${suffix}", or set "source": { "pattern": "*.json" } in tokens.config.json.`
+          : "."),
+    );
+  }
+  return matched.map((name: string) => {
+    const full = join(sourceDir, name);
+    return { path: full, content: readFileSync(full, "utf-8") };
+  });
 }
 
 /**

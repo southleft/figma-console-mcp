@@ -114,6 +114,7 @@ function makeMockConnector(state: ReturnType<typeof figmaState>) {
   return {
     calls,
     getVariablesFromPluginUI: async () => state,
+    getVariables: async () => state,
     executeCodeViaUI: async (script: string) => {
       if (script.includes("const plan = ")) {
         const plan = extractJson(script, "const plan = ");
