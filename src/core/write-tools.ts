@@ -2447,8 +2447,13 @@ for (const n of page.children) {
 		previousContainers.push(n);
 	}
 }
+// Never remove a container that still holds another component set: a
+// duplicated container (Figma copies pluginData) or a hand-nested layout
+// would otherwise take that set and its variants with it.
 for (const el of previousContainers) {
-	if (!el.removed) el.remove();
+	if (el.removed) continue;
+	const holdsOtherSet = el.findAllWithCriteria({ types: ["COMPONENT_SET"] }).some((n) => n.id !== componentSet.id);
+	if (!holdsOtherSet) el.remove();
 }
 
 // ============================================================================

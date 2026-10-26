@@ -15,7 +15,9 @@ import {
 	escapeHtml,
 	isAllowedRedirectUri,
 	isLoopbackOrTrustedRedirect,
+	mintSseSessionId,
 	readCookie,
+	sseSessionBelongsTo,
 	verifyPkceS256,
 } from "../src/core/oauth-security";
 
@@ -43,14 +45,27 @@ describe("isAllowedRedirectUri", () => {
 		expect(isAllowedRedirectUri("https://chatgpt.com/connector_platform_oauth_redirect/x", registered)).toBe(false);
 	});
 
-	it("for an unknown client, allows only loopback and trusted hosted callbacks", () => {
+	it("lets a registered loopback redirect use any port (RFC 8252)", () => {
+		const reg = ["http://localhost:3334/oauth/callback"];
+		expect(isAllowedRedirectUri("http://localhost:51234/oauth/callback", reg)).toBe(true);
+		expect(isAllowedRedirectUri("http://localhost:51234/other", reg)).toBe(false);
+		expect(isAllowedRedirectUri("http://127.0.0.1:3334/oauth/callback", reg)).toBe(false);
+	});
+
+	it("for an unknown (or expired) client, accepts safe destinations, which then get the consent page", () => {
 		expect(isAllowedRedirectUri("http://localhost:33418/oauth/callback", null)).toBe(true);
-		expect(isAllowedRedirectUri("http://127.0.0.1:5173/cb", null)).toBe(true);
-		expect(isAllowedRedirectUri("http://[::1]:8080/cb", null)).toBe(true);
 		expect(isAllowedRedirectUri("https://claude.ai/api/mcp/auth_callback", null)).toBe(true);
-		expect(isAllowedRedirectUri("https://evil.example/cb", null)).toBe(false);
-		expect(isAllowedRedirectUri("https://localhost.evil.example/cb", null)).toBe(false);
-		expect(isAllowedRedirectUri("https://claude.ai.evil.example/api/mcp/auth_callback", null)).toBe(false);
+		expect(isAllowedRedirectUri("cursor://anysphere.cursor/oauth", null)).toBe(true);
+		expect(isAllowedRedirectUri("https://vscode.dev/redirect", null)).toBe(true);
+		expect(isLoopbackOrTrustedRedirect("https://vscode.dev/redirect")).toBe(false);
+		expect(isLoopbackOrTrustedRedirect("https://localhost.evil.example/cb")).toBe(false);
+		expect(isLoopbackOrTrustedRedirect("https://claude.ai.evil.example/api/mcp/auth_callback")).toBe(false);
+	});
+
+	it("refuses script/document schemes and plain http off-loopback", () => {
+		for (const uri of ["javascript:alert(1)", "data:text/html,x", "file:///etc/passwd", "http://evil.example/cb"]) {
+			expect(isAllowedRedirectUri(uri, null)).toBe(false);
+		}
 	});
 
 	it("refuses malformed URIs and fragments", () => {
@@ -89,6 +104,18 @@ describe("verifyPkceS256", () => {
 	});
 });
 
+describe("legacy /sse session binding", () => {
+	it("a session id verifies only with the token that minted it", async () => {
+		const id = await mintSseSessionId("secret", "figu_victim");
+		expect(id).toMatch(/^[0-9a-f]{64}$/);
+		await expect(sseSessionBelongsTo("secret", id, "figu_victim")).resolves.toBe(true);
+		await expect(sseSessionBelongsTo("secret", id, "figd_attacker")).resolves.toBe(false);
+		await expect(sseSessionBelongsTo("other-secret", id, "figu_victim")).resolves.toBe(false);
+		await expect(sseSessionBelongsTo("secret", "f".repeat(64), "figu_victim")).resolves.toBe(false);
+		await expect(sseSessionBelongsTo("secret", "not-hex", "figu_victim")).resolves.toBe(false);
+	});
+});
+
 describe("src/index.ts OAuth source guards", () => {
 	const src = readFileSync(join(__dirname, "..", "src", "index.ts"), "utf-8");
 
@@ -108,6 +135,16 @@ describe("src/index.ts OAuth source guards", () => {
 		expect(src).toMatch(/auth_code:\$\{authCode\}/);
 		expect(src).toMatch(/OAUTH_STATE\.delete\(codeKey\)/);
 		expect(src).toMatch(/verifyPkceS256\(codeVerifier/);
+	});
+
+	it("binds the callback to the browser that started the flow, before exchanging the code", () => {
+		const cb = src.slice(src.indexOf('url.pathname === "/oauth/callback"'));
+		expect(cb.indexOf("flowCookieName(stateToken)")).toBeGreaterThan(-1);
+		expect(cb.indexOf("flowCookieName(stateToken)")).toBeLessThan(cb.indexOf("api.figma.com/v1/oauth/token"));
+	});
+
+	it("requires PKCE S256 on /authorize", () => {
+		expect(src).toMatch(/if \(!codeChallenge \|\| codeChallengeMethod !== "S256"\)/);
 	});
 
 	it("gives each /sse session its own verified token", () => {

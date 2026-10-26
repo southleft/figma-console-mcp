@@ -35,7 +35,7 @@ import { registerTokensTools } from "./core/tokens-tools.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
 import { registerSlotTools } from "./core/slot-tools.js";
-import { escapeHtml, isAllowedRedirectUri, isLoopbackOrTrustedRedirect, readCookie, verifyPkceS256 } from "./core/oauth-security.js";
+import { escapeHtml, isAllowedRedirectUri, isLoopbackOrTrustedRedirect, mintSseSessionId, readCookie, sseSessionBelongsTo, verifyPkceS256 } from "./core/oauth-security.js";
 
 // Re-export PluginRelayDO so Cloudflare Workers can bind it as a Durable Object
 export { PluginRelayDO } from "./core/cloud-websocket-relay.js";
@@ -75,7 +75,34 @@ function isFigmaPAT(token: string): boolean {
  * token attached as Durable Object props, so the session's getFigmaAPI()
  * uses this user's token and nobody else's.
  */
-function serveSSEWithToken(request: Request, env: Env, ctx: ExecutionContext, figmaAccessToken: string): Promise<Response> {
+/** Per-flow cookie name, so concurrent sign-ins in one browser don't collide. */
+function flowCookieName(stateToken: string): string {
+	return `fcm_flow_${stateToken.slice(0, 16)}`;
+}
+
+async function serveSSEWithToken(request: Request, env: Env, ctx: ExecutionContext, figmaAccessToken: string): Promise<Response> {
+	// The Durable Object takes props once, when the session starts, so a later
+	// request on the same session must not be able to swap in another user's
+	// token or reach another user's session. Session ids are minted here and
+	// carry an HMAC of the opening token; every request naming a session must
+	// present that same token.
+	const secret = env.FIGMA_OAUTH_CLIENT_SECRET || "figma-console-mcp-dev-only";
+	const url = new URL(request.url);
+	const requested = url.searchParams.get("sessionId");
+	if (requested) {
+		if (!(await sseSessionBelongsTo(secret, requested, figmaAccessToken))) {
+			return new Response(JSON.stringify({
+				error: "invalid_token",
+				error_description: "This session was opened with different credentials. Reconnect to start a new session."
+			}), {
+				status: 403,
+				headers: { "Content-Type": "application/json" }
+			});
+		}
+	} else if (url.pathname === "/sse") {
+		url.searchParams.set("sessionId", await mintSseSessionId(secret, figmaAccessToken));
+		request = new Request(url.toString(), request);
+	}
 	(ctx as ExecutionContext & { props?: Record<string, unknown> }).props = { figmaAccessToken };
 	return FigmaConsoleMCPv3.serveSSE("/sse").fetch(request, env, ctx);
 }
@@ -1471,6 +1498,16 @@ export default {
 			let needsConsent = false;
 			let clientName = "An MCP client";
 
+			if (redirectUri && !state) {
+				return new Response(JSON.stringify({
+					error: "invalid_request",
+					error_description: "state is required with redirect_uri"
+				}), {
+					status: 400,
+					headers: { "Content-Type": "application/json" }
+				});
+			}
+
 			// Store the MCP client's redirect_uri and state for the callback
 			if (redirectUri && state) {
 				const registrationJson = clientId ? await env.OAUTH_STATE.get(`client:${clientId}`) : null;
@@ -1487,10 +1524,10 @@ export default {
 						headers: { "Content-Type": "application/json" }
 					});
 				}
-				if (codeChallenge && codeChallengeMethod !== "S256") {
+				if (!codeChallenge || codeChallengeMethod !== "S256") {
 					return new Response(JSON.stringify({
 						error: "invalid_request",
-						error_description: "code_challenge_method must be S256"
+						error_description: "PKCE is required: send code_challenge with code_challenge_method=S256"
 					}), {
 						status: 400,
 						headers: { "Content-Type": "application/json" }
@@ -1532,10 +1569,16 @@ export default {
 			// Generate CSRF protection token
 			const stateToken = FigmaConsoleMCPv3.generateStateToken();
 
-			// Store state token with sessionId (10 minute expiration)
-			await env.OAUTH_STATE.put(stateToken, sessionId, {
+			// Store state token with sessionId (10 minute expiration), bound to
+			// THIS browser by a cookie the callback must see. Without it, an
+			// attacker could start a flow (passing any consent page in their own
+			// browser) and hand the resulting Figma sign-in link to a victim,
+			// whose approval would then deliver the code to the attacker.
+			const flowNonce = FigmaConsoleMCPv3.generateStateToken();
+			await env.OAUTH_STATE.put(stateToken, JSON.stringify({ sessionId, flowNonce }), {
 				expirationTtl: 600
 			});
+			const flowCookie = `${flowCookieName(stateToken)}=${flowNonce}; Path=/oauth/callback; Max-Age=600; HttpOnly; Secure; SameSite=Lax`;
 
 			// Redirect to Figma OAuth
 			const figmaAuthUrl = new URL("https://www.figma.com/oauth");
@@ -1546,7 +1589,10 @@ export default {
 			figmaAuthUrl.searchParams.set("response_type", "code");
 
 			if (!needsConsent) {
-				return Response.redirect(figmaAuthUrl.toString(), 302);
+				return new Response(null, {
+					status: 302,
+					headers: { Location: figmaAuthUrl.toString(), "Set-Cookie": flowCookie, "Cache-Control": "no-store" }
+				});
 			}
 
 			// Consent interstitial for redirects that are neither loopback nor a
@@ -1566,13 +1612,14 @@ export default {
 <p>After you sign in, access will be sent to <code>${destination}</code>. Only continue if you started this from an app you trust.</p>
 <p><a class="button" href="/authorize/continue">Continue to Figma</a></p></body></html>`,
 				{
-					headers: {
-						"Content-Type": "text/html; charset=utf-8",
-						"Set-Cookie": `fcm_consent=${consentNonce}; Path=/authorize; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
-						"Content-Security-Policy": "frame-ancestors 'none'",
-						"X-Frame-Options": "DENY",
-						"Cache-Control": "no-store"
-					}
+					headers: [
+						["Content-Type", "text/html; charset=utf-8"],
+						["Set-Cookie", `fcm_consent=${consentNonce}; Path=/authorize; Max-Age=600; HttpOnly; Secure; SameSite=Lax`],
+						["Set-Cookie", flowCookie],
+						["Content-Security-Policy", "frame-ancestors 'none'"],
+						["X-Frame-Options", "DENY"],
+						["Cache-Control", "no-store"]
+					]
 				}
 			);
 		}
@@ -1868,8 +1915,17 @@ export default {
 				return new Response("Missing code or state parameter", { status: 400 });
 			}
 
-			// Validate state token (CSRF protection)
-			const sessionId = await env.OAUTH_STATE.get(stateToken);
+			// Validate state token (CSRF protection). MCP flows store
+			// { sessionId, flowNonce }; the legacy /oauth/authorize flow stores
+			// the bare session id.
+			const stateRecord = await env.OAUTH_STATE.get(stateToken);
+			let sessionId: string | null = stateRecord;
+			let flowNonce: string | null = null;
+			if (stateRecord && stateRecord.startsWith("{")) {
+				const parsed = JSON.parse(stateRecord) as { sessionId: string; flowNonce?: string };
+				sessionId = parsed.sessionId;
+				flowNonce = parsed.flowNonce ?? null;
+			}
 
 			logger.info({ stateToken, sessionId, hasSessionId: !!sessionId }, "OAuth callback - state token lookup");
 
@@ -1889,6 +1945,29 @@ export default {
 
 			// Delete state token after validation (one-time use)
 			await env.OAUTH_STATE.delete(stateToken);
+
+			// A flow that will hand a code back to an MCP client must finish in
+			// the browser that started it (see the flow cookie in /authorize).
+			// Checked BEFORE exchanging the Figma code, so a mismatched flow
+			// never obtains the user's token at all.
+			const pendingMcpAuth = await env.OAUTH_STATE.get(`mcp_auth:${sessionId}`);
+			if (pendingMcpAuth) {
+				const cookieNonce = readCookie(request.headers.get("Cookie"), flowCookieName(stateToken));
+				if (!flowNonce || cookieNonce !== flowNonce) {
+					await env.OAUTH_STATE.delete(`mcp_auth:${sessionId}`);
+					logger.warn({ sessionId }, "OAuth callback refused: flow finished in a different browser than it started");
+					return new Response(
+						`<html><body>
+						<h1>Sign-in could not be completed</h1>
+						<p>This sign-in link was started in a different browser, or it expired. For your security, start the sign-in again from your MCP client.</p>
+					</body></html>`,
+						{
+							status: 400,
+							headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'" }
+						}
+					);
+				}
+			}
 
 			try {
 				// Exchange authorization code for access token

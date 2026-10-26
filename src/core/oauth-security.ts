@@ -37,12 +37,10 @@ function isLoopbackRedirect(uri: URL): boolean {
 /**
  * Decide whether /authorize may send an authorization code to `redirectUri`.
  *
- * - Registered client: exact match against the redirect_uris it registered.
- * - Unknown client (never registered, or registration expired): loopback or a
- *   trusted hosted callback only.
- *
- * Anything else is refused so an attacker-crafted /authorize link cannot
- * deliver a victim's code to the attacker's server.
+ * - Registered client: exact match against the redirect_uris it registered
+ *   (loopback: any port).
+ * - Unknown client (never registered, or registration expired): any safe
+ *   destination; non-loopback ones go through the consent page.
  */
 export function isAllowedRedirectUri(redirectUri: string, registeredRedirectUris: string[] | null): boolean {
 	let parsed: URL;
@@ -54,10 +52,33 @@ export function isAllowedRedirectUri(redirectUri: string, registeredRedirectUris
 	if (parsed.hash) return false;
 
 	if (registeredRedirectUris && registeredRedirectUris.length > 0) {
-		return registeredRedirectUris.includes(redirectUri);
+		if (registeredRedirectUris.includes(redirectUri)) return true;
+		// RFC 8252 §7.3: native apps pick a free loopback port at runtime, so a
+		// loopback redirect matches a registered one on scheme, host and path
+		// with any port.
+		if (isLoopbackRedirect(parsed)) {
+			return registeredRedirectUris.some((r) => {
+				try {
+					const reg = new URL(r);
+					return isLoopbackRedirect(reg) && reg.protocol === parsed.protocol && reg.hostname === parsed.hostname && reg.pathname === parsed.pathname && reg.search === parsed.search;
+				} catch {
+					return false;
+				}
+			});
+		}
+		return false;
 	}
-	return isLoopbackOrTrustedRedirect(redirectUri);
+	// Unknown client (never registered, or its 30-day registration expired):
+	// accept any well-formed destination that isn't a script/document scheme
+	// or plain http off-loopback. Anything not loopback or trusted is shown
+	// on the consent page, and the callback is bound to the browser that
+	// started the flow, so an attacker can't skip that confirmation.
+	if (UNSAFE_SCHEMES.has(parsed.protocol)) return false;
+	if (parsed.protocol === "http:" && !isLoopbackRedirect(parsed)) return false;
+	return true;
 }
+
+const UNSAFE_SCHEMES = new Set(["javascript:", "data:", "file:", "blob:", "vbscript:", "about:", "ws:", "wss:", "ftp:"]);
 
 /**
  * Loopback and trusted hosted callbacks can skip the consent page. Any other
@@ -95,4 +116,38 @@ export async function verifyPkceS256(codeVerifier: string, codeChallenge: string
 	if (!/^[A-Za-z0-9\-._~]{43,128}$/.test(codeVerifier)) return false;
 	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(codeVerifier));
 	return base64UrlEncode(new Uint8Array(digest)) === codeChallenge;
+}
+
+/** Lowercase hex SHA-256 of a string. */
+export async function sha256Hex(value: string): Promise<string> {
+	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+	return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacHex(secret: string, message: string): Promise<string> {
+	const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+	const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+	return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Legacy /sse session ids bound to the bearer token that opened them:
+ * 32 hex of randomness + 32 hex of HMAC(secret, nonce + token hash). Any
+ * request naming a session must present the same token, without a storage
+ * lookup (KV's eventual consistency would make a stored owner unreliable on
+ * a session's first messages).
+ */
+export async function mintSseSessionId(secret: string, bearerToken: string): Promise<string> {
+	const nonceBytes = new Uint8Array(16);
+	crypto.getRandomValues(nonceBytes);
+	const nonce = Array.from(nonceBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+	const mac = await hmacHex(secret, `${nonce}:${await sha256Hex(bearerToken)}`);
+	return nonce + mac.slice(0, 32);
+}
+
+export async function sseSessionBelongsTo(secret: string, sessionId: string, bearerToken: string): Promise<boolean> {
+	if (!/^[0-9a-f]{64}$/.test(sessionId)) return false;
+	const nonce = sessionId.slice(0, 32);
+	const mac = await hmacHex(secret, `${nonce}:${await sha256Hex(bearerToken)}`);
+	return mac.slice(0, 32) === sessionId.slice(32);
 }
