@@ -370,6 +370,21 @@ export function searchComponents(
 		}
 	}
 
+	// Rank by relevance (results used to come back in file order, so a set
+	// whose DESCRIPTION mentioned "button" could outrank the Button set).
+	// Stable sort: within a tier, sets stay ahead of standalone components.
+	if (queryLower) {
+		const tier = (r: ComponentSearchResult): number => {
+			const n = r.name.toLowerCase();
+			if (n === queryLower) return 0;
+			if (n.startsWith(queryLower)) return 1;
+			if (n.split(/[\s/_\-=,.]+/).includes(queryLower)) return 2;
+			if (n.includes(queryLower)) return 3;
+			return 4; // description-only match
+		};
+		allResults.sort((a, b) => tier(a) - tier(b));
+	}
+
 	const total = allResults.length;
 	// Truncate long doc blocks in search hits — full text is available via
 	// figma_get_component_details.

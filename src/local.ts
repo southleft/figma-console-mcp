@@ -2156,14 +2156,17 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								type: "text",
 								text: JSON.stringify(
 									{
-										success: true,
+										// A failed components fetch must not read as "this design
+										// system has no components" (#120): report failure and
+										// leave the component counts unknown.
+										success: !componentsFetchError,
 										cached: false,
 										fileKey,
 										categories: categories.slice(0, 15),
 										tokens: tokenSummary,
 										totals: {
-											components: manifest.summary.totalComponents,
-											componentSets: manifest.summary.totalComponentSets,
+											components: componentsFetchError ? null : manifest.summary.totalComponents,
+											componentSets: componentsFetchError ? null : manifest.summary.totalComponentSets,
 											tokens: manifest.summary.totalTokens,
 										},
 										warnings: componentsFetchError

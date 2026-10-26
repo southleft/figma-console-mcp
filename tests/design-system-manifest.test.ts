@@ -170,6 +170,19 @@ describe("Design System Manifest", () => {
 			},
 		});
 
+		it("ranks a name match above description-only matches", () => {
+			const m = makeManifest({
+				componentSets: {
+					a: { key: "a", nodeId: "1:1", name: "Avatar", description: "Can be wrapped in a button", variants: [], variantAxes: [] },
+					b: { key: "b", nodeId: "1:2", name: "Chip", description: "Like a small button", variants: [], variantAxes: [] },
+					c: { key: "c", nodeId: "1:3", name: "Icon Button", description: "", variants: [], variantAxes: [] },
+					d: { key: "d", nodeId: "1:4", name: "Button", description: "Main action", variants: [], variantAxes: [] },
+				},
+			});
+			const { results } = searchComponents(m, "button");
+			expect(results.map((r) => r.name)).toEqual(["Button", "Icon Button", "Avatar", "Chip"]);
+		});
+
 		it("finds components by name query", () => {
 			const { results, total } = searchComponents(manifest, "Button");
 			expect(total).toBe(1);
