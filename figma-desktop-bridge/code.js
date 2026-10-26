@@ -9,7 +9,7 @@
 // detect stale cached plugins. Bumped by scripts/release.sh ONLY when plugin files
 // change (see issue #62); server-only releases leave it alone, so it may lag
 // package.json — that's intentional, not drift.
-var PLUGIN_VERSION = '1.41.1'; // Last release in which plugin files changed.
+var PLUGIN_VERSION = '1.41.3'; // Last release in which plugin files changed.
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
@@ -1165,7 +1165,7 @@ figma.ui.onmessage = async (msg) => {
       }
 
       // Extract visual signature from a variant for diffing
-      function extractSignature(variant) {
+      async function extractSignature(variant) {
         var sig = {};
 
         // Find the main interactive element — prioritize by: has strokes (input fields),
@@ -1199,6 +1199,9 @@ figma.ui.onmessage = async (msg) => {
         // No stroked/frame child: the variant itself carries the visuals
         // (e.g. a button whose fill sits on the component).
         if (!mainChild) mainChild = variant;
+        // Layer paths whose values the top-level fields already report.
+        sig._mainPath = mainChild === variant ? null : mainChild.name;
+        sig._textPath = null;
 
         // Geometry and structure, so variants that differ in size or content
         // (2 icons vs 6 icons) don't diff as identical (#121).
@@ -1225,7 +1228,7 @@ figma.ui.onmessage = async (msg) => {
                   sig.strokeHex = '#' + Math.round(sc.r*255).toString(16).padStart(2,'0') + Math.round(sc.g*255).toString(16).padStart(2,'0') + Math.round(sc.b*255).toString(16).padStart(2,'0');
                 }
                 sig.effects = child.effects && child.effects.length > 0 ? child.effects : null;
-                sig.opacity = child.opacity < 1 ? child.opacity : null;
+                sig.opacity = child.opacity < 1 ? Math.round(child.opacity * 100) / 100 : null;
               } catch(e) {}
 
               // Check text children for color changes
@@ -1233,6 +1236,7 @@ figma.ui.onmessage = async (msg) => {
                 for (var t = 0; t < child.children.length; t++) {
                   var textChild = child.children[t];
                   if (textChild.type === 'TEXT') {
+                    sig._textPath = sig._mainPath ? sig._mainPath + ' › ' + textChild.name : textChild.name;
                     try {
                       var tbv = textChild.boundVariables || {};
                       sig.textToken = resolveBoundColor(tbv.fills);
@@ -1247,18 +1251,77 @@ figma.ui.onmessage = async (msg) => {
               }
         }
 
-        // Check element visibility changes
+        // Top-level layers that are hidden. _visible keeps every child's
+        // visibility so the diff can compare both directions.
         sig.visibilityChanges = {};
+        sig._visible = {};
         if (variant.children) {
           for (var j = 0; j < variant.children.length; j++) {
             var ch = variant.children[j];
             try {
+              sig._visible[ch.name] = ch.visible !== false;
               if (!ch.visible) sig.visibilityChanges[ch.name] = false;
             } catch(e) {}
           }
         }
 
+        // Opacity on the variant itself (a disabled state often lives here,
+        // not on any child).
+        sig.variantOpacity = variant.opacity < 1 ? Math.round(variant.opacity * 100) / 100 : null;
+
+        // Nested layers, keyed by path. State changes often sit below the
+        // first child (a checked radio swaps the icon instance; its vector's
+        // fill token changes), which the fields above never see. Only used
+        // for diffing — stripped from the response.
+        sig._layers = {};
+        var layerCount = 0;
+        async function walkLayers(parent, prefix, depth) {
+          if (!parent.children || depth > 4) return;
+          var seen = {};
+          for (var li = 0; li < parent.children.length && layerCount < 300; li++) {
+            var ln = parent.children[li];
+            var nm = ln.name;
+            seen[nm] = (seen[nm] || 0) + 1;
+            if (seen[nm] > 1) nm = nm + '#' + seen[nm];
+            var path = prefix ? prefix + ' › ' + nm : nm;
+            var entry = {};
+            layerCount++;
+            try {
+              var lbv = ln.boundVariables || {};
+              var ft = resolveBoundColor(lbv.fills);
+              var st = resolveBoundColor(lbv.strokes);
+              entry.fill = ft || (ln.fills && ln.fills.length > 0 && ln.fills[0].color ? colorHex(ln.fills[0].color) : null);
+              entry.stroke = st || (ln.strokes && ln.strokes.length > 0 && ln.strokes[0].color ? colorHex(ln.strokes[0].color) : null);
+              entry.strokeWeight = entry.stroke ? (typeof ln.strokeWeight === 'number' ? ln.strokeWeight : null) : null;
+              entry.opacity = ln.opacity < 1 ? Math.round(ln.opacity * 100) / 100 : null;
+              entry.visible = ln.visible !== false;
+            } catch(e) {}
+            if (ln.type === 'INSTANCE') {
+              try {
+                var mc = await ln.getMainComponentAsync();
+                entry.component = mc ? mc.name : null;
+              } catch(e) {}
+            }
+            sig._layers[path] = entry;
+            await walkLayers(ln, path, depth + 1);
+          }
+        }
+        await walkLayers(variant, '', 0);
+
         return sig;
+      }
+
+      function colorHex(c) {
+        return '#' + Math.round(c.r*255).toString(16).padStart(2,'0') + Math.round(c.g*255).toString(16).padStart(2,'0') + Math.round(c.b*255).toString(16).padStart(2,'0');
+      }
+
+      // Signature as returned to the caller, without the diff-only fields.
+      function publicSignature(sig) {
+        var out = {};
+        for (var k in sig) {
+          if (k.charAt(0) !== '_') out[k] = sig[k];
+        }
+        return out;
       }
 
       // Parse variant property definitions
@@ -1359,14 +1422,14 @@ figma.ui.onmessage = async (msg) => {
         }
       }
       if (defaultVariant) {
-        defaultSig = extractSignature(defaultVariant);
+        defaultSig = await extractSignature(defaultVariant);
       }
 
       // Process each variant and compute diff from default
       var variantDiffs = [];
       for (var vdi = 0; vdi < variants.length; vdi++) {
         var variant = variants[vdi];
-        var sig = extractSignature(variant);
+        var sig = await extractSignature(variant);
 
         // Parse variant name to extract axis values
         var axisParts = variant.name.split(', ');
@@ -1400,15 +1463,51 @@ figma.ui.onmessage = async (msg) => {
               removed: defaultSig.children.filter(function(n) { return sig.children.indexOf(n) === -1; })
             };
           }
-          // Visibility changes not in default
-          var dvKeys = Object.keys(defaultSig.visibilityChanges);
-          var svKeys = Object.keys(sig.visibilityChanges);
-          for (var sk = 0; sk < svKeys.length; sk++) {
-            if (!defaultSig.visibilityChanges[svKeys[sk]]) {
+          // Top-level layers present in both whose visibility differs
+          // (false = hidden in this variant, true = shown here but hidden in
+          // the default).
+          for (var vk in sig._visible) {
+            if (Object.prototype.hasOwnProperty.call(defaultSig._visible, vk) && sig._visible[vk] !== defaultSig._visible[vk]) {
               if (!diff.visibilityChanges) diff.visibilityChanges = {};
-              diff.visibilityChanges[svKeys[sk]] = sig.visibilityChanges[svKeys[sk]];
+              diff.visibilityChanges[vk] = sig._visible[vk];
             }
           }
+          if (sig._mainPath && sig.variantOpacity !== defaultSig.variantOpacity) diff.variantOpacity = sig.variantOpacity === null ? 1 : sig.variantOpacity;
+
+          // Nested layer changes, skipping values the fields above already
+          // report so one change isn't listed twice.
+          var layerProps = ['fill', 'stroke', 'strokeWeight', 'opacity', 'visible', 'component'];
+          for (var lp in sig._layers) {
+            var dl = defaultSig._layers[lp];
+            if (!dl) continue;
+            var sl = sig._layers[lp];
+            var isTop = lp.indexOf(' › ') === -1;
+            var ld = null;
+            for (var pi = 0; pi < layerProps.length; pi++) {
+              var prop = layerProps[pi];
+              if (prop === 'visible' && isTop) continue;
+              if (lp === sig._mainPath && prop !== 'visible' && prop !== 'component') continue;
+              if (lp === sig._textPath && prop === 'fill') continue;
+              if (sl[prop] !== dl[prop]) {
+                if (!ld) ld = {};
+                ld[prop] = sl[prop] === undefined ? null : sl[prop];
+              }
+            }
+            if (ld) {
+              if (!diff.layers) diff.layers = {};
+              diff.layers[lp] = ld;
+            }
+          }
+          var nestedAdded = [];
+          var nestedRemoved = [];
+          for (var ap2 in sig._layers) {
+            if (ap2.indexOf(' › ') !== -1 && !defaultSig._layers[ap2] && nestedAdded.length < 20) nestedAdded.push(ap2);
+          }
+          for (var rp2 in defaultSig._layers) {
+            if (rp2.indexOf(' › ') !== -1 && !sig._layers[rp2] && nestedRemoved.length < 20) nestedRemoved.push(rp2);
+          }
+          if (nestedAdded.length) diff.layersAdded = nestedAdded;
+          if (nestedRemoved.length) diff.layersRemoved = nestedRemoved;
         }
 
         variantDiffs.push({
@@ -1418,7 +1517,7 @@ figma.ui.onmessage = async (msg) => {
           state: stateValue,
           cssSelector: cssSelector,
           diffFromDefault: Object.keys(diff).length > 0 ? diff : null,
-          signature: sig
+          signature: publicSignature(sig)
         });
 
         // Build CSS mapping
@@ -1435,7 +1534,7 @@ figma.ui.onmessage = async (msg) => {
         var defaultAxes = parseAxes(defaultVariant.name);
         stateMachine.defaultState = stateAxis ? (defaultAxes[stateAxis] || 'default') : 'default';
         stateMachine.defaultVariant = { id: defaultVariant.id, name: defaultVariant.name };
-        stateMachine.defaultSignature = defaultSig;
+        stateMachine.defaultSignature = publicSignature(defaultSig);
       }
 
       var result = {
