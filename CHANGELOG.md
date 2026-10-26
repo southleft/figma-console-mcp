@@ -5,6 +5,25 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.1] - 2026-10-26
+
+Fixes for component analysis, component loading on large files, and variable paging. **Re-import the Desktop Bridge plugin** (Plugins → Development → Import plugin from manifest → `~/.figma-console-mcp/plugin/manifest.json`) to get the component fixes. Everything else works without it.
+
+### Fixed
+
+- **`figma_analyze_component_set` reported no differences between variants.** The default variant was found by searching names for a lowercase `state=default`, so sets named with Figma's usual `State=Default`, or with no state axis at all, had no default and every `diffFromDefault` was null. It now starts from Figma's own default variant (preferring a resting state when there is a state axis) and reports it as `stateMachine.defaultVariant`. Diffs now include width, height and added/removed child layers, so a 44px variant and a 284px variant no longer read as identical. Plugin re-import required. Reported by @slava-lilg (#121).
+- **Loading a file's components could time out after 300 seconds** (`figma_search_components`, `figma_get_design_system_summary`, `figma_get_design_system_kit`) on files that load in about a second. The plugin paused between batches of pages with `setTimeout`, and plugin timers are heavily throttled while Figma is in the background, so a few pauses could take minutes. The pauses are gone, and components are found with Figma's native search instead of a walk over every layer. On a 3,000-component library: 16.6s → 1.5s, same results. Plugin re-import required. Reported by @slava-lilg (#120).
+- **`figma_get_design_system_summary` reported "0 components" when the component fetch failed.** It now returns `success: false` and leaves the component counts unknown (#120).
+- **`figma_search_components` ranked results in file order**, so a component whose description mentioned "button" could come before the Button component. Results are now ranked: exact name, then name prefix, then name contains, then description-only matches.
+- **`figma_get_variables` ignored `page`/`pageSize` with `format: "full"`.** It returned every variable with no `pagination` object. Passing either now pages the full dataset and reports `pagination`. Reported by @muloka (#98).
+- **The `pagination` object had different field names depending on where the data came from** (`page`/`totalItems` from the REST API). It's now always `currentPage`, `pageSize`, `totalVariables`, `totalPages`, `hasNextPage` and `hasPrevPage`. Freshly fetched filtered results were also missing `pagination` entirely. Reported by @muloka (#99).
+- **`figma_get_component_for_development_deep` crashed on text with mixed case or decoration** ("Cannot unwrap symbol"). Mixed values are now reported as `"MIXED"`, with per-range styles in `styledSegments`. From community PR #85 by @DarWiM. Plugin re-import required.
+
+### Changed
+
+- **`figma_get_component_for_development_deep` accepts `depth: 0` for unlimited depth** (the tool description already promised it; values above 20 were clamped). Unlimited requests get a 120s timeout. From community PR #86 by @DarWiM, extended to Cloud Mode.
+
+
 ## [1.41.0] - 2026-10-26
 
 Security fixes for Cloud Mode sign-in, two data-loss fixes, and a sweep of the open issue tracker. Server-only: **no plugin re-import needed**. Cloud Mode users who connect through a client other than Claude.ai or a local app will see an "Authorize access" page when they sign in. Existing `/sse` connections need to reconnect once.
@@ -1517,6 +1536,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.41.1]: https://github.com/southleft/figma-console-mcp/compare/v1.41.0...v1.41.1
 [1.41.0]: https://github.com/southleft/figma-console-mcp/compare/v1.40.9...v1.41.0
 [1.40.9]: https://github.com/southleft/figma-console-mcp/compare/v1.40.8...v1.40.9
 [1.40.8]: https://github.com/southleft/figma-console-mcp/compare/v1.40.7...v1.40.8

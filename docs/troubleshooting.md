@@ -19,7 +19,7 @@ The fix lives in **both** the server and the redesigned Desktop Bridge plugin, s
    - Select `~/.figma-console-mcp/plugin/manifest.json` (the stable path the server maintains automatically)
 3. Run the Desktop Bridge plugin in your file. It auto-connects.
 
-> **You only have to do this once per plugin change.** After you're on v1.31.0+, updates don't need a re-import unless a release explicitly says so. The plugin files last changed in v1.39.0, so if your imported plugin is older than that, re-import it once. The plugin shows an update banner when the server bundles a newer plugin than the one running.
+> **You only have to do this once per plugin change.** After you're on v1.31.0+, updates don't need a re-import unless a release explicitly says so. The plugin files last changed in v1.41.1, so if your imported plugin is older than that, re-import it once. The plugin shows an update banner when the server bundles a newer plugin than the one running.
 
 ### Step 2 — Let it reconnect itself (no more restart ritual)
 
