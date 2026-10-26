@@ -654,6 +654,9 @@ describe('cleanupOrphanedProcesses — SIGKILL escalation (integration)', () => 
   const spawnOrphan = async (port: number, ignoreSigterm: boolean) => {
     const dir = mkdtempSync(join(tmpdir(), 'fcm-orphan-'));
     const file = join(dir, 'local.js');
+    // Pin CommonJS: a stray package.json with "type": "module" anywhere above
+    // the temp dir would otherwise make this require()-based script crash.
+    writeFileSync(join(dir, 'package.json'), '{"type":"commonjs"}');
     writeFileSync(
       file,
       `const net = require('net');\n` +
