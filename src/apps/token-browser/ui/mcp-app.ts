@@ -230,7 +230,7 @@ function render(): void {
 			const isExpanded = expandedCollections.has(col.id);
 			const modes: { modeId: string; name: string }[] = col.modes || [];
 			return `
-			<div class="collection ${isExpanded ? "expanded" : ""}" data-id="${col.id}">
+			<div class="collection ${isExpanded ? "expanded" : ""}" data-id="${escAttr(col.id)}">
 				<div class="collection-header">
 					<div>
 						<span class="collection-name">${esc(col.name)}</span>
@@ -325,7 +325,7 @@ function buildTable(
 
 			rowsHtml += `<tr>
 				<td class="cell-name" data-fullname="${escAttr(v.name)}" title="Click to copy: ${escAttr(v.name)}${v.description ? `\n${escAttr(v.description)}` : ""}">${esc(leaf)}</td>
-				<td class="cell-type"><span class="type-badge ${typeLower}">${esc(v.resolvedType)}</span></td>
+				<td class="cell-type"><span class="type-badge ${escAttr(typeLower)}">${esc(v.resolvedType)}</span></td>
 				${valueCells}
 			</tr>`;
 		}

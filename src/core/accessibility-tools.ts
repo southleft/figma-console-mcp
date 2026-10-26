@@ -56,19 +56,20 @@ async function scanHtmlWithAxe(
 		? html
 		: `<!DOCTYPE html><html lang="en"><head><title>Scan</title></head><body>${html}</body></html>`;
 
+	// "outside-only": <script> tags and inline handlers in the scanned HTML
+	// never execute (the HTML is caller-supplied, so running it would hand
+	// arbitrary code to this Node process). We still get window.eval to load
+	// axe-core ourselves.
 	const dom = new JSDOM(fullHtml, {
-		runScripts: "dangerously",
+		runScripts: "outside-only",
 		pretendToBeVisual: true,
 		url: "http://localhost",
 	});
 
 	const { document, window } = dom.window;
 
-	// Inject axe-core into the JSDOM window
-	const axeSource = axeCore.source;
-	const scriptEl = document.createElement("script");
-	scriptEl.textContent = axeSource;
-	document.head.appendChild(scriptEl);
+	// Load axe-core into the JSDOM window
+	window.eval(axeCore.source);
 
 	// Configure axe run options
 	const runOptions: any = {};
