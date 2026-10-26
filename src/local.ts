@@ -62,6 +62,7 @@ import {
 	refreshPortAdvertisement,
 	HEARTBEAT_INTERVAL_MS,
 } from "./core/port-discovery.js";
+import { onStdinClosed } from "./core/stdin-lifecycle.js";
 import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import {
 	registerDesignSystemAuditTool,
@@ -4126,6 +4127,9 @@ async function main() {
 
 	process.on("SIGINT", () => { void gracefulExit(0); });
 	process.on("SIGTERM", () => { void gracefulExit(0); });
+	// The MCP client closing our stdin means it's gone. On Windows no signal is
+	// delivered when the client exits, so without this the process never exits.
+	onStdinClosed(() => { void gracefulExit(0); });
 
 	// Start the server
 	await server.start();
