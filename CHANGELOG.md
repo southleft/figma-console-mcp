@@ -5,6 +5,17 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.3] - 2026-10-26
+
+Component-set analysis fixes found by live-testing v1.41.1 on four more design-system files. **Re-import the Desktop Bridge plugin** (Plugins → Development → Import plugin from manifest → `~/.figma-console-mcp/plugin/manifest.json`) to get them.
+
+### Fixed
+
+- **`figma_analyze_component_set` missed state changes below the first layer.** The diff read fill, stroke and text from one child layer, so a change anywhere deeper looked like no change. A radio button's checked and hover states swap the nested icon instance, whose vector changes fill token, and its disabled state sets opacity on the variant itself. All of these came back as `diffFromDefault: null`. Each variant's `diffFromDefault` now has a `layers` entry, keyed by layer path (`"Icons/Radio › Icon": { "fill": "color/content/weak-hover" }`, `"Icons/Radio": { "component": "state=hover" }`), plus `variantOpacity`, `layersAdded` and `layersRemoved`. On that file, 8 of 9 variants now report their differences, up from 4.
+- **A layer hidden in every variant was reported as a change on all of them.** On a 135-variant button set, every non-default variant listed `visibilityChanges: { "Icon": false }`, even though the default hides it too. Visibility is now compared in both directions, and only real differences are reported: `false` means hidden in this variant, `true` means shown here but hidden in the default.
+- Opacity values are rounded (`0.4`, not `0.4000000059604645`).
+
+
 ## [1.41.2] - 2026-10-26
 
 Server-only: **no plugin re-import needed** beyond v1.41.1's.
@@ -1545,6 +1556,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.41.3]: https://github.com/southleft/figma-console-mcp/compare/v1.41.2...v1.41.3
 [1.41.2]: https://github.com/southleft/figma-console-mcp/compare/v1.41.1...v1.41.2
 [1.41.1]: https://github.com/southleft/figma-console-mcp/compare/v1.41.0...v1.41.1
 [1.41.0]: https://github.com/southleft/figma-console-mcp/compare/v1.40.9...v1.41.0
