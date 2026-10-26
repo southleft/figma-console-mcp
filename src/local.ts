@@ -1793,6 +1793,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				DesignSystemManifestCache,
 				createEmptyManifest,
 				makeFigmaColorResolver,
+				unwrapBridgeVariables,
 			} = await import("./core/design-system-manifest.js");
 
 			const cache = DesignSystemManifestCache.getInstance();
@@ -1818,9 +1819,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 			// Get variables (tokens)
 			try {
-				const variablesResult = await connector.getVariables(fileKey);
-				if (variablesResult.success && variablesResult.data) {
-					for (const collection of variablesResult.data.variableCollections ||
+				const variablesData = unwrapBridgeVariables(await connector.getVariables(fileKey));
+				if (variablesData) {
+					for (const collection of variablesData.variableCollections ||
 						[]) {
 						manifest.collections.push({
 							id: collection.id,
@@ -1832,8 +1833,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							defaultModeId: collection.defaultModeId,
 						});
 					}
-					const colorHex = makeFigmaColorResolver(variablesResult.data.variables || [], manifest.collections);
-					for (const variable of variablesResult.data.variables || []) {
+					const colorHex = makeFigmaColorResolver(variablesData.variables || [], manifest.collections);
+					for (const variable of variablesData.variables || []) {
 						const tokenName = variable.name;
 						const defaultModeId = manifest.collections.find(
 							(c: any) => c.id === variable.variableCollectionId,
@@ -1978,6 +1979,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						DesignSystemManifestCache,
 						createEmptyManifest,
 						makeFigmaColorResolver,
+				unwrapBridgeVariables,
 						getCategories,
 						getTokenSummary,
 					} = await import("./core/design-system-manifest.js");
@@ -2029,9 +2031,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 					// Get variables (tokens)
 					try {
-						const variablesResult = await connector.getVariables(fileKey);
-						if (variablesResult.success && variablesResult.data) {
-							for (const collection of variablesResult.data
+						const variablesData = unwrapBridgeVariables(await connector.getVariables(fileKey));
+						if (variablesData) {
+							for (const collection of variablesData
 								.variableCollections || []) {
 								manifest.collections.push({
 									id: collection.id,
@@ -2043,8 +2045,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									defaultModeId: collection.defaultModeId,
 								});
 							}
-							const colorHex = makeFigmaColorResolver(variablesResult.data.variables || [], manifest.collections);
-							for (const variable of variablesResult.data.variables || []) {
+							const colorHex = makeFigmaColorResolver(variablesData.variables || [], manifest.collections);
+							for (const variable of variablesData.variables || []) {
 								const tokenName = variable.name;
 								const defaultModeId = manifest.collections.find(
 									(c) => c.id === variable.variableCollectionId,
