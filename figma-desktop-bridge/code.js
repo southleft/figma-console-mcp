@@ -1478,7 +1478,9 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   else if (msg.type === 'DEEP_GET_COMPONENT') {
     try {
-      var maxDepth = msg.depth || 10;
+      var maxDepth = msg.depth;
+      if (maxDepth === undefined || maxDepth === null) maxDepth = 10;
+      if (maxDepth <= 0) maxDepth = Infinity; // 0 or negative = unlimited depth
       console.log('🌉 [Desktop Bridge] Deep component fetch: ' + msg.nodeId + ' (depth: ' + maxDepth + ')');
 
       var rootNode = await figma.getNodeByIdAsync(msg.nodeId);
@@ -1762,7 +1764,7 @@ figma.ui.onmessage = async (msg) => {
 
       var result = walkNode(rootNode, 0);
       result._variableMapSize = Object.keys(varNameMap).length;
-      result._maxDepthUsed = maxDepth;
+      result._maxDepthUsed = (maxDepth === Infinity) ? 'unlimited' : maxDepth;
 
       // figma.mixed is a Symbol; it cannot cross figma.ui.postMessage
       // (structuredClone throws "Cannot unwrap symbol"). Serialize with a
