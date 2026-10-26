@@ -699,7 +699,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 							)
 							.optional()
 							.describe(
-								"Values by mode ID. For COLOR: hex like '#FF0000'. Example: { '1:0': '#FF0000' }",
+								"Values by mode ID. For COLOR: hex like '#FF0000'. To alias another variable, pass its ID (e.g. 'VariableID:1:23') as the value. Example: { '1:0': '#FF0000' }",
 							),
 					}),
 				)
@@ -736,7 +736,9 @@ for (const v of vars) {
     if (v.description) variable.description = v.description;
     if (v.valuesByMode) {
       for (const [modeId, value] of Object.entries(v.valuesByMode)) {
-        const processed = v.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
+        const processed = typeof value === 'string' && value.startsWith('VariableID:')
+          ? { type: 'VARIABLE_ALIAS', id: value }
+          : v.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
         variable.setValueForMode(modeId, processed);
       }
     }
@@ -1128,7 +1130,9 @@ for (const entry of createdDefs) {
         }
         variable.setValueForMode(modeId, figma.variables.createVariableAlias(target));
       } else {
-        const processed = t.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
+        const processed = typeof value === 'string' && value.startsWith('VariableID:')
+          ? { type: 'VARIABLE_ALIAS', id: value }
+          : t.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
         variable.setValueForMode(modeId, processed);
       }
     } catch (err) {
@@ -2418,26 +2422,33 @@ const csWidth = (totalCols * cellWidth) + ((totalCols - 1) * gap) + (edgePadding
 const csHeight = (totalRows * cellHeight) + ((totalRows - 1) * gap) + (edgePadding * 2);
 
 // ============================================================================
-// STEP 1: Remove old labels and container frames from previous arrangements
+// STEP 1: Remove THIS set's previous arrangement (and only this set's).
+// Other sets' "Component Container" frames hold those component sets, so a
+// page-wide cleanup deleted every other arranged set with its variants (#53).
 // ============================================================================
-const isOldArrangementElement = (n) =>
-	(n.type === "TEXT" && (n.name.startsWith("Row: ") || n.name.startsWith("Col: "))) ||
-	(n.type === "FRAME" && (n.name === "Component Container" || n.name === "Row Labels" || n.name === "Column Headers"));
+const ARRANGED_SET_KEY = "arrangedComponentSetId";
+const isArrangementContainer = (n) => n.type === "FRAME" && n.name === "Component Container";
 
-// If the set lives inside a previous arrangement container (re-run case),
-// pull it out to the page first so cleanup can't delete it
+// Re-run case: the set lives inside its previous container. Pull it out to the
+// page first, then remove that container.
+const previousContainers = [];
 let ancestor = componentSet.parent;
 while (ancestor && ancestor.type !== "PAGE") {
-	if (isOldArrangementElement(ancestor)) {
-		page.appendChild(componentSet);
-		break;
-	}
+	if (isArrangementContainer(ancestor)) previousContainers.push(ancestor);
 	ancestor = ancestor.parent;
 }
-
-const oldElements = page.children.filter(isOldArrangementElement);
-for (const el of oldElements) {
-	el.remove();
+if (previousContainers.length > 0) {
+	page.appendChild(componentSet);
+}
+// A previous container of this set that it was later moved out of (tagged
+// by this tool since #53).
+for (const n of page.children) {
+	if (isArrangementContainer(n) && n.getPluginData(ARRANGED_SET_KEY) === componentSet.id && previousContainers.indexOf(n) === -1) {
+		previousContainers.push(n);
+	}
+}
+for (const el of previousContainers) {
+	if (!el.removed) el.remove();
 }
 
 // ============================================================================
@@ -2513,6 +2524,7 @@ await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
 // Create the main container frame (white background)
 const containerFrame = figma.createFrame();
 containerFrame.name = "Component Container";
+containerFrame.setPluginData(ARRANGED_SET_KEY, componentSet.id);
 containerFrame.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];  // White
 containerFrame.cornerRadius = 8;
 containerFrame.layoutMode = 'VERTICAL';
