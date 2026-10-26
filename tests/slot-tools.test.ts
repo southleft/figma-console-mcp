@@ -108,11 +108,29 @@ describe("registerSlotTools", () => {
 			width: 320,
 			height: 200,
 			layoutMode: "VERTICAL",
-		});
+		}, undefined);
 		expect(result.isError).toBeUndefined();
 		const payload = JSON.parse(result.content[0].text);
 		expect(payload.success).toBe(true);
 		expect(payload.slot.name).toBe("Content");
+	});
+
+	test("figma_create_slot threads fileKey through to the connector", async () => {
+		const server = createMockServer();
+		const connector = createMockConnector();
+		registerSlotTools(server as never, async () => connector);
+
+		await server._getTool("figma_create_slot").handler({
+			nodeId: "1:2",
+			name: "Content",
+			fileKey: "abc123",
+		});
+
+		expect(connector.createSlot).toHaveBeenCalledWith(
+			"1:2",
+			expect.objectContaining({ name: "Content" }),
+			"abc123",
+		);
 	});
 
 	test("figma_get_slots returns slot list", async () => {
@@ -121,10 +139,19 @@ describe("registerSlotTools", () => {
 		registerSlotTools(server as never, async () => connector);
 
 		const result = await server._getTool("figma_get_slots").handler({ nodeId: "1:2" });
-		expect(connector.getSlots).toHaveBeenCalledWith("1:2");
+		expect(connector.getSlots).toHaveBeenCalledWith("1:2", undefined);
 		const payload = JSON.parse(result.content[0].text);
 		expect(payload.count).toBe(1);
 		expect(payload.slots[0].name).toBe("Content");
+	});
+
+	test("figma_get_slots threads fileKey through to the connector", async () => {
+		const server = createMockServer();
+		const connector = createMockConnector();
+		registerSlotTools(server as never, async () => connector);
+
+		await server._getTool("figma_get_slots").handler({ nodeId: "1:2", fileKey: "abc123" });
+		expect(connector.getSlots).toHaveBeenCalledWith("1:2", "abc123");
 	});
 
 	test("figma_append_to_slot requires slot target and content source", async () => {
@@ -159,8 +186,26 @@ describe("registerSlotTools", () => {
 				sourceNodeId: "1:99",
 				clearExisting: true,
 			}),
+			undefined,
 		);
 		expect(result.isError).toBeUndefined();
+	});
+
+	test("figma_append_to_slot threads fileKey through to the connector, stripped from params", async () => {
+		const server = createMockServer();
+		const connector = createMockConnector();
+		registerSlotTools(server as never, async () => connector);
+
+		await server._getTool("figma_append_to_slot").handler({
+			slotId: "1:10",
+			sourceNodeId: "1:99",
+			fileKey: "abc123",
+		});
+
+		expect(connector.appendToSlot).toHaveBeenCalledWith(
+			expect.not.objectContaining({ fileKey: expect.anything() }),
+			"abc123",
+		);
 	});
 
 	test("figma_reset_slot resolves by instanceId + slotName", async () => {
@@ -176,7 +221,24 @@ describe("registerSlotTools", () => {
 		expect(connector.resetSlot).toHaveBeenCalledWith({
 			instanceId: "1:2",
 			slotName: "Content",
+		}, undefined);
+	});
+
+	test("figma_reset_slot threads fileKey through to the connector", async () => {
+		const server = createMockServer();
+		const connector = createMockConnector();
+		registerSlotTools(server as never, async () => connector);
+
+		await server._getTool("figma_reset_slot").handler({
+			instanceId: "1:2",
+			slotName: "Content",
+			fileKey: "abc123",
 		});
+
+		expect(connector.resetSlot).toHaveBeenCalledWith(
+			{ slotId: undefined, instanceId: "1:2", slotName: "Content" },
+			"abc123",
+		);
 	});
 
 	test("figma_add_slot_property executes binding code", async () => {
@@ -196,6 +258,25 @@ describe("registerSlotTools", () => {
 		expect(payload.success).toBe(true);
 		expect(payload.result.propertyKey).toBe("Content#1:10");
 	});
+
+	test("figma_add_slot_property threads fileKey through to executeCodeViaUI", async () => {
+		const server = createMockServer();
+		const connector = createMockConnector();
+		registerSlotTools(server as never, async () => connector);
+
+		await server._getTool("figma_add_slot_property").handler({
+			nodeId: "1:2",
+			propertyName: "Content",
+			frameNodeId: "1:5",
+			fileKey: "abc123",
+		});
+
+		expect(connector.executeCodeViaUI).toHaveBeenCalledWith(
+			expect.any(String),
+			10000,
+			"abc123",
+		);
+	});
 });
 
 describe("WebSocket slot commands", () => {
@@ -211,18 +292,95 @@ describe("WebSocket slot commands", () => {
 		expect(mockServer.sendCommand).toHaveBeenCalledWith("CREATE_SLOT", {
 			nodeId: "1:2",
 			name: "Content",
-		});
+		}, undefined, undefined);
 
 		await connector.getSlots("1:2");
-		expect(mockServer.sendCommand).toHaveBeenCalledWith("GET_SLOTS", { nodeId: "1:2" });
+		expect(mockServer.sendCommand).toHaveBeenCalledWith("GET_SLOTS", { nodeId: "1:2" }, undefined, undefined);
 
 		await connector.appendToSlot({ slotId: "1:10", sourceNodeId: "1:99" });
 		expect(mockServer.sendCommand).toHaveBeenCalledWith("APPEND_TO_SLOT", {
 			slotId: "1:10",
 			sourceNodeId: "1:99",
-		});
+		}, undefined, undefined);
 
 		await connector.resetSlot({ slotId: "1:10" });
-		expect(mockServer.sendCommand).toHaveBeenCalledWith("RESET_SLOT", { slotId: "1:10" });
+		expect(mockServer.sendCommand).toHaveBeenCalledWith("RESET_SLOT", { slotId: "1:10" }, undefined, undefined);
+	});
+
+	test("connector routes slot methods to a specific fileKey via sendCommand's targetFileKey", async () => {
+		const { WebSocketConnector } = await import("../src/core/websocket-connector");
+		const mockServer = {
+			isClientConnected: () => false,
+			sendCommand: jest.fn().mockResolvedValue({ success: true }),
+		};
+		const connector = new WebSocketConnector(mockServer as never);
+
+		await connector.createSlot("1:2", { name: "Content" }, "file-a");
+		expect(mockServer.sendCommand).toHaveBeenCalledWith(
+			"CREATE_SLOT",
+			{ nodeId: "1:2", name: "Content" },
+			undefined,
+			"file-a",
+		);
+
+		await connector.getSlots("1:2", "file-a");
+		expect(mockServer.sendCommand).toHaveBeenCalledWith("GET_SLOTS", { nodeId: "1:2" }, undefined, "file-a");
+
+		await connector.appendToSlot({ slotId: "1:10", sourceNodeId: "1:99" }, "file-a");
+		expect(mockServer.sendCommand).toHaveBeenCalledWith(
+			"APPEND_TO_SLOT",
+			{ slotId: "1:10", sourceNodeId: "1:99" },
+			undefined,
+			"file-a",
+		);
+
+		await connector.resetSlot({ slotId: "1:10" }, "file-a");
+		expect(mockServer.sendCommand).toHaveBeenCalledWith("RESET_SLOT", { slotId: "1:10" }, undefined, "file-a");
+	});
+});
+
+describe("Cloud Mode slot commands reject fileKey", () => {
+	test("createSlot/getSlots/appendToSlot/resetSlot reject a passed fileKey", async () => {
+		const { CloudWebSocketConnector } = await import("../src/core/cloud-websocket-connector");
+		const stub = {
+			fetch: jest.fn().mockResolvedValue(
+				new Response(JSON.stringify({ result: { success: true } }), {
+					headers: { "Content-Type": "application/json" },
+				}),
+			),
+		};
+		const connector = new CloudWebSocketConnector(stub as never);
+
+		// Cloud Mode pairs with exactly one plugin instance. Honoring the call
+		// as-if-targeted would report a successful write to the wrong file.
+		await expect(connector.createSlot("1:2", {}, "some-other-file-key")).rejects.toThrow(
+			"Per-file targeting (fileKey) is Local Mode only",
+		);
+		await expect(connector.getSlots("1:2", "some-other-file-key")).rejects.toThrow(
+			"Per-file targeting (fileKey) is Local Mode only",
+		);
+		await expect(
+			connector.appendToSlot({ slotId: "1:10" }, "some-other-file-key"),
+		).rejects.toThrow("Per-file targeting (fileKey) is Local Mode only");
+		await expect(
+			connector.resetSlot({ slotId: "1:10" }, "some-other-file-key"),
+		).rejects.toThrow("Per-file targeting (fileKey) is Local Mode only");
+
+		expect(stub.fetch).not.toHaveBeenCalled();
+	});
+
+	test("createSlot/getSlots/appendToSlot/resetSlot still work when fileKey is omitted", async () => {
+		const { CloudWebSocketConnector } = await import("../src/core/cloud-websocket-connector");
+		const stub = {
+			fetch: jest.fn().mockResolvedValue(
+				new Response(JSON.stringify({ result: { success: true } }), {
+					headers: { "Content-Type": "application/json" },
+				}),
+			),
+		};
+		const connector = new CloudWebSocketConnector(stub as never);
+
+		await expect(connector.createSlot("1:2", {})).resolves.toEqual({ success: true });
+		expect(stub.fetch).toHaveBeenCalled();
 	});
 });
