@@ -448,7 +448,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool 1: Get Console Logs
 		this.server.tool(
 			"figma_get_console_logs",
-			"Retrieve console logs from Figma Desktop. FOR PLUGIN DEVELOPERS: This works immediately - no navigation needed! Just check logs, run your plugin in Figma Desktop, check logs again. All plugin logs ([Main], [Swapper], etc.) appear instantly.",
+			"Retrieve console logs captured by the Desktop Bridge plugin: console output from code run through it (figma_execute and the other write tools) and from the bridge itself. It does NOT capture another plugin's console — Figma runs one plugin at a time in a file, each in its own sandbox, so the bridge cannot see a plugin you are developing. To debug your own plugin's logic, run that code through figma_execute and read the logs here, or use Figma's own developer console for the plugin.",
 			{
 				count: z
 					.number()
@@ -795,7 +795,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Tool 3: Watch Console (Real-time streaming)
 		this.server.tool(
 			"figma_watch_console",
-			"Stream console logs in real-time for a specified duration (max 5 minutes). Use for monitoring plugin execution while user tests manually. Returns all logs captured during watch period with summary statistics. NOT for retrieving past logs (use figma_get_console_logs). Best for: watching plugin output during manual testing, debugging race conditions, monitoring async operations.",
+			"Stream console logs captured by the Desktop Bridge plugin in real-time for a specified duration (max 5 minutes). Covers code run through the bridge (figma_execute and the write tools) — not other plugins, which run in their own sandboxes. Returns all logs captured during the watch period with summary statistics. NOT for retrieving past logs (use figma_get_console_logs). Best for: watching long-running figma_execute scripts, debugging race conditions, monitoring async operations.",
 			{
 				duration: z
 					.number()
@@ -1371,7 +1371,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 													? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use — most likely multiple Claude Desktop tabs or terminal sessions are running the Figma Console MCP server. Ask the user to close some sessions and restart.`
 													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
 														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected. TELL THE USER: Close and reopen the Desktop Bridge plugin in Figma to reconnect. The plugin scans the whole port range (9223–9232) on launch and will pick up this server automatically.`
-														: `No connection to Figma Desktop. Open the Desktop Bridge plugin in Figma to connect.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`
+														: `No connection to Figma Desktop. Open the Desktop Bridge plugin in Figma to connect.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() + ' (Plugins → Development → Import plugin from manifest; on macOS the folder is hidden — press Cmd+Shift+G in the dialog and paste the path).' : ''}`
 												: activeTransport === "websocket"
 													? `Connected via WebSocket Bridge to "${currentFileName || "unknown file"}" on port ${this.wsActualPort}. All design tools and console monitoring tools are available. Console logs are captured from the plugin sandbox (code.js). IMPORTANT: Always verify the file name before destructive operations when multiple files have the plugin open.`
 													: "All tools are ready to use.",
@@ -4155,6 +4155,10 @@ if (currentFile === entryFile) {
 					"\nImport this manifest in Figma (Plugins → Development →\n" +
 					"Import plugin from manifest). The MCP server refreshes the\n" +
 					"plugin files in this directory on every startup.\n" +
+					"\n" +
+					"On macOS the folder is hidden (it starts with a dot): in\n" +
+					"the import dialog press Cmd+Shift+G and paste the path above\n" +
+					"(or Cmd+Shift+. to show hidden files).\n" +
 					"\n" +
 					"Re-importing after a package update is OPTIONAL — most\n" +
 					"upgrades stay wire-compatible with the previous plugin.\n" +

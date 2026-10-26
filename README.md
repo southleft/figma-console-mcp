@@ -133,8 +133,10 @@ If you're not sure where to put the JSON configuration above, here's where each 
 **Desktop Bridge Plugin:**
 1. Open Figma Desktop normally (no special flags needed) and open a file
 2. Go to **Plugins → Development → Import plugin from manifest...**
-3. Select `~/.figma-console-mcp/plugin/manifest.json` (stable path, auto-created by the MCP server)
+3. Select `~/.figma-console-mcp/plugin/manifest.json` (stable path, auto-created by the MCP server). Run `npx figma-console-mcp --print-path` to print the exact path for your machine.
 4. Run the plugin in your Figma file — it scans ports 9223–9232 and connects automatically to your running MCP server
+
+> **Can't see the folder in the import dialog?** `.figma-console-mcp` starts with a dot, so macOS hides it. In the dialog, press **⌘⇧G** and paste the path (or press **⌘⇧.** to show hidden files). On Windows the folder is visible as normal.
 
 > **Heads-up on plugin updates.** Figma caches plugin files (`code.js` and `ui.html`) at the application level. The MCP server refreshes the files at `~/.figma-console-mcp/plugin/` on every startup, but Figma keeps using its cached copy until you re-import the manifest.
 >
@@ -706,7 +708,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 
 1. Open Figma Desktop (normal launch — no debug flags needed)
 2. Go to **Plugins → Development → Import plugin from manifest...**
-3. Select `figma-desktop-bridge/manifest.json` from the figma-console-mcp directory
+3. Select `~/.figma-console-mcp/plugin/manifest.json` — the stable path the MCP server keeps up to date (`npx figma-console-mcp --print-path` prints it; on macOS press **⌘⇧G** in the dialog and paste it, since the folder is hidden). If you cloned this repo for development, you can select `figma-desktop-bridge/manifest.json` from the clone instead.
 4. Run the plugin in your Figma file — it auto-connects via WebSocket (scans ports 9223–9232)
 5. Ask your AI: "Check Figma status" to verify the connection
 

@@ -255,8 +255,7 @@ figma_diagnose({
 
 ### `figma_get_console_logs`
 
-> **💡 Plugin Developers in Local Mode**: This tool works immediately - no navigation required!
-> Just check logs, run your plugin in Figma Desktop, check logs again. All `[Main]`, `[Swapper]`, etc. plugin logs appear instantly.
+> **Scope:** captures console output from the Desktop Bridge plugin's sandbox — code run through `figma_execute` and the write tools, plus the bridge itself. It cannot see another plugin's console: Figma runs one plugin at a time in a file, each in an isolated sandbox. To debug your own plugin, run its logic through `figma_execute`, or use Figma's DevTools (Help → Debugging → Open DevTools). See [Plugin Development & Debugging](use-cases.md#-plugin-development--debugging).
 
 Retrieve console logs with filters.
 
@@ -314,7 +313,7 @@ figma_watch_console({
 - Real-time stream of console logs captured during the watch period
 - Summary of total logs captured by level
 
-**Use case:** Perfect for monitoring console output while you test your plugin manually.
+**Use case:** Watching console output from long-running `figma_execute` scripts or bridge operations. Like `figma_get_console_logs`, it only sees the Desktop Bridge plugin's sandbox, not other plugins.
 
 ---
 
