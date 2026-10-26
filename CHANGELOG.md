@@ -5,6 +5,39 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.0] - 2026-10-26
+
+Security fixes for Cloud Mode sign-in, two data-loss fixes, and a sweep of the open issue tracker. Server-only: **no plugin re-import needed**. Cloud Mode users who connect through a client other than Claude.ai or a local app may see a one-time "Authorize access" page the next time they sign in.
+
+### Security
+
+- **Cloud Mode `/sse` sessions could use another user's Figma token.** Every `/sse` session read its token from one storage slot shared by all users, so REST calls ran with whichever user (or personal access token) had connected most recently. Each session now uses the token its own client presented, and the shared slot is gone. The `/mcp` endpoint was not affected. Reported in #104.
+- **Cloud Mode sign-in could hand an authorization code to an attacker.** `/authorize` sent the code to any `redirect_uri`, and the "code" was the client's public `client_id`, reusable for the life of the token. Codes are now random, single-use, expire after 10 minutes, and are bound to the client, its redirect URI and its PKCE challenge (S256, verified at `/token`). A redirect URI must match the client's registration; loopback addresses and Claude's hosted callback are always accepted. Any other registered destination shows a consent page naming where access will be sent, tied to the browser that started the sign-in. Reported in #104.
+- **The OAuth error page reflected its query parameters as HTML** (`/oauth/callback?error=…`). They are now escaped. Reported in #104.
+- **`figma_scan_code_accessibility` executed scripts contained in the HTML it scanned.** JSDOM ran with `runScripts: "dangerously"`, and a `<script>` could reach the Node process. Scripts and inline handlers in scanned HTML no longer run; axe-core is loaded separately. Local Mode only. Reported in #104.
+- Two attribute values in the token browser app are now escaped.
+
+### Fixed
+
+- **`figma_import_tokens` could delete every variable in a file and report success.** With a `configPath` whose source folder held `tokens.json` (the default pattern is `*.tokens.json`), the import read no files, returned `success: true` with no warnings, and planned to delete all variables; `strategy: "replace"` would have carried that out. A source folder with no matching files is now an error that names the JSON files it found, and any import that parses no tokens is refused. Reported by @slava-lilg (#122).
+- **`strategy: "replace"` deletes only inside the collections the token files contain.** A file covering one collection used to make every other collection's variables delete candidates. They are now left alone, with a warning.
+- **`figma_arrange_component_set` deleted other arranged component sets.** Each run removed every "Component Container" on the page, and each container holds its component set, so arranging a second set deleted the first set and all its variants. Only the set's own previous arrangement is replaced now. Reported by @cforsyth77 (#53).
+- **`figma_export_tokens` and `figma_import_tokens` used a stale copy of the variables.** Both read the snapshot the plugin takes when it opens, so renames and `codeSyntax` changes made afterwards were missing from exports, and imports compared against old names. Both now read variables live. If the live read fails, export falls back to the snapshot and says so. Reported by @marcinkwiatkowski605 and @BoTsch50 (#91).
+- **On Windows, abandoned servers never exited**, holding one port each until all ten were taken. The server now exits when its client closes stdin. From community PR #140 by @RomanOdokienko (#116).
+- **`figma_get_console_logs` and `figma_watch_console` claimed to capture any plugin's logs.** They only see the Desktop Bridge's own sandbox, because Figma runs one plugin at a time, each isolated. The descriptions and docs now say so (#119).
+- **The README's "Recommended Connection" section pointed npx users at the npx cache.** It now gives the stable `~/.figma-console-mcp/plugin/manifest.json` path and `--print-path`. The README, `--print-path` and `figma_get_status` explain that the folder is hidden on macOS and how to open it in Figma's import dialog (⌘⇧G). Reported by @muloka (#100, #101).
+- The published `dist/local.js` is marked executable (#73).
+
+### Added
+
+- **`figma_batch_create_variables` and `figma_setup_design_tokens` accept aliases**: pass a `VariableID:…` value, as `figma_batch_update_variables` already allowed. Reported by @muloka (#52).
+- **`fileKey` targeting for the five Slots tools**, so they can act on a connected file without switching the active file. Rejected in Cloud Mode, which pairs with one file. From community PR #112 by @Wolfr.
+
+### Changed
+
+- Dependencies updated within their semver ranges (`npm audit fix`); production advisories dropped from 12 to 2. The remaining two (`@modelcontextprotocol/sdk` < 1.32, `zod` < 4.6.6) require a coordinated upgrade of the Cloudflare `agents` package, tracked separately.
+
+
 ## [1.40.9] - 2026-10-02
 
 Support for Figma's composed colors: a color variable set to another color at an opacity ("grey/900 at 50%"). Server-only: **no plugin re-import needed**.
@@ -1478,6 +1511,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.41.0]: https://github.com/southleft/figma-console-mcp/compare/v1.40.9...v1.41.0
 [1.40.9]: https://github.com/southleft/figma-console-mcp/compare/v1.40.8...v1.40.9
 [1.40.8]: https://github.com/southleft/figma-console-mcp/compare/v1.40.7...v1.40.8
 [1.40.7]: https://github.com/southleft/figma-console-mcp/compare/v1.40.6...v1.40.7
