@@ -95,8 +95,8 @@ async function serveSSEWithToken(request: Request, env: Env, ctx: ExecutionConte
 				error: "invalid_token",
 				error_description: "This session was opened with different credentials. Reconnect to start a new session."
 			}), {
-				status: 403,
-				headers: { "Content-Type": "application/json" }
+				status: 401,
+				headers: { "Content-Type": "application/json", "WWW-Authenticate": 'Bearer error="invalid_token"' }
 			});
 		}
 	} else if (url.pathname === "/sse") {
@@ -1496,7 +1496,7 @@ export default {
 			// public and shared by every user of a client.)
 			const sessionId = FigmaConsoleMCPv3.generateStateToken();
 			let needsConsent = false;
-			let clientName = "An MCP client";
+			let clientName: string | null = null;
 
 			if (redirectUri && !state) {
 				return new Response(JSON.stringify({
@@ -1603,12 +1603,14 @@ export default {
 			await env.OAUTH_STATE.put(`consent:${consentNonce}`, figmaAuthUrl.toString(), {
 				expirationTtl: 600
 			});
-			const destination = escapeHtml(new URL(redirectUri as string).host || (redirectUri as string));
+			const redirectParsed = new URL(redirectUri as string);
+			// https: the host is what matters; custom schemes (cursor://…): show it all
+			const destination = escapeHtml(redirectParsed.protocol === "https:" ? redirectParsed.host : (redirectUri as string));
 			return new Response(
 				`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Authorize access</title>
 <style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:480px;margin:64px auto;padding:0 24px;color:#000}a.button{display:inline-block;background:#18a0fb;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none}code{background:#f0f0f0;padding:2px 6px;border-radius:4px}</style></head>
 <body><h1>Authorize access to Figma?</h1>
-<p><strong>${escapeHtml(clientName)}</strong> is asking for access to your Figma account through Figma Console MCP.</p>
+<p>${clientName ? `<strong>${escapeHtml(clientName)}</strong> (a name the app chose for itself)` : "An unregistered app"} is asking for access to your Figma account through Figma Console MCP.</p>
 <p>After you sign in, access will be sent to <code>${destination}</code>. Only continue if you started this from an app you trust.</p>
 <p><a class="button" href="/authorize/continue">Continue to Figma</a></p></body></html>`,
 				{
@@ -1922,9 +1924,13 @@ export default {
 			let sessionId: string | null = stateRecord;
 			let flowNonce: string | null = null;
 			if (stateRecord && stateRecord.startsWith("{")) {
-				const parsed = JSON.parse(stateRecord) as { sessionId: string; flowNonce?: string };
-				sessionId = parsed.sessionId;
-				flowNonce = parsed.flowNonce ?? null;
+				try {
+					const parsed = JSON.parse(stateRecord) as { sessionId: string; flowNonce?: string };
+					sessionId = parsed.sessionId;
+					flowNonce = parsed.flowNonce ?? null;
+				} catch {
+					sessionId = null;
+				}
 			}
 
 			logger.info({ stateToken, sessionId, hasSessionId: !!sessionId }, "OAuth callback - state token lookup");

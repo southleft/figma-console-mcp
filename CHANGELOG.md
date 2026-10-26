@@ -7,12 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.41.0] - 2026-10-26
 
-Security fixes for Cloud Mode sign-in, two data-loss fixes, and a sweep of the open issue tracker. Server-only: **no plugin re-import needed**. Cloud Mode users who connect through a client other than Claude.ai or a local app may see a one-time "Authorize access" page the next time they sign in.
+Security fixes for Cloud Mode sign-in, two data-loss fixes, and a sweep of the open issue tracker. Server-only: **no plugin re-import needed**. Cloud Mode users who connect through a client other than Claude.ai or a local app will see an "Authorize access" page when they sign in. Existing `/sse` connections need to reconnect once.
 
 ### Security
 
-- **Cloud Mode `/sse` sessions could use another user's Figma token.** Every `/sse` session read its token from one storage slot shared by all users, so REST calls ran with whichever user (or personal access token) had connected most recently. Each session now uses the token its own client presented, and the shared slot is gone. The `/mcp` endpoint was not affected. Reported in #104.
-- **Cloud Mode sign-in could hand an authorization code to an attacker.** `/authorize` sent the code to any `redirect_uri`, and the "code" was the client's public `client_id`, reusable for the life of the token. Codes are now random, single-use, expire after 10 minutes, and are bound to the client, its redirect URI and its PKCE challenge (S256, verified at `/token`). A redirect URI must match the client's registration; loopback addresses and Claude's hosted callback are always accepted. Any other registered destination shows a consent page naming where access will be sent, tied to the browser that started the sign-in. Reported in #104.
+- **Cloud Mode `/sse` sessions could use another user's Figma token.** Every `/sse` session read its token from one storage slot shared by all users, so REST calls ran with whichever user (or personal access token) had connected most recently. Each session now uses the token its own client presented, and each session id is bound to that token: a request that names a session with different credentials is refused. The shared slot is gone. The `/mcp` endpoint was not affected. Reported in #104.
+- **Cloud Mode sign-in could hand an authorization code to an attacker.** `/authorize` sent the code to any `redirect_uri`, and the "code" was the client's public `client_id`, reusable for the life of the token. Now:
+  - Codes are random, single-use, expire after 10 minutes, and are bound to the client, its redirect URI and its PKCE challenge. PKCE (S256) is required.
+  - A registered client's redirect URI must match its registration; loopback redirects may use any port (RFC 8252).
+  - Any destination other than a loopback address or Claude's hosted callback shows a consent page naming where access will be sent. This includes clients whose registration has expired.
+  - The flow must finish in the browser that started it, so a sign-in link started by someone else can't deliver your code to them.
+  
+  Reported in #104.
 - **The OAuth error page reflected its query parameters as HTML** (`/oauth/callback?error=…`). They are now escaped. Reported in #104.
 - **`figma_scan_code_accessibility` executed scripts contained in the HTML it scanned.** JSDOM ran with `runScripts: "dangerously"`, and a `<script>` could reach the Node process. Scripts and inline handlers in scanned HTML no longer run; axe-core is loaded separately. Local Mode only. Reported in #104.
 - Two attribute values in the token browser app are now escaped.

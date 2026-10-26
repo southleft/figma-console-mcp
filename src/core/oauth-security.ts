@@ -149,5 +149,9 @@ export async function sseSessionBelongsTo(secret: string, sessionId: string, bea
 	if (!/^[0-9a-f]{64}$/.test(sessionId)) return false;
 	const nonce = sessionId.slice(0, 32);
 	const mac = await hmacHex(secret, `${nonce}:${await sha256Hex(bearerToken)}`);
-	return mac.slice(0, 32) === sessionId.slice(32);
+	const expected = mac.slice(0, 32);
+	const actual = sessionId.slice(32);
+	let diff = 0;
+	for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ actual.charCodeAt(i);
+	return diff === 0;
 }
