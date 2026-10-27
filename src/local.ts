@@ -60,6 +60,7 @@ import {
 	cleanupOrphanedProcesses,
 	evictOldestInstance,
 	refreshPortAdvertisement,
+	noteToolCall,
 	HEARTBEAT_INTERVAL_MS,
 } from "./core/port-discovery.js";
 import { onStdinClosed } from "./core/stdin-lifecycle.js";
@@ -242,7 +243,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Stamp every tool response (and every thrown error) with our MCP identity
 		// so LLMs can attribute output unambiguously when multiple Figma-related
 		// MCPs are connected. Idempotent for already-tagged responses.
-		wrapServerForIdentity(this.server);
+		wrapServerForIdentity(this.server, { onToolCall: noteToolCall });
 	}
 
 	/**

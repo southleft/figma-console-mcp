@@ -86,6 +86,28 @@ export interface PortFileData {
   startedAt: string;
   /** Updated by heartbeat every 30s. Missing in port files from pre-v1.12 instances. */
   lastSeen?: string;
+  /** Last time this server handled a tool call. Missing until the first call, and in pre-v1.42.1 files. */
+  lastToolCall?: string;
+}
+
+/** When this process last handled a tool call; written to its port file by the heartbeat. */
+let lastToolCallAt: string | undefined;
+
+let lastToolCallWrite = 0;
+/** Write-through at most this often; the 30s heartbeat covers the rest. */
+const TOOL_CALL_WRITE_INTERVAL_MS = 10_000;
+
+/**
+ * Record that this server just handled a tool call (see evictOldestInstance).
+ * Written to the port file right away (throttled), so a server in use never
+ * looks idle to a sibling deciding whom to evict.
+ */
+export function noteToolCall(): void {
+  lastToolCallAt = new Date().toISOString();
+  const now = Date.now();
+  if (now - lastToolCallWrite < TOOL_CALL_WRITE_INTERVAL_MS) return;
+  lastToolCallWrite = now;
+  for (const port of advertisedPorts) refreshPortAdvertisement(port);
 }
 
 /**
@@ -183,6 +205,7 @@ export function refreshPortAdvertisement(port: number): void {
     // Only refresh our own port file
     if (data.pid !== process.pid) return;
     data.lastSeen = new Date().toISOString();
+    if (lastToolCallAt) data.lastToolCall = lastToolCallAt;
     writePortFileAtomic(filePath, data);
   } catch {
     // Best-effort — heartbeat failures are non-fatal
@@ -927,7 +950,11 @@ export async function cleanupOrphanedProcessesAsync(
 }
 
 /**
- * Last-resort eviction: terminate the oldest MCP server instance to free a port.
+ * Last-resort eviction: terminate the least recently used MCP server instance to free a port.
+ *
+ * "Least recently used" is the last tool call, falling back to start time for
+ * a server that has never handled one. So a server started for a thread that
+ * never touched Figma goes before an older one a thread is still working with.
  *
  * Called ONLY when all ports in the range are exhausted after both cleanup phases
  * (cleanupStalePortFiles + cleanupOrphanedProcesses) have already run. This handles
@@ -973,22 +1000,27 @@ export function evictOldestInstance(preferredPort: number = DEFAULT_WS_PORT): bo
     return false;
   }
 
-  // Sort by startedAt ascending — oldest first
-  candidates.sort((a, b) =>
-    new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
-  );
+  // Least recently used first: last tool call, else start time. A server that
+  // has never handled a tool call sorts by when it started, ahead of any
+  // server used since then. Servers started or used in the last
+  // EVICTION_MIN_AGE_MS are never evicted (prevents cascades, and never cuts
+  // off a thread mid-task).
+  const lastUsed = (c: PortFileData) => new Date(c.lastToolCall ?? c.startedAt).getTime();
+  const now = Date.now();
+  const eligible = candidates
+    .filter((c) => now - new Date(c.startedAt).getTime() >= EVICTION_MIN_AGE_MS && now - lastUsed(c) >= EVICTION_MIN_AGE_MS)
+    .sort((a, b) => lastUsed(a) - lastUsed(b));
 
-  const oldest = candidates[0];
-  const ageMs = Date.now() - new Date(oldest.startedAt).getTime();
-
-  // Safety: don't evict instances that started recently (prevents cascade)
-  if (ageMs < EVICTION_MIN_AGE_MS) {
+  if (eligible.length === 0) {
     logger.info(
-      { port: oldest.port, pid: oldest.pid, ageSeconds: Math.round(ageMs / 1000) },
-      'Oldest instance is too recent to evict — skipping',
+      { candidates: candidates.length },
+      'Every other instance started or handled a tool call recently — skipping eviction',
     );
     return false;
   }
+
+  const oldest = eligible[0];
+  const ageMs = now - new Date(oldest.startedAt).getTime();
 
   // Re-read the port file to avoid TOCTOU race
   try {
@@ -998,14 +1030,18 @@ export function evictOldestInstance(preferredPort: number = DEFAULT_WS_PORT): bo
       // PID changed between reads — another process took over, skip
       return false;
     }
+    if (Date.now() - lastUsed(freshData) < EVICTION_MIN_AGE_MS) {
+      // It handled a tool call since we first read it — it's in use, skip
+      return false;
+    }
   } catch {
     // File disappeared — port may already be free
     return true;
   }
 
   logger.info(
-    { port: oldest.port, pid: oldest.pid, startedAt: oldest.startedAt, ageHours: Math.round(ageMs / 3600000 * 10) / 10 },
-    'Evicting oldest MCP server instance to free port (all ports exhausted)',
+    { port: oldest.port, pid: oldest.pid, startedAt: oldest.startedAt, lastToolCall: oldest.lastToolCall ?? null, ageHours: Math.round(ageMs / 3600000 * 10) / 10 },
+    'Evicting least recently used MCP server instance to free port (all ports exhausted)',
   );
 
   terminateProcess(oldest.pid);

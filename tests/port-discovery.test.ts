@@ -33,6 +33,7 @@ import {
   startPeriodicReaper,
   evictOldestInstance,
   refreshPortAdvertisement,
+  noteToolCall,
   isStaleInstance,
   PortFileData,
 } from '../src/core/port-discovery.js';
@@ -484,6 +485,75 @@ describe('Port Discovery Module', () => {
       // This test validates the age guard works for alive processes
       const result = evictOldestInstance(TEST_PORT_BASE);
       expect(result).toBe(false);
+    });
+
+    describe('least recently used (#69)', () => {
+      const children: ReturnType<typeof spawn>[] = [];
+      const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+      const MIN = 60 * 1000;
+
+      /** A live process standing in for another MCP server, with its port file. */
+      function fakeServer(offset: number, startedAgo: number, lastToolCallAgo?: number) {
+        const child = spawn('sleep', ['30'], { stdio: 'ignore' });
+        children.push(child);
+        const data: PortFileData = {
+          port: TEST_PORT_BASE + offset,
+          pid: child.pid!,
+          host: 'localhost',
+          startedAt: ago(startedAgo),
+          lastSeen: new Date().toISOString(),
+          ...(lastToolCallAgo !== undefined ? { lastToolCall: ago(lastToolCallAgo) } : {}),
+        };
+        writeFileSync(getPortFilePath(data.port), JSON.stringify(data));
+        return data.port;
+      }
+
+      afterEach(() => {
+        for (const c of children.splice(0)) {
+          try { c.kill('SIGKILL'); } catch { /* already gone */ }
+        }
+      });
+
+      it('writes a tool call to our own port file right away', () => {
+        const port = TEST_PORT_BASE + 4;
+        advertisePort(port);
+        try {
+          expect(readPortFile(port)?.lastToolCall).toBeUndefined();
+          noteToolCall();
+          const written = readPortFile(port)?.lastToolCall;
+          expect(written).toBeDefined();
+          expect(Date.now() - new Date(written!).getTime()).toBeLessThan(5000);
+        } finally {
+          unadvertisePort(port);
+        }
+      });
+
+      it('evicts a server that never handled a tool call before an older one in use', () => {
+        const inUse = fakeServer(0, 120 * MIN, 3 * MIN);
+        const idle = fakeServer(1, 30 * MIN);
+
+        expect(evictOldestInstance(TEST_PORT_BASE)).toBe(true);
+        expect(existsSync(getPortFilePath(idle))).toBe(false);
+        expect(existsSync(getPortFilePath(inUse))).toBe(true);
+      });
+
+      it('evicts the server whose last tool call is oldest', () => {
+        const recent = fakeServer(0, 120 * MIN, 5 * MIN);
+        const stale = fakeServer(1, 60 * MIN, 50 * MIN);
+
+        expect(evictOldestInstance(TEST_PORT_BASE)).toBe(true);
+        expect(existsSync(getPortFilePath(stale))).toBe(false);
+        expect(existsSync(getPortFilePath(recent))).toBe(true);
+      });
+
+      it('never evicts a server that handled a tool call in the last two minutes', () => {
+        const a = fakeServer(0, 120 * MIN, 30 * 1000);
+        const b = fakeServer(1, 60 * MIN, 10 * 1000);
+
+        expect(evictOldestInstance(TEST_PORT_BASE)).toBe(false);
+        expect(existsSync(getPortFilePath(a))).toBe(true);
+        expect(existsSync(getPortFilePath(b))).toBe(true);
+      });
     });
 
     it('should have sensible eviction minimum age', () => {

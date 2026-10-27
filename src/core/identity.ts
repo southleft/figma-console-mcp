@@ -136,7 +136,10 @@ export function capToolResponse(result: unknown, maxBytes: number = MAX_TOOL_RES
  * Adds attribution coverage to every response path uniformly — see
  * project_lauren_cross_mcp_confusion for why this matters.
  */
-export function wrapServerForIdentity(server: McpServer): void {
+export function wrapServerForIdentity(
+	server: McpServer,
+	options: { onToolCall?: () => void } = {},
+): void {
 	// We have to bypass the McpServer.tool overload types because we're
 	// composing over arbitrary call signatures. The runtime behavior is
 	// the same regardless of which overload the caller invokes.
@@ -152,6 +155,7 @@ export function wrapServerForIdentity(server: McpServer): void {
 		const handler = args[args.length - 1] as (...a: unknown[]) => unknown;
 
 		const wrappedHandler = async (...handlerArgs: unknown[]): Promise<unknown> => {
+			options.onToolCall?.();
 			try {
 				const result = await handler(...handlerArgs);
 				return capToolResponse(tagToolResponse(result));
