@@ -123,7 +123,7 @@ export function registerCommentTools(
 				.boolean()
 				.optional()
 				.default(false)
-				.describe("Include resolved (completed) comment threads. Default: false (only active comments)"),
+				.describe("Include resolved (completed) comment threads. Default: false (only active threads unless thread_id is given)"),
 			node_id: z
 				.string()
 				.optional()
@@ -136,7 +136,7 @@ export function registerCommentTools(
 			thread_id: z
 				.string()
 				.optional()
-				.describe("Return only the thread containing this comment ID (root or reply)."),
+				.describe("Return only the thread containing this comment ID (root or reply), including resolved threads."),
 			since: z
 				.string()
 				.optional()
@@ -239,7 +239,7 @@ export function registerCommentTools(
 				const allComments: any[] = response.comments || [];
 				const threads = buildThreads(allComments);
 
-				let selected = include_resolved
+				let selected = include_resolved || thread_id
 					? threads
 					: threads.filter((t) => !t.root.resolved_at);
 

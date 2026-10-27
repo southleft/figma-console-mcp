@@ -313,6 +313,29 @@ describe("Comment Tools", () => {
 			expect(data.comments.map((c: any) => c.id)).toEqual(["r1"]);
 		});
 
+		it.each(["r3", "a3"])("finds a resolved thread by %s without include_resolved", async (thread_id) => {
+			mockApi.getComments.mockResolvedValue({
+				comments: [...threadComments, {
+					id: "a3",
+					parent_id: "r3",
+					message: "Resolved thread reply",
+					created_at: "2025-02-02T10:00:00Z",
+					user: { handle: "alice" },
+				}],
+			});
+			const { data } = await call({ thread_id });
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r3"]);
+			expect(data.comments[0].resolved_at).toBe("2025-02-04T00:00:00Z");
+			expect(data.comments[0].replies.map((c: any) => c.id)).toEqual(["a3"]);
+			expect(data.summary).toMatchObject({ total: 3, active: 2, resolved: 1, matched: 1, returned: 1 });
+		});
+
+		it("returns no threads for an unknown thread_id", async () => {
+			const { data } = await call({ thread_id: "missing" });
+			expect(data.comments).toEqual([]);
+			expect(data.summary.matched).toBe(0);
+		});
+
 		it("filters by latest activity with since", async () => {
 			const { data } = await call({ since: "2025-02-04" });
 			expect(data.comments.map((c: any) => c.id)).toEqual(["r1"]);
