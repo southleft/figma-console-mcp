@@ -5,6 +5,20 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.0] - 2026-10-27
+
+`figma_get_comments` now returns comment threads in a compact form, with filters and paging. On a file with hundreds of comments the response drops from about 97K characters to under 10K. Server-only: no plugin re-import needed. Thanks to @OAPrilepa (#139).
+
+### Changed
+
+- **Comments come back as threads.** Each result is a root comment with its replies, newest activity first. The compact default keeps the author handle, message, timestamps, pinned node, resolved time and reaction counts. Pass `format: "full"` for the raw Figma API fields.
+- **Results are paged: 30 threads by default.** Use `limit` (up to 200) and `offset`; `summary.has_more` says when more remain. Callers that relied on getting every comment in one call should pass a higher `limit` or page through.
+- **Summary counts are per thread.** `summary.total`, `active` and `resolved` count threads, not comments. `summary.comments_total` counts every comment, including replies, and `summary.matched` counts threads that passed the filters.
+
+### Added
+
+- **`node_id`, `thread_id` and `since` filters.** `node_id` returns threads pinned to that node, and by default to anything nested inside it. A `node-id` in a pasted `fileUrl` does not filter. `thread_id` (a root or reply id) returns that thread even if it is resolved. `since` keeps threads with activity at or after an ISO date.
+
 ## [1.41.5] - 2026-10-27
 
 A fifth round of component-set analysis fixes. They come from comparing, property by property, every variant the analyzer reported as unchanged against its default, across every component set in three more files. **Re-import the Desktop Bridge plugin** (Plugins → Development → Import plugin from manifest → `~/.figma-console-mcp/plugin/manifest.json`) to get them.

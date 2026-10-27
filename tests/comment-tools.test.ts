@@ -115,7 +115,8 @@ describe("Comment Tools", () => {
 			expect(result.isError).toBeUndefined();
 			const data = JSON.parse(result.content[0].text);
 			expect(data.comments).toHaveLength(2);
-			expect(data.comments.map((c: any) => c.id)).toEqual(["c1", "c3"]);
+			// Threads are sorted by latest activity, newest first.
+			expect(data.comments.map((c: any) => c.id)).toEqual(["c3", "c1"]);
 			expect(data.summary.total).toBe(3);
 			expect(data.summary.active).toBe(2);
 			expect(data.summary.resolved).toBe(1);
@@ -188,6 +189,174 @@ describe("Comment Tools", () => {
 	// -----------------------------------------------------------------------
 	// figma_post_comment
 	// -----------------------------------------------------------------------
+	describe("figma_get_comments threads and filters", () => {
+		const threadComments = [
+			{
+				id: "r1",
+				message: "Root on button",
+				resolved_at: null,
+				user: { handle: "alice", img_url: "https://img/a.png" },
+				created_at: "2025-02-01T10:00:00Z",
+				client_meta: { node_id: "10:2", node_offset: { x: 1, y: 2 } },
+				reactions: [{ emoji: ":+1:" }, { emoji: ":+1:" }],
+				uuid: "u1",
+				order_id: "1",
+			},
+			{
+				id: "a1",
+				parent_id: "r1",
+				message: "Reply later",
+				resolved_at: null,
+				user: { handle: "bob" },
+				created_at: "2025-02-05T10:00:00Z",
+			},
+			{
+				id: "r2",
+				message: "Root on other frame",
+				resolved_at: null,
+				user: { handle: "carol" },
+				created_at: "2025-02-03T10:00:00Z",
+				client_meta: { node_id: "20:1" },
+			},
+			{
+				id: "r3",
+				message: "Canvas comment",
+				resolved_at: "2025-02-04T00:00:00Z",
+				user: { handle: "dave" },
+				created_at: "2025-01-20T10:00:00Z",
+				client_meta: { x: 5, y: 5 },
+			},
+		];
+		const frameTree = {
+			nodes: {
+				"10:1": {
+					document: { id: "10:1", children: [{ id: "10:2", children: [] }] },
+				},
+			},
+		};
+
+		beforeEach(() => {
+			mockApi.getComments.mockResolvedValue({ comments: threadComments });
+			(mockApi as any).getNodes = jest.fn().mockResolvedValue(frameTree);
+		});
+
+		async function call(args: Record<string, unknown>) {
+			const tool = server._getTool("figma_get_comments");
+			const result = await tool.handler({ as_md: false, include_resolved: false, ...args });
+			return { result, data: JSON.parse(result.content[0].text) };
+		}
+
+		it("groups replies into threads in compact format", async () => {
+			const { data } = await call({});
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r1", "r2"]);
+			expect(data.comments[0]).toEqual({
+				id: "r1",
+				author: "alice",
+				created_at: "2025-02-01T10:00:00Z",
+				message: "Root on button",
+				reactions: { ":+1:": 2 },
+				node_id: "10:2",
+				replies: [
+					{ id: "a1", author: "bob", created_at: "2025-02-05T10:00:00Z", message: "Reply later" },
+				],
+			});
+			expect(data.summary).toMatchObject({ total: 3, active: 2, resolved: 1, comments_total: 4, matched: 2 });
+		});
+
+		it("returns raw objects with format=full", async () => {
+			const { data } = await call({ format: "full" });
+			expect(data.comments[0].uuid).toBe("u1");
+			expect(data.comments[0].replies[0].id).toBe("a1");
+		});
+
+		it("filters by node including nested nodes", async () => {
+			const { data } = await call({ node_id: "10-1" });
+			expect((mockApi as any).getNodes).toHaveBeenCalledWith(MOCK_FILE_KEY, ["10:1"]);
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r1"]);
+			expect(data.summary).toMatchObject({ node_id: "10:1", nested_nodes: 2 });
+		});
+
+		it("filters by exact node without nested lookup", async () => {
+			const { data } = await call({ node_id: "10:1", include_nested: false });
+			expect((mockApi as any).getNodes).not.toHaveBeenCalled();
+			expect(data.comments).toHaveLength(0);
+		});
+
+		it("does not infer a node filter from an explicit fileUrl", async () => {
+			const { data } = await call({ fileUrl: `${MOCK_FILE_URL}?node-id=20-1` });
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r1", "r2"]);
+			expect(data.summary.node_id).toBeUndefined();
+			expect((mockApi as any).getNodes).not.toHaveBeenCalled();
+		});
+
+		it("uses an explicit node_id with a different node-id in fileUrl", async () => {
+			const { data } = await call({ fileUrl: `${MOCK_FILE_URL}?node-id=20-1`, node_id: "10:1" });
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r1"]);
+			expect(data.summary.node_id).toBe("10:1");
+		});
+
+		it("an empty node_id leaves comments unfiltered", async () => {
+			const { data } = await call({ fileUrl: `${MOCK_FILE_URL}?node-id=20-1`, node_id: "" });
+			expect(data.comments).toHaveLength(2);
+			expect((mockApi as any).getNodes).not.toHaveBeenCalled();
+		});
+
+		it("returns error when the node is missing", async () => {
+			(mockApi as any).getNodes.mockResolvedValue({ nodes: { "99:9": null } });
+			const { result, data } = await call({ node_id: "99:9" });
+			expect(result.isError).toBe(true);
+			expect(data.error).toBe("node_not_found");
+		});
+
+		it("finds a thread by a reply id", async () => {
+			const { data } = await call({ thread_id: "a1" });
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r1"]);
+		});
+
+		it.each(["r3", "a3"])("finds a resolved thread by %s without include_resolved", async (thread_id) => {
+			mockApi.getComments.mockResolvedValue({
+				comments: [...threadComments, {
+					id: "a3",
+					parent_id: "r3",
+					message: "Resolved thread reply",
+					created_at: "2025-02-02T10:00:00Z",
+					user: { handle: "alice" },
+				}],
+			});
+			const { data } = await call({ thread_id });
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r3"]);
+			expect(data.comments[0].resolved_at).toBe("2025-02-04T00:00:00Z");
+			expect(data.comments[0].replies.map((c: any) => c.id)).toEqual(["a3"]);
+			expect(data.summary).toMatchObject({ total: 3, active: 2, resolved: 1, matched: 1, returned: 1 });
+		});
+
+		it("returns no threads for an unknown thread_id", async () => {
+			const { data } = await call({ thread_id: "missing" });
+			expect(data.comments).toEqual([]);
+			expect(data.summary.matched).toBe(0);
+		});
+
+		it("filters by latest activity with since", async () => {
+			const { data } = await call({ since: "2025-02-04" });
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r1"]);
+		});
+
+		it("rejects an invalid since", async () => {
+			const { result, data } = await call({ since: "yesterday-ish" });
+			expect(result.isError).toBe(true);
+			expect(data.error).toBe("invalid_since");
+		});
+
+		it("pages with limit and offset", async () => {
+			const first = await call({ limit: 1 });
+			expect(first.data.comments.map((c: any) => c.id)).toEqual(["r1"]);
+			expect(first.data.summary.has_more).toBe(true);
+			const second = await call({ limit: 1, offset: 1 });
+			expect(second.data.comments.map((c: any) => c.id)).toEqual(["r2"]);
+			expect(second.data.summary.has_more).toBe(false);
+		});
+	});
+
 	describe("figma_post_comment", () => {
 		it("posts a basic comment", async () => {
 			const tool = server._getTool("figma_post_comment");
