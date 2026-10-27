@@ -1164,6 +1164,100 @@ figma.ui.onmessage = async (msg) => {
         return null;
       }
 
+      function round2(n) {
+        return typeof n === 'number' && !isNaN(n) ? Math.round(n * 100) / 100 : undefined;
+      }
+
+      // A paint list as one comparable string: the bound token or hex for a
+      // solid, the stops for a gradient, 'image'/'video' otherwise. Paint
+      // opacity below 1 is appended ('@0.5'), extra visible paints as '+N'.
+      // Without this, gradients, images and a stroke faded to 0 diff as equal.
+      function paintSig(paints, bound) {
+        if (!paints || typeof paints === 'symbol' || !paints.length) return null;
+        var vis = [];
+        for (var pi = 0; pi < paints.length; pi++) {
+          if (paints[pi].visible !== false) vis.push(pi);
+        }
+        if (!vis.length) return null;
+        var p = paints[vis[0]];
+        var tok = null;
+        if (p.boundVariables && p.boundVariables.color && p.boundVariables.color.id) tok = resolveVarId(p.boundVariables.color.id);
+        else if (Array.isArray(bound) && bound[vis[0]] && bound[vis[0]].id) tok = resolveVarId(bound[vis[0]].id);
+        var s;
+        if (tok) s = tok;
+        else if (p.type === 'SOLID' && p.color) s = colorHex(p.color);
+        else if (p.type && p.type.indexOf('GRADIENT_') === 0) {
+          s = p.type.slice(9).toLowerCase() + '-gradient(' + (p.gradientStops || []).map(function(g) { return colorHex(g.color); }).join(', ') + ')';
+        } else s = (p.type || 'paint').toLowerCase();
+        if (typeof p.opacity === 'number' && p.opacity < 1) s += ' @' + round2(p.opacity);
+        if (vis.length > 1) s += ' +' + (vis.length - 1);
+        return s;
+      }
+
+      // Corner radius as a number, or 'tl tr br bl' when corners differ;
+      // bound corners use the token name. undefined for nodes without corners.
+      var CORNERS = ['topLeftRadius', 'topRightRadius', 'bottomRightRadius', 'bottomLeftRadius'];
+      function radiusSig(n) {
+        try {
+          var bv = n.boundVariables || {};
+          var vals = [];
+          for (var ri = 0; ri < CORNERS.length; ri++) {
+            var b = bv[CORNERS[ri]];
+            var val = b && b.id ? resolveVarId(b.id) : round2(n[CORNERS[ri]]);
+            if (val === undefined) return undefined;
+            vals.push(val);
+          }
+          return vals[0] === vals[1] && vals[1] === vals[2] && vals[2] === vals[3] ? vals[0] : vals.join(' ');
+        } catch (e) { return undefined; }
+      }
+
+      // Tokens bound to anything other than paints and corners (padding, gap,
+      // width, font size...). A variant can swap the token while the value in
+      // the current mode stays the same.
+      var SKIP_BOUND = { fills: 1, strokes: 1, effects: 1, componentProperties: 1, textRangeFills: 1, topLeftRadius: 1, topRightRadius: 1, bottomLeftRadius: 1, bottomRightRadius: 1 };
+      function boundTokens(n) {
+        var out = null;
+        try {
+          var bv = n.boundVariables || {};
+          for (var bk in bv) {
+            if (SKIP_BOUND[bk]) continue;
+            var tk = resolveBoundColor(bv[bk]);
+            if (tk) {
+              if (!out) out = {};
+              out[bk] = tk;
+            }
+          }
+        } catch (e) {}
+        return out;
+      }
+
+      // Keys whose values differ between two token maps (null = removed).
+      function diffTokens(a, b) {
+        a = a || {};
+        b = b || {};
+        var out = null;
+        var k;
+        for (k in a) if (a[k] !== b[k]) { if (!out) out = {}; out[k] = a[k]; }
+        for (k in b) if (!(k in a)) { if (!out) out = {}; out[k] = null; }
+        return out;
+      }
+
+      function shortHash(str) {
+        var h = 5381;
+        for (var hi = 0; hi < str.length; hi++) h = ((h << 5) + h + str.charCodeAt(hi)) | 0;
+        return (h >>> 0).toString(16);
+      }
+
+      function textValue(v, fmt) {
+        if (v === undefined || v === null) return null;
+        if (typeof v === 'symbol') return 'mixed';
+        return fmt ? fmt(v) : v;
+      }
+      function unitValue(u) {
+        if (u.unit === 'AUTO') return 'auto';
+        return round2(u.value) + (u.unit === 'PERCENT' ? '%' : 'px');
+      }
+
       // Extract visual signature from a variant for diffing
       async function extractSignature(variant) {
         var sig = {};
@@ -1218,17 +1312,13 @@ figma.ui.onmessage = async (msg) => {
                 sig.strokeToken = resolveBoundColor(bv.strokes);
                 sig.strokeWeight = child.strokeWeight;
 
-                // Raw colors as fallback
-                if (!sig.fillToken && child.fills && child.fills.length > 0 && child.fills[0].color) {
-                  var fc = child.fills[0].color;
-                  sig.fillHex = '#' + Math.round(fc.r*255).toString(16).padStart(2,'0') + Math.round(fc.g*255).toString(16).padStart(2,'0') + Math.round(fc.b*255).toString(16).padStart(2,'0');
-                }
-                if (!sig.strokeToken && child.strokes && child.strokes.length > 0 && child.strokes[0].color) {
-                  var sc = child.strokes[0].color;
-                  sig.strokeHex = '#' + Math.round(sc.r*255).toString(16).padStart(2,'0') + Math.round(sc.g*255).toString(16).padStart(2,'0') + Math.round(sc.b*255).toString(16).padStart(2,'0');
-                }
+                // Raw paint as fallback (hex, gradient or image, with opacity)
+                if (!sig.fillToken) sig.fillHex = paintSig(child.fills) || undefined;
+                if (!sig.strokeToken) sig.strokeHex = paintSig(child.strokes) || undefined;
                 sig.effects = child.effects && child.effects.length > 0 ? child.effects : null;
                 sig.opacity = child.opacity < 1 ? Math.round(child.opacity * 100) / 100 : null;
+                var mr = radiusSig(child);
+                if (mr !== undefined) sig.cornerRadius = mr;
               } catch(e) {}
 
               // Check text children for color changes
@@ -1240,10 +1330,7 @@ figma.ui.onmessage = async (msg) => {
                     try {
                       var tbv = textChild.boundVariables || {};
                       sig.textToken = resolveBoundColor(tbv.fills);
-                      if (!sig.textToken && textChild.fills && textChild.fills.length > 0 && textChild.fills[0].color) {
-                        var tc = textChild.fills[0].color;
-                        sig.textHex = '#' + Math.round(tc.r*255).toString(16).padStart(2,'0') + Math.round(tc.g*255).toString(16).padStart(2,'0') + Math.round(tc.b*255).toString(16).padStart(2,'0');
-                      }
+                      if (!sig.textToken) sig.textHex = paintSig(textChild.fills) || undefined;
                     } catch(e) {}
                     break; // First text node is enough
                   }
@@ -1277,14 +1364,14 @@ figma.ui.onmessage = async (msg) => {
         sig.variantStroke = null;
         try {
           var vbv = variant.boundVariables || {};
-          sig.variantFill = resolveBoundColor(vbv.fills) || (variant.fills && variant.fills.length > 0 && variant.fills[0].color ? colorHex(variant.fills[0].color) : null);
-          sig.variantStroke = resolveBoundColor(vbv.strokes) || (variant.strokes && variant.strokes.length > 0 && variant.strokes[0].color ? colorHex(variant.strokes[0].color) : null);
+          sig.variantFill = paintSig(variant.fills, vbv.fills);
+          sig.variantStroke = paintSig(variant.strokes, vbv.strokes);
+          var vr = radiusSig(variant);
+          if (vr !== undefined) sig.variantRadius = vr;
         } catch(e) {}
+        // Non-paint tokens on the variant (padding, gap, size). Diff-only.
+        sig._tokens = boundTokens(variant);
 
-        // Nested layers, keyed by path. State changes often sit below the
-        // first child (a checked radio swaps the icon instance; its vector's
-        // fill token changes), which the fields above never see. Only used
-        // for diffing — stripped from the response.
         // Auto-layout on the variant itself, so axes like Alignment or Density
         // that only change layout don't diff as identical. Diff-only.
         sig._layout = null;
@@ -1303,10 +1390,15 @@ figma.ui.onmessage = async (msg) => {
           }
         } catch(e) {}
 
+        // Nested layers, keyed by path. State changes often sit below the
+        // first child (a checked radio swaps the icon instance; its vector's
+        // fill token changes), which the fields above never see. Only used
+        // for diffing — stripped from the response.
         sig._layers = {};
         var layerCount = 0;
         async function walkLayers(parent, prefix, depth) {
           if (!parent.children || depth > 4) return;
+          var parentAuto = parent.layoutMode && parent.layoutMode !== 'NONE';
           var seen = {};
           for (var li = 0; li < parent.children.length && layerCount < 300; li++) {
             var ln = parent.children[li];
@@ -1318,13 +1410,36 @@ figma.ui.onmessage = async (msg) => {
             layerCount++;
             try {
               var lbv = ln.boundVariables || {};
-              var ft = resolveBoundColor(lbv.fills);
-              var st = resolveBoundColor(lbv.strokes);
-              entry.fill = ft || (ln.fills && ln.fills.length > 0 && ln.fills[0].color ? colorHex(ln.fills[0].color) : null);
-              entry.stroke = st || (ln.strokes && ln.strokes.length > 0 && ln.strokes[0].color ? colorHex(ln.strokes[0].color) : null);
+              entry.fill = paintSig(ln.fills, lbv.fills);
+              entry.stroke = paintSig(ln.strokes, lbv.strokes);
               entry.strokeWeight = entry.stroke ? (typeof ln.strokeWeight === 'number' ? ln.strokeWeight : null) : null;
               entry.opacity = ln.opacity < 1 ? Math.round(ln.opacity * 100) / 100 : null;
               entry.visible = ln.visible !== false;
+              entry.radius = radiusSig(ln);
+              entry.tokens = boundTokens(ln);
+              // Size always; position only where auto-layout doesn't place
+              // the layer (a tooltip's pointer moving between corners).
+              entry.width = round2(ln.width);
+              entry.height = round2(ln.height);
+              if (!parentAuto || ln.layoutPositioning === 'ABSOLUTE') {
+                entry.x = round2(ln.x);
+                entry.y = round2(ln.y);
+              }
+              entry.rotation = ln.rotation ? round2(ln.rotation) : undefined;
+              if (ln.type === 'ELLIPSE' && ln.arcData) {
+                entry.shape = 'arc ' + round2(ln.arcData.startingAngle) + ' ' + round2(ln.arcData.endingAngle) + ' ' + round2(ln.arcData.innerRadius);
+              } else if (ln.type === 'VECTOR' && ln.vectorPaths) {
+                entry.shape = 'path#' + shortHash(JSON.stringify(ln.vectorPaths));
+              }
+              if (ln.type === 'TEXT') {
+                entry.text = textValue(ln.characters, function(c) { return c.length > 80 ? c.slice(0, 80) + '…' : c; });
+                entry.fontSize = textValue(ln.fontSize, round2);
+                entry.font = textValue(ln.fontName, function(f) { return f.family + ' ' + f.style; });
+                entry.textDecoration = textValue(ln.textDecoration);
+                entry.textCase = textValue(ln.textCase);
+                entry.lineHeight = textValue(ln.lineHeight, unitValue);
+                entry.letterSpacing = textValue(ln.letterSpacing, unitValue);
+              }
             } catch(e) {}
             if (ln.type === 'INSTANCE') {
               try {
@@ -1486,6 +1601,7 @@ figma.ui.onmessage = async (msg) => {
           if (sig.fillHex !== defaultSig.fillHex && !diff.fillToken) diff.fillHex = sig.fillHex;
           if (sig.strokeHex !== defaultSig.strokeHex && !diff.strokeToken) diff.strokeHex = sig.strokeHex;
           if (sig.textHex !== defaultSig.textHex && !diff.textToken) diff.textHex = sig.textHex;
+          if (sig.cornerRadius !== defaultSig.cornerRadius) diff.cornerRadius = sig.cornerRadius === undefined ? null : sig.cornerRadius;
           if (JSON.stringify(sig.children) !== JSON.stringify(defaultSig.children)) {
             diff.children = {
               count: sig.children.length,
@@ -1508,7 +1624,10 @@ figma.ui.onmessage = async (msg) => {
           if (sig._mainPath || defaultSig._mainPath) {
             if (sig.variantFill !== defaultSig.variantFill) diff.variantFill = sig.variantFill;
             if (sig.variantStroke !== defaultSig.variantStroke) diff.variantStroke = sig.variantStroke;
+            if (sig.variantRadius !== defaultSig.variantRadius) diff.variantRadius = sig.variantRadius === undefined ? null : sig.variantRadius;
           }
+          var tokenDiff = diffTokens(sig._tokens, defaultSig._tokens);
+          if (tokenDiff) diff.tokens = tokenDiff;
 
           // Nested layer changes, skipping values the fields above already
           // report so one change isn't listed twice.
@@ -1526,7 +1645,9 @@ figma.ui.onmessage = async (msg) => {
             if (layoutDiff) diff.layout = layoutDiff;
           }
 
-          var layerProps = ['fill', 'stroke', 'strokeWeight', 'opacity', 'visible', 'component'];
+          var layerProps = ['fill', 'stroke', 'strokeWeight', 'opacity', 'visible', 'component', 'radius', 'width', 'height', 'x', 'y', 'rotation', 'shape', 'text', 'fontSize', 'font', 'textDecoration', 'textCase', 'lineHeight', 'letterSpacing'];
+          // Reported for the main layer by fillToken/strokeToken/opacity/cornerRadius.
+          var mainCovered = { fill: 1, stroke: 1, strokeWeight: 1, opacity: 1, radius: 1 };
           for (var lp in sig._layers) {
             var dl = defaultSig._layers[lp];
             if (!dl) continue;
@@ -1536,12 +1657,17 @@ figma.ui.onmessage = async (msg) => {
             for (var pi = 0; pi < layerProps.length; pi++) {
               var prop = layerProps[pi];
               if (prop === 'visible' && isTop) continue;
-              if (lp === sig._mainPath && prop !== 'visible' && prop !== 'component') continue;
+              if (lp === sig._mainPath && mainCovered[prop]) continue;
               if (lp === sig._textPath && prop === 'fill') continue;
               if (sl[prop] !== dl[prop]) {
                 if (!ld) ld = {};
                 ld[prop] = sl[prop] === undefined ? null : sl[prop];
               }
+            }
+            var ltd = diffTokens(sl.tokens, dl.tokens);
+            if (ltd) {
+              if (!ld) ld = {};
+              ld.tokens = ltd;
             }
             if (ld) {
               if (!diff.layers) diff.layers = {};

@@ -8,6 +8,10 @@
  * - Eventz Radio Button: disabled sets opacity on the variant itself, and
  *   checked/hover swap a nested icon instance whose vector changes fill
  *   token — all three diffed as "no change".
+ * - Whole-file sweeps of CBDS, Eventz and DS Contracts: gradient and image
+ *   fills, paint opacity, corner radius, typography, label text, swapped
+ *   spacing tokens, nested layer size and position, and vector shapes all
+ *   diffed as "no change".
  */
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -48,7 +52,7 @@ function variant(name: string, children: any[], opts: any = {}): any {
 		width: 100,
 		height: 40,
 		opacity: opts.opacity ?? 1,
-		fills: [],
+		fills: opts.fill ? [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }] : [],
 		strokes: [],
 		boundVariables: opts.fill ? { fills: [{ id: opts.fill }] } : {},
 		children,
@@ -172,5 +176,124 @@ describe("ANALYZE_COMPONENT_SET variant diffs", () => {
 			variant(`state=${state}`, [layer("Container", { fill, children: [layer("Label", { type: "TEXT" })] })]);
 		const { byName } = await run([mk("default", "v:bg"), mk("hover", "v:hover")], { state: ["default", "hover"] });
 		expect(byName["state=hover"].diffFromDefault).toEqual({ fillToken: "content/weak-hover" });
+	});
+
+	it("reports gradient, image and paint-opacity changes", async () => {
+		// Eventz Badge (gradient per variant), .fileThumbnail (image vs
+		// loading gradient), DS Contracts Cursor (stroke faded to 0).
+		const grad = (r: number) => ({
+			type: "GRADIENT_LINEAR",
+			gradientStops: [
+				{ color: { r, g: 0, b: 0 }, position: 0 },
+				{ color: { r: 1, g: 1, b: 1 }, position: 1 },
+			],
+		});
+		const mk = (name: string, fills: any[], strokeOpacity: number) => {
+			const cursor = Object.assign(layer("cursor", { type: "LINE" }), {
+				strokes: [{ type: "SOLID", opacity: strokeOpacity, color: { r: 0, g: 0, b: 0 } }],
+			});
+			return Object.assign(variant(name, [cursor]), { fills });
+		};
+		const { byName } = await run(
+			[
+				mk("variant=accent", [grad(1)], 1),
+				mk("variant=warning", [grad(0)], 1),
+				mk("variant=image", [{ type: "IMAGE" }], 1),
+				mk("variant=hidden", [grad(1)], 0),
+			],
+			{ variant: ["accent", "warning", "image", "hidden"] },
+		);
+		expect(byName["variant=warning"].diffFromDefault).toEqual({ variantFill: "linear-gradient(#000000, #ffffff)" });
+		expect(byName["variant=image"].diffFromDefault).toEqual({ variantFill: "image" });
+		expect(byName["variant=hidden"].diffFromDefault).toEqual({ strokeHex: "#000000 @0" });
+	});
+
+	it("reports corner radius on the variant and on nested layers", async () => {
+		// CBDS Chip round=true, Eventz .toggleGroupItem position=middle.
+		const corners = (n: number) => ({ topLeftRadius: n, topRightRadius: n, bottomRightRadius: n, bottomLeftRadius: n });
+		const mk = (name: string, root: number, inner: any) =>
+			Object.assign(variant(name, [Object.assign(layer("Label", { type: "TEXT" }), {}), Object.assign(layer("Button", { type: "INSTANCE" }), inner)]), corners(root));
+		const { byName } = await run(
+			[
+				mk("round=false", 4, corners(8)),
+				mk("round=true", 999, corners(8)),
+				mk("position=middle", 4, corners(0)),
+				mk("position=left", 4, { topLeftRadius: 8, topRightRadius: 0, bottomRightRadius: 0, bottomLeftRadius: 8 }),
+			],
+			{ round: ["false", "true"] },
+		);
+		expect(byName["round=true"].diffFromDefault).toEqual({ cornerRadius: 999 });
+		expect(byName["position=middle"].diffFromDefault).toEqual({ layers: { Button: { radius: 0 } } });
+		expect(byName["position=left"].diffFromDefault).toEqual({ layers: { Button: { radius: "8 0 0 8" } } });
+	});
+
+	it("reports typography and label text on text layers", async () => {
+		// CBDS Link underlined=true, Eventz Accordion sm vs lg, File Upload label.
+		const text = (o: any) =>
+			Object.assign(layer("Title", { type: "TEXT" }), {
+				characters: "Upload photo",
+				fontSize: 18,
+				fontName: { family: "Inter", style: "Bold" },
+				textDecoration: "NONE",
+				textCase: "ORIGINAL",
+				lineHeight: { unit: "PIXELS", value: 24 },
+				letterSpacing: { unit: "PERCENT", value: 0 },
+				...o,
+			});
+		const mk = (name: string, o: any) => variant(name, [layer("stack", { children: [text(o)] })]);
+		const { byName } = await run(
+			[
+				mk("v=default", {}),
+				mk("v=underlined", { textDecoration: "UNDERLINE" }),
+				mk("v=sm", { fontSize: 16, fontName: { family: "Inter", style: "Medium" }, lineHeight: { unit: "PIXELS", value: 20 } }),
+				mk("v=poster", { characters: "Upload poster" }),
+			],
+			{ v: ["default", "underlined", "sm", "poster"] },
+		);
+		expect(byName["v=underlined"].diffFromDefault).toEqual({ layers: { "stack › Title": { textDecoration: "UNDERLINE" } } });
+		expect(byName["v=sm"].diffFromDefault).toEqual({
+			layers: { "stack › Title": { fontSize: 16, font: "Inter Medium", lineHeight: "20px" } },
+		});
+		expect(byName["v=poster"].diffFromDefault).toEqual({ layers: { "stack › Title": { text: "Upload poster" } } });
+	});
+
+	it("reports a swapped spacing token even when the value is the same", async () => {
+		// DS Contracts Select multi=true: paddingLeft bound to another token.
+		VARS["v:pad-a"] = "space/inset-a";
+		VARS["v:pad-b"] = "space/inset-b";
+		const mk = (name: string, pad: string) =>
+			Object.assign(variant(name, [layer("Label", { type: "TEXT" })]), {
+				boundVariables: { paddingLeft: { type: "VARIABLE_ALIAS", id: pad } },
+			});
+		const { byName } = await run([mk("multi=false", "v:pad-a"), mk("multi=true", "v:pad-b")], { multi: ["false", "true"] });
+		expect(byName["multi=true"].diffFromDefault).toEqual({ tokens: { paddingLeft: "space/inset-b" } });
+	});
+
+	it("reports nested size, free position, rotation and vector shape changes", async () => {
+		// CBDS Tooltip pointerPosition, DS Contracts Heart hover, Eventz Radio icon paths.
+		const mk = (name: string, o: any) =>
+			variant(name, [
+				Object.assign(layer("Body"), { width: 120, height: 32 }),
+				Object.assign(layer("Pointer", { type: "VECTOR" }), { width: 12, height: 6, x: 10, y: 32, rotation: 0, vectorPaths: [{ data: "M0 0L6 6L12 0Z" }], ...o }),
+			]);
+		const { byName } = await run(
+			[
+				mk("p=top-right", {}),
+				mk("p=bottom-left", { x: 98, y: -6, rotation: 180 }),
+				mk("p=big", { width: 16, height: 8 }),
+				mk("p=other", { vectorPaths: [{ data: "M0 0L12 0Z" }] }),
+			],
+			{ p: ["top-right", "bottom-left", "big", "other"] },
+		);
+		expect(byName["p=bottom-left"].diffFromDefault).toEqual({ layers: { Pointer: { x: 98, y: -6, rotation: 180 } } });
+		expect(byName["p=big"].diffFromDefault).toEqual({ layers: { Pointer: { width: 16, height: 8 } } });
+		expect(Object.keys(byName["p=other"].diffFromDefault.layers.Pointer)).toEqual(["shape"]);
+	});
+
+	it("does not report position for layers placed by auto-layout", async () => {
+		const mk = (name: string, x: number) =>
+			Object.assign(variant(name, [Object.assign(layer("Icon"), { width: 16, height: 16, x, y: 0 })]), { layoutMode: "HORIZONTAL" });
+		const { byName } = await run([mk("a=1", 0), mk("a=2", 8)], { a: ["1", "2"] });
+		expect(byName["a=2"].diffFromDefault).toBeNull();
 	});
 });
