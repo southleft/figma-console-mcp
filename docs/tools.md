@@ -80,7 +80,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_setup_design_tokens` | Create collection + modes + variables atomically | Local / Cloud |
 | **🔍 Design-Code Parity** | `figma_check_design_parity` | Compare Figma specs vs code implementation | All |
 | | `figma_generate_component_doc` | Generate component documentation from Figma + code, with optional Figma version + git history | All |
-| **💬 Comments** | `figma_get_comments` | Get comments on a Figma file | All |
+| **💬 Comments** | `figma_get_comments` | Get comment threads on a Figma file, filtered by node, thread or date | All |
 | | `figma_post_comment` | Post a comment, optionally pinned to a node | All |
 | | `figma_delete_comment` | Delete a comment by ID | All |
 | **📝 Annotations** | `figma_get_annotations` | Read annotations from nodes (with optional child traversal) | Local / Cloud |
@@ -2793,30 +2793,38 @@ Any `codeInfo.changelog` entries you pass are still rendered, folded in as **Rel
 
 ### `figma_get_comments`
 
-Get comments on a Figma file. Returns comment threads with author, message, timestamps, and pinned node locations.
+Get comment threads on a Figma file. Each result is a root comment with its replies, sorted by latest activity, in a compact format by default.
 
 **When to Use:**
 - Reviewing feedback threads on a design file
-- Checking for open comments before a release
+- Checking for open comments on one component before a release
 - Retrieving comment IDs to reply to or delete
 
 **Usage:**
 ```javascript
 figma_get_comments({
   fileUrl: 'https://figma.com/design/abc123',
-  include_resolved: false,
-  as_md: true
+  node_id: '695:313',        // threads on this node and anything inside it
+  since: '2026-10-01',
+  limit: 30
 })
 ```
 
 **Parameters:**
-- `fileUrl` (optional): Figma file URL (uses current URL if omitted)
+- `fileUrl` (optional): Figma file URL (uses current URL if omitted). A `node-id` in the URL does not filter comments; pass `node_id`.
 - `as_md` (optional): Return comment message bodies as markdown (default: false)
-- `include_resolved` (optional): Include resolved comment threads (default: false)
+- `include_resolved` (optional): Include resolved threads (default: false)
+- `node_id` (optional): Only threads pinned to this node (`695:313` or `695-313`)
+- `include_nested` (optional): With `node_id`, also match threads pinned to nodes inside it (default: true)
+- `thread_id` (optional): Only the thread containing this comment ID (root or reply), even if resolved
+- `since` (optional): ISO date/time; only threads with activity at or after it
+- `limit` (optional): Maximum threads to return, 1–200 (default: 30)
+- `offset` (optional): Threads to skip, for paging (default: 0)
+- `format` (optional): `compact` (default) or `full` for raw Figma API comment objects
 
 **Returns:**
-- `comments`: Array of comment objects with `id`, `message`, `user`, `created_at`, `resolved_at`, `client_meta` (pinned location)
-- `summary`: Total, active, resolved, and returned counts
+- `comments`: Threads. Compact threads have `id`, `author`, `created_at`, `message`, `node_id`, `resolved_at`, `reactions` (counts by emoji) and `replies`.
+- `summary`: `total`, `active` and `resolved` thread counts; `comments_total` (every comment, including replies); `matched` (threads that passed the filters); `returned`, `offset` and `has_more` for paging
 
 ---
 
