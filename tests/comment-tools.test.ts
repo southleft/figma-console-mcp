@@ -282,17 +282,23 @@ describe("Comment Tools", () => {
 			expect(data.comments).toHaveLength(0);
 		});
 
-		it("takes the node filter from an explicit fileUrl", async () => {
-			(mockApi as any).getNodes.mockResolvedValue({
-				nodes: { "20:1": { document: { id: "20:1", children: [] } } },
-			});
+		it("does not infer a node filter from an explicit fileUrl", async () => {
 			const { data } = await call({ fileUrl: `${MOCK_FILE_URL}?node-id=20-1` });
-			expect(data.comments.map((c: any) => c.id)).toEqual(["r2"]);
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r1", "r2"]);
+			expect(data.summary.node_id).toBeUndefined();
+			expect((mockApi as any).getNodes).not.toHaveBeenCalled();
 		});
 
-		it("an empty node_id disables the fileUrl node filter", async () => {
+		it("uses an explicit node_id with a different node-id in fileUrl", async () => {
+			const { data } = await call({ fileUrl: `${MOCK_FILE_URL}?node-id=20-1`, node_id: "10:1" });
+			expect(data.comments.map((c: any) => c.id)).toEqual(["r1"]);
+			expect(data.summary.node_id).toBe("10:1");
+		});
+
+		it("an empty node_id leaves comments unfiltered", async () => {
 			const { data } = await call({ fileUrl: `${MOCK_FILE_URL}?node-id=20-1`, node_id: "" });
 			expect(data.comments).toHaveLength(2);
+			expect((mockApi as any).getNodes).not.toHaveBeenCalled();
 		});
 
 		it("returns error when the node is missing", async () => {

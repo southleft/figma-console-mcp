@@ -107,13 +107,13 @@ export function registerCommentTools(
 	// -----------------------------------------------------------------------
 	server.tool(
 		"figma_get_comments",
-		"Get comment threads on a Figma file. Returns threads (root comment + replies) sorted by latest activity, in a compact format by default (author handle, message, timestamps, pinned node, reaction counts). Narrow the result with node_id (includes comments pinned to nested nodes; taken from the node-id of an explicit fileUrl when omitted), thread_id or since, and page with limit/offset — files often have hundreds of comments. Use include_resolved to also see resolved threads and format='full' for raw Figma API objects.",
+		"Get comment threads on a Figma file. Returns threads (root comment + replies) sorted by latest activity, in a compact format by default (author handle, message, timestamps, pinned node, reaction counts). Narrow the result with an explicit node_id (includes comments pinned to nested nodes), thread_id or since, and page with limit/offset — files often have hundreds of comments. Use include_resolved to also see resolved threads and format='full' for raw Figma API objects.",
 		{
 			fileUrl: z
 				.string()
 				.url()
 				.optional()
-				.describe("Figma file URL. Uses current URL if omitted. A node-id in the URL filters threads to that node unless node_id is given."),
+				.describe("Figma file URL. Uses current URL if omitted. A node-id in the URL does not filter comments; use node_id explicitly."),
 			as_md: z
 				.boolean()
 				.optional()
@@ -127,7 +127,7 @@ export function registerCommentTools(
 			node_id: z
 				.string()
 				.optional()
-				.describe("Only threads pinned to this node (e.g. '695:313' or '695-313') or, with include_nested, to any node inside it. Pass an empty string to disable the node-id taken from fileUrl."),
+				.describe("Only threads pinned to this node (e.g. '695:313' or '695-313') or, with include_nested, to any node inside it. Omit or pass an empty string to return threads across the file."),
 			include_nested: z
 				.boolean()
 				.optional()
@@ -227,14 +227,7 @@ export function registerCommentTools(
 					}
 				}
 
-				// Only an explicit fileUrl implies a node filter: the current URL
-				// from the Desktop Bridge reflects whatever the user has selected.
-				const targetNode =
-					node_id !== undefined
-						? node_id || undefined
-						: fileUrl
-							? extractFigmaUrlInfo(fileUrl)?.nodeId
-							: undefined;
+				const targetNode = node_id || undefined;
 
 				logger.info(
 					{ fileKey, as_md, include_resolved, targetNode, thread_id, since, limit, offset, format },
