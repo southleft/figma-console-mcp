@@ -5,6 +5,24 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.1] - 2026-10-27
+
+Two reliability fixes, server-only: no plugin re-import needed.
+
+### Fixed
+
+- **Commands no longer pile up behind a plugin that's stuck on a timed-out script (#94).** Figma can't interrupt a running plugin script, so after a timeout the plugin may still be working, and every command sent after it waited in line. Each one timed out in turn, and could still run long after the caller gave up. Now:
+  - The first timeout says the script may still be running in Figma.
+  - If a second request times out behind an unanswered one, the error says which request the plugin is stuck on.
+  - Later commands to that file then fail immediately with *"The Desktop Bridge plugin is still busy with … sent Ns ago"* instead of being queued.
+  - The busy state clears when the plugin's late reply arrives, when the plugin is closed and reopened, or after 10 minutes. Other files aren't affected. A late reply is logged instead of being dropped silently.
+- **A new server no longer shuts down one that's in use (#69).** When all ten ports (9223–9232) were taken, for example by one server per Codex thread, a new server ended the *oldest* running server, even if a thread was working with it. Servers now record their last tool call in their port file. Eviction ends the *least recently used* server, so a thread that never touched Figma goes first, and it never ends a server started or used in the last two minutes.
+
+### Changed
+
+- **`figma_execute` accepts a `timeout` of up to 300000 ms (5 minutes)**, up from 30000, for long scripts. The default stays 5000 ms.
+
+
 ## [1.42.0] - 2026-10-27
 
 `figma_get_comments` now returns comment threads in a compact form, with filters and paging. On a file with hundreds of comments the response drops from about 97K characters to under 10K. Server-only: no plugin re-import needed. Thanks to @OAPrilepa (#139).
@@ -1601,6 +1619,8 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.42.1]: https://github.com/southleft/figma-console-mcp/compare/v1.42.0...v1.42.1
+[1.42.0]: https://github.com/southleft/figma-console-mcp/compare/v1.41.5...v1.42.0
 [1.41.5]: https://github.com/southleft/figma-console-mcp/compare/v1.41.4...v1.41.5
 [1.41.4]: https://github.com/southleft/figma-console-mcp/compare/v1.41.3...v1.41.4
 [1.41.3]: https://github.com/southleft/figma-console-mcp/compare/v1.41.2...v1.41.3
