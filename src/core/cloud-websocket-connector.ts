@@ -207,7 +207,7 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 	}
 
 	async analyzeComponentSet(nodeId: string): Promise<any> {
-		return this.sendCommand('ANALYZE_COMPONENT_SET', { nodeId }, 30000);
+		return this.sendCommand('ANALYZE_COMPONENT_SET', { nodeId }, 120000);
 	}
 
 	async addComponentProperty(

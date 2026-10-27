@@ -240,7 +240,7 @@ export class WebSocketConnector implements IFigmaConnector {
   }
 
   async analyzeComponentSet(nodeId: string): Promise<any> {
-    return this.wsServer.sendCommand('ANALYZE_COMPONENT_SET', { nodeId }, 30000);
+    return this.wsServer.sendCommand('ANALYZE_COMPONENT_SET', { nodeId }, 120000);
   }
 
   async addComponentProperty(
