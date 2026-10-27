@@ -5,6 +5,13 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`figma_get_comments` returns comment threads in compact format by default**, sorted by latest activity, with explicit `node_id`, `thread_id`, and `since` filters and `limit`/`offset` paging. A `node-id` in `fileUrl` does not apply a node filter. An explicit `thread_id` also finds resolved threads without `include_resolved`. Use `format: "full"` for raw Figma comment fields within each thread.
+- **`figma_get_comments` summary counts changed:** `summary.total`, `summary.active`, and `summary.resolved` now count threads rather than individual comments. `summary.comments_total` reports the total number of individual comments, including replies.
+
 ## [1.41.4] - 2026-10-26
 
 More component-set analysis fixes, found by running v1.41.3's shipped plugin against a real file. **Re-import the Desktop Bridge plugin** (Plugins → Development → Import plugin from manifest → `~/.figma-console-mcp/plugin/manifest.json`) to get them.
