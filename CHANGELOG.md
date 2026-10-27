@@ -5,6 +5,25 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.5] - 2026-10-27
+
+A fifth round of component-set analysis fixes. They come from comparing, property by property, every variant the analyzer reported as unchanged against its default, across every component set in three more files. **Re-import the Desktop Bridge plugin** (Plugins → Development → Import plugin from manifest → `~/.figma-console-mcp/plugin/manifest.json`) to get them.
+
+### Fixed
+
+- **`figma_analyze_component_set` reported no change for 67 variants that do differ from their default.** Six kinds of change were never compared:
+  - **Paints other than solid colors.** Gradients, image fills and paint opacity were ignored, so a badge's gradient per variant, a thumbnail's image vs loading state, and a cursor stroke faded to transparent all came back as no change. Fills and strokes now read as the token, the hex, `linear-gradient(#a, #b)` or `image`, with `@0.5` when the paint is partly transparent.
+  - **Corner radius.** Round vs square chips and buttons, progress-bar shapes and toggle-group ends now report `cornerRadius`/`variantRadius` (a number or token, or `"tl tr br bl"` when the corners differ).
+  - **Typography and label text.** Text layers now report changes to font size, family and style, underline, case, line height, letter spacing and the text itself (`Upload photo` → `Upload poster`).
+  - **Swapped spacing and size tokens.** A variant can bind padding, gap or width to a different token while the value in the current mode stays the same. These now show up under `tokens`, e.g. `{ "paddingLeft": "space/inset-b" }`.
+  - **Nested layer geometry.** Changes to a nested layer's size and rotation, and to its position when auto-layout doesn't place it (a tooltip pointer moving between corners), are reported under `layers`.
+  - **Vector shapes.** Icon paths and progress arcs that change between variants are reported as `shape`.
+
+- **Analysis gets 120 seconds instead of 30.** Comparing all of the above costs about 2–3× more time per variant (CBDS Button, 135 variants: 1.0 s → 2.8 s), so very large sets could have hit the old limit.
+
+After the fix, across 1,800+ variants in three files (CBDS, Eventz, FDS Evals), every variant reported as unchanged is identical to its default.
+
+
 ## [1.41.4] - 2026-10-26
 
 More component-set analysis fixes, found by running v1.41.3's shipped plugin against a real file. **Re-import the Desktop Bridge plugin** (Plugins → Development → Import plugin from manifest → `~/.figma-console-mcp/plugin/manifest.json`) to get them.
@@ -1568,6 +1587,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.41.5]: https://github.com/southleft/figma-console-mcp/compare/v1.41.4...v1.41.5
 [1.41.4]: https://github.com/southleft/figma-console-mcp/compare/v1.41.3...v1.41.4
 [1.41.3]: https://github.com/southleft/figma-console-mcp/compare/v1.41.2...v1.41.3
 [1.41.2]: https://github.com/southleft/figma-console-mcp/compare/v1.41.1...v1.41.2
