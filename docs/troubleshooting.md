@@ -196,6 +196,17 @@ You'll see all your `[Main]`, `[Swapper]`, `[Serializer]`, etc. plugin logs imme
 
 ---
 
+### Issue: "The Desktop Bridge plugin is still busy"
+
+**Symptom:** a call times out, the next one times out too, and later calls fail at once with *"The Desktop Bridge plugin is still busy with EXECUTE_CODE, sent 40s ago, so … was not sent."*
+
+**Cause:** Figma can't interrupt a plugin script once it's running. A long or stuck `figma_execute` script (a big synchronous loop, a walk over every node in a large file) keeps running after the server stops waiting for it, and every command sent after it waits in line behind it. Once two requests in a row time out, the server stops sending to that file instead of piling more work into the queue, work that could otherwise run long after you gave up on it.
+
+**Solutions:**
+1. Wait. When the script finishes, the plugin's late reply clears the busy state and commands go through again. The server also retries on its own after 10 minutes.
+2. To stop the script now, close and reopen the Desktop Bridge plugin in that file.
+3. For scripts that are meant to run long, pass a larger `timeout` to `figma_execute` (up to 300000 ms), or split the work into smaller calls.
+
 ### Issue: No Console Logs Captured
 
 **Symptoms:**

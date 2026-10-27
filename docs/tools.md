@@ -1128,7 +1128,7 @@ figma_execute({
 
 **Parameters:**
 - `code` (required): JavaScript code to execute. Has access to `figma` global object.
-- `timeout` (optional): Execution timeout in ms (default: 5000, max: 30000)
+- `timeout` (optional): Execution timeout in ms (default: 5000, max: 300000)
 - `fileKey` (optional, **Local Mode only**): Run against a specific connected file instead of the active one, without changing the active file or releasing target lock. Get connected fileKeys from `figma_list_open_files`. Cloud Mode pairs with a single plugin instance and rejects this parameter rather than silently running against the paired file.
 
 **Returns:**

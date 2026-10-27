@@ -125,11 +125,11 @@ describe("Write Tools", () => {
 	// ========================================================================
 
 	describe("figma_execute", () => {
-		it("caps timeout at 30000ms even when higher value requested", async () => {
+		it("caps timeout at 300000ms even when higher value requested", async () => {
 			const tool = server._getTool("figma_execute");
-			await tool.handler({ code: "return 1", timeout: 99999 });
+			await tool.handler({ code: "return 1", timeout: 999999 });
 
-			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 30000, undefined);
+			expect(mockConnector.executeCodeViaUI).toHaveBeenCalledWith("return 1", 300000, undefined);
 		});
 
 		it("passes through smaller timeouts unchanged", async () => {

@@ -138,6 +138,33 @@ interface PendingRequest {
   targetFileKey: string;
 }
 
+/**
+ * A request that timed out before the plugin answered. Figma can't interrupt a
+ * running plugin script, so the plugin may still be working on it, and
+ * commands sent after it wait in line behind it.
+ */
+interface AbandonedRequest {
+  method: string;
+  sentAt: number;
+  timedOutAt: number;
+  targetFileKey: string;
+  /** Socket the request went out on; a reconnect means the plugin restarted. */
+  ws: WebSocket;
+}
+
+/** A file whose plugin stopped answering: two requests in a row timed out. */
+interface StalledFile {
+  method: string;
+  sentAt: number;
+  since: number;
+  ws: WebSocket;
+}
+
+/** Forget timed-out requests after this long; a reply that late is just logged as unsolicited. */
+const ABANDONED_REQUEST_TTL_MS = 15 * 60 * 1000;
+/** Stop failing fast after this long, so a plugin that recovered without replying gets traffic again. */
+const STALL_MAX_MS = 10 * 60 * 1000;
+
 export interface ConnectedFileInfo {
   fileName: string;
   fileKey: string | null;
@@ -229,6 +256,8 @@ export class FigmaWebSocketServer extends EventEmitter {
    */
   private _targetLocked = false;
   private pendingRequests: Map<string, PendingRequest> = new Map();
+  private abandonedRequests: Map<string, AbandonedRequest> = new Map();
+  private stalledFiles: Map<string, StalledFile> = new Map();
   private requestIdCounter = 0;
   private options: WebSocketServerOptions;
   private _isStarted = false;
@@ -477,12 +506,33 @@ export class FigmaWebSocketServer extends EventEmitter {
       } else {
         clearTimeout(pending.timeoutId);
         this.pendingRequests.delete(message.id);
+        this.clearStall(pending.targetFileKey);
 
         if (message.error) {
           pending.reject(new Error(message.error));
         } else {
           pending.resolve(message.result);
         }
+        return;
+      }
+    }
+
+    // Reply to a request we already gave up on: the plugin finished it late.
+    if (message.id && this.abandonedRequests.has(message.id)) {
+      const abandoned = this.abandonedRequests.get(message.id)!;
+      if (abandoned.ws === ws) {
+        this.abandonedRequests.delete(message.id);
+        this.clearStall(abandoned.targetFileKey);
+        logger.info(
+          {
+            id: message.id,
+            method: abandoned.method,
+            fileKey: abandoned.targetFileKey,
+            secondsAfterTimeout: Math.round((Date.now() - abandoned.timedOutAt) / 1000),
+            failed: !!message.error,
+          },
+          'Plugin answered a request after it timed out; the result was discarded'
+        );
         return;
       }
     }
@@ -817,12 +867,59 @@ export class FigmaWebSocketServer extends EventEmitter {
         return;
       }
 
+      const stall = this.getStall(fileKey, client.ws);
+      if (stall) {
+        const busyFor = Math.round((Date.now() - stall.sentAt) / 1000);
+        reject(new Error(
+          `The Desktop Bridge plugin is still busy with ${stall.method}, sent ${busyFor}s ago, ` +
+          `so ${method} was not sent. Figma can't interrupt a running plugin script, and commands ` +
+          `sent now would wait behind it (and could run long after you gave up on them). ` +
+          `Wait for it to finish, or close and reopen the Desktop Bridge plugin to stop it.`
+        ));
+        return;
+      }
+
       const id = `ws_${++this.requestIdCounter}_${Date.now()}`;
+      const sentAt = Date.now();
+      // An earlier request to this file that timed out and is still unanswered:
+      // if this one times out too, the plugin is stuck rather than slow.
+      const queuedBehind = this.oldestAbandonedFor(fileKey, client.ws);
 
       const timeoutId = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          reject(new Error(`WebSocket command ${method} timed out after ${timeoutMs}ms`));
+          this.pruneAbandoned();
+          this.abandonedRequests.set(id, {
+            method,
+            sentAt,
+            timedOutAt: Date.now(),
+            targetFileKey: fileKey,
+            ws: client.ws,
+          });
+          let detail = '';
+          if (queuedBehind && this.abandonedRequests.has(queuedBehind.id)) {
+            const earlier = queuedBehind.request;
+            this.stalledFiles.set(fileKey, {
+              method: earlier.method,
+              sentAt: earlier.sentAt,
+              since: Date.now(),
+              ws: client.ws,
+            });
+            detail =
+              ` The plugin is still busy with an earlier ${earlier.method} sent ` +
+              `${Math.round((Date.now() - earlier.sentAt) / 1000)}s ago that also timed out. ` +
+              `Figma can't interrupt a running plugin script, so commands wait behind it. ` +
+              `Commands to this file will now fail immediately until it finishes, or until ` +
+              `the Desktop Bridge plugin is closed and reopened.`;
+            logger.warn(
+              { fileKey, method, blockedBy: earlier.method, blockedForSeconds: Math.round((Date.now() - earlier.sentAt) / 1000) },
+              'Plugin is not answering: a second request timed out behind an earlier one'
+            );
+          } else if (method === 'EXECUTE_CODE') {
+            detail =
+              ' The script may still be running in Figma; commands sent before it finishes will wait behind it.';
+          }
+          reject(new Error(`WebSocket command ${method} timed out after ${timeoutMs}ms.${detail}`));
         }
       }, timeoutMs);
 
@@ -1176,6 +1273,42 @@ export class FigmaWebSocketServer extends EventEmitter {
   /**
    * Reject pending requests that were sent to a specific file
    */
+  /** The file's stall, if it still applies to this socket and hasn't expired. */
+  private getStall(fileKey: string, ws: WebSocket): StalledFile | null {
+    const stall = this.stalledFiles.get(fileKey);
+    if (!stall) return null;
+    if (stall.ws !== ws || Date.now() - stall.since > STALL_MAX_MS) {
+      this.stalledFiles.delete(fileKey);
+      return null;
+    }
+    return stall;
+  }
+
+  private clearStall(fileKey: string): void {
+    if (this.stalledFiles.delete(fileKey)) {
+      logger.info({ fileKey }, 'Plugin is answering again');
+    }
+  }
+
+  private oldestAbandonedFor(fileKey: string, ws: WebSocket): { id: string; request: AbandonedRequest } | null {
+    let oldest: { id: string; request: AbandonedRequest } | null = null;
+    for (const [id, request] of this.abandonedRequests) {
+      if (request.targetFileKey !== fileKey || request.ws !== ws) continue;
+      if (Date.now() - request.timedOutAt > ABANDONED_REQUEST_TTL_MS) continue;
+      if (!oldest || request.sentAt < oldest.request.sentAt) oldest = { id, request };
+    }
+    return oldest;
+  }
+
+  private pruneAbandoned(): void {
+    const now = Date.now();
+    for (const [id, request] of this.abandonedRequests) {
+      if (now - request.timedOutAt > ABANDONED_REQUEST_TTL_MS || request.ws.readyState !== WebSocket.OPEN) {
+        this.abandonedRequests.delete(id);
+      }
+    }
+  }
+
   private rejectPendingRequestsForFile(fileKey: string, reason: string): void {
     for (const [id, pending] of this.pendingRequests) {
       if (pending.targetFileKey === fileKey) {
@@ -1222,6 +1355,8 @@ export class FigmaWebSocketServer extends EventEmitter {
     this._pendingClients.clear();
 
     this.rejectPendingRequests('WebSocket server shutting down');
+    this.abandonedRequests.clear();
+    this.stalledFiles.clear();
 
     // Terminate all connected clients so wss.close() resolves promptly
     if (this.wss) {

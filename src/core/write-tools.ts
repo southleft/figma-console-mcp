@@ -49,7 +49,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 				.optional()
 				.default(5000)
 				.describe(
-					"Execution timeout in milliseconds (default: 5000, max: 30000)",
+					"Execution timeout in milliseconds (default: 5000, max: 300000)",
 				),
 			fileKey: z
 				.string()
@@ -63,7 +63,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 				const connector = await getDesktopConnector();
 				const result = await connector.executeCodeViaUI(
 					code,
-					Math.min(timeout, 30000),
+					Math.min(timeout, 300000),
 					fileKey,
 				);
 
@@ -89,16 +89,19 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					{ error },
 					"Failed to execute code in Figma plugin context",
 				);
+				const errorMessage = error instanceof Error ? error.message : String(error);
+				const busy = /timed out|still busy/.test(errorMessage);
 				return {
 					content: [
 						{
 							type: "text" as const,
 							text: JSON.stringify(
 								{
-									error:
-										error instanceof Error ? error.message : String(error),
+									error: errorMessage,
 									message: "Failed to execute code in Figma plugin context",
-									hint: "Make sure the Desktop Bridge plugin is running in Figma",
+									hint: busy
+										? "Figma can't stop a running script. Wait for it to finish (or close and reopen the Desktop Bridge plugin), then retry. For long scripts, pass a larger timeout (up to 300000 ms) or split the work into smaller calls."
+										: "Make sure the Desktop Bridge plugin is running in Figma",
 								},
 							),
 						},

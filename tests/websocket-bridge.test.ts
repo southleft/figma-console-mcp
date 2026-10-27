@@ -298,6 +298,99 @@ describe('FigmaWebSocketServer', () => {
       ).rejects.toThrow('timed out');
     });
 
+    describe('plugin still busy after a timeout (#94)', () => {
+      /** A plugin stuck on one request: it holds every message until release(). */
+      function stuckPlugin(client: WebSocket) {
+        const held: any[] = [];
+        client.on('message', (data: Buffer) => {
+          const msg = JSON.parse(data.toString());
+          if (msg.id && msg.method) held.push(msg);
+        });
+        return {
+          held,
+          release() {
+            for (const msg of held.splice(0)) {
+              client.send(JSON.stringify({ id: msg.id, result: { done: msg.method } }));
+            }
+          },
+        };
+      }
+
+      test('a single timeout does not block the next command', async () => {
+        server = new FigmaWebSocketServer({ port: TEST_PORT });
+        await server.start();
+        const client = await connectClient(server, TEST_PORT);
+        clients.push(client);
+        const plugin = stuckPlugin(client);
+
+        await expect(server.sendCommand('EXECUTE_CODE', { code: 'loop' }, 100))
+          .rejects.toThrow(/timed out after 100ms\. The script may still be running/);
+        // The next command is still sent (the plugin may just have been slow).
+        const next = server.sendCommand('UPDATE_VARIABLE', {}, 100);
+        await expect(next).rejects.toThrow('timed out');
+        expect(plugin.held.map((m) => m.method)).toEqual(['EXECUTE_CODE', 'UPDATE_VARIABLE']);
+      });
+
+      test('a second timeout behind the first fails later commands fast', async () => {
+        server = new FigmaWebSocketServer({ port: TEST_PORT });
+        await server.start();
+        const client = await connectClient(server, TEST_PORT);
+        clients.push(client);
+        const plugin = stuckPlugin(client);
+
+        await expect(server.sendCommand('EXECUTE_CODE', { code: 'loop' }, 100)).rejects.toThrow('timed out');
+        await expect(server.sendCommand('GET_SELECTION', {}, 100))
+          .rejects.toThrow(/still busy with an earlier EXECUTE_CODE/);
+
+        const started = Date.now();
+        await expect(server.sendCommand('UPDATE_VARIABLE', {}, 5000))
+          .rejects.toThrow(/still busy with EXECUTE_CODE, sent \d+s ago, so UPDATE_VARIABLE was not sent/);
+        expect(Date.now() - started).toBeLessThan(500);
+        // The fail-fast command never reached the plugin.
+        expect(plugin.held.map((m) => m.method)).toEqual(['EXECUTE_CODE', 'GET_SELECTION']);
+      });
+
+      test('a late reply from the plugin clears the busy state', async () => {
+        server = new FigmaWebSocketServer({ port: TEST_PORT });
+        await server.start();
+        const client = await connectClient(server, TEST_PORT);
+        clients.push(client);
+        const plugin = stuckPlugin(client);
+
+        await expect(server.sendCommand('EXECUTE_CODE', { code: 'loop' }, 100)).rejects.toThrow('timed out');
+        await expect(server.sendCommand('GET_SELECTION', {}, 100)).rejects.toThrow('still busy');
+
+        // The long script finishes: both held replies arrive late.
+        plugin.release();
+        await new Promise((r) => setTimeout(r, 100));
+
+        const answered = server.sendCommand('UPDATE_VARIABLE', {}, 2000);
+        await new Promise((r) => setTimeout(r, 50));
+        plugin.release();
+        await expect(answered).resolves.toEqual({ done: 'UPDATE_VARIABLE' });
+      });
+
+      test('reopening the plugin clears the busy state', async () => {
+        server = new FigmaWebSocketServer({ port: TEST_PORT });
+        await server.start();
+        const client = await connectClient(server, TEST_PORT);
+        clients.push(client);
+        stuckPlugin(client);
+
+        await expect(server.sendCommand('EXECUTE_CODE', { code: 'loop' }, 100)).rejects.toThrow('timed out');
+        await expect(server.sendCommand('GET_SELECTION', {}, 100)).rejects.toThrow('still busy');
+
+        // Same file reconnects on a new socket (plugin closed and reopened).
+        const reopened = await connectClient(server, TEST_PORT);
+        clients.push(reopened);
+        reopened.on('message', (data: Buffer) => {
+          const msg = JSON.parse(data.toString());
+          if (msg.id && msg.method) reopened.send(JSON.stringify({ id: msg.id, result: 'ok' }));
+        });
+        await expect(server.sendCommand('UPDATE_VARIABLE', {}, 2000)).resolves.toBe('ok');
+      });
+    });
+
     test('emits pluginMessage for unsolicited data', async () => {
       server = new FigmaWebSocketServer({ port: TEST_PORT });
       await server.start();
