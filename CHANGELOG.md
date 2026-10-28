@@ -5,6 +5,15 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.44.2] - 2026-10-27
+
+Cloud Mode fix, server-only: no plugin re-import needed.
+
+### Fixed
+
+- **Looking up a library component by key works in Cloud Mode.** `figma_get_library_component_by_key` calls Figma's `/v1/components/:key` and `/v1/component_sets/:key`, which need the `library_assets:read` scope, and Cloud sign-in never asked for it, so those calls returned 403. Sign-in now requests it, and Figma's consent screen lists *"Read published components and styles data"*. Existing Cloud sessions keep their original scopes: sign in again to use these lookups. Personal access tokens need **Library assets** (see the setup guide).
+
+
 ## [1.44.1] - 2026-10-27
 
 A Cloud Mode sign-in fix, clearer token-scope errors, and up-to-date setup guides for Codex, Gemini CLI and Antigravity. Server-only: no plugin re-import needed.
@@ -1669,6 +1678,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.44.2]: https://github.com/southleft/figma-console-mcp/compare/v1.44.1...v1.44.2
 [1.44.1]: https://github.com/southleft/figma-console-mcp/compare/v1.44.0...v1.44.1
 [1.44.0]: https://github.com/southleft/figma-console-mcp/compare/v1.43.0...v1.44.0
 [1.43.0]: https://github.com/southleft/figma-console-mcp/compare/v1.42.1...v1.43.0
