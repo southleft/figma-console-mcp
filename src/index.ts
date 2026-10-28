@@ -28,6 +28,7 @@ import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerLibraryTools, registerLibraryVariableTools } from "./core/library-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { wrapServerForIdentity } from "./core/identity.js";
+import { isFigmaPAT, validateFigmaPAT } from "./core/figma-pat.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
 import { registerWriteTools } from "./core/write-tools.js";
@@ -43,32 +44,6 @@ export { PluginRelayDO } from "./core/cloud-websocket-relay.js";
 // They require Node.js file system APIs for serving HTML that don't work in Cloudflare Workers
 
 const logger = createChildLogger({ component: "mcp-server" });
-
-/**
- * Validate a Figma Personal Access Token (PAT) by calling the Figma API.
- * PATs start with 'figd_' and require the X-Figma-Token header (not Bearer).
- * Returns the user info if valid, null if invalid/expired.
- */
-async function validateFigmaPAT(token: string): Promise<{ id: string; handle: string; email: string } | null> {
-	try {
-		const response = await fetch("https://api.figma.com/v1/me", {
-			headers: { "X-Figma-Token": token },
-		});
-		if (!response.ok) return null;
-		const data = await response.json() as { id: string; handle: string; email: string };
-		return data?.id ? data : null;
-	} catch {
-		return null;
-	}
-}
-
-/**
- * Check if a token is a Figma Personal Access Token.
- * PATs start with 'figd_' — OAuth tokens start with 'figu_'.
- */
-function isFigmaPAT(token: string): boolean {
-	return token.startsWith("figd_");
-}
 
 /**
  * Serve the legacy /sse transport with the caller's already-verified Figma

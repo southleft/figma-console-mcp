@@ -147,6 +147,17 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 
 > **Stable plugin path:** The MCP server automatically copies plugin files to `~/.figma-console-mcp/plugin/` on startup. Import from this path instead of the volatile npx cache path. Re-importing after a package update is optional — only required when the release notes call for it.
 
+#### 403 Forbidden from the Figma API
+**Cause:** Your personal access token is missing a scope that the tool's REST call needs. Figma answers **401** for a token it doesn't recognize, and **403** for a valid token without the right scope.
+**Fix:** Create a new token with the scopes in [Setup → Get your Figma token](/setup#step-1-get-your-figma-token-2-min), then update `FIGMA_ACCESS_TOKEN` and restart your MCP client. Which scope a 403 points to:
+- Component search, the design system kit, component docs, styles → **Library content** (`library_content:read`)
+- Looking up a published component by key → **Library assets** (`library_assets:read`)
+- Version history, changelogs, version diffs → **File versions** (`file_versions:read`)
+- Comments → **Comments** (`file_comments:read` / `file_comments:write`)
+- Variables over REST → **Variables** (`file_variables:read`, Enterprise only). On other plans, open the Desktop Bridge plugin; variables are then read through it and no scope is needed.
+
+Before v1.44.1, Cloud Mode rejected a token without **Current user** (`current_user:read`) as `invalid_token`. It now accepts it.
+
 #### HTTP endpoint issues
 These apply only when you've set `FIGMA_MCP_HTTP_PORT` to share one server over HTTP (v1.44.0). Run `figma_get_status` and look at `transport.mcpHttp`.
 - **`mcpHttp.error` says the port is in use:** another process, often another figma-console-mcp started with the same variable, already holds it. That server's URL is listed under `otherInstances[].mcpHttpUrl`; point your clients there, or choose another port. Avoid 3845 (Figma's Dev Mode MCP) and 9223–9232 (the bridge).

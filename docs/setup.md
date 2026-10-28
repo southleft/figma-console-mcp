@@ -18,7 +18,8 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | **Create, modify, and develop with AI** | [NPX Setup](#-npx-setup-recommended) (Recommended) | ~10 min |
 | **Design from Claude.ai, v0, Replit, or Lovable** | [Cloud Mode](#-cloud-mode-web-ai-clients) | ~5 min |
 | **Full capabilities with manual update control** | [Local Git Setup](#-local-git-setup-alternative) | ~15 min |
-| **Set up with OpenAI Codex** (GUI config) | [Codex Setup](#-openai-codex) | ~5 min |
+| **Set up with OpenAI Codex** (app, CLI, or IDE extension) | [Codex Setup](#-openai-codex) | ~5 min |
+| **Set up with Gemini CLI or Google Antigravity** | [Gemini CLI](#-gemini-cli) · [Antigravity](#-google-antigravity) | ~5 min |
 | **Just explore my design data** (read-only) | [Remote Mode](#-remote-mode-read-only-exploration) | ~2 min |
 
 ### ⚠️ Important: Capability Differences
@@ -104,27 +105,30 @@ Before starting, verify you have:
 
 ### Step 1: Get Your Figma Token (~2 min)
 
-1. Go to [Manage personal access tokens](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) in Figma Help
-2. Follow the steps to **create a new personal access token**
-3. Enter description: `Figma Console MCP`
-4. **Set the following scopes:**
+1. In Figma, open the account menu (top left of the file browser) → **Settings** → **Security** → **Personal access tokens** → **Generate new token** ([Figma Help](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens))
+2. Enter a name: `Figma Console MCP`
+3. **Set the following scopes:**
 
 | Scope | Access | Why |
 |-------|--------|-----|
-| **File content** | ✅ Read only | Read design data, components, styles, and render images |
-| **Variables** | ✅ Read only | Read design tokens/variables (Enterprise plans only) |
-| **Comments** | ✅ Read and write | Read and post comments on files |
+| **File content** (`file_content:read`) | ✅ Read | Files, nodes, and rendered images |
+| **File versions** (`file_versions:read`) | ✅ Read | Version history, changelogs, and version diffs |
+| **Library content** (`library_content:read`) | ✅ Read | A file's components, component sets, and styles (component search, design system kit, docs) |
+| **Library assets** (`library_assets:read`) | ✅ Read | Looking up a published component or component set by key |
+| **Comments** (`file_comments:read`, `file_comments:write`) | ✅ Read and write | Reading, posting, and deleting comments |
+| **Current user** (`current_user:read`) | ✅ Read | Lets Cloud Mode confirm your token. Optional for Local Mode |
+| **Variables** (`file_variables:read`) | ✅ Read | Variables over the REST API. **Enterprise plans only**, and optional: every plan reads variables through the Desktop Bridge plugin |
 
-> 💡 **No other scopes are needed.** Leave Webhooks, Dev resources, and Library analytics as "No access".
+> 💡 **No other scopes are needed.** Leave Webhooks, Dev resources, Library analytics, and the rest as "No access". A tool that needs a scope you didn't grant fails with a **403** naming the request; see [Troubleshooting](/troubleshooting#403-forbidden-from-the-figma-api). Scope reference: [Figma REST API scopes](https://developers.figma.com/docs/rest-api/scopes/).
 
-5. Click **"Generate token"**
-6. **Copy the token immediately** — you won't see it again!
+4. Click **"Generate token"**
+5. **Copy the token immediately** — you won't see it again!
 
 > 💡 Your token starts with `figd_` — if it doesn't, something went wrong.
 
 ### Step 2: Configure Your MCP Client (~3 min)
 
-> 💡 **Using OpenAI Codex?** Skip to the dedicated [Codex setup section](#-openai-codex) — it uses a graphical interface instead of JSON config files.
+> 💡 **Using OpenAI Codex, Gemini CLI, or Google Antigravity?** They use their own config formats: see [OpenAI Codex](#-openai-codex), [Gemini CLI](#-gemini-cli), or [Google Antigravity](#-google-antigravity).
 
 #### Claude Code (CLI)
 
@@ -581,7 +585,7 @@ Create `.vscode/mcp.json` in your project:
 
 ## 🧠 OpenAI Codex
 
-OpenAI Codex uses a graphical interface for MCP server configuration instead of JSON files. This makes setup straightforward — just fill in the fields.
+The Codex app, the Codex CLI, and the Codex IDE extension share one MCP configuration (`~/.codex/config.toml`), so adding the server in any of them makes it available in all three. Use whichever is easiest: the app's form, one CLI command, or the config file. ([Codex MCP docs](https://developers.openai.com/codex/mcp))
 
 <iframe
   width="100%"
@@ -595,18 +599,25 @@ OpenAI Codex uses a graphical interface for MCP server configuration instead of 
 
 ### Prerequisites
 
-- [OpenAI Codex desktop app](https://openai.com/codex/get-started/) installed
+- [OpenAI Codex](https://openai.com/codex/get-started/) (app, CLI, or IDE extension) installed
 - Node.js 18+ installed
 - Figma Desktop installed
 - Figma Personal Access Token ([get one](#step-1-get-your-figma-token-2-min))
 
 ### Step 1: Add the MCP Server (~2 min)
 
-1. Open Codex and go to **Settings** (gear icon in the sidebar)
-2. Click **Settings** again in the submenu
-3. Select **MCP servers** from the left sidebar
-4. Click **"Add MCP Server"** (or create a new server)
-5. Fill in the fields:
+**Option A: Codex CLI (one command)**
+
+```bash
+codex mcp add figma-console --env FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE --env ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
+```
+
+Then raise the timeouts as shown in Option C. The defaults are too short for this server.
+
+**Option B: Codex app or IDE extension**
+
+1. Open **Settings** → **MCP servers** → **Add server** (in the IDE extension: gear menu → **MCP servers** → **Add server**)
+2. Choose **STDIO** and fill in the fields:
 
 | Field | Value |
 |-------|-------|
@@ -616,7 +627,7 @@ OpenAI Codex uses a graphical interface for MCP server configuration instead of 
 | **Environment variables** | `FIGMA_ACCESS_TOKEN` = `figd_YOUR_TOKEN_HERE` |
 | **Environment variables** | `ENABLE_MCP_APPS` = `true` |
 
-6. Click **Save**
+3. Click **Save**, then **Restart** (in the IDE extension, **Restart extension**)
 
 Here's what the completed configuration looks like:
 
@@ -626,13 +637,29 @@ Here's what the completed configuration looks like:
 
 > 💡 **Tip:** The Codex UI adds arguments one at a time. Click **"+ Add argument"** after entering `-y` to add the second argument `figma-console-mcp@latest`.
 
+**Option C: Edit `~/.codex/config.toml`**
+
+```toml
+[mcp_servers.figma-console]
+command = "npx"
+args = ["-y", "figma-console-mcp@latest"]
+startup_timeout_sec = 60   # default 10; the first npx download can take longer
+tool_timeout_sec = 300     # default 60; figma_execute and large file reads can run longer
+
+[mcp_servers.figma-console.env]
+FIGMA_ACCESS_TOKEN = "figd_YOUR_TOKEN_HERE"
+ENABLE_MCP_APPS = "true"
+```
+
+> 💡 **Keep the token out of the file:** replace the `env` table with `env_vars = ["FIGMA_ACCESS_TOKEN"]` to forward the variable from your shell instead. For a single project, put the same block in `.codex/config.toml` in that (trusted) project.
+
 ### Step 2: Connect to Figma Desktop
 
 Same as [NPX Step 3](#step-3-connect-to-figma-desktop-2-min) above — install the Desktop Bridge Plugin in Figma.
 
 ### Step 3: Test It
 
-Start a new thread in Codex and try:
+Check the server is listed with `codex mcp list` (or `/mcp` inside Codex), then start a new thread and try:
 
 ```
 Use the Figma Console connector to check Figma status
@@ -642,7 +669,91 @@ If the Desktop Bridge plugin isn't running yet, the server will connect but repo
 
 ### Equivalent JSON Config
 
-For reference, the Codex GUI fields map directly to the [NPX JSON configuration](#step-2-configure-your-mcp-client-3-min) used by other MCP clients like Claude Desktop, Cursor, and Windsurf.
+For reference, the Codex fields map directly to the [NPX JSON configuration](#step-2-configure-your-mcp-client-3-min) used by other MCP clients like Claude Desktop, Cursor, and Windsurf.
+
+---
+
+## 💎 Gemini CLI
+
+> **Note:** On June 18, 2026, Google replaced Gemini CLI with [Antigravity CLI](#-google-antigravity) for free-tier and Google One accounts. Gemini CLI still works with paid API keys and Gemini Code Assist Standard/Enterprise licenses. If you've moved to Antigravity, use the [Antigravity section](#-google-antigravity). The first time you run `agy`, it offers to import your Gemini CLI settings, including MCP servers. ([Gemini CLI MCP docs](https://geminicli.com/docs/tools/mcp-server/))
+
+### Step 1: Add the MCP Server
+
+**Option A: CLI command**
+
+```bash
+gemini mcp add -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -e ENABLE_MCP_APPS=true figma-console npx -y figma-console-mcp@latest
+```
+
+`-s user` makes it available in every project. Without it, `gemini mcp add` writes to the current project's `.gemini/settings.json`.
+
+**Option B: Edit `~/.gemini/settings.json`**
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "$FIGMA_ACCESS_TOKEN",
+        "ENABLE_MCP_APPS": "true"
+      }
+    }
+  }
+}
+```
+
+`"$FIGMA_ACCESS_TOKEN"` reads the token from your shell environment. You can also paste the token itself. Gemini CLI's default tool timeout (10 minutes) is long enough, so no `timeout` is needed.
+
+### Step 2: Connect to Figma Desktop
+
+Same as [NPX Step 3](#step-3-connect-to-figma-desktop-2-min): run the Desktop Bridge plugin in your Figma file.
+
+### Step 3: Test It
+
+Restart Gemini CLI and run `/mcp`; `figma-console` should show as **CONNECTED** with its tools. (`gemini mcp list` does the same from the shell, and only shows stdio servers as connected inside a [trusted folder](https://geminicli.com/docs/tools/mcp-server/).) Then ask: *"Check Figma status."*
+
+> 💡 Keep the server name free of underscores (`figma-console`, not `figma_console`): Gemini CLI names tools `mcp_<server>_<tool>` and splits on the first underscore.
+
+---
+
+## 🛸 Google Antigravity
+
+The Antigravity IDE, Antigravity CLI (`agy`), and the Antigravity app read the same MCP config file, so adding the server once covers all three. ([Antigravity MCP docs](https://antigravity.google/docs/mcp/))
+
+### Step 1: Add the MCP Server
+
+1. Open the config:
+   - **IDE:** click **…** at the top of the agent panel → **MCP Servers** → **Manage MCP Servers** → **View raw config**
+   - **Or** edit the file directly: `~/.gemini/config/mcp_config.json` (all projects), or `.agents/mcp_config.json` in a workspace (that project only)
+2. Add the server:
+
+```json
+{
+  "mcpServers": {
+    "figma-console": {
+      "command": "npx",
+      "args": ["-y", "figma-console-mcp@latest"],
+      "env": {
+        "FIGMA_ACCESS_TOKEN": "figd_YOUR_TOKEN_HERE",
+        "ENABLE_MCP_APPS": "true"
+      },
+      "timeoutSeconds": 300
+    }
+  }
+}
+```
+
+`timeoutSeconds: 300` raises the per-tool-call limit from Antigravity's default of 180 seconds, so long `figma_execute` scripts aren't cut off.
+
+### Step 2: Connect to Figma Desktop
+
+Same as [NPX Step 3](#step-3-connect-to-figma-desktop-2-min): run the Desktop Bridge plugin in your Figma file.
+
+### Step 3: Test It
+
+In Antigravity CLI, run `/mcp` to see the server's status and reload configs. In the IDE, reopen **MCP Servers** to confirm `figma-console` lists its tools. Antigravity asks before running MCP tools until you allow them (for example `mcp(figma-console/*)` in your permissions policy). Then ask: *"Check Figma status."*
 
 ---
 

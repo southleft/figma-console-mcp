@@ -1790,7 +1790,7 @@ figma_get_library_component_by_key({
 - `compression` (only when stripped): `{ originalSizeKB, finalSizeKB, strippedVisualSpecs: true }`
 - `warnings[]`: non-fatal issues (e.g. variant-key resolution skipped)
 
-**Plan requirements:** Works on **all Figma plans**. Requires `FIGMA_ACCESS_TOKEN` with `library_assets:read` + `files:read` scopes.
+**Plan requirements:** Works on **all Figma plans**. Requires `FIGMA_ACCESS_TOKEN` with the **Library assets** (`library_assets:read`) scope for the key lookup, plus **File content** (`file_content:read`) and **Library content** (`library_content:read`) for the published file's node and component data.
 
 ---
 
@@ -2789,7 +2789,7 @@ Any `codeInfo.changelog` entries you pass are still rendered, folded in as **Rel
 **Coverage limits** — the generated doc states these inline so an empty table is never misread as "nothing changed":
 - Figma's REST version snapshots **omit description and Dev Mode annotation edits**, raw layout/visual properties, and variable *value* changes. Structure (child layers), component property definitions, variable *bindings*, and renames are tracked, at depth 2
 - Version-history retention is plan-dependent, so lower tiers expose a shorter window
-- Reading version history requires the `file_versions:read` OAuth scope, or the **Versions** Read permission on a Personal Access Token. Without it the section degrades to an explanatory note rather than failing the doc
+- Reading version history requires the `file_versions:read` OAuth scope, or the **File versions** Read scope on a Personal Access Token. Without it the section degrades to an explanatory note rather than failing the doc
 - `git` history uses `--follow` (renames traced) only when exactly one path is resolved — git supports it for a single pathspec only
 
 ---

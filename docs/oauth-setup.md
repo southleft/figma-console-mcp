@@ -145,7 +145,9 @@ Claude: ✅ Retrieved 247 design variables from your file
 ### OAuth Scopes
 Currently requesting:
 - `file_content:read` - Read access to Figma file content
-- `library_content:read` - Read access to library/component content
+- `file_versions:read` - Read version history
+- `library_content:read` - Read a file's components, component sets, and styles
+- `file_comments:read` / `file_comments:write` - Read, post, and delete comments
 - `file_variables:read` - Read access to design variables (for Enterprise accounts)
 
 ### Token Refresh
@@ -224,8 +226,12 @@ If you're currently using `FIGMA_ACCESS_TOKEN` (deprecated):
 
 ### Scopes Requested
 - `file_content:read` - Read Figma file content
+- `file_versions:read` - Read version history
 - `library_content:read` - Read library/component data
+- `file_comments:read` / `file_comments:write` - Read and write comments
 - `file_variables:read` - Read design variables (Enterprise)
+
+Your Figma OAuth app must allow these scopes.
 
 ### Webhook Configuration (Optional)
 Future enhancement: Set up webhooks for token revocation notifications

@@ -130,6 +130,28 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
  * Figma API Client
  * Makes authenticated requests to Figma REST API
  */
+/**
+ * The REST scope an endpoint needs (developers.figma.com/docs/rest-api/scopes),
+ * so a 403 can say which one a personal access token is missing.
+ */
+export function requiredScopeFor(method: string, url: string): string | null {
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+  const write = method.toUpperCase() !== 'GET';
+  if (/^\/v1\/files\/[^/]+\/comments/.test(path)) return write ? 'file_comments:write' : 'file_comments:read';
+  if (/^\/v1\/files\/[^/]+\/variables/.test(path)) return write ? 'file_variables:write' : 'file_variables:read';
+  if (/^\/v1\/files\/[^/]+\/versions$/.test(path)) return 'file_versions:read';
+  if (/^\/v1\/files\/[^/]+\/(components|component_sets|styles)$/.test(path)) return 'library_content:read';
+  if (/^\/v1\/(components|component_sets|styles)\//.test(path)) return 'library_assets:read';
+  if (path === '/v1/me') return 'current_user:read';
+  if (/^\/v1\/(files|images)\//.test(path)) return 'file_content:read';
+  return null;
+}
+
 export class FigmaAPI {
   private accessToken: string;
 
@@ -214,6 +236,15 @@ export class FigmaAPI {
       if (isAuthError) {
         message +=
           ' — Your Figma access token is expired or invalid. Generate a new personal access token at figma.com → Settings → Security → Personal access tokens, then update FIGMA_ACCESS_TOKEN in your MCP config. If Figma Desktop is open with the Desktop Bridge plugin running, most tools work without any REST token.';
+      } else if (response.status === 403) {
+        const method = (options.method || 'GET').toUpperCase();
+        const scope = requiredScopeFor(method, url);
+        if (scope) {
+          const path = new URL(url).pathname;
+          message += scope.startsWith('file_variables')
+            ? ` — ${method} ${path} needs the ${scope} scope, which Figma only grants on Enterprise plans. On other plans, open the Desktop Bridge plugin in Figma: variables are then read through it.`
+            : ` — ${method} ${path} needs the ${scope} scope. If your personal access token was created without it, generate a new one that includes it (figma.com → Settings → Security → Personal access tokens) and update FIGMA_ACCESS_TOKEN.`;
+        }
       } else if (response.status === 429) {
         message += ' Rate limited by Figma — wait a moment and retry.';
       }

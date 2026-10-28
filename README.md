@@ -82,7 +82,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 1. Go to [Manage personal access tokens](https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens) in Figma Help
 2. Follow the steps to **create a new personal access token**
 3. Enter description: `Figma Console MCP`
-4. Set scopes: **File content** (Read), **File versions** (Read), **Variables** (Read), **Comments** (Read and write)
+4. Set scopes (all Read unless noted): **File content**, **File versions**, **Library content**, **Library assets**, **Comments** (Read and write), **Current user**, and **Variables** (Enterprise only, optional). See [why each is needed](https://docs.figma-console-mcp.southleft.com/setup#step-1-get-your-figma-token-2-min)
 5. **Copy the token** — you won't see it again! (starts with `figd_`)
 
 #### Step 2: Configure Your MCP Client
@@ -91,6 +91,19 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 ```bash
 claude mcp add figma-console -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -e ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
 ```
+
+**OpenAI Codex (CLI):**
+```bash
+codex mcp add figma-console --env FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE --env ENABLE_MCP_APPS=true -- npx -y figma-console-mcp@latest
+```
+Then set `startup_timeout_sec = 60` and `tool_timeout_sec = 300` for it in `~/.codex/config.toml` (Codex's 10 s / 60 s defaults are too short). The Codex app and IDE extension share this config. [Full Codex setup →](https://docs.figma-console-mcp.southleft.com/setup#-openai-codex)
+
+**Gemini CLI:**
+```bash
+gemini mcp add -s user -e FIGMA_ACCESS_TOKEN=figd_YOUR_TOKEN_HERE -e ENABLE_MCP_APPS=true figma-console npx -y figma-console-mcp@latest
+```
+
+**Google Antigravity (IDE, CLI, app):** add the JSON below to `~/.gemini/config/mcp_config.json`, plus `"timeoutSeconds": 300` in the server entry. [Full Antigravity setup →](https://docs.figma-console-mcp.southleft.com/setup#-google-antigravity)
 
 **Cursor / Windsurf / Claude Desktop:**
 
@@ -121,6 +134,9 @@ If you're not sure where to put the JSON configuration above, here's where each 
 | **Claude Code (CLI)** | `~/.claude.json` | `%USERPROFILE%\.claude.json` |
 | **Cursor** | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
 | **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | `%USERPROFILE%\.codeium\windsurf\mcp_config.json` |
+| **OpenAI Codex** (app, CLI, IDE) | `~/.codex/config.toml` (TOML, [see format](https://docs.figma-console-mcp.southleft.com/setup#-openai-codex)) | `%USERPROFILE%\.codex\config.toml` |
+| **Gemini CLI** | `~/.gemini/settings.json` | `%USERPROFILE%\.gemini\settings.json` |
+| **Google Antigravity** (IDE, CLI, app) | `~/.gemini/config/mcp_config.json` | `%USERPROFILE%\.gemini\config\mcp_config.json` |
 
 > **Tip for designers:** The `~` symbol means your **home folder**. On macOS, that's `/Users/YourName/`. On Windows, it's `C:\Users\YourName\`. You can open these files in any text editor — even TextEdit or Notepad.
 >
@@ -375,7 +391,7 @@ When you first use design system tools:
 ### Local Mode - Personal Access Token (Manual)
 
 1. Visit https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens
-2. Generate token with scopes: **File content** (Read), **File versions** (Read), **Variables** (Read), **Comments** (Read and write)
+2. Generate token with scopes (all Read unless noted): **File content**, **File versions**, **Library content**, **Library assets**, **Comments** (Read and write), **Current user**, and **Variables** (Enterprise only, optional)
 3. Add to MCP config as `FIGMA_ACCESS_TOKEN` environment variable
 
 ---

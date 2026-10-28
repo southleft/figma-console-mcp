@@ -42,7 +42,7 @@ Figma Console MCP uses **Figma's native authentication**:
     - Generated in Figma account settings
     - Stored locally in your MCP client config
     - Never transmitted except to `api.figma.com`
-    - Scoped permissions based on token configuration
+    - Limited to the scopes you grant: Figma Console MCP needs only read scopes plus comment write ([list](/setup#step-1-get-your-figma-token-2-min)). Note that a PAT can reach every file your account can; Figma doesn't allow narrowing it to specific files.
   </Accordion>
   <Accordion title="OAuth (Remote Mode)" icon="right-to-bracket">
     - Uses Figma's official OAuth 2.0 flow
