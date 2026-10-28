@@ -61,8 +61,10 @@ import {
 	evictOldestInstance,
 	refreshPortAdvertisement,
 	noteToolCall,
+	setAdvertisedMcpHttpUrl,
 	HEARTBEAT_INTERVAL_MS,
 } from "./core/port-discovery.js";
+import { parseHttpPort, startLocalHttpTransport, type LocalHttpHandle } from "./core/http-transport.js";
 import { onStdinClosed } from "./core/stdin-lifecycle.js";
 import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import {
@@ -129,6 +131,9 @@ class LocalFigmaConsoleMCP {
 	private wsReaperStop: (() => void) | null = null;
 	/** Heartbeat timer that refreshes port file to prove this server is active */
 	private wsHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+	/** Optional Streamable HTTP endpoint (FIGMA_MCP_HTTP_PORT), shared by local clients. */
+	private httpEndpoint: LocalHttpHandle | null = null;
+	private httpStartupError: string | null = null;
 	private config = getConfig();
 
 	// In-memory cache for variables data to avoid MCP token limits
@@ -168,7 +173,15 @@ class LocalFigmaConsoleMCP {
 	}
 
 	constructor() {
-		this.server = new McpServer(
+		this.server = this.createMcpServer();
+	}
+
+	/**
+	 * A configured McpServer with no tools yet. stdio uses one for the whole
+	 * run; the optional HTTP endpoint builds one per request (see http-transport.ts).
+	 */
+	private createMcpServer(): McpServer {
+		const server = new McpServer(
 			{
 				name: "Figma Console MCP (Local)",
 				// Was hard-coded "0.1.0" — every client saw that regardless of the release
@@ -243,7 +256,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Stamp every tool response (and every thrown error) with our MCP identity
 		// so LLMs can attribute output unambiguously when multiple Figma-related
 		// MCPs are connected. Idempotent for already-tagged responses.
-		wrapServerForIdentity(this.server, { onToolCall: noteToolCall });
+		wrapServerForIdentity(server, { onToolCall: noteToolCall });
+		return server;
 	}
 
 	/**
@@ -446,9 +460,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	/**
 	 * Register all MCP tools
 	 */
-	private registerTools(): void {
+	private registerTools(server: McpServer): void {
 		// Tool 1: Get Console Logs
-		this.server.tool(
+		server.tool(
 			"figma_get_console_logs",
 			"Retrieve console logs captured by the Desktop Bridge plugin: console output from code run through it (figma_execute and the other write tools) and from the bridge itself. It does NOT capture another plugin's console — Figma runs one plugin at a time in a file, each in its own sandbox, so the bridge cannot see a plugin you are developing. To debug your own plugin's logic, run that code through figma_execute and read the logs here, or use Figma's own developer console for the plugin.",
 			{
@@ -554,7 +568,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Bridge-first: the plugin's exportAsync works on any Figma plan with no REST
 		// token, and reflects the current runtime state (no cloud-sync lag).
 		// Note: For screenshots of specific components, use figma_get_component_image instead
-		this.server.tool(
+		server.tool(
 			"figma_take_screenshot",
 			`Export an image of the current Figma page or specific node. Uses the Desktop Bridge plugin (exportAsync) when connected — works on any plan, no REST token needed, reflects current runtime state. Falls back to the Figma REST API when the bridge is unavailable or for PDF format. Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image.`,
 			{
@@ -795,7 +809,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 3: Watch Console (Real-time streaming)
-		this.server.tool(
+		server.tool(
 			"figma_watch_console",
 			"Stream console logs captured by the Desktop Bridge plugin in real-time for a specified duration (max 5 minutes). Covers code run through the bridge (figma_execute and the write tools) — not other plugins, which run in their own sandboxes. Returns all logs captured during the watch period with summary statistics. NOT for retrieving past logs (use figma_get_console_logs). Best for: watching long-running figma_execute scripts, debugging race conditions, monitoring async operations.",
 			{
@@ -860,7 +874,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 4: Reload Plugin
-		this.server.tool(
+		server.tool(
 			"figma_reload_plugin",
 			"Reload the current Figma page/plugin to test code changes. Optionally clears console logs before reload. Use when user says: 'reload plugin', 'refresh page', 'restart plugin', 'test my changes'. Returns reload confirmation and current URL. Best for rapid iteration during plugin development.",
 			{
@@ -941,7 +955,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 5: Clear Console
-		this.server.tool(
+		server.tool(
 			"figma_clear_console",
 			"Clear the console log buffer. Safely clears the buffer without disrupting the connection. Returns number of logs cleared.",
 			{},
@@ -1004,7 +1018,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 6: Navigate / switch active file
-		this.server.tool(
+		server.tool(
 			"figma_navigate",
 			"Switch the active Figma file target among files that already have the Desktop Bridge plugin running. Local mode is WebSocket-only — this tool does NOT launch a browser or open files. If the requested URL is already the active file, it confirms the connection. If another connected plugin matches the URL, it switches the active target so subsequent tool calls hit that file. If no connected plugin matches, returns guidance for the user to open the Desktop Bridge plugin in the target file. Use figma_list_open_files to see all connected files.\n\nPass lock: true to PIN this file as the target — new connections, reconnects, and the user's own selection/page changes in other files will no longer move the target. Use this for parallel work (agent edits one file while the user works in another) so commands can't silently route to the wrong file. Switching to another file (or lock: false) releases the pin; it also releases automatically if the pinned file disconnects.",
 			{
@@ -1172,7 +1186,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 7: Get Status (with setup validation)
-		this.server.tool(
+		server.tool(
 			"figma_get_status",
 			"Check connection status to Figma Desktop. Reports transport status and connection health via the Desktop Bridge plugin (WebSocket transport). Use probe:true for an active roundtrip verification that the plugin is actually responding.",
 			{
@@ -1282,6 +1296,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 										monitorWorkerCount: 0,
 										transport: {
 											active: activeTransport,
+											mcpHttp: this.httpEndpoint
+												? { url: this.httpEndpoint.url, sessions: this.httpEndpoint.sessionCount(), auth: process.env.FIGMA_MCP_HTTP_TOKEN ? "bearer" : "none" }
+												: this.httpStartupError
+													? { error: this.httpStartupError }
+													: undefined,
 											websocket: {
 												available: wsConnected,
 												serverRunning: this.wsServer?.isStarted() ?? false,
@@ -1307,6 +1326,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 															port: i.port,
 															pid: i.pid,
 															startedAt: i.startedAt,
+															mcpHttpUrl: i.mcpHttpUrl,
 														}));
 													} catch { return undefined; }
 												})(),
@@ -1412,7 +1432,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// ============================================================================
 
 		// Tool: Force reconnect to Figma Desktop
-		this.server.tool(
+		server.tool(
 			"figma_reconnect",
 			"Force a complete reconnection to Figma Desktop. Use when connection seems stale or after switching files.",
 			{},
@@ -1524,7 +1544,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// ============================================================================
 
 		// Tool: Get current user selection in Figma
-		this.server.tool(
+		server.tool(
 			"figma_get_selection",
 			"Get the currently selected nodes in Figma. Returns node IDs, names, types, and dimensions. WebSocket-only — requires Desktop Bridge plugin. Use this to understand what the user is pointing at instead of asking them to describe it.",
 			{
@@ -1629,7 +1649,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool: Get recent design changes
-		this.server.tool(
+		server.tool(
 			"figma_get_design_changes",
 			"Get recent document changes detected in Figma. Returns buffered change events including which nodes changed, whether styles were modified, and change counts. WebSocket-only — events are captured via Desktop Bridge plugin. Use this to understand what changed since you last checked.",
 			{
@@ -1713,7 +1733,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool: List all open files connected via WebSocket
-		this.server.tool(
+		server.tool(
 			"figma_list_open_files",
 			"List all Figma files currently connected via the Desktop Bridge plugin. Shows which files have the plugin open and which one is the active target for tool calls. Use figma_navigate to switch between files. WebSocket multi-client mode — each file with the Desktop Bridge plugin maintains its own connection.",
 			{},
@@ -1962,7 +1982,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Phase-2 write-tools dedupe excised them along with the surrounding writes.)
 		// ============================================================================
 
-		this.server.tool(
+		server.tool(
 			"figma_get_design_system_summary",
 			"Get a compact overview of the design system. Returns categories, component counts, and token collection names WITHOUT full details. Use this first to understand what's available, then use figma_search_components to find specific components. This tool is optimized for minimal token usage.",
 			{
@@ -2205,7 +2225,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 2: Search Components (~3000 tokens response max, paginated)
-		this.server.tool(
+		server.tool(
 			"figma_search_components",
 			`Search for components by name, category, or description. Returns paginated results with component keys for instantiation. Automatically loads the design system cache if needed.
 
@@ -2502,7 +2522,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		);
 
 		// Tool 3: Get Component Details (~500 tokens per component)
-		this.server.tool(
+		server.tool(
 			"figma_get_component_details",
 			"Get full details for a specific component including all variants, properties, and keys needed for instantiation. Use the component key or name from figma_search_components.",
 			{
@@ -2643,7 +2663,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		);
 
 		// Tool 4: Get Token Values (~2000 tokens response max)
-		this.server.tool(
+		server.tool(
 			"figma_get_token_values",
 			"Get actual values for design tokens (colors, spacing, etc). Use after figma_get_design_system_summary to get specific token values for implementation.",
 			{
@@ -2760,7 +2780,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		);
 
 		// Tool 5: Instantiate Component
-		this.server.tool(
+		server.tool(
 			"figma_get_library_components",
 			`Discover published components from a shared/team library file.
 
@@ -3093,14 +3113,14 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// Register all write/manipulation tools (figma_execute, variable CRUD, node mutations,
 		// design-token setup, accessibility audits, etc.). Sourced from src/core/write-tools.ts
 		// so local mode and cloud mode share the same 30 implementations — no risk of drift.
-		registerWriteTools(this.server, () => this.getDesktopConnector());
+		registerWriteTools(server, () => this.getDesktopConnector());
 
 		// Register cross-file tools (figma_execute_across_files) — run the same
 		// code against every (or a chosen subset of) currently connected files
 		// concurrently. Local mode only, needs direct wsServer access for
 		// getConnectedFiles(), so it isn't part of the connector abstraction.
 		registerMultiFileTools(
-			this.server,
+			server,
 			() => this.wsServer,
 			() => this.getDesktopConnector(),
 		);
@@ -3110,7 +3130,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// popular styling methods (DTCG canonical — legacy + 2025.10 dialects —
 		// plus CSS/Tailwind/SCSS/TS/JSON/Style Dictionary/Tokens Studio, all
 		// derived from a single internal token model).
-		registerTokensTools(this.server, () => this.getDesktopConnector(), {
+		registerTokensTools(server, () => this.getDesktopConnector(), {
 			// Lets figma_export_tokens report WHICH connected file it read from —
 			// the bridge reads the active file, which may not be the intended one.
 			resolveFileName: (fileKey) =>
@@ -3125,11 +3145,11 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// these read/write the local filesystem, which Cloudflare Workers
 		// cannot (registerMultiFileTools precedent — never registered in
 		// src/index.ts, so no Cloud Mode silent no-op is possible).
-		registerDesignSystemExtractionTools(this.server);
+		registerDesignSystemExtractionTools(server);
 
 		// Register Figma API tools (Tools 8-11)
 		registerFigmaAPITools(
-			this.server,
+			server,
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
 			this.variablesCache, // Pass cache for efficient variable queries
@@ -3139,7 +3159,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 		// Register Design-Code Parity & Documentation tools
 		registerDesignCodeTools(
-			this.server,
+			server,
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
 			this.variablesCache,
@@ -3149,14 +3169,14 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 		// Register Comment tools
 		registerCommentTools(
-			this.server,
+			server,
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
 		);
 
 		// Register Version History tools
 		registerVersionTools(
-			this.server,
+			server,
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
 			undefined, // options
@@ -3176,7 +3196,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 		// Register Design System Kit tool
 		registerDesignSystemTools(
-			this.server,
+			server,
 			() => this.getFigmaAPI(),
 			() => this.getCurrentFileUrl(),
 			this.variablesCache,
@@ -3185,20 +3205,20 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		);
 
 		// Register Library Tools (key-based component inspection across shared libraries)
-		registerLibraryTools(this.server, () => this.getFigmaAPI());
+		registerLibraryTools(server, () => this.getFigmaAPI());
 
 		// Register Library Variable Tools (Plugin-API based — list + import variables
 		// from subscribed team libraries; works on every Figma plan, no Enterprise needed)
-		registerLibraryVariableTools(this.server, () => this.getDesktopConnector());
+		registerLibraryVariableTools(server, () => this.getDesktopConnector());
 
 		// Register code-side accessibility scanning (axe-core + JSDOM)
-		registerAccessibilityTools(this.server);
+		registerAccessibilityTools(server);
 
 		// Register figma_diagnose — designer-readable health check + cross-MCP disambiguator.
 		// This is the first tool to point a confused user at: it self-identifies the server,
 		// reports plugin/token state in plain language, and explicitly disclaims any
 		// token/OAuth error that may have been emitted by a different Figma-related MCP.
-		registerDiagnoseTool(this.server, {
+		registerDiagnoseTool(server, {
 			mode: "local",
 			getServerVersion: () => {
 				try {
@@ -3234,36 +3254,36 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 		// Register Annotation tools (read/write design annotations via Desktop Bridge)
 		registerAnnotationTools(
-			this.server,
+			server,
 			() => this.getDesktopConnector(),
 		);
 
 		// Register Deep Component tools (full Plugin API tree extraction for code generation)
 		registerDeepComponentTools(
-			this.server,
+			server,
 			() => this.getDesktopConnector(),
 		);
 
 		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)
 		registerFigJamTools(
-			this.server,
+			server,
 			() => this.getDesktopConnector(),
 		);
 
 		// Register Figma Slides tools (slide management, transitions, content)
 		registerSlidesTools(
-			this.server,
+			server,
 			() => this.getDesktopConnector(),
 		);
 
 		registerSlotTools(
-			this.server,
+			server,
 			() => this.getDesktopConnector(),
 		);
 
 		// MCP Apps - gated behind ENABLE_MCP_APPS env var
 		if (process.env.ENABLE_MCP_APPS === "true") {
-			registerTokenBrowserApp(this.server, async (fileUrl?: string) => {
+			registerTokenBrowserApp(server, async (fileUrl?: string) => {
 				const url = fileUrl || this.getCurrentFileUrl();
 				if (!url) {
 					throw new Error(
@@ -3800,7 +3820,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// Always available — any MCP client can run the audit, no MCP Apps
 		// support required.
 		registerDesignSystemAuditTool(
-			this.server,
+			server,
 			fetchDesignSystemAuditData,
 			() => this.getCurrentFileUrl(),
 		);
@@ -3808,7 +3828,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// Visual dashboard app (MCP-Apps-capable hosts only).
 		if (process.env.ENABLE_MCP_APPS === "true") {
 			registerDesignSystemDashboardApp(
-				this.server,
+				server,
 				fetchDesignSystemAuditData,
 				// Pass getCurrentUrl so dashboard can track which file was audited
 				() => this.getCurrentFileUrl(),
@@ -4041,7 +4061,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			await this.checkFigmaDesktop();
 
 			// Register all tools
-			this.registerTools();
+			this.registerTools(this.server);
 
 			// Create stdio transport
 			const transport = new StdioServerTransport();
@@ -4050,6 +4070,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			await this.server.connect(transport);
 
 			logger.info("MCP server started successfully on stdio transport");
+
+			await this.startHttpEndpoint();
 
 			// 🆕 AUTO-CONNECT: Start monitoring immediately if Figma Desktop is available
 			// This enables "get latest logs" workflow without requiring manual setup
@@ -4068,12 +4090,53 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 	}
 
 	/**
+	 * Serve MCP over Streamable HTTP as well, when FIGMA_MCP_HTTP_PORT is set.
+	 * A failure here (bad value, port taken) is reported but never stops stdio.
+	 */
+	private async startHttpEndpoint(): Promise<void> {
+		let port: number | null;
+		try {
+			port = parseHttpPort(process.env.FIGMA_MCP_HTTP_PORT);
+		} catch (error) {
+			this.httpStartupError = error instanceof Error ? error.message : String(error);
+			logger.warn(this.httpStartupError);
+			return;
+		}
+		if (port === null) return;
+
+		try {
+			this.httpEndpoint = await startLocalHttpTransport({
+				port,
+				token: process.env.FIGMA_MCP_HTTP_TOKEN || undefined,
+				createServer: () => {
+					const server = this.createMcpServer();
+					this.registerTools(server);
+					return server;
+				},
+			});
+			setAdvertisedMcpHttpUrl(this.httpEndpoint.url);
+			console.error(`[figma-console-mcp] MCP over HTTP: ${this.httpEndpoint.url}`);
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException)?.code;
+			this.httpStartupError = code === "EADDRINUSE"
+				? `Port ${port} is already in use, so the HTTP endpoint is off (stdio still works). Another figma-console-mcp may already serve it: check its port file, or pick another FIGMA_MCP_HTTP_PORT.`
+				: `HTTP endpoint failed to start on port ${port}: ${error instanceof Error ? error.message : String(error)}`;
+			logger.warn({ port, code }, this.httpStartupError);
+		}
+	}
+
+	/**
 	 * Cleanup and shutdown
 	 */
 	async shutdown(): Promise<void> {
 		logger.info("Shutting down MCP server...");
 
 		try {
+			if (this.httpEndpoint) {
+				await this.httpEndpoint.close();
+				this.httpEndpoint = null;
+			}
+
 			// Stop heartbeat timer
 			if (this.wsHeartbeatTimer) {
 				clearInterval(this.wsHeartbeatTimer);

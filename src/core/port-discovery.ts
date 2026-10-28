@@ -88,10 +88,21 @@ export interface PortFileData {
   lastSeen?: string;
   /** Last time this server handled a tool call. Missing until the first call, and in pre-v1.42.1 files. */
   lastToolCall?: string;
+  /** Streamable HTTP MCP endpoint, when FIGMA_MCP_HTTP_PORT is set (v1.44.0+). */
+  mcpHttpUrl?: string;
 }
 
 /** When this process last handled a tool call; written to its port file by the heartbeat. */
 let lastToolCallAt: string | undefined;
+
+/** This process's HTTP MCP endpoint, advertised in its port file. */
+let mcpHttpUrl: string | undefined;
+
+/** Record (or clear) this server's HTTP MCP endpoint and write it to its port file now. */
+export function setAdvertisedMcpHttpUrl(url: string | undefined): void {
+  mcpHttpUrl = url;
+  for (const port of advertisedPorts) refreshPortAdvertisement(port);
+}
 
 let lastToolCallWrite = 0;
 /** Write-through at most this often; the 30s heartbeat covers the rest. */
@@ -146,6 +157,7 @@ export function advertisePort(port: number, host: string = 'localhost'): void {
     host,
     startedAt: now,
     lastSeen: now,
+    ...(mcpHttpUrl ? { mcpHttpUrl } : {}),
   };
 
   const filePath = getPortFilePath(port);
@@ -206,6 +218,8 @@ export function refreshPortAdvertisement(port: number): void {
     if (data.pid !== process.pid) return;
     data.lastSeen = new Date().toISOString();
     if (lastToolCallAt) data.lastToolCall = lastToolCallAt;
+    if (mcpHttpUrl) data.mcpHttpUrl = mcpHttpUrl;
+    else delete data.mcpHttpUrl;
     writePortFileAtomic(filePath, data);
   } catch {
     // Best-effort — heartbeat failures are non-fatal

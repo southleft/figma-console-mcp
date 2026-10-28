@@ -741,6 +741,8 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 **Environment variables:**
 - `FIGMA_WS_PORT` — Override the preferred WebSocket port (default: 9223). The server will fall back through a 10-port range starting from this value if the preferred port is occupied.
 - `FIGMA_WS_HOST` — Override the WebSocket server bind address (default: `localhost`). Set to `0.0.0.0` when running inside Docker so the host machine can reach the MCP server.
+- `FIGMA_MCP_HTTP_PORT` — Also serve MCP over Streamable HTTP at `http://127.0.0.1:<port>/mcp`, so other local clients can share this server's Figma connection. Off by default. See [Sharing one server over HTTP](#sharing-one-server-over-http-optional).
+- `FIGMA_MCP_HTTP_TOKEN` — With `FIGMA_MCP_HTTP_PORT`, require `Authorization: Bearer <token>` on every HTTP request.
 
 **Cloud Mode:** The plugin also supports a **Cloud Mode** toggle for pairing with web AI clients (Claude.ai, v0, Replit, Lovable). Toggle "Cloud Mode" in the plugin UI, enter the 6-character pairing code from your AI assistant, and click Connect. See [Cloud Mode](#-cloud-mode-web-ai-clients) for details.
 
@@ -781,6 +783,23 @@ When two processes tried to start the MCP server (e.g., Claude Desktop's Chat ta
 - No manual port management — the plugin already scans the whole range
 
 (Re-importing the manifest is only required when the plugin code itself changes — e.g. after a package update. Port-range scanning is already in the shipped plugin.)
+
+### Sharing one server over HTTP (optional)
+
+Normally each MCP client starts its own server over stdio. To let several local clients share one server and its Figma connection, set `FIGMA_MCP_HTTP_PORT`. The server then also serves MCP at `http://127.0.0.1:<port>/mcp`, and lists that URL in its port file (`mcpHttpUrl`) and in `figma_get_status` (`transport.mcpHttp`).
+
+```bash
+# Start a shared server in a terminal (keep it open)
+FIGMA_ACCESS_TOKEN=figd_... FIGMA_MCP_HTTP_PORT=9300 npx -y figma-console-mcp@latest
+
+# Point clients at it, e.g. Claude Code:
+claude mcp add --transport http figma-console-shared http://127.0.0.1:9300/mcp
+```
+
+- **Loopback only.** It binds `127.0.0.1` and refuses requests whose `Host` isn't localhost (DNS rebinding) or that come from a non-localhost browser page. Set `FIGMA_MCP_HTTP_TOKEN` to also require a bearer token.
+- **Each client gets its own session**, as with stdio, and all of them share the plugin connection. Idle sessions close after 30 minutes and clients reconnect automatically.
+- **The endpoint lives as long as the server process.** When an MCP client spawned the server, closing that client ends it.
+- Avoid port 3845, which Figma's own Dev Mode MCP server uses, and the bridge range 9223–9232.
 
 ---
 

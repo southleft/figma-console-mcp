@@ -222,6 +222,8 @@ Multiple MCP clients (e.g., Claude Desktop Chat + Code tabs, Claude + Cursor) ar
 - Orphaned server processes from closed tabs are automatically detected and terminated on startup
 - No manual port management needed (the plugin scans the whole range automatically)
 
+To have several clients share **one** server instead, start it with `FIGMA_MCP_HTTP_PORT=9300` (any free port outside 9223–9232, and not 3845, which Figma's Dev Mode MCP uses). It then also serves MCP at `http://127.0.0.1:9300/mcp`; add that URL to each client as a Streamable HTTP server, e.g. `claude mcp add --transport http figma-console-shared http://127.0.0.1:9300/mcp`. It accepts loopback requests only; set `FIGMA_MCP_HTTP_TOKEN` to require a bearer token as well.
+
 ### Step 4: Restart Your MCP Client (~1 min)
 
 1. **Restart your MCP client** (quit and reopen Claude Code, Cursor, Windsurf, Claude Desktop, etc.)

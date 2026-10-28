@@ -34,6 +34,7 @@ import {
   evictOldestInstance,
   refreshPortAdvertisement,
   noteToolCall,
+  setAdvertisedMcpHttpUrl,
   isStaleInstance,
   PortFileData,
 } from '../src/core/port-discovery.js';
@@ -524,6 +525,20 @@ describe('Port Discovery Module', () => {
           expect(written).toBeDefined();
           expect(Date.now() - new Date(written!).getTime()).toBeLessThan(5000);
         } finally {
+          unadvertisePort(port);
+        }
+      });
+
+      it('advertises the HTTP MCP endpoint, and drops it when cleared', () => {
+        const port = TEST_PORT_BASE + 5;
+        advertisePort(port);
+        try {
+          setAdvertisedMcpHttpUrl('http://127.0.0.1:3845/mcp');
+          expect(readPortFile(port)?.mcpHttpUrl).toBe('http://127.0.0.1:3845/mcp');
+          setAdvertisedMcpHttpUrl(undefined);
+          expect(readPortFile(port)?.mcpHttpUrl).toBeUndefined();
+        } finally {
+          setAdvertisedMcpHttpUrl(undefined);
           unadvertisePort(port);
         }
       });

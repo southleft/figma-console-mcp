@@ -105,6 +105,11 @@ All network communication is limited to:
 - **Request/response correlation** — Each command uses a unique correlation ID to prevent response confusion
 - **Per-file isolation** — Multiple connected Figma files maintain independent state (selection, changes, console logs)
 
+### Optional HTTP Endpoint (Local Mode)
+- **Off by default** — Only `FIGMA_MCP_HTTP_PORT` turns on MCP over Streamable HTTP
+- **Loopback only** — Binds `127.0.0.1`; requests must name a localhost `Host` (blocks DNS rebinding) and may not come from a non-localhost browser `Origin` (blocks web pages)
+- **Optional bearer token** — `FIGMA_MCP_HTTP_TOKEN` requires `Authorization: Bearer <token>`, compared in constant time
+
 <Check>
 **No external dependencies at runtime** — No third-party analytics, CDNs, or external API calls beyond Figma.
 </Check>
