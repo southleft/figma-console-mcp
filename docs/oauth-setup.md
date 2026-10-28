@@ -147,6 +147,7 @@ Currently requesting:
 - `file_content:read` - Read access to Figma file content
 - `file_versions:read` - Read version history
 - `library_content:read` - Read a file's components, component sets, and styles
+- `library_assets:read` - Read a published component or style by its key
 - `file_comments:read` / `file_comments:write` - Read, post, and delete comments
 - `file_variables:read` - Read access to design variables (for Enterprise accounts)
 
@@ -228,6 +229,7 @@ If you're currently using `FIGMA_ACCESS_TOKEN` (deprecated):
 - `file_content:read` - Read Figma file content
 - `file_versions:read` - Read version history
 - `library_content:read` - Read library/component data
+- `library_assets:read` - Read published components and styles by key
 - `file_comments:read` / `file_comments:write` - Read and write comments
 - `file_variables:read` - Read design variables (Enterprise)
 
