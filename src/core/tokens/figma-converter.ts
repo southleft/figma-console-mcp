@@ -54,15 +54,28 @@ interface FigmaVariable {
 }
 
 /**
- * Config-2026 EASING variable value shape. `bezierValues` is present for
- * bezier-based easings; spring easings carry `springValues` instead (and no
- * usable bezier).
+ * EASING variable value. Current Figma (Plugin API Update 133+) returns
+ * MotionEasing: `{ type, easingFunctionCubicBezier: {x1,y1,x2,y2} }` for
+ * bezier types (named ones like EASE_OUT included), `{ type,
+ * easingFunctionSpring: {bounce} }` for springs (GENTLE, QUICK, BOUNCY, SLOW,
+ * CUSTOM_SPRING), and `{ type: "HOLD" }`. Builds from mid-2026 returned
+ * `{ easingType, bezierValues | springValues }`; both are read.
  */
 interface FigmaEasingValue {
+  type?: string;
+  easingFunctionCubicBezier?: { x1: number; y1: number; x2: number; y2: number };
+  easingFunctionSpring?: { bounce: number };
   easingType?: string;
   bezierValues?: { p1x: number; p1y: number; p2x: number; p2y: number };
   springValues?: { mass?: number; stiffness?: number; damping?: number };
 }
+
+/**
+ * Figma stores motion numbers as 32-bit floats (0.2 reads back as
+ * 0.20000000298). Round so an exported value equals what the token file
+ * wrote, or every import would see a change and rewrite it.
+ */
+const roundMotion = (n: number): number => Math.round(n * 10000) / 10000;
 
 type FigmaValue =
   | { r: number; g: number; b: number; a?: number } // COLOR
@@ -518,7 +531,7 @@ function convertValue(
     // Figma TIMING values are plain numbers in SECONDS. DTCG duration uses
     // the structured `{ value, unit }` form — emit milliseconds.
     if (typeof rawValue === "number") {
-      return { literal: { value: rawValue * 1000, unit: "ms" } };
+      return { literal: { value: Math.round(rawValue * 1000 * 1000) / 1000, unit: "ms" } };
     }
     warnings.push(
       `TIMING value for "${variable.name}" (mode "${modeName}") isn't a number: ${JSON.stringify(rawValue)} — emitting as string.`,
@@ -527,6 +540,26 @@ function convertValue(
   }
   if (resolvedType === "EASING") {
     const easing = rawValue as FigmaEasingValue;
+    const cb = easing?.easingFunctionCubicBezier;
+    if (cb && [cb.x1, cb.y1, cb.x2, cb.y2].every((n) => typeof n === "number")) {
+      // DTCG cubicBezier: [x1, y1, x2, y2]. Named bezier types (EASE_OUT…)
+      // carry their curve too, so they export exactly.
+      return { literal: [cb.x1, cb.y1, cb.x2, cb.y2].map(roundMotion) };
+    }
+    if (easing && typeof easing === "object" && (easing.easingFunctionSpring || easing.type === "HOLD")) {
+      // Springs and HOLD have no cubic-bezier form. Emit a standard "ease"
+      // curve as a usable approximation and keep the exact easing in
+      // $extensions so figma_import_tokens restores it.
+      const kind = easing.type === "HOLD" ? "a hold (step)" : `a spring (${easing.type})`;
+      warnings.push(
+        `EASING variable "${variable.name}" (mode "${modeName}") is ${kind} — DTCG cubicBezier cannot represent it. Emitted a fallback cubicBezier; the exact easing is preserved in $extensions["figma-console-mcp"].spring.`,
+      );
+      onSpring({
+        easingType: easing.type,
+        ...(easing.easingFunctionSpring ? { bounce: roundMotion(easing.easingFunctionSpring.bounce) } : {}),
+      });
+      return { literal: easing.type === "HOLD" ? [0, 0, 1, 1] : [0.25, 0.1, 0.25, 1.0] };
+    }
     const b = easing?.bezierValues;
     if (
       b &&

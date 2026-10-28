@@ -5,6 +5,26 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Motion tools and motion tokens, built on Figma's Plugin API Updates 130–141. Server-only: no plugin re-import needed.
+
+### Added
+
+- **Motion tools.** Five new tools for Figma Motion (beta):
+  - `figma_get_animations` reads a layer's animation styles, keyframe tracks and timeline, with CSS easings and token bindings.
+  - `figma_apply_animation` animates a layer with a Figma preset, a custom animation style, or manual keyframes for any animatable property, paint color or effect. Easing can bind to an EASING variable and a preset's duration to a TIMING variable.
+  - `figma_remove_animation` removes an animation style, a keyframe track, or everything.
+  - `figma_manage_animation_styles` lists Figma's presets with their options, and creates, updates and deletes reusable custom animation styles.
+  - `figma_export_animation` exports an animated frame as MP4, GIF or WebM (Local Mode writes the file; Cloud Mode returns base64 up to 5 MB).
+- **`figma_get_code_layers`** finds Figma code layers on a page or across the file. Figma's APIs don't expose code-layer source, so the tool reports position, size and linked dev resources, and points to Figma's own MCP for creating and editing them.
+- **Motion tokens can be written.** `figma_import_tokens` now creates and updates TIMING and EASING variables from DTCG `duration` and `cubicBezier` tokens, where it used to skip them. `figma_create_variable`, `figma_batch_create_variables`, `figma_batch_update_variables` and `figma_setup_design_tokens` accept TIMING (seconds, `"300ms"`, `"0.3s"`) and EASING (`cubic-bezier(...)`, a Figma easing name, or `spring(bounce)`).
+
+### Fixed
+
+- **Easing variables export again.** Figma changed the EASING value shape in August 2026 (`easingFunctionCubicBezier` / `easingFunctionSpring`), and `figma_export_tokens` only read the earlier shape, so new easing variables exported as plain strings. Both shapes are read now. Springs and holds keep their exact value in `$extensions["figma-console-mcp"].spring` for round-trip, and changing only a spring's bounce is detected on import.
+- **No more endless motion-token diffs.** Figma stores motion numbers at 32-bit precision (0.2 reads back as 0.20000000298), so a re-import would always see a change. Exported easing curves and durations are rounded.
+
 ## [1.44.2] - 2026-10-27
 
 Cloud Mode fix, server-only: no plugin re-import needed.

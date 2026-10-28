@@ -147,6 +147,12 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 
 > **Stable plugin path:** The MCP server automatically copies plugin files to `~/.figma-console-mcp/plugin/` on startup. Import from this path instead of the volatile npx cache path. Re-importing after a package update is optional — only required when the release notes call for it.
 
+#### Motion tools: "Motion API is not available" or "main component"
+- **"The Figma Motion API is not available"**: update Figma Desktop. Motion shipped in Plugin API Update 130 (June 2026), custom animation styles in Update 140 (September 2026).
+- **"Figma does not allow writing animations to a main component"**: Figma blocks this through the Plugin API. Animate an instance or a frame instead.
+- **The animation doesn't show in a screenshot**: expected. Motion plays in Figma's preview and in `figma_export_animation`; screenshots show the first frame.
+- **Video export fails**: export the frame that holds the Motion timeline, and check that it actually has animations (`figma_get_animations`).
+
 #### 403 Forbidden from the Figma API
 **Cause:** Your personal access token is missing a scope that the tool's REST call needs. Figma answers **401** for a token it doesn't recognize, and **403** for a valid token without the right scope.
 **Fix:** Create a new token with the scopes in [Setup → Get your Figma token](/setup#step-1-get-your-figma-token-2-min), then update `FIGMA_ACCESS_TOKEN` and restart your MCP client. Which scope a 403 points to:

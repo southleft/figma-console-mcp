@@ -863,6 +863,53 @@ describe("token sync engine", () => {
       expect(ext.figmaResolvedType).toBe("EASING");
     });
 
+    describe("current Figma EASING shape (MotionEasing, Plugin API Update 133+)", () => {
+      const easingDoc = (value: unknown) =>
+        convertFigmaVariablesToDocument({
+          collections: [{ id: "c1", name: "Motion", modes: [{ modeId: "m1", name: "Default" }], variableIds: ["v1"] }],
+          variables: [
+            { id: "v1", name: "motion/ease", resolvedType: "EASING", variableCollectionId: "c1", valuesByMode: { m1: value } },
+          ],
+        } as any);
+
+      it("exports a bezier easing, rounding Figma's float32 noise", () => {
+        const { document, warnings } = easingDoc({
+          type: "CUSTOM_CUBIC_BEZIER",
+          easingFunctionCubicBezier: { x1: 0.20000000298023224, y1: 0, x2: 0, y2: 1 },
+        });
+        expect(warnings).toEqual([]);
+        expect(document.sets[0].tokens[0].values.Default.literal).toEqual([0.2, 0, 0, 1]);
+      });
+
+      it("exports named bezier types with their curve", () => {
+        const { document } = easingDoc({ type: "EASE_OUT_BACK", easingFunctionCubicBezier: { x1: 0.45, y1: 1.45, x2: 0.8, y2: 1 } });
+        expect(document.sets[0].tokens[0].values.Default.literal).toEqual([0.45, 1.45, 0.8, 1]);
+      });
+
+      it("keeps springs exact in extensions, with a fallback bezier", () => {
+        const { document, warnings } = easingDoc({ type: "BOUNCY", easingFunctionSpring: { bounce: 0.6938137821521027 } });
+        const token = document.sets[0].tokens[0];
+        expect(token.values.Default.literal).toEqual([0.25, 0.1, 0.25, 1.0]);
+        expect((token.extensions?.["figma-console-mcp"] as any).spring.Default).toEqual({ easingType: "BOUNCY", bounce: 0.6938 });
+        expect(warnings.join("\n")).toContain("a spring (BOUNCY)");
+      });
+
+      it("keeps HOLD in extensions", () => {
+        const { document } = easingDoc({ type: "HOLD" });
+        const token = document.sets[0].tokens[0];
+        expect(token.values.Default.literal).toEqual([0, 0, 1, 1]);
+        expect((token.extensions?.["figma-console-mcp"] as any).spring.Default).toEqual({ easingType: "HOLD" });
+      });
+
+      it("rounds TIMING float32 noise in milliseconds", () => {
+        const { document } = convertFigmaVariablesToDocument({
+          collections: [{ id: "c1", name: "Motion", modes: [{ modeId: "m1", name: "Default" }], variableIds: ["v1"] }],
+          variables: [{ id: "v1", name: "d", resolvedType: "TIMING", variableCollectionId: "c1", valuesByMode: { m1: 0.30000001192092896 } }],
+        } as any);
+        expect(document.sets[0].tokens[0].values.Default.literal).toEqual({ value: 300, unit: "ms" });
+      });
+    });
+
     it("preserves spring EASING parameters in extensions with a warning (DTCG can't express springs)", () => {
       const payload = {
         collections: [

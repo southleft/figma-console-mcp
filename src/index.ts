@@ -36,6 +36,8 @@ import { registerTokensTools } from "./core/tokens-tools.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
 import { registerSlotTools } from "./core/slot-tools.js";
+import { registerMotionTools } from "./core/motion-tools.js";
+import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { escapeHtml, isAllowedRedirectUri, isLoopbackOrTrustedRedirect, mintSseSessionId, readCookie, sseSessionBelongsTo, verifyPkceS256 } from "./core/oauth-security.js";
 
 // Re-export PluginRelayDO so Cloudflare Workers can bind it as a Durable Object
@@ -903,6 +905,9 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		registerSlotTools(this.server, getCloudDesktopConnector);
 
+		registerMotionTools(this.server, getCloudDesktopConnector);
+		registerCodeLayerTools(this.server, getCloudDesktopConnector);
+
 		// Register Figma API tools (Tools 8-14)
 		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
 		registerFigmaAPITools(
@@ -1365,6 +1370,9 @@ export default {
 			registerSlidesTools(statelessServer, getCloudDesktopConnector);
 
 			registerSlotTools(statelessServer, getCloudDesktopConnector);
+
+			registerMotionTools(statelessServer, getCloudDesktopConnector);
+			registerCodeLayerTools(statelessServer, getCloudDesktopConnector);
 
 			// Register REST API tools with the authenticated Figma API
 			registerFigmaAPITools(
@@ -2263,13 +2271,13 @@ export default {
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Figma Console MCP: a design-system MCP server for Figma and code</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="An open-source MCP server for design systems. 121+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
+	<meta name="description" content="An open-source MCP server for design systems. 127+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 
 	<!-- Open Graph -->
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="https://figma-console-mcp.southleft.com">
 	<meta property="og:title" content="Figma Console MCP: keep Figma and code on the same design system">
-	<meta property="og:description" content="An open-source MCP server for design systems. 121+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
+	<meta property="og:description" content="An open-source MCP server for design systems. 127+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 	<meta property="og:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 	<meta property="og:image:width" content="1200">
 	<meta property="og:image:height" content="630">
@@ -2277,7 +2285,7 @@ export default {
 	<!-- Twitter -->
 	<meta name="twitter:card" content="summary_large_image">
 	<meta name="twitter:title" content="Figma Console MCP: keep Figma and code on the same design system">
-	<meta name="twitter:description" content="An open-source MCP server for design systems. 121+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
+	<meta name="twitter:description" content="An open-source MCP server for design systems. 127+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 	<meta name="twitter:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 
 	<meta name="theme-color" content="#0F766E">
@@ -3310,12 +3318,12 @@ All values are bound to space/* tokens.</code></pre>
 				<div class="modes">
 					<div class="mode">
 						<h3>Local</h3>
-						<p class="count"><span class="number">121+</span><span class="unit">tools</span></p>
+						<p class="count"><span class="number">127+</span><span class="unit">tools</span></p>
 						<p><strong>Everything</strong>, including writes, checks, and design-system extraction. Runs with npx next to Figma Desktop and the Desktop Bridge plugin.</p>
 					</div>
 					<div class="mode">
 						<h3>Cloud</h3>
-						<p class="count"><span data-mode="cloud">96</span><span class="unit">tools</span></p>
+						<p class="count"><span data-mode="cloud">102</span><span class="unit">tools</span></p>
 						<p><strong>For web AI clients</strong> such as Claude.ai. Pair the Desktop Bridge plugin with a code and keep write access.</p>
 					</div>
 					<div class="mode">
