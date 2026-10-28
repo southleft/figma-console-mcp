@@ -109,7 +109,7 @@ export const TokensConfigSchema = z
     modes: z
       .object({
         /** e.g. { "Light": "light", "Dark": "dark" } */
-        map: z.record(z.string()).optional(),
+        map: z.record(z.string(), z.string()).optional(),
         /** Default mode if a token has no explicit mode (e.g. "Light"). */
         default: z.string().optional(),
       })

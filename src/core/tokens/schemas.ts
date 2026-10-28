@@ -177,13 +177,13 @@ export const ImportTokensInputSchema = z
       "How to apply changes. 'merge' (default) diffs against current Figma state and applies only deltas, preserving Figma-only variables. 'replace' wipes the target collections and rewrites. 'dry-run' computes the diff and reports without touching Figma.",
     ),
     collectionMapping: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .optional()
       .describe(
         "Map input token set names to Figma collection names. Example: {'primitives': 'Primitive Tokens'}. When omitted, set names map 1:1 to collection names.",
       ),
     modeMapping: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .optional()
       .describe(
         "Map input mode names to Figma mode names. Useful when source uses 'light'/'dark' and Figma uses 'Light'/'Dark'. Defaults to 1:1 mapping with case preservation.",

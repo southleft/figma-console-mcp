@@ -116,6 +116,11 @@ async function serveSSEWithToken(request: Request, env: Env, ctx: ExecutionConte
 const cloudBuild = { version: "1.42.1" };
 
 export class FigmaConsoleMCPv3 extends McpAgent {
+	// agents 0.7 types `server` against its own nested SDK 1.26 copy; ours is
+	// 1.32 (security fixes). Only connect() and the transport interface cross
+	// that boundary, and both are unchanged between the two. Moving to agents
+	// 0.30+ removes the split but needs a newer workerd and compatibility_date.
+	// @ts-expect-error -- same McpServer class from two SDK copies
 	server = (() => {
 		const s = new McpServer({
 			name: "Figma Console MCP",

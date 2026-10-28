@@ -1252,7 +1252,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					"The node ID from search results. ALWAYS pass this alongside componentKey - most local components need it.",
 				),
 			variant: z
-				.record(z.string())
+				.record(z.string(), z.string())
 				.optional()
 				.describe(
 					"Variant properties to set (e.g., { Type: 'Simple', State: 'Active' })",
@@ -2884,7 +2884,7 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 					"Node IDs of existing COMPONENT nodes to combine as variants. Mutually exclusive with baseComponentId. Components already inside a component set are rejected.",
 				),
 			variantProperties: z
-				.array(z.record(z.string()))
+				.array(z.record(z.string(), z.string()))
 				.optional()
 				.describe(
 					"Only with componentIds: one property map per component, aligned by index — e.g. [{ State: 'default' }, { State: 'hover' }]. Each component is renamed to 'Prop=Value, ...' before combining. Without this, existing names are kept (names lacking '=' become 'Property 1=<name>').",

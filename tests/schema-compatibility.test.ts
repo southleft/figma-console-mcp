@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
+// Same conversion the MCP SDK applies to tool schemas (server/zod-json-schema-compat).
+const zodToJsonSchema = (schema: z.ZodType) =>
+	z.toJSONSchema(schema, { target: "draft-7", io: "input" });
 
 /**
  * Schema Compatibility Tests
@@ -146,7 +148,7 @@ describe("Schema Compatibility Tests", () => {
 	describe("JSON Schema Structure Validation", () => {
 		it("updateVariableValue should produce explicit type array for union", () => {
 			const jsonSchema = zodToJsonSchema(schemas.updateVariableValue) as Record<string, unknown>;
-			// zod-to-json-schema produces type: ["string", "number", "boolean"] for unions of primitives
+			// The converter produces type: ["string", "number", "boolean"] for unions of primitives
 			const typeArray = jsonSchema.type;
 			expect(Array.isArray(typeArray)).toBe(true);
 			expect(typeArray).toContain("string");
@@ -401,7 +403,7 @@ describe("Schema Compatibility Tests", () => {
 
 			for (const { name, schema } of unionSchemas) {
 				const jsonSchema = zodToJsonSchema(schema) as Record<string, unknown>;
-				// zod-to-json-schema produces type: ["string", "number", "boolean"] for primitive unions
+				// The converter produces type: ["string", "number", "boolean"] for primitive unions
 				const typeArray = jsonSchema.type;
 				expect(Array.isArray(typeArray)).toBe(true);
 				expect((typeArray as string[]).length).toBeGreaterThan(1);

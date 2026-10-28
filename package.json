@@ -60,14 +60,14 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/ext-apps": "^1.0.1",
-		"@modelcontextprotocol/sdk": "^1.26.0",
+		"@modelcontextprotocol/sdk": "^1.32.1",
 		"axe-core": "^4.11.2",
 		"jsdom": "^29.0.1",
 		"pino": "^9.5.0",
 		"pino-pretty": "^13.0.0",
 		"uuid": "^11.0.3",
 		"ws": "^8.19.0",
-		"zod": "^3.25.76"
+		"zod": "^4.6.7"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.2.5",
@@ -85,7 +85,6 @@
 		"typescript": "5.9.3",
 		"vite": "^6.0.0",
 		"vite-plugin-singlefile": "^2.0.0",
-		"wrangler": "4.72.0",
-		"zod-to-json-schema": "^3.25.1"
+		"wrangler": "4.72.0"
 	}
 }

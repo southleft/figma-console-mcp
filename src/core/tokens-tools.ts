@@ -170,7 +170,7 @@ export function registerImportTokensTool(
   server.tool(
     "figma_import_tokens",
     IMPORT_TOOL_DESCRIPTION,
-    ImportTokensInputSchema._def.schema.shape,
+    ImportTokensInputSchema.shape,
     async (args) => {
       try {
         return await handleImport(args, getDesktopConnector, opts);

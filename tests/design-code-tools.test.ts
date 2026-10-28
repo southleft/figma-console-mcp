@@ -243,7 +243,6 @@ describe("Design-Code Tools Schema Compatibility", () => {
 		// This test verifies that our schemas are strictly typed
 		// and compatible with LLMs that require explicit JSON Schema types (like Gemini)
 		const { z } = require("zod");
-		const { zodToJsonSchema } = require("zod-to-json-schema");
 
 		const codeSpecSchema = z.object({
 			filePath: z.string().optional(),
@@ -255,7 +254,7 @@ describe("Design-Code Tools Schema Compatibility", () => {
 			}).optional(),
 		});
 
-		const jsonSchema = zodToJsonSchema(codeSpecSchema);
+		const jsonSchema = z.toJSONSchema(codeSpecSchema, { target: "draft-7", io: "input" });
 
 		// Should have 'type' or 'properties' at root level (not be an empty schema)
 		expect(jsonSchema).toHaveProperty("type");
