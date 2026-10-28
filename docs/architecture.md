@@ -106,7 +106,7 @@ flowchart TB
 The main server implements the Model Context Protocol with stdio transport for local mode, plus an optional Streamable HTTP endpoint (`src/core/http-transport.ts`).
 
 **Key Responsibilities:**
-- Tool registration (127 tools in Local Mode, 95 in Cloud Mode)
+- Tool registration (127 tools in Local Mode, 102 in Cloud Mode)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication via WebSocket
