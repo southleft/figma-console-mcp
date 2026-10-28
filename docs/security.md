@@ -12,7 +12,7 @@ Figma Console MCP is designed with security as a priority. The project is **full
 <CardGroup cols={2}>
   <Card title="Local Mode" icon="laptop">
     **Recommended for security-sensitive environments**
-    - Runs entirely on localhost via stdio
+    - Runs entirely on localhost via stdio (optional loopback-only HTTP)
     - Zero external network calls
     - All communication stays local
   </Card>
@@ -97,6 +97,7 @@ Code runs in Figma's **plugin sandbox**, not your system. It cannot access your 
 All network communication is limited to:
 - `api.figma.com` — Figma's official REST API (HTTPS)
 - `localhost:9223–9232` — WebSocket Bridge (Desktop Bridge Plugin communication, port range for multi-instance support)
+- `127.0.0.1:<FIGMA_MCP_HTTP_PORT>` — Optional local MCP over HTTP, only when you set that variable
 - `*.workers.dev` — Remote mode only (HTTPS)
 
 ### WebSocket Bridge Security

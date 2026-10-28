@@ -131,7 +131,7 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 
 #### Port 9223 Already in Use
 **Cause:** Another MCP server instance or orphaned process is running on port 9223.
-**Fix:** The server automatically cleans up orphaned MCP processes on startup and falls back to the next available port in the range 9223–9232. The plugin scans the whole range on launch and picks up whichever port the server bound to.
+**Fix:** The server automatically cleans up orphaned MCP processes on startup and falls back to the next available port in the range 9223–9232. The plugin scans the whole range on launch and picks up whichever port the server bound to. If all ten ports are in use, a new server ends the least recently used one — never one started or used in the last two minutes (v1.42.1). If you regularly run more than ten clients, consider [sharing one server over HTTP](#http-endpoint-issues).
 
 #### Plugin Shows "MCP scanning" or "Retry"
 **Cause:** The MCP server is not running yet, or all ports 9223–9232 are occupied.
@@ -146,6 +146,15 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 **Fix (v1.31.0+):** The server now force-kills orphans it finds — escalating `SIGTERM` → `SIGKILL` so even a hung process that ignores a graceful shutdown is cleared — on startup *and* on a 5-minute background sweep. A shutdown backstop also prevents a server from zombifying in the first place. In normal use you should never need to intervene. To inspect (not kill) what's holding ports: `lsof -i :9223-9232 | grep LISTEN`. To force-clear leftovers from before you upgraded, see [Start Here → Last resort](#last-resort--manually-clear-leftover-zombies-rarely-needed).
 
 > **Stable plugin path:** The MCP server automatically copies plugin files to `~/.figma-console-mcp/plugin/` on startup. Import from this path instead of the volatile npx cache path. Re-importing after a package update is optional — only required when the release notes call for it.
+
+#### HTTP endpoint issues
+These apply only when you've set `FIGMA_MCP_HTTP_PORT` to share one server over HTTP (v1.44.0). Run `figma_get_status` and look at `transport.mcpHttp`.
+- **`mcpHttp.error` says the port is in use:** another process, often another figma-console-mcp started with the same variable, already holds it. That server's URL is listed under `otherInstances[].mcpHttpUrl`; point your clients there, or choose another port. Avoid 3845 (Figma's Dev Mode MCP) and 9223–9232 (the bridge).
+- **403 "Host … is not allowed":** connect with `127.0.0.1` or `localhost` and the exact port. Other hostnames are refused to block DNS rebinding.
+- **403 "Origin … is not allowed":** the request came from a web page. Only pages served from localhost (such as MCP Inspector) are accepted.
+- **401:** `FIGMA_MCP_HTTP_TOKEN` is set; send `Authorization: Bearer <token>`.
+- **404 "Session not found":** the session closed (30 minutes idle, the server restarted, or more than 32 sessions). MCP clients re-initialize on their own.
+- **The endpoint disappears when an MCP client closes:** that client spawned the server, and the endpoint lives as long as the server does. Start the shared server in a terminal instead.
 
 #### Running in Docker
 **Cause:** The WebSocket server binds to `localhost` by default, which is unreachable from the Docker host.
@@ -412,6 +421,12 @@ FIGMA_WS_PORT=9223
 
 # WebSocket bind host (set to 0.0.0.0 when running in Docker)
 FIGMA_WS_HOST=localhost
+
+# Also serve MCP over Streamable HTTP at http://127.0.0.1:<port>/mcp (off when unset)
+FIGMA_MCP_HTTP_PORT=9300
+
+# Require "Authorization: Bearer <token>" on that HTTP endpoint (optional)
+FIGMA_MCP_HTTP_TOKEN=change-me
 
 # Personal Access Token for the Figma REST API (local mode only)
 FIGMA_ACCESS_TOKEN=figd_xxx

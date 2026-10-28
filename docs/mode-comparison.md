@@ -187,6 +187,7 @@ Variables & Components Data
 - Install the Desktop Bridge Plugin once — no debug flags needed
 - Server automatically selects an available port (9223–9232) for multi-instance support
 - All 121 tools work through WebSocket
+- Optionally serves MCP over HTTP on loopback (`FIGMA_MCP_HTTP_PORT`) so several local clients can share one server
 - Plugin can access local variables (no Enterprise API needed)
 - Instant console log capture via WebSocket
 - Real-time selection tracking and document change monitoring

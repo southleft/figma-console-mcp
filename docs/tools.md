@@ -184,6 +184,11 @@ figma_get_status()
   - `setup.transport` - Transport status (`websocket` or `none`)
   - `setup.setupInstructions` - Step-by-step setup guide (if no transport available)
   - `setup.ai_instruction` - Guidance for AI assistants
+- **Transport** (local mode):
+  - `transport.websocket.connectedFiles` - Every file with the Desktop Bridge open, with plugin version and whether an update is available
+  - `transport.websocket.port` / `preferredPort` / `portFallbackUsed` - Which bridge port this server bound
+  - `transport.websocket.otherInstances` - Other running servers (port, PID, start time, and `mcpHttpUrl` if they serve HTTP)
+  - `transport.mcpHttp` - The optional HTTP endpoint: `{ url, sessions, auth }` when `FIGMA_MCP_HTTP_PORT` is set, or `{ error }` if it couldn't start
 - Browser connection status
 - Console monitoring active/inactive
 - Current URL (if navigated)

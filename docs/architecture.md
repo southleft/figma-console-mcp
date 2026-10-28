@@ -65,6 +65,7 @@ flowchart TB
 flowchart TB
     AI[AI Assistant]
     AI -->|stdio| SERVER[Local MCP Server]
+    OTHER[Other local MCP clients] -.->|"HTTP /mcp (opt-in)"| SERVER
 
     SERVER --> REST[REST Client]
     SERVER --> WS[WebSocket Server]
@@ -80,6 +81,7 @@ flowchart TB
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running. Orphaned processes are automatically detected and terminated on startup.
 - The HTTP server on the same port exposes `/health` for liveness checks.
 - All 121 tools work through the WebSocket transport.
+- **Optional MCP over HTTP** — with `FIGMA_MCP_HTTP_PORT` set, the server also serves MCP (Streamable HTTP) at `http://127.0.0.1:<port>/mcp`, so other local clients can share its plugin connection. Off by default; see [Sharing one server over HTTP](#sharing-one-server-over-http).
 
 **Plugin distribution:**
 - The Desktop Bridge plugin ships as `manifest.json`, `code.js`, and `ui.html` — the full UI (~60 KB) is loaded directly by Figma at plugin-open time (no bootloader fetch).
@@ -101,7 +103,7 @@ flowchart TB
 
 ### MCP Server Core (`src/local.ts`)
 
-The main server implements the Model Context Protocol with stdio transport for local mode.
+The main server implements the Model Context Protocol with stdio transport for local mode, plus an optional Streamable HTTP endpoint (`src/core/http-transport.ts`).
 
 **Key Responsibilities:**
 - Tool registration (121 tools in Local Mode, 95 in Cloud Mode)
@@ -199,6 +201,18 @@ See [Cloud Write Relay](#cloud-write-relay) for full details.
 #### Multi-Instance Support (v1.10.0+)
 
 Multiple MCP server processes can run simultaneously (e.g., Claude Desktop Chat tab, Code tab, Cursor, etc.). Each server binds to the first available port in the range 9223–9232. The Desktop Bridge Plugin scans all ports in the range and connects to every active server.
+
+Each server writes a port file (`figma-console-mcp-<port>.json` in the OS temp dir, `$TMPDIR` on macOS) with its PID, a 30-second heartbeat, the time of its last tool call (`lastToolCall`) and, when enabled, its HTTP endpoint (`mcpHttpUrl`). When all ten ports are taken, a new server ends the **least recently used** server, never one started or used in the last two minutes (v1.42.1).
+
+#### Sharing one server over HTTP
+
+With `FIGMA_MCP_HTTP_PORT` set (v1.44.0), the server also accepts MCP over Streamable HTTP at `http://127.0.0.1:<port>/mcp`. Each HTTP session gets its own `McpServer` with every tool registered, as each stdio client gets its own process, and all sessions share the one WebSocket bridge and its caches. Sessions end when the client ends them, after 30 minutes idle, or (least recently used first) past 32 open.
+
+Only loopback is served: the endpoint binds `127.0.0.1`, rejects any `Host` that isn't localhost (DNS rebinding), and rejects browser `Origin`s other than localhost pages. `FIGMA_MCP_HTTP_TOKEN` adds a bearer token. If the port is taken, the endpoint stays off and `figma_get_status` reports why; stdio is unaffected.
+
+#### Timed-out commands
+
+Figma can't stop a running plugin script, so a timed-out request may still be running. The server remembers timed-out requests for 15 minutes. If a second request times out behind one that's still unanswered, it marks that file as busy, and later commands to the file fail immediately with a "still busy" message instead of queuing (v1.42.1). The busy state clears when the late reply arrives, when the plugin reconnects, or after 10 minutes.
 
 #### Transport Detection
 
