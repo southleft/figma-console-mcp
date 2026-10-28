@@ -5,6 +5,20 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.44.0] - 2026-10-27
+
+Local Mode can serve MCP over HTTP, so several local clients can share one server. It's opt-in and server-only: nothing changes unless you set the new variable, and no plugin re-import is needed.
+
+### Added
+
+- **Optional Streamable HTTP endpoint (#48).** Set `FIGMA_MCP_HTTP_PORT` (for example `9300`) and the server also serves MCP at `http://127.0.0.1:<port>/mcp`, alongside stdio. Any local MCP client can then connect to a running server and share its Desktop Bridge connection, instead of each client starting its own.
+  - Each HTTP client gets its own session, just as each stdio client gets its own server, and all of them share the plugin connection.
+  - Sessions close when the client ends them, after 30 minutes idle, or (least recently used first) past 32 open. Clients reconnect on their own.
+  - The URL appears in the server's port file (`mcpHttpUrl`), in `figma_get_status` under `transport.mcpHttp`, and in `otherInstances`, so other tools can find it.
+  - It only serves loopback. It binds `127.0.0.1` and refuses any request whose `Host` isn't localhost, which blocks DNS rebinding, and any request from a browser page that isn't on localhost. Set `FIGMA_MCP_HTTP_TOKEN` to also require `Authorization: Bearer <token>`.
+  - If the port is taken or the value is invalid, the endpoint stays off and `figma_get_status` says why. stdio keeps working.
+
+
 ## [1.43.0] - 2026-10-27
 
 Security dependency update, server-only: no plugin re-import needed, and tools behave as before.
@@ -1634,6 +1648,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.44.0]: https://github.com/southleft/figma-console-mcp/compare/v1.43.0...v1.44.0
 [1.43.0]: https://github.com/southleft/figma-console-mcp/compare/v1.42.1...v1.43.0
 [1.42.1]: https://github.com/southleft/figma-console-mcp/compare/v1.42.0...v1.42.1
 [1.42.0]: https://github.com/southleft/figma-console-mcp/compare/v1.41.5...v1.42.0
