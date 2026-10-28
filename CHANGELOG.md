@@ -5,6 +5,27 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.44.1] - 2026-10-27
+
+A Cloud Mode sign-in fix, clearer token-scope errors, and up-to-date setup guides for Codex, Gemini CLI and Antigravity. Server-only: no plugin re-import needed.
+
+### Fixed
+
+- **Cloud Mode no longer rejects a working personal access token that lacks the Current user scope.** Cloud Mode checks a token by calling Figma's `/v1/me`, which needs `current_user:read`. Figma answers **401** for a bad token but **403** for a real token without that scope, and both were treated as `invalid_token`. Our setup guide never listed that scope, so tokens made by following it were rejected. A 403 now counts as a genuine token.
+
+### Changed
+
+- **A 403 from the Figma API says what's missing.** The error now names the request and the scope it needs, for example *"GET /v1/files/…/components needs the library_content:read scope"*, and says how to fix it. For variables, it explains that Figma only grants that scope on Enterprise plans and points to the Desktop Bridge instead.
+
+### Documentation
+
+- **Complete token scope list.** The setup guide now lists every scope the server's REST calls use: File content, File versions, Library content, Library assets, Comments, Current user, and Variables (Enterprise, optional). Library content, Library assets and Current user were missing. A new troubleshooting entry maps each 403 to the scope it needs. (Thanks to @arevlo-flow for raising this in #42.)
+- **Setup for OpenAI Codex, Gemini CLI and Google Antigravity**, written against each platform's current docs and checked with `@openai/codex` 0.165.0 and `@google/gemini-cli`. (Thanks to @abhijitchirde for #19.)
+  - Codex: the CLI command, the app and IDE form, and `~/.codex/config.toml`. The guide raises Codex's default 10 s startup and 60 s tool timeouts, which are too short for a first `npx` download and for long `figma_execute` calls.
+  - Gemini CLI: `gemini mcp add -s user` and `settings.json`, with a note that Antigravity CLI replaced Gemini CLI for free-tier and Google One accounts in June 2026.
+  - Antigravity (IDE, CLI, app): `mcp_config.json`, with `timeoutSeconds: 300`.
+
+
 ## [1.44.0] - 2026-10-27
 
 Local Mode can serve MCP over HTTP, so several local clients can share one server. It's opt-in and server-only: nothing changes unless you set the new variable, and no plugin re-import is needed.
@@ -1648,6 +1669,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.44.1]: https://github.com/southleft/figma-console-mcp/compare/v1.44.0...v1.44.1
 [1.44.0]: https://github.com/southleft/figma-console-mcp/compare/v1.43.0...v1.44.0
 [1.43.0]: https://github.com/southleft/figma-console-mcp/compare/v1.42.1...v1.43.0
 [1.42.1]: https://github.com/southleft/figma-console-mcp/compare/v1.42.0...v1.42.1
