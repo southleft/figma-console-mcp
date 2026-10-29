@@ -2369,7 +2369,6 @@ After instantiating components, use figma_take_screenshot to verify the result l
 								{
 									error:
 										error instanceof Error ? error.message : String(error),
-									hint: "Make sure the node is a TEXT node",
 								},
 							),
 						},

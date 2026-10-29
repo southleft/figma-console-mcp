@@ -161,6 +161,39 @@ describe("figma_set_layout", () => {
 		expect(out).toMatchObject({ mode: "HORIZONTAL", gap: 12, wrap: true, counterAxisGap: 8, primaryAlign: "SPACE_EVENLY", padding: { top: 16, right: 0, bottom: 0, left: 24 } });
 	});
 
+	// Like Figma: a new frame's main axis hugs, so switching layout on resizes it to its children.
+	function hugFrame(overrides: Record<string, unknown> = {}) {
+		const f = frame({ width: 560, height: 140, primaryAxisSizingMode: "AUTO", counterAxisSizingMode: "FIXED", ...overrides });
+		let mode = f.layoutMode;
+		Object.defineProperty(f, "layoutMode", {
+			get: () => mode,
+			set: (m: string) => { if (mode === "NONE" && m !== "NONE" && f.primaryAxisSizingMode === "AUTO") f.width = 300; mode = m; },
+		});
+		return f;
+	}
+
+	it("keeps the frame's size when switching auto layout on", async () => {
+		const f = hugFrame();
+		const out = await runScript(layoutScript({ nodeId: "2:1", mode: "HORIZONTAL", wrap: true }), { getNodeByIdAsync: async () => f });
+		expect(out).toMatchObject({ width: 560, height: 140, wrap: true });
+		expect(f.primaryAxisSizingMode).toBe("FIXED");
+		expect(out.notes).toBeUndefined();
+	});
+
+	it("fixes a hugging main axis when wrap is turned on, and says so", async () => {
+		const f = hugFrame({ layoutMode: "HORIZONTAL", width: 700 });
+		const out = await runScript(layoutScript({ nodeId: "2:1", wrap: true }), { getNodeByIdAsync: async () => f });
+		expect(f.primaryAxisSizingMode).toBe("FIXED");
+		expect(out.notes).toEqual([expect.stringMatching(/^Width was hugging its children, so it is now fixed at 700px/)]);
+	});
+
+	it("leaves a hugging main axis alone when wrap comes with sizing for that axis", async () => {
+		const f = hugFrame({ layoutMode: "HORIZONTAL" });
+		const out = await runScript(layoutScript({ nodeId: "2:1", wrap: true, horizontalSizing: "FILL" }), { getNodeByIdAsync: async () => f });
+		expect(f.primaryAxisSizingMode).toBe("AUTO");
+		expect(out.notes).toBeUndefined();
+	});
+
 	it("builds grid tracks and reports them as CSS", async () => {
 		const f = frame();
 		const out = await runScript(
