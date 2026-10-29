@@ -24,7 +24,7 @@ This page reflects both servers as of September 2026. Figma's server changes oft
   <Card title="Figma Console MCP" icon="terminal">
     **Made by Southleft.** A design-system-focused server that runs on your machine (or in Cloud Mode) and talks to Figma through the Desktop Bridge plugin and the REST API. Most operations are dedicated, schema-validated tools rather than generated scripts, and it also runs arbitrary Plugin API code through `figma_execute`.
 
-    127 tools. Plugin API + REST API. Open source (MIT).
+    130 tools. Plugin API + REST API. Open source (MIT).
   </Card>
 </Columns>
 
@@ -107,7 +107,7 @@ Console log capture from the Desktop Bridge plugin (`figma_get_console_logs`, `f
 
 ### Other dedicated tools
 
-Structured tools for variables, components and component sets (`figma_create_component_set`), Slots, node editing, annotations, comments, FigJam, and Slides. See the [Tools Reference](/tools).
+Structured tools for variables, components and component sets (`figma_create_component_set`), Slots, Motion, shaders, auto layout and grid layout (`figma_set_layout`), node editing, annotations, comments, FigJam, and Slides. See the [Tools Reference](/tools).
 
 ---
 
@@ -126,7 +126,7 @@ Neither approach is universally better. A script is flexible and handles one-off
 | **Runs where** | Hosted by Figma | Your machine (`npx` or a git clone), Southleft's hosted Cloud Mode, or your own Cloudflare deployment |
 | **Connection to Figma** | Figma's service | Desktop Bridge plugin over WebSocket, plus the Figma REST API |
 | **Authentication** | OAuth | Personal access token; OAuth for the hosted remote endpoints |
-| **Web AI clients** | Any client that supports remote MCP servers | Cloud Mode: Yes (102 tools) after pairing the Desktop Bridge plugin |
+| **Web AI clients** | Any client that supports remote MCP servers | Cloud Mode: Yes (105 tools) after pairing the Desktop Bridge plugin |
 | **Source code** | Operated by Figma | Open source (MIT), self-hostable |
 
 For Figma's current plan requirements and usage limits, see [Figma's documentation](https://developers.figma.com/docs/figma-mcp-server/). Figma Console MCP is free. It calls the Figma REST API with your own token, so Figma's REST API rate limits apply.
@@ -151,11 +151,12 @@ For Figma's current plan requirements and usage limits, see [Figma's documentati
   <Tab title="Designers and Design System Teams">
     **The official Figma MCP** fits when:
     - You want an agent to create designs, files, or FigJam diagrams
-    - You work with shaders, or want code layers generated from your code
+    - You want to create or edit shader code, or want code layers generated from your code
 
     **Figma Console MCP** fits when:
     - You maintain token collections with many modes and want batch, schema-validated variable operations
     - You want typed tools for motion: apply animations, build reusable animation styles bound to Timing and Easing tokens, and export video
+    - You want typed tools for shaders already in your files (apply them and set properties by name), auto layout and grid layout, and OKLCH or Display P3 colors
     - You want repeatable accessibility and design-system health audits
     - You want to audit design-code drift
     - You want version-history diffs, changelogs, or blame for components
@@ -203,7 +204,7 @@ When this comparison was first written, the official Figma MCP was read-only and
 
 <Columns cols={2}>
   <Card title="Set Up Figma Console MCP" icon="rocket" href="/setup">
-    Full 127 tool access in about 10 minutes.
+    Full 130 tool access in about 10 minutes.
   </Card>
   <Card title="Set Up Figma MCP (Official)" icon="figma" href="https://developers.figma.com/docs/figma-mcp-server/">
     Figma's documentation for its MCP server.

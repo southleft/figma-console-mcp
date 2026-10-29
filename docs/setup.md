@@ -37,9 +37,9 @@ Complete setup instructions for connecting Figma Console MCP to various AI clien
 | Console log streaming | ✅ | ❌ | ❌ |
 | Codebase → design system extraction (`figma_ds_*`) | ✅ | ❌ | ❌ |
 | Requires Node.js | Yes | No | No |
-| **Total tools available** | **127** | **102** after pairing | Read-only subset |
+| **Total tools available** | **130** | **105** after pairing | Read-only subset |
 
-> **Bottom line:** Remote mode is **read-only** until you pair the plugin. Cloud Mode adds **write access** (102 tools) without Node.js. Local (NPX/Git) has **everything** (127 tools) including real-time monitoring.
+> **Bottom line:** Remote mode is **read-only** until you pair the plugin. Cloud Mode adds **write access** (105 tools) without Node.js. Local (NPX/Git) has **everything** (130 tools) including real-time monitoring.
 
 ---
 
@@ -93,7 +93,7 @@ New to MCP servers, JSON configs, and terminal commands? These designer-friendly
 
 **Best for:** Anyone who wants full AI-assisted design and development capabilities with automatic updates.
 
-**What you get:** All 127 tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
+**What you get:** All 130 tools including design creation, variable management, component instantiation, design-to-code workflows, and Desktop Bridge plugin support.
 
 ### Prerequisites Checklist
 
@@ -260,7 +260,7 @@ Create a simple frame with a blue background
 
 **Best for:** Users who want more control over when updates happen, or developers who want to contribute to the project.
 
-**What you get:** Same 127 tools as NPX. Updates are manual — you pull and rebuild when you're ready.
+**What you get:** Same 130 tools as NPX. Updates are manual — you pull and rebuild when you're ready.
 
 ### Prerequisites
 
@@ -367,7 +367,7 @@ Then restart Claude Desktop.
 
 **Best for:** Claude.ai, v0, Replit, Lovable, and any MCP-capable web platform that needs to create and modify Figma designs.
 
-**What you get:** 102 tools — full write access (create frames, components, variables, edit designs) plus REST API reads, design system extraction, comments, version history, slides, FigJam, and annotations. This is Remote Mode upgraded with the Cloud Write Relay.
+**What you get:** 105 tools — full write access (create frames, components, variables, edit designs) plus REST API reads, design system extraction, comments, version history, slides, FigJam, and annotations. This is Remote Mode upgraded with the Cloud Write Relay.
 
 **What you don't get vs Local:** Real-time selection tracking, document change monitoring, and console log streaming (these require a local WebSocket connection).
 

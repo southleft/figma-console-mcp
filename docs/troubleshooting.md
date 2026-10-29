@@ -147,6 +147,14 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 
 > **Stable plugin path:** The MCP server automatically copies plugin files to `~/.figma-console-mcp/plugin/` on startup. Import from this path instead of the volatile npx cache path. Re-importing after a package update is optional — only required when the release notes call for it.
 
+#### Shaders: "Invalid shader id" or a shader that disappeared
+- **"Invalid shader id … Expected an id from figma.listAvailableShaders()"** on `effects`: fill shaders and effect shaders are separate kinds. Put a fill shader on `fills` or `strokes`.
+- **The same error on `fills`**: the shader isn't in the file anymore. Figma drops a shader once nothing uses it and the file reloads. Keep one layer using each shader you want to reuse, and get ids from `figma_list_shaders`.
+- **"Unknown shader property"**: the error lists the shader's real property names. Nothing was changed.
+
+#### Colors: an OKLCH or Display P3 color came back as sRGB
+Figma keeps the source color space only on fully opaque paints. A paint below 100% opacity is stored as sRGB, and `figma_set_fills` / `figma_set_strokes` say so in a `note`. In a file using the sRGB color profile, wide-gamut colors also display clamped to sRGB.
+
 #### Motion tools: "Motion API is not available" or "main component"
 - **"The Figma Motion API is not available"**: update Figma Desktop. Motion shipped in Plugin API Update 130 (June 2026), custom animation styles in Update 140 (September 2026).
 - **"Figma does not allow writing animations to a main component"**: Figma blocks this through the Plugin API. Animate an instance or a frame instead.

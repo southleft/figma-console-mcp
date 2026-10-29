@@ -7,6 +7,86 @@ const logger = createChildLogger({ component: "write-tools" });
 export const MOTION_VALUE_DOC =
 	"TIMING values are seconds (a number like 0.3, or '300ms' / '0.3s'). EASING values are 'cubic-bezier(x1, y1, x2, y2)', a Figma easing name (EASE_IN, EASE_OUT, EASE_IN_AND_OUT, LINEAR, EASE_IN_BACK, EASE_OUT_BACK, EASE_IN_AND_OUT_BACK, GENTLE, QUICK, BOUNCY, SLOW, HOLD) or 'spring(bounce)' with bounce 0–1.";
 
+/** A hex color the Desktop Bridge plugin's own fill/stroke handlers parse. */
+export const HEX_COLOR_RE = /^#?([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+export const CSS_COLOR_DOC =
+	"Hex ('#FF0000', '#FF000080') or any CSS color: rgb(), hsl(), oklch(), oklab(), lab(), lch() or color(display-p3 …). Fully opaque wide-gamut colors keep their source color space in Figma.";
+
+/**
+ * Plugin script for fills/strokes given as CSS colors. Hex-only calls keep
+ * going through the plugin's SET_NODE_FILLS / SET_NODE_STROKES handlers;
+ * anything else is parsed by figma.util.solidPaint, which keeps OKLCH / P3
+ * source colors. Variable bindings work the same way as the hex path.
+ */
+export const CSS_PAINT_BODY = `
+const node = await figma.getNodeByIdAsync(P.nodeId);
+if (!node) throw new Error('Node not found: ' + P.nodeId);
+if (!(P.target in node)) throw new Error('Node type ' + node.type + ' does not support ' + P.target);
+const paints = [];
+const requested = [];
+for (const item of P.paints) {
+  let paint;
+  try { paint = figma.util.solidPaint(item.color || '#000000'); requested.push(paint.color.sourceColor ? paint.color.sourceColor.space : 'SRGB'); }
+  catch (e) { throw new Error('Could not read color ' + JSON.stringify(item.color) + '. Use hex or a CSS color such as oklch(60% 0.2 250) or color(display-p3 1 0 0).'); }
+  if (paint.opacity === 1 && item.opacity !== undefined) paint = Object.assign({}, paint, { opacity: item.opacity });
+  if (item.variableId) {
+    const v = await figma.variables.getVariableByIdAsync(item.variableId);
+    if (!v) throw new Error('Variable not found: "' + item.variableId + '". Pass a local variable id from figma_get_variables (e.g. "VariableID:1:23"). Library variables must be imported first via figma_import_library_variable.');
+    paint = figma.variables.setBoundVariableForPaint(paint, 'color', v);
+  }
+  paints.push(paint);
+}
+node[P.target] = paints;
+if (P.strokeWeight !== undefined) node.strokeWeight = P.strokeWeight;
+const spaces = node[P.target].map(p => (p.color && p.color.sourceColor ? p.color.sourceColor.space : 'SRGB'));
+const out = { node: { id: node.id, name: node.name }, colorSpaces: spaces };
+const profile = figma.root.documentColorProfile;
+if (profile) out.documentColorProfile = profile;
+const notes = [];
+const dropped = requested.map((s, i) => (s !== 'SRGB' && spaces[i] === 'SRGB' && !P.paints[i].variableId ? i : -1)).filter(i => i >= 0);
+if (dropped.length) notes.push('Figma keeps an OKLCH or Display P3 source color only on fully opaque paints, so ' + P.target + ' ' + dropped.join(', ') + ' (below 100% opacity) ' + (dropped.length > 1 ? 'are' : 'is') + ' stored as sRGB.');
+if (profile === 'SRGB' && spaces.some(s => s !== 'SRGB')) notes.push('This file uses the sRGB color profile, so wide-gamut colors display clamped to sRGB. The source color is kept and shows in full in a Display P3 file.');
+if (notes.length) out.note = notes.join(' ');
+return out;
+`;
+
+/**
+ * Plugin script for the text options that need the Plugin API directly:
+ * text wrap style and variable-font axes, plus font size/family/style when
+ * figma_set_text is called without new text.
+ */
+export const TEXT_STYLE_BODY = `
+const node = await figma.getNodeByIdAsync(P.nodeId);
+if (!node) throw new Error('Node not found: ' + P.nodeId);
+if (node.type !== 'TEXT') throw new Error('Node ' + P.nodeId + ' is a ' + node.type + ', not a TEXT node');
+const len = node.characters.length;
+for (const f of (len ? node.getRangeAllFontNames(0, len) : [node.fontName])) { if (f !== figma.mixed) await figma.loadFontAsync(f); }
+const current = node.fontName !== figma.mixed ? node.fontName : null;
+const family = P.fontFamily || (current && current.family);
+const style = P.fontStyle ? P.fontStyle.replace(/^(Semi|Extra|Ultra|Demi)(Bold|Light)$/i, '$1 $2') : undefined;
+if (P.fontVariations) {
+  if (!family) throw new Error('This text uses several fonts. Pass fontFamily to set font variations.');
+  const axes = figma.getFontFamilyVariationAxes(family);
+  if (!axes) throw new Error(family + ' is not a variable font, so it has no variation axes.');
+  const unknown = Object.keys(P.fontVariations).filter(a => !axes.includes(a));
+  if (unknown.length) throw new Error(family + ' has no ' + unknown.join(', ') + ' axis. Its axes are: ' + axes.join(', ') + '.');
+  const font = { family, variationSettings: P.fontVariations };
+  if (style) font.style = style;
+  await figma.loadFontAsync(font);
+  node.fontName = font;
+} else if (P.fontFamily || style) {
+  if (!family) throw new Error('This text uses several fonts. Pass fontFamily too.');
+  const font = { family, style: style || (current && current.family === family ? current.style : 'Regular') };
+  await figma.loadFontAsync(font);
+  node.fontName = font;
+}
+if (P.fontSize !== undefined) node.fontSize = P.fontSize;
+if (P.textWrapStyle !== undefined) node.textWrapStyle = P.textWrapStyle;
+const fn = node.fontName !== figma.mixed ? node.fontName : 'mixed';
+return { node: { id: node.id, name: node.name }, fontName: fn, fontSize: node.fontSize !== figma.mixed ? node.fontSize : 'mixed', textWrapStyle: node.textWrapStyle };
+`;
+
 /**
  * Plugin-side converter for motion variable values (see MOTION_VALUE_DOC).
  * Non-motion types pass through unchanged. Inlined into variable scripts.
@@ -42,6 +122,18 @@ function motionValue(type, value) {
  * Register write/manipulation tools that require a Desktop Bridge connector.
  * Used by both local mode (src/local.ts) and cloud mode (src/index.ts).
  */
+async function setCssPaints(
+	connector: any,
+	payload: { nodeId: string; target: "fills" | "strokes"; paints: unknown[]; strokeWeight?: number },
+	message: string,
+) {
+	const result = await connector.executeCodeViaUI(`const P = ${JSON.stringify(payload)};\n${CSS_PAINT_BODY}`, 15000);
+	if (!result?.success) throw new Error(result?.error || `Failed to set ${payload.target}`);
+	return {
+		content: [{ type: "text" as const, text: JSON.stringify({ success: true, message, ...result.result }) }],
+	};
+}
+
 export function registerWriteTools(
 	server: McpServer,
 	getDesktopConnector: () => Promise<any>,
@@ -1841,7 +1933,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Tool: Set Node Fills
 	server.tool(
 		"figma_set_fills",
-		"Set the fill colors on a node. Accepts hex color strings (e.g., '#FF0000'). To bind a fill to a design token / color variable, pass that fill's variableId — the variable drives the color and this works on any Figma plan via the bridge (no raw figma_execute needed).",
+		"Set the fill colors on a node. Accepts hex or CSS colors, including oklch() and color(display-p3 …). To bind a fill to a design token / color variable, pass that fill's variableId — the variable drives the color and this works on any Figma plan via the bridge (no raw figma_execute needed).",
 		{
 			nodeId: z.string().describe("The node ID to modify"),
 			fills: z
@@ -1853,9 +1945,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 						color: z
 							.string()
 							.optional()
-							.describe(
-								"Hex color string (e.g., '#FF0000', '#FF000080' for transparency). Optional when variableId is provided.",
-							),
+							.describe(`${CSS_COLOR_DOC} Optional when variableId is provided.`),
 						opacity: z
 							.number()
 							.optional()
@@ -1873,6 +1963,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 		async ({ nodeId, fills }) => {
 			try {
 				const connector = await getDesktopConnector();
+				if (fills.some((f) => f.color !== undefined && !HEX_COLOR_RE.test(f.color.trim()))) {
+					return await setCssPaints(connector, { nodeId, target: "fills", paints: fills }, "Fills updated");
+				}
 				const result = await connector.setNodeFills(nodeId, fills);
 
 				if (!result.success) {
@@ -1966,7 +2059,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Tool: Set Node Strokes
 	server.tool(
 		"figma_set_strokes",
-		"Set the stroke (border) on a node. Accepts hex color strings and optional stroke weight. To bind a stroke to a design token / color variable, pass that stroke's variableId — works on any Figma plan via the bridge.",
+		"Set the stroke (border) on a node. Accepts hex or CSS colors (including oklch() and color(display-p3 …)) and an optional stroke weight. To bind a stroke to a design token / color variable, pass that stroke's variableId — works on any Figma plan via the bridge.",
 		{
 			nodeId: z.string().describe("The node ID to modify"),
 			strokes: z
@@ -1976,7 +2069,7 @@ After instantiating components, use figma_take_screenshot to verify the result l
 						color: z
 							.string()
 							.optional()
-							.describe("Hex color string. Optional when variableId is provided."),
+							.describe(`${CSS_COLOR_DOC} Optional when variableId is provided.`),
 						opacity: z.number().optional().describe("Opacity 0-1"),
 						variableId: z
 							.string()
@@ -1995,6 +2088,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 		async ({ nodeId, strokes, strokeWeight }) => {
 			try {
 				const connector = await getDesktopConnector();
+				if (strokes.some((f) => f.color !== undefined && !HEX_COLOR_RE.test(f.color.trim()))) {
+					return await setCssPaints(connector, { nodeId, target: "strokes", paints: strokes, strokeWeight }, "Strokes updated");
+				}
 				const result = await connector.setNodeStrokes(
 					nodeId,
 					strokes,
@@ -2193,10 +2289,10 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// Tool: Set Text Content
 	server.tool(
 		"figma_set_text",
-		"Set the text content of a text node. Optionally adjust font size and the font family/style. Font style names are space-sensitive ('Semi Bold', not 'SemiBold'), but this tool auto-corrects common no-space variants and falls back gracefully — so you don't need raw figma_execute to change typography.",
+		"Set the text content of a text node. Optionally adjust font size and the font family/style, the text wrap style (BALANCE or PRETTY, like CSS text-wrap), and variable-font axes (fontVariations, e.g. {wght: 550}). Font style names are space-sensitive ('Semi Bold', not 'SemiBold'), but this tool auto-corrects common no-space variants and falls back gracefully — so you don't need raw figma_execute to change typography. text can be left out to change only the styling.",
 		{
 			nodeId: z.string().describe("The text node ID"),
-			text: z.string().describe("The new text content"),
+			text: z.string().optional().describe("The new text content. Leave out to change only the styling"),
 			fontSize: z.number().optional().describe("Optional font size to set"),
 			fontFamily: z
 				.string()
@@ -2208,20 +2304,44 @@ After instantiating components, use figma_take_screenshot to verify the result l
 				.describe(
 					"Optional font style/weight to apply (e.g., 'Bold', 'Semi Bold'). No-space variants like 'SemiBold' are auto-corrected.",
 				),
+			textWrapStyle: z
+				.enum(["AUTO", "BALANCE", "PRETTY"])
+				.optional()
+				.describe("How lines break: AUTO (default), BALANCE (even line lengths, for headings) or PRETTY (avoids a lone last word)"),
+			fontVariations: z
+				.record(z.string(), z.number())
+				.optional()
+				.describe("Variable-font axis values by OpenType tag, e.g. {wght: 550, slnt: -5}. Axes you leave out keep the named style's values"),
 		},
-		async ({ nodeId, text, fontSize, fontFamily, fontStyle }) => {
+		async ({ nodeId, text, fontSize, fontFamily, fontStyle, textWrapStyle, fontVariations }) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.setTextContent(
-					nodeId,
-					text,
-					fontSize || fontFamily || fontStyle
-						? { fontSize, fontFamily, fontStyle }
-						: undefined,
-				);
-
-				if (!result.success) {
-					throw new Error(result.error || "Failed to set text");
+				const styleOnly = text === undefined;
+				if (styleOnly && fontSize === undefined && !fontFamily && !fontStyle && !textWrapStyle && !fontVariations) {
+					throw new Error("Nothing to change: pass text, or a font or wrap option");
+				}
+				let node: unknown;
+				if (!styleOnly) {
+					// Variable-font axes are set by the follow-up script, so the
+					// family and style go there too when fontVariations is given.
+					const fontOpts = fontVariations
+						? fontSize !== undefined ? { fontSize } : undefined
+						: fontSize || fontFamily || fontStyle ? { fontSize, fontFamily, fontStyle } : undefined;
+					const result = await connector.setTextContent(nodeId, text, fontOpts);
+					if (!result.success) {
+						throw new Error(result.error || "Failed to set text");
+					}
+					node = result.node;
+				}
+				let styling: Record<string, unknown> | undefined;
+				if (styleOnly || textWrapStyle || fontVariations) {
+					const payload = styleOnly
+						? { nodeId, fontSize, fontFamily, fontStyle, textWrapStyle, fontVariations }
+						: { nodeId, textWrapStyle, fontVariations, ...(fontVariations ? { fontFamily, fontStyle } : {}) };
+					const res = await connector.executeCodeViaUI(`const P = ${JSON.stringify(payload)};\n${TEXT_STYLE_BODY}`, 15000);
+					if (!res?.success) throw new Error(res?.error || "Failed to set text styling");
+					styling = res.result;
+					node = node ?? res.result.node;
 				}
 
 				return {
@@ -2231,8 +2351,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 							text: JSON.stringify(
 								{
 									success: true,
-									message: "Text content updated",
-									node: result.node,
+									message: styleOnly ? "Text styling updated" : "Text content updated",
+									node,
+									...(styling ? { fontName: styling.fontName, fontSize: styling.fontSize, textWrapStyle: styling.textWrapStyle } : {}),
 								},
 							),
 						},
