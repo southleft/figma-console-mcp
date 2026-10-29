@@ -2252,7 +2252,7 @@ figma_export_animation({ nodeId: "12:34", format: "MP4", fps: 30, quality: "HIGH
 
 **Parameters:** `format` (`MP4`, `GIF`, `WEBM`), `fps` (MP4/WebM: 12, 24, 30, 60. GIF: 8, 12, 15, 24, 30), `quality` (MP4/WebM), `loopCount` (GIF), one of `scale` (0.5–4), `width` or `height`.
 
-Local Mode writes the file to `outputPath` (default: the OS temp folder) and returns its path. Cloud Mode returns the video as base64, up to 5 MB.
+Local Mode writes the file to `outputPath` (default: the OS temp folder) and returns its path. If a file already exists at `outputPath`, nothing is exported or written unless you pass `overwrite: true`. Cloud Mode returns the video as base64, up to 5 MB.
 
 ### `figma_get_code_layers`
 

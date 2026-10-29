@@ -11,7 +11,7 @@
  * gets a clear message instead of a TypeError.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -633,7 +633,7 @@ Apply a custom style with figma_apply_animation customStyleId.`,
 		"figma_export_animation",
 		`Export an animated frame as MP4, GIF or WebM. The node should be the frame that holds the Motion timeline (its top-level frame).${
 			options.allowFileWrite
-				? " The file is written to outputPath (default: the OS temp folder) and the path is returned."
+				? " The file is written to outputPath (default: the OS temp folder) and the path is returned. An existing file is never replaced unless overwrite is true."
 				: ` Cloud Mode returns the video as base64 (up to ${MAX_INLINE_EXPORT_BYTES / 1024 / 1024} MB); use a lower fps, quality or scale for long animations.`
 		}`,
 		{
@@ -646,7 +646,10 @@ Apply a custom style with figma_apply_animation customStyleId.`,
 			width: z.number().positive().optional().describe("Output width in px"),
 			height: z.number().positive().optional().describe("Output height in px"),
 			...(options.allowFileWrite
-				? { outputPath: z.string().optional().describe("Where to write the file. Default: OS temp folder") }
+				? {
+						outputPath: z.string().optional().describe("Where to write the file. Default: OS temp folder"),
+						overwrite: z.boolean().optional().default(false).describe("Replace a file that already exists at outputPath"),
+					}
 				: {}),
 			fileKey: fileKeySchema,
 		},
@@ -654,15 +657,19 @@ Apply a custom style with figma_apply_animation customStyleId.`,
 			try {
 				const settingsError = validateVideoSettings(args as { format: string; fps?: number; scale?: number });
 				if (settingsError) throw new Error(settingsError);
-				const { fileKey, outputPath, ...payload } = args;
+				const { fileKey, outputPath, overwrite, ...payload } = args;
+				const explicitTarget = options.allowFileWrite && outputPath ? (isAbsolute(outputPath) ? outputPath : resolve(outputPath)) : undefined;
+				// Checked before the export so a long render isn't wasted.
+				if (explicitTarget && !overwrite && existsSync(explicitTarget)) {
+					throw new Error(`Nothing was written. "${explicitTarget}" already exists. Pass overwrite: true to replace it, or choose another outputPath.`);
+				}
 				const result = await run(getDesktopConnector, motionScript(payload, EXPORT_ANIMATION_BODY), 180000, fileKey);
 				const ext = String(args.format).toLowerCase();
 				const meta = { nodeId: result.nodeId, name: result.name, format: result.format, bytes: result.bytes, mimeType: MIME[args.format] };
 				if (options.allowFileWrite) {
 					const safeName = String(result.name || "animation").replace(/[^a-z0-9-_]+/gi, "-").slice(0, 60);
-					const target = outputPath
-						? isAbsolute(outputPath) ? outputPath : resolve(outputPath)
-						: join(tmpdir(), `figma-${safeName}-${Date.now()}.${ext}`);
+					const target = explicitTarget
+						?? join(tmpdir(), `figma-${safeName}-${Date.now()}.${ext}`);
 					mkdirSync(dirname(target), { recursive: true });
 					writeFileSync(target, Buffer.from(result.base64, "base64"));
 					return ok({ ...meta, path: target });

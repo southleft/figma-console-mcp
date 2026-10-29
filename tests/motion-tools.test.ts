@@ -3,7 +3,7 @@
  * run against a fake `figma` global.
  */
 
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -176,6 +176,25 @@ describe("motion tools", () => {
 		expect(body.path).toBe(target);
 		expect(readFileSync(target, "utf8")).toBe("GIF");
 		expect(body.base64).toBeUndefined();
+		rmSync(target);
+	});
+
+	it("refuses to overwrite an existing file unless overwrite is true", async () => {
+		const target = join(tmpdir(), `motion-test-existing-${Date.now()}.gif`);
+		writeFileSync(target, "KEEP");
+		const connector = connectorReturning({ nodeId: "1:2", name: "Card", format: "GIF", bytes: 3, base64: Buffer.from("GIF").toString("base64") });
+		const refused = mockServer();
+		registerMotionTools(refused as any, async () => connector, { allowFileWrite: true });
+		const res = await refused.tools.figma_export_animation({ format: "GIF", outputPath: target });
+		expect(res.isError).toBe(true);
+		expect(res.content[0].text).toMatch(/already exists/);
+		expect(connector.executeCodeViaUI).not.toHaveBeenCalled();
+		expect(readFileSync(target, "utf8")).toBe("KEEP");
+
+		const allowed = mockServer();
+		registerMotionTools(allowed as any, async () => connector, { allowFileWrite: true });
+		await allowed.tools.figma_export_animation({ format: "GIF", outputPath: target, overwrite: true });
+		expect(readFileSync(target, "utf8")).toBe("GIF");
 		rmSync(target);
 	});
 

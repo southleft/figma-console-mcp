@@ -16,7 +16,7 @@ Motion tools and motion tokens, built on Figma's Plugin API Updates 130–141. S
   - `figma_apply_animation` animates a layer with a Figma preset, a custom animation style, or manual keyframes for any animatable property, paint color or effect. Easing can bind to an EASING variable and a preset's duration to a TIMING variable.
   - `figma_remove_animation` removes an animation style, a keyframe track, or everything.
   - `figma_manage_animation_styles` lists Figma's presets with their options, and creates, updates and deletes reusable custom animation styles.
-  - `figma_export_animation` exports an animated frame as MP4, GIF or WebM (Local Mode writes the file; Cloud Mode returns base64 up to 5 MB).
+  - `figma_export_animation` exports an animated frame as MP4, GIF or WebM (Local Mode writes the file and won't replace an existing one without `overwrite: true`; Cloud Mode returns base64 up to 5 MB).
 - **`figma_get_code_layers`** finds Figma code layers on a page or across the file. Figma's APIs don't expose code-layer source, so the tool reports position, size and linked dev resources, and points to Figma's own MCP for creating and editing them.
 - **Motion tokens can be written.** `figma_import_tokens` now creates and updates TIMING and EASING variables from DTCG `duration` and `cubicBezier` tokens, where it used to skip them. `figma_create_variable`, `figma_batch_create_variables`, `figma_batch_update_variables` and `figma_setup_design_tokens` accept TIMING (seconds, `"300ms"`, `"0.3s"`) and EASING (`cubic-bezier(...)`, a Figma easing name, or `spring(bounce)`).
 
