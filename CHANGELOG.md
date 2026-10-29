@@ -5,11 +5,14 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.45.1] - 2026-10-29
+
+Patch, server-only: no plugin re-import needed.
 
 ### Fixed
 
-- **`figma_get_code_layers` no longer hangs on a file in a background window.** Figma never answers dev-resource and related-link lookups while a file's window isn't focused, so the tool waited out its 2-minute timeout and returned nothing. Each lookup now gets 3 seconds, and after the first one runs out the rest are skipped. The tool returns the code layers it found, with `linksUnavailable: true` and a note to bring the file to the front for links. Server-only.
+- **`figma_get_code_layers` no longer hangs on a file in a background window.** Figma never answers dev-resource and related-link lookups while a file's window isn't focused, so the tool waited out its 2-minute timeout and returned nothing. Each lookup now gets 3 seconds, and after the first one runs out the rest are skipped. The tool returns the code layers it found, with `linksUnavailable: true` and a note to bring the file to the front for links.
+- **Tool docs match the tools again.** An audit of every tool's real parameters against the docs fixed examples that used parameters which don't exist: `figma_take_screenshot`, `figma_instantiate_component`, `figma_create_child`, `figma_add_component_property`, `figma_create_variable`, `figma_get_token_values` and `figma_set_text`. It also added sections for `figma_reconnect`, `figma_get_component_for_development_deep` and `figma_analyze_component_set`, and fixed the quick-reference grouping: Slots tools appeared under Code Layers, and component-property tools under Shared Library Variables. The homepage now covers Motion.
 
 ## [1.45.0] - 2026-10-28
 
@@ -1704,6 +1707,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.45.1]: https://github.com/southleft/figma-console-mcp/compare/v1.45.0...v1.45.1
 [1.45.0]: https://github.com/southleft/figma-console-mcp/compare/v1.44.2...v1.45.0
 [1.44.2]: https://github.com/southleft/figma-console-mcp/compare/v1.44.1...v1.44.2
 [1.44.1]: https://github.com/southleft/figma-console-mcp/compare/v1.44.0...v1.44.1
