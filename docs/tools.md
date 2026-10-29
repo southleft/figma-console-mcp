@@ -2305,6 +2305,8 @@ figma_get_code_layers({ scope: "file" })
 
 Returns each code layer's id, name, page, position, size, and any dev resources or related links. Figma's Plugin API and REST API expose code layers as rendered layers only: their source and props can't be read or edited, and code layers can't be created through them. Create and edit code layers in Figma, through a GitHub import, or with Figma's own MCP server (`send_code_to_figma`). Use `figma_capture_screenshot` with a code layer's id to see it.
 
+Figma only returns dev resources and related links while the file's window is focused. For a file in a background window, the code layers are still listed, but the result has `linksUnavailable: true` and no links. Bring the file to the front and run it again to include them.
+
 ---
 
 ## 🔧 Node Manipulation Tools

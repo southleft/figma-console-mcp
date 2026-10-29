@@ -5,6 +5,12 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`figma_get_code_layers` no longer hangs on a file in a background window.** Figma never answers dev-resource and related-link lookups while a file's window isn't focused, so the tool waited out its 2-minute timeout and returned nothing. Each lookup now gets 3 seconds, and after the first one runs out the rest are skipped. The tool returns the code layers it found, with `linksUnavailable: true` and a note to bring the file to the front for links. Server-only.
+
 ## [1.45.0] - 2026-10-28
 
 Motion tools and motion tokens, built on Figma's Plugin API Updates 130–141. Server-only: no plugin re-import needed.
