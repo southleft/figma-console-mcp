@@ -104,6 +104,7 @@ The MCP server has **three execution modes** and **four setup methods**:
 | **Variable Management** | ⚠️ | ✅ | ✅ | Remote requires Enterprise. Cloud/Local use Plugin API (any plan) |
 | **Screenshots** | ✅ | ✅ | ✅ | Remote uses the REST API. Cloud and Local render through the Desktop Bridge plugin (`figma_capture_screenshot`, and `figma_take_screenshot` first), with REST as the fallback |
 | **Motion** (`figma_apply_animation`, `figma_get_animations`, animation styles, `figma_export_animation`) | ❌ | ✅ | ✅ | Desktop Bridge. Video export writes a file in Local Mode and returns base64 (up to 5 MB) in Cloud Mode |
+| **Shaders and layout** (`figma_apply_shader`, `figma_list_shaders`, `figma_set_layout`) | ❌ | ✅ | ✅ | Desktop Bridge |
 | **Code layer discovery** (`figma_get_code_layers`) | ❌ | ✅ | ✅ | Desktop Bridge. Finds code layers; their source can't be read or edited through Figma's APIs |
 | **Design System Reads** | ✅ | ✅ | ✅ | Variables, components, styles via Figma API |
 | **Codebase → Design System Extraction** (`figma_ds_*`) | ❌ | ❌ | ✅ | Local-only — reads and writes your local filesystem |
