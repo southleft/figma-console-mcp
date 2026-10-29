@@ -2495,6 +2495,8 @@ figma_set_strokes({
 
 Set a frame's auto layout or grid layout in one call, and place its children. Only the fields you pass change, and the tool returns the resulting layout.
 
+Turning auto layout on keeps the frame's current size (Figma would otherwise make it hug its children). Turning wrap on for a frame whose main axis hugs fixes that axis at its current size so the children can wrap, and the result's `notes` says so; pass `width`, `height` or sizing to choose otherwise.
+
 **Auto layout:**
 ```javascript
 figma_set_layout({

@@ -51,10 +51,18 @@ export const SET_LAYOUT_BODY = `
 const node = await figma.getNodeByIdAsync(P.nodeId);
 if (!node) throw new Error('Node not found: ' + P.nodeId);
 if (!('layoutMode' in node)) throw new Error(node.type + ' nodes have no layout. Use a frame, component or instance.');
+const before = { mode: node.layoutMode, width: node.width, height: node.height };
 if (P.mode) node.layoutMode = P.mode;
 const mode = node.layoutMode;
 const isGrid = mode === 'GRID';
 const isStack = mode === 'HORIZONTAL' || mode === 'VERTICAL';
+const notes = [];
+// Figma makes a frame hug its children when layout is switched on, which resizes it. Keep its size; sizing passed below still wins.
+if (before.mode === 'NONE' && isStack) {
+  node.primaryAxisSizingMode = 'FIXED';
+  node.counterAxisSizingMode = 'FIXED';
+  node.resize(before.width, before.height);
+}
 const needs = (what, ok) => { if (!ok) throw new Error(what + ' needs ' + (what.startsWith('grid') ? 'mode GRID' : 'mode HORIZONTAL or VERTICAL') + ' (this frame is ' + mode + ').'); };
 
 if (P.padding !== undefined) {
@@ -65,7 +73,16 @@ if (P.padding !== undefined) {
   if (p.bottom !== undefined) node.paddingBottom = p.bottom;
   if (p.left !== undefined) node.paddingLeft = p.left;
 }
-if (P.wrap !== undefined) { needs('wrap', isStack); node.layoutWrap = P.wrap ? 'WRAP' : 'NO_WRAP'; }
+if (P.wrap !== undefined) {
+  needs('wrap', isStack);
+  node.layoutWrap = P.wrap ? 'WRAP' : 'NO_WRAP';
+  // A hugging main axis never runs out of room, so nothing wraps. Figma's UI fixes the axis when wrap is turned on; do the same unless sizing for that axis was passed.
+  const primarySizing = mode === 'HORIZONTAL' ? P.horizontalSizing : P.verticalSizing;
+  if (P.wrap && node.primaryAxisSizingMode === 'AUTO' && primarySizing === undefined) {
+    node.primaryAxisSizingMode = 'FIXED';
+    notes.push((mode === 'HORIZONTAL' ? 'Width' : 'Height') + ' was hugging its children, so it is now fixed at ' + Math.round(mode === 'HORIZONTAL' ? node.width : node.height) + 'px for wrap to take effect. Pass width or height to change it.');
+  }
+}
 if (P.gap !== undefined) {
   if (isGrid) { node.gridRowGap = P.gap; node.gridColumnGap = P.gap; }
   else { needs('gap', isStack); node.itemSpacing = P.gap; }
@@ -131,6 +148,7 @@ if (node.layoutMode !== 'NONE') out.padding = { top: node.paddingTop, right: nod
 if (isStack) Object.assign(out, { gap: node.itemSpacing, wrap: node.layoutWrap === 'WRAP', counterAxisGap: node.layoutWrap === 'WRAP' ? node.counterAxisSpacing : undefined, primaryAlign: node.primaryAxisAlignItems, counterAlign: node.counterAxisAlignItems, alignContent: node.layoutWrap === 'WRAP' ? node.counterAxisAlignContent : undefined });
 // Built from the track sizes: gridColumnSizingCSS can lag a write within the same script.
 const css = (sizes) => sizes.map(t => t.type === 'FIXED' ? t.value + 'px' : t.type === 'HUG' ? 'auto' : (t.value === undefined ? 1 : t.value) + 'fr').join(' ');
+if (notes.length) out.notes = notes;
 if (node.layoutMode === 'GRID') out.grid = { columns: css(node.gridColumnSizes), rows: css(node.gridRowSizes), columnCount: node.gridColumnCount, rowCount: node.gridRowCount, columnGap: node.gridColumnGap, rowGap: node.gridRowGap, autoRows: node.gridAutoTracks === 'ROWS', autoFlow: node.gridItemsPositioning === 'ROW_AUTO_FLOW' };
 if (children.length) out.children = children;
 return out;
@@ -146,7 +164,7 @@ const gridAlign = z.enum(["MIN", "CENTER", "MAX", "AUTO"]);
 export function registerLayoutTools(server: McpServer, getDesktopConnector: () => Promise<any>): void {
 	server.tool(
 		"figma_set_layout",
-		"Set a frame's auto layout or grid layout in one call, and place its children. Auto layout: mode HORIZONTAL or VERTICAL, gap, padding, primaryAlign (MIN, CENTER, MAX, SPACE_BETWEEN, SPACE_EVENLY, SPACE_AROUND), counterAlign, wrap with counterAxisGap and alignContent, and sizing (FIXED, HUG, FILL). Grid: mode GRID with tracks written CSS-style (grid.columns: '240px 1fr 1fr', 'repeat(3, 1fr)', 'auto 1fr', or a count), gaps, autoRows, autoFlow, and per-child row, column, spans and alignment. Only the fields you pass change. Returns the resulting layout, with grid tracks as CSS. Requires Desktop Bridge.",
+		"Set a frame's auto layout or grid layout in one call, and place its children. Auto layout: mode HORIZONTAL or VERTICAL, gap, padding, primaryAlign (MIN, CENTER, MAX, SPACE_BETWEEN, SPACE_EVENLY, SPACE_AROUND), counterAlign, wrap with counterAxisGap and alignContent, and sizing (FIXED, HUG, FILL). Grid: mode GRID with tracks written CSS-style (grid.columns: '240px 1fr 1fr', 'repeat(3, 1fr)', 'auto 1fr', or a count), gaps, autoRows, autoFlow, and per-child row, column, spans and alignment. Only the fields you pass change: turning auto layout on keeps the frame's size, and turning wrap on fixes a hugging main axis. Returns the resulting layout, with grid tracks as CSS. Requires Desktop Bridge.",
 		{
 			nodeId: z.string().describe("Frame, component or instance to lay out"),
 			mode: z.enum(["NONE", "HORIZONTAL", "VERTICAL", "GRID"]).optional(),

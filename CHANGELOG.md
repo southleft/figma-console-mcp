@@ -5,6 +5,13 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`figma_set_layout` no longer resizes a frame when it turns auto layout on.** Figma makes the frame hug its children when layout is switched on, so a 560px frame could shrink or grow and `wrap: true` had no effect. The frame now keeps its size unless sizing is passed. Turning wrap on for a frame whose main axis hugs now fixes that axis at its current size, as Figma's own UI does, and the result says so.
+- **`figma_set_text` errors no longer add an unrelated "Make sure the node is a TEXT node" hint**, for example to a wrong variable-font axis.
+
 ## [1.46.0] - 2026-10-29
 
 Shaders, layout, wide-gamut color and text typography, built on Figma's Plugin API Updates 130–141. Server-only: no plugin re-import needed.
