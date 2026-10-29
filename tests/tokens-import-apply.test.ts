@@ -292,7 +292,7 @@ describe("import apply phase — buildCreatePlan", () => {
     expect(warnings.join("\n")).toContain('mode not found in existing Figma collection "Theme"');
   });
 
-  it("skips TIMING/EASING creates with a warning (Plugin API cannot create them)", () => {
+  it("creates TIMING/EASING variables with Figma-native values (seconds, MotionEasing, springs)", () => {
     const codeDoc = codeDocWith({
       setName: "Motion",
       entries: [
@@ -311,9 +311,21 @@ describe("import apply phase — buildCreatePlan", () => {
           values: { Default: { literal: [0.4, 0, 0.2, 1] } },
         },
         {
-          // Name-inferred duration WITHOUT a TIMING record stays skipped
-          // too (inferFigmaResolvedType maps duration → TIMING), but a
-          // recorded FLOAT must create as FLOAT.
+          // Spring easing: the exported fallback bezier is ignored in favour
+          // of the exact spring kept in $extensions.
+          path: ["easing", "bouncy"],
+          type: "cubicBezier",
+          values: { Default: { literal: [0.25, 0.1, 0.25, 1] } },
+          extensions: {
+            "figma-console-mcp": {
+              figmaResolvedType: "EASING",
+              spring: { Default: { easingType: "BOUNCY", bounce: 0.6938 } },
+            },
+          },
+        },
+        {
+          // A recorded FLOAT must create as FLOAT even though the token
+          // type is duration (inferFigmaResolvedType alone would say TIMING).
           path: ["delay", "short"],
           type: "duration",
           values: { Default: { literal: 200 } },
@@ -326,6 +338,7 @@ describe("import apply phase — buildCreatePlan", () => {
     const toCreate = [
       { path: "Motion::duration.quick" },
       { path: "Motion::easing.standard" },
+      { path: "Motion::easing.bouncy" },
       { path: "Motion::delay.short" },
     ];
     const warnings: string[] = [];
@@ -338,10 +351,24 @@ describe("import apply phase — buildCreatePlan", () => {
     );
 
     const planned = plan.newCollections[0]?.variables ?? [];
-    expect(planned.map((v) => v.key)).toEqual(["Motion::delay.short"]);
-    expect(planned[0].resolvedType).toBe("FLOAT");
-    expect(warnings.join("\n")).toContain("cannot create Timing");
-    expect(warnings.join("\n")).toContain("cannot create Easing");
+    const byKey = Object.fromEntries(planned.map((v) => [v.key, v]));
+    expect(Object.keys(byKey).sort()).toEqual([
+      "Motion::delay.short",
+      "Motion::duration.quick",
+      "Motion::easing.bouncy",
+      "Motion::easing.standard",
+    ]);
+    const literal = (key: string) => (byKey[key].values[0] as { value: unknown }).value;
+    expect(byKey["Motion::duration.quick"].resolvedType).toBe("TIMING");
+    expect(literal("Motion::duration.quick")).toBe(0.3); // 300ms → seconds
+    expect(byKey["Motion::easing.standard"].resolvedType).toBe("EASING");
+    expect(literal("Motion::easing.standard")).toEqual({
+      type: "CUSTOM_CUBIC_BEZIER",
+      easingFunctionCubicBezier: { x1: 0.4, y1: 0, x2: 0.2, y2: 1 },
+    });
+    expect(literal("Motion::easing.bouncy")).toEqual({ type: "BOUNCY", easingFunctionSpring: { bounce: 0.6938 } });
+    expect(byKey["Motion::delay.short"].resolvedType).toBe("FLOAT");
+    expect(warnings).toEqual([]);
   });
 
   it("resolves aliases: existing target → alias, within-batch target → alias-pending, unresolvable → warning", () => {

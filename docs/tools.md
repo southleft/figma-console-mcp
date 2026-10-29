@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 121 MCP tools, including parameters, return values, and usage examples."
+description: "Complete API reference for all 127 MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **121 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **96 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools. Those run a headless browser session that only the `/sse` endpoint keeps open.
+> **Note:** Local Mode (NPX/Git) provides **127 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **102 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools. Those run a headless browser session that only the `/sse` endpoint keeps open.
 
 ## Quick Reference
 
@@ -52,6 +52,12 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_arrange_component_set` | Organize variants with labels | Local / Cloud |
 | | `figma_set_description` | Add component descriptions | Local / Cloud |
 | **🧩 Slots** | `figma_create_slot` | **Add a slot to a component** (auto-linked SLOT property; variants supported) | Local / Cloud |
+| **🎬 Motion** | `figma_get_animations` | Read a layer's animations, keyframes, timeline and token bindings | Local / Cloud |
+| | `figma_apply_animation` | **Animate a layer** with a preset, custom style or keyframes; bind easing/duration to tokens | Local / Cloud |
+| | `figma_remove_animation` | Remove an animation style, a keyframe track, or all | Local / Cloud |
+| | `figma_manage_animation_styles` | List presets; create, update and delete custom animation styles | Local / Cloud |
+| | `figma_export_animation` | Export an animated frame as MP4, GIF or WebM | Local / Cloud |
+| **🧱 Code Layers** | `figma_get_code_layers` | Find code layers on a page or across the file | Local / Cloud |
 | | `figma_get_slots` | List slots on a component, set, or instance | Local / Cloud |
 | | `figma_append_to_slot` | **Populate an instance's slot** — clone a node or create content | Local / Cloud |
 | | `figma_reset_slot` | Clear a slot's content on an instance | Local / Cloud |
@@ -565,7 +571,7 @@ figma_import_tokens({
 **What the apply phase does:**
 
 - ✅ `toUpdate` (value changes on existing variables): applied via the plugin bridge (`figma.variables.setValueForMode`). Multi-mode supported. Renames matched by round-trip variable ID apply as name changes on the existing variable — a token-path rename never becomes a create+delete pair. `scopes` and `codeSyntax` metadata changes apply too (a code-side absent field means "no opinion" and never resets Figma metadata).
-- ✅ `toCreate` (new variables and collections): missing collections are created with their full mode lists; missing variables are created with inferred or round-trip-recorded types, values set across all modes in dependency order — literal values first, alias values in a second pass so their targets exist. TIMING/EASING tokens are skipped with a clear warning (the Plugin API cannot create those types).
+- ✅ `toCreate` (new variables and collections): missing collections are created with their full mode lists; missing variables are created with inferred or round-trip-recorded types, values set across all modes in dependency order — literal values first, alias values in a second pass so their targets exist. Motion tokens are created and updated as TIMING (DTCG `duration`) and EASING (DTCG `cubicBezier`) variables. Springs and holds, which cubicBezier can't express, round-trip exactly through `$extensions["figma-console-mcp"].spring`.
 - ✅ Alias updates (code-side `{color.primary}` references): written as real `{ type: "VARIABLE_ALIAS", id }` values. Resolver priority: just-created variable → live Figma snapshot → pending in this batch → recorded `$extensions` variable ID. Unresolvable references are skipped with a warning.
 - ✅ `toDelete` (Figma-only variables): applied **only** under `strategy: "replace"`, and announced loudly in the response. The default `merge` strategy reports them without deleting.
 
@@ -1303,7 +1309,7 @@ figma_create_variable({
 **Parameters:**
 - `name` (required): Variable name (use `/` for grouping)
 - `collectionId` (required): Target collection ID
-- `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, or `"BOOLEAN"`
+- `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, `"BOOLEAN"`, or the motion types `"TIMING"` (seconds, or `"300ms"` / `"0.3s"`) and `"EASING"` (`"cubic-bezier(x1, y1, x2, y2)"`, a Figma easing name such as `"EASE_OUT"` or `"BOUNCY"`, or `"spring(0.4)"`)
 - `valuesByMode` (optional): Object mapping mode IDs to values
 - `description` (optional): Variable description
 - `scopes` (optional): Where variable can be applied
@@ -1495,7 +1501,7 @@ figma_batch_create_variables({
 - `collectionId` (required): Collection ID to create all variables in
 - `variables` (required): Array of 1-100 variable definitions, each with:
   - `name` (required): Variable name (use `/` for grouping)
-  - `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, or `"BOOLEAN"`
+  - `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, `"BOOLEAN"`, or the motion types `"TIMING"` (seconds, or `"300ms"` / `"0.3s"`) and `"EASING"` (`"cubic-bezier(x1, y1, x2, y2)"`, a Figma easing name such as `"EASE_OUT"` or `"BOUNCY"`, or `"spring(0.4)"`)
   - `description` (optional): Variable description
   - `valuesByMode` (optional): Object mapping mode IDs to values
 
@@ -1610,7 +1616,7 @@ figma_setup_design_tokens({
 - `modes` (required): Array of 1-4 mode names (first becomes default)
 - `tokens` (required): Array of 1-100 token definitions, each with:
   - `name` (required): Token name (use `/` for grouping)
-  - `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, or `"BOOLEAN"`
+  - `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, `"BOOLEAN"`, or the motion types `"TIMING"` (seconds, or `"300ms"` / `"0.3s"`) and `"EASING"` (`"cubic-bezier(x1, y1, x2, y2)"`, a Figma easing name such as `"EASE_OUT"` or `"BOUNCY"`, or `"spring(0.4)"`)
   - `description` (optional): Token description
   - `values` (required): Object mapping **mode names** (not IDs) to values. A value can be a literal **or a DTCG brace reference** (`"{color.blue.600}"`, set-qualified forms like `"{primitives.color.blue.600}"` too) — resolved via `createVariableAlias` against both variables created in the same call and variables that already exist in the file.
 
@@ -2151,6 +2157,112 @@ figma_set_description({
 - Confirmation with updated node info
 
 **Note:** Descriptions appear in Figma's Dev Mode for developers.
+
+---
+
+## 🎬 Motion Tools
+
+Read, apply and export Figma Motion animations, and manage reusable animation styles. These tools use Figma's Motion Plugin API (beta, Plugin API Update 130 and later), so they need a recent Figma Desktop and the Desktop Bridge plugin. No plugin re-import is required.
+
+- Animations play in Figma's preview and in video export. Static screenshots show the first frame.
+- Figma doesn't allow writing animations to a **main component** through the Plugin API. Animate an instance or a frame.
+- Easing can bind to an **EASING** variable and a preset's duration to a **TIMING** variable, so motion stays tied to your tokens. Create those variables with `figma_setup_design_tokens`, `figma_batch_create_variables` or `figma_import_tokens`.
+
+### `figma_get_animations`
+
+Read a layer's animations: applied animation styles (Figma presets and custom styles, with their entries), manual keyframe tracks, timelines, and the playhead position.
+
+```javascript
+figma_get_animations({ nodeId: "12:34", includeDescendants: true })
+```
+
+**Parameters:** `nodeId` (default: current selection), `includeDescendants` (also list animated layers inside), `limit`, `fileKey`.
+
+Easings come back with a CSS equivalent where one exists (`cubic-bezier(0, 0, 0.58, 1)`, `linear`). Token bindings come back as `{ variableId, variableName }`. Each style has an `appliedId` for `figma_remove_animation`.
+
+### `figma_apply_animation`
+
+Animate a layer. Pass exactly one of `preset`, `customStyleId` or `keyframeTracks`.
+
+```javascript
+// A Figma preset, with easing and duration bound to motion tokens
+figma_apply_animation({
+  nodeId: "12:34",
+  preset: "Opacity",
+  props: { type: "fadeIn" },
+  easing: { variableId: "VariableID:1:2" },      // EASING variable
+  durationVariableId: "VariableID:1:3",           // TIMING variable
+})
+
+// Manual keyframes: rotation with a spring, scale, and a fill color change
+figma_apply_animation({
+  nodeId: "12:34",
+  keyframeTracks: [
+    { property: "ROTATION", keyframes: [{ time: 0, value: 0 }, { time: 0.6, value: 8, easing: { type: "CUSTOM_SPRING", bounce: 0.4 } }] },
+    { property: "SCALE_XY", keyframes: [{ time: 0, value: { x: 0.9, y: 0.9 } }, { time: 0.4, value: { x: 1, y: 1 }, easing: { type: "EASE_OUT" } }] },
+    { paint: { collection: "fills", index: 0 }, keyframes: [{ time: 1, value: { r: 0.9, g: 0.2, b: 0.4 } }] },
+  ],
+})
+```
+
+**Parameters:**
+- `preset`: Figma animation style id: `Position`, `Scale`, `Rotation`, `Size`, `Opacity`, `Path`, `TextStagger`. Options per preset come from `figma_manage_animation_styles` → `list_presets`, and go in `props`.
+- `customStyleId`: a local custom animation style.
+- `keyframeTracks[]`: each track targets one `property` (OPACITY, TRANSLATION_X/Y/XY, ROTATION, SCALE_X/Y/XY, WIDTH, HEIGHT, corner radii, stroke and border weights, auto-layout spacing and padding, grid gaps, PATH_TRIM_START/END), one `paint` (`{ collection: "fills" | "strokes", index }`, color values), or one `effect` (`{ index, field }`). Values are numbers, `{x, y}` for the XY properties, or `{r, g, b, a}` colors. A track replaces any existing track for that target.
+- `duration`, `timelineOffset` (seconds), `durationVariableId`.
+- `easing`: `{ type }` (EASE_IN, EASE_OUT, EASE_IN_AND_OUT, LINEAR, the BACK variants, GENTLE, QUICK, BOUNCY, SLOW, HOLD), `{ type: "CUSTOM_CUBIC_BEZIER", bezier: {x1, y1, x2, y2} }`, `{ type: "CUSTOM_SPRING", bounce }`, or `{ variableId }` for an EASING variable.
+
+### `figma_remove_animation`
+
+```javascript
+figma_remove_animation({ nodeId: "12:34", appliedId: "AnimationPresetId:56:78" })
+figma_remove_animation({ nodeId: "12:34", keyframeTrack: { property: "ROTATION" } })
+figma_remove_animation({ nodeId: "12:34", all: true })
+```
+
+Use the `appliedId` from `figma_get_animations`, not the preset name.
+
+### `figma_manage_animation_styles`
+
+Reusable animation styles are the motion layer of a design system: a named style (for example `Motion/Enter`) bundles preset animations and is applied to layers by id.
+
+```javascript
+figma_manage_animation_styles({ action: "list_presets" })   // Figma's presets with every option and default
+figma_manage_animation_styles({
+  action: "create",
+  name: "Motion/Enter",
+  description: "Default entrance",
+  entries: [
+    { preset: "Opacity", duration: 0.25 },
+    { preset: "Position", durationVariableId: "VariableID:1:3", props: { direction: "up", distance: 24 } },
+  ],
+})
+figma_apply_animation({ nodeId: "12:34", customStyleId: "S:abc…" })
+```
+
+**Actions:** `list_presets`, `list`, `create` (`name`, `description`, `entries`), `update` (rename, change the description, append `entries`), `remove_entry` (`entryId`), `delete` (`styleId`).
+
+### `figma_export_animation`
+
+Export an animated frame (the frame holding the Motion timeline) as a video.
+
+```javascript
+figma_export_animation({ nodeId: "12:34", format: "MP4", fps: 30, quality: "HIGH", outputPath: "./card.mp4" })
+```
+
+**Parameters:** `format` (`MP4`, `GIF`, `WEBM`), `fps` (MP4/WebM: 12, 24, 30, 60. GIF: 8, 12, 15, 24, 30), `quality` (MP4/WebM), `loopCount` (GIF), one of `scale` (0.5–4), `width` or `height`.
+
+Local Mode writes the file to `outputPath` (default: the OS temp folder) and returns its path. If a file already exists at `outputPath`, nothing is exported or written unless you pass `overwrite: true`. Cloud Mode returns the video as base64, up to 5 MB.
+
+### `figma_get_code_layers`
+
+Find Figma code layers (node type `CODE_INSTANCE`) on the current page or across the file.
+
+```javascript
+figma_get_code_layers({ scope: "file" })
+```
+
+Returns each code layer's id, name, page, position, size, and any dev resources or related links. Figma's Plugin API and REST API expose code layers as rendered layers only: their source and props can't be read or edited, and code layers can't be created through them. Create and edit code layers in Figma, through a GitHub import, or with Figma's own MCP server (`send_code_to_figma`). Use `figma_capture_screenshot` with a code layer's id to see it.
 
 ---
 

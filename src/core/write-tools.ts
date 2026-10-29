@@ -4,6 +4,40 @@ import { createChildLogger } from "./logger.js";
 
 const logger = createChildLogger({ component: "write-tools" });
 
+export const MOTION_VALUE_DOC =
+	"TIMING values are seconds (a number like 0.3, or '300ms' / '0.3s'). EASING values are 'cubic-bezier(x1, y1, x2, y2)', a Figma easing name (EASE_IN, EASE_OUT, EASE_IN_AND_OUT, LINEAR, EASE_IN_BACK, EASE_OUT_BACK, EASE_IN_AND_OUT_BACK, GENTLE, QUICK, BOUNCY, SLOW, HOLD) or 'spring(bounce)' with bounce 0–1.";
+
+/**
+ * Plugin-side converter for motion variable values (see MOTION_VALUE_DOC).
+ * Non-motion types pass through unchanged. Inlined into variable scripts.
+ */
+export const MOTION_VALUE_JS = `
+function motionValue(type, value) {
+  if (type === 'TIMING') {
+    if (typeof value === 'number') return value;
+    const m = String(value).trim().match(/^(\\d*\\.?\\d+)\\s*(ms|s)?$/i);
+    if (!m) throw new Error('TIMING value ' + JSON.stringify(value) + ' is not a duration (use seconds, "300ms" or "0.3s")');
+    return m[2] && m[2].toLowerCase() === 'ms' ? Number(m[1]) / 1000 : Number(m[1]);
+  }
+  if (type === 'EASING') {
+    if (value && typeof value === 'object') return value;
+    const str = String(value).trim();
+    const bez = str.match(/^cubic-bezier\\(([^)]*)\\)$/i);
+    if (bez) {
+      const n = bez[1].split(',').map(Number);
+      if (n.length !== 4 || n.some(isNaN)) throw new Error('Invalid cubic-bezier: ' + str);
+      return { type: 'CUSTOM_CUBIC_BEZIER', easingFunctionCubicBezier: { x1: n[0], y1: n[1], x2: n[2], y2: n[3] } };
+    }
+    const spring = str.match(/^spring\\(\\s*(\\d*\\.?\\d+)\\s*\\)$/i);
+    if (spring) return { type: 'CUSTOM_SPRING', easingFunctionSpring: { bounce: Number(spring[1]) } };
+    const named = ['EASE_IN','EASE_OUT','EASE_IN_AND_OUT','LINEAR','EASE_IN_BACK','EASE_OUT_BACK','EASE_IN_AND_OUT_BACK','GENTLE','QUICK','BOUNCY','SLOW','HOLD'];
+    if (named.indexOf(str.toUpperCase()) !== -1) return { type: str.toUpperCase() };
+    throw new Error('EASING value ' + JSON.stringify(value) + ' is not cubic-bezier(...), spring(bounce) or a Figma easing name');
+  }
+  return value;
+}
+`;
+
 /**
  * Register write/manipulation tools that require a Desktop Bridge connector.
  * Used by both local mode (src/local.ts) and cloud mode (src/index.ts).
@@ -225,7 +259,7 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 	// Tool: Create a new variable
 	server.tool(
 		"figma_create_variable",
-		"Create a single Figma variable. For multiple variables, use figma_batch_create_variables instead (10-50x faster). Use figma_get_variables first to get collection IDs. Supports COLOR, FLOAT, STRING, BOOLEAN. Requires Desktop Bridge plugin.",
+		"Create a single Figma variable. For multiple variables, use figma_batch_create_variables instead (10-50x faster). Use figma_get_variables first to get collection IDs. Supports COLOR, FLOAT, STRING, BOOLEAN, and motion TIMING/EASING. Requires Desktop Bridge plugin.",
 		{
 			name: z
 				.string()
@@ -236,8 +270,8 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					"The collection ID to create the variable in (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
 				),
 			resolvedType: z
-				.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
-				.describe("The variable type: COLOR, FLOAT, STRING, or BOOLEAN"),
+				.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"])
+				.describe(`The variable type: COLOR, FLOAT, STRING, BOOLEAN, or the motion types TIMING and EASING. ${MOTION_VALUE_DOC}`),
 			description: z
 				.string()
 				.optional()
@@ -258,15 +292,34 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 		}) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.createVariable(
-					name,
-					collectionId,
-					resolvedType,
-					{
-						description,
-						valuesByMode,
-					},
-				);
+				let result;
+				if (resolvedType === "TIMING" || resolvedType === "EASING") {
+					// The bridge's CREATE_VARIABLE handler predates motion types;
+					// run the create here so no plugin update is needed.
+					const run = await connector.executeCodeViaUI(
+						`${MOTION_VALUE_JS}
+const collection = await figma.variables.getVariableCollectionByIdAsync(${JSON.stringify(collectionId)});
+if (!collection) throw new Error('Collection not found: ' + ${JSON.stringify(collectionId)});
+const variable = figma.variables.createVariable(${JSON.stringify(name)}, collection, ${JSON.stringify(resolvedType)});
+${description ? `variable.description = ${JSON.stringify(description)};` : ""}
+const values = ${JSON.stringify(valuesByMode ?? {})};
+for (const modeId of Object.keys(values)) variable.setValueForMode(modeId, motionValue(variable.resolvedType, values[modeId]));
+return { id: variable.id, name: variable.name, resolvedType: variable.resolvedType, valuesByMode: variable.valuesByMode, variableCollectionId: variable.variableCollectionId };`,
+						10000,
+					);
+					if (!run.success) throw new Error(run.error || "Failed to create variable");
+					result = { variable: run.result };
+				} else {
+					result = await connector.createVariable(
+						name,
+						collectionId,
+						resolvedType,
+						{
+							description,
+							valuesByMode,
+						},
+					);
+				}
 
 				return {
 					content: [
@@ -689,8 +742,8 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					z.object({
 						name: z.string().describe("Variable name (e.g., 'primary-blue')"),
 						resolvedType: z
-							.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
-							.describe("Variable type"),
+							.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"])
+							.describe(`Variable type. ${MOTION_VALUE_DOC}`),
 						description: z
 							.string()
 							.optional()
@@ -719,6 +772,7 @@ const results = [];
 const collectionId = ${JSON.stringify(collectionId)};
 const vars = ${JSON.stringify(variables)};
 
+${MOTION_VALUE_JS}
 function hexToRgba(hex) {
   hex = hex.replace('#', '');
   if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -741,7 +795,7 @@ for (const v of vars) {
       for (const [modeId, value] of Object.entries(v.valuesByMode)) {
         const processed = typeof value === 'string' && value.startsWith('VariableID:')
           ? { type: 'VARIABLE_ALIAS', id: value }
-          : v.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
+          : v.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : motionValue(v.resolvedType, value);
         variable.setValueForMode(modeId, processed);
       }
     }
@@ -856,6 +910,7 @@ return {
 const results = [];
 const updates = ${JSON.stringify(updates)};
 
+${MOTION_VALUE_JS}
 function hexToRgba(hex) {
   hex = hex.replace('#', '');
   if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -872,7 +927,7 @@ for (const u of updates) {
     const variable = await figma.variables.getVariableByIdAsync(u.variableId);
     if (!variable) throw new Error('Variable not found: ' + u.variableId);
     const isColor = variable.resolvedType === 'COLOR';
-    const processed = isColor && typeof u.value === 'string' ? hexToRgba(u.value) : u.value;
+    const processed = isColor && typeof u.value === 'string' ? hexToRgba(u.value) : motionValue(variable.resolvedType, u.value);
     variable.setValueForMode(u.modeId, processed);
     results.push({ success: true, variableId: u.variableId, name: variable.name });
   } catch (err) {
@@ -972,8 +1027,8 @@ return {
 							.string()
 							.describe("Token name (e.g., 'color/primary')"),
 						resolvedType: z
-							.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
-							.describe("Token type"),
+							.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"])
+							.describe(`Token type. ${MOTION_VALUE_DOC}`),
 						description: z
 							.string()
 							.optional()
@@ -1001,6 +1056,7 @@ const collectionName = ${JSON.stringify(collectionName)};
 const modeNames = ${JSON.stringify(modes)};
 const tokenDefs = ${JSON.stringify(tokens)};
 
+${MOTION_VALUE_JS}
 function hexToRgba(hex) {
   hex = hex.replace('#', '');
   if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -1135,7 +1191,7 @@ for (const entry of createdDefs) {
       } else {
         const processed = typeof value === 'string' && value.startsWith('VariableID:')
           ? { type: 'VARIABLE_ALIAS', id: value }
-          : t.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : value;
+          : t.resolvedType === 'COLOR' && typeof value === 'string' ? hexToRgba(value) : motionValue(t.resolvedType, value);
         variable.setValueForMode(modeId, processed);
       }
     } catch (err) {

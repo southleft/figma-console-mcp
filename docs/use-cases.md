@@ -631,7 +631,7 @@ Figma's official MCP server provides design context for code generation and Code
 ## 📚 More Examples
 
 See also:
-- [Tool Documentation](tools) - Complete API reference for all 121 tools
+- [Tool Documentation](tools) - Complete API reference for all 127 tools
 - [Architecture Overview](architecture) - Understanding deployment modes
 - [Example Prompts](https://github.com/southleft/figma-console-mcp#-example-prompts) - Quick prompt examples on GitHub
 - [Troubleshooting](troubleshooting) - Solutions to common issues
