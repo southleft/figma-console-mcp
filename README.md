@@ -59,9 +59,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Codebase → design system extraction (`figma_ds_*`) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **127** | **102** after pairing | Read-only subset |
+| **Total tools available** | **130** | **105** after pairing | Read-only subset |
 
-> **Bottom line:** Remote SSE is **read-only** until you pair the plugin. **Cloud Mode** unlocks write access (102 tools) from web AI clients without Node.js. NPX/Local Git gives the full 127 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** until you pair the plugin. **Cloud Mode** unlocks write access (105 tools) from web AI clients without Node.js. NPX/Local Git gives the full 130 tools with real-time monitoring.
 
 ---
 
@@ -69,7 +69,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 127 tools including design creation, variable management, and component instantiation.
+**What you get:** All 130 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -184,7 +184,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 127 tools as NPX, plus full source code access.
+**What you get:** Same 130 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -273,7 +273,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 **Best for:** Using Claude.ai, v0, Replit, or Lovable to create and modify Figma designs — no Node.js required.
 
-**What you get:** 102 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
+**What you get:** 105 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
 
 #### Prerequisites
 
@@ -330,7 +330,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **127** | **102** after pairing | **127** (Local Git) | Read-only subset |
+| **Total tools** | **130** | **105** after pairing | **130** (Local Git) | Read-only subset |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -345,7 +345,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 127 tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 130 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -483,6 +483,13 @@ Figma Motion (Plugin API beta). Animations play in Figma's preview and in video 
 ### 🧱 Code Layers (Local Mode + Cloud Mode)
 - `figma_get_code_layers` - Find Figma code layers on a page or across the file, with position, size and linked dev resources. Figma's APIs don't expose code-layer source, so creating and editing them stays in Figma or Figma's own MCP (`send_code_to_figma`)
 
+### ✨ Shaders (Local Mode + Cloud Mode)
+- `figma_list_shaders` - List shaders applied in the file (with each property's name, type and default, and the layers using them) and shaders from your libraries
+- `figma_apply_shader` - **Apply a shader or change its properties by name** (`{turbulence: 40, cloudColor: '#E8F4FF'}`) on fills, strokes or effects, including variable bindings. Shaders themselves are created in Figma or with Figma's own MCP
+
+### 📐 Layout (Local Mode + Cloud Mode)
+- `figma_set_layout` - **Auto layout and grid layout in one call**: direction, gaps, padding, alignment including `SPACE_EVENLY`/`SPACE_AROUND`, wrap, sizing, and grid tracks written CSS-style (`'240px 1fr 1fr'`, `repeat(3, 1fr)`) with child placement and spans
+
 ### 🔍 Design-Code Parity (All Modes)
 - `figma_check_design_parity` - Compare Figma component specs against code implementation, producing a scored diff report with actionable fix items
 - `figma_generate_component_doc` - Generate platform-agnostic markdown documentation by merging Figma design data with code-side info; the optional `history` parameter adds a changelog from Figma version history and `git log`
@@ -491,7 +498,7 @@ Figma Motion (Plugin API beta). Animations play in Figma's preview and in video 
 - `figma_search_components` / `figma_get_component_details` - Find components (local + library) and get their variants, properties, and keys (Local Mode only)
 - `figma_instantiate_component` / `figma_set_instance_properties` - Place instances and set their TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties
 - `figma_add_component_property` / `figma_edit_component_property` / `figma_delete_component_property` - Manage component properties
-- `figma_create_child`, `figma_move_node`, `figma_resize_node`, `figma_clone_node`, `figma_rename_node`, `figma_delete_node`, `figma_set_text`, `figma_set_fills`, `figma_set_strokes`, `figma_set_image_fill` - Structured node edits, including variable binding on fills and strokes
+- `figma_create_child`, `figma_move_node`, `figma_resize_node`, `figma_clone_node`, `figma_rename_node`, `figma_delete_node`, `figma_set_text`, `figma_set_fills`, `figma_set_strokes`, `figma_set_image_fill` - Structured node edits, including variable binding on fills and strokes, OKLCH/Display P3 and other CSS colors on fills and strokes, and text wrap style and variable-font axes on text
 - `figma_get_component_for_development_deep` - Full component tree with resolved token names and instance references
 - `figma_analyze_component_set` - A variant set as a state machine, with CSS pseudo-class mappings and per-variant diffs
 
@@ -761,7 +768,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 127 tools work through the WebSocket transport
+- All 130 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 

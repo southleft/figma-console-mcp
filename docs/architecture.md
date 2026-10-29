@@ -80,7 +80,7 @@ flowchart TB
 - **WebSocket + HTTP** — via Desktop Bridge Plugin on ports 9223–9232. No debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running. Orphaned processes are automatically detected and terminated on startup.
 - The HTTP server on the same port exposes `/health` for liveness checks.
-- All 127 tools work through the WebSocket transport.
+- All 130 tools work through the WebSocket transport.
 - **Optional MCP over HTTP** — with `FIGMA_MCP_HTTP_PORT` set, the server also serves MCP (Streamable HTTP) at `http://127.0.0.1:<port>/mcp`, so other local clients can share its plugin connection. Off by default; see [Sharing one server over HTTP](#sharing-one-server-over-http).
 
 **Plugin distribution:**
@@ -106,7 +106,7 @@ flowchart TB
 The main server implements the Model Context Protocol with stdio transport for local mode, plus an optional Streamable HTTP endpoint (`src/core/http-transport.ts`).
 
 **Key Responsibilities:**
-- Tool registration (127 tools in Local Mode, 102 in Cloud Mode)
+- Tool registration (130 tools in Local Mode, 102 in Cloud Mode)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication via WebSocket
@@ -218,7 +218,7 @@ Figma can't stop a running plugin script, so a timed-out request may still be ru
 
 The MCP server checks if a WebSocket client is connected (instant, under 1ms). If connected, commands route through WebSocket. If no client is connected, setup instructions are returned.
 
-All 127 tools work through the WebSocket transport.
+All 130 tools work through the WebSocket transport.
 
 ---
 

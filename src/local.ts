@@ -76,6 +76,8 @@ import { registerSlidesTools } from "./core/slides-tools.js";
 import { registerSlotTools } from "./core/slot-tools.js";
 import { registerMotionTools } from "./core/motion-tools.js";
 import { registerCodeLayerTools } from "./core/code-layer-tools.js";
+import { registerShaderTools } from "./core/shader-tools.js";
+import { registerLayoutTools } from "./core/layout-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -3285,6 +3287,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 		registerMotionTools(server, () => this.getDesktopConnector(), { allowFileWrite: true });
 		registerCodeLayerTools(server, () => this.getDesktopConnector());
+		registerShaderTools(server, () => this.getDesktopConnector());
+		registerLayoutTools(server, () => this.getDesktopConnector());
 
 		// MCP Apps - gated behind ENABLE_MCP_APPS env var
 		if (process.env.ENABLE_MCP_APPS === "true") {

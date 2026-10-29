@@ -5,6 +5,18 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Shaders, layout, wide-gamut color and text typography, built on Figma's Plugin API Updates 130–141. Server-only: no plugin re-import needed.
+
+### Added
+
+- **`figma_list_shaders`** lists the shaders applied in a file, page or layer: each one's id, kind (fill or effect), the layers using it, and its properties with name, type and default. It also lists shaders from your libraries.
+- **`figma_apply_shader`** applies a shader to fills, strokes or effects, or changes one already applied, with properties set by name (`{turbulence: 40, cloudColor: "#E8F4FF"}`) instead of Figma's internal property keys. Colors take hex, any property can bind a variable, and an unknown name changes nothing and lists the valid ones.
+- **`figma_set_layout`** sets auto layout or grid layout in one call: direction, gap, padding, alignment including `SPACE_EVENLY` and `SPACE_AROUND`, wrap, and sizing; grid tracks written CSS-style (`"240px 1fr 1fr"`, `"repeat(3, 1fr)"`, `"auto"`), gaps, auto rows, auto flow, and child placement with spans. Before this, layout needed `figma_execute`.
+- **`figma_set_fills` and `figma_set_strokes` accept CSS colors**: `oklch()`, `oklab()`, `lab()`, `lch()`, `color(display-p3 …)`, `rgb()` and `hsl()`. Fully opaque OKLCH and P3 colors keep their source color space in Figma. Hex colors work exactly as before.
+- **`figma_set_text` sets text wrap style and variable-font axes**: `textWrapStyle` (`BALANCE` or `PRETTY`, like CSS `text-wrap`) and `fontVariations` (`{wght: 550}`), with the font's real axes listed when one is wrong. `text` is now optional, so styling can change without retyping the text.
+
 ## [1.45.1] - 2026-10-29
 
 Patch, server-only: no plugin re-import needed.

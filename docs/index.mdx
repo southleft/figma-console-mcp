@@ -18,7 +18,7 @@ Figma Console MCP is a design-system-focused MCP server. It connects AI assistan
     Figma ⇄ code. Export variables to 10 token formats and import DTCG edits back with round-trip IDs, extract a design system from an existing codebase, and compare components with their code.
   </Card>
   <Card title="Writes to Figma" icon="wand-magic-sparkles">
-    Variables, components and component sets, Slots, Motion animations, annotations, FigJam boards, and Slides, plus any Plugin API code through `figma_execute`.
+    Variables, components and component sets, Slots, Motion animations, shaders, auto layout and grid layout, annotations, FigJam boards, and Slides, plus any Plugin API code through `figma_execute`.
   </Card>
   <Card title="Deterministic checks" icon="list-check">
     Rule-based checks that return the same result every run: design-code parity, accessibility on the canvas and in code, and design-system health.
@@ -169,8 +169,10 @@ Real component data. Real token values. Real code that uses your actual design s
     - `figma_create_slot` / `figma_append_to_slot` — Add slots to components and populate them on instances (Figma Slots, GA at Config 2026), plus `figma_get_slots`, `figma_reset_slot`, and `figma_add_slot_property`
     - `figma_apply_animation` / `figma_manage_animation_styles` — Animate layers with Figma Motion presets, custom animation styles or keyframes, with easing and duration bound to Timing/Easing tokens, plus `figma_get_animations`, `figma_remove_animation`, and `figma_export_animation` (MP4, GIF, WebM)
     - `figma_get_code_layers` — Find Figma code layers on a page or across the file
+    - `figma_apply_shader` / `figma_list_shaders` — Apply shaders and set their properties by name
+    - `figma_set_layout` — Auto layout and grid layout in one call, with CSS-style grid tracks and child placement
     - `figma_create_variable` — Add design tokens
-    - Plus dedicated tools for creating, moving, resizing, cloning, renaming, and deleting nodes, and for text, fills, strokes, image fills, instance properties, and component properties
+    - Plus dedicated tools for creating, moving, resizing, cloning, renaming, and deleting nodes, and for text (including text wrap and variable-font axes), fills and strokes (including OKLCH and Display P3), image fills, instance properties, and component properties
   </Accordion>
 
   <Accordion title="Design-Code Parity & Documentation" icon="code-compare">
@@ -248,12 +250,12 @@ Real component data. Real token values. Real code that uses your actual design s
 
 <Columns cols={3}>
   <Card title="NPX Setup (Recommended)" icon="bolt" href="/setup#-npx-setup-recommended">
-    **Full capabilities — 127 tools**
+    **Full capabilities — 130 tools**
 
     All tools including real-time monitoring. Requires Node.js and a Figma token.
   </Card>
   <Card title="Cloud Mode" icon="cloud-arrow-up" href="/setup#-cloud-mode-web-ai-clients">
-    **Web AI clients — 102 tools**
+    **Web AI clients — 105 tools**
 
     Full write access from Claude.ai, v0, Replit, or Lovable. Pair with a code — no Node.js needed.
   </Card>
@@ -316,7 +318,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Real scenarios and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 127 tools
+    Complete reference for 130 tools
   </Card>
   <Card title="Troubleshooting" icon="circle-question" href="/troubleshooting">
     Common issues and solutions
