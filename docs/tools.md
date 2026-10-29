@@ -21,7 +21,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | **📋 Console** | `figma_get_console_logs` | Retrieve console logs with filters | All |
 | | `figma_watch_console` | Stream logs in real-time | All |
 | | `figma_clear_console` | Clear log buffer | All |
-| **🔍 Debugging** | `figma_take_screenshot` | Capture UI screenshots | All |
+| **🔍 Debugging** | `figma_take_screenshot` | Export an image of a page or node (plugin first, REST fallback) | All |
 | | `figma_reload_plugin` | Reload current page | All |
 | | `figma_capture_screenshot` | Render a node from the plugin runtime (reflects unsaved changes) | Local / Cloud |
 | **👁️ Real-Time Awareness** | `figma_get_selection` | Get the nodes currently selected in Figma | Local |
@@ -52,16 +52,16 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_arrange_component_set` | Organize variants with labels | Local / Cloud |
 | | `figma_set_description` | Add component descriptions | Local / Cloud |
 | **🧩 Slots** | `figma_create_slot` | **Add a slot to a component** (auto-linked SLOT property; variants supported) | Local / Cloud |
+| | `figma_get_slots` | List slots on a component, set, or instance | Local / Cloud |
+| | `figma_append_to_slot` | **Populate an instance's slot** — clone a node or create content | Local / Cloud |
+| | `figma_reset_slot` | Clear a slot's content on an instance | Local / Cloud |
+| | `figma_add_slot_property` | Retrofit an existing frame as a slot (manual SLOT binding) | Local / Cloud |
 | **🎬 Motion** | `figma_get_animations` | Read a layer's animations, keyframes, timeline and token bindings | Local / Cloud |
 | | `figma_apply_animation` | **Animate a layer** with a preset, custom style or keyframes; bind easing/duration to tokens | Local / Cloud |
 | | `figma_remove_animation` | Remove an animation style, a keyframe track, or all | Local / Cloud |
 | | `figma_manage_animation_styles` | List presets; create, update and delete custom animation styles | Local / Cloud |
 | | `figma_export_animation` | Export an animated frame as MP4, GIF or WebM | Local / Cloud |
 | **🧱 Code Layers** | `figma_get_code_layers` | Find code layers on a page or across the file | Local / Cloud |
-| | `figma_get_slots` | List slots on a component, set, or instance | Local / Cloud |
-| | `figma_append_to_slot` | **Populate an instance's slot** — clone a node or create content | Local / Cloud |
-| | `figma_reset_slot` | Clear a slot's content on an instance | Local / Cloud |
-| | `figma_add_slot_property` | Retrofit an existing frame as a slot (manual SLOT binding) | Local / Cloud |
 | **🧩 Components** | `figma_search_components` | Find components by name (local + library) | Local |
 | | `figma_get_library_components` | Discover components from published libraries | Local |
 | | `figma_get_library_component_by_key` | **Resolve any component key to full props + variants + visual specs** — no library URL needed | Local / Cloud |
@@ -70,9 +70,9 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_set_instance_properties` | Set TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties on an instance | Local / Cloud |
 | **📚 Shared Library Variables** | `figma_get_library_variables` | List variables from subscribed libraries (no Enterprise plan needed) | Local / Cloud |
 | | `figma_import_library_variable` | Import a library variable into the current file | Local / Cloud |
-| | `figma_add_component_property` | Add component property | Local / Cloud |
-| | `figma_edit_component_property` | Edit component property | Local / Cloud |
-| | `figma_delete_component_property` | Remove component property | Local / Cloud |
+| **🏷️ Component Properties** | `figma_add_component_property` | Add a BOOLEAN, TEXT, INSTANCE_SWAP, VARIANT or SLOT property | Local / Cloud |
+| | `figma_edit_component_property` | Rename a property or change its default | Local / Cloud |
+| | `figma_delete_component_property` | Remove a property | Local / Cloud |
 | **🔧 Variables** | `figma_create_variable_collection` | Create collections with modes | Local / Cloud |
 | | `figma_create_variable` | Create new variables | Local / Cloud |
 | | `figma_update_variable` | Update variable values | Local / Cloud |
@@ -232,6 +232,18 @@ figma_get_status()
 
 ---
 
+### `figma_reconnect`
+
+Force a full reconnection to Figma Desktop. Use it when the connection seems stale, for example after switching files or waking the computer. Local Mode.
+
+```javascript
+figma_reconnect()
+```
+
+`figma_get_status({ probe: true })` checks whether the plugin is actually responding first, and `figma_diagnose` explains what's wrong in plain language.
+
+---
+
 ### `figma_list_open_files`
 
 List every Figma file that currently has the Desktop Bridge plugin open, and show which one is the active target for tool calls.
@@ -347,30 +359,26 @@ figma_clear_console()
 
 ### `figma_take_screenshot`
 
-Capture screenshots of Figma UI.
+Export an image of the current page or a specific node. With the Desktop Bridge connected, it renders through the plugin (`exportAsync`): any plan, no REST token, and it reflects unsaved changes. Otherwise, and always for PDF, it uses the Figma REST API, which returns an image URL valid for 30 days.
 
 **Usage:**
 ```javascript
 figma_take_screenshot({
-  target: 'plugin',           // 'plugin', 'full-page', or 'viewport'
-  format: 'png',              // 'png' or 'jpeg'
-  quality: 90,                // JPEG quality 0-100 (default: 90)
-  filename: 'my-screenshot'   // Optional filename
+  nodeId: '123:456',   // optional; URL-style ids like 123-456 work too
+  scale: 2,            // 0.01–4 (default: 2)
+  format: 'png'        // 'png', 'jpg', 'svg' or 'pdf' (default: 'png')
 })
 ```
 
 **Parameters:**
-- `target` (optional): What to screenshot
-  - `'plugin'`: Just the plugin UI (default)
-  - `'full-page'`: Entire scrollable page
-  - `'viewport'`: Current visible viewport
-- `format` (optional): Image format (default: 'png')
-- `quality` (optional): JPEG quality 0-100 (default: 90)
-- `filename` (optional): Custom filename
+- `nodeId` (optional): Node to export. Without it, the node in the file's current URL is used.
+- `scale` (optional): Scale factor, 0.01–4 (default: 2)
+- `format` (optional): `png`, `jpg`, `svg` or `pdf` (default: `png`)
 
 **Returns:**
-- Screenshot image
-- Metadata (dimensions, format, size)
+- The image (through the plugin) or an image URL (through REST)
+
+To see what's on the canvas right now, `figma_capture_screenshot` is the plugin-only equivalent. For components, `figma_get_component_image` is a better fit.
 
 ---
 
@@ -967,6 +975,31 @@ figma_get_component_for_development({
 
 ---
 
+### `figma_get_component_for_development_deep`
+
+Get a component's full layer tree through the Desktop Bridge, at any depth: visual properties, resolved design-token names, instance references, prototype interactions and annotations at every level. Use it for complex components (data tables, nested menus, date pickers, compound form fields) where the REST-based `figma_get_component_for_development` stops at depth 4.
+
+```javascript
+figma_get_component_for_development_deep({
+  nodeId: "695:313",
+  depth: 10      // default: 10; 0 or a negative number means unlimited
+})
+```
+
+Unlimited depth can return a large payload. Target a child node if it gets unwieldy.
+
+---
+
+### `figma_analyze_component_set`
+
+Analyze a component set for code generation: the variant axes and their values, CSS pseudo-class mappings for interaction states (hover → `:hover`, focus → `:focus-visible`, disabled → `:disabled`, error → `[aria-invalid]`), and each variant's differences from the default variant, including changes inside nested layers.
+
+```javascript
+figma_analyze_component_set({ nodeId: "214:274" })   // the COMPONENT_SET node, not a variant
+```
+
+---
+
 ### `figma_get_component_image`
 
 Render a component as an image only.
@@ -1301,8 +1334,7 @@ figma_create_variable({
     "1:0": "#3B82F6",    // Light mode
     "1:1": "#60A5FA"     // Dark mode
   },
-  description: "Primary brand color",  // Optional
-  scopes: ["ALL_FILLS"]                 // Optional
+  description: "Primary brand color"   // Optional
 })
 ```
 
@@ -1312,13 +1344,16 @@ figma_create_variable({
 - `resolvedType` (required): `"COLOR"`, `"FLOAT"`, `"STRING"`, `"BOOLEAN"`, or the motion types `"TIMING"` (seconds, or `"300ms"` / `"0.3s"`) and `"EASING"` (`"cubic-bezier(x1, y1, x2, y2)"`, a Figma easing name such as `"EASE_OUT"` or `"BOUNCY"`, or `"spring(0.4)"`)
 - `valuesByMode` (optional): Object mapping mode IDs to values
 - `description` (optional): Variable description
-- `scopes` (optional): Where variable can be applied
 
 **Value Formats:**
 - **COLOR**: Hex string `"#FF0000"` or `"#FF0000FF"` (with alpha)
 - **FLOAT**: Number `16` or `1.5`
 - **STRING**: Text `"Hello World"`
 - **BOOLEAN**: `true` or `false`
+- **TIMING**: Seconds `0.3`, or `"300ms"` / `"0.3s"`
+- **EASING**: `"cubic-bezier(0.4, 0, 0.2, 1)"`, a Figma easing name such as `"EASE_OUT"`, or `"spring(0.4)"`
+
+Variable scopes are set through `figma_import_tokens` (`$extensions["figma-console-mcp"].scopes`) or `figma_execute`.
 
 ---
 
@@ -1914,21 +1949,27 @@ Create an instance of a component on the canvas.
 **Usage:**
 ```javascript
 figma_instantiate_component({
-  componentKey: "abc123def456",
-  x: 100,                        // X position
-  y: 200,                        // Y position
+  componentKey: "abc123def456",  // from figma_search_components
+  nodeId: "12:34",               // pass both: nodeId is the fallback for unpublished components
+  variant: { Size: "Large", State: "Default" },
   overrides: {                   // Property overrides
     "Button Label": "Click Me",
     "Show Icon": true
-  }
+  },
+  position: { x: 100, y: 200 },
+  parentId: "1:2"                // frame or section to place it in
 })
 ```
 
 **Parameters:**
-- `componentKey` (required): Component key to instantiate
-- `x` (optional): X position on canvas
-- `y` (optional): Y position on canvas
-- `overrides` (optional): Property overrides for the instance
+- `componentKey` (optional): Component key from search results. Pass it together with `nodeId`.
+- `nodeId` (optional): Component node id from search results. Local and unpublished components need it.
+- `variant` (optional): Variant properties to set, such as `{ Type: "Simple", State: "Active" }`
+- `overrides` (optional): Property overrides for the instance (text, boolean, instance swap)
+- `position` (optional): `{ x, y }` on the canvas (default: 0, 0)
+- `parentId` (optional): Node to append the instance to
+
+Node ids change between sessions, so search again before instantiating. Fonts used by the instance's text are loaded before overrides are applied, and failed overrides come back in `warnings`.
 
 **Returns:**
 - Created instance with node ID
@@ -2351,7 +2392,10 @@ Set the text content of a text node.
 ```javascript
 figma_set_text({
   nodeId: "123:456",
-  characters: "Hello World"
+  text: "Hello World",
+  fontFamily: "Inter",     // optional
+  fontStyle: "Semi Bold",  // optional; "SemiBold" is corrected
+  fontSize: 16             // optional
 })
 ```
 
@@ -2394,10 +2438,21 @@ Create a child node inside a parent.
 ```javascript
 figma_create_child({
   parentId: "123:456",
-  type: "FRAME",
-  name: "New Frame"
+  nodeType: "FRAME",            // RECTANGLE, ELLIPSE, FRAME, TEXT or LINE
+  properties: {
+    name: "New Frame",
+    x: 0, y: 0, width: 320, height: 200,
+    fills: [{ type: "SOLID", color: "#FFFFFF" }]
+  }
 })
+
+figma_create_child({ parentId: "123:456", nodeType: "TEXT", properties: { text: "Hello" } })
 ```
+
+**Parameters:**
+- `parentId` (required): The section or frame to create the node in
+- `nodeType` (required): `RECTANGLE`, `ELLIPSE`, `FRAME`, `TEXT` or `LINE`
+- `properties` (optional): `name`, `x`, `y`, `width`, `height` (default 100 × 100), `fills` (hex) and `text` (TEXT only)
 
 ---
 
@@ -2412,16 +2467,18 @@ Add a new property to a component.
 figma_add_component_property({
   nodeId: "123:456",
   propertyName: "Show Icon",
-  propertyType: "BOOLEAN",
+  type: "BOOLEAN",
   defaultValue: true
 })
 ```
 
 **Parameters:**
-- `nodeId` (required): Component node ID
+- `nodeId` (required): Component or component set node ID
 - `propertyName` (required): Name for the new property
-- `propertyType` (required): `"BOOLEAN"`, `"TEXT"`, `"INSTANCE_SWAP"`, or `"VARIANT"`
-- `defaultValue` (required): Default value for the property
+- `type` (required): `"BOOLEAN"`, `"TEXT"`, `"INSTANCE_SWAP"`, `"VARIANT"` or `"SLOT"` (for new slots, prefer `figma_create_slot`)
+- `defaultValue`: Required for TEXT (a string), INSTANCE_SWAP (a component id) and VARIANT (a non-empty option name). Optional for BOOLEAN (default `false`). Leave out for SLOT.
+- `description` (optional): Property description (SLOT only)
+- `preferredValues` (optional): Preferred components as `[{ type: "COMPONENT" | "COMPONENT_SET", key }]` (INSTANCE_SWAP and SLOT only)
 
 ---
 
@@ -2622,9 +2679,13 @@ Get all variable values organized by collection and mode.
 **Usage:**
 ```javascript
 figma_get_token_values({
-  collectionName: "Brand Colors"  // Optional: filter by collection
+  type: "colors",      // "colors", "spacing" or "all" (default: "all")
+  filter: "primary",   // optional: match token names
+  limit: 50            // default: 50
 })
 ```
+
+Use it after `figma_get_design_system_summary` to get the values behind specific tokens.
 
 **Returns:**
 - Variables organized by collection

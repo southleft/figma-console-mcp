@@ -102,7 +102,9 @@ The MCP server has **three execution modes** and **four setup methods**:
 | **Read Design Data** | ✅ | ✅ | ✅ | All modes use Figma REST API |
 | **Design Creation (write)** | ❌ | ✅ | ✅ | Cloud via relay, Local via WebSocket |
 | **Variable Management** | ⚠️ | ✅ | ✅ | Remote requires Enterprise. Cloud/Local use Plugin API (any plan) |
-| **Screenshots** | ✅ | ✅ | ✅ | All use Figma REST API |
+| **Screenshots** | ✅ | ✅ | ✅ | Remote uses the REST API. Cloud and Local render through the Desktop Bridge plugin (`figma_capture_screenshot`, and `figma_take_screenshot` first), with REST as the fallback |
+| **Motion** (`figma_apply_animation`, `figma_get_animations`, animation styles, `figma_export_animation`) | ❌ | ✅ | ✅ | Desktop Bridge. Video export writes a file in Local Mode and returns base64 (up to 5 MB) in Cloud Mode |
+| **Code layer discovery** (`figma_get_code_layers`) | ❌ | ✅ | ✅ | Desktop Bridge. Finds code layers; their source can't be read or edited through Figma's APIs |
 | **Design System Reads** | ✅ | ✅ | ✅ | Variables, components, styles via Figma API |
 | **Codebase → Design System Extraction** (`figma_ds_*`) | ❌ | ❌ | ✅ | Local-only — reads and writes your local filesystem |
 | **Design-System Health Report** (`figma_audit_design_system_report`) | ❌ | ❌ | ✅ | Local-only |
@@ -203,7 +205,7 @@ Variables & Components Data
 | `figma_navigate` | ✅ | ✅ | Remote navigates the cloud headless browser; Local switches the active file among connected plugins |
 | `figma_get_console_logs` | ✅ | ✅ | Both capture logs, Local has lower latency |
 | `figma_watch_console` | ✅ | ✅ | Real-time log streaming |
-| `figma_take_screenshot` | ✅ | ✅ | Both use Figma REST API |
+| `figma_take_screenshot` | ✅ | ✅ | Local renders through the Desktop Bridge (REST for PDF or without the plugin); Remote uses the REST API |
 | `figma_reload_plugin` | ✅ | ✅ | Reloads current page |
 | `figma_clear_console` | ✅ | ✅ | Clears log buffer |
 | `figma_get_status` | ✅ | ✅ | Check connection status |
