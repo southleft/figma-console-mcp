@@ -221,6 +221,26 @@ describe("code layer tools", () => {
 		expect(out.codeLayers[0]).toMatchObject({ id: "7:3", page: "P", devResources: [{ name: "repo", url: "https://github.com/x/y" }] });
 	});
 
+	it("doesn't hang when Figma never returns links (background window)", async () => {
+		jest.useFakeTimers();
+		try {
+			let calls = 0;
+			const hang = () => { calls++; return new Promise<never>(() => {}); };
+			const mk = (id: string) => ({ id, name: id, type: "CODE_INSTANCE", x: 0, y: 0, width: 1, height: 1, visible: true, locked: false, parent: null, getDevResourcesAsync: hang, getRelatedLinksAsync: hang });
+			const page = { id: "0:1", name: "P", findAll: (pred: (n: any) => boolean) => [mk("1:1"), mk("1:2"), mk("1:3")].filter(pred) };
+			const pending = runScript(GET_CODE_LAYERS_SCRIPT("page", 10), { currentPage: page, root: { children: [page] } });
+			await jest.advanceTimersByTimeAsync(3000);
+			const out = await pending;
+			expect(out.count).toBe(3);
+			expect(out.linksUnavailable).toBe(true);
+			expect(out.note).toMatch(/focused/);
+			expect(calls).toBe(1);
+			expect(out.codeLayers[0].devResources).toBeUndefined();
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
 	it("registers figma_get_code_layers", () => {
 		const server = mockServer();
 		registerCodeLayerTools(server as any, async () => ({}));
