@@ -5,7 +5,7 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.45.0] - 2026-10-28
 
 Motion tools and motion tokens, built on Figma's Plugin API Updates 130–141. Server-only: no plugin re-import needed.
 
@@ -1698,6 +1698,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[1.45.0]: https://github.com/southleft/figma-console-mcp/compare/v1.44.2...v1.45.0
 [1.44.2]: https://github.com/southleft/figma-console-mcp/compare/v1.44.1...v1.44.2
 [1.44.1]: https://github.com/southleft/figma-console-mcp/compare/v1.44.0...v1.44.1
 [1.44.0]: https://github.com/southleft/figma-console-mcp/compare/v1.43.0...v1.44.0

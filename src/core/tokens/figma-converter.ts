@@ -328,10 +328,9 @@ function convertVariable(
         ...(Object.keys(composedByMode).length > 0 ? { composedColor: composedByMode } : {}),
         variableId: variable.id,
         collectionId: variable.variableCollectionId,
-        // The Figma-native type is what import needs to decide writability
-        // — TIMING/EASING variables cannot be written via the Plugin API,
-        // and FLOAT variables whose token type is "duration" (name-inferred)
-        // must NOT be mistaken for TIMING.
+        // The Figma-native type tells import how to write the value back:
+        // a TIMING variable takes seconds, and a FLOAT variable whose token
+        // type is "duration" (name-inferred) must NOT be mistaken for TIMING.
         figmaResolvedType: variable.resolvedType,
         // Preserve the original variable name when the token path dropped
         // the trailing "Timing"/"Easing" segment, so round-trip can
