@@ -3100,7 +3100,7 @@ export default {
 							<p class="claim">Changes land in the file, not in a chat reply.</p>
 						</div>
 						<div class="pillar-body">
-							<p>Create and edit variables and collections, components and component sets with variants, slots, and annotations. Build FigJam boards and Slides decks.</p>
+							<p>Create and edit variables and collections, components and component sets with variants, slots, and annotations. Animate layers with Figma Motion, with easing and duration bound to your motion tokens, and export the result as video. Build FigJam boards and Slides decks.</p>
 							<p class="muted">When no structured tool fits, run Plugin API code directly, in one file or across several open files at once.</p>
 						</div>
 						<div>
@@ -3109,6 +3109,7 @@ export default {
 								<li><code>figma_batch_create_variables</code></li>
 								<li><code>figma_create_component_set</code></li>
 								<li><code>figma_create_slot</code></li>
+								<li><code>figma_apply_animation</code></li>
 								<li><code>figma_set_annotations</code></li>
 								<li><code>figma_execute_across_files</code></li>
 							</ul>
