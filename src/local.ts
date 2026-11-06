@@ -46,7 +46,7 @@ import { registerTokensTools } from "./core/tokens-tools.js";
 import { wrapServerForIdentity } from "./core/identity.js";
 import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
-import { FigmaWebSocketServer, getBundledPluginVersion, getServerVersion } from "./core/websocket-server.js";
+import { FigmaWebSocketServer, getBundledPluginVersion, getServerVersion, type SelectionInfo } from "./core/websocket-server.js";
 import { WebSocketConnector } from "./core/websocket-connector.js";
 import {
 	DEFAULT_WS_PORT,
@@ -1560,7 +1560,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 			async ({ verbose }) => {
 				try {
-					const selection = this.wsServer?.getCurrentSelection() ?? null;
+					let selection = this.wsServer?.getCurrentSelection() ?? null;
+					// Send the bridge calls below to the file this selection belongs to, so
+					// a selection event in another file cannot switch the target mid-call.
+					const fileKey = this.wsServer?.getActiveFileKey() ?? undefined;
 
 					if (!this.wsServer?.isClientConnected()) {
 						return {
@@ -1573,6 +1576,40 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							}],
 							isError: true,
 						};
+					}
+
+					// No selection reported yet. Plugins older than the FILE_INFO selection
+					// snapshot report it only on selectionchange, so a selection made before
+					// the plugin connected is unknown here. Read it live instead of
+					// reporting "nothing selected" (issue #156).
+					if (!selection) {
+						const connector = await this.getDesktopConnector();
+						const live = await connector.executeCodeViaUI(
+							`var sel = figma.currentPage.selection;
+							var nodes = [];
+							for (var i = 0; i < Math.min(sel.length, 50); i++) {
+								try {
+									var n = sel[i];
+									nodes.push({ id: n.id, name: n.name, type: n.type, width: n.width, height: n.height });
+								} catch (e) {}
+							}
+							return { nodes: nodes, count: sel.length, page: figma.currentPage.name, timestamp: Date.now() };`,
+							5000,
+							fileKey,
+						);
+						if (!live?.success || !live.result) {
+							return {
+								content: [{
+									type: "text",
+									text: JSON.stringify({
+										error: live?.error || "No result from the Desktop Bridge plugin",
+										message: "Failed to get selection",
+									}),
+								}],
+								isError: true,
+							};
+						}
+						selection = live.result as SelectionInfo;
 					}
 
 					if (!selection || selection.count === 0) {
@@ -1622,6 +1659,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								}
 								return results;`,
 								10000,
+								fileKey,
 							);
 							if (details.success && details.result) {
 								result.details = details.result;

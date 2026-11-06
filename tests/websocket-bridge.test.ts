@@ -21,7 +21,7 @@ jest.setTimeout(10000);
 function connectClient(
   server: FigmaWebSocketServer,
   port: number,
-  fileInfo?: { fileKey: string; fileName: string; currentPage?: string; pluginVersion?: string }
+  fileInfo?: { fileKey: string; fileName: string; currentPage?: string; pluginVersion?: string; selection?: object }
 ): Promise<WebSocket> {
   const info = fileInfo || { fileKey: 'test-file-key', fileName: 'Test File', currentPage: 'Page 1' };
   return new Promise((resolve, reject) => {
@@ -1425,6 +1425,81 @@ describe('Selection change tracking', () => {
     const current = server.getCurrentSelection();
     expect(current!.nodes[0].name).toBe('New');
     expect(current!.page).toBe('Page 2');
+  });
+
+  // Issue #156: a selection made before the plugin connected must be known
+  // without waiting for the next SELECTION_CHANGE.
+  it('should store the selection snapshot sent in FILE_INFO', async () => {
+    const snapshot = {
+      nodes: [{ id: '3:9142', name: 'Board 1', type: 'FRAME', width: 1680, height: 3595 }],
+      count: 1,
+      page: 'Reference',
+      timestamp: Date.now(),
+    };
+
+    const other = await connectClient(server, port, {
+      fileKey: 'snapshot-file',
+      fileName: 'Snapshot File',
+      currentPage: 'Reference',
+      selection: snapshot,
+    });
+
+    try {
+      const sel = server.getCurrentSelection();
+      expect(sel).toEqual(snapshot);
+    } finally {
+      await closeClient(other);
+    }
+  });
+
+  it('should replace a stale selection with the FILE_INFO snapshot on reconnect', async () => {
+    const stale = {
+      nodes: [{ id: '1:1', name: 'Old', type: 'FRAME', width: 50, height: 50 }],
+      count: 1,
+      page: 'Page 1',
+      timestamp: Date.now(),
+    };
+    const eventPromise = new Promise<void>((resolve) =>
+      server.once('selectionChange', () => resolve())
+    );
+    client.send(JSON.stringify({ type: 'SELECTION_CHANGE', data: stale }));
+    await eventPromise;
+
+    const fresh = { nodes: [], count: 0, page: 'Page 1', timestamp: Date.now() + 100 };
+    const reconnected = await connectClient(server, port, {
+      fileKey: 'test-file-key',
+      fileName: 'Test File',
+      currentPage: 'Page 1',
+      selection: fresh,
+    });
+
+    try {
+      expect(server.getCurrentSelection()).toEqual(fresh);
+    } finally {
+      await closeClient(reconnected);
+    }
+  });
+
+  it('should keep the previous selection when FILE_INFO has no snapshot (older plugin)', async () => {
+    const previous = {
+      nodes: [{ id: '1:1', name: 'Kept', type: 'FRAME', width: 50, height: 50 }],
+      count: 1,
+      page: 'Page 1',
+      timestamp: Date.now(),
+    };
+    const eventPromise = new Promise<void>((resolve) =>
+      server.once('selectionChange', () => resolve())
+    );
+    client.send(JSON.stringify({ type: 'SELECTION_CHANGE', data: previous }));
+    await eventPromise;
+
+    const reconnected = await connectClient(server, port);
+
+    try {
+      expect(server.getCurrentSelection()).toEqual(previous);
+    } finally {
+      await closeClient(reconnected);
+    }
   });
 });
 

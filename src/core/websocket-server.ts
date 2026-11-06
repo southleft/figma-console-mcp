@@ -750,7 +750,10 @@ export class FigmaWebSocketServer extends EventEmitter {
         pluginVersion,
         pluginUpdateAvailable,
       },
-      selection: existing?.selection || null,
+      // Plugins that include a selection snapshot in FILE_INFO make the selection
+      // known on connect, not only after the next SELECTION_CHANGE (issue #156).
+      // Older plugins send no snapshot — keep the previous connection's value.
+      selection: (data.selection as SelectionInfo | undefined) || existing?.selection || null,
       documentChanges: existing?.documentChanges || [],
       metadataChanges: existing?.metadataChanges || [],
       consoleLogs: existing?.consoleLogs || [],
