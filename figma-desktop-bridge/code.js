@@ -4292,7 +4292,7 @@ figma.ui.onmessage = async (msg) => {
   // ============================================================================
   else if (msg.type === 'GET_FILE_INFO') {
     try {
-      var selection = figma.currentPage.selection;
+      var selectionSnapshot = getSelectionSnapshot();
       figma.ui.postMessage({
         type: 'GET_FILE_INFO_RESULT',
         requestId: msg.requestId,
@@ -4302,7 +4302,10 @@ figma.ui.onmessage = async (msg) => {
           fileKey: figma.fileKey || null,
           currentPage: figma.currentPage.name,
           currentPageId: figma.currentPage.id,
-          selectionCount: selection ? selection.length : 0,
+          selectionCount: selectionSnapshot.count,
+          // Full snapshot so the server knows the selection on connect, not
+          // only after the next selectionchange event (issue #156).
+          selection: selectionSnapshot,
           pluginVersion: PLUGIN_VERSION,
           editorType: __editorType
         }
@@ -7575,6 +7578,47 @@ figma.ui.onmessage = async (msg) => {
   }
 };
 
+// Snapshot of the current selection, in the SelectionInfo shape the server
+// stores. Sent on every selectionchange and in GET_FILE_INFO (on connect).
+function getSelectionSnapshot() {
+  var selection = figma.currentPage.selection;
+  var selectedNodes = [];
+  for (var i = 0; i < Math.min(selection.length, 50); i++) {
+    try {
+      var node = selection[i];
+      selectedNodes.push({
+        id: node.id,
+        name: node.name,
+        type: node.type,
+        width: node.width,
+        height: node.height
+      });
+    } catch (e) {
+      // Slot sublayers and table cells may not be fully resolvable —
+      // accessing .name throws "does not exist" for these node types.
+      // Skip silently rather than crashing the plugin.
+    }
+  }
+  return {
+    nodes: selectedNodes,
+    count: selection.length,
+    page: figma.currentPage.name,
+    timestamp: Date.now()
+  };
+}
+
+// Selection change listener — tracks what the user has selected in Figma.
+// Registered right away, not after loadAllPagesAsync() like the listeners
+// below: selectionchange does not need all pages loaded, and a change made
+// while pages load would otherwise be lost (the FILE_INFO snapshot may
+// already have been sent).
+figma.on('selectionchange', function() {
+  figma.ui.postMessage({
+    type: 'SELECTION_CHANGE',
+    data: getSelectionSnapshot()
+  });
+});
+
 // ============================================================================
 // DOCUMENT CHANGE LISTENER - Forward change events for cache invalidation
 // Fires when variables, styles, or nodes change (by any means — user edits, API, etc.)
@@ -7659,37 +7703,6 @@ figma.loadAllPagesAsync().then(function() {
       });
     }
   });
-  // Selection change listener — tracks what the user has selected in Figma
-  figma.on('selectionchange', function() {
-    var selection = figma.currentPage.selection;
-    var selectedNodes = [];
-    for (var i = 0; i < Math.min(selection.length, 50); i++) {
-      try {
-        var node = selection[i];
-        selectedNodes.push({
-          id: node.id,
-          name: node.name,
-          type: node.type,
-          width: node.width,
-          height: node.height
-        });
-      } catch (e) {
-        // Slot sublayers and table cells may not be fully resolvable —
-        // accessing .name throws "does not exist" for these node types.
-        // Skip silently rather than crashing the plugin.
-      }
-    }
-    figma.ui.postMessage({
-      type: 'SELECTION_CHANGE',
-      data: {
-        nodes: selectedNodes,
-        count: selection.length,
-        page: figma.currentPage.name,
-        timestamp: Date.now()
-      }
-    });
-  });
-
   // Page change listener — tracks which page the user is viewing
   figma.on('currentpagechange', function() {
     figma.ui.postMessage({
@@ -7702,7 +7715,7 @@ figma.loadAllPagesAsync().then(function() {
     });
   });
 
-  console.log('🌉 [Desktop Bridge] Document change, selection, and page listeners registered');
+  console.log('🌉 [Desktop Bridge] Document change and page listeners registered');
 }).catch(function(err) {
   console.warn('🌉 [Desktop Bridge] Could not register event listeners:', err);
 });
