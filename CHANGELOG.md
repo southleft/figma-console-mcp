@@ -5,6 +5,12 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Gradient tokens export as CSS gradients instead of raw JSON.** `figma_import_tokens` accepts `$type: "gradient"` DTCG tokens, but the CSS-family formatters (CSS vars, SCSS, Tailwind v4) serialized the composite object into the stylesheet (`--hero-bg: {"type":"linear",…}`), which no browser can consume. Gradients now render as `linear-gradient(90deg, #ff0000 0%, #0000ff 100%)` / `radial-gradient(…)` / `conic-gradient(from 45deg, …)` with stop positions scaled from the 0–1 convention to percent; malformed gradients are skipped with a warning instead of emitting JSON.
+
 ## [1.46.0] - 2026-10-29
 
 Shaders, layout, wide-gamut color and text typography, built on Figma's Plugin API Updates 130–141. Server-only: no plugin re-import needed.

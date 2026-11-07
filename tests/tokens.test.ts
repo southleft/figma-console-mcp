@@ -1064,6 +1064,52 @@ describe("token sync engine", () => {
       );
     });
 
+    it("renders gradient tokens as CSS gradient functions, not raw JSON", async () => {
+      const formatCssVars = await lazy();
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Primitives",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["gradient", "hero"],
+                type: "gradient",
+                values: {
+                  Default: {
+                    literal: {
+                      type: "linear",
+                      angle: 90,
+                      stops: [
+                        { color: "#ff0000", position: 0 },
+                        { color: "#0000ff", position: 1 },
+                      ],
+                    },
+                  },
+                },
+              },
+              {
+                path: ["gradient", "bad"],
+                type: "gradient",
+                values: { Default: { literal: { type: "weird", stops: [] } } },
+              },
+            ],
+          },
+        ],
+      };
+      const result = formatCssVars(doc, { target: { format: "css-vars" } });
+      const content = result.files[0].content;
+      expect(content).toContain(
+        "--gradient-hero: linear-gradient(90deg, #ff0000 0%, #0000ff 100%);",
+      );
+      expect(content).not.toContain("--gradient-bad:");
+      expect(
+        result.warnings.some((w) =>
+          w.includes("gradient.bad") && w.includes("unparseable"),
+        ),
+      ).toBe(true);
+    });
+
     it("emits dark mode under .dark selector by convention", async () => {
       const formatCssVars = await lazy();
       const doc: TokenDocument = {

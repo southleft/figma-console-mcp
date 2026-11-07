@@ -82,6 +82,54 @@ const ALIAS_DOC: TokenDocument = {
   ],
 };
 
+const GRADIENT_DOC: TokenDocument = {
+  sets: [
+    {
+      name: "Primitives",
+      modes: ["Default"],
+      tokens: [
+        {
+          path: ["gradient", "hero"],
+          type: "gradient",
+          values: {
+            Default: {
+              literal: {
+                type: "linear",
+                angle: 90,
+                stops: [
+                  { color: "#ff0000", position: 0 },
+                  { color: "#0000ff", position: 1 },
+                ],
+              },
+            },
+          },
+        },
+        {
+          path: ["gradient", "ring"],
+          type: "gradient",
+          values: {
+            Default: {
+              literal: {
+                type: "conic",
+                angle: 45,
+                stops: [
+                  { color: "#00aaff", position: 0.25 },
+                  { color: "#ffaa00", position: 0.75 },
+                ],
+              },
+            },
+          },
+        },
+        {
+          path: ["gradient", "bad"],
+          type: "gradient",
+          values: { Default: { literal: { type: "weird", stops: [] } } },
+        },
+      ],
+    },
+  ],
+};
+
 describe("Tailwind v4 formatter", () => {
   it("emits @theme inline block with primitive tokens", () => {
     const r = formatTailwindV4(SIMPLE_DOC, { target: { format: "tailwind-v4" } });
@@ -111,6 +159,23 @@ describe("Tailwind v4 formatter", () => {
     expect(content).toContain("--color-brand: var(--color-primary);");
     expect(content).toContain("skipped — cross-library alias to VariableID:4:4975");
   });
+
+  it("renders gradient tokens as CSS gradient functions, not raw JSON", () => {
+    const r = formatTailwindV4(GRADIENT_DOC, {
+      target: { format: "tailwind-v4" },
+    });
+    const content = r.files[0].content;
+    expect(content).toContain(
+      "--gradient-hero: linear-gradient(90deg, #ff0000 0%, #0000ff 100%);",
+    );
+    expect(content).toContain(
+      "--gradient-ring: conic-gradient(from 45deg, #00aaff 25%, #ffaa00 75%);",
+    );
+    expect(content).not.toContain("--gradient-bad:");
+    expect(
+      r.warnings.some((w) => w.includes("gradient.bad")),
+    ).toBe(true);
+  });
 });
 
 describe("SCSS formatter", () => {
@@ -133,6 +198,21 @@ describe("SCSS formatter", () => {
     const r = formatScss(ALIAS_DOC, { target: { format: "scss" } });
     const content = r.files[0].content;
     expect(content).toContain("$color-brand: $color-primary;");
+  });
+
+  it("renders gradient tokens as CSS gradient functions, not raw JSON", () => {
+    const r = formatScss(GRADIENT_DOC, { target: { format: "scss" } });
+    const content = r.files[0].content;
+    expect(content).toContain(
+      "$gradient-hero: linear-gradient(90deg, #ff0000 0%, #0000ff 100%);",
+    );
+    expect(content).toContain(
+      "$gradient-ring: conic-gradient(from 45deg, #00aaff 25%, #ffaa00 75%);",
+    );
+    expect(content).not.toContain("$gradient-bad:");
+    expect(
+      r.warnings.some((w) => w.includes("gradient.bad")),
+    ).toBe(true);
   });
 });
 
