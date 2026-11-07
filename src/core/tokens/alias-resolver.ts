@@ -38,7 +38,12 @@ export function slugifySetName(name: string): string {
  * each defining `color/primary`), the bare key is NOT indexed — resolving a
  * bare reference to "whichever set was indexed last" is exactly the
  * cross-collection misresolution bug this guards against. Callers that pass
- * a `warnings` array get one warning per ambiguous bare path.
+ * a `warnings` array get one warning per ambiguous bare path. The same rule
+ * applies one level up: when two DIFFERENT collection names slugify to the
+ * same set key (e.g. non-Latin names like "Set 一" and "Set 二"), their
+ * set-qualified keys are not indexed either — they would collide and again
+ * resolve to whichever set was indexed last — and one warning per colliding
+ * slug tells the user to rename.
  */
 export function buildTokenIndex(
   doc: TokenDocument,
@@ -75,11 +80,44 @@ export function buildTokenLookup(
   // barePath → owning entries, used to detect cross-set ambiguity.
   const bareOwners = new Map<string, TokenLookupEntry[]>();
 
+  // Detect set-name slugs that collide across DIFFERENT set names first.
+  // Two collections whose names slugify identically (e.g. "Set 一" and
+  // "Set 二", or an all-CJK name and "Set") would otherwise share every
+  // set-qualified key, and the later set would silently overwrite the
+  // earlier one — reintroducing exactly the indexed-last misresolution the
+  // bare-path guard below exists to prevent.
+  const slugOwners = new Map<string, Set<string>>();
+  for (const set of doc.sets) {
+    const slug = slugifySetName(set.name);
+    const owners = slugOwners.get(slug) ?? new Set<string>();
+    owners.add(set.name);
+    slugOwners.set(slug, owners);
+  }
+  const collidingSlugs = new Map(
+    [...slugOwners].filter(([, names]) => names.size > 1),
+  );
+  if (collidingSlugs.size > 0 && warnings) {
+    for (const [slug, names] of collidingSlugs) {
+      warnings.push(
+        `Collection names ${[...names]
+          .map((n) => `"${n}"`)
+          .join(", ")} all slugify to "${
+            slug === "" ? "(empty)" : slug
+          }" — set-qualified alias references like {${
+            slug === "" ? "" : slug
+          }.path.to.token} are ambiguous and will not resolve. Rename one collection so its slug is unique.`,
+      );
+    }
+  }
+
   for (const set of doc.sets) {
     const setKey = slugifySetName(set.name);
+    const slugCollides = collidingSlugs.has(setKey);
     for (const token of set.tokens) {
       const bare = token.path.join(".");
-      index.set(`${setKey}.${bare}`, { setName: set.name, token });
+      if (!slugCollides) {
+        index.set(`${setKey}.${bare}`, { setName: set.name, token });
+      }
       const owners = bareOwners.get(bare) ?? [];
       owners.push({ setName: set.name, token });
       bareOwners.set(bare, owners);
@@ -92,10 +130,17 @@ export function buildTokenLookup(
     if (owners.length === 1) {
       if (!index.has(bare)) index.set(bare, owners[0]);
     } else if (warnings) {
+      // If the suggested set slug is itself colliding, a set-qualified
+      // reference is no better than the bare one — the collection names
+      // have to be disambiguated first.
+      const suggestedSlug = slugifySetName(owners[0].setName);
+      const suggestion = collidingSlugs.has(suggestedSlug)
+        ? "Rename the collections so their names slugify differently."
+        : `Use a set-qualified reference like {${suggestedSlug}.${bare}}.`;
       warnings.push(
         `Token path "${bare}" exists in multiple collections (${owners
           .map((o) => `"${o.setName}"`)
-          .join(", ")}) — bare alias references to it are ambiguous and will not resolve. Use a set-qualified reference like {${slugifySetName(owners[0].setName)}.${bare}}.`,
+          .join(", ")}) — bare alias references to it are ambiguous and will not resolve. ${suggestion}`,
       );
     }
   }

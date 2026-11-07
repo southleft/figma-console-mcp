@@ -577,6 +577,69 @@ describe("token sync engine", () => {
       expect(errors.length).toBeGreaterThan(0);
       expect(errors[0]).toMatch(/Unresolvable/i);
     });
+
+    it("does not let set-name slug collisions misresolve aliases (regression)", () => {
+      // FIX: two collection names that slugify to the same key (CJK names
+      // "Set 一" and "Set 二" both slugify to "set") shared every
+      // set-qualified index key, so {set.color.primary} silently resolved
+      // to whichever set was indexed LAST — the same cross-collection
+      // misresolution the bare-path guard prevents.
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Set 一",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#111111" } },
+              },
+              {
+                path: ["color", "brand"],
+                type: "color",
+                values: { Default: { reference: "{set.color.primary}" } },
+              },
+            ],
+          },
+          {
+            name: "Set 二",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#222222" } },
+              },
+            ],
+          },
+        ],
+      };
+      const warnings: string[] = [];
+      const index = buildTokenIndex(doc, warnings);
+
+      // The colliding set-qualified key must NOT resolve to either token —
+      // silently picking the wrong collection is the bug this guards.
+      expect(() =>
+        resolveReference("{set.color.primary}", "Default", index),
+      ).toThrow(/Unresolvable/i);
+
+      // The collision is surfaced as a warning naming both collections.
+      expect(
+        warnings.some(
+          (w) =>
+            w.includes("Set 一") &&
+            w.includes("Set 二") &&
+            w.includes('slugify to "set"'),
+        ),
+      ).toBe(true);
+
+      // validateAliases reports the alias as unresolvable instead of
+      // blessing a misresolution.
+      const errors = validateAliases(doc);
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0]).toMatch(/Unresolvable/i);
+    });
   });
 
   describe("tokens.config.json loader", () => {

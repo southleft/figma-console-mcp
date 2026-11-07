@@ -5,6 +5,12 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Token collections whose names slug to the same key no longer silently misresolve aliases.** Two collections whose names slugify identically (e.g. non-Latin names like "Set 一" and "Set 二", both → `set`) shared every set-qualified index key in the alias resolver, so a reference like `{set.color.primary}` resolved to whichever collection was indexed last, and `figma_import_tokens` diffs could attach the wrong collection. Colliding set-qualified keys are now left unresolvable with a warning that names the collections and asks for a rename, mirroring the existing bare-path ambiguity guard. Bare references that are unambiguous still resolve as before.
+
 ## [1.46.0] - 2026-10-29
 
 Shaders, layout, wide-gamut color and text typography, built on Figma's Plugin API Updates 130–141. Server-only: no plugin re-import needed.
