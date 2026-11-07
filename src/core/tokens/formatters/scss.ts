@@ -242,6 +242,13 @@ function emitSassLines(
   if (token.type === "shadow" && typeof value.literal === "object") {
     const css = renderShadow(value.literal);
     if (css) out.push(`${sassName}: ${css};`);
+    else warnings.push(`Token ${token.path.join(".")} has an unparseable shadow value — skipping.`);
+    return;
+  }
+  if (token.type === "gradient" && typeof value.literal === "object") {
+    const css = renderGradient(value.literal);
+    if (css) out.push(`${sassName}: ${css};`);
+    else warnings.push(`Token ${token.path.join(".")} has an unparseable gradient value — skipping.`);
     return;
   }
 
@@ -313,6 +320,42 @@ function needsQuoting(s: string): boolean {
   if (/^[\d.]+([a-z%]+)?$/.test(s)) return false;
   if (/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(s)) return false;
   return true;
+}
+
+/**
+ * Render a gradient composite as a CSS gradient function value.
+ * Stop positions follow the internal 0–1 fraction convention and are
+ * scaled to CSS percentages; values above 1 are treated as already given
+ * in percent. Unknown gradient types or malformed stops return null so the
+ * caller can skip the token with a warning instead of emitting garbage.
+ */
+function renderGradient(gradient: unknown): string | null {
+  if (!gradient || typeof gradient !== "object") return null;
+  const g = gradient as Record<string, unknown>;
+  const stops = Array.isArray(g.stops) ? g.stops : null;
+  if (!stops || stops.length === 0) return null;
+  const renderedStops: string[] = [];
+  for (const s of stops) {
+    const stop = s as Record<string, unknown>;
+    if (typeof stop.color !== "string") return null;
+    if (typeof stop.position !== "number") {
+      renderedStops.push(stop.color);
+      continue;
+    }
+    const pct = stop.position <= 1 ? stop.position * 100 : stop.position;
+    renderedStops.push(`${stop.color} ${num(pct)}%`);
+  }
+  const angle = typeof g.angle === "number" ? g.angle : undefined;
+  if (g.type === "linear") {
+    return `linear-gradient(${angle !== undefined ? `${num(angle)}deg, ` : ""}${renderedStops.join(", ")})`;
+  }
+  if (g.type === "radial") {
+    return `radial-gradient(${renderedStops.join(", ")})`;
+  }
+  if (g.type === "conic") {
+    return `conic-gradient(${angle !== undefined ? `from ${num(angle)}deg, ` : ""}${renderedStops.join(", ")})`;
+  }
+  return null;
 }
 
 function renderShadow(shadow: unknown): string | null {
