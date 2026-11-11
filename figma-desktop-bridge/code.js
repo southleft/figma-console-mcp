@@ -121,6 +121,7 @@ function __serializeBuzzField(field, index) {
     'text',
     'characters',
     'value',
+    'hash',
     'placeholder',
     'label',
     'description',
