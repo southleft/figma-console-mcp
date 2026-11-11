@@ -170,7 +170,7 @@ export interface ConnectedFileInfo {
   fileKey: string | null;
   currentPage?: string;
   currentPageId?: string;
-  editorType?: 'figma' | 'figjam' | 'dev';
+  editorType?: 'figma' | 'figjam' | 'slides' | 'buzz' | 'dev';
   connectedAt: number;
   /** Version reported by the imported plugin's code.js (FILE_INFO). Null when the plugin predates version reporting. */
   pluginVersion?: string | null;
@@ -1260,7 +1260,7 @@ export class FigmaWebSocketServer extends EventEmitter {
    * Get the editor type of the currently active file.
    * Returns 'figma' if no file is connected or editorType wasn't reported.
    */
-  getEditorType(): 'figma' | 'figjam' | 'dev' {
+  getEditorType(): 'figma' | 'figjam' | 'slides' | 'buzz' | 'dev' {
     if (!this._activeFileKey) return 'figma';
     const client = this.clients.get(this._activeFileKey);
     return client?.fileInfo?.editorType || 'figma';
