@@ -304,6 +304,29 @@ describe("Buzz Tools", () => {
 			});
 			expect(result.isError).toBeUndefined();
 		});
+
+		it("passes a width-only size through to the plugin", async () => {
+			const tool = server._getTool("figma_buzz_create_frame");
+			const result = await tool.handler({ width: 1080 });
+
+			expect(mockConnector.createBuzzFrame).toHaveBeenCalledWith({
+				row: undefined,
+				col: undefined,
+				name: undefined,
+				width: 1080,
+				height: undefined,
+			});
+			expect(result.isError).toBeUndefined();
+		});
+
+		it("returns the plugin error when col is given without row", async () => {
+			mockConnector.createBuzzFrame.mockRejectedValueOnce(new Error("col requires row"));
+			const tool = server._getTool("figma_buzz_create_frame");
+			const result = await tool.handler({ col: 2 });
+
+			expect(result.isError).toBe(true);
+			expect(JSON.parse(result.content[0].text).error).toBe("col requires row");
+		});
 	});
 
 	describe("figma_buzz_get_asset_type", () => {

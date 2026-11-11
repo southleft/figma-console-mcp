@@ -7183,15 +7183,27 @@ figma.ui.onmessage = async (msg) => {
       if (__editorType !== 'buzz') {
         throw new Error('CREATE_BUZZ_FRAME is only available in Buzz files');
       }
+      if (typeof msg.col === 'number' && typeof msg.row !== 'number') {
+        throw new Error('col requires row');
+      }
       console.log('🌉 [Desktop Bridge] Creating Buzz frame');
 
-      var buzzFrame = (typeof msg.row === 'number' || typeof msg.col === 'number')
-        ? figma.buzz.createFrame(msg.row, msg.col)
-        : figma.buzz.createFrame();
+      var buzzFrame;
+      if (typeof msg.row === 'number' && typeof msg.col === 'number') {
+        buzzFrame = figma.buzz.createFrame(msg.row, msg.col);
+      } else if (typeof msg.row === 'number') {
+        buzzFrame = figma.buzz.createFrame(msg.row);
+      } else {
+        buzzFrame = figma.buzz.createFrame();
+      }
 
       if (msg.name) buzzFrame.name = msg.name;
       if (typeof msg.width === 'number' && typeof msg.height === 'number') {
         buzzFrame.resize(msg.width, msg.height);
+      } else if (typeof msg.width === 'number') {
+        buzzFrame.resize(msg.width, buzzFrame.height);
+      } else if (typeof msg.height === 'number') {
+        buzzFrame.resize(buzzFrame.width, msg.height);
       }
 
       figma.ui.postMessage({

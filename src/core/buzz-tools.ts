@@ -221,13 +221,13 @@ export function registerBuzzTools(
 
 	server.tool(
 		"figma_buzz_create_frame",
-		"Create a grid-aware Buzz frame using Figma Buzz's native frame creation API. Optionally set grid position, name, and size.",
+		"Create a grid-aware Buzz frame using Figma Buzz's native frame creation API. Optionally set grid position, name, and size. Without a position, the frame is added at the end of the canvas grid.",
 		{
 			row: z.number().int().min(0).max(MAX_GRID_INDEX).optional().describe("Optional grid row index."),
-			col: z.number().int().min(0).max(MAX_GRID_INDEX).optional().describe("Optional grid column index."),
+			col: z.number().int().min(0).max(MAX_GRID_INDEX).optional().describe("Optional grid column index. Requires `row`."),
 			name: z.string().max(MAX_NAME_LENGTH).optional().describe("Optional frame name."),
-			width: z.number().min(1).max(MAX_DIMENSION).optional().describe("Optional frame width in pixels."),
-			height: z.number().min(1).max(MAX_DIMENSION).optional().describe("Optional frame height in pixels."),
+			width: z.number().min(1).max(MAX_DIMENSION).optional().describe("Optional frame width in pixels. If only width is given, the default height is kept."),
+			height: z.number().min(1).max(MAX_DIMENSION).optional().describe("Optional frame height in pixels. If only height is given, the default width is kept."),
 		},
 		async ({ row, col, name, width, height }) => {
 			try {
