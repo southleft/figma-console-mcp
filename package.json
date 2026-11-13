@@ -71,7 +71,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.2.5",
-		"@cloudflare/puppeteer": "^1.0.4",
+		"@cloudflare/puppeteer": "^2.0.0",
 		"@types/jest": "^29.5.14",
 		"@types/jsdom": "^28.0.1",
 		"@types/node": "^22.10.2",
