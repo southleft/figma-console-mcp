@@ -926,7 +926,7 @@ describe("Design System Kit Tool", () => {
 			expect(effectStyle.resolvedValue).toBeDefined();
 			expect(effectStyle.resolvedValue.effects).toHaveLength(1);
 			expect(effectStyle.resolvedValue.effects[0].type).toBe("DROP_SHADOW");
-			expect(effectStyle.resolvedValue.effects[0].color).toBe("#000000");
+			expect(effectStyle.resolvedValue.effects[0].color).toBe("#00000026");
 			expect(effectStyle.resolvedValue.effects[0].radius).toBe(8);
 		});
 	});
