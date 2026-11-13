@@ -9,6 +9,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { figmaRGBAToHex } from "./diff/property-compare.js";
 import type { FigmaAPI } from "./figma-api.js";
 import { extractFileKey, formatComponentData } from "./figma-api.js";
 import { resolveFormattedVariables } from "./variable-resolver.js";
@@ -145,14 +146,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 /**
- * Convert Figma RGBA (0-1 range) to hex string
+ * Convert Figma RGBA (0-1 range) to hex string, keeping alpha below 1
  */
 function rgbaToHex(color: { r: number; g: number; b: number; a?: number }): string {
-	const r = Math.round(color.r * 255);
-	const g = Math.round(color.g * 255);
-	const b = Math.round(color.b * 255);
-	const hex = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-	return hex.toUpperCase();
+	return figmaRGBAToHex(color).toUpperCase();
 }
 
 /**
