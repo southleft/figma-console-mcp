@@ -12,6 +12,7 @@
   "networkAccess": {
     "allowedDomains": [
       "http://localhost",
+      "http://localhost:8124",
       "http://localhost:9223",
       "http://localhost:9224",
       "http://localhost:9225",
@@ -39,6 +40,7 @@
     "reasoning": "Connects to local MCP server via WebSocket (port range 9223-9232 for multi-instance), and optionally to the cloud relay for remote write access.",
     "devAllowedDomains": [
       "http://localhost",
+      "http://localhost:8124",
       "http://localhost:9223",
       "http://localhost:9224",
       "http://localhost:9225",

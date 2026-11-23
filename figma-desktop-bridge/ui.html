@@ -2766,5 +2766,35 @@
       }
     };
   </script>
+
+  <!-- Local PNG export hook: sandbox posts HJ_UPLOAD_PNG, UI forwards it to a local receiver. -->
+  <script>
+    (function () {
+      const DEFAULT_ENDPOINT = 'http://localhost:8124/upload';
+      let chain = Promise.resolve();
+
+      window.addEventListener('message', function (event) {
+        const msg = event.data && event.data.pluginMessage;
+        if (!msg || msg.type !== 'HJ_UPLOAD_PNG') return;
+
+        chain = chain.then(async function () {
+          try {
+            const res = await fetch(msg.endpoint || DEFAULT_ENDPOINT, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                folder: msg.section,
+                name: msg.name,
+                data: msg.data
+              })
+            });
+            console.log('[PNG export] ' + msg.name + ' -> HTTP ' + res.status);
+          } catch (e) {
+            console.error('[PNG export] failed ' + msg.name + ': ' + e);
+          }
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
