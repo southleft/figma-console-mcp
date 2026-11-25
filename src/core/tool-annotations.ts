@@ -17,7 +17,6 @@
  * are destructive; "set X to Y" updates are idempotent, non-destructive writes;
  * creates are non-idempotent, non-destructive writes.
  */
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 export type ToolKind =
 	/** Reads only — no change to Figma, the filesystem or server state. */
@@ -258,7 +257,7 @@ export function hintsFor(name: string): ToolHints | undefined {
  *
  * Returns the names of registered tools with no entry in TOOL_KINDS.
  */
-export function applyToolAnnotations(server: McpServer): string[] {
+export function applyToolAnnotations(server: object): string[] {
 	const registered = (
 		server as unknown as {
 			_registeredTools: Record<

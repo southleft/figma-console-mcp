@@ -4,9 +4,8 @@
  */
 
 import { z } from "zod";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer, InMemoryTransport } from "@modelcontextprotocol/server";
+import { Client } from "@modelcontextprotocol/client";
 import { stripStringPropertyNames, wrapServerForIdentity } from "../src/core/identity";
 
 describe("stripStringPropertyNames", () => {
@@ -31,10 +30,12 @@ describe("tools/list through wrapServerForIdentity", () => {
 	it("serves record schemas without propertyNames", async () => {
 		const server = new McpServer({ name: "t", version: "0" });
 		wrapServerForIdentity(server);
-		server.tool(
+		server.registerTool(
 			"record_tool",
-			"test",
-			{ overrides: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional() },
+			{
+				description: "test",
+				inputSchema: z.object({ overrides: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional() }),
+			},
 			async () => ({ content: [{ type: "text", text: "ok" }] }),
 		);
 

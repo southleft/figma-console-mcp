@@ -15,11 +15,16 @@
  * pages). FIGMA_MCP_HTTP_TOKEN additionally requires a bearer token.
  */
 
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+	createServer,
+	type IncomingMessage,
+	type Server,
+	type ServerResponse,
+} from "node:http";
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { isInitializeRequest } from "@modelcontextprotocol/server";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { createChildLogger } from "./logger.js";
 
 const logger = createChildLogger({ component: "http-transport" });
@@ -50,7 +55,7 @@ export interface LocalHttpHandle {
 }
 
 interface Session {
-	transport: StreamableHTTPServerTransport;
+	transport: NodeStreamableHTTPServerTransport;
 	server: McpServer;
 	lastUsed: number;
 }
@@ -60,7 +65,9 @@ export function parseHttpPort(raw: string | undefined): number | null {
 	if (raw === undefined || raw.trim() === "") return null;
 	const port = Number(raw);
 	if (!Number.isInteger(port) || port < 1 || port > 65535) {
-		throw new Error(`FIGMA_MCP_HTTP_PORT must be a port number (1-65535), got "${raw}"`);
+		throw new Error(
+			`FIGMA_MCP_HTTP_PORT must be a port number (1-65535), got "${raw}"`,
+		);
 	}
 	return port;
 }
@@ -79,8 +86,15 @@ export function rejectReason(
 	token: string | undefined,
 ): { status: number; message: string } | null {
 	const host = headers.host;
-	if (!host || !LOOPBACK_HOSTNAMES.has(hostnameOf(host)) || !host.endsWith(`:${port}`)) {
-		return { status: 403, message: `Host "${host ?? ""}" is not allowed; connect to http://127.0.0.1:${port}${MCP_HTTP_PATH}` };
+	if (
+		!host ||
+		!LOOPBACK_HOSTNAMES.has(hostnameOf(host)) ||
+		!host.endsWith(`:${port}`)
+	) {
+		return {
+			status: 403,
+			message: `Host "${host ?? ""}" is not allowed; connect to http://127.0.0.1:${port}${MCP_HTTP_PATH}`,
+		};
 	}
 	// Non-browser clients send no Origin. Browsers always do on these requests;
 	// allow loopback pages (e.g. MCP Inspector) and refuse everything else,
@@ -102,16 +116,26 @@ export function rejectReason(
 		const given = Buffer.from(auth.startsWith("Bearer ") ? auth.slice(7) : "");
 		const expected = Buffer.from(token);
 		if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
-			return { status: 401, message: "Missing or wrong bearer token (FIGMA_MCP_HTTP_TOKEN)" };
+			return {
+				status: 401,
+				message: "Missing or wrong bearer token (FIGMA_MCP_HTTP_TOKEN)",
+			};
 		}
 	}
 	return null;
 }
 
-function sendError(res: ServerResponse, status: number, message: string, code = -32000): void {
+function sendError(
+	res: ServerResponse,
+	status: number,
+	message: string,
+	code = -32000,
+): void {
 	if (res.headersSent) return;
 	res.writeHead(status, { "Content-Type": "application/json" });
-	res.end(JSON.stringify({ jsonrpc: "2.0", error: { code, message }, id: null }));
+	res.end(
+		JSON.stringify({ jsonrpc: "2.0", error: { code, message }, id: null }),
+	);
 }
 
 function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -121,7 +145,9 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 		req.on("data", (chunk: Buffer) => {
 			size += chunk.length;
 			if (size > MAX_BODY_BYTES) {
-				reject(Object.assign(new Error("Request body too large"), { status: 413 }));
+				reject(
+					Object.assign(new Error("Request body too large"), { status: 413 }),
+				);
 				req.destroy();
 				return;
 			}
@@ -131,14 +157,21 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
 			try {
 				resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")));
 			} catch {
-				reject(Object.assign(new Error("Request body is not valid JSON"), { status: 400, code: -32700 }));
+				reject(
+					Object.assign(new Error("Request body is not valid JSON"), {
+						status: 400,
+						code: -32700,
+					}),
+				);
 			}
 		});
 		req.on("error", reject);
 	});
 }
 
-export async function startLocalHttpTransport(options: LocalHttpOptions): Promise<LocalHttpHandle> {
+export async function startLocalHttpTransport(
+	options: LocalHttpOptions,
+): Promise<LocalHttpHandle> {
 	const host = options.host ?? "127.0.0.1";
 	const sessions = new Map<string, Session>();
 
@@ -146,7 +179,10 @@ export async function startLocalHttpTransport(options: LocalHttpOptions): Promis
 		const session = sessions.get(id);
 		if (!session) return;
 		sessions.delete(id);
-		logger.info({ sessionId: id, reason, open: sessions.size }, "HTTP MCP session closed");
+		logger.info(
+			{ sessionId: id, reason, open: sessions.size },
+			"HTTP MCP session closed",
+		);
 		try {
 			await session.server.close();
 		} catch {
@@ -162,7 +198,14 @@ export async function startLocalHttpTransport(options: LocalHttpOptions): Promis
 		}
 		const rejected = rejectReason(req.headers, actualPort, options.token);
 		if (rejected) {
-			logger.warn({ status: rejected.status, host: req.headers.host, origin: req.headers.origin }, "HTTP MCP request refused");
+			logger.warn(
+				{
+					status: rejected.status,
+					host: req.headers.host,
+					origin: req.headers.origin,
+				},
+				"HTTP MCP request refused",
+			);
 			sendError(res, rejected.status, rejected.message);
 			return;
 		}
@@ -193,25 +236,36 @@ export async function startLocalHttpTransport(options: LocalHttpOptions): Promis
 		}
 		const messages = Array.isArray(body) ? body : [body];
 		if (!messages.some((m) => isInitializeRequest(m))) {
-			sendError(res, 400, "Missing mcp-session-id header; send initialize first");
+			sendError(
+				res,
+				400,
+				"Missing mcp-session-id header; send initialize first",
+			);
 			return;
 		}
 
 		if (sessions.size >= MAX_SESSIONS) {
-			const oldest = [...sessions.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0];
+			const oldest = [...sessions.entries()].sort(
+				(a, b) => a[1].lastUsed - b[1].lastUsed,
+			)[0];
 			if (oldest) await closeSession(oldest[0], "session limit");
 		}
 
 		const server = options.createServer();
-		const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
-			sessionIdGenerator: () => randomUUID(),
-			onsessioninitialized: (id) => {
-				sessions.set(id, { transport, server, lastUsed: Date.now() });
-				logger.info({ sessionId: id, open: sessions.size }, "HTTP MCP session opened");
-			},
-		});
+		const transport: NodeStreamableHTTPServerTransport =
+			new NodeStreamableHTTPServerTransport({
+				sessionIdGenerator: () => randomUUID(),
+				onsessioninitialized: (id) => {
+					sessions.set(id, { transport, server, lastUsed: Date.now() });
+					logger.info(
+						{ sessionId: id, open: sessions.size },
+						"HTTP MCP session opened",
+					);
+				},
+			});
 		transport.onclose = () => {
-			if (transport.sessionId) void closeSession(transport.sessionId, "closed by client");
+			if (transport.sessionId)
+				void closeSession(transport.sessionId, "closed by client");
 		};
 		await server.connect(transport);
 		await transport.handleRequest(req, res, body);
@@ -243,13 +297,17 @@ export async function startLocalHttpTransport(options: LocalHttpOptions): Promis
 
 	const sweep = setInterval(() => {
 		const cutoff = Date.now() - SESSION_IDLE_MS;
-		for (const [id, s] of sessions) if (s.lastUsed < cutoff) void closeSession(id, "idle");
+		for (const [id, s] of sessions)
+			if (s.lastUsed < cutoff) void closeSession(id, "idle");
 	}, 60_000);
 	sweep.unref();
 
 	const urlHost = host.includes(":") ? `[${host}]` : host;
 	const url = `http://${urlHost}:${actualPort}${MCP_HTTP_PATH}`;
-	logger.info({ url, auth: options.token ? "bearer" : "none" }, "HTTP MCP endpoint listening");
+	logger.info(
+		{ url, auth: options.token ? "bearer" : "none" },
+		"HTTP MCP endpoint listening",
+	);
 
 	return {
 		url,
@@ -257,7 +315,9 @@ export async function startLocalHttpTransport(options: LocalHttpOptions): Promis
 		sessionCount: () => sessions.size,
 		close: async () => {
 			clearInterval(sweep);
-			await Promise.all([...sessions.keys()].map((id) => closeSession(id, "shutdown")));
+			await Promise.all(
+				[...sessions.keys()].map((id) => closeSession(id, "shutdown")),
+			);
 			await new Promise<void>((resolve) => {
 				httpServer.close(() => resolve());
 				httpServer.closeAllConnections?.();

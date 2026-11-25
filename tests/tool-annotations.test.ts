@@ -5,7 +5,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
 	TOOL_KINDS,
@@ -62,15 +62,13 @@ describe("tool annotations", () => {
 
 	it("applies hints to a server and keeps per-tool overrides", () => {
 		const server = new McpServer({ name: "t", version: "0" });
-		server.tool("figma_get_status", "s", {}, async () => ({ content: [] }));
-		server.tool(
+		server.registerTool("figma_get_status", { description: "s" }, async () => ({ content: [] }));
+		server.registerTool(
 			"figma_delete_node",
-			"d",
-			{ nodeId: z.string() },
-			{ title: "Delete node" },
+			{ description: "d", inputSchema: z.object({ nodeId: z.string() }), annotations: { title: "Delete node" } },
 			async () => ({ content: [] }),
 		);
-		server.tool("not_classified", "x", {}, async () => ({ content: [] }));
+		server.registerTool("not_classified", { description: "x" }, async () => ({ content: [] }));
 
 		const missing = applyToolAnnotations(server);
 		expect(missing).toEqual(["not_classified"]);

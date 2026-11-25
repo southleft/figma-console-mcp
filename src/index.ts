@@ -10,6 +10,9 @@
  */
 
 import { McpAgent } from "agents/mcp";
+// Shared tool modules are typed against the v2 McpServer; McpAgent still hands us a v1 one.
+// The registerTool(name, { inputSchema: z.object(...) }, cb) calls they make work on both at runtime.
+import type { McpServer as ToolServer } from "@modelcontextprotocol/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
@@ -111,6 +114,9 @@ async function serveSSEWithToken(request: Request, env: Env, ctx: ExecutionConte
 const cloudBuild = { version: "1.46.0" };
 
 export class FigmaConsoleMCPv3 extends McpAgent {
+	private get toolServer(): ToolServer {
+		return this.server as unknown as ToolServer;
+	}
 	// agents 0.7 types `server` against its own nested SDK 1.26 copy; ours is
 	// 1.32 (security fixes). Only connect() and the transport interface cross
 	// that boundary, and both are unchanged between the two. Moving to agents
@@ -123,7 +129,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		});
 		// Identity wrap — every tool's response and thrown error gets stamped
 		// with our MCP name so cross-MCP attribution is unambiguous.
-		wrapServerForIdentity(s);
+		wrapServerForIdentity(s as unknown as ToolServer);
 		return s;
 	})();
 
@@ -889,34 +895,34 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		};
 
 		// Register all write/manipulation tools via shared function
-		registerWriteTools(this.server, getCloudDesktopConnector);
+		registerWriteTools(this.toolServer, getCloudDesktopConnector);
 
 		// Register token sync tools — figma_export_tokens and figma_import_tokens.
-		registerTokensTools(this.server, getCloudDesktopConnector, { isRemoteMode: true });
+		registerTokensTools(this.toolServer, getCloudDesktopConnector, { isRemoteMode: true });
 
 		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)
-		registerFigJamTools(this.server, getCloudDesktopConnector);
+		registerFigJamTools(this.toolServer, getCloudDesktopConnector);
 
 		// Register Annotation tools (read/write design annotations via Desktop Bridge)
-		registerAnnotationTools(this.server, getCloudDesktopConnector);
+		registerAnnotationTools(this.toolServer, getCloudDesktopConnector);
 
 		// Register Deep Component tools (Plugin API tree extraction for code generation)
-		registerDeepComponentTools(this.server, getCloudDesktopConnector);
+		registerDeepComponentTools(this.toolServer, getCloudDesktopConnector);
 
 		// Register Figma Slides tools (slide management, transitions, content)
-		registerSlidesTools(this.server, getCloudDesktopConnector);
+		registerSlidesTools(this.toolServer, getCloudDesktopConnector);
 
-		registerSlotTools(this.server, getCloudDesktopConnector);
+		registerSlotTools(this.toolServer, getCloudDesktopConnector);
 
-		registerMotionTools(this.server, getCloudDesktopConnector);
-		registerCodeLayerTools(this.server, getCloudDesktopConnector);
-		registerShaderTools(this.server, getCloudDesktopConnector);
-		registerLayoutTools(this.server, getCloudDesktopConnector);
+		registerMotionTools(this.toolServer, getCloudDesktopConnector);
+		registerCodeLayerTools(this.toolServer, getCloudDesktopConnector);
+		registerShaderTools(this.toolServer, getCloudDesktopConnector);
+		registerLayoutTools(this.toolServer, getCloudDesktopConnector);
 
 		// Register Figma API tools (Tools 8-14)
 		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
 		registerFigmaAPITools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
@@ -926,7 +932,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Register Design-Code Parity & Documentation tools
 		registerDesignCodeTools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
@@ -936,7 +942,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Register Comment tools
 		registerCommentTools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			{ isRemoteMode: true },
@@ -944,7 +950,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Register Version History tools
 		registerVersionTools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			{ isRemoteMode: true },
@@ -952,7 +958,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Register Design System Kit tool
 		registerDesignSystemTools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
@@ -961,11 +967,11 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		);
 
 		// Register Library Tools (key-based component inspection across shared libraries)
-		registerLibraryTools(this.server, async () => await this.getFigmaAPI());
+		registerLibraryTools(this.toolServer, async () => await this.getFigmaAPI());
 
 		// Register Library Variable Tools (Plugin-API based — list + import variables
 		// from subscribed team libraries; routes through the cloud Desktop Bridge)
-		registerLibraryVariableTools(this.server, getCloudDesktopConnector);
+		registerLibraryVariableTools(this.toolServer, getCloudDesktopConnector);
 
 		// figma_scan_code_accessibility (axe-core + JSDOM) is Local Mode only.
 		// JSDOM cannot run in Workers: called here it failed on every input
@@ -975,7 +981,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Register figma_diagnose for cloud mode. Plugin state isn't directly
 		// observable from here (the paired plugin's WS lives in the relay DO),
 		// so we report mode and let the cross-MCP disclaimer do most of the work.
-		registerDiagnoseTool(this.server, {
+		registerDiagnoseTool(this.toolServer, {
 			mode: "cloud",
 			getServerVersion: () => cloudBuild.version,
 			getPluginState: () => null,
@@ -989,7 +995,6 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// They require Node.js file system APIs that don't work in Cloudflare Workers
 
 		// Behavior hints (read-only / destructive / idempotent) for every tool.
-		// @ts-expect-error -- same McpServer class from two SDK copies (see `server` above)
 		applyToolAnnotations(this.server);
 	}
 }
@@ -1267,7 +1272,7 @@ export default {
 				name: "Figma Console MCP",
 				version: "1.46.0",
 			});
-			wrapServerForIdentity(statelessServer);
+			wrapServerForIdentity(statelessServer as unknown as ToolServer);
 
 			// ================================================================
 			// Cloud Write Relay — Pairing Tool (stateless /mcp path)
@@ -1363,31 +1368,31 @@ export default {
 			}
 
 			// Register all write/manipulation tools via shared function
-			registerWriteTools(statelessServer, getCloudDesktopConnector);
-			registerTokensTools(statelessServer, getCloudDesktopConnector, { isRemoteMode: true });
+			registerWriteTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerTokensTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector, { isRemoteMode: true });
 
 			// Register FigJam-specific tools
-			registerFigJamTools(statelessServer, getCloudDesktopConnector);
+			registerFigJamTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			// Register Annotation tools
-			registerAnnotationTools(statelessServer, getCloudDesktopConnector);
+			registerAnnotationTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			// Register Deep Component tools
-			registerDeepComponentTools(statelessServer, getCloudDesktopConnector);
+			registerDeepComponentTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			// Register Figma Slides tools
-			registerSlidesTools(statelessServer, getCloudDesktopConnector);
+			registerSlidesTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
-			registerSlotTools(statelessServer, getCloudDesktopConnector);
+			registerSlotTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
-			registerMotionTools(statelessServer, getCloudDesktopConnector);
-			registerCodeLayerTools(statelessServer, getCloudDesktopConnector);
-			registerShaderTools(statelessServer, getCloudDesktopConnector);
-			registerLayoutTools(statelessServer, getCloudDesktopConnector);
+			registerMotionTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerCodeLayerTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerShaderTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerLayoutTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			// Register REST API tools with the authenticated Figma API
 			registerFigmaAPITools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 				new Map(),  // Fresh variables cache per request
@@ -1396,7 +1401,7 @@ export default {
 			);
 
 			registerDesignCodeTools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 				new Map(), // Fresh variables cache per request
@@ -1405,19 +1410,19 @@ export default {
 			);
 
 			registerCommentTools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 			);
 
 			registerVersionTools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 			);
 
 			registerDesignSystemTools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 				new Map(), // Fresh variables cache per request
@@ -1425,13 +1430,13 @@ export default {
 				getCloudDesktopConnector, // bridge-first variable resolution (works on any plan)
 			);
 
-			registerLibraryTools(statelessServer, async () => statelessApi);
+			registerLibraryTools(statelessServer as unknown as ToolServer, async () => statelessApi);
 
-			registerLibraryVariableTools(statelessServer, getCloudDesktopConnector);
+			registerLibraryVariableTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			// Parity with /sse. (figma_scan_code_accessibility stays Local-only:
 			// JSDOM does not run in Workers — see the note in FigmaConsoleMCPv3.)
-			registerDiagnoseTool(statelessServer, {
+			registerDiagnoseTool(statelessServer as unknown as ToolServer, {
 				mode: "cloud",
 				getServerVersion: () => cloudBuild.version,
 				getPluginState: () => relaySnapshot,

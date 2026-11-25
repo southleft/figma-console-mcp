@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
 
@@ -108,16 +108,32 @@ const easingSchema = z
 		type: z
 			.enum(EASING_TYPES)
 			.optional()
-			.describe("Easing curve. CUSTOM_CUBIC_BEZIER needs `bezier`; CUSTOM_SPRING needs `bounce`."),
+			.describe(
+				"Easing curve. CUSTOM_CUBIC_BEZIER needs `bezier`; CUSTOM_SPRING needs `bounce`.",
+			),
 		bezier: z
-			.object({ x1: z.number(), y1: z.number(), x2: z.number(), y2: z.number() })
+			.object({
+				x1: z.number(),
+				y1: z.number(),
+				x2: z.number(),
+				y2: z.number(),
+			})
 			.optional()
-			.describe("Control points for CUSTOM_CUBIC_BEZIER, as in CSS cubic-bezier(x1, y1, x2, y2)"),
-		bounce: z.number().min(0).max(1).optional().describe("Spring bounce (0–1) for CUSTOM_SPRING"),
+			.describe(
+				"Control points for CUSTOM_CUBIC_BEZIER, as in CSS cubic-bezier(x1, y1, x2, y2)",
+			),
+		bounce: z
+			.number()
+			.min(0)
+			.max(1)
+			.optional()
+			.describe("Spring bounce (0–1) for CUSTOM_SPRING"),
 		variableId: z
 			.string()
 			.optional()
-			.describe("Bind an EASING variable instead of a literal curve (the other fields are then ignored)"),
+			.describe(
+				"Bind an EASING variable instead of a literal curve (the other fields are then ignored)",
+			),
 	})
 	.describe("Easing: a literal curve, or an EASING variable to bind");
 
@@ -125,28 +141,47 @@ const keyframeValueSchema = z
 	.union([
 		z.number(),
 		z.object({ x: z.number(), y: z.number() }),
-		z.object({ r: z.number(), g: z.number(), b: z.number(), a: z.number().optional() }),
+		z.object({
+			r: z.number(),
+			g: z.number(),
+			b: z.number(),
+			a: z.number().optional(),
+		}),
 	])
-	.describe("A number (most properties), {x,y} for TRANSLATION_XY / SCALE_XY, or {r,g,b,a} (0–1) for colors");
+	.describe(
+		"A number (most properties), {x,y} for TRANSLATION_XY / SCALE_XY, or {r,g,b,a} (0–1) for colors",
+	);
 
 const trackTargetShape = {
 	property: z
 		.enum(KEYFRAME_PROPERTIES)
 		.optional()
-		.describe("Node property to animate. TRANSLATION_* and ROTATION are additive offsets; SCALE_* are multipliers"),
+		.describe(
+			"Node property to animate. TRANSLATION_* and ROTATION are additive offsets; SCALE_* are multipliers",
+		),
 	paint: z
-		.object({ collection: z.enum(["fills", "strokes"]), index: z.number().int().min(0) })
+		.object({
+			collection: z.enum(["fills", "strokes"]),
+			index: z.number().int().min(0),
+		})
 		.optional()
-		.describe("Animate the color of fills[index] or strokes[index] (values are {r,g,b,a})"),
+		.describe(
+			"Animate the color of fills[index] or strokes[index] (values are {r,g,b,a})",
+		),
 	effect: z
-		.object({ index: z.number().int().min(0), field: z.enum(EFFECT_KEYFRAME_FIELDS) })
+		.object({
+			index: z.number().int().min(0),
+			field: z.enum(EFFECT_KEYFRAME_FIELDS),
+		})
 		.optional()
 		.describe("Animate a field of effects[index]"),
 };
 
 const keyframeTrackSchema = z.object({
 	...trackTargetShape,
-	baseValue: keyframeValueSchema.optional().describe("Value outside the keyframed range (optional)"),
+	baseValue: keyframeValueSchema
+		.optional()
+		.describe("Value outside the keyframed range (optional)"),
 	keyframes: z
 		.array(
 			z.object({
@@ -478,10 +513,18 @@ catch (e) { throw new Error('Video export failed: ' + (e && e.message ? e.messag
 return { nodeId: node.id, name: node.name, format: P.format, bytes: bytes.length, base64: figma.base64Encode(bytes) };
 `;
 
-const MIME: Record<string, string> = { MP4: "video/mp4", GIF: "image/gif", WEBM: "video/webm" };
+const MIME: Record<string, string> = {
+	MP4: "video/mp4",
+	GIF: "image/gif",
+	WEBM: "video/webm",
+};
 
 /** Validate fps/scale for a video format; returns an error message or null. */
-export function validateVideoSettings(args: { format: string; fps?: number; scale?: number }): string | null {
+export function validateVideoSettings(args: {
+	format: string;
+	fps?: number;
+	scale?: number;
+}): string | null {
 	const allowed = args.format === "GIF" ? GIF_FPS : MP4_WEBM_FPS;
 	if (args.fps !== undefined && !allowed.includes(args.fps)) {
 		return `fps ${args.fps} is not supported for ${args.format}. Use one of: ${allowed.join(", ")}`;
@@ -499,15 +542,28 @@ function ok(data: unknown) {
 function fail(tool: string, error: unknown) {
 	logger.error({ error }, `${tool} failed`);
 	return {
-		content: [{ type: "text" as const, text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }],
+		content: [
+			{
+				type: "text" as const,
+				text: JSON.stringify({
+					error: error instanceof Error ? error.message : String(error),
+				}),
+			},
+		],
 		isError: true,
 	};
 }
 
-async function run(getDesktopConnector: () => Promise<any>, script: string, timeout: number, fileKey?: string) {
+async function run(
+	getDesktopConnector: () => Promise<any>,
+	script: string,
+	timeout: number,
+	fileKey?: string,
+) {
 	const connector = await getDesktopConnector();
 	const result = await connector.executeCodeViaUI(script, timeout, fileKey);
-	if (!result?.success) throw new Error(result?.error || "Motion script failed");
+	if (!result?.success)
+		throw new Error(result?.error || "Motion script failed");
 	return result.result;
 }
 
@@ -521,71 +577,159 @@ export function registerMotionTools(
 	getDesktopConnector: () => Promise<any>,
 	options: MotionToolsOptions = {},
 ): void {
-	server.tool(
+	server.registerTool(
 		"figma_get_animations",
-		"Read a node's Motion animations: applied animation styles (Figma presets and custom styles, with their entries), manual keyframe tracks, timelines and the playhead. Easing comes back with a CSS equivalent (cubic-bezier) where one exists, and token bindings come back as EASING/TIMING variable references. Set includeDescendants to also list animated layers inside it. Requires Desktop Bridge and Figma Desktop with the Motion API (beta).",
 		{
-			nodeId: z.string().optional().describe("Node to read. Defaults to the current selection"),
-			includeDescendants: z.boolean().optional().default(false).describe("Also return animated layers inside the node"),
-			limit: z.number().int().min(1).max(500).optional().default(100).describe("Max descendants to return"),
-			fileKey: fileKeySchema,
+			description:
+				"Read a node's Motion animations: applied animation styles (Figma presets and custom styles, with their entries), manual keyframe tracks, timelines and the playhead. Easing comes back with a CSS equivalent (cubic-bezier) where one exists, and token bindings come back as EASING/TIMING variable references. Set includeDescendants to also list animated layers inside it. Requires Desktop Bridge and Figma Desktop with the Motion API (beta).",
+			inputSchema: z.object({
+				nodeId: z
+					.string()
+					.optional()
+					.describe("Node to read. Defaults to the current selection"),
+				includeDescendants: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe("Also return animated layers inside the node"),
+				limit: z
+					.number()
+					.int()
+					.min(1)
+					.max(500)
+					.optional()
+					.default(100)
+					.describe("Max descendants to return"),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async ({ nodeId, includeDescendants, limit, fileKey }) => {
 			try {
-				return ok(await run(getDesktopConnector, motionScript({ nodeId, includeDescendants, limit }, GET_ANIMATIONS_BODY), 30000, fileKey));
+				return ok(
+					await run(
+						getDesktopConnector,
+						motionScript(
+							{ nodeId, includeDescendants, limit },
+							GET_ANIMATIONS_BODY,
+						),
+						30000,
+						fileKey,
+					),
+				);
 			} catch (error) {
 				return fail("figma_get_animations", error);
 			}
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_apply_animation",
-		`Animate a node with Figma Motion. Pass exactly one of:
+		{
+			description: `Animate a node with Figma Motion. Pass exactly one of:
 - preset: a Figma animation style (Position, Scale, Rotation, Size, Opacity, Path, TextStagger), with optional duration, timelineOffset, easing and preset props. List presets and their props with figma_manage_animation_styles action 'list_presets'.
 - customStyleId: a local custom animation style (see figma_manage_animation_styles).
 - keyframeTracks: manual keyframes per property, paint color or effect field. Each track replaces any existing track for that target.
 Easing can be a literal curve or an EASING variable (easing.variableId); a preset's duration can be bound to a TIMING variable (durationVariableId). Main components can't be animated through the Plugin API: use an instance or frame. Motion plays in Figma's preview and video export, not in static screenshots.`,
-		{
-			nodeId: z.string().describe("Node to animate (an instance or frame, not a main component)"),
-			preset: z.string().optional().describe("Figma animation style id, e.g. 'Opacity', 'Scale', 'Position'"),
-			customStyleId: z.string().optional().describe("Local custom animation style id"),
-			keyframeTracks: z.array(keyframeTrackSchema).optional().describe("Manual keyframe tracks"),
-			duration: z.number().min(0).optional().describe("Preset duration in seconds"),
-			durationVariableId: z.string().optional().describe("Bind the preset's duration to a TIMING variable"),
-			timelineOffset: z.number().min(0).optional().describe("Start offset on the timeline in seconds"),
-			easing: easingSchema.optional(),
-			props: propsSchema,
-			fileKey: fileKeySchema,
+			inputSchema: z.object({
+				nodeId: z
+					.string()
+					.describe(
+						"Node to animate (an instance or frame, not a main component)",
+					),
+				preset: z
+					.string()
+					.optional()
+					.describe(
+						"Figma animation style id, e.g. 'Opacity', 'Scale', 'Position'",
+					),
+				customStyleId: z
+					.string()
+					.optional()
+					.describe("Local custom animation style id"),
+				keyframeTracks: z
+					.array(keyframeTrackSchema)
+					.optional()
+					.describe("Manual keyframe tracks"),
+				duration: z
+					.number()
+					.min(0)
+					.optional()
+					.describe("Preset duration in seconds"),
+				durationVariableId: z
+					.string()
+					.optional()
+					.describe("Bind the preset's duration to a TIMING variable"),
+				timelineOffset: z
+					.number()
+					.min(0)
+					.optional()
+					.describe("Start offset on the timeline in seconds"),
+				easing: easingSchema.optional(),
+				props: propsSchema,
+				fileKey: fileKeySchema,
+			}),
 		},
 		async (args) => {
 			try {
-				const modes = [args.preset, args.customStyleId, args.keyframeTracks?.length ? "k" : undefined].filter(Boolean);
-				if (modes.length !== 1) throw new Error("Pass exactly one of preset, customStyleId or keyframeTracks");
+				const modes = [
+					args.preset,
+					args.customStyleId,
+					args.keyframeTracks?.length ? "k" : undefined,
+				].filter(Boolean);
+				if (modes.length !== 1)
+					throw new Error(
+						"Pass exactly one of preset, customStyleId or keyframeTracks",
+					);
 				const { fileKey, ...payload } = args;
-				return ok(await run(getDesktopConnector, motionScript(payload, APPLY_ANIMATION_BODY), 30000, fileKey));
+				return ok(
+					await run(
+						getDesktopConnector,
+						motionScript(payload, APPLY_ANIMATION_BODY),
+						30000,
+						fileKey,
+					),
+				);
 			} catch (error) {
 				return fail("figma_apply_animation", error);
 			}
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_remove_animation",
-		"Remove animations from a node: one applied animation style (appliedId, from figma_get_animations), one manual keyframe track, or everything (all: true). Returns what's left.",
 		{
-			nodeId: z.string().describe("Animated node"),
-			appliedId: z.string().optional().describe("Applied animation style id (figma_get_animations → animationStyles[].appliedId)"),
-			keyframeTrack: keyframeTargetSchema.optional(),
-			all: z.boolean().optional().default(false).describe("Remove every animation style and keyframe track"),
-			fileKey: fileKeySchema,
+			description:
+				"Remove animations from a node: one applied animation style (appliedId, from figma_get_animations), one manual keyframe track, or everything (all: true). Returns what's left.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("Animated node"),
+				appliedId: z
+					.string()
+					.optional()
+					.describe(
+						"Applied animation style id (figma_get_animations → animationStyles[].appliedId)",
+					),
+				keyframeTrack: keyframeTargetSchema.optional(),
+				all: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe("Remove every animation style and keyframe track"),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async ({ fileKey, ...payload }) => {
 			try {
 				if (!payload.all && !payload.appliedId && !payload.keyframeTrack) {
 					throw new Error("Pass appliedId, keyframeTrack, or all: true");
 				}
-				return ok(await run(getDesktopConnector, motionScript(payload, REMOVE_ANIMATION_BODY), 30000, fileKey));
+				return ok(
+					await run(
+						getDesktopConnector,
+						motionScript(payload, REMOVE_ANIMATION_BODY),
+						30000,
+						fileKey,
+					),
+				);
 			} catch (error) {
 				return fail("figma_remove_animation", error);
 			}
@@ -595,15 +739,19 @@ Easing can be a literal curve or an EASING variable (easing.variableId); a prese
 	const entrySchema = z.object({
 		preset: z.string().describe("Figma animation style id, e.g. 'Opacity'"),
 		duration: z.number().min(0).optional(),
-		durationVariableId: z.string().optional().describe("Bind duration to a TIMING variable"),
+		durationVariableId: z
+			.string()
+			.optional()
+			.describe("Bind duration to a TIMING variable"),
 		timelineOffset: z.number().min(0).optional(),
 		easing: easingSchema.optional(),
 		props: propsSchema,
 	});
 
-	server.tool(
+	server.registerTool(
 		"figma_manage_animation_styles",
-		`Manage reusable Motion animation styles, the motion layer of a design system.
+		{
+			description: `Manage reusable Motion animation styles, the motion layer of a design system.
 - list_presets: Figma's built-in animation styles with each one's props and defaults.
 - list: local custom animation styles and their entries.
 - create: a custom style (name, description) from entries, each a preset with duration, offset, easing and props. Durations and easings can bind to TIMING/EASING variables.
@@ -611,65 +759,148 @@ Easing can be a literal curve or an EASING variable (easing.variableId); a prese
 - remove_entry: drop one entry (entryId from list).
 - delete: remove the style.
 Apply a custom style with figma_apply_animation customStyleId.`,
-		{
-			action: z.enum(["list_presets", "list", "create", "update", "remove_entry", "delete"]),
-			styleId: z.string().optional().describe("Custom animation style id (update, remove_entry, delete)"),
-			name: z.string().optional().describe("Style name; use '/' for folders, e.g. 'Motion/Enter'"),
-			description: z.string().optional(),
-			entries: z.array(entrySchema).optional().describe("Entries to add (create, update)"),
-			entryId: z.string().optional().describe("Entry id to remove (remove_entry)"),
-			fileKey: fileKeySchema,
+			inputSchema: z.object({
+				action: z.enum([
+					"list_presets",
+					"list",
+					"create",
+					"update",
+					"remove_entry",
+					"delete",
+				]),
+				styleId: z
+					.string()
+					.optional()
+					.describe("Custom animation style id (update, remove_entry, delete)"),
+				name: z
+					.string()
+					.optional()
+					.describe("Style name; use '/' for folders, e.g. 'Motion/Enter'"),
+				description: z.string().optional(),
+				entries: z
+					.array(entrySchema)
+					.optional()
+					.describe("Entries to add (create, update)"),
+				entryId: z
+					.string()
+					.optional()
+					.describe("Entry id to remove (remove_entry)"),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async ({ fileKey, ...payload }) => {
 			try {
-				return ok(await run(getDesktopConnector, motionScript(payload, MANAGE_STYLES_BODY), 30000, fileKey));
+				return ok(
+					await run(
+						getDesktopConnector,
+						motionScript(payload, MANAGE_STYLES_BODY),
+						30000,
+						fileKey,
+					),
+				);
 			} catch (error) {
 				return fail("figma_manage_animation_styles", error);
 			}
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_export_animation",
-		`Export an animated frame as MP4, GIF or WebM. The node should be the frame that holds the Motion timeline (its top-level frame).${
-			options.allowFileWrite
-				? " The file is written to outputPath (default: the OS temp folder) and the path is returned. An existing file is never replaced unless overwrite is true."
-				: ` Cloud Mode returns the video as base64 (up to ${MAX_INLINE_EXPORT_BYTES / 1024 / 1024} MB); use a lower fps, quality or scale for long animations.`
-		}`,
 		{
-			nodeId: z.string().optional().describe("Frame to export. Defaults to the current selection"),
-			format: z.enum(["MP4", "GIF", "WEBM"]),
-			fps: z.number().int().optional().describe("MP4/WebM: 12, 24, 30 or 60. GIF: 8, 12, 15, 24 or 30"),
-			quality: z.enum(["LOW", "MEDIUM", "HIGH"]).optional().describe("MP4/WebM quality"),
-			loopCount: z.number().int().min(0).optional().describe("GIF loops (0 = forever)"),
-			scale: z.number().optional().describe("0.5, 0.75, 1, 1.5, 2, 3 or 4. Use scale, width or height, not several"),
-			width: z.number().positive().optional().describe("Output width in px"),
-			height: z.number().positive().optional().describe("Output height in px"),
-			...(options.allowFileWrite
-				? {
-						outputPath: z.string().optional().describe("Where to write the file. Default: OS temp folder"),
-						overwrite: z.boolean().optional().default(false).describe("Replace a file that already exists at outputPath"),
-					}
-				: {}),
-			fileKey: fileKeySchema,
+			description: `Export an animated frame as MP4, GIF or WebM. The node should be the frame that holds the Motion timeline (its top-level frame).${
+				options.allowFileWrite
+					? " The file is written to outputPath (default: the OS temp folder) and the path is returned. An existing file is never replaced unless overwrite is true."
+					: ` Cloud Mode returns the video as base64 (up to ${MAX_INLINE_EXPORT_BYTES / 1024 / 1024} MB); use a lower fps, quality or scale for long animations.`
+			}`,
+			inputSchema: z.object({
+				nodeId: z
+					.string()
+					.optional()
+					.describe("Frame to export. Defaults to the current selection"),
+				format: z.enum(["MP4", "GIF", "WEBM"]),
+				fps: z
+					.number()
+					.int()
+					.optional()
+					.describe("MP4/WebM: 12, 24, 30 or 60. GIF: 8, 12, 15, 24 or 30"),
+				quality: z
+					.enum(["LOW", "MEDIUM", "HIGH"])
+					.optional()
+					.describe("MP4/WebM quality"),
+				loopCount: z
+					.number()
+					.int()
+					.min(0)
+					.optional()
+					.describe("GIF loops (0 = forever)"),
+				scale: z
+					.number()
+					.optional()
+					.describe(
+						"0.5, 0.75, 1, 1.5, 2, 3 or 4. Use scale, width or height, not several",
+					),
+				width: z.number().positive().optional().describe("Output width in px"),
+				height: z
+					.number()
+					.positive()
+					.optional()
+					.describe("Output height in px"),
+				...(options.allowFileWrite
+					? {
+							outputPath: z
+								.string()
+								.optional()
+								.describe("Where to write the file. Default: OS temp folder"),
+							overwrite: z
+								.boolean()
+								.optional()
+								.default(false)
+								.describe("Replace a file that already exists at outputPath"),
+						}
+					: {}),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async (args: Record<string, any>) => {
 			try {
-				const settingsError = validateVideoSettings(args as { format: string; fps?: number; scale?: number });
+				const settingsError = validateVideoSettings(
+					args as { format: string; fps?: number; scale?: number },
+				);
 				if (settingsError) throw new Error(settingsError);
 				const { fileKey, outputPath, overwrite, ...payload } = args;
-				const explicitTarget = options.allowFileWrite && outputPath ? (isAbsolute(outputPath) ? outputPath : resolve(outputPath)) : undefined;
+				const explicitTarget =
+					options.allowFileWrite && outputPath
+						? isAbsolute(outputPath)
+							? outputPath
+							: resolve(outputPath)
+						: undefined;
 				// Checked before the export so a long render isn't wasted.
 				if (explicitTarget && !overwrite && existsSync(explicitTarget)) {
-					throw new Error(`Nothing was written. "${explicitTarget}" already exists. Pass overwrite: true to replace it, or choose another outputPath.`);
+					throw new Error(
+						`Nothing was written. "${explicitTarget}" already exists. Pass overwrite: true to replace it, or choose another outputPath.`,
+					);
 				}
-				const result = await run(getDesktopConnector, motionScript(payload, EXPORT_ANIMATION_BODY), 180000, fileKey);
+				const result = await run(
+					getDesktopConnector,
+					motionScript(payload, EXPORT_ANIMATION_BODY),
+					180000,
+					fileKey,
+				);
 				const ext = String(args.format).toLowerCase();
-				const meta = { nodeId: result.nodeId, name: result.name, format: result.format, bytes: result.bytes, mimeType: MIME[args.format] };
+				const meta = {
+					nodeId: result.nodeId,
+					name: result.name,
+					format: result.format,
+					bytes: result.bytes,
+					mimeType: MIME[args.format],
+				};
 				if (options.allowFileWrite) {
-					const safeName = String(result.name || "animation").replace(/[^a-z0-9-_]+/gi, "-").slice(0, 60);
-					const target = explicitTarget
-						?? join(tmpdir(), `figma-${safeName}-${Date.now()}.${ext}`);
+					const safeName = String(result.name || "animation")
+						.replace(/[^a-z0-9-_]+/gi, "-")
+						.slice(0, 60);
+					const target =
+						explicitTarget ??
+						join(tmpdir(), `figma-${safeName}-${Date.now()}.${ext}`);
 					mkdirSync(dirname(target), { recursive: true });
 					writeFileSync(target, Buffer.from(result.base64, "base64"));
 					return ok({ ...meta, path: target });

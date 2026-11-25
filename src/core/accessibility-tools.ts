@@ -9,7 +9,7 @@
  * those are handled by the design-side figma_lint_design tool.
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "./logger.js";
 
@@ -52,9 +52,10 @@ async function scanHtmlWithAxe(
 	await loadDeps();
 
 	// Wrap HTML fragment in a full document if needed
-	const fullHtml = html.includes("<html") || html.includes("<!DOCTYPE")
-		? html
-		: `<!DOCTYPE html><html lang="en"><head><title>Scan</title></head><body>${html}</body></html>`;
+	const fullHtml =
+		html.includes("<html") || html.includes("<!DOCTYPE")
+			? html
+			: `<!DOCTYPE html><html lang="en"><head><title>Scan</title></head><body>${html}</body></html>`;
 
 	// "outside-only": <script> tags and inline handlers in the scanned HTML
 	// never execute (the HTML is caller-supplied, so running it would hand
@@ -110,19 +111,36 @@ async function scanHtmlWithAxe(
  * Parses the HTML to extract semantic element, ARIA attributes, and states.
  * Uses axe-core results to infer what the code supports.
  */
-export function axeResultsToCodeSpec(html: string, axeResults: any): Record<string, any> {
+export function axeResultsToCodeSpec(
+	html: string,
+	axeResults: any,
+): Record<string, any> {
 	const spec: Record<string, any> = {};
 
 	// Parse HTML to extract attributes (lightweight regex-based, no DOM needed)
 	const htmlLower = html.toLowerCase();
 
 	// Semantic element: find the root/first meaningful element
-	const rootElementMatch = html.match(/<(button|a|input|select|textarea|details|dialog|nav|main|form|label|fieldset)\b/i);
+	const rootElementMatch = html.match(
+		/<(button|a|input|select|textarea|details|dialog|nav|main|form|label|fieldset)\b/i,
+	);
 	if (rootElementMatch) {
 		spec.semanticElement = rootElementMatch[1].toLowerCase();
 	} else {
 		const firstElementMatch = html.match(/<(\w+)[\s>]/);
-		if (firstElementMatch && !["div", "span", "html", "head", "body", "script", "style", "!doctype"].includes(firstElementMatch[1].toLowerCase())) {
+		if (
+			firstElementMatch &&
+			![
+				"div",
+				"span",
+				"html",
+				"head",
+				"body",
+				"script",
+				"style",
+				"!doctype",
+			].includes(firstElementMatch[1].toLowerCase())
+		) {
 			spec.semanticElement = firstElementMatch[1].toLowerCase();
 		} else {
 			spec.semanticElement = "div";
@@ -144,8 +162,10 @@ export function axeResultsToCodeSpec(html: string, axeResults: any): Record<stri
 	// Focus visible: check for :focus-visible or :focus in inline styles/class names,
 	// or infer from element type (native interactive elements have default focus)
 	const nativeFocusElements = ["button", "a", "input", "select", "textarea"];
-	const hasFocusCSS = /focus-visible|:focus\b|outline.*focus|ring.*focus|focus.*ring/i.test(html);
-	spec.focusVisible = hasFocusCSS || nativeFocusElements.includes(spec.semanticElement || "");
+	const hasFocusCSS =
+		/focus-visible|:focus\b|outline.*focus|ring.*focus|focus.*ring/i.test(html);
+	spec.focusVisible =
+		hasFocusCSS || nativeFocusElements.includes(spec.semanticElement || "");
 
 	// Disabled support: only assert true when we find positive evidence.
 	// Absence of disabled/aria-disabled in a single HTML snapshot does NOT mean
@@ -158,7 +178,9 @@ export function axeResultsToCodeSpec(html: string, axeResults: any): Record<stri
 	// Error support: same principle — only assert true on positive evidence.
 	// A default-state HTML snippet won't have aria-invalid; that doesn't mean
 	// the component can't enter an error state.
-	if (/aria-invalid|aria-errormessage|aria-describedby.*error/i.test(htmlLower)) {
+	if (
+		/aria-invalid|aria-errormessage|aria-describedby.*error/i.test(htmlLower)
+	) {
 		spec.supportsError = true;
 	}
 	// (leave undefined when not found — scan a different state to confirm)
@@ -176,7 +198,10 @@ export function axeResultsToCodeSpec(html: string, axeResults: any): Record<stri
 		keyboardInteractions.push("Enter", "Space");
 	} else if (spec.semanticElement === "a" || spec.role === "link") {
 		keyboardInteractions.push("Enter");
-	} else if (spec.semanticElement === "input" || spec.semanticElement === "textarea") {
+	} else if (
+		spec.semanticElement === "input" ||
+		spec.semanticElement === "textarea"
+	) {
 		keyboardInteractions.push("Tab (focus)", "Type (input)");
 	} else if (spec.semanticElement === "select" || spec.role === "listbox") {
 		keyboardInteractions.push("Arrow keys", "Enter", "Space");
@@ -238,7 +263,9 @@ function formatAxeResults(axeResults: any): any {
 			severity,
 			count: violation.nodes.length,
 			description: violation.help,
-			wcagTags: violation.tags.filter((t: string) => t.startsWith("wcag") || t.startsWith("best-practice")),
+			wcagTags: violation.tags.filter(
+				(t: string) => t.startsWith("wcag") || t.startsWith("best-practice"),
+			),
 			helpUrl: violation.helpUrl,
 			nodes: nodes.slice(0, 10), // Cap at 10 per rule
 		});
@@ -246,7 +273,11 @@ function formatAxeResults(axeResults: any): any {
 
 	// Sort: critical first, then by count
 	categories.sort((a: any, b: any) => {
-		const sevOrder: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+		const sevOrder: Record<string, number> = {
+			critical: 0,
+			warning: 1,
+			info: 2,
+		};
 		if (sevOrder[a.severity] !== sevOrder[b.severity]) {
 			return sevOrder[a.severity] - sevOrder[b.severity];
 		}
@@ -289,9 +320,11 @@ function scanTextSpacingSupport(html: string): Record<string, any> | null {
 	// Collect CSS from <style> blocks and inline style="" attributes
 	let css = "";
 	const styleBlocks = html.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) || [];
-	for (const block of styleBlocks) css += block.replace(/<\/?style[^>]*>/gi, "") + "\n";
+	for (const block of styleBlocks)
+		css += block.replace(/<\/?style[^>]*>/gi, "") + "\n";
 	const inlineStyles = html.match(/style=["']([^"']*)["']/gi) || [];
-	for (const s of inlineStyles) css += s.replace(/^style=["']|["']$/gi, "") + ";\n";
+	for (const s of inlineStyles)
+		css += s.replace(/^style=["']|["']$/gi, "") + ";\n";
 
 	if (!css.trim()) return null;
 
@@ -322,31 +355,52 @@ function scanTextSpacingSupport(html: string): Record<string, any> | null {
 	};
 }
 
-export function registerAccessibilityTools(
-	server: McpServer,
-): void {
-	server.tool(
+export function registerAccessibilityTools(server: McpServer): void {
+	server.registerTool(
 		"figma_scan_code_accessibility",
-		"Scan HTML code for accessibility violations using axe-core (Deque). " +
-		"Runs structural/semantic checks via JSDOM: ARIA attributes, roles, labels, alt text, " +
-		"form labels, heading order, landmarks, semantic HTML, tabindex, duplicate IDs, lang attribute, and ~50 more rules. " +
-		"Visual checks (color contrast, focus visibility) are disabled in this mode — use figma_lint_design for visual a11y on the design side. " +
-		"Also surfaces a WCAG 1.4.12 (Text Spacing) / 1.4.4 (Resize Text) advisory when typography is locked to fixed px units — the code side is where text-spacing override support is actually verified (a sub-1.5 line height in a design is not itself a failure). " +
-		"Together, these two tools provide full-spectrum accessibility coverage across design and code. " +
-		"Pass component HTML directly or use with figma_check_design_parity for design-to-code a11y comparison. " +
-		"No Figma connection required — this is a standalone code analysis tool.",
 		{
-			html: z.string().describe("HTML string to scan. Can be a full document or a component fragment (will be wrapped in a valid document)."),
-			tags: z.array(z.string()).optional().describe(
-				"WCAG tag filter. Examples: ['wcag2a'], ['wcag2aa'], ['wcag21aa'], ['wcag22aa'], ['best-practice']. " +
-				"Defaults to all structural rules if omitted.",
-			),
-			context: z.string().optional().describe("CSS selector to scope the scan to a specific element (e.g., '#my-component', '.card'). Scans entire document if omitted."),
-			includePassingRules: z.boolean().optional().describe("If true, includes count of passing and incomplete rules in the response (default: false)."),
-			mapToCodeSpec: z.boolean().optional().describe(
-				"If true, includes a codeSpec.accessibility object auto-extracted from the HTML + scan results. " +
-				"Pass this directly into figma_check_design_parity's codeSpec.accessibility field for automated design-to-code a11y parity checking.",
-			),
+			description:
+				"Scan HTML code for accessibility violations using axe-core (Deque). " +
+				"Runs structural/semantic checks via JSDOM: ARIA attributes, roles, labels, alt text, " +
+				"form labels, heading order, landmarks, semantic HTML, tabindex, duplicate IDs, lang attribute, and ~50 more rules. " +
+				"Visual checks (color contrast, focus visibility) are disabled in this mode — use figma_lint_design for visual a11y on the design side. " +
+				"Also surfaces a WCAG 1.4.12 (Text Spacing) / 1.4.4 (Resize Text) advisory when typography is locked to fixed px units — the code side is where text-spacing override support is actually verified (a sub-1.5 line height in a design is not itself a failure). " +
+				"Together, these two tools provide full-spectrum accessibility coverage across design and code. " +
+				"Pass component HTML directly or use with figma_check_design_parity for design-to-code a11y comparison. " +
+				"No Figma connection required — this is a standalone code analysis tool.",
+			inputSchema: z.object({
+				html: z
+					.string()
+					.describe(
+						"HTML string to scan. Can be a full document or a component fragment (will be wrapped in a valid document).",
+					),
+				tags: z
+					.array(z.string())
+					.optional()
+					.describe(
+						"WCAG tag filter. Examples: ['wcag2a'], ['wcag2aa'], ['wcag21aa'], ['wcag22aa'], ['best-practice']. " +
+							"Defaults to all structural rules if omitted.",
+					),
+				context: z
+					.string()
+					.optional()
+					.describe(
+						"CSS selector to scope the scan to a specific element (e.g., '#my-component', '.card'). Scans entire document if omitted.",
+					),
+				includePassingRules: z
+					.boolean()
+					.optional()
+					.describe(
+						"If true, includes count of passing and incomplete rules in the response (default: false).",
+					),
+				mapToCodeSpec: z
+					.boolean()
+					.optional()
+					.describe(
+						"If true, includes a codeSpec.accessibility object auto-extracted from the HTML + scan results. " +
+							"Pass this directly into figma_check_design_parity's codeSpec.accessibility field for automated design-to-code a11y parity checking.",
+					),
+			}),
 		},
 		async ({ html, tags, context, includePassingRules, mapToCodeSpec }) => {
 			try {
@@ -375,8 +429,12 @@ export function registerAccessibilityTools(
 
 				// Auto-generate CodeSpec.accessibility from HTML + results
 				if (mapToCodeSpec) {
-					formatted.codeSpecAccessibility = axeResultsToCodeSpec(html, axeResults);
-					formatted.codeSpecAccessibility._usage = "Pass this object as codeSpec.accessibility in figma_check_design_parity for automated a11y parity checking.";
+					formatted.codeSpecAccessibility = axeResultsToCodeSpec(
+						html,
+						axeResults,
+					);
+					formatted.codeSpecAccessibility._usage =
+						"Pass this object as codeSpec.accessibility in figma_check_design_parity for automated a11y parity checking.";
 				}
 
 				return {

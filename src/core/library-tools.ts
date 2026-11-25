@@ -10,7 +10,7 @@
  * inspection (componentPropertyDefinitions, variants, visual specs).
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { FigmaAPI } from "./figma-api.js";
 import type { IFigmaConnector } from "./figma-connector.js";
@@ -125,9 +125,10 @@ export function registerLibraryTools(
 	server: McpServer,
 	getFigmaAPI: () => Promise<FigmaAPI>,
 ): void {
-	server.tool(
+	server.registerTool(
 		"figma_get_library_component_by_key",
-		`Get full property definitions, variants, and visual specs for a SINGLE published library component using only its component key.
+		{
+			description: `Get full property definitions, variants, and visual specs for a SINGLE published library component using only its component key.
 
 **USE THIS when you have a component key** (the 40-char hex returned by figma_search_components, figma_get_library_components, or search_design_system) **and want to inspect what properties/variants it exposes** before instantiating it — without first needing the source library file's URL.
 
@@ -141,27 +142,28 @@ export function registerLibraryTools(
 5. For COMPONENT_SET keys, also fetches the source file's /components list to map each variant's node to its published variant key (needed for figma_instantiate_component)
 
 **REQUIRES** FIGMA_ACCESS_TOKEN with library_assets:read and files:read scopes.`,
-		{
-			componentKey: z
-				.string()
-				.min(1)
-				.describe(
-					"The component key (40-char hex string from search results, e.g., '806826503bbd2ab15d0ff77d076a9406a5a83197'). Works for both COMPONENT_SET and standalone COMPONENT keys.",
-				),
-			includeVisualSpecs: z
-				.boolean()
-				.optional()
-				.default(true)
-				.describe(
-					"Include per-variant visual specs (fills, strokes, padding, typography). Default true. Auto-stripped if response exceeds 500KB.",
-				),
-			format: z
-				.enum(["full", "summary"])
-				.optional()
-				.default("full")
-				.describe(
-					"'full' returns properties + variants + visual specs. 'summary' returns properties + variant names only (no visualSpec). Auto-downgrades to 'summary' on large responses.",
-				),
+			inputSchema: z.object({
+				componentKey: z
+					.string()
+					.min(1)
+					.describe(
+						"The component key (40-char hex string from search results, e.g., '806826503bbd2ab15d0ff77d076a9406a5a83197'). Works for both COMPONENT_SET and standalone COMPONENT keys.",
+					),
+				includeVisualSpecs: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe(
+						"Include per-variant visual specs (fills, strokes, padding, typography). Default true. Auto-stripped if response exceeds 500KB.",
+					),
+				format: z
+					.enum(["full", "summary"])
+					.optional()
+					.default("full")
+					.describe(
+						"'full' returns properties + variants + visual specs. 'summary' returns properties + variant names only (no visualSpec). Auto-downgrades to 'summary' on large responses.",
+					),
+			}),
 		},
 		async ({ componentKey, includeVisualSpecs, format }) => {
 			const warnings: string[] = [];
@@ -215,7 +217,8 @@ export function registerLibraryTools(
 								type: "text",
 								text: JSON.stringify({
 									_mcp: "figma-console-mcp",
-									error: "Figma REST API returned a response without file_key or node_id.",
+									error:
+										"Figma REST API returned a response without file_key or node_id.",
 									hint: "This may indicate a Figma API change or a malformed component key. Re-check the key with figma_search_components.",
 									componentKey,
 								}),
@@ -386,7 +389,10 @@ export function registerLibraryTools(
 				if (isAuthError(error)) {
 					hint =
 						"Authentication failed. FIGMA_ACCESS_TOKEN must be set with library_assets:read and files:read scopes. Get a token at https://www.figma.com/developers/api#access-tokens";
-				} else if (errorMessage.includes("(429)") || /Rate/i.test(errorMessage)) {
+				} else if (
+					errorMessage.includes("(429)") ||
+					/Rate/i.test(errorMessage)
+				) {
 					hint =
 						"Rate limited by Figma API. Wait a moment and retry, or reduce concurrent requests.";
 				}
@@ -470,9 +476,10 @@ export function registerLibraryVariableTools(
 	// figma_get_library_variables — list available variables from
 	// libraries currently subscribed by the open file.
 	// --------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_get_library_variables",
-		`List all variables from team libraries the current file has subscribed.
+		{
+			description: `List all variables from team libraries the current file has subscribed.
 
 **USE THIS** when you want to see what design tokens (colors, spacing, typography sizes, booleans, strings) are available from shared libraries — without needing the library file's URL or REST API Enterprise plan.
 
@@ -487,25 +494,26 @@ export function registerLibraryVariableTools(
 **Filters**: libraryName/collectionName accept partial case-insensitive matches.
 
 **REQUIRES** the Desktop Bridge plugin to be running in Figma Desktop.`,
-		{
-			libraryName: z
-				.string()
-				.optional()
-				.describe(
-					"Optional: filter by library name (case-insensitive substring match). E.g., 'Northright' or 'Altitude'.",
-				),
-			collectionName: z
-				.string()
-				.optional()
-				.describe(
-					"Optional: filter by collection name within a library (case-insensitive substring match). E.g., 'Colors' or 'Spacing'.",
-				),
-			resolvedType: z
-				.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
-				.optional()
-				.describe(
-					"Optional: filter by variable type. Useful when you only need color tokens or only spacing values.",
-				),
+			inputSchema: z.object({
+				libraryName: z
+					.string()
+					.optional()
+					.describe(
+						"Optional: filter by library name (case-insensitive substring match). E.g., 'Northright' or 'Altitude'.",
+					),
+				collectionName: z
+					.string()
+					.optional()
+					.describe(
+						"Optional: filter by collection name within a library (case-insensitive substring match). E.g., 'Colors' or 'Spacing'.",
+					),
+				resolvedType: z
+					.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
+					.optional()
+					.describe(
+						"Optional: filter by variable type. Useful when you only need color tokens or only spacing values.",
+					),
+			}),
 		},
 		async ({ libraryName, collectionName, resolvedType }) => {
 			try {
@@ -598,9 +606,7 @@ export function registerLibraryVariableTools(
 							(v: any) => v.resolvedType === resolvedType,
 						),
 					}));
-					collections = collections.filter(
-						(c: any) => c.variables.length > 0,
-					);
+					collections = collections.filter((c: any) => c.variables.length > 0);
 					// Refresh counts after filtering
 					collections.forEach((c: any) => {
 						c.variableCount = c.variables.length;
@@ -661,9 +667,10 @@ export function registerLibraryVariableTools(
 	// figma_import_library_variable — import a single library variable
 	// into the current file so it can be bound to nodes.
 	// --------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_import_library_variable",
-		`Import a single variable from a subscribed team library into the current file.
+		{
+			description: `Import a single variable from a subscribed team library into the current file.
 
 After import, the variable becomes locally addressable by its returned 'id' and can be passed to any tool that binds variables to nodes (fills, strokes, paddings, etc.). The import is idempotent — calling it twice returns the same local id.
 
@@ -673,13 +680,14 @@ After import, the variable becomes locally addressable by its returned 'id' and 
 3. Use the returned 'id' with figma_set_fills (boundVariables), figma_update_variable, or other binding tools
 
 **REQUIRES** the Desktop Bridge plugin and that the source library is subscribed by the current file (otherwise importVariableByKeyAsync rejects).`,
-		{
-			variableKey: z
-				.string()
-				.min(1)
-				.describe(
-					"The variable key from figma_get_library_variables (collections[].variables[].key). Distinct from the variable's local id.",
-				),
+			inputSchema: z.object({
+				variableKey: z
+					.string()
+					.min(1)
+					.describe(
+						"The variable key from figma_get_library_variables (collections[].variables[].key). Distinct from the variable's local id.",
+					),
+			}),
 		},
 		async ({ variableKey }) => {
 			try {

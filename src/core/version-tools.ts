@@ -21,7 +21,7 @@
  * Design notes at .notes/VERSION-HISTORY-DIFF-DESIGN.md.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { FigmaAPI } from "./figma-api.js";
 import { extractFileKey } from "./figma-api.js";
@@ -73,7 +73,9 @@ async function fetchDocumentAtVersion(
 	versionId: string,
 ): Promise<FetchResult<any>> {
 	const isHead = isCurrentSentinel(versionId);
-	const cacheKey = isHead ? null : versionSnapshotCache.makeKey(fileKey, versionId, 1);
+	const cacheKey = isHead
+		? null
+		: versionSnapshotCache.makeKey(fileKey, versionId, 1);
 	const cached = versionSnapshotCache.get<any>(cacheKey);
 	if (cached) return { data: cached, cached: true };
 	const opts = isHead ? { depth: 1 } : { version: versionId, depth: 1 };
@@ -93,7 +95,9 @@ async function fetchNodeAtVersion(
 	versionId: string,
 ): Promise<FetchResult<any>> {
 	const isHead = isCurrentSentinel(versionId);
-	const cacheKey = isHead ? null : versionSnapshotCache.makeKey(fileKey, versionId, 2, [nodeId]);
+	const cacheKey = isHead
+		? null
+		: versionSnapshotCache.makeKey(fileKey, versionId, 2, [nodeId]);
 	const cached = versionSnapshotCache.get<any>(cacheKey);
 	if (cached) return { data: cached, cached: true };
 	const opts = isHead ? { depth: 2 } : { version: versionId, depth: 2 };
@@ -190,34 +194,46 @@ export function registerVersionTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_get_file_versions
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_get_file_versions",
-		"List a Figma file's version history with metadata (label, description, author, timestamp). Auto-paginates up to max_versions. By default returns only labeled versions (skips auto-saves). Pass include_autosaves=true to see every saved state. Use the returned pagination.next_cursor to continue paging. Required scope: file_versions:read (OAuth) or 'Versions' Read (PAT).",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			include_autosaves: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe("Include auto-saved versions (those without a label). Default: false."),
-			max_versions: z
-				.number()
-				.int()
-				.min(1)
-				.max(MAX_VERSIONS_HARD_CAP)
-				.optional()
-				.default(50)
-				.describe("Hard cap on returned versions. Default 50, max 200."),
-			cursor: z
-				.string()
-				.optional()
-				.describe("Version ID returned as pagination.next_cursor on a previous call. Pass to continue from where the last call stopped."),
+			description:
+				"List a Figma file's version history with metadata (label, description, author, timestamp). Auto-paginates up to max_versions. By default returns only labeled versions (skips auto-saves). Pass include_autosaves=true to see every saved state. Use the returned pagination.next_cursor to continue paging. Required scope: file_versions:read (OAuth) or 'Versions' Read (PAT).",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				include_autosaves: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Include auto-saved versions (those without a label). Default: false.",
+					),
+				max_versions: z
+					.number()
+					.int()
+					.min(1)
+					.max(MAX_VERSIONS_HARD_CAP)
+					.optional()
+					.default(50)
+					.describe("Hard cap on returned versions. Default 50, max 200."),
+				cursor: z
+					.string()
+					.optional()
+					.describe(
+						"Version ID returned as pagination.next_cursor on a previous call. Pass to continue from where the last call stopped.",
+					),
+			}),
 		},
-		async ({ fileUrl, include_autosaves = false, max_versions = 50, cursor }) => {
+		async ({
+			fileUrl,
+			include_autosaves = false,
+			max_versions = 50,
+			cursor,
+		}) => {
 			try {
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
@@ -253,7 +269,10 @@ export function registerVersionTools(
 				}
 
 				const cap = Math.min(Math.max(1, max_versions), MAX_VERSIONS_HARD_CAP);
-				logger.info({ fileKey, cap, include_autosaves, cursor }, "Fetching file versions");
+				logger.info(
+					{ fileKey, cap, include_autosaves, cursor },
+					"Fetching file versions",
+				);
 
 				const api = await getFigmaAPI();
 
@@ -265,7 +284,11 @@ export function registerVersionTools(
 				let pages = 0;
 				let apiCalls = 0;
 
-				while (pages < MAX_SCAN_PAGES && figmaSaysMore && collected.length < cap) {
+				while (
+					pages < MAX_SCAN_PAGES &&
+					figmaSaysMore &&
+					collected.length < cap
+				) {
 					// Figma's pagination semantics: in a newest-first list, `after=X`
 					// returns versions that come AFTER X in list order, i.e. OLDER in time.
 					// (Empirically verified — `before=X` returns newer items, which is the
@@ -315,11 +338,10 @@ export function registerVersionTools(
 				// Edge case: if labeled-only mode collected zero items but Figma has more
 				// data to scan, expose lastReceivedId so the caller can keep scanning past
 				// the autosave-only stretch.
-				const lastCollectedId = collected.length > 0 ? collected[collected.length - 1].id : null;
+				const lastCollectedId =
+					collected.length > 0 ? collected[collected.length - 1].id : null;
 				const hasMore = collected.length >= cap || figmaSaysMore;
-				const nextCursor = hasMore
-					? (lastCollectedId ?? lastReceivedId)
-					: null;
+				const nextCursor = hasMore ? (lastCollectedId ?? lastReceivedId) : null;
 
 				const result = {
 					file_key: fileKey,
@@ -371,29 +393,38 @@ export function registerVersionTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_get_file_at_version
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_get_file_at_version",
-		"Fetch a Figma file (or specific nodes) as it existed at a past version_id. Thin snapshot tool — same shape as figma_get_file_data but bound to a historical version. Use figma_get_file_versions to discover version IDs. Combine with depth and node_ids to keep payloads small. Required scope: file_content:read (already standard).",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			version_id: z
-				.string()
-				.describe("The version ID to snapshot (from figma_get_file_versions)."),
-			node_ids: z
-				.array(z.string())
-				.optional()
-				.describe("Optional: snapshot only these node IDs instead of the full file. Reduces payload significantly for targeted inspection."),
-			depth: z
-				.number()
-				.int()
-				.min(1)
-				.max(10)
-				.optional()
-				.describe("How deep into the document tree to recurse. Lower is cheaper. Default: full depth (no limit)."),
+			description:
+				"Fetch a Figma file (or specific nodes) as it existed at a past version_id. Thin snapshot tool — same shape as figma_get_file_data but bound to a historical version. Use figma_get_file_versions to discover version IDs. Combine with depth and node_ids to keep payloads small. Required scope: file_content:read (already standard).",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				version_id: z
+					.string()
+					.describe(
+						"The version ID to snapshot (from figma_get_file_versions).",
+					),
+				node_ids: z
+					.array(z.string())
+					.optional()
+					.describe(
+						"Optional: snapshot only these node IDs instead of the full file. Reduces payload significantly for targeted inspection.",
+					),
+				depth: z
+					.number()
+					.int()
+					.min(1)
+					.max(10)
+					.optional()
+					.describe(
+						"How deep into the document tree to recurse. Lower is cheaper. Default: full depth (no limit).",
+					),
+			}),
 		},
 		async ({ fileUrl, version_id, node_ids, depth }) => {
 			try {
@@ -430,12 +461,18 @@ export function registerVersionTools(
 					};
 				}
 
-				logger.info({ fileKey, version_id, node_ids, depth }, "Snapshotting file at version");
+				logger.info(
+					{ fileKey, version_id, node_ids, depth },
+					"Snapshotting file at version",
+				);
 
 				const api = await getFigmaAPI();
 				const fileData =
 					node_ids && node_ids.length > 0
-						? await api.getNodes(fileKey, node_ids, { version: version_id, depth })
+						? await api.getNodes(fileKey, node_ids, {
+								version: version_id,
+								depth,
+							})
 						: await api.getFile(fileKey, { version: version_id, depth });
 
 				const result = {
@@ -528,18 +565,29 @@ export function registerVersionTools(
 			}
 			const fileKey = extractFileKey(url);
 			if (!fileKey) {
-				return { ok: false, error: "invalid_url", message: `Invalid Figma URL: ${url}` };
+				return {
+					ok: false,
+					error: "invalid_url",
+					message: `Invalid Figma URL: ${url}`,
+				};
 			}
 			if (from_version === to_version) {
 				return {
 					ok: false,
 					error: "same_version",
-					message: "from_version and to_version are identical — nothing to diff.",
+					message:
+						"from_version and to_version are identical — nothing to diff.",
 				};
 			}
 
 			logger.info(
-				{ fileKey, from_version, to_version, mode, scoped: !!component_ids?.length },
+				{
+					fileKey,
+					from_version,
+					to_version,
+					mode,
+					scoped: !!component_ids?.length,
+				},
 				"Diffing versions",
 			);
 			const api = await getFigmaAPI();
@@ -608,7 +656,10 @@ export function registerVersionTools(
 						until: toMs,
 					});
 				} catch (e) {
-					logger.warn({ err: e }, "Metadata buffer lookup failed; continuing without metadata changes");
+					logger.warn(
+						{ err: e },
+						"Metadata buffer lookup failed; continuing without metadata changes",
+					);
 					bufferedMetadata = [];
 				}
 			}
@@ -633,7 +684,9 @@ export function registerVersionTools(
 						consumed.add(entry);
 					}
 				}
-				unscopedMetadataChanges = bufferedMetadata.filter((e) => !consumed.has(e));
+				unscopedMetadataChanges = bufferedMetadata.filter(
+					(e) => !consumed.has(e),
+				);
 			}
 
 			const notes: string[] = [];
@@ -695,7 +748,9 @@ export function registerVersionTools(
 				scoped_nodes: hasScopedNodes ? scoped : undefined,
 				summary: {
 					page_changes:
-						pageDiff.summary.added + pageDiff.summary.removed + pageDiff.summary.renamed,
+						pageDiff.summary.added +
+						pageDiff.summary.removed +
+						pageDiff.summary.renamed,
 					scoped_nodes_requested: component_ids?.length ?? 0,
 					scoped_nodes_returned: scoped.length,
 					scoped_nodes_with_changes: scopedChanged,
@@ -792,7 +847,11 @@ export function registerVersionTools(
 				: message.includes("404")
 					? " Hint: a version_id may have been pruned or may not belong to this file. Use figma_get_file_versions to list valid IDs."
 					: "";
-			return { ok: false, error: "diff_versions_failed", message: message + hint };
+			return {
+				ok: false,
+				error: "diff_versions_failed",
+				message: message + hint,
+			};
 		}
 	};
 
@@ -842,7 +901,10 @@ export function registerVersionTools(
 				// "metadata not available") — just make sure the underlying reason
 				// lands in the log for debugging.
 				const reason = e instanceof Error ? e.message : String(e);
-				logger.warn({ err: e, reason, page }, "Author enrichment lookup failed; continuing without it");
+				logger.warn(
+					{ err: e, reason, page },
+					"Author enrichment lookup failed; continuing without it",
+				);
 				break;
 			}
 			const versions = response?.versions || [];
@@ -870,30 +932,41 @@ export function registerVersionTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_diff_versions
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_diff_versions",
-		"Diff two versions of a Figma file. Always returns a cheap page-structure diff (added/removed/renamed pages, 2 API calls). Pass component_ids to additionally get per-node deep diffs at depth=2 (added/removed children, name/description changes, componentPropertyDefinitions changes for COMPONENT_SETs, boundVariables deltas) — costs 2 API calls per scoped node. Use 'current' for to_version to diff against HEAD. v1.25.0: when the Desktop Bridge plugin is connected, description and Dev Mode annotation changes are ALSO tracked via a session buffer and surfaced under `scoped_nodes[].metadata_changes[]` and `unscoped_metadata_changes[]` — Figma REST omits these from version snapshots so they're otherwise invisible. STILL NOT tracked: instances of components on the canvas, raw layout properties (layoutSizingHorizontal/Vertical, unbound paddings/widths), raw visual properties (cornerRadius, unbound fills), variable VALUE changes, style content, and metadata edits made while the plugin was disconnected. See `scope_coverage` and `notes[]` for the full coverage map and complementary tools.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			from_version: z
-				.string()
-				.describe("The earlier version_id to compare from. Get from figma_get_file_versions."),
-			to_version: z
-				.string()
-				.describe("The later version_id to compare to. Use 'current' for HEAD."),
-			component_ids: z
-				.array(z.string())
-				.optional()
-				.describe("Optional. Node IDs (typically COMPONENT_SETs) to diff in detail. If omitted, falls back to the current Figma selection. If neither is available, only the page-structure diff is returned. Use figma_get_design_system_kit or figma_search_components to discover IDs explicitly."),
-			mode: z
-				.enum(["summary", "standard", "detailed"])
-				.optional()
-				.default("standard")
-				.describe("Output verbosity. summary=counts only, standard=names+counts (default), detailed=full property/binding details."),
+			description:
+				"Diff two versions of a Figma file. Always returns a cheap page-structure diff (added/removed/renamed pages, 2 API calls). Pass component_ids to additionally get per-node deep diffs at depth=2 (added/removed children, name/description changes, componentPropertyDefinitions changes for COMPONENT_SETs, boundVariables deltas) — costs 2 API calls per scoped node. Use 'current' for to_version to diff against HEAD. v1.25.0: when the Desktop Bridge plugin is connected, description and Dev Mode annotation changes are ALSO tracked via a session buffer and surfaced under `scoped_nodes[].metadata_changes[]` and `unscoped_metadata_changes[]` — Figma REST omits these from version snapshots so they're otherwise invisible. STILL NOT tracked: instances of components on the canvas, raw layout properties (layoutSizingHorizontal/Vertical, unbound paddings/widths), raw visual properties (cornerRadius, unbound fills), variable VALUE changes, style content, and metadata edits made while the plugin was disconnected. See `scope_coverage` and `notes[]` for the full coverage map and complementary tools.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				from_version: z
+					.string()
+					.describe(
+						"The earlier version_id to compare from. Get from figma_get_file_versions.",
+					),
+				to_version: z
+					.string()
+					.describe(
+						"The later version_id to compare to. Use 'current' for HEAD.",
+					),
+				component_ids: z
+					.array(z.string())
+					.optional()
+					.describe(
+						"Optional. Node IDs (typically COMPONENT_SETs) to diff in detail. If omitted, falls back to the current Figma selection. If neither is available, only the page-structure diff is returned. Use figma_get_design_system_kit or figma_search_components to discover IDs explicitly.",
+					),
+				mode: z
+					.enum(["summary", "standard", "detailed"])
+					.optional()
+					.default("standard")
+					.describe(
+						"Output verbosity. summary=counts only, standard=names+counts (default), detailed=full property/binding details.",
+					),
+			}),
 		},
 		async (args) => runDiff(args as any),
 	);
@@ -901,26 +974,31 @@ export function registerVersionTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_get_changes_since_version
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_get_changes_since_version",
-		"Convenience wrapper for figma_diff_versions: compares a given version against the current HEAD. Same output shape as figma_diff_versions, with to_version implicitly 'current'. Useful for 'what's changed since the last code-sync' workflows.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			since_version: z
-				.string()
-				.describe("The version_id to compare against the current HEAD."),
-			component_ids: z
-				.array(z.string())
-				.optional()
-				.describe("Optional. Node IDs to diff in detail. If omitted, falls back to the current Figma selection. Same semantics as figma_diff_versions otherwise."),
-			mode: z
-				.enum(["summary", "standard", "detailed"])
-				.optional()
-				.default("standard"),
+			description:
+				"Convenience wrapper for figma_diff_versions: compares a given version against the current HEAD. Same output shape as figma_diff_versions, with to_version implicitly 'current'. Useful for 'what's changed since the last code-sync' workflows.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				since_version: z
+					.string()
+					.describe("The version_id to compare against the current HEAD."),
+				component_ids: z
+					.array(z.string())
+					.optional()
+					.describe(
+						"Optional. Node IDs to diff in detail. If omitted, falls back to the current Figma selection. Same semantics as figma_diff_versions otherwise.",
+					),
+				mode: z
+					.enum(["summary", "standard", "detailed"])
+					.optional()
+					.default("standard"),
+			}),
 		},
 		async ({ fileUrl, since_version, component_ids, mode }) =>
 			runDiff({
@@ -935,33 +1013,43 @@ export function registerVersionTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_generate_changelog
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_generate_changelog",
-		"Generate a human-readable markdown changelog between two versions. Wraps figma_diff_versions and enriches the output with author labels and timestamps via figma_get_file_versions lookback (one extra cheap API call). Returns BOTH a `markdown` string (paste into release notes / PRs / Storybook MDX) and the structured diff data. Same component_ids and mode semantics as figma_diff_versions. Use 'current' for to_version to changelog against HEAD.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			from_version: z
-				.string()
-				.describe("The earlier version_id. Get from figma_get_file_versions."),
-			to_version: z
-				.string()
-				.describe("The later version_id. Use 'current' for HEAD."),
-			component_ids: z
-				.array(z.string())
-				.optional()
-				.describe("Optional. Node IDs to include in the per-component changelog section. If omitted, falls back to the current Figma selection."),
-			mode: z
-				.enum(["summary", "standard", "detailed"])
-				.optional()
-				.default("standard")
-				.describe("Output verbosity. summary=one-liner, standard=sectioned with counts (default), detailed=full per-property/per-binding bullets."),
+			description:
+				"Generate a human-readable markdown changelog between two versions. Wraps figma_diff_versions and enriches the output with author labels and timestamps via figma_get_file_versions lookback (one extra cheap API call). Returns BOTH a `markdown` string (paste into release notes / PRs / Storybook MDX) and the structured diff data. Same component_ids and mode semantics as figma_diff_versions. Use 'current' for to_version to changelog against HEAD.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				from_version: z
+					.string()
+					.describe(
+						"The earlier version_id. Get from figma_get_file_versions.",
+					),
+				to_version: z
+					.string()
+					.describe("The later version_id. Use 'current' for HEAD."),
+				component_ids: z
+					.array(z.string())
+					.optional()
+					.describe(
+						"Optional. Node IDs to include in the per-component changelog section. If omitted, falls back to the current Figma selection.",
+					),
+				mode: z
+					.enum(["summary", "standard", "detailed"])
+					.optional()
+					.default("standard")
+					.describe(
+						"Output verbosity. summary=one-liner, standard=sectioned with counts (default), detailed=full per-property/per-binding bullets.",
+					),
+			}),
 		},
 		async ({ fileUrl, from_version, to_version, component_ids, mode }) => {
-			const effectiveMode: DiffMode = (mode as DiffMode | undefined) ?? "standard";
+			const effectiveMode: DiffMode =
+				(mode as DiffMode | undefined) ?? "standard";
 			try {
 				const result = await computeDiff({
 					fileUrl,
@@ -980,16 +1068,17 @@ export function registerVersionTools(
 				const idsToLookup = [from_version, to_version].filter(
 					(id) => !isCurrentSentinel(id),
 				);
-				const authorMap = idsToLookup.length > 0
-					? await findVersionAuthorMetadata(api, result.fileKey, idsToLookup)
-					: new Map<string, VersionAuthorMeta | null>();
+				const authorMap =
+					idsToLookup.length > 0
+						? await findVersionAuthorMetadata(api, result.fileKey, idsToLookup)
+						: new Map<string, VersionAuthorMeta | null>();
 
 				let fromMeta: VersionAuthorMeta | null = isCurrentSentinel(from_version)
 					? buildHeadMeta(result.fromFile)
-					: authorMap.get(from_version) ?? null;
+					: (authorMap.get(from_version) ?? null);
 				let toMeta: VersionAuthorMeta | null = isCurrentSentinel(to_version)
 					? buildHeadMeta(result.toFile)
-					: authorMap.get(to_version) ?? null;
+					: (authorMap.get(to_version) ?? null);
 
 				const markdown = formatChangelogMarkdown(
 					{
@@ -1030,45 +1119,58 @@ export function registerVersionTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_blame_node
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_blame_node",
-		"Find the version that introduced a specific change to a node — answers 'who/when added this'. Walks version history backward via binary search (~log2(N) API calls instead of N) to localize the introduction point. Returns the version's metadata (label/author/timestamp). Default includes autosaves for finer attribution; system 'Figma' user appears occasionally for scheduled snapshots and is flagged via attribution_certainty='system_attributed'. Specify EXACTLY ONE of target_component_property or target_child_node_id. node_id is optional — if omitted, falls back to the first node in the current Figma selection.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			node_id: z
-				.string()
-				.optional()
-				.describe("The parent node ID to inspect (typically a COMPONENT_SET). If omitted, falls back to the first node in the current Figma selection."),
-			target_component_property: z
-				.string()
-				.optional()
-				.describe("A componentPropertyDefinitions key (e.g. 'Disabled#1:2') — find when this property was first added to the node."),
-			target_child_node_id: z
-				.string()
-				.optional()
-				.describe("A descendant node ID — find when this child was first added under node_id."),
-			start_version: z
-				.string()
-				.optional()
-				.default("current")
-				.describe("Version to walk backward from. Default 'current' (HEAD)."),
-			max_versions_to_walk: z
-				.number()
-				.int()
-				.min(2)
-				.max(500)
-				.optional()
-				.default(200)
-				.describe("Lookback cap. Binary search probes ~log2(N) of these. Default 200, max 500."),
-			include_autosaves: z
-				.boolean()
-				.optional()
-				.default(true)
-				.describe("Include auto-saved versions in the search range. Default true (better attribution accuracy; most autosaves carry the real human user)."),
+			description:
+				"Find the version that introduced a specific change to a node — answers 'who/when added this'. Walks version history backward via binary search (~log2(N) API calls instead of N) to localize the introduction point. Returns the version's metadata (label/author/timestamp). Default includes autosaves for finer attribution; system 'Figma' user appears occasionally for scheduled snapshots and is flagged via attribution_certainty='system_attributed'. Specify EXACTLY ONE of target_component_property or target_child_node_id. node_id is optional — if omitted, falls back to the first node in the current Figma selection.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				node_id: z
+					.string()
+					.optional()
+					.describe(
+						"The parent node ID to inspect (typically a COMPONENT_SET). If omitted, falls back to the first node in the current Figma selection.",
+					),
+				target_component_property: z
+					.string()
+					.optional()
+					.describe(
+						"A componentPropertyDefinitions key (e.g. 'Disabled#1:2') — find when this property was first added to the node.",
+					),
+				target_child_node_id: z
+					.string()
+					.optional()
+					.describe(
+						"A descendant node ID — find when this child was first added under node_id.",
+					),
+				start_version: z
+					.string()
+					.optional()
+					.default("current")
+					.describe("Version to walk backward from. Default 'current' (HEAD)."),
+				max_versions_to_walk: z
+					.number()
+					.int()
+					.min(2)
+					.max(500)
+					.optional()
+					.default(200)
+					.describe(
+						"Lookback cap. Binary search probes ~log2(N) of these. Default 200, max 500.",
+					),
+				include_autosaves: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe(
+						"Include auto-saved versions in the search range. Default true (better attribution accuracy; most autosaves carry the real human user).",
+					),
+			}),
 		},
 		async ({
 			fileUrl,
@@ -1100,9 +1202,10 @@ export function registerVersionTools(
 				}
 
 				// Validate exactly one target type
-				const targets = [target_component_property, target_child_node_id].filter(
-					(t) => t !== undefined && t !== null,
-				);
+				const targets = [
+					target_component_property,
+					target_child_node_id,
+				].filter((t) => t !== undefined && t !== null);
 				if (targets.length !== 1) {
 					return errorResponse(
 						"invalid_target",
@@ -1141,17 +1244,28 @@ export function registerVersionTools(
 				let cacheHits = 0;
 
 				// Step 1: Confirm target exists at start_version
-				const startResp = await fetchNodeAtVersion(api, fileKey, resolvedNodeId, startVer);
+				const startResp = await fetchNodeAtVersion(
+					api,
+					fileKey,
+					resolvedNodeId,
+					startVer,
+				);
 				if (startResp.cached) cacheHits++;
 				else apiCalls++;
-				const startNode = startResp.data?.nodes?.[resolvedNodeId]?.document ?? null;
+				const startNode =
+					startResp.data?.nodes?.[resolvedNodeId]?.document ?? null;
 				if (!startNode) {
 					return errorResponse(
 						"node_not_at_start",
 						`Node ${resolvedNodeId} not found at start_version. Verify the node_id and start_version.`,
 					);
 				}
-				if (!targetExists(startNode, { target_component_property, target_child_node_id })) {
+				if (
+					!targetExists(startNode, {
+						target_component_property,
+						target_child_node_id,
+					})
+				) {
 					return errorResponse(
 						"target_not_at_start",
 						`Target was not found at start_version. The blame walker requires the target to exist at start_version (you're asking 'when was this introduced'). If you're tracking something that was REMOVED, you want to look in the opposite direction — pick a start_version where it still existed.`,
@@ -1199,7 +1313,12 @@ export function registerVersionTools(
 				while (lo <= hi) {
 					const mid = Math.floor((lo + hi) / 2);
 					const midVer = versions[mid].id;
-					const resp = await fetchNodeAtVersion(api, fileKey, resolvedNodeId, midVer);
+					const resp = await fetchNodeAtVersion(
+						api,
+						fileKey,
+						resolvedNodeId,
+						midVer,
+					);
 					if (resp.cached) cacheHits++;
 					else apiCalls++;
 					const midNode = resp.data?.nodes?.[resolvedNodeId]?.document ?? null;
@@ -1234,8 +1353,12 @@ export function registerVersionTools(
 
 				if (oldestExistsIdx === -1) {
 					// Target was introduced at start_version itself. Look up start's metadata.
-					const lookupId = isCurrentSentinel(startVer) ? resolvedStartVer : startVer;
-					const authorMap = await findVersionAuthorMetadata(api, fileKey, [lookupId]);
+					const lookupId = isCurrentSentinel(startVer)
+						? resolvedStartVer
+						: startVer;
+					const authorMap = await findVersionAuthorMetadata(api, fileKey, [
+						lookupId,
+					]);
 					apiCalls += 1; // helper makes 1-4 paginated calls; conservative under-count
 					const meta = authorMap.get(lookupId);
 					introducedVersionMeta = {
@@ -1264,7 +1387,9 @@ export function registerVersionTools(
 						label: introducedVersion.label || null,
 						created_at: introducedVersion.created_at,
 						user_handle: introducedVersion.user?.handle ?? null,
-						is_labeled: !!(introducedVersion.label && introducedVersion.label !== ""),
+						is_labeled: !!(
+							introducedVersion.label && introducedVersion.label !== ""
+						),
 					};
 					if (oldestExistsIdx === versions.length - 1) {
 						certainty = "exists_at_lookback_horizon";
@@ -1367,7 +1492,11 @@ export function registerVersionTools(
 		// Once we hit start_version's id in the list, switch to "collecting older" mode
 		let foundStart = isCurrentSentinel(startVer);
 		const MAX_PAGES = 10; // 10 × 50 = 500 versions hard cap on scan
-		for (let page = 0; page < MAX_PAGES && collected.length < lookback; page++) {
+		for (
+			let page = 0;
+			page < MAX_PAGES && collected.length < lookback;
+			page++
+		) {
 			let response: any;
 			try {
 				response = await api.getFileVersions(fileKey, {
@@ -1402,7 +1531,13 @@ export function registerVersionTools(
 			if (!last?.id || last.id === cursor) break;
 			cursor = last.id;
 		}
-		return { versions: collected, apiCalls, cacheHits, listFetchFailed, listFetchError };
+		return {
+			versions: collected,
+			apiCalls,
+			cacheHits,
+			listFetchFailed,
+			listFetchError,
+		};
 	};
 }
 
@@ -1432,7 +1567,9 @@ function targetExists(
 	target: { target_component_property?: string; target_child_node_id?: string },
 ): boolean {
 	if (target.target_component_property) {
-		return !!node?.componentPropertyDefinitions?.[target.target_component_property];
+		return !!node?.componentPropertyDefinitions?.[
+			target.target_component_property
+		];
 	}
 	if (target.target_child_node_id) {
 		return findChildById(node, target.target_child_node_id);

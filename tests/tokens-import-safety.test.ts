@@ -52,7 +52,7 @@ function connector(live: any, snapshot: any = live) {
 
 function importHandler(conn: any, isRemoteMode: boolean) {
 	let h: any;
-	registerImportTokensTool({ tool: (_n: string, _d: string, _s: any, cb: any) => { h = cb; } } as any, async () => conn, { isRemoteMode });
+	registerImportTokensTool({ registerTool: (_n: string, __cfg: any, cb: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; h = cb; } } as any, async () => conn, { isRemoteMode });
 	return h;
 }
 
@@ -130,7 +130,7 @@ describe("#91 token tools read live Figma state, not the load-time snapshot", ()
 
 	it("export emits the live name", async () => {
 		let h: any;
-		registerExportTokensTool({ tool: (_n: string, _d: string, _s: any, cb: any) => { h = cb; } } as any, async () => connector(renamed, stale) as any, {});
+		registerExportTokensTool({ registerTool: (_n: string, __cfg: any, cb: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; h = cb; } } as any, async () => connector(renamed, stale) as any, {});
 		const res = await h({ scope: "collection", collectionIds: ["C:1"], format: "dtcg" });
 		expect(res.isError).toBeFalsy();
 		expect(text(res)).toContain("brand");
@@ -140,7 +140,7 @@ describe("#91 token tools read live Figma state, not the load-time snapshot", ()
 	it("export falls back to the snapshot with a warning when the live read fails", async () => {
 		let h: any;
 		const conn = { ...connector(stale), getVariables: async () => { throw new Error("timeout"); } };
-		registerExportTokensTool({ tool: (_n: string, _d: string, _s: any, cb: any) => { h = cb; } } as any, async () => conn as any, {});
+		registerExportTokensTool({ registerTool: (_n: string, __cfg: any, cb: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; h = cb; } } as any, async () => conn as any, {});
 		const res = await h({ scope: "collection", collectionIds: ["C:1"], format: "dtcg" });
 		expect(res.isError).toBeFalsy();
 		expect(text(res)).toContain("snapshot taken when it opened");

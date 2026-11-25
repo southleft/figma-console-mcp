@@ -27,42 +27,44 @@
  */
 
 import {
-  writeFileSync,
-  mkdirSync,
-  existsSync,
-  readFileSync,
-  readdirSync,
-  statSync,
+	writeFileSync,
+	mkdirSync,
+	existsSync,
+	readFileSync,
+	readdirSync,
+	statSync,
 } from "node:fs";
 import {
-  basename,
-  dirname,
-  extname,
-  isAbsolute,
-  join,
-  resolve,
+	basename,
+	dirname,
+	extname,
+	isAbsolute,
+	join,
+	resolve,
 } from "node:path";
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-
+import type { McpServer } from "@modelcontextprotocol/server";
 import { createChildLogger } from "./logger.js";
-import { askUser, notConfirmedResult } from "./confirm.js";
+import { confirmStep, notConfirmedResult } from "./confirm.js";
 import type { ComposedColor } from "./tokens/types.js";
-import { augmentWithExtendedCollections, countOverrides } from "./extended-collections.js";
 import {
-  buildTokenLookup,
-  canonicalizeTokenValueForComparison,
-  clamp01,
-  convertFigmaVariablesToDocument,
-  ExportTokensInputSchema,
-  ImportTokensInputSchema,
-  format as formatTokenDocument,
-  hexToRawRgba,
-  loadTokensConfig,
-  parse as parseTokenPayload,
-  resolveOutputTargets,
-  stripRawColorFromValues,
-  type TokenDocument,
+	augmentWithExtendedCollections,
+	countOverrides,
+} from "./extended-collections.js";
+import {
+	buildTokenLookup,
+	canonicalizeTokenValueForComparison,
+	clamp01,
+	convertFigmaVariablesToDocument,
+	ExportTokensInputSchema,
+	ImportTokensInputSchema,
+	format as formatTokenDocument,
+	hexToRawRgba,
+	loadTokensConfig,
+	parse as parseTokenPayload,
+	resolveOutputTargets,
+	stripRawColorFromValues,
+	type TokenDocument,
 } from "./tokens/index.js";
 
 const logger = createChildLogger({ component: "tokens-tools" });
@@ -109,114 +111,120 @@ CONFLICT HANDLING: When BOTH Figma and code changed the same token since the las
 DRY-RUN: Default first call after detecting changes is dry-run for safety. The response includes the full diff plan; user confirms, then call again with \`dryRun: false\` (or \`strategy\` other than dry-run) to apply.`;
 
 export interface RegisterTokensToolsOptions {
-  /**
-   * True when registering in Cloud Mode (Cloudflare Workers). In Cloud Mode
-   * the MCP server has no local filesystem access, so the tools surface a
-   * clear "inline payload required" error instead of letting an fs ENOENT
-   * bubble up cryptically. Export still works with explicit content return;
-   * import still works with inline payload/files. tokens.config.json
-   * autodiscovery, outputPath disk writes, and config-source file reads
-   * are all Local Mode only.
-   */
-  isRemoteMode?: boolean;
-  /**
-   * Resolve a Figma fileKey to its display name (Local Mode: from the Desktop
-   * Bridge's connected-file registry). Used to tell the caller WHICH file an
-   * export actually read from — the bridge reads whatever file is active.
-   */
-  resolveFileName?: (fileKey: string) => string | null | undefined;
+	/**
+	 * True when registering in Cloud Mode (Cloudflare Workers). In Cloud Mode
+	 * the MCP server has no local filesystem access, so the tools surface a
+	 * clear "inline payload required" error instead of letting an fs ENOENT
+	 * bubble up cryptically. Export still works with explicit content return;
+	 * import still works with inline payload/files. tokens.config.json
+	 * autodiscovery, outputPath disk writes, and config-source file reads
+	 * are all Local Mode only.
+	 */
+	isRemoteMode?: boolean;
+	/**
+	 * Resolve a Figma fileKey to its display name (Local Mode: from the Desktop
+	 * Bridge's connected-file registry). Used to tell the caller WHICH file an
+	 * export actually read from — the bridge reads whatever file is active.
+	 */
+	resolveFileName?: (fileKey: string) => string | null | undefined;
 }
 
 export function registerExportTokensTool(
-  server: McpServer,
-  getDesktopConnector: () => Promise<any>,
-  opts: RegisterTokensToolsOptions = {},
+	server: McpServer,
+	getDesktopConnector: () => Promise<any>,
+	opts: RegisterTokensToolsOptions = {},
 ): void {
-  server.tool(
-    "figma_export_tokens",
-    EXPORT_TOOL_DESCRIPTION,
-    ExportTokensInputSchema.shape,
-    async (args) => {
-      try {
-        return await handleExport(args, getDesktopConnector, opts);
-      } catch (err) {
-        logger.error({ err }, "figma_export_tokens failed");
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-                // Output-location errors already say what to do; the format hint would only mislead.
-                ...(/outputPath|Cannot write|[Nn]othing was written/.test(err instanceof Error ? err.message : String(err))
-                  ? {}
-                  : {
-                      hint: "If this is a TokenFormatNotImplementedError for a non-DTCG/non-CSS format, export to 'dtcg' or 'css-vars' instead — those are the fully-implemented formats. The canonical DTCG JSON can be consumed by Style Dictionary v4 or any other DTCG-aware tooling.",
-                    }),
-              }),
-            },
-          ],
-          isError: true,
-        };
-      }
-    },
-  );
+	server.registerTool(
+		"figma_export_tokens",
+		{
+			description: EXPORT_TOOL_DESCRIPTION,
+			inputSchema: ExportTokensInputSchema,
+		},
+		async (args) => {
+			try {
+				return await handleExport(args, getDesktopConnector, opts);
+			} catch (err) {
+				logger.error({ err }, "figma_export_tokens failed");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: err instanceof Error ? err.message : String(err),
+								// Output-location errors already say what to do; the format hint would only mislead.
+								...(/outputPath|Cannot write|[Nn]othing was written/.test(
+									err instanceof Error ? err.message : String(err),
+								)
+									? {}
+									: {
+											hint: "If this is a TokenFormatNotImplementedError for a non-DTCG/non-CSS format, export to 'dtcg' or 'css-vars' instead — those are the fully-implemented formats. The canonical DTCG JSON can be consumed by Style Dictionary v4 or any other DTCG-aware tooling.",
+										}),
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
 }
 
 export function registerImportTokensTool(
-  server: McpServer,
-  getDesktopConnector: () => Promise<any>,
-  opts: RegisterTokensToolsOptions = {},
+	server: McpServer,
+	getDesktopConnector: () => Promise<any>,
+	opts: RegisterTokensToolsOptions = {},
 ): void {
-  server.tool(
-    "figma_import_tokens",
-    IMPORT_TOOL_DESCRIPTION,
-    ImportTokensInputSchema.shape,
-    async (args) => {
-      try {
-        return await handleImport(args, getDesktopConnector, opts, server);
-      } catch (err) {
-        logger.error({ err }, "figma_import_tokens failed");
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: err instanceof Error ? err.message : String(err),
-                hint: "If this is a NotImplementedError for a non-DTCG format, convert the source to DTCG first (e.g. via figma_export_tokens then edit the JSON).",
-              }),
-            },
-          ],
-          isError: true,
-        };
-      }
-    },
-  );
+	server.registerTool(
+		"figma_import_tokens",
+		{
+			description: IMPORT_TOOL_DESCRIPTION,
+			inputSchema: ImportTokensInputSchema,
+		},
+		async (args, ctx) => {
+			try {
+				return await handleImport(args, getDesktopConnector, opts, server, ctx);
+			} catch (err) {
+				logger.error({ err }, "figma_import_tokens failed");
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: err instanceof Error ? err.message : String(err),
+								hint: "If this is a NotImplementedError for a non-DTCG format, convert the source to DTCG first (e.g. via figma_export_tokens then edit the JSON).",
+							}),
+						},
+					],
+					isError: true,
+				};
+			}
+		},
+	);
 }
 
 /**
  * Convenience: register both tools at once.
  */
 export function registerTokensTools(
-  server: McpServer,
-  getDesktopConnector: () => Promise<any>,
-  opts: RegisterTokensToolsOptions = {},
+	server: McpServer,
+	getDesktopConnector: () => Promise<any>,
+	opts: RegisterTokensToolsOptions = {},
 ): void {
-  registerExportTokensTool(server, getDesktopConnector, opts);
-  registerImportTokensTool(server, getDesktopConnector, opts);
+	registerExportTokensTool(server, getDesktopConnector, opts);
+	registerImportTokensTool(server, getDesktopConnector, opts);
 }
 
 /**
  * Standardized error for fs-dependent paths called in Cloud Mode.
  */
 function cloudModeFsError(operation: string): Error {
-  return new Error(
-    `[figma-console-mcp] ${operation} is a Local Mode operation — Cloud Mode (Cloudflare Workers) has no local filesystem access. ` +
-      "Use one of these alternatives:\n" +
-      "  • Export: omit `configPath` and `outputPath` — the tool will return token content inline in the response. Have your AI client write the files via its own Edit/Write tools.\n" +
-      "  • Import: pass token data inline via the `payload` argument (single file) or `files` argument (multi-file). Omit `configPath`.\n" +
-      "For full filesystem support (tokens.config.json autodiscovery, automatic writes to source/generated dirs), run the MCP in Local Mode via NPX.",
-  );
+	return new Error(
+		`[figma-console-mcp] ${operation} is a Local Mode operation — Cloud Mode (Cloudflare Workers) has no local filesystem access. ` +
+			"Use one of these alternatives:\n" +
+			"  • Export: omit `configPath` and `outputPath` — the tool will return token content inline in the response. Have your AI client write the files via its own Edit/Write tools.\n" +
+			"  • Import: pass token data inline via the `payload` argument (single file) or `files` argument (multi-file). Omit `configPath`.\n" +
+			"For full filesystem support (tokens.config.json autodiscovery, automatic writes to source/generated dirs), run the MCP in Local Mode via NPX.",
+	);
 }
 
 // ============================================================================
@@ -224,724 +232,764 @@ function cloudModeFsError(operation: string): Error {
 // ============================================================================
 
 async function handleExport(
-  args: any,
-  getDesktopConnector: () => Promise<any>,
-  opts: RegisterTokensToolsOptions,
-): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
-  // Cloud Mode guard. Any filesystem operation needs to bail with a clear
-  // message before the fs call actually throws something cryptic.
-  if (opts.isRemoteMode) {
-    if (args.configPath) {
-      throw cloudModeFsError("`configPath` (tokens.config.json autodiscovery)");
-    }
-    if (args.outputPath) {
-      throw cloudModeFsError("`outputPath` (writing token files to disk)");
-    }
-  }
+	args: any,
+	getDesktopConnector: () => Promise<any>,
+	opts: RegisterTokensToolsOptions,
+): Promise<{
+	content: Array<{ type: "text"; text: string }>;
+	isError?: boolean;
+}> {
+	// Cloud Mode guard. Any filesystem operation needs to bail with a clear
+	// message before the fs call actually throws something cryptic.
+	if (opts.isRemoteMode) {
+		if (args.configPath) {
+			throw cloudModeFsError("`configPath` (tokens.config.json autodiscovery)");
+		}
+		if (args.outputPath) {
+			throw cloudModeFsError("`outputPath` (writing token files to disk)");
+		}
+	}
 
-  // 1. Load config (autodiscover or explicit). Skip entirely in Cloud Mode
-  //    — tokens.config.json lookup requires a filesystem.
-  const loaded = opts.isRemoteMode
-    ? null
-    : loadTokensConfig({ explicitPath: args.configPath });
+	// 1. Load config (autodiscover or explicit). Skip entirely in Cloud Mode
+	//    — tokens.config.json lookup requires a filesystem.
+	const loaded = opts.isRemoteMode
+		? null
+		: loadTokensConfig({ explicitPath: args.configPath });
 
-  // 2. Fetch variables from Figma via the desktop connector — LIVE from the
-  //    Plugin API (#91). The plugin's load-time snapshot misses renames and
-  //    codeSyntax edits made after the plugin opened; it's only a fallback.
-  const connector = await getDesktopConnector();
-  // We don't have a specific fileKey here unless the caller passed one in
-  // config; pass undefined to let the connector use the currently-connected
-  // file context.
-  const fileKey = loaded?.config?.figmaFile
-    ? extractFileKey(loaded.config.figmaFile)
-    : undefined;
+	// 2. Fetch variables from Figma via the desktop connector — LIVE from the
+	//    Plugin API (#91). The plugin's load-time snapshot misses renames and
+	//    codeSyntax edits made after the plugin opened; it's only a fallback.
+	const connector = await getDesktopConnector();
+	// We don't have a specific fileKey here unless the caller passed one in
+	// config; pass undefined to let the connector use the currently-connected
+	// file context.
+	const fileKey = loaded?.config?.figmaFile
+		? extractFileKey(loaded.config.figmaFile)
+		: undefined;
 
-  const staleWarnings: string[] = [];
-  let variableData: any;
-  try {
-    variableData = await readVariablesLive(connector, fileKey);
-  } catch (liveErr) {
-    const raw = await connector.getVariablesFromPluginUI(fileKey);
-    variableData = raw?.result?.variables ? raw.result : raw;
-    staleWarnings.push(
-      `Variables were read from the Desktop Bridge plugin's snapshot taken when it opened, because the live read failed (${liveErr instanceof Error ? liveErr.message : String(liveErr)}). Renames and codeSyntax changes made since then may be missing — reopen the plugin and export again to be sure.`,
-    );
-  }
+	const staleWarnings: string[] = [];
+	let variableData: any;
+	try {
+		variableData = await readVariablesLive(connector, fileKey);
+	} catch (liveErr) {
+		const raw = await connector.getVariablesFromPluginUI(fileKey);
+		variableData = raw?.result?.variables ? raw.result : raw;
+		staleWarnings.push(
+			`Variables were read from the Desktop Bridge plugin's snapshot taken when it opened, because the live read failed (${liveErr instanceof Error ? liveErr.message : String(liveErr)}). Renames and codeSyntax changes made since then may be missing — reopen the plugin and export again to be sure.`,
+		);
+	}
 
-  if (!variableData?.variables) {
-    throw new Error(
-      "[figma-console-mcp] No variables found in the connected Figma file. Make sure the Desktop Bridge plugin is running and the file has at least one variable collection.",
-    );
-  }
+	if (!variableData?.variables) {
+		throw new Error(
+			"[figma-console-mcp] No variables found in the connected Figma file. Make sure the Desktop Bridge plugin is running and the file has at least one variable collection.",
+		);
+	}
 
-  // 3a. Extended collections (Figma collection extensions) own no variables of
-  //     their own — their values live in `variableOverrides` on the collection —
-  //     so the converter would emit them as EMPTY sets. Export can't represent
-  //     "extends X" yet (DTCG has no notion of it, and figma_import_tokens could
-  //     not recreate one), so exclude them explicitly and say so.
-  const extensionWarnings: string[] = [];
-  const extended = await augmentWithExtendedCollections(connector, variableData, fileKey);
-  if (extended.warning) extensionWarnings.push(extended.warning);
-  const extendedCollections: any[] = (Array.isArray(variableData.variableCollections)
-    ? variableData.variableCollections
-    : Object.values(variableData.variableCollections ?? {})
-  ).filter((c: any) => c?.isExtension);
-  if (extendedCollections.length > 0) {
-    const requestedExtended = Array.isArray(args.collectionIds)
-      ? extendedCollections.filter((c) => args.collectionIds.includes(c.id))
-      : [];
-    if (requestedExtended.length > 0) {
-      const names = requestedExtended.map((c) => `"${c.name}" (${c.id})`).join(", ");
-      throw new Error(
-        `[figma-console-mcp] ${names} ${requestedExtended.length === 1 ? "is an extended collection" : "are extended collections"}, which figma_export_tokens cannot export yet. Nothing was written. ` +
-          "An extended collection inherits its parent's variables and stores only its overrides, and the token formats have no way to express that. " +
-          `To read its values — every variable, per mode, marked overridden or inherited — use figma_get_variables with collection="${requestedExtended[0].name}". To export the base tokens, request the parent collection instead.`,
-      );
-    }
-    const extendedIds = new Set(extendedCollections.map((c) => c.id));
-    if (Array.isArray(variableData.variableCollections)) {
-      variableData.variableCollections = variableData.variableCollections.filter((c: any) => !extendedIds.has(c.id));
-    }
-    for (const c of extendedCollections) {
-      const counts = countOverrides(c);
-      extensionWarnings.push(
-        `Extended collection "${c.name}" was not exported (${counts.values} overridden value${counts.values === 1 ? "" : "s"} across ${counts.variables} variable${counts.variables === 1 ? "" : "s"}). Exporting extended collections isn't supported yet; use figma_get_variables with collection="${c.name}" to read its values.`,
-      );
-    }
-  }
+	// 3a. Extended collections (Figma collection extensions) own no variables of
+	//     their own — their values live in `variableOverrides` on the collection —
+	//     so the converter would emit them as EMPTY sets. Export can't represent
+	//     "extends X" yet (DTCG has no notion of it, and figma_import_tokens could
+	//     not recreate one), so exclude them explicitly and say so.
+	const extensionWarnings: string[] = [];
+	const extended = await augmentWithExtendedCollections(
+		connector,
+		variableData,
+		fileKey,
+	);
+	if (extended.warning) extensionWarnings.push(extended.warning);
+	const extendedCollections: any[] = (
+		Array.isArray(variableData.variableCollections)
+			? variableData.variableCollections
+			: Object.values(variableData.variableCollections ?? {})
+	).filter((c: any) => c?.isExtension);
+	if (extendedCollections.length > 0) {
+		const requestedExtended = Array.isArray(args.collectionIds)
+			? extendedCollections.filter((c) => args.collectionIds.includes(c.id))
+			: [];
+		if (requestedExtended.length > 0) {
+			const names = requestedExtended
+				.map((c) => `"${c.name}" (${c.id})`)
+				.join(", ");
+			throw new Error(
+				`[figma-console-mcp] ${names} ${requestedExtended.length === 1 ? "is an extended collection" : "are extended collections"}, which figma_export_tokens cannot export yet. Nothing was written. ` +
+					"An extended collection inherits its parent's variables and stores only its overrides, and the token formats have no way to express that. " +
+					`To read its values — every variable, per mode, marked overridden or inherited — use figma_get_variables with collection="${requestedExtended[0].name}". To export the base tokens, request the parent collection instead.`,
+			);
+		}
+		const extendedIds = new Set(extendedCollections.map((c) => c.id));
+		if (Array.isArray(variableData.variableCollections)) {
+			variableData.variableCollections =
+				variableData.variableCollections.filter(
+					(c: any) => !extendedIds.has(c.id),
+				);
+		}
+		for (const c of extendedCollections) {
+			const counts = countOverrides(c);
+			extensionWarnings.push(
+				`Extended collection "${c.name}" was not exported (${counts.values} overridden value${counts.values === 1 ? "" : "s"} across ${counts.variables} variable${counts.variables === 1 ? "" : "s"}). Exporting extended collections isn't supported yet; use figma_get_variables with collection="${c.name}" to read its values.`,
+			);
+		}
+	}
 
-  // 3. Normalize to the converter's expected shape.
-  const payload = normalizeFigmaPayload(variableData);
-  const sourceFileKey: string | null =
-    (typeof variableData.fileKey === "string" && variableData.fileKey) ||
-    fileKey ||
-    null;
+	// 3. Normalize to the converter's expected shape.
+	const payload = normalizeFigmaPayload(variableData);
+	const sourceFileKey: string | null =
+		(typeof variableData.fileKey === "string" && variableData.fileKey) ||
+		fileKey ||
+		null;
 
-  // 3b. Identify the Figma file the data ACTUALLY came from. Without a
-  //     tokens.config.json `figmaFile`, the bridge reads whichever file is
-  //     active in Figma Desktop — which may not be the one the caller means.
-  //     (With `figmaFile` pinned, sendCommand routes to that file's plugin
-  //     connection and rejects if it isn't connected, so no check is needed.)
-  const source = {
-    fileKey: sourceFileKey,
-    fileName:
-      (sourceFileKey && opts.resolveFileName?.(sourceFileKey)) || null,
-  };
-  // 3c. Every requested collection must exist in that file. A partial or
-  //     empty match would otherwise be written over the target as if it were
-  //     the full export.
-  assertRequestedCollectionsFound(args.collectionIds, payload.collections, source);
+	// 3b. Identify the Figma file the data ACTUALLY came from. Without a
+	//     tokens.config.json `figmaFile`, the bridge reads whichever file is
+	//     active in Figma Desktop — which may not be the one the caller means.
+	//     (With `figmaFile` pinned, sendCommand routes to that file's plugin
+	//     connection and rejects if it isn't connected, so no check is needed.)
+	const source = {
+		fileKey: sourceFileKey,
+		fileName: (sourceFileKey && opts.resolveFileName?.(sourceFileKey)) || null,
+	};
+	// 3c. Every requested collection must exist in that file. A partial or
+	//     empty match would otherwise be written over the target as if it were
+	//     the full export.
+	assertRequestedCollectionsFound(
+		args.collectionIds,
+		payload.collections,
+		source,
+	);
 
-  // 4. Convert to canonical TokenDocument.
-  const { document, warnings } = convertFigmaVariablesToDocument(payload, {
-    // The file the data was ACTUALLY read from — stamped into DTCG output so a
-    // later export from a different Figma file can be recognized and refused.
-    figmaFileKey: sourceFileKey ?? undefined,
-    collectionIds: args.collectionIds,
-    modes: args.modes,
-    stripPrefix: args.prefix,
-    mcpVersion: MCP_VERSION,
-  });
+	// 4. Convert to canonical TokenDocument.
+	const { document, warnings } = convertFigmaVariablesToDocument(payload, {
+		// The file the data was ACTUALLY read from — stamped into DTCG output so a
+		// later export from a different Figma file can be recognized and refused.
+		figmaFileKey: sourceFileKey ?? undefined,
+		collectionIds: args.collectionIds,
+		modes: args.modes,
+		stripPrefix: args.prefix,
+		mcpVersion: MCP_VERSION,
+	});
 
-  // 5. Resolve which output formats to emit.
-  const targets = resolveOutputTargets(loaded?.config ?? null, args.format);
+	// 5. Resolve which output formats to emit.
+	const targets = resolveOutputTargets(loaded?.config ?? null, args.format);
 
-  // 6. Format the document for each target.
-  const allFiles: Array<{
-    format: string;
-    path: string;
-    content: string;
-    splitByCollection: boolean;
-  }> = [];
-  const allWarnings: string[] = [...staleWarnings, ...extensionWarnings, ...warnings];
-  if (
-    args.scope === "collection" &&
-    !(Array.isArray(args.collectionIds) && args.collectionIds.length > 0)
-  ) {
-    allWarnings.push(
-      "scope is 'collection' but no collectionIds were passed — every collection was exported. Pass collectionIds (see figma_get_variables) to narrow the export.",
-    );
-  }
+	// 6. Format the document for each target.
+	const allFiles: Array<{
+		format: string;
+		path: string;
+		content: string;
+		splitByCollection: boolean;
+	}> = [];
+	const allWarnings: string[] = [
+		...staleWarnings,
+		...extensionWarnings,
+		...warnings,
+	];
+	if (
+		args.scope === "collection" &&
+		!(Array.isArray(args.collectionIds) && args.collectionIds.length > 0)
+	) {
+		allWarnings.push(
+			"scope is 'collection' but no collectionIds were passed — every collection was exported. Pass collectionIds (see figma_get_variables) to narrow the export.",
+		);
+	}
 
-  for (const target of targets) {
-    try {
-      const result = formatTokenDocument(document, {
-        target: {
-          ...target,
-          splitByMode: args.splitByMode ?? target.splitByMode,
-          splitByCollection: args.splitByCollection ?? target.splitByCollection,
-          prefix: args.prefix ?? target.prefix,
-          resolveAliases: args.resolveAliases ?? target.resolveAliases,
-          dtcgDialect: args.dtcgDialect ?? target.dtcgDialect,
-          transforms: {
-            colorFormat: args.colorFormat ?? target.transforms?.colorFormat,
-            sizeUnit: args.sizeUnit ?? target.transforms?.sizeUnit,
-            remBase: args.remBase ?? target.transforms?.remBase,
-          },
-        },
-        projectRoot: loaded?.projectRoot,
-      });
-      for (const file of result.files) {
-        allFiles.push({
-          format: target.format,
-          ...file,
-          content: stampSourceFile(file.content, sourceFileKey),
-          splitByCollection: !!(
-            args.splitByCollection ?? target.splitByCollection
-          ),
-        });
-      }
-      // Formatters warn once per (token, mode); keep each message once.
-      for (const w of result.warnings) if (!allWarnings.includes(w)) allWarnings.push(w);
-    } catch (err) {
-      // Non-DTCG formatters throw NotImplementedError. Surface it without
-      // bailing on the other targets.
-      allWarnings.push(
-        `[${target.format}] ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
+	for (const target of targets) {
+		try {
+			const result = formatTokenDocument(document, {
+				target: {
+					...target,
+					splitByMode: args.splitByMode ?? target.splitByMode,
+					splitByCollection: args.splitByCollection ?? target.splitByCollection,
+					prefix: args.prefix ?? target.prefix,
+					resolveAliases: args.resolveAliases ?? target.resolveAliases,
+					dtcgDialect: args.dtcgDialect ?? target.dtcgDialect,
+					transforms: {
+						colorFormat: args.colorFormat ?? target.transforms?.colorFormat,
+						sizeUnit: args.sizeUnit ?? target.transforms?.sizeUnit,
+						remBase: args.remBase ?? target.transforms?.remBase,
+					},
+				},
+				projectRoot: loaded?.projectRoot,
+			});
+			for (const file of result.files) {
+				allFiles.push({
+					format: target.format,
+					...file,
+					content: stampSourceFile(file.content, sourceFileKey),
+					splitByCollection: !!(
+						args.splitByCollection ?? target.splitByCollection
+					),
+				});
+			}
+			// Formatters warn once per (token, mode); keep each message once.
+			for (const w of result.warnings)
+				if (!allWarnings.includes(w)) allWarnings.push(w);
+		} catch (err) {
+			// Non-DTCG formatters throw NotImplementedError. Surface it without
+			// bailing on the other targets.
+			allWarnings.push(
+				`[${target.format}] ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
 
-  // 7. If outputPath is set, write to disk. Otherwise return inline.
-  // Output routing: canonical-format files (matching config.source.canonical)
-  // go to source.dir; everything else goes to generated.dir.
-  //
-  // The write plan is computed (and validated) up front — for dry-runs too —
-  // so a bad outputPath fails with an actionable message before any file is
-  // written, instead of surfacing a raw EEXIST/ENOTDIR half-way through.
-  const dryRun = args.strategy === "dry-run";
-  const writtenPaths: string[] = [];
+	// 7. If outputPath is set, write to disk. Otherwise return inline.
+	// Output routing: canonical-format files (matching config.source.canonical)
+	// go to source.dir; everything else goes to generated.dir.
+	//
+	// The write plan is computed (and validated) up front — for dry-runs too —
+	// so a bad outputPath fails with an actionable message before any file is
+	// written, instead of surfacing a raw EEXIST/ENOTDIR half-way through.
+	const dryRun = args.strategy === "dry-run";
+	const writtenPaths: string[] = [];
 
-  const plan = planExportWrites(allFiles, args.outputPath, loaded);
-  allWarnings.push(...plan.warnings);
+	const plan = planExportWrites(allFiles, args.outputPath, loaded);
+	allWarnings.push(...plan.warnings);
 
-  // Validate EVERY planned write before performing ANY of them — a refused
-  // export must leave the disk exactly as it found it.
-  const totalTokens = document.sets.reduce((n, s) => n + s.tokens.length, 0);
-  if (totalTokens === 0) {
-    if (plan.writes.length > 0) {
-      throw new Error(
-        `[figma-console-mcp] The export contains 0 tokens (read from ${describeSource(source)}), so nothing was written — writing it would have emptied ${plan.writes.length === 1 ? `"${plan.writes[0].fullPath}"` : `${plan.writes.length} files`}. Check that the right file is active in Figma and that the collectionIds/modes filters match it.`,
-      );
-    }
-    allWarnings.push(
-      `The export contains 0 tokens (read from ${describeSource(source)}). Check that the right file is active in Figma and that the collectionIds/modes filters match it.`,
-    );
-  }
-  if (args.strategy !== "replace") {
-    const allExportedCollectionIds = document.sets
-      .map((s) => s.meta?.figmaCollectionId)
-      .filter((id): id is string => typeof id === "string");
-    // Exported collections that ended up with no tokens appear in no file's
-    // content — yet a token stamped with one that vanishes was still
-    // legitimately deleted in Figma.
-    const emptyExportedCollectionIds = document.sets
-      .filter((s) => s.tokens.length === 0)
-      .map((s) => s.meta?.figmaCollectionId)
-      .filter((id): id is string => typeof id === "string");
+	// Validate EVERY planned write before performing ANY of them — a refused
+	// export must leave the disk exactly as it found it.
+	const totalTokens = document.sets.reduce((n, s) => n + s.tokens.length, 0);
+	if (totalTokens === 0) {
+		if (plan.writes.length > 0) {
+			throw new Error(
+				`[figma-console-mcp] The export contains 0 tokens (read from ${describeSource(source)}), so nothing was written — writing it would have emptied ${plan.writes.length === 1 ? `"${plan.writes[0].fullPath}"` : `${plan.writes.length} files`}. Check that the right file is active in Figma and that the collectionIds/modes filters match it.`,
+			);
+		}
+		allWarnings.push(
+			`The export contains 0 tokens (read from ${describeSource(source)}). Check that the right file is active in Figma and that the collectionIds/modes filters match it.`,
+		);
+	}
+	if (args.strategy !== "replace") {
+		const allExportedCollectionIds = document.sets
+			.map((s) => s.meta?.figmaCollectionId)
+			.filter((id): id is string => typeof id === "string");
+		// Exported collections that ended up with no tokens appear in no file's
+		// content — yet a token stamped with one that vanishes was still
+		// legitimately deleted in Figma.
+		const emptyExportedCollectionIds = document.sets
+			.filter((s) => s.tokens.length === 0)
+			.map((s) => s.meta?.figmaCollectionId)
+			.filter((id): id is string => typeof id === "string");
 
-    for (const write of plan.writes) {
-      if (!existsSync(write.fullPath)) continue;
-      let existing: string;
-      try {
-        existing = readFileSync(write.fullPath, "utf-8");
-      } catch (err) {
-        // Unreadable target: we cannot prove the overwrite is safe, so don't.
-        throw new Error(
-          `[figma-console-mcp] Nothing was written. "${write.fullPath}" exists but could not be read to check what overwriting it would destroy (${err instanceof Error ? err.message : String(err)}). Fix the file's permissions, or pass strategy: "replace" to overwrite it unconditionally.`,
-        );
-      }
+		for (const write of plan.writes) {
+			if (!existsSync(write.fullPath)) continue;
+			let existing: string;
+			try {
+				existing = readFileSync(write.fullPath, "utf-8");
+			} catch (err) {
+				// Unreadable target: we cannot prove the overwrite is safe, so don't.
+				throw new Error(
+					`[figma-console-mcp] Nothing was written. "${write.fullPath}" exists but could not be read to check what overwriting it would destroy (${err instanceof Error ? err.message : String(err)}). Fix the file's permissions, or pass strategy: "replace" to overwrite it unconditionally.`,
+				);
+			}
 
-      // (a) Any format: was this file generated from a DIFFERENT Figma file?
-      const stampedKey = readSourceFileStamp(existing);
-      if (stampedKey && !sourceFileKey) {
-        // The target records its source, but this run can't say where ITS data
-        // came from — we cannot prove they match, so don't overwrite.
-        throw new Error(
-          `[figma-console-mcp] Nothing was written. "${write.fullPath}" was generated from Figma file ${stampedKey}, but the Desktop Bridge plugin did not report which file this export read from, so it can't be confirmed to be the same one. Re-import the plugin manifest in Figma (the bundled manifest enables file-key reporting) and retry, or pass strategy: "replace" to overwrite anyway.`,
-        );
-      }
-      if (stampedKey && sourceFileKey && stampedKey !== sourceFileKey) {
-        throw new Error(
-          `[figma-console-mcp] Nothing was written. "${write.fullPath}" was generated from Figma file ${stampedKey}, but this export read from ${describeSource(source)} — most likely a different file/tab is active in Figma than you intended. Switch to the right file (or use figma_navigate) and retry. If you really mean to re-source this file, pass strategy: "replace".`,
-        );
-      }
+			// (a) Any format: was this file generated from a DIFFERENT Figma file?
+			const stampedKey = readSourceFileStamp(existing);
+			if (stampedKey && !sourceFileKey) {
+				// The target records its source, but this run can't say where ITS data
+				// came from — we cannot prove they match, so don't overwrite.
+				throw new Error(
+					`[figma-console-mcp] Nothing was written. "${write.fullPath}" was generated from Figma file ${stampedKey}, but the Desktop Bridge plugin did not report which file this export read from, so it can't be confirmed to be the same one. Re-import the plugin manifest in Figma (the bundled manifest enables file-key reporting) and retry, or pass strategy: "replace" to overwrite anyway.`,
+				);
+			}
+			if (stampedKey && sourceFileKey && stampedKey !== sourceFileKey) {
+				throw new Error(
+					`[figma-console-mcp] Nothing was written. "${write.fullPath}" was generated from Figma file ${stampedKey}, but this export read from ${describeSource(source)} — most likely a different file/tab is active in Figma than you intended. Switch to the right file (or use figma_navigate) and retry. If you really mean to re-source this file, pass strategy: "replace".`,
+				);
+			}
 
-      // (b) DTCG: would the overwrite destroy tokens this export doesn't manage?
-      //     A DTCG target we cannot parse (merge-conflict markers, a truncated
-      //     write) can't be checked — refuse rather than bulldoze it.
-      if (
-        write.format === "dtcg" &&
-        stripBom(existing).trim() !== "" &&
-        !isParsableJson(existing)
-      ) {
-        throw new Error(
-          `[figma-console-mcp] Nothing was written. "${write.fullPath}" exists but is not valid JSON (unresolved merge conflict? partial write?), so what overwriting it would destroy can't be checked. Fix the file, or pass strategy: "replace" to overwrite it unconditionally.`,
-        );
-      }
-      //     A DTCG token file must never be replaced by a DIFFERENT kind of
-      //     output (css-vars aimed at typography.tokens.json): the new side
-      //     isn't JSON, so the token comparison below would see nothing lost.
-      if (dtcgTokenCount(existing) > 0 && !isParsableJson(write.content)) {
-        throw new Error(
-          `[figma-console-mcp] Nothing was written. "${write.fullPath}" is a DTCG token file (${dtcgTokenCount(existing)} tokens), and this export would replace it with ${write.format} output — every token in it would be lost. Point outputPath at a ${write.format} file instead, or pass strategy: "replace" if you really mean to convert this file.`,
-        );
-      }
-      //     Which collections does THIS file speak for? With splitByCollection
-      //     a file holds one collection, so only that one (a token from another
-      //     collection pasted in is NOT ours to drop). Otherwise every exported
-      //     collection feeds the file — including one that has just lost the
-      //     mode a splitByMode file is for, whose tokens rightly disappear.
-      const loss = findUnmanagedTokenLoss(
-        existing,
-        write.content,
-        new Set(
-          write.splitByCollection
-            ? [
-                ...collectionIdsInDtcg(write.content),
-                ...emptyExportedCollectionIds,
-              ]
-            : allExportedCollectionIds,
-        ),
-      );
-      if (loss) throw unmanagedLossError(loss, write.fullPath, source);
-    }
-  }
+			// (b) DTCG: would the overwrite destroy tokens this export doesn't manage?
+			//     A DTCG target we cannot parse (merge-conflict markers, a truncated
+			//     write) can't be checked — refuse rather than bulldoze it.
+			if (
+				write.format === "dtcg" &&
+				stripBom(existing).trim() !== "" &&
+				!isParsableJson(existing)
+			) {
+				throw new Error(
+					`[figma-console-mcp] Nothing was written. "${write.fullPath}" exists but is not valid JSON (unresolved merge conflict? partial write?), so what overwriting it would destroy can't be checked. Fix the file, or pass strategy: "replace" to overwrite it unconditionally.`,
+				);
+			}
+			//     A DTCG token file must never be replaced by a DIFFERENT kind of
+			//     output (css-vars aimed at typography.tokens.json): the new side
+			//     isn't JSON, so the token comparison below would see nothing lost.
+			if (dtcgTokenCount(existing) > 0 && !isParsableJson(write.content)) {
+				throw new Error(
+					`[figma-console-mcp] Nothing was written. "${write.fullPath}" is a DTCG token file (${dtcgTokenCount(existing)} tokens), and this export would replace it with ${write.format} output — every token in it would be lost. Point outputPath at a ${write.format} file instead, or pass strategy: "replace" if you really mean to convert this file.`,
+				);
+			}
+			//     Which collections does THIS file speak for? With splitByCollection
+			//     a file holds one collection, so only that one (a token from another
+			//     collection pasted in is NOT ours to drop). Otherwise every exported
+			//     collection feeds the file — including one that has just lost the
+			//     mode a splitByMode file is for, whose tokens rightly disappear.
+			const loss = findUnmanagedTokenLoss(
+				existing,
+				write.content,
+				new Set(
+					write.splitByCollection
+						? [
+								...collectionIdsInDtcg(write.content),
+								...emptyExportedCollectionIds,
+							]
+						: allExportedCollectionIds,
+				),
+			);
+			if (loss) throw unmanagedLossError(loss, write.fullPath, source);
+		}
+	}
 
-  if (!dryRun) {
-    for (const write of plan.writes) {
-      try {
-        mkdirSync(dirname(write.fullPath), { recursive: true });
-        writeFileSync(write.fullPath, write.content, "utf-8");
-      } catch (err) {
-        throw describeExportWriteError(err, write.fullPath);
-      }
-      writtenPaths.push(write.fullPath);
-    }
-  }
-  const outputBase = writtenPaths.length > 0 ? "(multiple)" : null;
+	if (!dryRun) {
+		for (const write of plan.writes) {
+			try {
+				mkdirSync(dirname(write.fullPath), { recursive: true });
+				writeFileSync(write.fullPath, write.content, "utf-8");
+			} catch (err) {
+				throw describeExportWriteError(err, write.fullPath);
+			}
+			writtenPaths.push(write.fullPath);
+		}
+	}
+	const outputBase = writtenPaths.length > 0 ? "(multiple)" : null;
 
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: JSON.stringify(
-          {
-            success: true,
-            mode: dryRun ? "dry-run" : outputBase ? "written" : "inline",
-            configFound: !!loaded,
-            configPath: loaded?.configPath ?? null,
-            // Which Figma file the variables were read from. Verify this is
-            // the file you meant — the bridge reads the ACTIVE file unless
-            // tokens.config.json pins `figmaFile`.
-            source,
-            collections: document.sets.map((s) => ({
-              name: s.name,
-              modes: s.modes,
-              tokenCount: s.tokens.length,
-              figmaCollectionId: s.meta?.figmaCollectionId,
-            })),
-            outputs: dryRun
-              ? allFiles.map((f) => {
-                const planned = plan.writes.find(
-                  (w) => w.format === f.format && w.sourcePath === f.path,
-                );
-                return {
-                  format: f.format,
-                  path: f.path,
-                  ...(planned ? { wouldWriteTo: planned.fullPath } : {}),
-                  preview: f.content.slice(0, 500) + (f.content.length > 500 ? "…" : ""),
-                };
-              })
-              : outputBase
-                ? writtenPaths.map((p) => ({ writtenTo: p }))
-                : allFiles,
-            warnings: allWarnings,
-            ...(loaded
-              ? {}
-              : {
-                  suggestedScaffold: {
-                    note: "No tokens.config.json detected. Recommended scaffold:",
-                    configContent: JSON.stringify(
-                      {
-                        $schema:
-                          "https://figma-console-mcp.southleft.com/schemas/tokens.config.v1.json",
-                        source: { dir: "src/styles/tokens", canonical: "dtcg" },
-                        generated: {
-                          dir: "src/styles/generated",
-                          formats: [{ format: "css-vars", splitByMode: true }],
-                        },
-                        conflictResolution: "ask",
-                      },
-                      null,
-                      2,
-                    ),
-                    directories: ["src/styles/tokens", "src/styles/generated"],
-                    nextSteps:
-                      "Write tokens.config.json at the project root, create the directories, then call figma_export_tokens again — zero args needed.",
-                  },
-                }),
-          },
-          null,
-          2,
-        ),
-      },
-    ],
-  };
+	return {
+		content: [
+			{
+				type: "text" as const,
+				text: JSON.stringify(
+					{
+						success: true,
+						mode: dryRun ? "dry-run" : outputBase ? "written" : "inline",
+						configFound: !!loaded,
+						configPath: loaded?.configPath ?? null,
+						// Which Figma file the variables were read from. Verify this is
+						// the file you meant — the bridge reads the ACTIVE file unless
+						// tokens.config.json pins `figmaFile`.
+						source,
+						collections: document.sets.map((s) => ({
+							name: s.name,
+							modes: s.modes,
+							tokenCount: s.tokens.length,
+							figmaCollectionId: s.meta?.figmaCollectionId,
+						})),
+						outputs: dryRun
+							? allFiles.map((f) => {
+									const planned = plan.writes.find(
+										(w) => w.format === f.format && w.sourcePath === f.path,
+									);
+									return {
+										format: f.format,
+										path: f.path,
+										...(planned ? { wouldWriteTo: planned.fullPath } : {}),
+										preview:
+											f.content.slice(0, 500) +
+											(f.content.length > 500 ? "…" : ""),
+									};
+								})
+							: outputBase
+								? writtenPaths.map((p) => ({ writtenTo: p }))
+								: allFiles,
+						warnings: allWarnings,
+						...(loaded
+							? {}
+							: {
+									suggestedScaffold: {
+										note: "No tokens.config.json detected. Recommended scaffold:",
+										configContent: JSON.stringify(
+											{
+												$schema:
+													"https://figma-console-mcp.southleft.com/schemas/tokens.config.v1.json",
+												source: { dir: "src/styles/tokens", canonical: "dtcg" },
+												generated: {
+													dir: "src/styles/generated",
+													formats: [{ format: "css-vars", splitByMode: true }],
+												},
+												conflictResolution: "ask",
+											},
+											null,
+											2,
+										),
+										directories: ["src/styles/tokens", "src/styles/generated"],
+										nextSteps:
+											"Write tokens.config.json at the project root, create the directories, then call figma_export_tokens again — zero args needed.",
+									},
+								}),
+					},
+					null,
+					2,
+				),
+			},
+		],
+	};
 }
 
 async function handleImport(
-  args: any,
-  getDesktopConnector: () => Promise<any>,
-  opts: RegisterTokensToolsOptions,
-  server?: McpServer,
-): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
-  // Cloud Mode guard: filesystem operations are unavailable. Inline
-  // `payload` / `files` arguments still work and are the supported path.
-  if (opts.isRemoteMode) {
-    if (args.configPath) {
-      throw cloudModeFsError("`configPath` (tokens.config.json autodiscovery)");
-    }
-    if (!args.payload && !args.files) {
-      throw cloudModeFsError(
-        "Implicit source-dir reads (when neither `payload` nor `files` is provided)",
-      );
-    }
-  }
+	args: any,
+	getDesktopConnector: () => Promise<any>,
+	opts: RegisterTokensToolsOptions,
+	server?: McpServer,
+	ctx?: any,
+): Promise<any> {
+	// Cloud Mode guard: filesystem operations are unavailable. Inline
+	// `payload` / `files` arguments still work and are the supported path.
+	if (opts.isRemoteMode) {
+		if (args.configPath) {
+			throw cloudModeFsError("`configPath` (tokens.config.json autodiscovery)");
+		}
+		if (!args.payload && !args.files) {
+			throw cloudModeFsError(
+				"Implicit source-dir reads (when neither `payload` nor `files` is provided)",
+			);
+		}
+	}
 
-  // 1. Load config + resolve where the source payload(s) live.
-  const loaded = opts.isRemoteMode
-    ? null
-    : loadTokensConfig({ explicitPath: args.configPath });
+	// 1. Load config + resolve where the source payload(s) live.
+	const loaded = opts.isRemoteMode
+		? null
+		: loadTokensConfig({ explicitPath: args.configPath });
 
-  // 2. Collect input payloads.
-  const inputFiles = collectInputFiles(args, loaded);
+	// 2. Collect input payloads.
+	const inputFiles = collectInputFiles(args, loaded);
 
-  // 3. Parse each input file to a TokenDocument.
-  const documents: TokenDocument[] = [];
-  const parseWarnings: string[] = [];
-  for (const file of inputFiles) {
-    const parseResult = parseTokenPayload(args.format ?? "auto", {
-      payload: file.content,
-      sourcePath: file.path,
-    });
-    documents.push(parseResult.document);
-    parseWarnings.push(...parseResult.warnings);
-  }
+	// 3. Parse each input file to a TokenDocument.
+	const documents: TokenDocument[] = [];
+	const parseWarnings: string[] = [];
+	for (const file of inputFiles) {
+		const parseResult = parseTokenPayload(args.format ?? "auto", {
+			payload: file.content,
+			sourcePath: file.path,
+		});
+		documents.push(parseResult.document);
+		parseWarnings.push(...parseResult.warnings);
+	}
 
-  // 4. Merge documents into a single TokenDocument (sets are concatenated;
-  //    tokens within sets are combined by path).
-  const merged = mergeDocuments(documents);
+	// 4. Merge documents into a single TokenDocument (sets are concatenated;
+	//    tokens within sets are combined by path).
+	const merged = mergeDocuments(documents);
 
-  // Fail closed on an empty import (#122). Parsing nothing would diff every
-  // Figma variable as "removed in code" and, under replace, delete them all.
-  const parsedTokenCount = merged.sets.reduce((n, set) => n + set.tokens.length, 0);
-  if (parsedTokenCount === 0) {
-    throw new Error(
-      `[figma-console-mcp] Nothing was imported or changed: ${inputFiles.length} input file(s) produced 0 tokens. ` +
-        (inputFiles.length === 0
-          ? "No token files were found."
-          : `Files read: ${inputFiles.map((f) => f.path).slice(0, 5).join(", ")}. Check that they are token files in the expected format.`),
-    );
-  }
+	// Fail closed on an empty import (#122). Parsing nothing would diff every
+	// Figma variable as "removed in code" and, under replace, delete them all.
+	const parsedTokenCount = merged.sets.reduce(
+		(n, set) => n + set.tokens.length,
+		0,
+	);
+	if (parsedTokenCount === 0) {
+		throw new Error(
+			`[figma-console-mcp] Nothing was imported or changed: ${inputFiles.length} input file(s) produced 0 tokens. ` +
+				(inputFiles.length === 0
+					? "No token files were found."
+					: `Files read: ${inputFiles
+							.map((f) => f.path)
+							.slice(0, 5)
+							.join(
+								", ",
+							)}. Check that they are token files in the expected format.`),
+		);
+	}
 
-  // 5. Fetch current Figma state for diffing.
-  const connector = await getDesktopConnector();
-  const fileKey = loaded?.config?.figmaFile
-    ? extractFileKey(loaded.config.figmaFile)
-    : undefined;
-  // Diff against LIVE Figma state (#91): a stale snapshot would turn a rename
-  // made in Figma into a delete + create under replace. No snapshot fallback.
-  const variableData = await readVariablesLive(connector, fileKey);
-  const figmaPayload = normalizeFigmaPayload(variableData ?? { variables: [], variableCollections: [] });
-  const { document: figmaDoc } = convertFigmaVariablesToDocument(figmaPayload, {
-    figmaFileKey: fileKey,
-    mcpVersion: MCP_VERSION,
-  });
+	// 5. Fetch current Figma state for diffing.
+	const connector = await getDesktopConnector();
+	const fileKey = loaded?.config?.figmaFile
+		? extractFileKey(loaded.config.figmaFile)
+		: undefined;
+	// Diff against LIVE Figma state (#91): a stale snapshot would turn a rename
+	// made in Figma into a delete + create under replace. No snapshot fallback.
+	const variableData = await readVariablesLive(connector, fileKey);
+	const figmaPayload = normalizeFigmaPayload(
+		variableData ?? { variables: [], variableCollections: [] },
+	);
+	const { document: figmaDoc } = convertFigmaVariablesToDocument(figmaPayload, {
+		figmaFileKey: fileKey,
+		mcpVersion: MCP_VERSION,
+	});
 
-  // 6. Compute the diff plan.
-  const diff = computeDiffPlan(figmaDoc, merged);
+	// 6. Compute the diff plan.
+	const diff = computeDiffPlan(figmaDoc, merged);
 
-  // Scope deletes to collections the token files actually contain (#122).
-  // A token file that only covers "Colors" says nothing about "Spacing", so
-  // replace must not read it as "delete every Spacing variable".
-  const inputSetNames = new Set(merged.sets.map((set) => set.name));
-  const outOfScopeDeletes = diff.toDelete.filter((e) => !inputSetNames.has(e.path.split("::")[0]));
-  if (outOfScopeDeletes.length > 0) {
-    diff.toDelete = diff.toDelete.filter((e) => inputSetNames.has(e.path.split("::")[0]));
-    const skippedSets = [...new Set(outOfScopeDeletes.map((e) => e.path.split("::")[0]))];
-    parseWarnings.push(
-      `${outOfScopeDeletes.length} Figma variable(s) in collection(s) the token files don't include were left alone and are not candidates for deletion: ${skippedSets.slice(0, 10).join(", ")}${skippedSets.length > 10 ? ", …" : ""}. To remove them, include those collections in the import or delete them in Figma.`,
-    );
-  }
+	// Scope deletes to collections the token files actually contain (#122).
+	// A token file that only covers "Colors" says nothing about "Spacing", so
+	// replace must not read it as "delete every Spacing variable".
+	const inputSetNames = new Set(merged.sets.map((set) => set.name));
+	const outOfScopeDeletes = diff.toDelete.filter(
+		(e) => !inputSetNames.has(e.path.split("::")[0]),
+	);
+	if (outOfScopeDeletes.length > 0) {
+		diff.toDelete = diff.toDelete.filter((e) =>
+			inputSetNames.has(e.path.split("::")[0]),
+		);
+		const skippedSets = [
+			...new Set(outOfScopeDeletes.map((e) => e.path.split("::")[0])),
+		];
+		parseWarnings.push(
+			`${outOfScopeDeletes.length} Figma variable(s) in collection(s) the token files don't include were left alone and are not candidates for deletion: ${skippedSets.slice(0, 10).join(", ")}${skippedSets.length > 10 ? ", …" : ""}. To remove them, include those collections in the import or delete them in Figma.`,
+		);
+	}
+	const dryRun = args.dryRun === true || args.strategy === "dry-run";
+	let strategy: "merge" | "replace" =
+		args.strategy === "replace" ? "replace" : "merge";
 
-  const dryRun = args.dryRun === true || args.strategy === "dry-run";
-  let strategy: "merge" | "replace" =
-    args.strategy === "replace" ? "replace" : "merge";
+	// 6b. Replace would permanently delete variables. When the client can show
+	//     a form, the PERSON (not the agent) confirms first — or chooses to
+	//     keep them and apply only creates/updates. Clients without elicitation
+	//     keep the previous behavior (replace is already an explicit opt-in).
+	if (!dryRun && strategy === "replace" && diff.toDelete.length > 0) {
+		const n = diff.toDelete.length;
+		const sample = diff.toDelete
+			.slice(0, 8)
+			.map((e) => e.path.replace("::", " / "))
+			.join(", ");
+		const outcome = confirmStep(server, ctx, "confirm_replace_deletes", {
+			message:
+				`figma_import_tokens (replace) will PERMANENTLY DELETE ${n} Figma variable${n === 1 ? "" : "s"} that ${n === 1 ? "isn't" : "aren't"} in the token file: ${sample}${n > 8 ? `, and ${n - 8} more` : ""}. ` +
+				`It will also create ${diff.toCreate.length}, update ${diff.toUpdate.length} and rename ${diff.toRename.length}. ` +
+				"Anything bound to a deleted variable loses that binding.",
+			fields: {
+				action: {
+					type: "string",
+					title: "What should happen to those variables?",
+					enum: ["keep", "delete"],
+					enumNames: [
+						"Keep them — apply creates, updates and renames only",
+						n === 1 ? "Delete it" : `Delete all ${n}`,
+					],
+					default: "keep",
+				},
+			},
+			required: ["action"],
+		});
+		if (outcome.status === "ask") return outcome.result;
+		if (outcome.status === "accepted") {
+			if (outcome.content.action !== "delete") {
+				strategy = "merge";
+				parseWarnings.push(
+					`The user chose to keep the ${n} Figma-only variable${n === 1 ? "" : "s"}, so the import ran as a merge (no deletes).`,
+				);
+			}
+		} else if (outcome.status === "declined" || outcome.status === "cancelled") {
+			return notConfirmedResult(`the replace import (${n} deletion${n === 1 ? "" : "s"})`, outcome);
+		}
+	}
 
-  // 6b. Replace would permanently delete variables. When the client can show
-  //     a form, the PERSON (not the agent) confirms first — or chooses to
-  //     keep them and apply only creates/updates. Clients without elicitation
-  //     keep the previous behavior (replace is already an explicit opt-in).
-  let confirmationNote: string | undefined;
-  if (!dryRun && strategy === "replace" && diff.toDelete.length > 0) {
-    const n = diff.toDelete.length;
-    const sample = diff.toDelete
-      .slice(0, 8)
-      .map((e) => e.path.replace("::", " / "))
-      .join(", ");
-    const outcome = await askUser(server, {
-      message:
-        `figma_import_tokens (replace) will PERMANENTLY DELETE ${n} Figma variable${n === 1 ? "" : "s"} that ${n === 1 ? "isn't" : "aren't"} in the token file: ${sample}${n > 8 ? `, and ${n - 8} more` : ""}. ` +
-        `It will also create ${diff.toCreate.length}, update ${diff.toUpdate.length} and rename ${diff.toRename.length}. ` +
-        "Anything bound to a deleted variable loses that binding.",
-      fields: {
-        action: {
-          type: "string",
-          title: "What should happen to those variables?",
-          enum: ["keep", "delete"],
-          enumNames: [
-            "Keep them — apply creates, updates and renames only",
-            n === 1 ? "Delete it" : `Delete all ${n}`,
-          ],
-          default: "keep",
-        },
-      },
-      required: ["action"],
-    });
-    if (outcome.status === "accepted") {
-      if (outcome.content.action !== "delete") {
-        strategy = "merge";
-        confirmationNote = `The user chose to keep the ${n} Figma-only variable${n === 1 ? "" : "s"}, so the import ran as a merge (no deletes).`;
-        parseWarnings.push(confirmationNote);
-      } else {
-        confirmationNote = `The user confirmed deleting ${n} variable${n === 1 ? "" : "s"}.`;
-      }
-    } else if (outcome.status !== "unsupported") {
-      return notConfirmedResult(`the replace import (${n} deletion${n === 1 ? "" : "s"})`, outcome);
-    }
-  }
+	// 7. Apply phase: when not dry-run, mutate Figma via the plugin bridge in
+	//    three ordered sub-phases. Order matters: creates run FIRST so that
+	//    alias-target updates in the update phase can point at just-created
+	//    variables; deletes run LAST (and only under strategy "replace").
+	let applyResult: ApplyResult | null = null;
+	let deleteWarning: string | undefined;
+	if (!dryRun) {
+		const acc: ApplyResult = {
+			applied: 0,
+			created: 0,
+			createdCollections: 0,
+			renamed: 0,
+			deleted: 0,
+			failed: 0,
+			errors: [],
+		};
+		let anyPhaseRan = false;
 
-  // 7. Apply phase: when not dry-run, mutate Figma via the plugin bridge in
-  //    three ordered sub-phases. Order matters: creates run FIRST so that
-  //    alias-target updates in the update phase can point at just-created
-  //    variables; deletes run LAST (and only under strategy "replace").
-  let applyResult: ApplyResult | null = null;
-  let deleteWarning: string | undefined;
-  if (!dryRun) {
-    const acc: ApplyResult = {
-      applied: 0,
-      created: 0,
-      createdCollections: 0,
-      renamed: 0,
-      deleted: 0,
-      failed: 0,
-      errors: [],
-    };
-    let anyPhaseRan = false;
+		const collectionModeMap = buildCollectionModeMap(figmaPayload);
+		const toCreateKeys = new Set(diff.toCreate.map((e) => e.path));
+		// Mutable map the alias resolver closes over — populated by the create
+		// phase so later alias resolutions see freshly-created variable IDs.
+		const createdIdByKey = new Map<string, string>();
+		const resolveAliasId = makeAliasIdResolver(
+			figmaDoc,
+			merged,
+			toCreateKeys,
+			createdIdByKey,
+		);
 
-    const collectionModeMap = buildCollectionModeMap(figmaPayload);
-    const toCreateKeys = new Set(diff.toCreate.map((e) => e.path));
-    // Mutable map the alias resolver closes over — populated by the create
-    // phase so later alias resolutions see freshly-created variable IDs.
-    const createdIdByKey = new Map<string, string>();
-    const resolveAliasId = makeAliasIdResolver(
-      figmaDoc,
-      merged,
-      toCreateKeys,
-      createdIdByKey,
-    );
+		// 7a. CREATE phase — missing collections (with the token file's full
+		//     mode list) and missing variables. Literal values are set at
+		//     creation; alias values apply in a second in-script pass after ALL
+		//     variables exist, so aliases among created variables resolve.
+		if (diff.toCreate.length > 0) {
+			const createPlan = buildCreatePlan(
+				diff.toCreate,
+				merged,
+				figmaPayload,
+				resolveAliasId,
+				parseWarnings,
+			);
+			if (
+				createPlan.newCollections.length > 0 ||
+				createPlan.existingCollections.length > 0
+			) {
+				anyPhaseRan = true;
+				const createResult = await applyCreates(connector, createPlan);
+				acc.created += createResult.created;
+				acc.createdCollections += createResult.createdCollections;
+				acc.failed += createResult.failed;
+				acc.errors.push(...createResult.errors);
+				for (const [key, id] of createResult.createdIdByKey) {
+					createdIdByKey.set(key, id);
+				}
+			}
+		}
 
-    // 7a. CREATE phase — missing collections (with the token file's full
-    //     mode list) and missing variables. Literal values are set at
-    //     creation; alias values apply in a second in-script pass after ALL
-    //     variables exist, so aliases among created variables resolve.
-    if (diff.toCreate.length > 0) {
-      const createPlan = buildCreatePlan(
-        diff.toCreate,
-        merged,
-        figmaPayload,
-        resolveAliasId,
-        parseWarnings,
-      );
-      if (
-        createPlan.newCollections.length > 0 ||
-        createPlan.existingCollections.length > 0
-      ) {
-        anyPhaseRan = true;
-        const createResult = await applyCreates(connector, createPlan);
-        acc.created += createResult.created;
-        acc.createdCollections += createResult.createdCollections;
-        acc.failed += createResult.failed;
-        acc.errors.push(...createResult.errors);
-        for (const [key, id] of createResult.createdIdByKey) {
-          createdIdByKey.set(key, id);
-        }
-      }
-    }
+		// 7b. UPDATE phase — value updates including alias-target updates
+		//     (references resolved to { type: "VARIABLE_ALIAS", id }) AND
+		//     renames (ID-matched tokens whose path moved: variable.name is set
+		//     to the new '/'-joined path instead of create+delete).
+		if (diff.toUpdate.length > 0 || diff.toRename.length > 0) {
+			const renameEntries = diff.toRename.map((r) => ({
+				path: r.from, // Figma-side lookup (old key)
+				codePath: r.path, // code-side lookup (new key)
+				newName: r.newName,
+				before: undefined,
+				after: undefined,
+				changes: r.changes,
+			}));
+			const updates = buildUpdatePayloads(
+				[...renameEntries, ...diff.toUpdate],
+				figmaDoc,
+				merged,
+				collectionModeMap,
+				parseWarnings,
+				resolveAliasId,
+			);
+			if (updates.length > 0) {
+				anyPhaseRan = true;
+				const renameIds = new Set(
+					updates
+						.filter((u) => u.newName !== undefined)
+						.map((u) => u.variableId),
+				);
+				const updateResult = await applyUpdates(connector, updates);
+				const renamedFailed = updateResult.errors.filter((e) =>
+					renameIds.has(e.variableId),
+				).length;
+				const renamedOk = renameIds.size - renamedFailed;
+				acc.renamed += renamedOk;
+				// `applied` counts successful non-rename update entries; a rename
+				// entry (even one that also carried value changes) counts once,
+				// under `renamed`.
+				acc.applied += updateResult.applied - renamedOk;
+				acc.failed += updateResult.failed;
+				acc.errors.push(...updateResult.errors);
+			}
+		}
 
-    // 7b. UPDATE phase — value updates including alias-target updates
-    //     (references resolved to { type: "VARIABLE_ALIAS", id }) AND
-    //     renames (ID-matched tokens whose path moved: variable.name is set
-    //     to the new '/'-joined path instead of create+delete).
-    if (diff.toUpdate.length > 0 || diff.toRename.length > 0) {
-      const renameEntries = diff.toRename.map((r) => ({
-        path: r.from, // Figma-side lookup (old key)
-        codePath: r.path, // code-side lookup (new key)
-        newName: r.newName,
-        before: undefined,
-        after: undefined,
-        changes: r.changes,
-      }));
-      const updates = buildUpdatePayloads(
-        [...renameEntries, ...diff.toUpdate],
-        figmaDoc,
-        merged,
-        collectionModeMap,
-        parseWarnings,
-        resolveAliasId,
-      );
-      if (updates.length > 0) {
-        anyPhaseRan = true;
-        const renameIds = new Set(
-          updates.filter((u) => u.newName !== undefined).map((u) => u.variableId),
-        );
-        const updateResult = await applyUpdates(connector, updates);
-        const renamedFailed = updateResult.errors.filter((e) =>
-          renameIds.has(e.variableId),
-        ).length;
-        const renamedOk = renameIds.size - renamedFailed;
-        acc.renamed += renamedOk;
-        // `applied` counts successful non-rename update entries; a rename
-        // entry (even one that also carried value changes) counts once,
-        // under `renamed`.
-        acc.applied += updateResult.applied - renamedOk;
-        acc.failed += updateResult.failed;
-        acc.errors.push(...updateResult.errors);
-      }
-    }
+		// 7c. DELETE phase — STRICTLY gated behind strategy "replace". Merge
+		//     (the default) never deletes; it only reports Figma-only tokens.
+		if (strategy === "replace" && diff.toDelete.length > 0) {
+			anyPhaseRan = true;
+			const deleteResult = await applyDeletes(
+				connector,
+				diff.toDelete,
+				figmaDoc,
+			);
+			acc.deleted += deleteResult.deleted;
+			acc.failed += deleteResult.failed;
+			acc.errors.push(...deleteResult.errors);
+			if (deleteResult.deleted > 0) {
+				deleteWarning = `⚠️ REPLACE STRATEGY: permanently deleted ${deleteResult.deleted} Figma variable(s) that were not present in the token file. Recover via Figma's version history / Edit > Undo if this was unintended.`;
+				parseWarnings.push(deleteWarning);
+			}
+		}
 
-    // 7c. DELETE phase — STRICTLY gated behind strategy "replace". Merge
-    //     (the default) never deletes; it only reports Figma-only tokens.
-    if (strategy === "replace" && diff.toDelete.length > 0) {
-      anyPhaseRan = true;
-      const deleteResult = await applyDeletes(
-        connector,
-        diff.toDelete,
-        figmaDoc,
-      );
-      acc.deleted += deleteResult.deleted;
-      acc.failed += deleteResult.failed;
-      acc.errors.push(...deleteResult.errors);
-      if (deleteResult.deleted > 0) {
-        deleteWarning = `⚠️ REPLACE STRATEGY: permanently deleted ${deleteResult.deleted} Figma variable(s) that were not present in the token file. Recover via Figma's version history / Edit > Undo if this was unintended.`;
-        parseWarnings.push(deleteWarning);
-      }
-    }
+		if (anyPhaseRan) applyResult = acc;
+	}
 
-    if (anyPhaseRan) applyResult = acc;
-  }
+	// Slim the diff for the response: full entries blow past LLM context for
+	// large design systems. Show counts + a sample of first N entries from
+	// each bucket; the caller can re-run with format=detailed if they want
+	// everything.
+	const SAMPLE_LIMIT = 20;
+	const slimDiff = {
+		summary: {
+			toCreate: diff.toCreate.length,
+			toUpdate: diff.toUpdate.length,
+			toRename: diff.toRename.length,
+			toDelete: diff.toDelete.length,
+			unchanged: diff.unchanged,
+		},
+		samples: {
+			toCreate: diff.toCreate.slice(0, SAMPLE_LIMIT).map((e) => ({
+				path: e.path,
+				type: e.type,
+			})),
+			toUpdate: diff.toUpdate.slice(0, SAMPLE_LIMIT),
+			toRename: diff.toRename.slice(0, SAMPLE_LIMIT).map((e) => ({
+				from: e.from,
+				to: e.path,
+				variableId: e.variableId,
+			})),
+			toDelete: diff.toDelete.slice(0, SAMPLE_LIMIT),
+		},
+		truncated: {
+			toCreate: diff.toCreate.length > SAMPLE_LIMIT,
+			toUpdate: diff.toUpdate.length > SAMPLE_LIMIT,
+			toRename: diff.toRename.length > SAMPLE_LIMIT,
+			toDelete: diff.toDelete.length > SAMPLE_LIMIT,
+		},
+	};
 
-  // Slim the diff for the response: full entries blow past LLM context for
-  // large design systems. Show counts + a sample of first N entries from
-  // each bucket; the caller can re-run with format=detailed if they want
-  // everything.
-  const SAMPLE_LIMIT = 20;
-  const slimDiff = {
-    summary: {
-      toCreate: diff.toCreate.length,
-      toUpdate: diff.toUpdate.length,
-      toRename: diff.toRename.length,
-      toDelete: diff.toDelete.length,
-      unchanged: diff.unchanged,
-    },
-    samples: {
-      toCreate: diff.toCreate.slice(0, SAMPLE_LIMIT).map((e) => ({
-        path: e.path,
-        type: e.type,
-      })),
-      toUpdate: diff.toUpdate.slice(0, SAMPLE_LIMIT),
-      toRename: diff.toRename.slice(0, SAMPLE_LIMIT).map((e) => ({
-        from: e.from,
-        to: e.path,
-        variableId: e.variableId,
-      })),
-      toDelete: diff.toDelete.slice(0, SAMPLE_LIMIT),
-    },
-    truncated: {
-      toCreate: diff.toCreate.length > SAMPLE_LIMIT,
-      toUpdate: diff.toUpdate.length > SAMPLE_LIMIT,
-      toRename: diff.toRename.length > SAMPLE_LIMIT,
-      toDelete: diff.toDelete.length > SAMPLE_LIMIT,
-    },
-  };
-
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: JSON.stringify(
-          {
-            success: true,
-            mode: dryRun ? "dry-run" : applyResult ? "applied" : "no-changes",
-            applyNote: dryRun
-              ? "Dry-run only — no Figma mutations performed."
-              : applyResult
-                ? [
-                    applyResult.createdCollections > 0
-                      ? `Created ${applyResult.createdCollections} collection(s).`
-                      : null,
-                    applyResult.created > 0
-                      ? `Created ${applyResult.created} variable(s).`
-                      : null,
-                    applyResult.renamed > 0
-                      ? `Renamed ${applyResult.renamed} variable(s).`
-                      : null,
-                    `Applied ${applyResult.applied} value update(s).`,
-                    applyResult.deleted > 0
-                      ? `Deleted ${applyResult.deleted} variable(s) (replace strategy).`
-                      : null,
-                    `${applyResult.failed} failed.`,
-                  ]
-                    .filter(Boolean)
-                    .join(" ")
-                : diff.toUpdate.length === 0 &&
-                    diff.toCreate.length === 0 &&
-                    diff.toRename.length === 0
-                  ? "Nothing to apply — all tokens already in sync."
-                  : "Changes were detected but skipped (likely unresolvable aliases or unconvertible values — see warnings).",
-            deleteNote: deleteWarning
-              ? deleteWarning
-              : diff.toDelete.length > 0
-                ? strategy === "replace" && dryRun
-                  ? `${diff.toDelete.length} Figma-only token(s) would be PERMANENTLY DELETED on apply (replace strategy + dry-run).`
-                  : strategy === "replace"
-                    ? `${diff.toDelete.length} Figma-only token(s) targeted for deletion (replace strategy) — see applyResult for outcome.`
-                    : `${diff.toDelete.length} Figma-only token(s) preserved (merge strategy). Use strategy: "replace" to delete them, or figma_delete_variable manually.`
-                : undefined,
-            inputFileCount: inputFiles.length,
-            parsedSetCount: merged.sets.length,
-            parsedTokenCount,
-            diff: slimDiff,
-            applyResult: applyResult
-              ? {
-                  applied: applyResult.applied,
-                  created: applyResult.created,
-                  createdCollections: applyResult.createdCollections,
-                  renamed: applyResult.renamed,
-                  deleted: applyResult.deleted,
-                  failed: applyResult.failed,
-                  errors: applyResult.errors.slice(0, 10),
-                }
-              : null,
-            warnings: parseWarnings,
-          },
-          null,
-          2,
-        ),
-      },
-    ],
-  };
+	return {
+		content: [
+			{
+				type: "text" as const,
+				text: JSON.stringify(
+					{
+						success: true,
+						mode: dryRun ? "dry-run" : applyResult ? "applied" : "no-changes",
+						applyNote: dryRun
+							? "Dry-run only — no Figma mutations performed."
+							: applyResult
+								? [
+										applyResult.createdCollections > 0
+											? `Created ${applyResult.createdCollections} collection(s).`
+											: null,
+										applyResult.created > 0
+											? `Created ${applyResult.created} variable(s).`
+											: null,
+										applyResult.renamed > 0
+											? `Renamed ${applyResult.renamed} variable(s).`
+											: null,
+										`Applied ${applyResult.applied} value update(s).`,
+										applyResult.deleted > 0
+											? `Deleted ${applyResult.deleted} variable(s) (replace strategy).`
+											: null,
+										`${applyResult.failed} failed.`,
+									]
+										.filter(Boolean)
+										.join(" ")
+								: diff.toUpdate.length === 0 &&
+										diff.toCreate.length === 0 &&
+										diff.toRename.length === 0
+									? "Nothing to apply — all tokens already in sync."
+									: "Changes were detected but skipped (likely unresolvable aliases or unconvertible values — see warnings).",
+						deleteNote: deleteWarning
+							? deleteWarning
+							: diff.toDelete.length > 0
+								? strategy === "replace" && dryRun
+									? `${diff.toDelete.length} Figma-only token(s) would be PERMANENTLY DELETED on apply (replace strategy + dry-run).`
+									: strategy === "replace"
+										? `${diff.toDelete.length} Figma-only token(s) targeted for deletion (replace strategy) — see applyResult for outcome.`
+										: `${diff.toDelete.length} Figma-only token(s) preserved (merge strategy). Use strategy: "replace" to delete them, or figma_delete_variable manually.`
+								: undefined,
+						inputFileCount: inputFiles.length,
+						parsedSetCount: merged.sets.length,
+						parsedTokenCount,
+						diff: slimDiff,
+						applyResult: applyResult
+							? {
+									applied: applyResult.applied,
+									created: applyResult.created,
+									createdCollections: applyResult.createdCollections,
+									renamed: applyResult.renamed,
+									deleted: applyResult.deleted,
+									failed: applyResult.failed,
+									errors: applyResult.errors.slice(0, 10),
+								}
+							: null,
+						warnings: parseWarnings,
+					},
+					null,
+					2,
+				),
+			},
+		],
+	};
 }
 
 // ============================================================================
@@ -952,14 +1000,17 @@ async function handleImport(
  * Read local variables live through the Plugin API (EXECUTE_CODE), unwrapped
  * to the same shape as the plugin's VARIABLES_DATA snapshot.
  */
-async function readVariablesLive(connector: any, fileKey?: string): Promise<any> {
-  const raw = await connector.getVariables(fileKey);
-  const data = raw?.result?.variables ? raw.result : raw;
-  if (!data || data.success === false || !Array.isArray(data.variables)) {
-    const reason = data?.error || raw?.error || "no variable data returned";
-    throw new Error(`live variable read failed: ${reason}`);
-  }
-  return data;
+async function readVariablesLive(
+	connector: any,
+	fileKey?: string,
+): Promise<any> {
+	const raw = await connector.getVariables(fileKey);
+	const data = raw?.result?.variables ? raw.result : raw;
+	if (!data || data.success === false || !Array.isArray(data.variables)) {
+		const reason = data?.error || raw?.error || "no variable data returned";
+		throw new Error(`live variable read failed: ${reason}`);
+	}
+	return data;
 }
 
 /**
@@ -967,8 +1018,10 @@ async function readVariablesLive(connector: any, fileKey?: string): Promise<any>
  * already a key.
  */
 function extractFileKey(figmaFileOrUrl: string): string {
-  const match = figmaFileOrUrl.match(/figma\.com\/(?:file|design)\/([a-zA-Z0-9]+)/);
-  return match ? match[1] : figmaFileOrUrl;
+	const match = figmaFileOrUrl.match(
+		/figma\.com\/(?:file|design)\/([a-zA-Z0-9]+)/,
+	);
+	return match ? match[1] : figmaFileOrUrl;
 }
 
 /**
@@ -977,21 +1030,21 @@ function extractFileKey(figmaFileOrUrl: string): string {
  * normalize both into an array.
  */
 function normalizeFigmaPayload(raw: any): {
-  collections: any[];
-  variables: any[];
+	collections: any[];
+	variables: any[];
 } {
-  const collections = Array.isArray(raw.variableCollections)
-    ? raw.variableCollections
-    : Object.entries(raw.variableCollections ?? {}).map(
-        ([id, c]: [string, any]) => ({ id, ...c }),
-      );
-  const variables = Array.isArray(raw.variables)
-    ? raw.variables
-    : Object.entries(raw.variables ?? {}).map(([id, v]: [string, any]) => ({
-        id,
-        ...v,
-      }));
-  return { collections, variables };
+	const collections = Array.isArray(raw.variableCollections)
+		? raw.variableCollections
+		: Object.entries(raw.variableCollections ?? {}).map(
+				([id, c]: [string, any]) => ({ id, ...c }),
+			);
+	const variables = Array.isArray(raw.variables)
+		? raw.variables
+		: Object.entries(raw.variables ?? {}).map(([id, v]: [string, any]) => ({
+				id,
+				...v,
+			}));
+	return { collections, variables };
 }
 
 /**
@@ -1000,39 +1053,39 @@ function normalizeFigmaPayload(raw: any): {
  * to generated.dir. Caller-supplied outputPath wins over both.
  */
 function resolveOutputBaseForFormat(
-  outputPath: string | undefined,
-  loaded: ReturnType<typeof loadTokensConfig>,
-  format: string,
+	outputPath: string | undefined,
+	loaded: ReturnType<typeof loadTokensConfig>,
+	format: string,
 ): string | null {
-  // Explicit outputPath always wins.
-  if (outputPath) {
-    return isAbsolute(outputPath)
-      ? outputPath
-      : resolve(loaded?.projectRoot ?? process.cwd(), outputPath);
-  }
-  if (!loaded) return null;
-  // Canonical format goes to source.dir.
-  if (format === loaded.config.source.canonical) {
-    return resolve(loaded.projectRoot, loaded.config.source.dir);
-  }
-  // Otherwise generated.dir.
-  if (loaded.config.generated?.dir) {
-    return resolve(loaded.projectRoot, loaded.config.generated.dir);
-  }
-  return null;
+	// Explicit outputPath always wins.
+	if (outputPath) {
+		return isAbsolute(outputPath)
+			? outputPath
+			: resolve(loaded?.projectRoot ?? process.cwd(), outputPath);
+	}
+	if (!loaded) return null;
+	// Canonical format goes to source.dir.
+	if (format === loaded.config.source.canonical) {
+		return resolve(loaded.projectRoot, loaded.config.source.dir);
+	}
+	// Otherwise generated.dir.
+	if (loaded.config.generated?.dir) {
+		return resolve(loaded.projectRoot, loaded.config.generated.dir);
+	}
+	return null;
 }
 
 /** Where an export's variables were read from. */
 export interface ExportSource {
-  fileKey: string | null;
-  fileName: string | null;
+	fileKey: string | null;
+	fileName: string | null;
 }
 
 function describeSource(source: ExportSource): string {
-  if (source.fileName && source.fileKey)
-    return `Figma file "${source.fileName}" (${source.fileKey})`;
-  if (source.fileKey) return `Figma file ${source.fileKey}`;
-  return "the file currently active in Figma";
+	if (source.fileName && source.fileKey)
+		return `Figma file "${source.fileName}" (${source.fileKey})`;
+	if (source.fileKey) return `Figma file ${source.fileKey}`;
+	return "the file currently active in Figma";
 }
 
 /**
@@ -1041,41 +1094,41 @@ function describeSource(source: ExportSource): string {
  * existing file is still data loss, just a quieter one.
  */
 export function assertRequestedCollectionsFound(
-  requested: string[] | undefined,
-  available: Array<{ id: string; name?: string }>,
-  source: ExportSource,
+	requested: string[] | undefined,
+	available: Array<{ id: string; name?: string }>,
+	source: ExportSource,
 ): void {
-  if (!Array.isArray(requested) || requested.length === 0) return;
-  const have = new Set(available.map((c) => c.id));
-  const missing = requested.filter((id) => !have.has(id));
-  if (missing.length === 0) return;
-  const listed = available
-    .slice(0, 12)
-    .map((c) => `${c.name ?? "(unnamed)"} [${c.id}]`)
-    .join(", ");
-  throw new Error(
-    `[figma-console-mcp] ${missing.length} of ${requested.length} requested collection(s) not found in ${describeSource(source)}: ${missing.join(", ")}. Nothing was written. ` +
-      "The Desktop Bridge reads from the file that is active in Figma Desktop, so this usually means a different file/tab is focused than the one that owns the collection — switch to it (or use figma_navigate) and retry. " +
-      (available.length > 0
-        ? `Collections in that file: ${listed}${available.length > 12 ? ", …" : ""}.`
-        : "That file has no variable collections."),
-  );
+	if (!Array.isArray(requested) || requested.length === 0) return;
+	const have = new Set(available.map((c) => c.id));
+	const missing = requested.filter((id) => !have.has(id));
+	if (missing.length === 0) return;
+	const listed = available
+		.slice(0, 12)
+		.map((c) => `${c.name ?? "(unnamed)"} [${c.id}]`)
+		.join(", ");
+	throw new Error(
+		`[figma-console-mcp] ${missing.length} of ${requested.length} requested collection(s) not found in ${describeSource(source)}: ${missing.join(", ")}. Nothing was written. ` +
+			"The Desktop Bridge reads from the file that is active in Figma Desktop, so this usually means a different file/tab is focused than the one that owns the collection — switch to it (or use figma_navigate) and retry. " +
+			(available.length > 0
+				? `Collections in that file: ${listed}${available.length > 12 ? ", …" : ""}.`
+				: "That file has no variable collections."),
+	);
 }
 
 const GENERATED_HEADER = "Generated by figma-console-mcp";
 
 /** Editors on Windows love a UTF-8 BOM; JSON.parse does not. */
 function stripBom(content: string): string {
-  return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+	return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
 }
 
 function isParsableJson(content: string): boolean {
-  try {
-    JSON.parse(stripBom(content));
-    return true;
-  } catch {
-    return false;
-  }
+	try {
+		JSON.parse(stripBom(content));
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -1088,31 +1141,31 @@ function isParsableJson(content: string): boolean {
  * nowhere to put a comment.
  */
 export function stampSourceFile(
-  content: string,
-  sourceFileKey: string | null,
+	content: string,
+	sourceFileKey: string | null,
 ): string {
-  if (!sourceFileKey) return content;
-  const lines = content.split("\n");
-  const idx = lines
-    .slice(0, 6)
-    .findIndex((line) => line.includes(GENERATED_HEADER));
-  if (idx === -1) return content;
-  const header = lines[idx];
-  const label = `Source: Figma file ${sourceFileKey}`;
-  const indent = header.match(/^\s*/)?.[0] ?? "";
-  const trimmed = header.trimStart();
-  let stamp: string;
-  if (trimmed.startsWith("/*") && trimmed.trimEnd().endsWith("*/")) {
-    stamp = `${indent}/* ${label} */`;
-  } else if (trimmed.startsWith("//")) {
-    stamp = `${indent}// ${label}`;
-  } else if (trimmed.startsWith("*")) {
-    stamp = `${indent}* ${label}`;
-  } else {
-    return content; // unknown comment style — never guess at syntax
-  }
-  lines.splice(idx + 1, 0, stamp);
-  return lines.join("\n");
+	if (!sourceFileKey) return content;
+	const lines = content.split("\n");
+	const idx = lines
+		.slice(0, 6)
+		.findIndex((line) => line.includes(GENERATED_HEADER));
+	if (idx === -1) return content;
+	const header = lines[idx];
+	const label = `Source: Figma file ${sourceFileKey}`;
+	const indent = header.match(/^\s*/)?.[0] ?? "";
+	const trimmed = header.trimStart();
+	let stamp: string;
+	if (trimmed.startsWith("/*") && trimmed.trimEnd().endsWith("*/")) {
+		stamp = `${indent}/* ${label} */`;
+	} else if (trimmed.startsWith("//")) {
+		stamp = `${indent}// ${label}`;
+	} else if (trimmed.startsWith("*")) {
+		stamp = `${indent}* ${label}`;
+	} else {
+		return content; // unknown comment style — never guess at syntax
+	}
+	lines.splice(idx + 1, 0, stamp);
+	return lines.join("\n");
 }
 
 /**
@@ -1122,80 +1175,81 @@ export function stampSourceFile(
  * carries no stamp (exported before stamping existed, or a plain-JSON format).
  */
 export function readSourceFileStamp(rawContent: string): string | null {
-  const content = stripBom(rawContent);
-  const head = content.slice(0, 800);
-  if (head.includes(GENERATED_HEADER)) {
-    const m = head.match(/Source: Figma file ([A-Za-z0-9_-]+)/);
-    if (m) return m[1];
-  }
-  if (content.trimStart().startsWith("{")) {
-    try {
-      const key = JSON.parse(content)?.$extensions?.["figma-console-mcp"]
-        ?.figmaFileKey;
-      if (typeof key === "string" && key) return key;
-    } catch {
-      /* not JSON — no stamp */
-    }
-  }
-  return null;
+	const content = stripBom(rawContent);
+	const head = content.slice(0, 800);
+	if (head.includes(GENERATED_HEADER)) {
+		const m = head.match(/Source: Figma file ([A-Za-z0-9_-]+)/);
+		if (m) return m[1];
+	}
+	if (content.trimStart().startsWith("{")) {
+		try {
+			const key =
+				JSON.parse(content)?.$extensions?.["figma-console-mcp"]?.figmaFileKey;
+			if (typeof key === "string" && key) return key;
+		} catch {
+			/* not JSON — no stamp */
+		}
+	}
+	return null;
 }
 
 /** Number of `$value` leaves in a DTCG document; 0 when it isn't one. */
 function dtcgTokenCount(content: string): number {
-  let root: unknown;
-  try {
-    root = JSON.parse(stripBom(content));
-  } catch {
-    return 0;
-  }
-  let count = 0;
-  const walk = (node: unknown): void => {
-    if (!node || typeof node !== "object" || Array.isArray(node)) return;
-    const obj = node as Record<string, unknown>;
-    if ("$value" in obj) {
-      count++;
-      return;
-    }
-    for (const [key, child] of Object.entries(obj)) {
-      if (!key.startsWith("$")) walk(child);
-    }
-  };
-  walk(root);
-  return count;
+	let root: unknown;
+	try {
+		root = JSON.parse(stripBom(content));
+	} catch {
+		return 0;
+	}
+	let count = 0;
+	const walk = (node: unknown): void => {
+		if (!node || typeof node !== "object" || Array.isArray(node)) return;
+		const obj = node as Record<string, unknown>;
+		if ("$value" in obj) {
+			count++;
+			return;
+		}
+		for (const [key, child] of Object.entries(obj)) {
+			if (!key.startsWith("$")) walk(child);
+		}
+	};
+	walk(root);
+	return count;
 }
 
 /** Collection ids present in a DTCG document (set-level and token-level stamps). */
 function collectionIdsInDtcg(content: string): string[] {
-  let root: unknown;
-  try {
-    root = JSON.parse(stripBom(content));
-  } catch {
-    return [];
-  }
-  const ids = new Set<string>();
-  const walk = (node: unknown): void => {
-    if (!node || typeof node !== "object" || Array.isArray(node)) return;
-    const obj = node as Record<string, unknown>;
-    const ext = (obj.$extensions as Record<string, any> | undefined)?.[
-      "figma-console-mcp"
-    ];
-    if (typeof ext?.figmaCollectionId === "string") ids.add(ext.figmaCollectionId);
-    if (typeof ext?.collectionId === "string") ids.add(ext.collectionId);
-    if ("$value" in obj) return;
-    for (const [key, child] of Object.entries(obj)) {
-      if (!key.startsWith("$")) walk(child);
-    }
-  };
-  walk(root);
-  return [...ids];
+	let root: unknown;
+	try {
+		root = JSON.parse(stripBom(content));
+	} catch {
+		return [];
+	}
+	const ids = new Set<string>();
+	const walk = (node: unknown): void => {
+		if (!node || typeof node !== "object" || Array.isArray(node)) return;
+		const obj = node as Record<string, unknown>;
+		const ext = (obj.$extensions as Record<string, any> | undefined)?.[
+			"figma-console-mcp"
+		];
+		if (typeof ext?.figmaCollectionId === "string")
+			ids.add(ext.figmaCollectionId);
+		if (typeof ext?.collectionId === "string") ids.add(ext.collectionId);
+		if ("$value" in obj) return;
+		for (const [key, child] of Object.entries(obj)) {
+			if (!key.startsWith("$")) walk(child);
+		}
+	};
+	walk(root);
+	return [...ids];
 }
 
 /** Tokens an overwrite would destroy that the export has no authority over. */
 export interface UnmanagedTokenLoss {
-  /** Tokens with no figma-console-mcp variable stamp — hand-added / code-only. */
-  codeOnly: string[];
-  /** Tokens stamped with a collection that is not part of this export. */
-  otherCollections: string[];
+	/** Tokens with no figma-console-mcp variable stamp — hand-added / code-only. */
+	codeOnly: string[];
+	/** Tokens stamped with a collection that is not part of this export. */
+	otherCollections: string[];
 }
 
 /**
@@ -1213,101 +1267,101 @@ export interface UnmanagedTokenLoss {
  * not a DTCG JSON document (CSS/SCSS/TS outputs are generated artifacts).
  */
 export function findUnmanagedTokenLoss(
-  existingContent: string,
-  newContent: string,
-  exportedCollectionIds: Set<string>,
+	existingContent: string,
+	newContent: string,
+	exportedCollectionIds: Set<string>,
 ): UnmanagedTokenLoss | null {
-  let existing: unknown;
-  let next: unknown;
-  try {
-    existing = JSON.parse(stripBom(existingContent));
-    next = JSON.parse(stripBom(newContent));
-  } catch {
-    return null;
-  }
+	let existing: unknown;
+	let next: unknown;
+	try {
+		existing = JSON.parse(stripBom(existingContent));
+		next = JSON.parse(stripBom(newContent));
+	} catch {
+		return null;
+	}
 
-  const collect = (
-    node: unknown,
-    path: string[],
-    out: Map<string, Record<string, unknown> | undefined>,
-  ): void => {
-    if (!node || typeof node !== "object" || Array.isArray(node)) return;
-    const obj = node as Record<string, unknown>;
-    if ("$value" in obj) {
-      const ext = (obj.$extensions as Record<string, unknown> | undefined)?.[
-        "figma-console-mcp"
-      ];
-      out.set(
-        path.join("."),
-        ext && typeof ext === "object"
-          ? (ext as Record<string, unknown>)
-          : undefined,
-      );
-      return;
-    }
-    for (const [key, child] of Object.entries(obj)) {
-      if (key.startsWith("$")) continue;
-      collect(child, [...path, key], out);
-    }
-  };
+	const collect = (
+		node: unknown,
+		path: string[],
+		out: Map<string, Record<string, unknown> | undefined>,
+	): void => {
+		if (!node || typeof node !== "object" || Array.isArray(node)) return;
+		const obj = node as Record<string, unknown>;
+		if ("$value" in obj) {
+			const ext = (obj.$extensions as Record<string, unknown> | undefined)?.[
+				"figma-console-mcp"
+			];
+			out.set(
+				path.join("."),
+				ext && typeof ext === "object"
+					? (ext as Record<string, unknown>)
+					: undefined,
+			);
+			return;
+		}
+		for (const [key, child] of Object.entries(obj)) {
+			if (key.startsWith("$")) continue;
+			collect(child, [...path, key], out);
+		}
+	};
 
-  const before = new Map<string, Record<string, unknown> | undefined>();
-  const after = new Map<string, Record<string, unknown> | undefined>();
-  collect(existing, [], before);
-  collect(next, [], after);
-  if (before.size === 0) return null;
+	const before = new Map<string, Record<string, unknown> | undefined>();
+	const after = new Map<string, Record<string, unknown> | undefined>();
+	collect(existing, [], before);
+	collect(next, [], after);
+	if (before.size === 0) return null;
 
-  const loss: UnmanagedTokenLoss = { codeOnly: [], otherCollections: [] };
-  for (const [path, stamp] of before) {
-    if (after.has(path)) continue;
-    if (!stamp || typeof stamp.variableId !== "string") {
-      loss.codeOnly.push(path);
-    } else if (
-      typeof stamp.collectionId !== "string" ||
-      !exportedCollectionIds.has(stamp.collectionId)
-    ) {
-      loss.otherCollections.push(path);
-    }
-    // else: stamped + collection exported + gone = deleted in Figma. Fine.
-  }
-  return loss.codeOnly.length + loss.otherCollections.length > 0 ? loss : null;
+	const loss: UnmanagedTokenLoss = { codeOnly: [], otherCollections: [] };
+	for (const [path, stamp] of before) {
+		if (after.has(path)) continue;
+		if (!stamp || typeof stamp.variableId !== "string") {
+			loss.codeOnly.push(path);
+		} else if (
+			typeof stamp.collectionId !== "string" ||
+			!exportedCollectionIds.has(stamp.collectionId)
+		) {
+			loss.otherCollections.push(path);
+		}
+		// else: stamped + collection exported + gone = deleted in Figma. Fine.
+	}
+	return loss.codeOnly.length + loss.otherCollections.length > 0 ? loss : null;
 }
 
 function unmanagedLossError(
-  loss: UnmanagedTokenLoss,
-  fullPath: string,
-  source: ExportSource,
+	loss: UnmanagedTokenLoss,
+	fullPath: string,
+	source: ExportSource,
 ): Error {
-  const sample = (paths: string[]) =>
-    `${paths.slice(0, 5).join(", ")}${paths.length > 5 ? `, +${paths.length - 5} more` : ""}`;
-  const parts: string[] = [];
-  if (loss.otherCollections.length > 0) {
-    parts.push(
-      `${loss.otherCollections.length} token(s) from collections that are not part of this export (${sample(loss.otherCollections)})`,
-    );
-  }
-  if (loss.codeOnly.length > 0) {
-    parts.push(
-      `${loss.codeOnly.length} token(s) that were not exported from Figma, e.g. added by hand (${sample(loss.codeOnly)})`,
-    );
-  }
-  return new Error(
-    `[figma-console-mcp] Nothing was written. Overwriting "${fullPath}" with this export (read from ${describeSource(source)}) would delete ${parts.join(" and ")}. ` +
-      "Export replaces the whole file — it does not merge into it. If the source file above is not the one you intended, switch files in Figma and retry. " +
-      'If the loss is intended, pass strategy: "replace" to overwrite anyway; otherwise export to a different path and reconcile by hand.',
-  );
+	const sample = (paths: string[]) =>
+		`${paths.slice(0, 5).join(", ")}${paths.length > 5 ? `, +${paths.length - 5} more` : ""}`;
+	const parts: string[] = [];
+	if (loss.otherCollections.length > 0) {
+		parts.push(
+			`${loss.otherCollections.length} token(s) from collections that are not part of this export (${sample(loss.otherCollections)})`,
+		);
+	}
+	if (loss.codeOnly.length > 0) {
+		parts.push(
+			`${loss.codeOnly.length} token(s) that were not exported from Figma, e.g. added by hand (${sample(loss.codeOnly)})`,
+		);
+	}
+	return new Error(
+		`[figma-console-mcp] Nothing was written. Overwriting "${fullPath}" with this export (read from ${describeSource(source)}) would delete ${parts.join(" and ")}. ` +
+			"Export replaces the whole file — it does not merge into it. If the source file above is not the one you intended, switch files in Figma and retry. " +
+			'If the loss is intended, pass strategy: "replace" to overwrite anyway; otherwise export to a different path and reconcile by hand.',
+	);
 }
 
 /** A single file the export is going to write, with its resolved destination. */
 export interface PlannedExportWrite {
-  format: string;
-  /** Formatter-chosen relative filename (e.g. `tokens.tokens.json`). */
-  sourcePath: string;
-  /** Absolute destination on disk. */
-  fullPath: string;
-  content: string;
-  /** True when this file holds ONE collection (a splitByCollection target). */
-  splitByCollection?: boolean;
+	format: string;
+	/** Formatter-chosen relative filename (e.g. `tokens.tokens.json`). */
+	sourcePath: string;
+	/** Absolute destination on disk. */
+	fullPath: string;
+	content: string;
+	/** True when this file holds ONE collection (a splitByCollection target). */
+	splitByCollection?: boolean;
 }
 
 /**
@@ -1316,14 +1370,14 @@ export interface PlannedExportWrite {
  * `typography.tokens.json`.
  */
 const EXPORT_FILE_EXTENSIONS = new Set([
-  ".json",
-  ".css",
-  ".scss",
-  ".less",
-  ".ts",
-  ".js",
-  ".mjs",
-  ".cjs",
+	".json",
+	".css",
+	".scss",
+	".less",
+	".ts",
+	".js",
+	".mjs",
+	".cjs",
 ]);
 
 /**
@@ -1341,74 +1395,74 @@ const EXPORT_FILE_EXTENSIONS = new Set([
  * target is combined with a multi-file export.
  */
 export function planExportWrites(
-  files: Array<{
-    format: string;
-    path: string;
-    content: string;
-    splitByCollection?: boolean;
-  }>,
-  outputPath: string | undefined,
-  loaded: ReturnType<typeof loadTokensConfig>,
+	files: Array<{
+		format: string;
+		path: string;
+		content: string;
+		splitByCollection?: boolean;
+	}>,
+	outputPath: string | undefined,
+	loaded: ReturnType<typeof loadTokensConfig>,
 ): { writes: PlannedExportWrite[]; warnings: string[] } {
-  const warnings: string[] = [];
+	const warnings: string[] = [];
 
-  if (outputPath) {
-    const target = resolveOutputBaseForFormat(outputPath, loaded, "")!;
-    const stat = statSync(target, { throwIfNoEntry: false });
-    const explicitDir = /[\\/]$/.test(outputPath);
-    const isFileTarget =
-      !explicitDir &&
-      !stat?.isDirectory() &&
-      (stat?.isFile() === true ||
-        EXPORT_FILE_EXTENSIONS.has(extname(target).toLowerCase()));
+	if (outputPath) {
+		const target = resolveOutputBaseForFormat(outputPath, loaded, "")!;
+		const stat = statSync(target, { throwIfNoEntry: false });
+		const explicitDir = /[\\/]$/.test(outputPath);
+		const isFileTarget =
+			!explicitDir &&
+			!stat?.isDirectory() &&
+			(stat?.isFile() === true ||
+				EXPORT_FILE_EXTENSIONS.has(extname(target).toLowerCase()));
 
-    if (isFileTarget) {
-      if (files.length > 1) {
-        const names = files.map((f) => f.path);
-        const shown = names.slice(0, 6).join(", ");
-        throw new Error(
-          `[figma-console-mcp] outputPath "${outputPath}" ${stat?.isFile() ? "is an existing file" : "looks like a file path"}, but this export produces ${files.length} files (${shown}${names.length > 6 ? ", …" : ""}). ` +
-            "Either pass a DIRECTORY as outputPath (each file is written inside it), or narrow the export to a single file — one `format`, `collectionIds` for the collection you want, and no splitByMode/splitByCollection — and it will be written at exactly that path.",
-        );
-      }
-      if (files.length === 0) return { writes: [], warnings };
+		if (isFileTarget) {
+			if (files.length > 1) {
+				const names = files.map((f) => f.path);
+				const shown = names.slice(0, 6).join(", ");
+				throw new Error(
+					`[figma-console-mcp] outputPath "${outputPath}" ${stat?.isFile() ? "is an existing file" : "looks like a file path"}, but this export produces ${files.length} files (${shown}${names.length > 6 ? ", …" : ""}). ` +
+						"Either pass a DIRECTORY as outputPath (each file is written inside it), or narrow the export to a single file — one `format`, `collectionIds` for the collection you want, and no splitByMode/splitByCollection — and it will be written at exactly that path.",
+				);
+			}
+			if (files.length === 0) return { writes: [], warnings };
 
-      const file = files[0];
-      const wantExt = extname(file.path).toLowerCase();
-      const gotExt = extname(target).toLowerCase();
-      if (wantExt && gotExt && wantExt !== gotExt) {
-        warnings.push(
-          `outputPath "${basename(target)}" ends in ${gotExt} but the ${file.format} format produces ${wantExt} content — written as requested; double-check the filename.`,
-        );
-      }
-      return {
-        writes: [
-          {
-            format: file.format,
-            sourcePath: file.path,
-            fullPath: target,
-            content: file.content,
-            splitByCollection: file.splitByCollection,
-          },
-        ],
-        warnings,
-      };
-    }
-  }
+			const file = files[0];
+			const wantExt = extname(file.path).toLowerCase();
+			const gotExt = extname(target).toLowerCase();
+			if (wantExt && gotExt && wantExt !== gotExt) {
+				warnings.push(
+					`outputPath "${basename(target)}" ends in ${gotExt} but the ${file.format} format produces ${wantExt} content — written as requested; double-check the filename.`,
+				);
+			}
+			return {
+				writes: [
+					{
+						format: file.format,
+						sourcePath: file.path,
+						fullPath: target,
+						content: file.content,
+						splitByCollection: file.splitByCollection,
+					},
+				],
+				warnings,
+			};
+		}
+	}
 
-  const writes: PlannedExportWrite[] = [];
-  for (const file of files) {
-    const base = resolveOutputBaseForFormat(outputPath, loaded, file.format);
-    if (!base) continue; // No config or outputPath → caller gets content inline.
-    writes.push({
-      format: file.format,
-      sourcePath: file.path,
-      fullPath: isAbsolute(file.path) ? file.path : join(base, file.path),
-      content: file.content,
-      splitByCollection: file.splitByCollection,
-    });
-  }
-  return { writes, warnings };
+	const writes: PlannedExportWrite[] = [];
+	for (const file of files) {
+		const base = resolveOutputBaseForFormat(outputPath, loaded, file.format);
+		if (!base) continue; // No config or outputPath → caller gets content inline.
+		writes.push({
+			format: file.format,
+			sourcePath: file.path,
+			fullPath: isAbsolute(file.path) ? file.path : join(base, file.path),
+			content: file.content,
+			splitByCollection: file.splitByCollection,
+		});
+	}
+	return { writes, warnings };
 }
 
 /**
@@ -1416,18 +1470,18 @@ export function planExportWrites(
  * sitting where a directory is needed) into something the caller can act on.
  */
 function describeExportWriteError(err: unknown, fullPath: string): Error {
-  const code = (err as NodeJS.ErrnoException)?.code;
-  if (code === "EEXIST" || code === "ENOTDIR") {
-    return new Error(
-      `[figma-console-mcp] Cannot write "${fullPath}": part of that path already exists as a regular file, so the directory can't be created. Point outputPath at a directory (or at the exact file to overwrite, for a single-file export).`,
-    );
-  }
-  if (code === "EISDIR") {
-    return new Error(
-      `[figma-console-mcp] Cannot write "${fullPath}": a directory already exists at that path.`,
-    );
-  }
-  return err instanceof Error ? err : new Error(String(err));
+	const code = (err as NodeJS.ErrnoException)?.code;
+	if (code === "EEXIST" || code === "ENOTDIR") {
+		return new Error(
+			`[figma-console-mcp] Cannot write "${fullPath}": part of that path already exists as a regular file, so the directory can't be created. Point outputPath at a directory (or at the exact file to overwrite, for a single-file export).`,
+		);
+	}
+	if (code === "EISDIR") {
+		return new Error(
+			`[figma-console-mcp] Cannot write "${fullPath}": a directory already exists at that path.`,
+		);
+	}
+	return err instanceof Error ? err : new Error(String(err));
 }
 
 /**
@@ -1437,46 +1491,46 @@ function describeExportWriteError(err: unknown, fullPath: string): Error {
  *   3. Config-derived source dir (read every *.tokens.json file).
  */
 function collectInputFiles(
-  args: any,
-  loaded: ReturnType<typeof loadTokensConfig>,
+	args: any,
+	loaded: ReturnType<typeof loadTokensConfig>,
 ): Array<{ path: string; content: string }> {
-  if (args.payload) {
-    return [{ path: "<inline>", content: args.payload }];
-  }
-  if (args.files?.length) {
-    return args.files;
-  }
-  if (!loaded) {
-    throw new Error(
-      "[figma-console-mcp] No payload, files, or tokens.config.json supplied. Pass one of: { payload }, { files }, or have tokens.config.json at the project root.",
-    );
-  }
-  // Walk the source dir for *.tokens.json files. Currently a flat scan;
-  // the config's source.pattern is honored as a simple glob (just suffix
-  // matching for now).
-  const sourceDir = resolve(loaded.projectRoot, loaded.config.source.dir);
-  if (!existsSync(sourceDir)) {
-    throw new Error(
-      `[figma-console-mcp] Source dir does not exist: ${sourceDir}. Make sure tokens.config.json's source.dir points at a directory that exists.`,
-    );
-  }
-  const pattern = loaded.config.source.pattern ?? "*.tokens.json";
-  const suffix = pattern.replace(/^\*/, "");
-  const entries = readdirSync(sourceDir);
-  const matched = entries.filter((e: string) => e.endsWith(suffix));
-  if (matched.length === 0) {
-    const jsonFiles = entries.filter((e: string) => e.endsWith(".json"));
-    throw new Error(
-      `[figma-console-mcp] Nothing was imported or changed: no files in ${sourceDir} match source.pattern "${pattern}"` +
-        (jsonFiles.length > 0
-          ? ` (JSON files there: ${jsonFiles.slice(0, 5).join(", ")}). Rename them to end in "${suffix}", or set "source": { "pattern": "*.json" } in tokens.config.json.`
-          : "."),
-    );
-  }
-  return matched.map((name: string) => {
-    const full = join(sourceDir, name);
-    return { path: full, content: readFileSync(full, "utf-8") };
-  });
+	if (args.payload) {
+		return [{ path: "<inline>", content: args.payload }];
+	}
+	if (args.files?.length) {
+		return args.files;
+	}
+	if (!loaded) {
+		throw new Error(
+			"[figma-console-mcp] No payload, files, or tokens.config.json supplied. Pass one of: { payload }, { files }, or have tokens.config.json at the project root.",
+		);
+	}
+	// Walk the source dir for *.tokens.json files. Currently a flat scan;
+	// the config's source.pattern is honored as a simple glob (just suffix
+	// matching for now).
+	const sourceDir = resolve(loaded.projectRoot, loaded.config.source.dir);
+	if (!existsSync(sourceDir)) {
+		throw new Error(
+			`[figma-console-mcp] Source dir does not exist: ${sourceDir}. Make sure tokens.config.json's source.dir points at a directory that exists.`,
+		);
+	}
+	const pattern = loaded.config.source.pattern ?? "*.tokens.json";
+	const suffix = pattern.replace(/^\*/, "");
+	const entries = readdirSync(sourceDir);
+	const matched = entries.filter((e: string) => e.endsWith(suffix));
+	if (matched.length === 0) {
+		const jsonFiles = entries.filter((e: string) => e.endsWith(".json"));
+		throw new Error(
+			`[figma-console-mcp] Nothing was imported or changed: no files in ${sourceDir} match source.pattern "${pattern}"` +
+				(jsonFiles.length > 0
+					? ` (JSON files there: ${jsonFiles.slice(0, 5).join(", ")}). Rename them to end in "${suffix}", or set "source": { "pattern": "*.json" } in tokens.config.json.`
+					: "."),
+		);
+	}
+	return matched.map((name: string) => {
+		const full = join(sourceDir, name);
+		return { path: full, content: readFileSync(full, "utf-8") };
+	});
 }
 
 /**
@@ -1487,58 +1541,59 @@ function collectInputFiles(
  * first document's values.
  */
 function mergeDocuments(docs: TokenDocument[]): TokenDocument {
-  if (docs.length === 0) {
-    return { sets: [], meta: {} };
-  }
-  if (docs.length === 1) return docs[0];
+	if (docs.length === 0) {
+		return { sets: [], meta: {} };
+	}
+	if (docs.length === 1) return docs[0];
 
-  const setsByName = new Map<string, TokenDocument["sets"][number]>();
-  for (const doc of docs) {
-    for (const set of doc.sets) {
-      const existing = setsByName.get(set.name);
-      if (!existing) {
-        setsByName.set(set.name, { ...set, tokens: [...set.tokens] });
-        continue;
-      }
-      existing.modes = [...new Set([...existing.modes, ...set.modes])];
-      // Dedupe by path: tokens with the same path merge their values.
-      // Critical for splitByMode output where each file has the same tokens
-      // with a different mode's value, and the import needs to reassemble
-      // them into one multi-mode token instead of triplicating.
-      const byPath = new Map(
-        existing.tokens.map((t) => [t.path.join("/"), t]),
-      );
-      for (const incoming of set.tokens) {
-        const key = incoming.path.join("/");
-        const found = byPath.get(key);
-        if (found) {
-          found.values = { ...found.values, ...incoming.values };
-          // Merge MCP extensions too — newer lastSyncedAt wins, lastSyncedValue
-          // unions across modes.
-          const aExt = found.extensions?.["figma-console-mcp"];
-          const bExt = incoming.extensions?.["figma-console-mcp"];
-          if (aExt || bExt) {
-            const merged = { ...(aExt ?? {}), ...(bExt ?? {}) };
-            if (aExt?.lastSyncedValue || bExt?.lastSyncedValue) {
-              merged.lastSyncedValue = {
-                ...(aExt?.lastSyncedValue ?? {}),
-                ...(bExt?.lastSyncedValue ?? {}),
-              };
-            }
-            found.extensions = { ...(found.extensions ?? {}), "figma-console-mcp": merged };
-          }
-        } else {
-          existing.tokens.push(incoming);
-          byPath.set(key, incoming);
-        }
-      }
-    }
-  }
-  return {
-    $schema: docs[0].$schema,
-    sets: [...setsByName.values()],
-    meta: docs[0].meta,
-  };
+	const setsByName = new Map<string, TokenDocument["sets"][number]>();
+	for (const doc of docs) {
+		for (const set of doc.sets) {
+			const existing = setsByName.get(set.name);
+			if (!existing) {
+				setsByName.set(set.name, { ...set, tokens: [...set.tokens] });
+				continue;
+			}
+			existing.modes = [...new Set([...existing.modes, ...set.modes])];
+			// Dedupe by path: tokens with the same path merge their values.
+			// Critical for splitByMode output where each file has the same tokens
+			// with a different mode's value, and the import needs to reassemble
+			// them into one multi-mode token instead of triplicating.
+			const byPath = new Map(existing.tokens.map((t) => [t.path.join("/"), t]));
+			for (const incoming of set.tokens) {
+				const key = incoming.path.join("/");
+				const found = byPath.get(key);
+				if (found) {
+					found.values = { ...found.values, ...incoming.values };
+					// Merge MCP extensions too — newer lastSyncedAt wins, lastSyncedValue
+					// unions across modes.
+					const aExt = found.extensions?.["figma-console-mcp"];
+					const bExt = incoming.extensions?.["figma-console-mcp"];
+					if (aExt || bExt) {
+						const merged = { ...(aExt ?? {}), ...(bExt ?? {}) };
+						if (aExt?.lastSyncedValue || bExt?.lastSyncedValue) {
+							merged.lastSyncedValue = {
+								...(aExt?.lastSyncedValue ?? {}),
+								...(bExt?.lastSyncedValue ?? {}),
+							};
+						}
+						found.extensions = {
+							...(found.extensions ?? {}),
+							"figma-console-mcp": merged,
+						};
+					}
+				} else {
+					existing.tokens.push(incoming);
+					byPath.set(key, incoming);
+				}
+			}
+		}
+	}
+	return {
+		$schema: docs[0].$schema,
+		sets: [...setsByName.values()],
+		meta: docs[0].meta,
+	};
 }
 
 /**
@@ -1560,157 +1615,157 @@ function mergeDocuments(docs: TokenDocument[]): TokenDocument {
  * rename classification.
  */
 export function computeDiffPlan(
-  figmaDoc: TokenDocument,
-  codeDoc: TokenDocument,
+	figmaDoc: TokenDocument,
+	codeDoc: TokenDocument,
 ): {
-  toCreate: Array<{ path: string; type: string; value: unknown }>;
-  toUpdate: Array<{
-    path: string;
-    before: unknown;
-    after: unknown;
-    /**
-     * Present when variable metadata (scopes/codeSyntax) changed. Absent for
-     * plain value-only updates (the historical entry shape). `values: false`
-     * tells the apply phase to skip setValueForMode entirely and only write
-     * the metadata.
-     */
-    changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
-  }>;
-  toRename: Array<{
-    /** New (code-side) diff key. */
-    path: string;
-    /** Old (Figma-side) diff key the variableId matched. */
-    from: string;
-    variableId: string;
-    /** New Figma variable name — the '/'-joined code-side token path. */
-    newName: string;
-    /** Value/meta changes to apply alongside the rename. */
-    changes: { values: boolean; scopes: boolean; codeSyntax: boolean };
-  }>;
-  toDelete: Array<{ path: string }>;
-  unchanged: number;
+	toCreate: Array<{ path: string; type: string; value: unknown }>;
+	toUpdate: Array<{
+		path: string;
+		before: unknown;
+		after: unknown;
+		/**
+		 * Present when variable metadata (scopes/codeSyntax) changed. Absent for
+		 * plain value-only updates (the historical entry shape). `values: false`
+		 * tells the apply phase to skip setValueForMode entirely and only write
+		 * the metadata.
+		 */
+		changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
+	}>;
+	toRename: Array<{
+		/** New (code-side) diff key. */
+		path: string;
+		/** Old (Figma-side) diff key the variableId matched. */
+		from: string;
+		variableId: string;
+		/** New Figma variable name — the '/'-joined code-side token path. */
+		newName: string;
+		/** Value/meta changes to apply alongside the rename. */
+		changes: { values: boolean; scopes: boolean; codeSyntax: boolean };
+	}>;
+	toDelete: Array<{ path: string }>;
+	unchanged: number;
 } {
-  // Build lookup maps by path for both sides.
-  const figmaTokens = new Map<string, any>();
-  for (const set of figmaDoc.sets) {
-    for (const t of set.tokens) {
-      figmaTokens.set(`${set.name}::${t.path.join(".")}`, t);
-    }
-  }
-  const codeTokens = new Map<string, any>();
-  for (const set of codeDoc.sets) {
-    for (const t of set.tokens) {
-      codeTokens.set(`${set.name}::${t.path.join(".")}`, t);
-    }
-  }
-  // ID-first index: live Figma variableId → its diff key + token.
-  const figmaByVariableId = new Map<string, { key: string; token: any }>();
-  for (const [key, token] of figmaTokens) {
-    const id = token.extensions?.["figma-console-mcp"]?.variableId;
-    if (typeof id === "string") figmaByVariableId.set(id, { key, token });
-  }
+	// Build lookup maps by path for both sides.
+	const figmaTokens = new Map<string, any>();
+	for (const set of figmaDoc.sets) {
+		for (const t of set.tokens) {
+			figmaTokens.set(`${set.name}::${t.path.join(".")}`, t);
+		}
+	}
+	const codeTokens = new Map<string, any>();
+	for (const set of codeDoc.sets) {
+		for (const t of set.tokens) {
+			codeTokens.set(`${set.name}::${t.path.join(".")}`, t);
+		}
+	}
+	// ID-first index: live Figma variableId → its diff key + token.
+	const figmaByVariableId = new Map<string, { key: string; token: any }>();
+	for (const [key, token] of figmaTokens) {
+		const id = token.extensions?.["figma-console-mcp"]?.variableId;
+		if (typeof id === "string") figmaByVariableId.set(id, { key, token });
+	}
 
-  const toCreate: Array<{ path: string; type: string; value: unknown }> = [];
-  const toUpdate: Array<{
-    path: string;
-    before: unknown;
-    after: unknown;
-    changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
-  }> = [];
-  const toRename: Array<{
-    path: string;
-    from: string;
-    variableId: string;
-    newName: string;
-    changes: { values: boolean; scopes: boolean; codeSyntax: boolean };
-  }> = [];
-  // Figma-side keys consumed by a rename — excluded from toDelete.
-  const renamedFigmaKeys = new Set<string>();
-  const toDelete: Array<{ path: string }> = [];
-  let unchanged = 0;
+	const toCreate: Array<{ path: string; type: string; value: unknown }> = [];
+	const toUpdate: Array<{
+		path: string;
+		before: unknown;
+		after: unknown;
+		changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
+	}> = [];
+	const toRename: Array<{
+		path: string;
+		from: string;
+		variableId: string;
+		newName: string;
+		changes: { values: boolean; scopes: boolean; codeSyntax: boolean };
+	}> = [];
+	// Figma-side keys consumed by a rename — excluded from toDelete.
+	const renamedFigmaKeys = new Set<string>();
+	const toDelete: Array<{ path: string }> = [];
+	let unchanged = 0;
 
-  for (const [key, codeToken] of codeTokens) {
-    const figmaToken = figmaTokens.get(key);
-    if (!figmaToken) {
-      // No path match — try the ID-first match before classifying as a
-      // create. Guards: the matched Figma path must not ALSO exist in the
-      // code doc (then the ID was copy-pasted, not renamed), and each Figma
-      // variable can be claimed by at most one rename.
-      const extId = codeToken.extensions?.["figma-console-mcp"]?.variableId;
-      const idMatch =
-        typeof extId === "string" ? figmaByVariableId.get(extId) : undefined;
-      if (
-        idMatch &&
-        !codeTokens.has(idMatch.key) &&
-        !renamedFigmaKeys.has(idMatch.key)
-      ) {
-        renamedFigmaKeys.add(idMatch.key);
-        const valuesChanged = tokenValuesDiffer(idMatch.token, codeToken);
-        const meta = diffVariableMeta(idMatch.token, codeToken);
-        toRename.push({
-          path: key,
-          from: idMatch.key,
-          variableId: extId as string,
-          newName: codeToken.path.join("/"),
-          changes: {
-            values: valuesChanged,
-            scopes: meta.scopesChanged,
-            codeSyntax: meta.codeSyntaxChanged,
-          },
-        });
-        continue;
-      }
-      toCreate.push({
-        path: key,
-        type: codeToken.type,
-        value: codeToken.values,
-      });
-      continue;
-    }
+	for (const [key, codeToken] of codeTokens) {
+		const figmaToken = figmaTokens.get(key);
+		if (!figmaToken) {
+			// No path match — try the ID-first match before classifying as a
+			// create. Guards: the matched Figma path must not ALSO exist in the
+			// code doc (then the ID was copy-pasted, not renamed), and each Figma
+			// variable can be claimed by at most one rename.
+			const extId = codeToken.extensions?.["figma-console-mcp"]?.variableId;
+			const idMatch =
+				typeof extId === "string" ? figmaByVariableId.get(extId) : undefined;
+			if (
+				idMatch &&
+				!codeTokens.has(idMatch.key) &&
+				!renamedFigmaKeys.has(idMatch.key)
+			) {
+				renamedFigmaKeys.add(idMatch.key);
+				const valuesChanged = tokenValuesDiffer(idMatch.token, codeToken);
+				const meta = diffVariableMeta(idMatch.token, codeToken);
+				toRename.push({
+					path: key,
+					from: idMatch.key,
+					variableId: extId as string,
+					newName: codeToken.path.join("/"),
+					changes: {
+						values: valuesChanged,
+						scopes: meta.scopesChanged,
+						codeSyntax: meta.codeSyntaxChanged,
+					},
+				});
+				continue;
+			}
+			toCreate.push({
+				path: key,
+				type: codeToken.type,
+				value: codeToken.values,
+			});
+			continue;
+		}
 
-    const valuesChanged = tokenValuesDiffer(figmaToken, codeToken);
-    const meta = diffVariableMeta(figmaToken, codeToken);
+		const valuesChanged = tokenValuesDiffer(figmaToken, codeToken);
+		const meta = diffVariableMeta(figmaToken, codeToken);
 
-    if (valuesChanged || meta.scopesChanged || meta.codeSyntaxChanged) {
-      if (valuesChanged && !meta.scopesChanged && !meta.codeSyntaxChanged) {
-        // Value-only update — historical entry shape, no `changes` field, so
-        // pre-existing consumers/tests see exactly what they always saw.
-        toUpdate.push({
-          path: key,
-          // Figma-side values carry the transient rawColor floats — strip
-          // them so diff samples in the tool response stay shaped as before.
-          before: stripRawColorFromValues(figmaToken.values),
-          after: codeToken.values,
-        });
-      } else {
-        toUpdate.push({
-          path: key,
-          before: valuesChanged
-            ? stripRawColorFromValues(figmaToken.values)
-            : meta.before,
-          after: valuesChanged ? codeToken.values : meta.after,
-          changes: {
-            values: valuesChanged,
-            scopes: meta.scopesChanged,
-            codeSyntax: meta.codeSyntaxChanged,
-          },
-        });
-      }
-    } else {
-      unchanged++;
-    }
-  }
+		if (valuesChanged || meta.scopesChanged || meta.codeSyntaxChanged) {
+			if (valuesChanged && !meta.scopesChanged && !meta.codeSyntaxChanged) {
+				// Value-only update — historical entry shape, no `changes` field, so
+				// pre-existing consumers/tests see exactly what they always saw.
+				toUpdate.push({
+					path: key,
+					// Figma-side values carry the transient rawColor floats — strip
+					// them so diff samples in the tool response stay shaped as before.
+					before: stripRawColorFromValues(figmaToken.values),
+					after: codeToken.values,
+				});
+			} else {
+				toUpdate.push({
+					path: key,
+					before: valuesChanged
+						? stripRawColorFromValues(figmaToken.values)
+						: meta.before,
+					after: valuesChanged ? codeToken.values : meta.after,
+					changes: {
+						values: valuesChanged,
+						scopes: meta.scopesChanged,
+						codeSyntax: meta.codeSyntaxChanged,
+					},
+				});
+			}
+		} else {
+			unchanged++;
+		}
+	}
 
-  for (const key of figmaTokens.keys()) {
-    if (!codeTokens.has(key) && !renamedFigmaKeys.has(key)) {
-      // Reports as "would delete if strategy=replace" but defaults to
-      // preserve under merge strategy. Keys consumed by a rename are NOT
-      // deletions — the variable lives on under its new name.
-      toDelete.push({ path: key });
-    }
-  }
+	for (const key of figmaTokens.keys()) {
+		if (!codeTokens.has(key) && !renamedFigmaKeys.has(key)) {
+			// Reports as "would delete if strategy=replace" but defaults to
+			// preserve under merge strategy. Keys consumed by a rename are NOT
+			// deletions — the variable lives on under its new name.
+			toDelete.push({ path: key });
+		}
+	}
 
-  return { toCreate, toUpdate, toRename, toDelete, unchanged };
+	return { toCreate, toUpdate, toRename, toDelete, unchanged };
 }
 
 /**
@@ -1736,60 +1791,68 @@ export function computeDiffPlan(
  * bounce.
  */
 function tokenValuesDiffer(
-  figmaToken: { values: Record<string, unknown>; extensions?: Record<string, any> },
-  codeToken: { values: Record<string, unknown>; extensions?: Record<string, any> },
+	figmaToken: {
+		values: Record<string, unknown>;
+		extensions?: Record<string, any>;
+	},
+	codeToken: {
+		values: Record<string, unknown>;
+		extensions?: Record<string, any>;
+	},
 ): boolean {
-  if (!valuesEqual(figmaToken.values as any, codeToken.values as any)) return true;
-  // Key-order-insensitive, so a hand-edited file doesn't diff forever.
-  const stable = (v: unknown): unknown =>
-    v && typeof v === "object" && !Array.isArray(v)
-      ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, stable((v as any)[k])]))
-      : v;
-  const springOf = (t: { extensions?: Record<string, any> }) =>
-    JSON.stringify(stable(t.extensions?.["figma-console-mcp"]?.spring ?? {}));
-  return springOf(figmaToken) !== springOf(codeToken);
+	if (!valuesEqual(figmaToken.values as any, codeToken.values as any))
+		return true;
+	// Key-order-insensitive, so a hand-edited file doesn't diff forever.
+	const stable = (v: unknown): unknown =>
+		v && typeof v === "object" && !Array.isArray(v)
+			? Object.fromEntries(
+					Object.keys(v as object)
+						.sort()
+						.map((k) => [k, stable((v as any)[k])]),
+				)
+			: v;
+	const springOf = (t: { extensions?: Record<string, any> }) =>
+		JSON.stringify(stable(t.extensions?.["figma-console-mcp"]?.spring ?? {}));
+	return springOf(figmaToken) !== springOf(codeToken);
 }
 
-function valuesEqual(
-  a: Record<string, any>,
-  b: Record<string, any>,
-): boolean {
-  const aKeys = Object.keys(a).sort();
-  const bKeys = Object.keys(b).sort();
-  if (aKeys.length !== bKeys.length) return false;
-  for (let i = 0; i < aKeys.length; i++) {
-    if (aKeys[i] !== bKeys[i]) return false;
-    if (
-      !deepEqual(
-        canonicalizeTokenValueForComparison(a[aKeys[i]]),
-        canonicalizeTokenValueForComparison(b[bKeys[i]]),
-      )
-    ) {
-      return false;
-    }
-  }
-  return true;
+function valuesEqual(a: Record<string, any>, b: Record<string, any>): boolean {
+	const aKeys = Object.keys(a).sort();
+	const bKeys = Object.keys(b).sort();
+	if (aKeys.length !== bKeys.length) return false;
+	for (let i = 0; i < aKeys.length; i++) {
+		if (aKeys[i] !== bKeys[i]) return false;
+		if (
+			!deepEqual(
+				canonicalizeTokenValueForComparison(a[aKeys[i]]),
+				canonicalizeTokenValueForComparison(b[bKeys[i]]),
+			)
+		) {
+			return false;
+		}
+	}
+	return true;
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== typeof b) return false;
-  if (a === null || b === null) return a === b;
-  if (typeof a !== "object") return a === b;
-  if (Array.isArray(a)) {
-    if (!Array.isArray(b) || a.length !== b.length) return false;
-    return a.every((v, i) => deepEqual(v, (b as unknown[])[i]));
-  }
-  const aObj = a as Record<string, unknown>;
-  const bObj = b as Record<string, unknown>;
-  const aKeys = Object.keys(aObj).sort();
-  const bKeys = Object.keys(bObj).sort();
-  if (aKeys.length !== bKeys.length) return false;
-  for (let i = 0; i < aKeys.length; i++) {
-    if (aKeys[i] !== bKeys[i]) return false;
-    if (!deepEqual(aObj[aKeys[i]], bObj[bKeys[i]])) return false;
-  }
-  return true;
+	if (a === b) return true;
+	if (typeof a !== typeof b) return false;
+	if (a === null || b === null) return a === b;
+	if (typeof a !== "object") return a === b;
+	if (Array.isArray(a)) {
+		if (!Array.isArray(b) || a.length !== b.length) return false;
+		return a.every((v, i) => deepEqual(v, (b as unknown[])[i]));
+	}
+	const aObj = a as Record<string, unknown>;
+	const bObj = b as Record<string, unknown>;
+	const aKeys = Object.keys(aObj).sort();
+	const bKeys = Object.keys(bObj).sort();
+	if (aKeys.length !== bKeys.length) return false;
+	for (let i = 0; i < aKeys.length; i++) {
+		if (aKeys[i] !== bKeys[i]) return false;
+		if (!deepEqual(aObj[aKeys[i]], bObj[bKeys[i]])) return false;
+	}
+	return true;
 }
 
 /**
@@ -1807,45 +1870,48 @@ function deepEqual(a: unknown, b: unknown): boolean {
  *     every platform" opinion; absent counts as no opinion).
  */
 function diffVariableMeta(
-  figmaToken: any,
-  codeToken: any,
+	figmaToken: any,
+	codeToken: any,
 ): {
-  scopesChanged: boolean;
-  codeSyntaxChanged: boolean;
-  before: Record<string, unknown>;
-  after: Record<string, unknown>;
+	scopesChanged: boolean;
+	codeSyntaxChanged: boolean;
+	before: Record<string, unknown>;
+	after: Record<string, unknown>;
 } {
-  const figmaExt = figmaToken.extensions?.["figma-console-mcp"] ?? {};
-  const codeExt = codeToken.extensions?.["figma-console-mcp"] ?? {};
+	const figmaExt = figmaToken.extensions?.["figma-console-mcp"] ?? {};
+	const codeExt = codeToken.extensions?.["figma-console-mcp"] ?? {};
 
-  let scopesChanged = false;
-  if (Array.isArray(codeExt.scopes)) {
-    const codeScopes = normalizeScopesForComparison(codeExt.scopes);
-    const figmaScopes = normalizeScopesForComparison(figmaExt.scopes);
-    scopesChanged = !deepEqual(codeScopes, figmaScopes);
-  }
+	let scopesChanged = false;
+	if (Array.isArray(codeExt.scopes)) {
+		const codeScopes = normalizeScopesForComparison(codeExt.scopes);
+		const figmaScopes = normalizeScopesForComparison(figmaExt.scopes);
+		scopesChanged = !deepEqual(codeScopes, figmaScopes);
+	}
 
-  let codeSyntaxChanged = false;
-  if (
-    codeExt.codeSyntax !== undefined &&
-    codeExt.codeSyntax !== null &&
-    typeof codeExt.codeSyntax === "object" &&
-    !Array.isArray(codeExt.codeSyntax)
-  ) {
-    codeSyntaxChanged = !deepEqual(codeExt.codeSyntax, figmaExt.codeSyntax ?? {});
-  }
+	let codeSyntaxChanged = false;
+	if (
+		codeExt.codeSyntax !== undefined &&
+		codeExt.codeSyntax !== null &&
+		typeof codeExt.codeSyntax === "object" &&
+		!Array.isArray(codeExt.codeSyntax)
+	) {
+		codeSyntaxChanged = !deepEqual(
+			codeExt.codeSyntax,
+			figmaExt.codeSyntax ?? {},
+		);
+	}
 
-  const before: Record<string, unknown> = {};
-  const after: Record<string, unknown> = {};
-  if (scopesChanged) {
-    before.scopes = figmaExt.scopes ?? ["ALL_SCOPES"];
-    after.scopes = codeExt.scopes;
-  }
-  if (codeSyntaxChanged) {
-    before.codeSyntax = figmaExt.codeSyntax ?? {};
-    after.codeSyntax = codeExt.codeSyntax;
-  }
-  return { scopesChanged, codeSyntaxChanged, before, after };
+	const before: Record<string, unknown> = {};
+	const after: Record<string, unknown> = {};
+	if (scopesChanged) {
+		before.scopes = figmaExt.scopes ?? ["ALL_SCOPES"];
+		after.scopes = codeExt.scopes;
+	}
+	if (codeSyntaxChanged) {
+		before.codeSyntax = figmaExt.codeSyntax ?? {};
+		after.codeSyntax = codeExt.codeSyntax;
+	}
+	return { scopesChanged, codeSyntaxChanged, before, after };
 }
 
 /**
@@ -1853,11 +1919,12 @@ function diffVariableMeta(
  * empty, and ["ALL_SCOPES"] all mean "the default scoping" in Figma.
  */
 function normalizeScopesForComparison(scopes: unknown): string[] {
-  if (!Array.isArray(scopes) || scopes.length === 0) return ["ALL_SCOPES"];
-  const cleaned = scopes.filter((s): s is string => typeof s === "string");
-  if (cleaned.length === 0) return ["ALL_SCOPES"];
-  if (cleaned.length === 1 && cleaned[0] === "ALL_SCOPES") return ["ALL_SCOPES"];
-  return [...cleaned].sort();
+	if (!Array.isArray(scopes) || scopes.length === 0) return ["ALL_SCOPES"];
+	const cleaned = scopes.filter((s): s is string => typeof s === "string");
+	if (cleaned.length === 0) return ["ALL_SCOPES"];
+	if (cleaned.length === 1 && cleaned[0] === "ALL_SCOPES")
+		return ["ALL_SCOPES"];
+	return [...cleaned].sort();
 }
 
 // ============================================================================
@@ -1871,18 +1938,18 @@ function normalizeScopesForComparison(scopes: unknown): string[] {
  * batch (partial-success semantics).
  */
 interface ApplyResult {
-  /** Value updates applied (toUpdate). */
-  applied: number;
-  /** Variables created (toCreate). */
-  created: number;
-  /** Collections created (sets with no matching Figma collection). */
-  createdCollections: number;
-  /** Variables renamed (ID-matched path moves; may include value changes). */
-  renamed: number;
-  /** Variables deleted (toDelete, strategy "replace" only). */
-  deleted: number;
-  failed: number;
-  errors: Array<{ variableId: string; error: string }>;
+	/** Value updates applied (toUpdate). */
+	applied: number;
+	/** Variables created (toCreate). */
+	created: number;
+	/** Collections created (sets with no matching Figma collection). */
+	createdCollections: number;
+	/** Variables renamed (ID-matched path moves; may include value changes). */
+	renamed: number;
+	/** Variables deleted (toDelete, strategy "replace" only). */
+	deleted: number;
+	failed: number;
+	errors: Array<{ variableId: string; error: string }>;
 }
 
 /**
@@ -1915,53 +1982,53 @@ type ComposedPart<T> = { reference: string } | { value: T };
  * snapshot lookup. Exported for test coverage.
  */
 export function makeAliasIdResolver(
-  figmaDoc: TokenDocument,
-  codeDoc: TokenDocument,
-  toCreateKeys: Set<string>,
-  createdIdByKey: Map<string, string>,
+	figmaDoc: TokenDocument,
+	codeDoc: TokenDocument,
+	toCreateKeys: Set<string>,
+	createdIdByKey: Map<string, string>,
 ): (reference: string) => AliasIdResolution {
-  const codeLookup = buildTokenLookup(codeDoc);
-  const figmaLookup = buildTokenLookup(figmaDoc);
-  // "SetName::dot.path" → live Figma variable ID.
-  const figmaIdByKey = new Map<string, string>();
-  for (const set of figmaDoc.sets) {
-    for (const t of set.tokens) {
-      const id = t.extensions?.["figma-console-mcp"]?.variableId;
-      if (typeof id === "string") {
-        figmaIdByKey.set(`${set.name}::${t.path.join(".")}`, id);
-      }
-    }
-  }
+	const codeLookup = buildTokenLookup(codeDoc);
+	const figmaLookup = buildTokenLookup(figmaDoc);
+	// "SetName::dot.path" → live Figma variable ID.
+	const figmaIdByKey = new Map<string, string>();
+	for (const set of figmaDoc.sets) {
+		for (const t of set.tokens) {
+			const id = t.extensions?.["figma-console-mcp"]?.variableId;
+			if (typeof id === "string") {
+				figmaIdByKey.set(`${set.name}::${t.path.join(".")}`, id);
+			}
+		}
+	}
 
-  return (reference: string): AliasIdResolution => {
-    const bare = reference.replace(/^\{|\}$/g, "");
-    // Cross-library references preserve the original Figma variable ID —
-    // usable directly as an alias target.
-    if (bare.startsWith("__library:")) {
-      return { id: bare.slice("__library:".length) };
-    }
-    const codeEntry = codeLookup.get(bare);
-    if (codeEntry) {
-      const key = `${codeEntry.setName}::${codeEntry.token.path.join(".")}`;
-      const createdId = createdIdByKey.get(key);
-      if (createdId) return { id: createdId };
-      const liveId = figmaIdByKey.get(key);
-      if (liveId) return { id: liveId };
-      if (toCreateKeys.has(key)) return { pending: key };
-      const extId =
-        codeEntry.token.extensions?.["figma-console-mcp"]?.variableId;
-      if (typeof extId === "string") return { id: extId };
-      return null;
-    }
-    // Not in the code document — the reference may point at a Figma-only
-    // token (present in the live snapshot but absent from the import file).
-    const figmaEntry = figmaLookup.get(bare);
-    if (figmaEntry) {
-      const id = figmaEntry.token.extensions?.["figma-console-mcp"]?.variableId;
-      if (typeof id === "string") return { id };
-    }
-    return null;
-  };
+	return (reference: string): AliasIdResolution => {
+		const bare = reference.replace(/^\{|\}$/g, "");
+		// Cross-library references preserve the original Figma variable ID —
+		// usable directly as an alias target.
+		if (bare.startsWith("__library:")) {
+			return { id: bare.slice("__library:".length) };
+		}
+		const codeEntry = codeLookup.get(bare);
+		if (codeEntry) {
+			const key = `${codeEntry.setName}::${codeEntry.token.path.join(".")}`;
+			const createdId = createdIdByKey.get(key);
+			if (createdId) return { id: createdId };
+			const liveId = figmaIdByKey.get(key);
+			if (liveId) return { id: liveId };
+			if (toCreateKeys.has(key)) return { pending: key };
+			const extId =
+				codeEntry.token.extensions?.["figma-console-mcp"]?.variableId;
+			if (typeof extId === "string") return { id: extId };
+			return null;
+		}
+		// Not in the code document — the reference may point at a Figma-only
+		// token (present in the live snapshot but absent from the import file).
+		const figmaEntry = figmaLookup.get(bare);
+		if (figmaEntry) {
+			const id = figmaEntry.token.extensions?.["figma-console-mcp"]?.variableId;
+			if (typeof id === "string") return { id };
+		}
+		return null;
+	};
 }
 
 /**
@@ -1970,25 +2037,25 @@ export function makeAliasIdResolver(
  * needs.
  */
 interface VariableUpdate {
-  variableId: string;
-  variableName: string;
-  resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN" | "TIMING" | "EASING";
-  valuesByMode: Record<string, unknown>; // modeId → Figma-native value
-  /**
-   * Rename op: set `variable.name` to this '/'-joined path before any value
-   * writes. Produced by the ID-first rename classification in
-   * computeDiffPlan — never combined with a create/delete of the same
-   * variable.
-   */
-  newName?: string;
-  /** Full replacement scopes array (`variable.scopes = [...]`). */
-  scopes?: string[];
-  /**
-   * Per-platform code syntax ops: `set` maps platform → value
-   * (setVariableCodeSyntax), `remove` lists platforms to clear
-   * (removeVariableCodeSyntax).
-   */
-  codeSyntax?: { set?: Record<string, string>; remove?: string[] };
+	variableId: string;
+	variableName: string;
+	resolvedType: "COLOR" | "FLOAT" | "STRING" | "BOOLEAN" | "TIMING" | "EASING";
+	valuesByMode: Record<string, unknown>; // modeId → Figma-native value
+	/**
+	 * Rename op: set `variable.name` to this '/'-joined path before any value
+	 * writes. Produced by the ID-first rename classification in
+	 * computeDiffPlan — never combined with a create/delete of the same
+	 * variable.
+	 */
+	newName?: string;
+	/** Full replacement scopes array (`variable.scopes = [...]`). */
+	scopes?: string[];
+	/**
+	 * Per-platform code syntax ops: `set` maps platform → value
+	 * (setVariableCodeSyntax), `remove` lists platforms to clear
+	 * (removeVariableCodeSyntax).
+	 */
+	codeSyntax?: { set?: Record<string, string>; remove?: string[] };
 }
 
 /**
@@ -1996,18 +2063,19 @@ interface VariableUpdate {
  * Figma payload. Needed because our internal model is keyed by mode name
  * but the Plugin API wants the modeId.
  */
-function buildCollectionModeMap(
-  payload: { collections: any[]; variables: any[] },
-): Map<string, Map<string, string>> {
-  const out = new Map<string, Map<string, string>>();
-  for (const c of payload.collections) {
-    const modes = new Map<string, string>();
-    for (const m of c.modes ?? []) {
-      modes.set(m.name, m.modeId);
-    }
-    out.set(c.id, modes);
-  }
-  return out;
+function buildCollectionModeMap(payload: {
+	collections: any[];
+	variables: any[];
+}): Map<string, Map<string, string>> {
+	const out = new Map<string, Map<string, string>>();
+	for (const c of payload.collections) {
+		const modes = new Map<string, string>();
+		for (const m of c.modes ?? []) {
+			modes.set(m.name, m.modeId);
+		}
+		out.set(c.id, modes);
+	}
+	return out;
 }
 
 /**
@@ -2036,7 +2104,13 @@ function buildCollectionModeMap(
  *
  * Exported for test coverage of the value-conversion edge cases.
  */
-const SPRING_EASING_TYPES = new Set(["GENTLE", "QUICK", "BOUNCY", "SLOW", "CUSTOM_SPRING"]);
+const SPRING_EASING_TYPES = new Set([
+	"GENTLE",
+	"QUICK",
+	"BOUNCY",
+	"SLOW",
+	"CUSTOM_SPRING",
+]);
 
 /**
  * Rebuild a spring or hold easing from the extension figma_export_tokens
@@ -2045,137 +2119,173 @@ const SPRING_EASING_TYPES = new Set(["GENTLE", "QUICK", "BOUNCY", "SLOW", "CUSTO
  * shape (`springValues: {mass, stiffness, damping}`) has no exact bounce
  * equivalent server-side and falls back to the bezier.
  */
-function springToFigmaEasing(spring: unknown): Record<string, unknown> | undefined {
-  if (!spring || typeof spring !== "object") return undefined;
-  const s = spring as { easingType?: unknown; bounce?: unknown };
-  if (s.easingType === "HOLD") return { type: "HOLD" };
-  if (typeof s.bounce !== "number" || !Number.isFinite(s.bounce)) return undefined;
-  const type = typeof s.easingType === "string" && SPRING_EASING_TYPES.has(s.easingType) ? s.easingType : "CUSTOM_SPRING";
-  return { type, easingFunctionSpring: { bounce: s.bounce } };
+function springToFigmaEasing(
+	spring: unknown,
+): Record<string, unknown> | undefined {
+	if (!spring || typeof spring !== "object") return undefined;
+	const s = spring as { easingType?: unknown; bounce?: unknown };
+	if (s.easingType === "HOLD") return { type: "HOLD" };
+	if (typeof s.bounce !== "number" || !Number.isFinite(s.bounce))
+		return undefined;
+	const type =
+		typeof s.easingType === "string" && SPRING_EASING_TYPES.has(s.easingType)
+			? s.easingType
+			: "CUSTOM_SPRING";
+	return { type, easingFunctionSpring: { bounce: s.bounce } };
 }
 
 export function tokenValueToFigma(
-  value: { literal?: unknown; reference?: string; composed?: ComposedColor },
-  resolvedType: VariableUpdate["resolvedType"],
-  /** EASING only: this mode's $extensions["figma-console-mcp"].spring entry, which overrides the fallback bezier. */
-  spring?: unknown,
+	value: { literal?: unknown; reference?: string; composed?: ComposedColor },
+	resolvedType: VariableUpdate["resolvedType"],
+	/** EASING only: this mode's $extensions["figma-console-mcp"].spring entry, which overrides the fallback bezier. */
+	spring?: unknown,
 ):
-  | { kind: "value"; value: unknown }
-  | { kind: "skip-alias"; reference: string }
-  | { kind: "composed"; color: ComposedPart<{ r: number; g: number; b: number; a: number }>; opacity: ComposedPart<number> }
-  | { kind: "skip-empty" }
-  | { kind: "skip-invalid"; reason: string } {
-  // Composed color ("grey/900 at 50%"): the caller resolves the reference
-  // part(s) and writes Figma's { color, opacity } value, keeping the link to
-  // the primitive instead of flattening it to the resolved literal.
-  if (resolvedType === "COLOR" && value.composed) {
-    const c = value.composed;
-    let color: ComposedPart<{ r: number; g: number; b: number; a: number }>;
-    if ("reference" in c.color) {
-      color = { reference: c.color.reference };
-    } else {
-      try {
-        color = { value: hexToRgba(c.color.literal) };
-      } catch (err) {
-        return { kind: "skip-invalid", reason: `cannot convert composed color ${JSON.stringify(c.color.literal)} to a Figma color` };
-      }
-    }
-    let opacity: ComposedPart<number>;
-    if ("reference" in c.opacity) {
-      opacity = { reference: c.opacity.reference };
-    } else {
-      const pct = Number(c.opacity.literal);
-      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-        return { kind: "skip-invalid", reason: `composed opacity ${JSON.stringify(c.opacity.literal)} is not a percent between 0 and 100` };
-      }
-      opacity = { value: pct };
-    }
-    if (!("reference" in color) && !("reference" in opacity)) {
-      return { kind: "skip-invalid", reason: "a composed color needs its color or its opacity to be a variable reference (Figma rejects two literals)" };
-    }
-    return { kind: "composed", color, opacity };
-  }
-  if (value.reference) {
-    // References aren't converted here — the caller resolves them to a
-    // Figma variable ID via its alias-ID resolver and writes a real
-    // { type: "VARIABLE_ALIAS", id } payload. Returning skip-alias hands
-    // the reference back for that resolution; if the resolver can't find
-    // a target, the caller surfaces a warning instead of silently wiping
-    // the reference with a literal.
-    return { kind: "skip-alias", reference: value.reference };
-  }
-  if (value.literal === undefined || value.literal === null) {
-    return { kind: "skip-empty" };
-  }
+	| { kind: "value"; value: unknown }
+	| { kind: "skip-alias"; reference: string }
+	| {
+			kind: "composed";
+			color: ComposedPart<{ r: number; g: number; b: number; a: number }>;
+			opacity: ComposedPart<number>;
+	  }
+	| { kind: "skip-empty" }
+	| { kind: "skip-invalid"; reason: string } {
+	// Composed color ("grey/900 at 50%"): the caller resolves the reference
+	// part(s) and writes Figma's { color, opacity } value, keeping the link to
+	// the primitive instead of flattening it to the resolved literal.
+	if (resolvedType === "COLOR" && value.composed) {
+		const c = value.composed;
+		let color: ComposedPart<{ r: number; g: number; b: number; a: number }>;
+		if ("reference" in c.color) {
+			color = { reference: c.color.reference };
+		} else {
+			try {
+				color = { value: hexToRgba(c.color.literal) };
+			} catch (err) {
+				return {
+					kind: "skip-invalid",
+					reason: `cannot convert composed color ${JSON.stringify(c.color.literal)} to a Figma color`,
+				};
+			}
+		}
+		let opacity: ComposedPart<number>;
+		if ("reference" in c.opacity) {
+			opacity = { reference: c.opacity.reference };
+		} else {
+			const pct = Number(c.opacity.literal);
+			if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+				return {
+					kind: "skip-invalid",
+					reason: `composed opacity ${JSON.stringify(c.opacity.literal)} is not a percent between 0 and 100`,
+				};
+			}
+			opacity = { value: pct };
+		}
+		if (!("reference" in color) && !("reference" in opacity)) {
+			return {
+				kind: "skip-invalid",
+				reason:
+					"a composed color needs its color or its opacity to be a variable reference (Figma rejects two literals)",
+			};
+		}
+		return { kind: "composed", color, opacity };
+	}
+	if (value.reference) {
+		// References aren't converted here — the caller resolves them to a
+		// Figma variable ID via its alias-ID resolver and writes a real
+		// { type: "VARIABLE_ALIAS", id } payload. Returning skip-alias hands
+		// the reference back for that resolution; if the resolver can't find
+		// a target, the caller surfaces a warning instead of silently wiping
+		// the reference with a literal.
+		return { kind: "skip-alias", reference: value.reference };
+	}
+	if (value.literal === undefined || value.literal === null) {
+		return { kind: "skip-empty" };
+	}
 
-  let figmaValue: unknown;
-  if (resolvedType === "COLOR" && typeof value.literal === "string") {
-    // Guarded: hexToRgba throws on anything that isn't a hex color
-    // ("rgb(255,0,0)", "transparent", "salmon", "oklch(...)"). A throw here
-    // would abort the whole import AFTER the create phase already mutated
-    // Figma — so malformed colors become a per-value skip instead.
-    try {
-      figmaValue = hexToRgba(value.literal);
-    } catch (err) {
-      return {
-        kind: "skip-invalid",
-        reason: `cannot convert ${JSON.stringify(value.literal)} to a Figma color (${
-          err instanceof Error ? err.message : String(err)
-        })`,
-      };
-    }
-  } else if (
-    resolvedType === "COLOR" &&
-    typeof value.literal === "object" &&
-    value.literal !== null &&
-    !Array.isArray(value.literal)
-  ) {
-    // DTCG 2025.10 object-form color. Without this branch the object fell
-    // through to String(literal) → "[object Object]" pushed at a COLOR
-    // variable.
-    const converted = colorObjectToFigmaRgba(
-      value.literal as Record<string, unknown>,
-    );
-    if (converted.kind !== "value") return converted;
-    figmaValue = converted.value;
-  } else if (resolvedType === "FLOAT") {
-    const parsed = parseNumericLiteral(value.literal);
-    if (Number.isNaN(parsed)) {
-      // Never push NaN into setValueForMode — skip with a reason instead.
-      return {
-        kind: "skip-invalid",
-        reason: `cannot convert ${JSON.stringify(value.literal)} to a number for a FLOAT variable`,
-      };
-    }
-    figmaValue = parsed;
-  } else if (resolvedType === "BOOLEAN") {
-    figmaValue = Boolean(value.literal);
-  } else if (resolvedType === "TIMING") {
-    // Figma TIMING is seconds. parseNumericLiteral yields milliseconds for
-    // durations ({300,"ms"}, {0.3,"s"}, "300ms"; a bare number is ms).
-    const ms = parseNumericLiteral(value.literal);
-    if (!Number.isFinite(ms) || ms < 0) {
-      return { kind: "skip-invalid", reason: `cannot convert ${JSON.stringify(value.literal)} to a duration for a TIMING variable` };
-    }
-    figmaValue = ms / 1000;
-  } else if (resolvedType === "EASING") {
-    const easing = springToFigmaEasing(spring);
-    if (easing) {
-      figmaValue = easing;
-    } else {
-      const arr = value.literal;
-      if (!Array.isArray(arr) || arr.length !== 4 || !arr.every((n) => typeof n === "number" && Number.isFinite(n))) {
-        return { kind: "skip-invalid", reason: `cannot convert ${JSON.stringify(value.literal)} to an EASING value — expected a cubicBezier [x1, y1, x2, y2]` };
-      }
-      figmaValue = {
-        type: "CUSTOM_CUBIC_BEZIER",
-        easingFunctionCubicBezier: { x1: arr[0], y1: arr[1], x2: arr[2], y2: arr[3] },
-      };
-    }
-  } else {
-    figmaValue = typeof value.literal === "string" ? value.literal : String(value.literal);
-  }
-  return { kind: "value", value: figmaValue };
+	let figmaValue: unknown;
+	if (resolvedType === "COLOR" && typeof value.literal === "string") {
+		// Guarded: hexToRgba throws on anything that isn't a hex color
+		// ("rgb(255,0,0)", "transparent", "salmon", "oklch(...)"). A throw here
+		// would abort the whole import AFTER the create phase already mutated
+		// Figma — so malformed colors become a per-value skip instead.
+		try {
+			figmaValue = hexToRgba(value.literal);
+		} catch (err) {
+			return {
+				kind: "skip-invalid",
+				reason: `cannot convert ${JSON.stringify(value.literal)} to a Figma color (${
+					err instanceof Error ? err.message : String(err)
+				})`,
+			};
+		}
+	} else if (
+		resolvedType === "COLOR" &&
+		typeof value.literal === "object" &&
+		value.literal !== null &&
+		!Array.isArray(value.literal)
+	) {
+		// DTCG 2025.10 object-form color. Without this branch the object fell
+		// through to String(literal) → "[object Object]" pushed at a COLOR
+		// variable.
+		const converted = colorObjectToFigmaRgba(
+			value.literal as Record<string, unknown>,
+		);
+		if (converted.kind !== "value") return converted;
+		figmaValue = converted.value;
+	} else if (resolvedType === "FLOAT") {
+		const parsed = parseNumericLiteral(value.literal);
+		if (Number.isNaN(parsed)) {
+			// Never push NaN into setValueForMode — skip with a reason instead.
+			return {
+				kind: "skip-invalid",
+				reason: `cannot convert ${JSON.stringify(value.literal)} to a number for a FLOAT variable`,
+			};
+		}
+		figmaValue = parsed;
+	} else if (resolvedType === "BOOLEAN") {
+		figmaValue = Boolean(value.literal);
+	} else if (resolvedType === "TIMING") {
+		// Figma TIMING is seconds. parseNumericLiteral yields milliseconds for
+		// durations ({300,"ms"}, {0.3,"s"}, "300ms"; a bare number is ms).
+		const ms = parseNumericLiteral(value.literal);
+		if (!Number.isFinite(ms) || ms < 0) {
+			return {
+				kind: "skip-invalid",
+				reason: `cannot convert ${JSON.stringify(value.literal)} to a duration for a TIMING variable`,
+			};
+		}
+		figmaValue = ms / 1000;
+	} else if (resolvedType === "EASING") {
+		const easing = springToFigmaEasing(spring);
+		if (easing) {
+			figmaValue = easing;
+		} else {
+			const arr = value.literal;
+			if (
+				!Array.isArray(arr) ||
+				arr.length !== 4 ||
+				!arr.every((n) => typeof n === "number" && Number.isFinite(n))
+			) {
+				return {
+					kind: "skip-invalid",
+					reason: `cannot convert ${JSON.stringify(value.literal)} to an EASING value — expected a cubicBezier [x1, y1, x2, y2]`,
+				};
+			}
+			figmaValue = {
+				type: "CUSTOM_CUBIC_BEZIER",
+				easingFunctionCubicBezier: {
+					x1: arr[0],
+					y1: arr[1],
+					x2: arr[2],
+					y2: arr[3],
+				},
+			};
+		}
+	} else {
+		figmaValue =
+			typeof value.literal === "string" ? value.literal : String(value.literal);
+	}
+	return { kind: "value", value: figmaValue };
 }
 
 /**
@@ -2191,45 +2301,45 @@ export function tokenValueToFigma(
  *      do color-space conversion, and guessing would corrupt the variable)
  */
 function colorObjectToFigmaRgba(
-  obj: Record<string, unknown>,
+	obj: Record<string, unknown>,
 ):
-  | { kind: "value"; value: { r: number; g: number; b: number; a: number } }
-  | { kind: "skip-invalid"; reason: string } {
-  const colorSpace =
-    typeof obj.colorSpace === "string" ? obj.colorSpace : undefined;
-  const comps = obj.components;
-  if (
-    (colorSpace === undefined || colorSpace === "srgb") &&
-    Array.isArray(comps) &&
-    comps.length === 3 &&
-    comps.every((c) => typeof c === "number")
-  ) {
-    const [r, g, b] = (comps as number[]).map(clamp01);
-    const a = typeof obj.alpha === "number" ? clamp01(obj.alpha) : 1;
-    return { kind: "value", value: { r, g, b, a } };
-  }
-  if (typeof obj.hex === "string") {
-    try {
-      const rgba = hexToRgba(obj.hex);
-      if (typeof obj.alpha === "number") rgba.a = clamp01(obj.alpha);
-      return { kind: "value", value: rgba };
-    } catch {
-      return {
-        kind: "skip-invalid",
-        reason: `color object has an unparseable hex field ${JSON.stringify(obj.hex)}`,
-      };
-    }
-  }
-  if (colorSpace !== undefined && colorSpace !== "srgb") {
-    return {
-      kind: "skip-invalid",
-      reason: `unsupported colorSpace "${colorSpace}" without hex fallback`,
-    };
-  }
-  return {
-    kind: "skip-invalid",
-    reason: `cannot convert ${JSON.stringify(obj)} to a Figma color — expected srgb components or a hex field`,
-  };
+	| { kind: "value"; value: { r: number; g: number; b: number; a: number } }
+	| { kind: "skip-invalid"; reason: string } {
+	const colorSpace =
+		typeof obj.colorSpace === "string" ? obj.colorSpace : undefined;
+	const comps = obj.components;
+	if (
+		(colorSpace === undefined || colorSpace === "srgb") &&
+		Array.isArray(comps) &&
+		comps.length === 3 &&
+		comps.every((c) => typeof c === "number")
+	) {
+		const [r, g, b] = (comps as number[]).map(clamp01);
+		const a = typeof obj.alpha === "number" ? clamp01(obj.alpha) : 1;
+		return { kind: "value", value: { r, g, b, a } };
+	}
+	if (typeof obj.hex === "string") {
+		try {
+			const rgba = hexToRgba(obj.hex);
+			if (typeof obj.alpha === "number") rgba.a = clamp01(obj.alpha);
+			return { kind: "value", value: rgba };
+		} catch {
+			return {
+				kind: "skip-invalid",
+				reason: `color object has an unparseable hex field ${JSON.stringify(obj.hex)}`,
+			};
+		}
+	}
+	if (colorSpace !== undefined && colorSpace !== "srgb") {
+		return {
+			kind: "skip-invalid",
+			reason: `unsupported colorSpace "${colorSpace}" without hex fallback`,
+		};
+	}
+	return {
+		kind: "skip-invalid",
+		reason: `cannot convert ${JSON.stringify(obj)} to a Figma color — expected srgb components or a hex field`,
+	};
 }
 
 /**
@@ -2250,26 +2360,26 @@ function colorObjectToFigmaRgba(
  * into setValueForMode).
  */
 function parseNumericLiteral(literal: unknown): number {
-  if (typeof literal === "number") return literal;
-  if (typeof literal === "string") {
-    const match = literal
-      .trim()
-      .match(/^(-?(?:\d+\.?\d*|\.\d+))\s*(px|rem|em|pt|dp|ms|s|%)?$/i);
-    if (match) return Number(match[1]);
-    return Number(literal);
-  }
-  if (
-    literal !== null &&
-    typeof literal === "object" &&
-    "value" in (literal as Record<string, unknown>)
-  ) {
-    const obj = literal as Record<string, unknown>;
-    const inner = parseNumericLiteral(obj.value);
-    // s → ms, matching the diff-side canonicalization (see doc above).
-    if (obj.unit === "s") return inner * 1000;
-    return inner;
-  }
-  return Number(literal);
+	if (typeof literal === "number") return literal;
+	if (typeof literal === "string") {
+		const match = literal
+			.trim()
+			.match(/^(-?(?:\d+\.?\d*|\.\d+))\s*(px|rem|em|pt|dp|ms|s|%)?$/i);
+		if (match) return Number(match[1]);
+		return Number(literal);
+	}
+	if (
+		literal !== null &&
+		typeof literal === "object" &&
+		"value" in (literal as Record<string, unknown>)
+	) {
+		const obj = literal as Record<string, unknown>;
+		const inner = parseNumericLiteral(obj.value);
+		// s → ms, matching the diff-side canonicalization (see doc above).
+		if (obj.unit === "s") return inner * 1000;
+		return inner;
+	}
+	return Number(literal);
 }
 
 /**
@@ -2283,20 +2393,20 @@ function parseNumericLiteral(literal: unknown): number {
  * it into a skip-invalid.
  */
 function hexToRgba(hex: string): {
-  r: number;
-  g: number;
-  b: number;
-  a: number;
+	r: number;
+	g: number;
+	b: number;
+	a: number;
 } {
-  const trimmed = hex.trim();
-  const normalized = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
-  const rgba = hexToRawRgba(normalized);
-  if (!rgba) {
-    throw new Error(
-      `[figma-console-mcp] Invalid hex color ${JSON.stringify(hex)} — expected #RGB, #RRGGBB, or #RRGGBBAA.`,
-    );
-  }
-  return rgba;
+	const trimmed = hex.trim();
+	const normalized = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+	const rgba = hexToRawRgba(normalized);
+	if (!rgba) {
+		throw new Error(
+			`[figma-console-mcp] Invalid hex color ${JSON.stringify(hex)} — expected #RGB, #RRGGBB, or #RRGGBBAA.`,
+		);
+	}
+	return rgba;
 }
 
 /**
@@ -2305,203 +2415,203 @@ function hexToRgba(hex: string): {
  * resolvable value for any mode get skipped with a warning.
  */
 function buildUpdatePayloads(
-  toUpdate: Array<{
-    /** Figma-side diff key (where the live variable is today). */
-    path: string;
-    /**
-     * Code-side diff key when it differs from `path` — set for RENAME
-     * entries, where the code token lives at the NEW path while the Figma
-     * variable is still indexed under the old one.
-     */
-    codePath?: string;
-    /** Rename op: new '/'-joined variable name. */
-    newName?: string;
-    before: unknown;
-    after: unknown;
-    changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
-  }>,
-  figmaDoc: TokenDocument,
-  codeDoc: TokenDocument,
-  collectionModeMap: Map<string, Map<string, string>>,
-  warnings: string[],
-  resolveAliasId?: (reference: string) => AliasIdResolution,
+	toUpdate: Array<{
+		/** Figma-side diff key (where the live variable is today). */
+		path: string;
+		/**
+		 * Code-side diff key when it differs from `path` — set for RENAME
+		 * entries, where the code token lives at the NEW path while the Figma
+		 * variable is still indexed under the old one.
+		 */
+		codePath?: string;
+		/** Rename op: new '/'-joined variable name. */
+		newName?: string;
+		before: unknown;
+		after: unknown;
+		changes?: { values: boolean; scopes: boolean; codeSyntax: boolean };
+	}>,
+	figmaDoc: TokenDocument,
+	codeDoc: TokenDocument,
+	collectionModeMap: Map<string, Map<string, string>>,
+	warnings: string[],
+	resolveAliasId?: (reference: string) => AliasIdResolution,
 ): VariableUpdate[] {
-  // Build lookups: setName::tokenPath → (figmaToken, codeToken)
-  const figmaLookup = new Map<string, { token: any; set: any }>();
-  for (const set of figmaDoc.sets) {
-    for (const t of set.tokens) {
-      figmaLookup.set(`${set.name}::${t.path.join(".")}`, { token: t, set });
-    }
-  }
-  const codeLookup = new Map<string, { token: any; set: any }>();
-  for (const set of codeDoc.sets) {
-    for (const t of set.tokens) {
-      codeLookup.set(`${set.name}::${t.path.join(".")}`, { token: t, set });
-    }
-  }
+	// Build lookups: setName::tokenPath → (figmaToken, codeToken)
+	const figmaLookup = new Map<string, { token: any; set: any }>();
+	for (const set of figmaDoc.sets) {
+		for (const t of set.tokens) {
+			figmaLookup.set(`${set.name}::${t.path.join(".")}`, { token: t, set });
+		}
+	}
+	const codeLookup = new Map<string, { token: any; set: any }>();
+	for (const set of codeDoc.sets) {
+		for (const t of set.tokens) {
+			codeLookup.set(`${set.name}::${t.path.join(".")}`, { token: t, set });
+		}
+	}
 
-  const updates: VariableUpdate[] = [];
-  for (const entry of toUpdate) {
-    // Rename entries look up the code token at its NEW path (codePath) and
-    // the Figma variable at its OLD path (path).
-    const codeMatch = codeLookup.get(entry.codePath ?? entry.path);
-    const figmaMatch = figmaLookup.get(entry.path);
-    if (!codeMatch || !figmaMatch) continue;
+	const updates: VariableUpdate[] = [];
+	for (const entry of toUpdate) {
+		// Rename entries look up the code token at its NEW path (codePath) and
+		// the Figma variable at its OLD path (path).
+		const codeMatch = codeLookup.get(entry.codePath ?? entry.path);
+		const figmaMatch = figmaLookup.get(entry.path);
+		if (!codeMatch || !figmaMatch) continue;
 
-    const figmaToken = figmaMatch.token;
-    const variableId = figmaToken.extensions?.["figma-console-mcp"]?.variableId;
-    const collectionId =
-      figmaToken.extensions?.["figma-console-mcp"]?.collectionId;
-    if (!variableId || !collectionId) {
-      warnings.push(
-        `Cannot update ${entry.path} — missing Figma variable ID in extensions. Run figma_export_tokens first to populate.`,
-      );
-      continue;
-    }
+		const figmaToken = figmaMatch.token;
+		const variableId = figmaToken.extensions?.["figma-console-mcp"]?.variableId;
+		const collectionId =
+			figmaToken.extensions?.["figma-console-mcp"]?.collectionId;
+		if (!variableId || !collectionId) {
+			warnings.push(
+				`Cannot update ${entry.path} — missing Figma variable ID in extensions. Run figma_export_tokens first to populate.`,
+			);
+			continue;
+		}
 
-    const modeMap = collectionModeMap.get(collectionId);
-    if (!modeMap) {
-      warnings.push(
-        `Cannot update ${entry.path} — collection ${collectionId} not found in current Figma state.`,
-      );
-      continue;
-    }
+		const modeMap = collectionModeMap.get(collectionId);
+		if (!modeMap) {
+			warnings.push(
+				`Cannot update ${entry.path} — collection ${collectionId} not found in current Figma state.`,
+			);
+			continue;
+		}
 
-    // Map our token type → Figma resolvedType. Prefer the actual
-    // Figma-native type recorded at export time
-    // (extensions.figmaResolvedType) — critical so FLOAT variables whose
-    // token type was name-inferred as "duration" keep writing as FLOAT,
-    // while true TIMING/EASING variables are recognized. Fall back to
-    // inferring from the DTCG type when the extension is absent.
-    const recordedType =
-      figmaToken.extensions?.["figma-console-mcp"]?.figmaResolvedType;
-    const figmaNativeType: string =
-      typeof recordedType === "string"
-        ? recordedType
-        : inferFigmaResolvedType(figmaToken.type);
+		// Map our token type → Figma resolvedType. Prefer the actual
+		// Figma-native type recorded at export time
+		// (extensions.figmaResolvedType) — critical so FLOAT variables whose
+		// token type was name-inferred as "duration" keep writing as FLOAT,
+		// while true TIMING/EASING variables are recognized. Fall back to
+		// inferring from the DTCG type when the extension is absent.
+		const recordedType =
+			figmaToken.extensions?.["figma-console-mcp"]?.figmaResolvedType;
+		const figmaNativeType: string =
+			typeof recordedType === "string"
+				? recordedType
+				: inferFigmaResolvedType(figmaToken.type);
 
-    const resolvedType = figmaNativeType as VariableUpdate["resolvedType"];
+		const resolvedType = figmaNativeType as VariableUpdate["resolvedType"];
 
-    // Value updates apply unless the diff explicitly flagged this entry as
-    // metadata-only (changes.values === false) — re-pushing unchanged values
-    // would be wasteful and could trip alias-resolution warnings.
-    const wantValues = !entry.changes || entry.changes.values;
+		// Value updates apply unless the diff explicitly flagged this entry as
+		// metadata-only (changes.values === false) — re-pushing unchanged values
+		// would be wasteful and could trip alias-resolution warnings.
+		const wantValues = !entry.changes || entry.changes.values;
 
-    const valuesByMode: Record<string, unknown> = {};
-    const valueEntries = wantValues
-      ? Object.entries(codeMatch.token.values)
-      : [];
-    for (const [modeName, value] of valueEntries) {
-      const modeId = modeMap.get(modeName);
-      if (!modeId) {
-        warnings.push(
-          `Cannot update ${entry.path} (mode "${modeName}") — modeId not found in Figma collection.`,
-        );
-        continue;
-      }
-      const conversion = tokenValueToFigma(
-        value as any,
-        resolvedType,
-        codeMatch.token.extensions?.["figma-console-mcp"]?.spring?.[modeName],
-      );
-      if (conversion.kind === "composed") {
-        const part = (p: ComposedPart<unknown>) => {
-          if ("value" in p) return { ok: true as const, v: p.value };
-          const r = resolveAliasId?.(p.reference);
-          return r && "id" in r
-            ? { ok: true as const, v: { type: "VARIABLE_ALIAS", id: r.id } }
-            : { ok: false as const, ref: p.reference };
-        };
-        const color = part(conversion.color);
-        const opacity = part(conversion.opacity);
-        if (!color.ok || !opacity.ok) {
-          warnings.push(
-            `Skipped ${entry.path} (mode "${modeName}") — composed color reference "${!color.ok ? color.ref : (opacity as { ref: string }).ref}" could not be resolved to a Figma variable.`,
-          );
-          continue;
-        }
-        valuesByMode[modeId] = { color: color.v, opacity: opacity.v };
-        continue;
-      }
-      if (conversion.kind === "skip-alias") {
-        // Alias-target update: resolve the reference to a Figma variable ID
-        // and write it as a native variable alias. Creates run before
-        // updates, so references to just-created variables resolve too.
-        const resolved = resolveAliasId?.(conversion.reference);
-        if (resolved && "id" in resolved) {
-          valuesByMode[modeId] = { type: "VARIABLE_ALIAS", id: resolved.id };
-          continue;
-        }
-        warnings.push(
-          `Skipped ${entry.path} (mode "${modeName}") — alias reference "${conversion.reference}" could not be resolved to an existing or newly-created Figma variable. Fix the reference, or edit the alias target's value instead.`,
-        );
-        continue;
-      }
-      if (conversion.kind === "skip-invalid") {
-        warnings.push(
-          `Skipped ${entry.path} (mode "${modeName}") — ${conversion.reason}.`,
-        );
-        continue;
-      }
-      if (conversion.kind === "skip-empty") continue;
-      valuesByMode[modeId] = conversion.value;
-    }
+		const valuesByMode: Record<string, unknown> = {};
+		const valueEntries = wantValues
+			? Object.entries(codeMatch.token.values)
+			: [];
+		for (const [modeName, value] of valueEntries) {
+			const modeId = modeMap.get(modeName);
+			if (!modeId) {
+				warnings.push(
+					`Cannot update ${entry.path} (mode "${modeName}") — modeId not found in Figma collection.`,
+				);
+				continue;
+			}
+			const conversion = tokenValueToFigma(
+				value as any,
+				resolvedType,
+				codeMatch.token.extensions?.["figma-console-mcp"]?.spring?.[modeName],
+			);
+			if (conversion.kind === "composed") {
+				const part = (p: ComposedPart<unknown>) => {
+					if ("value" in p) return { ok: true as const, v: p.value };
+					const r = resolveAliasId?.(p.reference);
+					return r && "id" in r
+						? { ok: true as const, v: { type: "VARIABLE_ALIAS", id: r.id } }
+						: { ok: false as const, ref: p.reference };
+				};
+				const color = part(conversion.color);
+				const opacity = part(conversion.opacity);
+				if (!color.ok || !opacity.ok) {
+					warnings.push(
+						`Skipped ${entry.path} (mode "${modeName}") — composed color reference "${!color.ok ? color.ref : (opacity as { ref: string }).ref}" could not be resolved to a Figma variable.`,
+					);
+					continue;
+				}
+				valuesByMode[modeId] = { color: color.v, opacity: opacity.v };
+				continue;
+			}
+			if (conversion.kind === "skip-alias") {
+				// Alias-target update: resolve the reference to a Figma variable ID
+				// and write it as a native variable alias. Creates run before
+				// updates, so references to just-created variables resolve too.
+				const resolved = resolveAliasId?.(conversion.reference);
+				if (resolved && "id" in resolved) {
+					valuesByMode[modeId] = { type: "VARIABLE_ALIAS", id: resolved.id };
+					continue;
+				}
+				warnings.push(
+					`Skipped ${entry.path} (mode "${modeName}") — alias reference "${conversion.reference}" could not be resolved to an existing or newly-created Figma variable. Fix the reference, or edit the alias target's value instead.`,
+				);
+				continue;
+			}
+			if (conversion.kind === "skip-invalid") {
+				warnings.push(
+					`Skipped ${entry.path} (mode "${modeName}") — ${conversion.reason}.`,
+				);
+				continue;
+			}
+			if (conversion.kind === "skip-empty") continue;
+			valuesByMode[modeId] = conversion.value;
+		}
 
-    // Metadata ops (scopes / codeSyntax) — flagged by the diff phase.
-    let scopes: string[] | undefined;
-    if (entry.changes?.scopes) {
-      const codeScopes =
-        codeMatch.token.extensions?.["figma-console-mcp"]?.scopes;
-      if (Array.isArray(codeScopes) && codeScopes.length > 0) {
-        scopes = codeScopes;
-      } else {
-        // Explicit empty/["ALL_SCOPES"] normalizes to the Figma default.
-        scopes = ["ALL_SCOPES"];
-      }
-    }
+		// Metadata ops (scopes / codeSyntax) — flagged by the diff phase.
+		let scopes: string[] | undefined;
+		if (entry.changes?.scopes) {
+			const codeScopes =
+				codeMatch.token.extensions?.["figma-console-mcp"]?.scopes;
+			if (Array.isArray(codeScopes) && codeScopes.length > 0) {
+				scopes = codeScopes;
+			} else {
+				// Explicit empty/["ALL_SCOPES"] normalizes to the Figma default.
+				scopes = ["ALL_SCOPES"];
+			}
+		}
 
-    let codeSyntaxOps: VariableUpdate["codeSyntax"];
-    if (entry.changes?.codeSyntax) {
-      const codeCS: Record<string, string> =
-        codeMatch.token.extensions?.["figma-console-mcp"]?.codeSyntax ?? {};
-      const figmaCS: Record<string, string> =
-        figmaToken.extensions?.["figma-console-mcp"]?.codeSyntax ?? {};
-      const toSet: Record<string, string> = {};
-      for (const [platform, value] of Object.entries(codeCS)) {
-        if (typeof value === "string" && figmaCS[platform] !== value) {
-          toSet[platform] = value;
-        }
-      }
-      const toRemove = Object.keys(figmaCS).filter((p) => !(p in codeCS));
-      if (Object.keys(toSet).length > 0 || toRemove.length > 0) {
-        codeSyntaxOps = {
-          ...(Object.keys(toSet).length > 0 ? { set: toSet } : {}),
-          ...(toRemove.length > 0 ? { remove: toRemove } : {}),
-        };
-      }
-    }
+		let codeSyntaxOps: VariableUpdate["codeSyntax"];
+		if (entry.changes?.codeSyntax) {
+			const codeCS: Record<string, string> =
+				codeMatch.token.extensions?.["figma-console-mcp"]?.codeSyntax ?? {};
+			const figmaCS: Record<string, string> =
+				figmaToken.extensions?.["figma-console-mcp"]?.codeSyntax ?? {};
+			const toSet: Record<string, string> = {};
+			for (const [platform, value] of Object.entries(codeCS)) {
+				if (typeof value === "string" && figmaCS[platform] !== value) {
+					toSet[platform] = value;
+				}
+			}
+			const toRemove = Object.keys(figmaCS).filter((p) => !(p in codeCS));
+			if (Object.keys(toSet).length > 0 || toRemove.length > 0) {
+				codeSyntaxOps = {
+					...(Object.keys(toSet).length > 0 ? { set: toSet } : {}),
+					...(toRemove.length > 0 ? { remove: toRemove } : {}),
+				};
+			}
+		}
 
-    if (
-      Object.keys(valuesByMode).length === 0 &&
-      scopes === undefined &&
-      codeSyntaxOps === undefined &&
-      entry.newName === undefined
-    ) {
-      continue;
-    }
+		if (
+			Object.keys(valuesByMode).length === 0 &&
+			scopes === undefined &&
+			codeSyntaxOps === undefined &&
+			entry.newName === undefined
+		) {
+			continue;
+		}
 
-    updates.push({
-      variableId,
-      variableName: figmaToken.path.join("/"),
-      resolvedType,
-      valuesByMode,
-      ...(entry.newName !== undefined ? { newName: entry.newName } : {}),
-      ...(scopes !== undefined ? { scopes } : {}),
-      ...(codeSyntaxOps !== undefined ? { codeSyntax: codeSyntaxOps } : {}),
-    });
-  }
+		updates.push({
+			variableId,
+			variableName: figmaToken.path.join("/"),
+			resolvedType,
+			valuesByMode,
+			...(entry.newName !== undefined ? { newName: entry.newName } : {}),
+			...(scopes !== undefined ? { scopes } : {}),
+			...(codeSyntaxOps !== undefined ? { codeSyntax: codeSyntaxOps } : {}),
+		});
+	}
 
-  return updates;
+	return updates;
 }
 
 /**
@@ -2513,14 +2623,14 @@ function buildUpdatePayloads(
  * "duration" still write correctly as FLOAT.
  */
 function inferFigmaResolvedType(
-  type: string,
+	type: string,
 ): VariableUpdate["resolvedType"] | "TIMING" | "EASING" {
-  if (type === "color") return "COLOR";
-  if (type === "boolean") return "BOOLEAN";
-  if (type === "string" || type === "fontFamily") return "STRING";
-  if (type === "duration") return "TIMING";
-  if (type === "cubicBezier") return "EASING";
-  return "FLOAT"; // dimension, number, fontWeight, etc.
+	if (type === "color") return "COLOR";
+	if (type === "boolean") return "BOOLEAN";
+	if (type === "string" || type === "fontFamily") return "STRING";
+	if (type === "duration") return "TIMING";
+	if (type === "cubicBezier") return "EASING";
+	return "FLOAT"; // dimension, number, fontWeight, etc.
 }
 
 /**
@@ -2529,14 +2639,14 @@ function inferFigmaResolvedType(
  * each (variableId, modeId, value) tuple.
  */
 async function applyUpdates(
-  connector: any,
-  updates: VariableUpdate[],
+	connector: any,
+	updates: VariableUpdate[],
 ): Promise<Pick<ApplyResult, "applied" | "failed" | "errors">> {
-  // Serialize the update list into the script payload. JSON.stringify
-  // handles escape correctly even with nested objects (RGBA color values).
-  const payload = JSON.stringify(updates);
+	// Serialize the update list into the script payload. JSON.stringify
+	// handles escape correctly even with nested objects (RGBA color values).
+	const payload = JSON.stringify(updates);
 
-  const script = `
+	const script = `
     const updates = ${payload};
     const results = [];
     for (const u of updates) {
@@ -2585,33 +2695,33 @@ async function applyUpdates(
     };
   `;
 
-  const execResult = await connector.executeCodeViaUI(script, 30000);
+	const execResult = await connector.executeCodeViaUI(script, 30000);
 
-  if (!execResult?.success) {
-    return {
-      applied: 0,
-      failed: updates.length,
-      errors: [
-        {
-          variableId: "<batch>",
-          error:
-            execResult?.error ??
-            "Plugin executeCodeViaUI returned an error or timed out.",
-        },
-      ],
-    };
-  }
+	if (!execResult?.success) {
+		return {
+			applied: 0,
+			failed: updates.length,
+			errors: [
+				{
+					variableId: "<batch>",
+					error:
+						execResult?.error ??
+						"Plugin executeCodeViaUI returned an error or timed out.",
+				},
+			],
+		};
+	}
 
-  const inner = execResult.result ?? execResult;
-  const errors = (inner.results ?? [])
-    .filter((r: any) => !r.success)
-    .map((r: any) => ({ variableId: r.id, error: r.error }));
+	const inner = execResult.result ?? execResult;
+	const errors = (inner.results ?? [])
+		.filter((r: any) => !r.success)
+		.map((r: any) => ({ variableId: r.id, error: r.error }));
 
-  return {
-    applied: inner.applied ?? 0,
-    failed: inner.failed ?? 0,
-    errors,
-  };
+	return {
+		applied: inner.applied ?? 0,
+		failed: inner.failed ?? 0,
+		errors,
+	};
 }
 
 // ============================================================================
@@ -2628,33 +2738,33 @@ async function applyUpdates(
  * created-ID map in the second pass).
  */
 type CreateValueEntry = {
-  modeName?: string;
-  modeId?: string;
+	modeName?: string;
+	modeId?: string;
 } & (
-  | { kind: "literal"; value: unknown }
-  | { kind: "alias"; targetId: string }
-  | { kind: "alias-pending"; targetKey: string }
-  // Composed color: each part is a value, an existing variable id, or the key
-  // of a variable created in this batch (resolved in pass 2).
-  | {
-      kind: "composed";
-      color: { value?: unknown; targetId?: string; targetKey?: string };
-      opacity: { value?: unknown; targetId?: string; targetKey?: string };
-    }
+	| { kind: "literal"; value: unknown }
+	| { kind: "alias"; targetId: string }
+	| { kind: "alias-pending"; targetKey: string }
+	// Composed color: each part is a value, an existing variable id, or the key
+	// of a variable created in this batch (resolved in pass 2).
+	| {
+			kind: "composed";
+			color: { value?: unknown; targetId?: string; targetKey?: string };
+			opacity: { value?: unknown; targetId?: string; targetKey?: string };
+	  }
 );
 
 interface CreateVariableDef {
-  /** Diff key ("SetName::dot.path") — primary key for created-ID mapping. */
-  key: string;
-  /** Figma variable name (slash-joined token path). */
-  name: string;
-  resolvedType: VariableUpdate["resolvedType"];
-  description?: string;
-  values: CreateValueEntry[];
-  /** Non-default scopes to apply at creation (from token $extensions). */
-  scopes?: string[];
-  /** Per-platform code syntax to apply at creation (from token $extensions). */
-  codeSyntax?: Record<string, string>;
+	/** Diff key ("SetName::dot.path") — primary key for created-ID mapping. */
+	key: string;
+	/** Figma variable name (slash-joined token path). */
+	name: string;
+	resolvedType: VariableUpdate["resolvedType"];
+	description?: string;
+	values: CreateValueEntry[];
+	/** Non-default scopes to apply at creation (from token $extensions). */
+	scopes?: string[];
+	/** Per-platform code syntax to apply at creation (from token $extensions). */
+	codeSyntax?: Record<string, string>;
 }
 
 /**
@@ -2663,18 +2773,25 @@ interface CreateVariableDef {
  * server-side so the plugin script stays a dumb executor.
  */
 export interface CreatePlan {
-  newCollections: Array<{
-    setName: string;
-    modes: string[];
-    variables: CreateVariableDef[];
-  }>;
-  existingCollections: Array<{
-    collectionId: string;
-    variables: CreateVariableDef[];
-  }>;
+	newCollections: Array<{
+		setName: string;
+		modes: string[];
+		variables: CreateVariableDef[];
+	}>;
+	existingCollections: Array<{
+		collectionId: string;
+		variables: CreateVariableDef[];
+	}>;
 }
 
-const WRITABLE_RESOLVED_TYPES = new Set(["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"]);
+const WRITABLE_RESOLVED_TYPES = new Set([
+	"COLOR",
+	"FLOAT",
+	"STRING",
+	"BOOLEAN",
+	"TIMING",
+	"EASING",
+]);
 
 /**
  * Translate the diff's toCreate entries into a CreatePlan.
@@ -2695,200 +2812,199 @@ const WRITABLE_RESOLVED_TYPES = new Set(["COLOR", "FLOAT", "STRING", "BOOLEAN", 
  * Exported for test coverage.
  */
 export function buildCreatePlan(
-  toCreate: Array<{ path: string }>,
-  codeDoc: TokenDocument,
-  figmaPayload: { collections: any[]; variables: any[] },
-  resolveAliasId: (reference: string) => AliasIdResolution,
-  warnings: string[],
+	toCreate: Array<{ path: string }>,
+	codeDoc: TokenDocument,
+	figmaPayload: { collections: any[]; variables: any[] },
+	resolveAliasId: (reference: string) => AliasIdResolution,
+	warnings: string[],
 ): CreatePlan {
-  // Code-side lookup: "SetName::dot.path" → { set, token }.
-  const codeByKey = new Map<string, { set: any; token: any }>();
-  for (const set of codeDoc.sets) {
-    for (const token of set.tokens) {
-      codeByKey.set(`${set.name}::${token.path.join(".")}`, { set, token });
-    }
-  }
+	// Code-side lookup: "SetName::dot.path" → { set, token }.
+	const codeByKey = new Map<string, { set: any; token: any }>();
+	for (const set of codeDoc.sets) {
+		for (const token of set.tokens) {
+			codeByKey.set(`${set.name}::${token.path.join(".")}`, { set, token });
+		}
+	}
 
-  // Figma collection lookup by ID and by name.
-  const collectionById = new Map<string, any>();
-  const collectionByName = new Map<string, any>();
-  for (const c of figmaPayload.collections) {
-    collectionById.set(c.id, c);
-    collectionByName.set(c.name, c);
-  }
+	// Figma collection lookup by ID and by name.
+	const collectionById = new Map<string, any>();
+	const collectionByName = new Map<string, any>();
+	for (const c of figmaPayload.collections) {
+		collectionById.set(c.id, c);
+		collectionByName.set(c.name, c);
+	}
 
-  const newBySet = new Map<
-    string,
-    { setName: string; modes: string[]; variables: CreateVariableDef[] }
-  >();
-  const existingById = new Map<
-    string,
-    { collectionId: string; variables: CreateVariableDef[] }
-  >();
+	const newBySet = new Map<
+		string,
+		{ setName: string; modes: string[]; variables: CreateVariableDef[] }
+	>();
+	const existingById = new Map<
+		string,
+		{ collectionId: string; variables: CreateVariableDef[] }
+	>();
 
-  for (const entry of toCreate) {
-    const match = codeByKey.get(entry.path);
-    if (!match) continue; // Defensive — toCreate keys come from codeDoc.
-    const { set, token } = match;
+	for (const entry of toCreate) {
+		const match = codeByKey.get(entry.path);
+		if (!match) continue; // Defensive — toCreate keys come from codeDoc.
+		const { set, token } = match;
 
-    // Which Figma collection does this set map to? Round-trip collection ID
-    // wins; name match second; otherwise the set needs a new collection.
-    const existingCollection =
-      (set.meta?.figmaCollectionId
-        ? collectionById.get(set.meta.figmaCollectionId)
-        : undefined) ?? collectionByName.get(set.name);
+		// Which Figma collection does this set map to? Round-trip collection ID
+		// wins; name match second; otherwise the set needs a new collection.
+		const existingCollection =
+			(set.meta?.figmaCollectionId
+				? collectionById.get(set.meta.figmaCollectionId)
+				: undefined) ?? collectionByName.get(set.name);
 
-    // Resolve the Figma-native type, honoring the recorded resolvedType.
-    const recorded =
-      token.extensions?.["figma-console-mcp"]?.figmaResolvedType;
-    const figmaNativeType: string =
-      typeof recorded === "string" &&
-      ["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"].includes(
-        recorded,
-      )
-        ? recorded
-        : inferFigmaResolvedType(token.type);
-    if (!WRITABLE_RESOLVED_TYPES.has(figmaNativeType)) {
-      warnings.push(
-        `Skipped create for ${entry.path} — unsupported variable type ${figmaNativeType}.`,
-      );
-      continue;
-    }
-    const resolvedType = figmaNativeType as VariableUpdate["resolvedType"];
+		// Resolve the Figma-native type, honoring the recorded resolvedType.
+		const recorded = token.extensions?.["figma-console-mcp"]?.figmaResolvedType;
+		const figmaNativeType: string =
+			typeof recorded === "string" &&
+			["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"].includes(
+				recorded,
+			)
+				? recorded
+				: inferFigmaResolvedType(token.type);
+		if (!WRITABLE_RESOLVED_TYPES.has(figmaNativeType)) {
+			warnings.push(
+				`Skipped create for ${entry.path} — unsupported variable type ${figmaNativeType}.`,
+			);
+			continue;
+		}
+		const resolvedType = figmaNativeType as VariableUpdate["resolvedType"];
 
-    // Mode-name → modeId map for existing collections.
-    const modeIdByName = new Map<string, string>();
-    if (existingCollection) {
-      for (const m of existingCollection.modes ?? []) {
-        modeIdByName.set(m.name, m.modeId);
-      }
-    }
+		// Mode-name → modeId map for existing collections.
+		const modeIdByName = new Map<string, string>();
+		if (existingCollection) {
+			for (const m of existingCollection.modes ?? []) {
+				modeIdByName.set(m.name, m.modeId);
+			}
+		}
 
-    const values: CreateValueEntry[] = [];
-    for (const [modeName, value] of Object.entries(
-      token.values as Record<string, any>,
-    )) {
-      let modeKeying: { modeName?: string; modeId?: string };
-      if (existingCollection) {
-        const modeId = modeIdByName.get(modeName);
-        if (!modeId) {
-          warnings.push(
-            `Cannot set ${entry.path} (mode "${modeName}") — mode not found in existing Figma collection "${set.name}". Add the mode in Figma first (figma_add_mode).`,
-          );
-          continue;
-        }
-        modeKeying = { modeId };
-      } else {
-        modeKeying = { modeName };
-      }
+		const values: CreateValueEntry[] = [];
+		for (const [modeName, value] of Object.entries(
+			token.values as Record<string, any>,
+		)) {
+			let modeKeying: { modeName?: string; modeId?: string };
+			if (existingCollection) {
+				const modeId = modeIdByName.get(modeName);
+				if (!modeId) {
+					warnings.push(
+						`Cannot set ${entry.path} (mode "${modeName}") — mode not found in existing Figma collection "${set.name}". Add the mode in Figma first (figma_add_mode).`,
+					);
+					continue;
+				}
+				modeKeying = { modeId };
+			} else {
+				modeKeying = { modeName };
+			}
 
-      if (value?.reference) {
-        const resolved = resolveAliasId(value.reference);
-        if (!resolved) {
-          warnings.push(
-            `Skipped ${entry.path} (mode "${modeName}") — alias reference "${value.reference}" could not be resolved to an existing or newly-created Figma variable.`,
-          );
-          continue;
-        }
-        if ("id" in resolved) {
-          values.push({ ...modeKeying, kind: "alias", targetId: resolved.id });
-        } else {
-          values.push({
-            ...modeKeying,
-            kind: "alias-pending",
-            targetKey: resolved.pending,
-          });
-        }
-        continue;
-      }
+			if (value?.reference) {
+				const resolved = resolveAliasId(value.reference);
+				if (!resolved) {
+					warnings.push(
+						`Skipped ${entry.path} (mode "${modeName}") — alias reference "${value.reference}" could not be resolved to an existing or newly-created Figma variable.`,
+					);
+					continue;
+				}
+				if ("id" in resolved) {
+					values.push({ ...modeKeying, kind: "alias", targetId: resolved.id });
+				} else {
+					values.push({
+						...modeKeying,
+						kind: "alias-pending",
+						targetKey: resolved.pending,
+					});
+				}
+				continue;
+			}
 
-      const conversion = tokenValueToFigma(
-        value,
-        resolvedType,
-        token.extensions?.["figma-console-mcp"]?.spring?.[modeName],
-      );
-      if (conversion.kind === "skip-invalid") {
-        warnings.push(
-          `Skipped ${entry.path} (mode "${modeName}") — ${conversion.reason}.`,
-        );
-        continue;
-      }
-      if (conversion.kind === "composed") {
-        const part = (p: ComposedPart<unknown>) => {
-          if ("value" in p) return { value: p.value };
-          const r = resolveAliasId(p.reference);
-          if (!r) return null;
-          return "id" in r ? { targetId: r.id } : { targetKey: r.pending };
-        };
-        const color = part(conversion.color);
-        const opacity = part(conversion.opacity);
-        if (!color || !opacity) {
-          warnings.push(
-            `Skipped ${entry.path} (mode "${modeName}") — a composed color reference could not be resolved to an existing or newly-created Figma variable.`,
-          );
-          continue;
-        }
-        values.push({ ...modeKeying, kind: "composed", color, opacity });
-        continue;
-      }
-      if (conversion.kind !== "value") continue; // skip-empty / skip-alias (handled above)
-      values.push({ ...modeKeying, kind: "literal", value: conversion.value });
-    }
+			const conversion = tokenValueToFigma(
+				value,
+				resolvedType,
+				token.extensions?.["figma-console-mcp"]?.spring?.[modeName],
+			);
+			if (conversion.kind === "skip-invalid") {
+				warnings.push(
+					`Skipped ${entry.path} (mode "${modeName}") — ${conversion.reason}.`,
+				);
+				continue;
+			}
+			if (conversion.kind === "composed") {
+				const part = (p: ComposedPart<unknown>) => {
+					if ("value" in p) return { value: p.value };
+					const r = resolveAliasId(p.reference);
+					if (!r) return null;
+					return "id" in r ? { targetId: r.id } : { targetKey: r.pending };
+				};
+				const color = part(conversion.color);
+				const opacity = part(conversion.opacity);
+				if (!color || !opacity) {
+					warnings.push(
+						`Skipped ${entry.path} (mode "${modeName}") — a composed color reference could not be resolved to an existing or newly-created Figma variable.`,
+					);
+					continue;
+				}
+				values.push({ ...modeKeying, kind: "composed", color, opacity });
+				continue;
+			}
+			if (conversion.kind !== "value") continue; // skip-empty / skip-alias (handled above)
+			values.push({ ...modeKeying, kind: "literal", value: conversion.value });
+		}
 
-    // Stashed variable metadata rides along to creation. Scopes: only
-    // meaningful (non-default) arrays; codeSyntax: only non-empty maps.
-    const ext = token.extensions?.["figma-console-mcp"] ?? {};
-    const createScopes =
-      Array.isArray(ext.scopes) &&
-      ext.scopes.length > 0 &&
-      !(ext.scopes.length === 1 && ext.scopes[0] === "ALL_SCOPES")
-        ? ext.scopes.filter((s: unknown): s is string => typeof s === "string")
-        : undefined;
-    const createCodeSyntax =
-      ext.codeSyntax &&
-      typeof ext.codeSyntax === "object" &&
-      !Array.isArray(ext.codeSyntax) &&
-      Object.keys(ext.codeSyntax).length > 0
-        ? (ext.codeSyntax as Record<string, string>)
-        : undefined;
+		// Stashed variable metadata rides along to creation. Scopes: only
+		// meaningful (non-default) arrays; codeSyntax: only non-empty maps.
+		const ext = token.extensions?.["figma-console-mcp"] ?? {};
+		const createScopes =
+			Array.isArray(ext.scopes) &&
+			ext.scopes.length > 0 &&
+			!(ext.scopes.length === 1 && ext.scopes[0] === "ALL_SCOPES")
+				? ext.scopes.filter((s: unknown): s is string => typeof s === "string")
+				: undefined;
+		const createCodeSyntax =
+			ext.codeSyntax &&
+			typeof ext.codeSyntax === "object" &&
+			!Array.isArray(ext.codeSyntax) &&
+			Object.keys(ext.codeSyntax).length > 0
+				? (ext.codeSyntax as Record<string, string>)
+				: undefined;
 
-    const def: CreateVariableDef = {
-      key: entry.path,
-      name: token.path.join("/"),
-      resolvedType,
-      ...(token.description ? { description: token.description } : {}),
-      values,
-      ...(createScopes && createScopes.length > 0
-        ? { scopes: createScopes }
-        : {}),
-      ...(createCodeSyntax ? { codeSyntax: createCodeSyntax } : {}),
-    };
+		const def: CreateVariableDef = {
+			key: entry.path,
+			name: token.path.join("/"),
+			resolvedType,
+			...(token.description ? { description: token.description } : {}),
+			values,
+			...(createScopes && createScopes.length > 0
+				? { scopes: createScopes }
+				: {}),
+			...(createCodeSyntax ? { codeSyntax: createCodeSyntax } : {}),
+		};
 
-    if (existingCollection) {
-      let bucket = existingById.get(existingCollection.id);
-      if (!bucket) {
-        bucket = { collectionId: existingCollection.id, variables: [] };
-        existingById.set(existingCollection.id, bucket);
-      }
-      bucket.variables.push(def);
-    } else {
-      let bucket = newBySet.get(set.name);
-      if (!bucket) {
-        bucket = {
-          setName: set.name,
-          modes: set.modes?.length ? [...set.modes] : ["Default"],
-          variables: [],
-        };
-        newBySet.set(set.name, bucket);
-      }
-      bucket.variables.push(def);
-    }
-  }
+		if (existingCollection) {
+			let bucket = existingById.get(existingCollection.id);
+			if (!bucket) {
+				bucket = { collectionId: existingCollection.id, variables: [] };
+				existingById.set(existingCollection.id, bucket);
+			}
+			bucket.variables.push(def);
+		} else {
+			let bucket = newBySet.get(set.name);
+			if (!bucket) {
+				bucket = {
+					setName: set.name,
+					modes: set.modes?.length ? [...set.modes] : ["Default"],
+					variables: [],
+				};
+				newBySet.set(set.name, bucket);
+			}
+			bucket.variables.push(def);
+		}
+	}
 
-  return {
-    newCollections: [...newBySet.values()],
-    existingCollections: [...existingById.values()],
-  };
+	return {
+		newCollections: [...newBySet.values()],
+		existingCollections: [...existingById.values()],
+	};
 }
 
 /**
@@ -2905,25 +3021,25 @@ export function buildCreatePlan(
  * Per-item failures are collected and surfaced without failing the batch.
  */
 async function applyCreates(
-  connector: any,
-  plan: CreatePlan,
+	connector: any,
+	plan: CreatePlan,
 ): Promise<{
-  created: number;
-  createdCollections: number;
-  failed: number;
-  errors: Array<{ variableId: string; error: string }>;
-  createdIdByKey: Map<string, string>;
+	created: number;
+	createdCollections: number;
+	failed: number;
+	errors: Array<{ variableId: string; error: string }>;
+	createdIdByKey: Map<string, string>;
 }> {
-  const payload = JSON.stringify(plan);
-  const totalVars =
-    plan.newCollections.reduce((n, c) => n + c.variables.length, 0) +
-    plan.existingCollections.reduce((n, c) => n + c.variables.length, 0);
-  const timeout = Math.min(
-    60000,
-    Math.max(15000, totalVars * 200 + plan.newCollections.length * 500),
-  );
+	const payload = JSON.stringify(plan);
+	const totalVars =
+		plan.newCollections.reduce((n, c) => n + c.variables.length, 0) +
+		plan.existingCollections.reduce((n, c) => n + c.variables.length, 0);
+	const timeout = Math.min(
+		60000,
+		Math.max(15000, totalVars * 200 + plan.newCollections.length * 500),
+	);
 
-  const script = `
+	const script = `
     const plan = ${payload};
     const results = [];
     const aliasFailures = [];
@@ -3056,55 +3172,55 @@ async function applyCreates(
     };
   `;
 
-  const execResult = await connector.executeCodeViaUI(script, timeout);
+	const execResult = await connector.executeCodeViaUI(script, timeout);
 
-  if (!execResult?.success) {
-    return {
-      created: 0,
-      createdCollections: 0,
-      failed: totalVars,
-      errors: [
-        {
-          variableId: "<create-batch>",
-          error:
-            execResult?.error ??
-            "Plugin executeCodeViaUI returned an error or timed out.",
-        },
-      ],
-      createdIdByKey: new Map(),
-    };
-  }
+	if (!execResult?.success) {
+		return {
+			created: 0,
+			createdCollections: 0,
+			failed: totalVars,
+			errors: [
+				{
+					variableId: "<create-batch>",
+					error:
+						execResult?.error ??
+						"Plugin executeCodeViaUI returned an error or timed out.",
+				},
+			],
+			createdIdByKey: new Map(),
+		};
+	}
 
-  const inner = execResult.result ?? execResult;
-  const errors: Array<{ variableId: string; error: string }> = [];
-  const results: any[] = inner.results ?? [];
-  const aliasFailures: any[] = inner.aliasFailures ?? [];
-  for (const r of results) {
-    if (!r.success) errors.push({ variableId: r.key, error: r.error });
-  }
-  for (const f of aliasFailures) {
-    errors.push({ variableId: f.key, error: f.error });
-  }
+	const inner = execResult.result ?? execResult;
+	const errors: Array<{ variableId: string; error: string }> = [];
+	const results: any[] = inner.results ?? [];
+	const aliasFailures: any[] = inner.aliasFailures ?? [];
+	for (const r of results) {
+		if (!r.success) errors.push({ variableId: r.key, error: r.error });
+	}
+	for (const f of aliasFailures) {
+		errors.push({ variableId: f.key, error: f.error });
+	}
 
-  // Count each variable exactly ONCE: a variable that was created but whose
-  // alias pass failed counts as failed, not as created+failed (the previous
-  // arithmetic double-counted it across both buckets). Alias failures can
-  // repeat per mode — dedupe by variable key.
-  const aliasFailedKeys = new Set(aliasFailures.map((f) => f.key));
-  const createFailed = results.filter((r) => !r.success).length;
-  const createdOk = results.filter(
-    (r) => r.success && !aliasFailedKeys.has(r.key),
-  ).length;
+	// Count each variable exactly ONCE: a variable that was created but whose
+	// alias pass failed counts as failed, not as created+failed (the previous
+	// arithmetic double-counted it across both buckets). Alias failures can
+	// repeat per mode — dedupe by variable key.
+	const aliasFailedKeys = new Set(aliasFailures.map((f) => f.key));
+	const createFailed = results.filter((r) => !r.success).length;
+	const createdOk = results.filter(
+		(r) => r.success && !aliasFailedKeys.has(r.key),
+	).length;
 
-  return {
-    created: createdOk,
-    createdCollections: (inner.createdCollections ?? []).length,
-    failed: createFailed + aliasFailedKeys.size,
-    errors,
-    // Alias-failed variables DO exist — keep their IDs resolvable for the
-    // later update phase.
-    createdIdByKey: new Map(Object.entries(inner.createdIds ?? {})),
-  };
+	return {
+		created: createdOk,
+		createdCollections: (inner.createdCollections ?? []).length,
+		failed: createFailed + aliasFailedKeys.size,
+		errors,
+		// Alias-failed variables DO exist — keep their IDs resolvable for the
+		// later update phase.
+		createdIdByKey: new Map(Object.entries(inner.createdIds ?? {})),
+	};
 }
 
 // ============================================================================
@@ -3119,53 +3235,53 @@ async function applyCreates(
  * isolation.
  */
 async function applyDeletes(
-  connector: any,
-  toDelete: Array<{ path: string }>,
-  figmaDoc: TokenDocument,
+	connector: any,
+	toDelete: Array<{ path: string }>,
+	figmaDoc: TokenDocument,
 ): Promise<{
-  deleted: number;
-  failed: number;
-  errors: Array<{ variableId: string; error: string }>;
+	deleted: number;
+	failed: number;
+	errors: Array<{ variableId: string; error: string }>;
 }> {
-  // Diff key → live Figma variable ID.
-  const figmaIdByKey = new Map<string, string>();
-  for (const set of figmaDoc.sets) {
-    for (const t of set.tokens) {
-      const id = t.extensions?.["figma-console-mcp"]?.variableId;
-      if (typeof id === "string") {
-        figmaIdByKey.set(`${set.name}::${t.path.join(".")}`, id);
-      }
-    }
-  }
+	// Diff key → live Figma variable ID.
+	const figmaIdByKey = new Map<string, string>();
+	for (const set of figmaDoc.sets) {
+		for (const t of set.tokens) {
+			const id = t.extensions?.["figma-console-mcp"]?.variableId;
+			if (typeof id === "string") {
+				figmaIdByKey.set(`${set.name}::${t.path.join(".")}`, id);
+			}
+		}
+	}
 
-  let deleted = 0;
-  let failed = 0;
-  const errors: Array<{ variableId: string; error: string }> = [];
+	let deleted = 0;
+	let failed = 0;
+	const errors: Array<{ variableId: string; error: string }> = [];
 
-  for (const entry of toDelete) {
-    const variableId = figmaIdByKey.get(entry.path);
-    if (!variableId) {
-      failed++;
-      errors.push({
-        variableId: entry.path,
-        error: "no Figma variable ID recorded for this token — cannot delete",
-      });
-      continue;
-    }
-    try {
-      const result = await connector.deleteVariable(variableId);
-      if (result && result.success === false) {
-        throw new Error(result.error ?? "delete failed");
-      }
-      deleted++;
-    } catch (err) {
-      failed++;
-      errors.push({
-        variableId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+	for (const entry of toDelete) {
+		const variableId = figmaIdByKey.get(entry.path);
+		if (!variableId) {
+			failed++;
+			errors.push({
+				variableId: entry.path,
+				error: "no Figma variable ID recorded for this token — cannot delete",
+			});
+			continue;
+		}
+		try {
+			const result = await connector.deleteVariable(variableId);
+			if (result && result.success === false) {
+				throw new Error(result.error ?? "delete failed");
+			}
+			deleted++;
+		} catch (err) {
+			failed++;
+			errors.push({
+				variableId,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
 
-  return { deleted, failed, errors };
+	return { deleted, failed, errors };
 }

@@ -1,27 +1,42 @@
 /**
  * Ask the user to confirm a destructive operation via MCP elicitation.
  *
- * Elicitation pauses a tool call and shows the user a small form (Claude Code
- * renders a dialog; Claude desktop/claude.ai render forms). The agent cannot
- * answer it — only the human can — so it's a real safety gate for operations
- * like "replace" imports that permanently delete variables.
+ * Elicitation shows the PERSON a small form (Claude Code renders a dialog;
+ * Claude desktop/claude.ai render forms). The agent can't answer it, so it's a
+ * real safety gate for operations like "replace" imports that permanently
+ * delete variables.
  *
- * Behavior:
- *  - Client doesn't support elicitation → "unsupported": the caller proceeds
- *    exactly as before (the tool's own guardrails still apply).
- *  - FIGMA_CONSOLE_CONFIRM_DESTRUCTIVE=off|false|0 → "unsupported" too
- *    (opt-out for scripted / unattended runs).
- *  - User accepts → "accepted" with the form content.
- *  - User declines, cancels, the prompt times out, or the request fails after
- *    the client said it supports elicitation → caller must NOT proceed.
+ * Written for the v2 SDK's multi-round-trip model (protocol 2026-07-28): the
+ * handler RETURNS an input-required result on its first pass, and the client
+ * re-calls the tool with the user's answer in `ctx.mcpReq.inputResponses`.
+ * The SDK's legacy shim serves the same code to 2025-era clients by sending a
+ * real `elicitation/create` request and re-entering the handler. Handlers
+ * re-run from the top on the retry, so everything before the gate must be
+ * safe to repeat (reads, diffs) — never put a write before `confirmStep`.
+ *
+ *   const step = confirmStep(server, ctx, "confirm_delete", { message, fields });
+ *   if (step.status === "ask") return step.result;           // first pass
+ *   if (step.status === "declined" || step.status === "cancelled")
+ *     return notConfirmedResult("the delete", step);         // nothing changed
+ *   // "accepted" (use step.content) or "unsupported" (proceed as before)
+ *
+ * "unsupported" — the client can't show forms, FIGMA_CONSOLE_CONFIRM_DESTRUCTIVE
+ * is off, or the tool is running on the v1 SDK (Cloudflare) — means proceed
+ * exactly as before; the tool's own guardrails still apply.
  */
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { createChildLogger } from "./logger.js";
+// Type-only import: this module is shared with the Cloudflare build (v1 SDK),
+// so it must not pull v2 runtime code into the Worker bundle. The wire shapes
+// below are what the SDK's `inputRequired()` / `inputResponse()` produce
+// (hand-built results are explicitly legal per the SDK docs).
+import type { McpServer } from "@modelcontextprotocol/server";
 
-const logger = createChildLogger({ component: "confirm" });
+const CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities";
 
-/** How long a person has to answer before the operation is abandoned. */
-export const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
+interface InputRequiredResult {
+	resultType: "input_required";
+	inputRequests: Record<string, { method: "elicitation/create"; params: Record<string, unknown> }>;
+	[key: string]: unknown;
+}
 
 type Primitive =
 	| { type: "boolean"; title?: string; description?: string; default?: boolean }
@@ -42,10 +57,21 @@ export interface ConfirmRequest {
 	required?: string[];
 }
 
-export type ConfirmOutcome =
+export type ConfirmStep =
 	| { status: "unsupported" }
+	| { status: "ask"; result: InputRequiredResult }
 	| { status: "accepted"; content: Record<string, unknown> }
-	| { status: "declined" | "cancelled" | "timeout" | "error"; reason?: string };
+	| { status: "declined" | "cancelled" };
+
+/** Minimal view of the v2 handler context we read (absent on the v1 SDK). */
+type HandlerCtx =
+	| {
+			mcpReq?: {
+				inputResponses?: Record<string, unknown>;
+				envelope?: Record<string, unknown>;
+			};
+	  }
+	| undefined;
 
 export function confirmationsDisabled(): boolean {
 	// `process` may be absent in Cloudflare Workers without nodejs_compat.
@@ -54,62 +80,71 @@ export function confirmationsDisabled(): boolean {
 	return v === "off" || v === "false" || v === "0" || v === "no";
 }
 
-export function clientSupportsElicitation(server: McpServer): boolean {
+/** `{}` means form-only (pre-mode rule); `{ url: {} }` alone means no forms. */
+export function supportsForm(caps: unknown): boolean {
+	const e = (caps as { elicitation?: Record<string, unknown> } | undefined)?.elicitation;
+	if (!e || typeof e !== "object") return false;
+	return Object.keys(e).length === 0 || "form" in e;
+}
+
+/**
+ * Client capabilities for THIS request: the request's own `_meta` envelope on
+ * 2026-07-28, the initialize-declared ones on a 2025-era connection.
+ */
+export function requestClientCapabilities(server: McpServer | undefined, ctx: HandlerCtx): unknown {
+	const fromEnvelope = ctx?.mcpReq?.envelope?.[CLIENT_CAPABILITIES_META_KEY];
+	if (fromEnvelope) return fromEnvelope;
 	try {
-		const caps = server.server.getClientCapabilities() as
-			| { elicitation?: Record<string, unknown> }
-			| undefined;
-		const e = caps?.elicitation;
-		if (!e) return false;
-		// `{}` means form-only (backwards compat); `{ url: {} }` alone means no form.
-		return Object.keys(e).length === 0 || "form" in e;
+		return server?.server.getClientCapabilities();
 	} catch {
-		return false;
+		return undefined;
 	}
 }
 
-export async function askUser(
+export function confirmStep(
 	server: McpServer | undefined,
+	ctx: HandlerCtx,
+	key: string,
 	req: ConfirmRequest,
-): Promise<ConfirmOutcome> {
-	if (!server || confirmationsDisabled() || !clientSupportsElicitation(server)) {
-		return { status: "unsupported" };
+): ConfirmStep {
+	// v1 SDK (Cloudflare) has no multi-round-trip support: keep old behavior.
+	if (!ctx?.mcpReq || confirmationsDisabled()) return { status: "unsupported" };
+
+	const answer = ctx.mcpReq.inputResponses?.[key] as
+		| { action?: unknown; content?: Record<string, unknown> }
+		| undefined;
+	if (answer && typeof answer === "object" && typeof answer.action === "string") {
+		if (answer.action === "accept") return { status: "accepted", content: answer.content ?? {} };
+		return { status: answer.action === "decline" ? "declined" : "cancelled" };
 	}
-	try {
-		const result = await server.server.elicitInput(
-			{
-				mode: "form",
-				message: req.message,
-				requestedSchema: {
-					type: "object",
-					properties: req.fields as any,
-					...(req.required ? { required: req.required } : {}),
+
+	if (!supportsForm(requestClientCapabilities(server, ctx))) return { status: "unsupported" };
+
+	return {
+		status: "ask",
+		result: {
+			resultType: "input_required",
+			inputRequests: {
+				[key]: {
+					method: "elicitation/create",
+					params: {
+						mode: "form",
+						message: req.message,
+						requestedSchema: {
+							type: "object",
+							properties: req.fields,
+							...(req.required ? { required: req.required } : {}),
+						},
+					},
 				},
 			},
-			{ timeout: CONFIRM_TIMEOUT_MS },
-		);
-		if (result.action === "accept") {
-			return { status: "accepted", content: (result.content ?? {}) as Record<string, unknown> };
-		}
-		return { status: result.action === "decline" ? "declined" : "cancelled" };
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		const timedOut = /timed? ?out/i.test(msg);
-		logger.warn({ err: msg }, "Confirmation prompt failed — not proceeding");
-		return { status: timedOut ? "timeout" : "error", reason: msg };
-	}
+		},
+	};
 }
 
 /** Standard tool result when the user didn't confirm. Nothing was changed. */
-export function notConfirmedResult(operation: string, outcome: ConfirmOutcome) {
-	const why =
-		outcome.status === "declined"
-			? "The user declined"
-			: outcome.status === "cancelled"
-				? "The user dismissed the confirmation"
-				: outcome.status === "timeout"
-					? "The confirmation prompt timed out"
-					: `The confirmation prompt failed (${"reason" in outcome ? outcome.reason : "unknown error"})`;
+export function notConfirmedResult(operation: string, step: { status: "declined" | "cancelled" }) {
+	const why = step.status === "declined" ? "The user declined" : "The user dismissed the confirmation";
 	return {
 		content: [
 			{

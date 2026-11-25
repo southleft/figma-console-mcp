@@ -5,29 +5,34 @@
 // Requires the Desktop Bridge in the target file to (re)scan ports — reload
 // the plugin after starting this script.
 //
-// Usage: node scripts/spike/elicit-live-test.mjs <fileKey>
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+// Usage: node scripts/spike/elicit-live-test.mjs <fileKey> [v1|v2]
+//   v1 — 2025-era client (old SDK): exercises the server's legacy shim
+//   v2 — 2026-07-28 client (new SDK): exercises input_required round trips
+import { Client as V1Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport as V1Stdio } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { Client as V2Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport as V2Stdio } from "@modelcontextprotocol/client/stdio";
+import { SkillsClient } from "@modelcontextprotocol/client/ext/skills";
 
 const fileKey = process.argv[2];
+const era = process.argv[3] ?? "v1";
 if (!fileKey) throw new Error("fileKey required");
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
 
-const transport = new StdioClientTransport({
-	command: process.execPath,
-	args: ["dist/local.js"],
-	env: { ...process.env, LOG_LEVEL: "error" },
-	stderr: "ignore",
-});
-const client = new Client(
-	{ name: "spike-elicit-test", version: "0.0.0" },
-	{ capabilities: { elicitation: { form: {} } } },
-);
+const spawn = { command: process.execPath, args: ["dist/local.js"], env: { ...process.env, LOG_LEVEL: "error" }, stderr: "ignore" };
+const transport = era === "v2" ? new V2Stdio(spawn) : new V1Stdio(spawn);
+const client =
+	era === "v2"
+		? new V2Client(
+				{ name: "spike-elicit-test", version: "0.0.0" },
+				{ capabilities: { elicitation: { form: {} } }, versionNegotiation: { mode: { pin: "2026-07-28" } } },
+			)
+		: new V1Client({ name: "spike-elicit-test", version: "0.0.0" }, { capabilities: { elicitation: { form: {} } } });
 
 const answers = []; // queue of { action, content }
 const prompts = [];
-client.setRequestHandler(ElicitRequestSchema, async (req) => {
+client.setRequestHandler(era === "v2" ? "elicitation/create" : ElicitRequestSchema, async (req) => {
 	prompts.push(req.params);
 	const a = answers.shift() ?? { action: "cancel" };
 	log("ELICIT ←", JSON.stringify(req.params.message).slice(0, 400));
@@ -37,6 +42,13 @@ client.setRequestHandler(ElicitRequestSchema, async (req) => {
 });
 
 await client.connect(transport);
+log("era", era, "protocol", client.getNegotiatedProtocolVersion?.() ?? "2025 (v1 client)");
+if (era === "v2") {
+	const sk = await new SkillsClient(client).list();
+	log("skills:", JSON.stringify(sk.skills.map((x) => x.uri)));
+	const r = await client.readResource({ uri: sk.skills[0].uri });
+	log("skill read:", JSON.stringify(r.contents[0].text.slice(0, 120)));
+}
 const call = async (name, args) => {
 	const r = await client.callTool({ name, arguments: args }, undefined, { timeout: 120000 });
 	const text = r.content?.[0]?.text ?? "";

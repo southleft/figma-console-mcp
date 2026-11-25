@@ -1,20 +1,15 @@
 /**
- * Elicitation-based confirmations for destructive operations.
+ * Elicitation-based confirmations (v2 multi-round-trip model).
  */
-import { askUser, clientSupportsElicitation, confirmationsDisabled } from "../src/core/confirm";
+import { confirmStep, confirmationsDisabled, supportsForm } from "../src/core/confirm";
 
-function fakeServer(caps: unknown, elicit?: (p: any, o: any) => Promise<any>) {
-	return {
-		server: {
-			getClientCapabilities: () => caps,
-			elicitInput: elicit ?? (async () => ({ action: "accept", content: {} })),
-		},
-	} as any;
-}
+const req = { message: "Delete?", fields: { confirm: { type: "boolean" as const } }, required: ["confirm"] };
+const server = (caps: unknown) => ({ server: { getClientCapabilities: () => caps } }) as any;
+const ctx = (inputResponses?: Record<string, unknown>, envelope?: Record<string, unknown>) => ({
+	mcpReq: { inputResponses, envelope },
+});
 
-const req = { message: "Delete?", fields: { confirm: { type: "boolean" as const } } };
-
-describe("confirm", () => {
+describe("confirmStep", () => {
 	const saved = process.env.FIGMA_CONSOLE_CONFIRM_DESTRUCTIVE;
 	afterEach(() => {
 		if (saved === undefined) delete process.env.FIGMA_CONSOLE_CONFIRM_DESTRUCTIVE;
@@ -22,54 +17,52 @@ describe("confirm", () => {
 	});
 
 	it("detects form support (empty object = form-only, url-only = no form)", () => {
-		expect(clientSupportsElicitation(fakeServer(undefined))).toBe(false);
-		expect(clientSupportsElicitation(fakeServer({}))).toBe(false);
-		expect(clientSupportsElicitation(fakeServer({ elicitation: {} }))).toBe(true);
-		expect(clientSupportsElicitation(fakeServer({ elicitation: { form: {}, url: {} } }))).toBe(true);
-		expect(clientSupportsElicitation(fakeServer({ elicitation: { url: {} } }))).toBe(false);
+		expect(supportsForm(undefined)).toBe(false);
+		expect(supportsForm({})).toBe(false);
+		expect(supportsForm({ elicitation: {} })).toBe(true);
+		expect(supportsForm({ elicitation: { form: {}, url: {} } })).toBe(true);
+		expect(supportsForm({ elicitation: { url: {} } })).toBe(false);
 	});
 
-	it("returns unsupported when the client can't show a form", async () => {
-		const elicit = jest.fn();
-		expect(await askUser(fakeServer({}, elicit), req)).toEqual({ status: "unsupported" });
-		expect(elicit).not.toHaveBeenCalled();
-		expect(await askUser(undefined, req)).toEqual({ status: "unsupported" });
+	it("asks with a form-mode input_required result on the first pass", () => {
+		const step = confirmStep(server({ elicitation: { form: {} } }), ctx(), "k", req);
+		expect(step.status).toBe("ask");
+		expect((step as any).result).toEqual({
+			resultType: "input_required",
+			inputRequests: {
+				k: {
+					method: "elicitation/create",
+					params: {
+						mode: "form",
+						message: "Delete?",
+						requestedSchema: { type: "object", properties: req.fields, required: ["confirm"] },
+					},
+				},
+			},
+		});
 	});
 
-	it("honors the opt-out env var", async () => {
+	it("reads 2026-07-28 capabilities from the request envelope", () => {
+		const env = { "io.modelcontextprotocol/clientCapabilities": { elicitation: { form: {} } } };
+		expect(confirmStep(server(undefined), ctx(undefined, env), "k", req).status).toBe("ask");
+	});
+
+	it("maps the retried answer", () => {
+		const s = server({ elicitation: {} });
+		expect(confirmStep(s, ctx({ k: { action: "accept", content: { confirm: true } } }), "k", req)).toEqual({
+			status: "accepted",
+			content: { confirm: true },
+		});
+		expect(confirmStep(s, ctx({ k: { action: "decline" } }), "k", req).status).toBe("declined");
+		expect(confirmStep(s, ctx({ k: { action: "cancel" } }), "k", req).status).toBe("cancelled");
+	});
+
+	it("is unsupported without form support, on the v1 SDK, or when opted out", () => {
+		expect(confirmStep(server({}), ctx(), "k", req).status).toBe("unsupported");
+		expect(confirmStep(server({ elicitation: {} }), {} as any, "k", req).status).toBe("unsupported");
+		expect(confirmStep(server({ elicitation: {} }), undefined, "k", req).status).toBe("unsupported");
 		process.env.FIGMA_CONSOLE_CONFIRM_DESTRUCTIVE = "off";
 		expect(confirmationsDisabled()).toBe(true);
-		const elicit = jest.fn();
-		expect(await askUser(fakeServer({ elicitation: {} }, elicit), req)).toEqual({ status: "unsupported" });
-		expect(elicit).not.toHaveBeenCalled();
-	});
-
-	it("maps accept / decline / cancel", async () => {
-		const accept = fakeServer({ elicitation: {} }, async () => ({ action: "accept", content: { confirm: true } }));
-		expect(await askUser(accept, req)).toEqual({ status: "accepted", content: { confirm: true } });
-		const decline = fakeServer({ elicitation: {} }, async () => ({ action: "decline" }));
-		expect((await askUser(decline, req)).status).toBe("declined");
-		const cancel = fakeServer({ elicitation: {} }, async () => ({ action: "cancel" }));
-		expect((await askUser(cancel, req)).status).toBe("cancelled");
-	});
-
-	it("never proceeds when the prompt fails or times out", async () => {
-		const timeout = fakeServer({ elicitation: {} }, async () => {
-			throw new Error("Request timed out");
-		});
-		expect((await askUser(timeout, req)).status).toBe("timeout");
-		const broken = fakeServer({ elicitation: {} }, async () => {
-			throw new Error("connection closed");
-		});
-		expect((await askUser(broken, req)).status).toBe("error");
-	});
-
-	it("sends a form-mode request with a long timeout", async () => {
-		const elicit = jest.fn(async () => ({ action: "decline" }));
-		await askUser(fakeServer({ elicitation: { form: {} } }, elicit), { ...req, required: ["confirm"] });
-		const [params, opts] = (elicit.mock.calls[0] as unknown) as [any, any];
-		expect(params.mode).toBe("form");
-		expect(params.requestedSchema).toEqual({ type: "object", properties: req.fields, required: ["confirm"] });
-		expect(opts.timeout).toBeGreaterThanOrEqual(60_000);
+		expect(confirmStep(server({ elicitation: {} }), ctx(), "k", req).status).toBe("unsupported");
 	});
 });
