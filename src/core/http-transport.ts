@@ -6,9 +6,17 @@
  * http://127.0.0.1:<port>/mcp, so other local clients can share its
  * Desktop Bridge connection instead of each starting their own server.
  *
- * Each HTTP session gets its own McpServer (built by `createServer`), exactly
- * as each stdio client gets its own process today; all of them share the one
- * WebSocket bridge and its caches.
+ * Both protocol eras are served at the one URL, as stdio serves both:
+ *  - 2026-07-28 requests (per-request `_meta` envelope, no sessions) go to the
+ *    SDK's `createMcpHandler` entry, which builds a fresh McpServer from
+ *    `createServer` for every request.
+ *  - 2025-era traffic (`initialize` handshake, `mcp-session-id`, GET/DELETE)
+ *    keeps its own sessionful Streamable HTTP wiring: one McpServer per
+ *    session, a session cap and an idle timeout. Sessions (rather than the
+ *    SDK's stateless fallback) keep server-to-client requests such as
+ *    elicitation confirmations and standalone SSE streams working.
+ * `isLegacyRequest` (the SDK's own routing predicate) picks the leg. All
+ * servers share the one WebSocket bridge and its caches.
  *
  * Only loopback is served. Requests must name a loopback Host (blocks DNS
  * rebinding) and may not come from a non-loopback browser Origin (blocks web
@@ -22,8 +30,16 @@ import {
 	type ServerResponse,
 } from "node:http";
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
-import { isInitializeRequest } from "@modelcontextprotocol/server";
+import {
+	NodeStreamableHTTPServerTransport,
+	toNodeHandler,
+	toWebRequest,
+} from "@modelcontextprotocol/node";
+import {
+	createMcpHandler,
+	isInitializeRequest,
+	isLegacyRequest,
+} from "@modelcontextprotocol/server";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { createChildLogger } from "./logger.js";
 
@@ -43,13 +59,17 @@ export interface LocalHttpOptions {
 	host?: string;
 	/** When set, every request must send `Authorization: Bearer <token>`. */
 	token?: string;
-	/** Builds a fresh McpServer with every tool registered. */
+	/**
+	 * Builds a fresh McpServer with every tool registered. Called once per
+	 * 2025-era session and once per 2026-07-28 request.
+	 */
 	createServer: () => McpServer;
 }
 
 export interface LocalHttpHandle {
 	url: string;
 	port: number;
+	/** Open 2025-era sessions (2026-07-28 traffic is sessionless). */
 	sessionCount(): number;
 	close(): Promise<void>;
 }
@@ -174,6 +194,19 @@ export async function startLocalHttpTransport(
 ): Promise<LocalHttpHandle> {
 	const host = options.host ?? "127.0.0.1";
 	const sessions = new Map<string, Session>();
+	const reportError = (error: Error) =>
+		logger.warn({ err: error.message }, "HTTP MCP (2026-07-28) request error");
+	// Modern leg only: legacy traffic never reaches it (routed below), and
+	// 'reject' guarantees the SDK's stateless fallback can't shadow our sessions.
+	const modern = createMcpHandler(() => options.createServer(), {
+		legacy: "reject",
+		onerror: reportError,
+		maxRequestBodySize: MAX_BODY_BYTES,
+	});
+	const serveModern = toNodeHandler(modern, {
+		onerror: reportError,
+		maxRequestBodySize: MAX_BODY_BYTES,
+	});
 
 	const closeSession = async (id: string, reason: string) => {
 		const session = sessions.get(id);
@@ -232,6 +265,11 @@ export async function startLocalHttpTransport(
 		} catch (err) {
 			const e = err as Error & { status?: number; code?: number };
 			sendError(res, e.status ?? 400, e.message, e.code ?? -32000);
+			return;
+		}
+		// The SDK's own era predicate, so routing can't disagree with createMcpHandler.
+		if (!(await isLegacyRequest(await toWebRequest(req, body), body))) {
+			await serveModern(req, res, body);
 			return;
 		}
 		const messages = Array.isArray(body) ? body : [body];
@@ -315,6 +353,7 @@ export async function startLocalHttpTransport(
 		sessionCount: () => sessions.size,
 		close: async () => {
 			clearInterval(sweep);
+			await modern.close();
 			await Promise.all(
 				[...sessions.keys()].map((id) => closeSession(id, "shutdown")),
 			);

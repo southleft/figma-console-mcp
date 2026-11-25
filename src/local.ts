@@ -55,7 +55,7 @@ import { registerWriteTools } from "./core/write-tools.js";
 import { registerMultiFileTools } from "./core/multi-file-tools.js";
 import { registerDesignSystemExtractionTools } from "./core/design-system-extraction-tools.js";
 import { registerTokensTools } from "./core/tokens-tools.js";
-import { wrapServerForIdentity } from "./core/identity.js";
+import { withToolIdentity } from "./core/identity.js";
 import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
 import {
@@ -102,6 +102,13 @@ import { applyToolAnnotations } from "./core/tool-annotations.js";
 import { registerAdherenceTools } from "./core/adherence-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
+
+/**
+ * McpServer whose registerTool stamps every tool response (and every thrown
+ * error) with our MCP identity, so LLMs can attribute output unambiguously
+ * when multiple Figma-related MCPs are connected. See withToolIdentity.
+ */
+const IdentifiedMcpServer = withToolIdentity(McpServer, { onToolCall: noteToolCall });
 
 /**
  * Copy plugin files to a stable directory (~/.figma-console-mcp/plugin/).
@@ -214,7 +221,7 @@ class LocalFigmaConsoleMCP {
 	 * run; the optional HTTP endpoint builds one per request (see http-transport.ts).
 	 */
 	private createMcpServer(): McpServer {
-		const server = new McpServer(
+		const server = new IdentifiedMcpServer(
 			{
 				name: "Figma Console MCP (Local)",
 				// Was hard-coded "0.1.0" — every client saw that regardless of the release
@@ -286,10 +293,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 		);
 
-		// Stamp every tool response (and every thrown error) with our MCP identity
-		// so LLMs can attribute output unambiguously when multiple Figma-related
-		// MCPs are connected. Idempotent for already-tagged responses.
-		wrapServerForIdentity(server, { onToolCall: noteToolCall });
 		return server;
 	}
 
