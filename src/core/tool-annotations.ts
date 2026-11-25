@@ -166,6 +166,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
 	figma_set_strokes: "update",
 	figma_set_image_fill: "update",
 	figma_set_layout: "update",
+	figma_bind_tokens: "update",
 	figma_set_annotations: "update",
 	figma_apply_shader: "update",
 	figma_delete_node: "destructive",

@@ -100,6 +100,7 @@ import { registerShaderTools } from "./core/shader-tools.js";
 import { registerLayoutTools } from "./core/layout-tools.js";
 import { applyToolAnnotations } from "./core/tool-annotations.js";
 import { registerAdherenceTools } from "./core/adherence-tools.js";
+import { registerTokenBindingTools } from "./core/token-binding-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -3421,6 +3422,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 		// Design-system adherence: resolve needs → components (gaps go to the
 		// person), and audit generated compositions for invented / hardcoded work.
+		registerTokenBindingTools(server, () => this.getDesktopConnector());
 		registerAdherenceTools(server, {
 			readFile: async (path: string) => (await import("node:fs/promises")).readFile(path, "utf8"),
 			listDir: async (path: string) => (await import("node:fs/promises")).readdir(path),

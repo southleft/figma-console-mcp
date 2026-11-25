@@ -33,6 +33,7 @@ import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { withToolIdentity } from "./core/identity.js";
 import { applyToolAnnotations } from "./core/tool-annotations.js";
 import { registerAdherenceTools } from "./core/adherence-tools.js";
+import { registerTokenBindingTools } from "./core/token-binding-tools.js";
 import { isFigmaPAT, validateFigmaPAT } from "./core/figma-pat.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
@@ -922,6 +923,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		registerShaderTools(this.toolServer, getCloudDesktopConnector);
 		registerLayoutTools(this.toolServer, getCloudDesktopConnector);
 		// Design-system adherence (components read through the paired plugin; no filesystem).
+		registerTokenBindingTools(this.toolServer as any, getCloudDesktopConnector);
 		registerAdherenceTools(this.toolServer as any, {
 			getDesktopConnector: getCloudDesktopConnector,
 			getFigmaAPI: async () => await this.getFigmaAPI(),
@@ -1396,6 +1398,7 @@ export default {
 			registerCodeLayerTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 			registerShaderTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 			registerLayoutTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerTokenBindingTools(statelessServer as any, getCloudDesktopConnector);
 			registerAdherenceTools(statelessServer as any, {
 				getDesktopConnector: getCloudDesktopConnector,
 				getFigmaAPI: async () => statelessApi,
