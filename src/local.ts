@@ -78,6 +78,7 @@ import { registerMotionTools } from "./core/motion-tools.js";
 import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
 import { registerLayoutTools } from "./core/layout-tools.js";
+import { applyToolAnnotations } from "./core/tool-annotations.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -3842,6 +3843,12 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 				// Pass getCurrentUrl so dashboard can track which file was audited
 				() => this.getCurrentFileUrl(),
 			);
+		}
+
+		// Behavior hints (read-only / destructive / idempotent) for every tool.
+		const unclassified = applyToolAnnotations(server);
+		if (unclassified.length > 0) {
+			logger.warn({ unclassified }, "Tools registered without annotation hints");
 		}
 
 		logger.info(

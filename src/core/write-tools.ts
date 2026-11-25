@@ -1,6 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
+import {
+	askUser,
+	clientSupportsElicitation,
+	confirmationsDisabled,
+	notConfirmedResult,
+} from "./confirm.js";
 
 const logger = createChildLogger({ component: "write-tools" });
 
@@ -132,6 +138,23 @@ async function setCssPaints(
 	return {
 		content: [{ type: "text" as const, text: JSON.stringify({ success: true, message, ...result.result }) }],
 	};
+}
+
+
+/** Name and size of a collection, for the delete confirmation. Null if unreadable. */
+async function describeCollection(
+	connector: any,
+	collectionId: string,
+): Promise<{ name: string; variableCount: number; modeCount: number } | null> {
+	try {
+		const code = `const c = await figma.variables.getVariableCollectionByIdAsync(${JSON.stringify(collectionId)});
+return c ? { name: c.name, variableCount: c.variableIds.length, modeCount: c.modes.length } : null;`;
+		const res = await connector.executeCodeViaUI(code, 10000);
+		const value = res && typeof res === "object" && "result" in res ? res.result : res;
+		return value && typeof value.name === "string" ? value : null;
+	} catch {
+		return null;
+	}
 }
 
 export function registerWriteTools(
@@ -585,6 +608,33 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 		async ({ collectionId }) => {
 			try {
 				const connector = await getDesktopConnector();
+
+				// The person confirms before a whole collection disappears (when the
+				// client can show a form; otherwise behavior is unchanged).
+				if (clientSupportsElicitation(server) && !confirmationsDisabled()) {
+					const info = await describeCollection(connector, collectionId);
+					const label = info
+						? `"${info.name}" (${info.variableCount} variable${info.variableCount === 1 ? "" : "s"}, ${info.modeCount} mode${info.modeCount === 1 ? "" : "s"})`
+						: collectionId;
+					const outcome = await askUser(server, {
+						message: `Delete the variable collection ${label}? Every variable in it is deleted, and anything bound to them loses the binding. Only Figma's Undo can bring it back.`,
+						fields: {
+							confirm: {
+								type: "boolean",
+								title: `Delete ${info ? `"${info.name}"` : "this collection"}`,
+								default: false,
+							},
+						},
+						required: ["confirm"],
+					});
+					if (outcome.status === "accepted" && outcome.content.confirm !== true) {
+						return notConfirmedResult("the collection delete", { status: "declined" });
+					}
+					if (outcome.status !== "accepted" && outcome.status !== "unsupported") {
+						return notConfirmedResult("the collection delete", outcome);
+					}
+				}
+
 				const result = await connector.deleteVariableCollection(collectionId);
 
 				return {

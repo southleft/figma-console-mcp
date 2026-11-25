@@ -46,6 +46,7 @@ import {
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { createChildLogger } from "./logger.js";
+import { askUser, notConfirmedResult } from "./confirm.js";
 import type { ComposedColor } from "./tokens/types.js";
 import { augmentWithExtendedCollections, countOverrides } from "./extended-collections.js";
 import {
@@ -173,7 +174,7 @@ export function registerImportTokensTool(
     ImportTokensInputSchema.shape,
     async (args) => {
       try {
-        return await handleImport(args, getDesktopConnector, opts);
+        return await handleImport(args, getDesktopConnector, opts, server);
       } catch (err) {
         logger.error({ err }, "figma_import_tokens failed");
         return {
@@ -593,6 +594,7 @@ async function handleImport(
   args: any,
   getDesktopConnector: () => Promise<any>,
   opts: RegisterTokensToolsOptions,
+  server?: McpServer,
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   // Cloud Mode guard: filesystem operations are unavailable. Inline
   // `payload` / `files` arguments still work and are the supported path.
@@ -674,8 +676,51 @@ async function handleImport(
   }
 
   const dryRun = args.dryRun === true || args.strategy === "dry-run";
-  const strategy: "merge" | "replace" =
+  let strategy: "merge" | "replace" =
     args.strategy === "replace" ? "replace" : "merge";
+
+  // 6b. Replace would permanently delete variables. When the client can show
+  //     a form, the PERSON (not the agent) confirms first — or chooses to
+  //     keep them and apply only creates/updates. Clients without elicitation
+  //     keep the previous behavior (replace is already an explicit opt-in).
+  let confirmationNote: string | undefined;
+  if (!dryRun && strategy === "replace" && diff.toDelete.length > 0) {
+    const n = diff.toDelete.length;
+    const sample = diff.toDelete
+      .slice(0, 8)
+      .map((e) => e.path.replace("::", " / "))
+      .join(", ");
+    const outcome = await askUser(server, {
+      message:
+        `figma_import_tokens (replace) will PERMANENTLY DELETE ${n} Figma variable${n === 1 ? "" : "s"} that ${n === 1 ? "isn't" : "aren't"} in the token file: ${sample}${n > 8 ? `, and ${n - 8} more` : ""}. ` +
+        `It will also create ${diff.toCreate.length}, update ${diff.toUpdate.length} and rename ${diff.toRename.length}. ` +
+        "Anything bound to a deleted variable loses that binding.",
+      fields: {
+        action: {
+          type: "string",
+          title: "What should happen to those variables?",
+          enum: ["keep", "delete"],
+          enumNames: [
+            "Keep them — apply creates, updates and renames only",
+            n === 1 ? "Delete it" : `Delete all ${n}`,
+          ],
+          default: "keep",
+        },
+      },
+      required: ["action"],
+    });
+    if (outcome.status === "accepted") {
+      if (outcome.content.action !== "delete") {
+        strategy = "merge";
+        confirmationNote = `The user chose to keep the ${n} Figma-only variable${n === 1 ? "" : "s"}, so the import ran as a merge (no deletes).`;
+        parseWarnings.push(confirmationNote);
+      } else {
+        confirmationNote = `The user confirmed deleting ${n} variable${n === 1 ? "" : "s"}.`;
+      }
+    } else if (outcome.status !== "unsupported") {
+      return notConfirmedResult(`the replace import (${n} deletion${n === 1 ? "" : "s"})`, outcome);
+    }
+  }
 
   // 7. Apply phase: when not dry-run, mutate Figma via the plugin bridge in
   //    three ordered sub-phases. Order matters: creates run FIRST so that

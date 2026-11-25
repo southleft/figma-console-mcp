@@ -28,6 +28,7 @@ import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerLibraryTools, registerLibraryVariableTools } from "./core/library-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { wrapServerForIdentity } from "./core/identity.js";
+import { applyToolAnnotations } from "./core/tool-annotations.js";
 import { isFigmaPAT, validateFigmaPAT } from "./core/figma-pat.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
@@ -986,6 +987,10 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
 		// They require Node.js file system APIs that don't work in Cloudflare Workers
+
+		// Behavior hints (read-only / destructive / idempotent) for every tool.
+		// @ts-expect-error -- same McpServer class from two SDK copies (see `server` above)
+		applyToolAnnotations(this.server);
 	}
 }
 
@@ -1434,6 +1439,7 @@ export default {
 				getTokenState: () => ({ hasToken: true, source: isFigmaPAT(bearerToken) ? "bearer" : "oauth" }),
 			});
 
+			applyToolAnnotations(statelessServer);
 			await statelessServer.connect(transport);
 			const response = await transport.handleRequest(request);
 
