@@ -32,6 +32,7 @@ import { registerLibraryTools, registerLibraryVariableTools } from "./core/libra
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { wrapServerForIdentity } from "./core/identity.js";
 import { applyToolAnnotations } from "./core/tool-annotations.js";
+import { registerAdherenceTools } from "./core/adherence-tools.js";
 import { isFigmaPAT, validateFigmaPAT } from "./core/figma-pat.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
@@ -918,6 +919,11 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		registerCodeLayerTools(this.toolServer, getCloudDesktopConnector);
 		registerShaderTools(this.toolServer, getCloudDesktopConnector);
 		registerLayoutTools(this.toolServer, getCloudDesktopConnector);
+		// Design-system adherence (components read through the paired plugin; no filesystem).
+		registerAdherenceTools(this.toolServer as any, {
+			getDesktopConnector: getCloudDesktopConnector,
+			getFigmaAPI: async () => await this.getFigmaAPI(),
+		});
 
 		// Register Figma API tools (Tools 8-14)
 		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
@@ -1389,6 +1395,10 @@ export default {
 			registerCodeLayerTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 			registerShaderTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 			registerLayoutTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerAdherenceTools(statelessServer as any, {
+				getDesktopConnector: getCloudDesktopConnector,
+				getFigmaAPI: async () => statelessApi,
+			});
 
 			// Register REST API tools with the authenticated Figma API
 			registerFigmaAPITools(

@@ -93,6 +93,30 @@ function libraryKeysFrom(args: { libraryFileKeys?: string[]; libraryFileUrls?: s
 	return [...new Set(keys)];
 }
 
+/**
+ * Components defined in the connected file, read through the plugin. Used when
+ * no cached design-system manifest is available (Cloud Mode).
+ */
+export async function pluginCatalog(connector: any, fileKey?: string): Promise<CatalogEntry[]> {
+	const code = `await figma.loadAllPagesAsync();
+const out = [];
+for (const n of figma.root.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPONENT"] })) {
+  if (out.length >= 5000) break;
+  if (n.type === "COMPONENT" && n.parent && n.parent.type === "COMPONENT_SET") continue;
+  let axes = [];
+  try {
+    const defs = n.type === "COMPONENT_SET" ? n.componentPropertyDefinitions : {};
+    axes = Object.entries(defs).filter(([, d]) => d.type === "VARIANT").map(([k, d]) => ({ name: k.split("#")[0], values: d.variantOptions || [] }));
+  } catch (e) {}
+  out.push({ name: n.name, key: n.key, nodeId: n.id, type: n.type, description: n.description || undefined, variantAxes: axes, source: "local" });
+}
+return out;`;
+	const res = await connector.executeCodeViaUI(code, 60000, fileKey);
+	const value = res && typeof res === "object" && "result" in res ? res.result : res;
+	if (!Array.isArray(value)) throw new Error(res?.error ?? "Could not read components from the file.");
+	return value;
+}
+
 async function loadCatalog(
 	deps: AdherenceToolDeps,
 	libraryKeys: string[],
@@ -101,9 +125,11 @@ async function loadCatalog(
 	const catalog: CatalogEntry[] = [];
 	const sources: Array<{ source: string; components: number; error?: string }> = [];
 	const variantKeys = new Set<string>();
-	if (includeLocal && deps.getLocalCatalog) {
+	if (includeLocal) {
 		try {
-			const local = await deps.getLocalCatalog();
+			const local = deps.getLocalCatalog
+				? await deps.getLocalCatalog()
+				: await pluginCatalog(await deps.getDesktopConnector());
 			catalog.push(...local);
 			sources.push({ source: "local", components: local.length });
 		} catch (err) {
