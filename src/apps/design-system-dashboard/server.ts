@@ -20,13 +20,10 @@ import {
 	registerAppResource,
 	registerAppTool,
 } from "@modelcontextprotocol/ext-apps/server";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { scoreDesignSystem } from "./scoring/engine.js";
-import {
-	describeFixability,
-	getRemediation,
-} from "./scoring/remediation.js";
+import { describeFixability, getRemediation } from "./scoring/remediation.js";
 import type { DashboardData, DesignSystemRawData } from "./scoring/types.js";
 
 const DASHBOARD_URI = "ui://figma-console/design-system-dashboard";
@@ -212,7 +209,6 @@ export function registerDesignSystemDashboardApp(
 			};
 		},
 	);
-
 }
 
 /**
@@ -242,44 +238,47 @@ export function registerDesignSystemAuditTool(
 	) => Promise<DesignSystemRawData>,
 	getCurrentUrl?: () => string | null,
 ): void {
-	server.tool(
+	server.registerTool(
 		"figma_audit_design_system_report",
-		"Run the design-system health audit and return the scored report as data (no UI required). Same deterministic engine as the Design System Dashboard app: naming & semantics, token architecture, component metadata, accessibility, consistency, coverage — each 0-100 plus a weighted overall. Start with the default summary, then drill into one category at a time via `category` (chunked; avoids one giant payload). Results are cached ~5 minutes; pass forceRefresh after editing the file. Every finding includes whether this MCP can fix it (design-side write tools vs. design decision vs. manual).",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe(
-					"Figma file URL. If not provided, uses the currently active file.",
-				),
-			format: z
-				.enum(["summary", "full"])
-				.optional()
-				.default("summary")
-				.describe(
-					"'summary' (default) — bounded readable report: overall + category scores + non-pass findings + remediation. 'full' — complete scored JSON (examples/locations clamped); prefer per-category calls over 'full' when working interactively.",
-				),
-			category: z
-				.enum([
-					"naming-semantics",
-					"token-architecture",
-					"component-metadata",
-					"accessibility",
-					"consistency",
-					"coverage",
-				])
-				.optional()
-				.describe(
-					"Return full findings (including passes, examples, locations) for ONE category — the chunked drill-down path after a summary call.",
-				),
-			forceRefresh: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe(
-					"Bypass the 5-minute audit cache and re-crawl the file. Only needed after editing the file.",
-				),
+			description:
+				"Run the design-system health audit and return the scored report as data (no UI required). Same deterministic engine as the Design System Dashboard app: naming & semantics, token architecture, component metadata, accessibility, consistency, coverage — each 0-100 plus a weighted overall. Start with the default summary, then drill into one category at a time via `category` (chunked; avoids one giant payload). Results are cached ~5 minutes; pass forceRefresh after editing the file. Every finding includes whether this MCP can fix it (design-side write tools vs. design decision vs. manual).",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe(
+						"Figma file URL. If not provided, uses the currently active file.",
+					),
+				format: z
+					.enum(["summary", "full"])
+					.optional()
+					.default("summary")
+					.describe(
+						"'summary' (default) — bounded readable report: overall + category scores + non-pass findings + remediation. 'full' — complete scored JSON (examples/locations clamped); prefer per-category calls over 'full' when working interactively.",
+					),
+				category: z
+					.enum([
+						"naming-semantics",
+						"token-architecture",
+						"component-metadata",
+						"accessibility",
+						"consistency",
+						"coverage",
+					])
+					.optional()
+					.describe(
+						"Return full findings (including passes, examples, locations) for ONE category — the chunked drill-down path after a summary call.",
+					),
+				forceRefresh: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Bypass the 5-minute audit cache and re-crawl the file. Only needed after editing the file.",
+					),
+			}),
 		},
 		async ({ fileUrl, format, category, forceRefresh }) => {
 			try {
@@ -344,9 +343,7 @@ export function registerDesignSystemAuditTool(
 						componentsSource: scored.dataAvailability?.componentsSource,
 					};
 					return {
-						content: [
-							{ type: "text" as const, text: JSON.stringify(payload) },
-						],
+						content: [{ type: "text" as const, text: JSON.stringify(payload) }],
 					};
 				}
 
@@ -362,9 +359,7 @@ export function registerDesignSystemAuditTool(
 						})),
 					};
 					return {
-						content: [
-							{ type: "text" as const, text: JSON.stringify(clamped) },
-						],
+						content: [{ type: "text" as const, text: JSON.stringify(clamped) }],
 					};
 				}
 

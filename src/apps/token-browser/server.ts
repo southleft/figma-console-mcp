@@ -20,7 +20,7 @@ import {
 	registerAppResource,
 	registerAppTool,
 } from "@modelcontextprotocol/ext-apps/server";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 const TOKEN_BROWSER_URI = "ui://figma-console/token-browser";

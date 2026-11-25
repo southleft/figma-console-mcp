@@ -9,8 +9,7 @@
  * field makes attribution unambiguous.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 
 export const MCP_NAME = "figma-console-mcp";
 
@@ -50,7 +49,10 @@ function tagToolResponse(result: unknown): unknown {
 		return result;
 	}
 
-	const r = result as { content: Array<{ type: string; text?: string; [k: string]: unknown }>; [k: string]: unknown };
+	const r = result as {
+		content: Array<{ type: string; text?: string; [k: string]: unknown }>;
+		[k: string]: unknown;
+	};
 
 	const newContent = r.content.map((item) => {
 		if (item.type !== "text" || typeof item.text !== "string") return item;
@@ -91,7 +93,10 @@ export const MAX_TOOL_RESPONSE_BYTES = 8 * 1024 * 1024;
  * Replace an oversized tool result with an actionable error. Returning it would
  * not deliver the data anyway — it would kill the connection.
  */
-export function capToolResponse(result: unknown, maxBytes: number = MAX_TOOL_RESPONSE_BYTES): unknown {
+export function capToolResponse(
+	result: unknown,
+	maxBytes: number = MAX_TOOL_RESPONSE_BYTES,
+): unknown {
 	if (
 		!result ||
 		typeof result !== "object" ||
@@ -100,8 +105,10 @@ export function capToolResponse(result: unknown, maxBytes: number = MAX_TOOL_RES
 		return result;
 	}
 	let bytes = 0;
-	for (const item of (result as { content: Array<Record<string, unknown>> }).content) {
-		if (typeof item?.text === "string") bytes += Buffer.byteLength(item.text, "utf8");
+	for (const item of (result as { content: Array<Record<string, unknown>> })
+		.content) {
+		if (typeof item?.text === "string")
+			bytes += Buffer.byteLength(item.text, "utf8");
 		if (typeof item?.data === "string") bytes += item.data.length; // base64 image/audio
 	}
 	if (bytes <= maxBytes) return result;
@@ -144,18 +151,34 @@ export function wrapServerForIdentity(
 	// We have to bypass the McpServer.tool overload types because we're
 	// composing over arbitrary call signatures. The runtime behavior is
 	// the same regardless of which overload the caller invokes.
+	// v2 McpServer has only registerTool. The Cloudflare build still passes a v1
+	// McpServer (agents' McpAgent), whose tool() does NOT route through
+	// registerTool, so wrap whichever of the two exist.
 	type AnyTool = (...args: unknown[]) => unknown;
-	const target = server as unknown as { tool: AnyTool };
-	const originalTool = target.tool.bind(target);
+	const target = server as unknown as Record<"tool" | "registerTool", AnyTool | undefined>;
+	for (const method of ["tool", "registerTool"] as const) {
+		if (typeof target[method] === "function") wrapToolMethod(target, method, options);
+	}
+	wrapListTools(server);
+}
 
-	target.tool = function (...args: unknown[]): unknown {
+function wrapToolMethod(
+	target: Record<string, ((...args: unknown[]) => unknown) | undefined>,
+	method: string,
+	options: { onToolCall?: () => void },
+): void {
+	const originalTool = (target[method] as (...args: unknown[]) => unknown).bind(target);
+
+	target[method] = function (...args: unknown[]): unknown {
 		if (args.length === 0 || typeof args[args.length - 1] !== "function") {
 			return originalTool(...args);
 		}
 
 		const handler = args[args.length - 1] as (...a: unknown[]) => unknown;
 
-		const wrappedHandler = async (...handlerArgs: unknown[]): Promise<unknown> => {
+		const wrappedHandler = async (
+			...handlerArgs: unknown[]
+		): Promise<unknown> => {
 			options.onToolCall?.();
 			try {
 				const result = await handler(...handlerArgs);
@@ -170,26 +193,46 @@ export function wrapServerForIdentity(
 
 		return originalTool(...args.slice(0, -1), wrappedHandler);
 	};
+}
 
+/** v2 keys tools/list by method string; v1 by a zod schema whose method literal is "tools/list". */
+function isToolsListKey(key: unknown): boolean {
+	if (key === "tools/list") return true;
+	const literal = (key as { shape?: { method?: { value?: unknown } } } | null)?.shape?.method?.value;
+	return literal === "tools/list";
+}
+
+function wrapListTools(server: unknown): void {
 	// zod 4 emits `propertyNames: {type:"string"}` for every z.record(). It says
 	// nothing (JSON object keys are always strings), and Gemini rejects the
 	// keyword with a 400, so drop it from tools/list. The SDK registers that
 	// handler lazily on the first tool registration, which runs after this.
-	type SetRequestHandler = (schema: unknown, handler: (...a: unknown[]) => unknown) => unknown;
-	const protocol = (server as unknown as { server?: { setRequestHandler: SetRequestHandler } }).server;
+	// v2 keys handlers by method string, and custom (non-spec) methods such as
+	// the skills extension's skills/list use a 3-arg (method, schemas, handler)
+	// form, so forward every argument untouched for anything but tools/list.
+	type SetRequestHandler = (method: unknown, ...rest: unknown[]) => unknown;
+	const protocol = (
+		server as unknown as { server?: { setRequestHandler: SetRequestHandler } }
+	).server;
 	if (typeof protocol?.setRequestHandler !== "function") return;
 	const originalSetRequestHandler = protocol.setRequestHandler.bind(protocol);
-	protocol.setRequestHandler = function (schema, handler) {
-		if (schema !== ListToolsRequestSchema) return originalSetRequestHandler(schema, handler);
-		return originalSetRequestHandler(schema, async (...a: unknown[]) => {
-			const result = (await handler(...a)) as { tools?: Array<Record<string, unknown>> };
+	protocol.setRequestHandler = function (method, ...rest) {
+		const handler = rest[rest.length - 1] as (...a: unknown[]) => unknown;
+		if (!isToolsListKey(method) || rest.length !== 1)
+			return originalSetRequestHandler(method, ...rest);
+		return originalSetRequestHandler(method, async (...a: unknown[]) => {
+			const result = (await handler(...a)) as {
+				tools?: Array<Record<string, unknown>>;
+			};
 			if (!Array.isArray(result?.tools)) return result;
 			return {
 				...result,
 				tools: result.tools.map((tool) => ({
 					...tool,
 					inputSchema: stripStringPropertyNames(tool.inputSchema),
-					...(tool.outputSchema ? { outputSchema: stripStringPropertyNames(tool.outputSchema) } : {}),
+					...(tool.outputSchema
+						? { outputSchema: stripStringPropertyNames(tool.outputSchema) }
+						: {}),
 				})),
 			};
 		});

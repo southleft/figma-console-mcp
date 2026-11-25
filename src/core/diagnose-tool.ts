@@ -8,7 +8,7 @@
  * structured so an LLM is likely to surface the `report` field verbatim.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { MCP_NAME, withIdentity } from "./identity.js";
 
@@ -47,45 +47,69 @@ function buildReport(opts: DiagnoseToolOptions): string {
 	lines.push(`# ${MCP_NAME} diagnostic`);
 	lines.push("");
 	lines.push(`Server version: ${opts.getServerVersion()}`);
-	lines.push(`Mode: ${opts.mode === "local" ? "Local (stdio + WebSocket plugin bridge)" : "Cloud (Cloudflare Workers)"}`);
+	lines.push(
+		`Mode: ${opts.mode === "local" ? "Local (stdio + WebSocket plugin bridge)" : "Cloud (Cloudflare Workers)"}`,
+	);
 	lines.push("");
 
 	const plugin = opts.getPluginState?.();
 	lines.push("## Plugin connection");
 	if (!plugin) {
 		if (opts.mode === "cloud") {
-			lines.push("- Desktop Bridge plugin not paired with this cloud session. Read tools that use the Figma REST API work; write tools need pairing.");
-			lines.push("- To pair: call `figma_pair_plugin`, then enter the code in the plugin's Cloud Mode section in Figma Desktop.");
+			lines.push(
+				"- Desktop Bridge plugin not paired with this cloud session. Read tools that use the Figma REST API work; write tools need pairing.",
+			);
+			lines.push(
+				"- To pair: call `figma_pair_plugin`, then enter the code in the plugin's Cloud Mode section in Figma Desktop.",
+			);
 		} else {
-			lines.push("- No WebSocket server (cloud mode runs without a local plugin bridge unless paired).");
+			lines.push(
+				"- No WebSocket server (cloud mode runs without a local plugin bridge unless paired).",
+			);
 		}
 	} else if (plugin.connected) {
-		const portInfo = plugin.portFallbackFrom && plugin.port && plugin.port !== plugin.portFallbackFrom
-			? `port ${plugin.port} (fallback from ${plugin.portFallbackFrom})`
-			: plugin.port
-				? `port ${plugin.port}`
-				: "connected";
-		lines.push(opts.mode === "cloud"
-			? "- ✅ Desktop Bridge plugin connected through the cloud relay."
-			: `- ✅ Desktop Bridge plugin connected on ${portInfo}.`);
+		const portInfo =
+			plugin.portFallbackFrom &&
+			plugin.port &&
+			plugin.port !== plugin.portFallbackFrom
+				? `port ${plugin.port} (fallback from ${plugin.portFallbackFrom})`
+				: plugin.port
+					? `port ${plugin.port}`
+					: "connected";
+		lines.push(
+			opts.mode === "cloud"
+				? "- ✅ Desktop Bridge plugin connected through the cloud relay."
+				: `- ✅ Desktop Bridge plugin connected on ${portInfo}.`,
+		);
 		if (plugin.fileName) {
-			lines.push(`- Active file: **${plugin.fileName}**${plugin.currentPage ? ` (page: ${plugin.currentPage})` : ""}.`);
+			lines.push(
+				`- Active file: **${plugin.fileName}**${plugin.currentPage ? ` (page: ${plugin.currentPage})` : ""}.`,
+			);
 		}
 		if (plugin.editorType && plugin.editorType !== "figma") {
 			lines.push(`- Editor type: ${plugin.editorType}.`);
 		}
 		if (plugin.pluginUpdateAvailable) {
-			const bundledVersion = opts.getBundledPluginVersion?.() ?? opts.getServerVersion();
+			const bundledVersion =
+				opts.getBundledPluginVersion?.() ?? opts.getServerVersion();
 			lines.push(
 				`- ⚠️ **Plugin update available**: the imported plugin${plugin.pluginVersion ? ` (v${plugin.pluginVersion})` : " (version unknown — very old)"} differs from the plugin files this server ships (v${bundledVersion}). Figma caches plugin files, so re-import it: Figma Desktop → Plugins → Development → Import plugin from manifest → select manifest.json. Until then, recently added or fixed plugin features may silently misbehave.`,
 			);
 		}
 	} else if (opts.mode === "cloud") {
-		lines.push("- ⚠️ Paired before, but the Desktop Bridge plugin is not connected to the cloud relay right now.");
-		lines.push("- To fix: open the plugin in Figma Desktop and reconnect in its Cloud Mode section. If the pairing expired, call `figma_pair_plugin` for a new code.");
+		lines.push(
+			"- ⚠️ Paired before, but the Desktop Bridge plugin is not connected to the cloud relay right now.",
+		);
+		lines.push(
+			"- To fix: open the plugin in Figma Desktop and reconnect in its Cloud Mode section. If the pairing expired, call `figma_pair_plugin` for a new code.",
+		);
 	} else {
-		lines.push(`- ⚠️ Desktop Bridge plugin not connected${plugin.port ? ` (server is listening on port ${plugin.port})` : ""}.`);
-		lines.push("- To fix: open the Figma Desktop Bridge plugin in Figma Desktop. If it was already running, close and reopen it once.");
+		lines.push(
+			`- ⚠️ Desktop Bridge plugin not connected${plugin.port ? ` (server is listening on port ${plugin.port})` : ""}.`,
+		);
+		lines.push(
+			"- To fix: open the Figma Desktop Bridge plugin in Figma Desktop. If it was already running, close and reopen it once.",
+		);
 	}
 	lines.push("");
 
@@ -94,21 +118,33 @@ function buildReport(opts: DiagnoseToolOptions): string {
 	if (!token) {
 		lines.push("- Token state not available in this mode.");
 	} else if (token.hasToken) {
-		lines.push(`- ✅ Figma access token detected${token.source ? ` (source: ${token.source})` : ""}. REST-based tools should work.`);
+		lines.push(
+			`- ✅ Figma access token detected${token.source ? ` (source: ${token.source})` : ""}. REST-based tools should work.`,
+		);
 	} else {
-		lines.push("- ⚠️ No Figma access token detected. Plugin-based tools still work; REST-only tools (file data, version history, image rendering) will return an auth error.");
+		lines.push(
+			"- ⚠️ No Figma access token detected. Plugin-based tools still work; REST-only tools (file data, version history, image rendering) will return an auth error.",
+		);
 		if (opts.mode === "local") {
-			lines.push("- To enable REST tools: set FIGMA_ACCESS_TOKEN in your MCP client config. Generate a token at https://www.figma.com/developers/api#access-tokens.");
+			lines.push(
+				"- To enable REST tools: set FIGMA_ACCESS_TOKEN in your MCP client config. Generate a token at https://www.figma.com/developers/api#access-tokens.",
+			);
 		} else {
-			lines.push("- To enable REST tools: authenticate via your MCP client's OAuth flow or pass a Figma personal access token (figd_...) as a Bearer token.");
+			lines.push(
+				"- To enable REST tools: authenticate via your MCP client's OAuth flow or pass a Figma personal access token (figd_...) as a Bearer token.",
+			);
 		}
 	}
 	lines.push("");
 
 	lines.push("## If you're seeing token / OAuth errors in chat");
-	lines.push(`If you see messages like "API token has expired" or "Bearer token has expired" and the response above does NOT show a token problem, the error is most likely coming from a **different MCP server**, not from ${MCP_NAME}.`);
+	lines.push(
+		`If you see messages like "API token has expired" or "Bearer token has expired" and the response above does NOT show a token problem, the error is most likely coming from a **different MCP server**, not from ${MCP_NAME}.`,
+	);
 	lines.push("");
-	lines.push("Common cause: Figma's native MCP (often listed as just `Figma` in your MCP client) is also installed and its OAuth session expired. Check your MCP client's server list. Errors from those servers are not produced by figma-console-mcp.");
+	lines.push(
+		"Common cause: Figma's native MCP (often listed as just `Figma` in your MCP client) is also installed and its OAuth session expired. Check your MCP client's server list. Errors from those servers are not produced by figma-console-mcp.",
+	);
 	lines.push("");
 
 	return lines.join("\n");
@@ -118,15 +154,19 @@ export function registerDiagnoseTool(
 	server: McpServer,
 	options: DiagnoseToolOptions,
 ): void {
-	server.tool(
+	server.registerTool(
 		"figma_diagnose",
-		`Designer-readable health check for ${MCP_NAME}. Use this when something seems wrong — it self-identifies the server, reports plugin connection / file / token status in plain language, and disambiguates errors that may be coming from a different Figma-related MCP server. Recommended as the first step when a user reports a "token expired" or "plugin disconnected" issue.`,
 		{
-			verbose: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe("Include the raw structured state alongside the human-readable report."),
+			description: `Designer-readable health check for ${MCP_NAME}. Use this when something seems wrong — it self-identifies the server, reports plugin connection / file / token status in plain language, and disambiguates errors that may be coming from a different Figma-related MCP server. Recommended as the first step when a user reports a "token expired" or "plugin disconnected" issue.`,
+			inputSchema: z.object({
+				verbose: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Include the raw structured state alongside the human-readable report.",
+					),
+			}),
 		},
 		async ({ verbose }) => {
 			const report = buildReport(options);

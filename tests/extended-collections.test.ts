@@ -141,7 +141,7 @@ describe("annotateVariableOverrides", () => {
 function setup(opts: { executeFails?: boolean } = {}) {
 	const f = fixture();
 	const tools: Record<string, any> = {};
-	const server = { tool: (name: string, ...rest: any[]) => { tools[name] = rest[rest.length - 1]; } };
+	const server = { registerTool: (name: string, ...rest: any[]) => { tools[name] = rest[rest.length - 1]; } };
 	const connector = {
 		getTransportType: () => "websocket",
 		getVariablesFromPluginUI: jest.fn(async () => ({ success: true, variables: JSON.parse(JSON.stringify(f.variables)), variableCollections: JSON.parse(JSON.stringify(f.variableCollections)) })),
@@ -234,7 +234,7 @@ describe("figma_export_tokens — extended collections", () => {
 			getVariablesFromPluginUI: async () => ({ fileKey: "fileA", variables: JSON.parse(JSON.stringify(f.variables)), variableCollections: JSON.parse(JSON.stringify(f.variableCollections)) }),
 			executeCodeViaUI: async () => ({ success: true, result: f.extensions }),
 		};
-		registerExportTokensTool({ tool: (_n: string, _d: string, _s: any, h: any) => { handler = h; } } as any, async () => connector);
+		registerExportTokensTool({ registerTool: (_n: string, __cfg: any, h: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; handler = h; } } as any, async () => connector);
 	});
 	afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 	const parse = (r: any) => JSON.parse(r.content[0].text);
