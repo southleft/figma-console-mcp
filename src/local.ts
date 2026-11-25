@@ -99,6 +99,7 @@ import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
 import { registerLayoutTools } from "./core/layout-tools.js";
 import { applyToolAnnotations } from "./core/tool-annotations.js";
+import { registerAdherenceTools } from "./core/adherence-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
 
@@ -3414,6 +3415,34 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		registerCodeLayerTools(server, () => this.getDesktopConnector());
 		registerShaderTools(server, () => this.getDesktopConnector());
 		registerLayoutTools(server, () => this.getDesktopConnector());
+
+		// Design-system adherence: resolve needs → components (gaps go to the
+		// person), and audit generated compositions for invented / hardcoded work.
+		registerAdherenceTools(server, {
+			getDesktopConnector: () => this.getDesktopConnector(),
+			getFigmaAPI: () => this.getFigmaAPI(),
+			getLocalCatalog: async () => {
+				const { cacheEntry, warning } = await ensureDesignSystemCache();
+				const manifest = cacheEntry?.manifest;
+				if (!manifest) throw new Error(warning ?? "Design system data could not be loaded from the active file.");
+				const entries: any[] = [];
+				for (const set of Object.values<any>(manifest.componentSets ?? {})) {
+					entries.push({
+						name: set.name,
+						key: set.key,
+						nodeId: set.nodeId,
+						type: "COMPONENT_SET",
+						description: set.description,
+						variantAxes: (set.variantAxes ?? []).map((a: any) => ({ name: a.name, values: a.values ?? [] })),
+						source: "local",
+					});
+				}
+				for (const c of Object.values<any>(manifest.components ?? {})) {
+					entries.push({ name: c.name, key: c.key, nodeId: c.nodeId, type: "COMPONENT", description: c.description, source: "local" });
+				}
+				return entries;
+			},
+		});
 
 		// MCP Apps - gated behind ENABLE_MCP_APPS env var
 		if (process.env.ENABLE_MCP_APPS === "true") {

@@ -95,6 +95,9 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
 	figma_get_code_layers: "read",
 	figma_list_shaders: "read",
 	figma_analyze_component_set: "read",
+	// Design-system adherence (resolve may ask the person; neither writes).
+	figma_resolve_components: "read",
+	figma_audit_adherence: "read",
 
 	// ── Audits & reports (compute only) ──────────────────────────────────────
 	figma_lint_design: "read",
@@ -242,6 +245,7 @@ const REST_TOOLS = new Set<string>([
 	"figma_get_library_components",
 	"figma_get_library_component_by_key",
 	"figma_get_design_system_kit",
+	"figma_resolve_components",
 ]);
 
 export function hintsFor(name: string): ToolHints | undefined {

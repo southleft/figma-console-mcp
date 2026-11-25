@@ -1,0 +1,407 @@
+/**
+ * Design-system adherence: generate with the system, never invent.
+ *
+ *   figma_resolve_components — BEFORE building: map each needed UI element to a
+ *     real component, or flag it as a gap. Possible matches and gaps go to the
+ *     PERSON (elicitation) when the client supports it — the agent doesn't get
+ *     to improvise a substitute.
+ *   figma_audit_adherence — AFTER building: deterministic, scored report of a
+ *     composition: component instances vs. hand-built imitations, token-bound
+ *     vs. hardcoded styling, declared gaps. Built to be the evidence a separate
+ *     grader agent judges from.
+ */
+import { z } from "zod";
+import type { McpServer } from "@modelcontextprotocol/server";
+import { createChildLogger } from "./logger.js";
+import { confirmStep, fingerprint } from "./confirm.js";
+import {
+	type CatalogEntry,
+	MATCH_THRESHOLD,
+	POSSIBLE_THRESHOLD,
+	type NeedResolution,
+	resolveNeeds,
+} from "./adherence/matching.js";
+import { GAP_PREFIX, buildAuditCode } from "./adherence/audit-code.js";
+import { extractFileKey } from "./figma-api.js";
+
+const logger = createChildLogger({ component: "adherence-tools" });
+
+export interface AdherenceToolDeps {
+	getDesktopConnector: () => Promise<any>;
+	/** Components defined in the active file (local design system), if any. */
+	getLocalCatalog?: () => Promise<CatalogEntry[]>;
+	/** REST access for published libraries (needs a token). */
+	getFigmaAPI?: () => Promise<any>;
+}
+
+const text = (data: unknown, isError = false) => ({
+	content: [{ type: "text" as const, text: JSON.stringify(data) }],
+	...(isError ? { isError: true } : {}),
+});
+
+/** Components + component sets of a published library, as catalog entries. */
+export async function loadLibraryCatalog(api: any, fileKey: string): Promise<{ entries: CatalogEntry[]; variantKeys: Set<string> }> {
+	const [comps, sets] = await Promise.all([api.getComponents(fileKey), api.getComponentSets(fileKey)]);
+	const rawComponents: any[] = comps?.meta?.components ?? [];
+	const rawSets: any[] = sets?.meta?.component_sets ?? [];
+	const variantKeys = new Set<string>();
+	const bySet = new Map<string, any[]>();
+	for (const c of rawComponents) {
+		if (c.key) variantKeys.add(c.key);
+		const setId = c.containing_frame?.containingComponentSet?.nodeId ?? c.component_set_id;
+		if (setId) bySet.set(setId, [...(bySet.get(setId) ?? []), c]);
+	}
+	const entries: CatalogEntry[] = [];
+	for (const s of rawSets) {
+		const axes = new Map<string, Set<string>>();
+		for (const v of bySet.get(s.node_id) ?? []) {
+			for (const part of String(v.name).split(",")) {
+				const [k, val] = part.split("=").map((x: string) => x?.trim());
+				if (k && val) axes.set(k, (axes.get(k) ?? new Set()).add(val));
+			}
+		}
+		variantKeys.add(s.key);
+		entries.push({
+			name: s.name,
+			key: s.key,
+			nodeId: s.node_id,
+			type: "COMPONENT_SET",
+			description: s.description || undefined,
+			variantAxes: [...axes].map(([name, values]) => ({ name, values: [...values] })),
+			source: fileKey,
+		});
+	}
+	for (const c of rawComponents) {
+		const inSet = c.containing_frame?.containingComponentSet || c.component_set_id;
+		if (inSet) continue;
+		entries.push({ name: c.name, key: c.key, nodeId: c.node_id, type: "COMPONENT", description: c.description || undefined, source: fileKey });
+	}
+	return { entries, variantKeys };
+}
+
+function libraryKeysFrom(args: { libraryFileKeys?: string[]; libraryFileUrls?: string[] }): string[] {
+	const keys = [...(args.libraryFileKeys ?? [])];
+	for (const u of args.libraryFileUrls ?? []) {
+		const k = extractFileKey(u);
+		if (k) keys.push(k);
+	}
+	return [...new Set(keys)];
+}
+
+async function loadCatalog(
+	deps: AdherenceToolDeps,
+	libraryKeys: string[],
+	includeLocal: boolean,
+): Promise<{ catalog: CatalogEntry[]; sources: Array<{ source: string; components: number; error?: string }>; variantKeys: Set<string> }> {
+	const catalog: CatalogEntry[] = [];
+	const sources: Array<{ source: string; components: number; error?: string }> = [];
+	const variantKeys = new Set<string>();
+	if (includeLocal && deps.getLocalCatalog) {
+		try {
+			const local = await deps.getLocalCatalog();
+			catalog.push(...local);
+			sources.push({ source: "local", components: local.length });
+		} catch (err) {
+			sources.push({ source: "local", components: 0, error: err instanceof Error ? err.message : String(err) });
+		}
+	}
+	if (libraryKeys.length > 0) {
+		if (!deps.getFigmaAPI) {
+			for (const k of libraryKeys) sources.push({ source: k, components: 0, error: "Library lookup needs the Figma REST API (FIGMA_ACCESS_TOKEN)." });
+		} else {
+			const api = await deps.getFigmaAPI();
+			for (const k of libraryKeys) {
+				try {
+					const lib = await loadLibraryCatalog(api, k);
+					catalog.push(...lib.entries);
+					for (const v of lib.variantKeys) variantKeys.add(v);
+					sources.push({ source: k, components: lib.entries.length });
+				} catch (err) {
+					sources.push({ source: k, components: 0, error: err instanceof Error ? err.message : String(err) });
+				}
+			}
+		}
+	}
+	return { catalog, sources, variantKeys };
+}
+
+const RESOLVE_DESCRIPTION = `Before generating a design or code from a design system: map each UI element the request needs to a REAL component, and report what's missing instead of inventing it. Pass the needs in plain words (e.g. ["primary button", "date picker", "user avatar", "pricing card"]). Matching is deterministic (names, variants, descriptions, UI synonyms) — no judgment calls:
+• matched — build with this component (key/nodeId returned; use figma_instantiate_component).
+• possible — something might fit; a person must confirm.
+• gap — the system has nothing for it.
+When the client supports it, the PERSON is asked how to handle each possible/gap item (stop, use a candidate, or a clearly labeled "${GAP_PREFIX} …" placeholder) and the decisions are returned. Otherwise the result says to stop and report the gaps to the user. Never substitute a hand-built look-alike for a gap. Searches the active file's components by default; pass libraryFileKeys/libraryFileUrls for published libraries (REST, needs FIGMA_ACCESS_TOKEN). Then verify the result with figma_audit_adherence.`;
+
+const AUDIT_DESCRIPTION = `Score how faithfully a generated composition uses the design system — the check to run after building a screen/section, and the evidence for an independent grader. Walks the frame (nodeId, or the single selected node) and reports: component instances used (local vs. library, by name), hand-built layers imitating a system component (error), new components created inside the composition (error), hand-drawn vectors (warning), styling not bound to variables/styles (colors, spacing, radius, typography, effects), instance style overrides, and declared "${GAP_PREFIX} …" placeholders. Returns componentCoverage, tokenCoverage, a 0–100 score, and pass/fail against minScore (default 90; any error fails). Pass libraryFileKeys to also fail instances of components that aren't from those libraries (off-system). Deterministic: same file, same result. Requires the Desktop Bridge.`;
+
+export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDeps): void {
+	server.registerTool(
+		"figma_resolve_components",
+		{
+			description: RESOLVE_DESCRIPTION,
+			inputSchema: z.object({
+				needs: z
+					.array(z.string().min(1))
+					.min(1)
+					.max(40)
+					.describe("The UI elements the request needs, in plain words, one per entry."),
+				libraryFileKeys: z.array(z.string()).optional().describe("Published library file keys to search (REST)."),
+				libraryFileUrls: z.array(z.string()).optional().describe("Published library file URLs (alternative to keys)."),
+				includeLocal: z
+					.boolean()
+					.optional()
+					.describe("Search components defined in the active file. Default true."),
+				askUser: z
+					.boolean()
+					.optional()
+					.describe("Ask the person how to handle possible matches and gaps when the client can show a form. Default true."),
+			}),
+		},
+		async (args, ctx) => {
+			try {
+				const libraryKeys = libraryKeysFrom(args);
+				const { catalog, sources } = await loadCatalog(deps, libraryKeys, args.includeLocal !== false);
+				if (catalog.length === 0) {
+					return text(
+						{
+							error: "No design-system components were found to match against, so nothing can be resolved. This is not the same as 'everything is a gap'.",
+							sources,
+							hint: "Open the Desktop Bridge in the design-system file, or pass libraryFileKeys/libraryFileUrls for the published library (needs FIGMA_ACCESS_TOKEN).",
+						},
+						true,
+					);
+				}
+
+				const items = resolveNeeds(args.needs, catalog);
+				const unresolved = items
+					.map((it, i) => ({ it, i }))
+					.filter(({ it }) => it.status !== "matched");
+
+				// Let the person decide every non-match. Keyed to the exact needs and
+				// candidates, so a re-run with different results asks again.
+				let decisions: Record<number, { decision: "stop" | "placeholder" | "use"; component?: NeedResolution["component"] }> = {};
+				let decisionSource: "user" | "none" = "none";
+				if (unresolved.length > 0 && args.askUser !== false) {
+					const fields: Record<string, any> = {};
+					const fieldFor: Record<string, number> = {};
+					for (const { it, i } of unresolved.slice(0, 15)) {
+						const opts: string[] = [];
+						const names: string[] = [];
+						it.candidates.slice(0, 2).forEach((c, ci) => {
+							if (c.score >= POSSIBLE_THRESHOLD) {
+								opts.push(`use_${ci}`);
+								names.push(`Use "${c.name}"`);
+							}
+						});
+						opts.push("placeholder", "stop");
+						names.push(`Add a labeled "${GAP_PREFIX} ${it.need}" placeholder`, "Stop — don't build it");
+						const key = `need_${i + 1}`;
+						fieldFor[key] = i;
+						fields[key] = {
+							type: "string",
+							title: `${it.status === "gap" ? "Missing" : "Unsure"}: ${it.need}`,
+							enum: opts,
+							enumNames: names,
+							default: "stop",
+						};
+					}
+					const gapList = unresolved.filter(({ it }) => it.status === "gap").map(({ it }) => it.need);
+					const possibleList = unresolved.filter(({ it }) => it.status === "possible").map(({ it }) => it.need);
+					const step = confirmStep(
+						server,
+						ctx,
+						`resolve_${fingerprint(...unresolved.map(({ it }) => `${it.need}=${it.candidates.map((c) => c.key).join(",")}`))}`,
+						{
+							message:
+								[
+									gapList.length ? `The design system has nothing for: ${gapList.join(", ")}.` : "",
+									possibleList.length ? `Unclear matches for: ${possibleList.join(", ")}.` : "",
+									"Choose how to handle each one. Nothing will be invented without your choice.",
+								]
+									.filter(Boolean)
+									.join(" "),
+							fields,
+							required: Object.keys(fields),
+						},
+					);
+					if (step.status === "ask") return step.result as any;
+					if (step.status === "accepted") {
+						decisionSource = "user";
+						for (const [field, value] of Object.entries(step.content)) {
+							const i = fieldFor[field];
+							if (i === undefined) continue;
+							const v = String(value);
+							if (v.startsWith("use_")) {
+								decisions[i] = { decision: "use", component: items[i].candidates[Number(v.slice(4))] };
+							} else if (v === "placeholder") decisions[i] = { decision: "placeholder" };
+							else decisions[i] = { decision: "stop" };
+						}
+					} else if (step.status === "declined" || step.status === "cancelled") {
+						decisionSource = "user";
+						decisions = Object.fromEntries(unresolved.map(({ i }) => [i, { decision: "stop" as const }]));
+					}
+				}
+
+				const out = items.map((it, i) => {
+					const d = decisions[i];
+					const base: Record<string, unknown> = {
+						need: it.need,
+						status: it.status,
+						...(it.component ? { component: it.component } : {}),
+						...(it.status !== "matched" && it.candidates.length ? { candidates: it.candidates } : {}),
+					};
+					if (it.status === "matched") base.action = "build-with-component";
+					else if (d?.decision === "use") {
+						base.action = "build-with-component";
+						base.component = d.component;
+						base.decidedBy = "user";
+					} else if (d?.decision === "placeholder") {
+						base.action = "placeholder";
+						base.placeholderName = `${GAP_PREFIX} ${it.need}`;
+						base.decidedBy = "user";
+					} else if (d?.decision === "stop") {
+						base.action = "skip";
+						base.decidedBy = "user";
+					} else base.action = "ask-user";
+					return base;
+				});
+
+				const counts = {
+					needs: items.length,
+					matched: items.filter((x) => x.status === "matched").length,
+					possible: items.filter((x) => x.status === "possible").length,
+					gaps: items.filter((x) => x.status === "gap").length,
+				};
+				const awaitingUser = out.filter((x) => x.action === "ask-user").map((x) => x.need);
+				return text({
+					success: true,
+					summary: counts,
+					sources,
+					catalogSize: catalog.length,
+					thresholds: { matched: MATCH_THRESHOLD, possible: POSSIBLE_THRESHOLD },
+					decisionsBy: decisionSource,
+					items: out,
+					rules: [
+						"Build ONLY items whose action is build-with-component, using that component (figma_instantiate_component with its key/nodeId).",
+						`For action placeholder, add one plainly labeled frame named exactly "${GAP_PREFIX} <need>" — no styling that imitates a real component.`,
+						"For action skip, build nothing for it.",
+						"Never hand-build a look-alike, and never create a new component, for anything not matched.",
+						"Bind every color, spacing, radius and text style to the system's variables/styles; run figma_audit_adherence on the result.",
+					],
+					...(awaitingUser.length
+						? {
+								ai_instruction: `STOP before building. The design system has no confirmed component for: ${awaitingUser.join(", ")}. Tell the user exactly which items are missing or unclear (list the candidates) and ask how to proceed. Do not substitute, approximate or hand-build them.`,
+							}
+						: {}),
+				});
+			} catch (err) {
+				logger.error({ err }, "figma_resolve_components failed");
+				return text({ error: err instanceof Error ? err.message : String(err) }, true);
+			}
+		},
+	);
+
+	server.registerTool(
+		"figma_audit_adherence",
+		{
+			description: AUDIT_DESCRIPTION,
+			inputSchema: z.object({
+				nodeId: z.string().optional().describe("Root of the composition to audit. Defaults to the single selected node."),
+				libraryFileKeys: z
+					.array(z.string())
+					.optional()
+					.describe("If set, instances must come from these published libraries (or the file itself if allowLocal); anything else is off-system."),
+				allowLocal: z
+					.boolean()
+					.optional()
+					.describe("With libraryFileKeys: also allow components defined in this file. Default true."),
+				minScore: z.number().min(0).max(100).optional().describe("Pass threshold for the 0–100 score. Default 90."),
+				maxNodes: z.number().int().min(50).max(20000).optional().describe("Walk limit. Default 5000."),
+				maxFindings: z.number().int().min(1).max(500).optional().describe("Findings returned (sorted by severity). Default 100."),
+				fileKey: z.string().optional().describe("Run against this connected file instead of the active one."),
+			}),
+		},
+		async (args) => {
+			try {
+				const connector = await deps.getDesktopConnector();
+				const libraryKeys = args.libraryFileKeys ?? [];
+				const { catalog, sources, variantKeys } = await loadCatalog(deps, libraryKeys, true);
+				const componentNames = [
+					...new Set(
+						catalog
+							.map((c) => c.name.split("/").pop()!.trim().toLowerCase())
+							.filter((n) => n.length >= 3),
+					),
+				];
+				const code = buildAuditCode({ nodeId: args.nodeId, maxNodes: args.maxNodes ?? 5000, componentNames });
+				const res = await connector.executeCodeViaUI(code, 120000, args.fileKey);
+				const raw = res && typeof res === "object" && "result" in res ? res.result : res;
+				if (!raw || raw.error) {
+					return text({ error: raw?.error ?? res?.error ?? "Audit failed to run in the plugin.", hint: "Pass a nodeId of the generated frame (or select it) in the connected file." }, true);
+				}
+
+				const findings: any[] = raw.findings ?? [];
+				// Off-system components: only checkable against the given libraries.
+				if (libraryKeys.length > 0 && variantKeys.size > 0) {
+					const allowLocal = args.allowLocal !== false;
+					for (const u of raw.componentsUsed ?? []) {
+						const inLib = (u.key && variantKeys.has(u.key)) || (u.setKey && variantKeys.has(u.setKey));
+						const ok = inLib || (u.source === "local" && allowLocal);
+						u.inAllowedLibraries = ok;
+						if (!ok) {
+							findings.push({
+								nodeId: u.nodeIds?.[0],
+								name: u.name,
+								type: "INSTANCE",
+								rule: "off-system-component",
+								severity: "error",
+								message: `"${u.name}" (${u.count}×) isn't from the allowed libraries.`,
+								nodeIds: u.nodeIds,
+							});
+						}
+					}
+				}
+
+				const s = raw.stats;
+				const inventions = s.imitations + s.suspects + s.newComponents + s.handDrawnVectors;
+				const componentCoverage = s.instances + inventions > 0 ? s.instances / (s.instances + inventions) : null;
+				const tokenCoverage = s.styledProps > 0 ? s.boundProps / s.styledProps : null;
+				const parts = [componentCoverage, tokenCoverage].filter((x): x is number => x !== null);
+				const score = parts.length ? Math.round((parts.reduce((a, b) => a + b, 0) / parts.length) * 100) : 100;
+				const sevRank: Record<string, number> = { error: 0, warning: 1, info: 2 };
+				findings.sort((a, b) => (sevRank[a.severity] ?? 3) - (sevRank[b.severity] ?? 3));
+				const errors = findings.filter((f) => f.severity === "error").length;
+				const warnings = findings.filter((f) => f.severity === "warning").length;
+				const minScore = args.minScore ?? 90;
+				const pass = errors === 0 && score >= minScore && !s.truncated;
+				const byRule: Record<string, number> = {};
+				for (const f of findings) byRule[f.rule] = (byRule[f.rule] ?? 0) + 1;
+				const maxFindings = args.maxFindings ?? 100;
+
+				return text({
+					success: true,
+					pass,
+					score,
+					minScore,
+					componentCoverage: componentCoverage === null ? null : Math.round(componentCoverage * 1000) / 1000,
+					tokenCoverage: tokenCoverage === null ? null : Math.round(tokenCoverage * 1000) / 1000,
+					root: raw.root,
+					file: raw.file,
+					counts: { errors, warnings, info: findings.length - errors - warnings, byRule },
+					stats: s,
+					componentsUsed: raw.componentsUsed,
+					declaredGaps: raw.gaps,
+					catalogSources: sources,
+					findings: findings.slice(0, maxFindings),
+					findingsTruncated: findings.length > maxFindings,
+					scoring:
+						"componentCoverage = instances ÷ (instances + imitations + hand-built suspects + new components + hand-drawn vectors). tokenCoverage = bound ÷ styled properties outside instances (fills, strokes, spacing, radius, effects, text styles). score = mean of the two × 100. Fails on any error, on score < minScore, or if the walk was truncated.",
+					...(s.truncated ? { warning: `Stopped after ${s.nodesVisited} nodes; raise maxNodes or audit a smaller frame. A truncated audit never passes.` } : {}),
+					...(raw.gaps?.length ? { gapNote: `${raw.gaps.length} declared gap placeholder(s): ${raw.gaps.join(", ")}. These are reported, not scored.` } : {}),
+				});
+			} catch (err) {
+				logger.error({ err }, "figma_audit_adherence failed");
+				return text({ error: err instanceof Error ? err.message : String(err) }, true);
+			}
+		},
+	);
+}
