@@ -260,10 +260,18 @@ export function scoreCodeAudit(r: CodeAuditResult, minScore = 90) {
 }
 
 /** Token names from a CSS file (custom properties) or a DTCG / nested JSON token file. */
-/** Component names from a component folder's file names: "dropdown-menu.tsx" → "DropdownMenu". */
+/**
+ * Component names from a component folder's entries: files ("dropdown-menu.tsx"
+ * → "DropdownMenu") or one folder per component ("date-picker/" → "DatePicker").
+ */
 export function componentNamesFromFiles(fileNames: string[]): string[] {
 	return fileNames
-		.filter((f) => /\.(tsx|jsx|vue|svelte)$/i.test(f) && !/^(index|use-)/i.test(f) && !/\.(test|spec|stories)\./i.test(f))
+		.filter(
+			(f) =>
+				(/\.(tsx|jsx|vue|svelte)$/i.test(f) || !f.includes(".")) &&
+				!/^(index|use-|__)/i.test(f) &&
+				!/\.(test|spec|stories)\./i.test(f),
+		)
 		.map((f) =>
 			f
 				.replace(/\.[^.]+$/, "")

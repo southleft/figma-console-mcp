@@ -19,6 +19,7 @@ import {
 	MATCH_THRESHOLD,
 	POSSIBLE_THRESHOLD,
 	type NeedResolution,
+	pairLibraries,
 	resolveNeeds,
 } from "./adherence/matching.js";
 import { GAP_PREFIX, buildAuditCode } from "./adherence/audit-code.js";
@@ -517,6 +518,59 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 				});
 			} catch (err) {
 				logger.error({ err }, "figma_audit_code_adherence failed");
+				return text({ error: err instanceof Error ? err.message : String(err) }, true);
+			}
+		},
+	);
+
+	server.registerTool(
+		"figma_check_library_parity",
+		{
+			description:
+				"Library-level parity between a Figma component library and its code counterpart: which components exist on both sides, which are only in Figma, and which are only in code. Pairs by exact name, then the same words ignoring case/punctuation/folders, then the same UI concept (only when unambiguous, so nothing is force-paired). Archived/deprecated/private Figma components are listed separately, not counted as missing. Figma side: the active file's components (default) and/or published libraries (libraryFileKeys, REST). Code side: componentsDir (file names, Local Mode) and/or a components list. Then use figma_check_design_parity on each pair for property-level drift. Deterministic; it reports differences and decides nothing.",
+			inputSchema: z.object({
+				componentsDir: z.string().optional().describe('Folder of the code library\'s component files, e.g. "src/components/ui" (Local Mode).'),
+				components: z.array(z.string()).optional().describe("Code component names (alternative or addition to componentsDir)."),
+				libraryFileKeys: z.array(z.string()).optional().describe("Published Figma library file keys (REST)."),
+				includeLocal: z.boolean().optional().describe("Include components defined in the active Figma file. Default true."),
+			}),
+		},
+		async (args) => {
+			try {
+				let code = [...(args.components ?? [])];
+				if (args.componentsDir) {
+					if (!deps.listDir) return text({ error: "componentsDir needs Local Mode; pass components instead." }, true);
+					code = [...code, ...componentNamesFromFiles(await deps.listDir(args.componentsDir))];
+				}
+				code = [...new Set(code)];
+				if (code.length === 0) return text({ error: "No code components given: pass componentsDir or components." }, true);
+				const { catalog, sources } = await loadCatalog(deps, args.libraryFileKeys ?? [], args.includeLocal !== false);
+				if (catalog.length === 0) {
+					return text({ error: "No Figma components found to compare against.", sources, hint: "Open the Desktop Bridge in the library file, or pass libraryFileKeys." }, true);
+				}
+				const r = pairLibraries(catalog, code);
+				const coverage = r.pairs.length / Math.max(1, r.pairs.length + r.figmaOnly.length + r.codeOnly.length);
+				return text({
+					success: true,
+					summary: {
+						paired: r.pairs.length,
+						figmaOnly: r.figmaOnly.length,
+						codeOnly: r.codeOnly.length,
+						coverage: Math.round(coverage * 1000) / 1000,
+					},
+					sources,
+					pairs: r.pairs,
+					figmaOnly: r.figmaOnly,
+					codeOnly: r.codeOnly,
+					...(r.retiredInFigma.length ? { retiredInFigma: r.retiredInFigma } : {}),
+					nextSteps: [
+						"For each pair, run figma_check_design_parity (nodeId + codeSpec from the code file) to find property-level drift.",
+						"figmaOnly / codeOnly are gaps on the other side: report them to the person; don't create components to close them without approval.",
+						"Pairs matched by 'concept' are inferred from synonyms. Confirm them before relying on them.",
+					],
+				});
+			} catch (err) {
+				logger.error({ err }, "figma_check_library_parity failed");
 				return text({ error: err instanceof Error ? err.message : String(err) }, true);
 			}
 		},

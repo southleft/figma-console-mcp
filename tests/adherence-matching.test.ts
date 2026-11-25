@@ -1,4 +1,4 @@
-import { type CatalogEntry, resolveNeeds, tokenize } from "../src/core/adherence/matching";
+import { type CatalogEntry, pairLibraries, resolveNeeds, tokenize } from "../src/core/adherence/matching";
 
 const cat = (name: string, extra: Partial<CatalogEntry> = {}): CatalogEntry => ({
 	name, key: `k-${name}`, type: "COMPONENT_SET", source: "local", ...extra,
@@ -61,4 +61,19 @@ describe("adherence matching", () => {
 		expect(r.candidates.map((c) => c.name)).toEqual(["Select"]);
 		expect(resolveNeeds(["select"], [cat("Archive/Select")])[0].status).toBe("gap");
 	});
+
+	it("pairs Figma and code libraries without force-pairing", () => {
+		const figma = [cat("Button"), cat("Forms/Text Field"), cat("Dialog"), cat("Avatar"), cat("Archive/Old Card"), cat("Tooltip")];
+		const r = pairLibraries(figma, ["Button", "TextField", "Modal", "Badge", "Tooltip"]);
+		expect(r.pairs.map((p) => `${p.figma.name}=${p.code}:${p.matchedBy}`)).toEqual([
+			"Button=Button:exact",
+			"Tooltip=Tooltip:exact",
+			"Forms/Text Field=TextField:normalized",
+			"Dialog=Modal:concept",
+		]);
+		expect(r.figmaOnly.map((f) => f.name)).toEqual(["Avatar"]);
+		expect(r.codeOnly).toEqual(["Badge"]);
+		expect(r.retiredInFigma).toEqual(["Archive/Old Card"]);
+	});
 });
+

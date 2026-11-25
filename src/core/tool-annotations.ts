@@ -99,6 +99,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
 	figma_resolve_components: "read",
 	figma_audit_adherence: "read",
 	figma_audit_code_adherence: "read",
+	figma_check_library_parity: "read",
 
 	// ── Audits & reports (compute only) ──────────────────────────────────────
 	figma_lint_design: "read",

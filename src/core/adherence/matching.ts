@@ -261,3 +261,54 @@ export function resolveNeeds(
 		};
 	});
 }
+
+export interface LibraryPair {
+	figma: { name: string; key: string; nodeId?: string; source: string };
+	code: string;
+	/** exact = same name; normalized = same words; concept = same UI concept via synonyms */
+	matchedBy: "exact" | "normalized" | "concept";
+}
+
+/**
+ * Pair a Figma library's components with a code library's components by name.
+ * Exact name first, then the same words ignoring case/punctuation/path, then
+ * the same UI concept (synonym table) — and only when that concept maps to
+ * exactly one component on each side, so nothing gets force-paired.
+ */
+export function pairLibraries(figma: CatalogEntry[], code: string[]) {
+	const live = figma.filter((f) => !isRetired(f));
+	const base = (n: string) => n.split("/").pop()!.trim();
+	const norm = (n: string) => base(n).toLowerCase().replace(/[^a-z0-9]+/g, "");
+	const pairs: LibraryPair[] = [];
+	const usedF = new Set<CatalogEntry>();
+	const usedC = new Set<string>();
+	const take = (f: CatalogEntry, c: string, matchedBy: LibraryPair["matchedBy"]) => {
+		pairs.push({ figma: { name: f.name, key: f.key, nodeId: f.nodeId, source: f.source }, code: c, matchedBy });
+		usedF.add(f);
+		usedC.add(c);
+	};
+	for (const f of live) {
+		const c = code.find((x) => !usedC.has(x) && x === base(f.name));
+		if (c) take(f, c, "exact");
+	}
+	for (const f of live) {
+		if (usedF.has(f)) continue;
+		const c = code.find((x) => !usedC.has(x) && norm(x) === norm(f.name));
+		if (c) take(f, c, "normalized");
+	}
+	const key = (n: string) => tokenize(base(n)).join(" ");
+	const byKeyF = new Map<string, CatalogEntry[]>();
+	for (const f of live) if (!usedF.has(f)) byKeyF.set(key(f.name), [...(byKeyF.get(key(f.name)) ?? []), f]);
+	const byKeyC = new Map<string, string[]>();
+	for (const c of code) if (!usedC.has(c)) byKeyC.set(key(c), [...(byKeyC.get(key(c)) ?? []), c]);
+	for (const [k, fs] of byKeyF) {
+		const cs = byKeyC.get(k);
+		if (k && fs.length === 1 && cs?.length === 1) take(fs[0], cs[0], "concept");
+	}
+	return {
+		pairs,
+		figmaOnly: live.filter((f) => !usedF.has(f)).map((f) => ({ name: f.name, key: f.key, nodeId: f.nodeId, source: f.source })),
+		codeOnly: code.filter((c) => !usedC.has(c)),
+		retiredInFigma: figma.filter((f) => isRetired(f)).map((f) => f.name),
+	};
+}

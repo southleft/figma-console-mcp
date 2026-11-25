@@ -30,6 +30,7 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_audit_adherence` | Score a generated frame: components vs. hand-built look-alikes, tokens vs. hardcoded values | Local / Cloud |
 | | `figma_audit_code_adherence` | Score generated code: system components and tokens vs. re-implementations and literals | Local / Cloud |
 | | `figma_bind_tokens` | Bind spacing, radius, size and type to existing variables; apply text/effect styles by name | Local / Cloud |
+| | `figma_check_library_parity` | Pair a Figma component library with its code library; list what exists on only one side | Local / Cloud |
 | **🔁 Token Sync** | `figma_export_tokens` | Export Figma variables to DTCG JSON + CSS (replaces Style Dictionary) | Local / Cloud |
 | | `figma_import_tokens` | Push code-side token edits back to Figma (diff-aware merge) | Local / Cloud |
 | **🧬 Design System Extraction** | `figma_ds_analyze` | Scan production codebase(s): component inventory, classification, architecture | Local |
@@ -672,6 +673,19 @@ figma_bind_tokens({
 ```
 
 It never creates a variable or style. An unknown or ambiguous name fails for that field and lists the closest real names, so a missing token gets reported instead of replaced with a raw value. For colors, use `figma_set_fills` / `figma_set_strokes` with a variable.
+
+### `figma_check_library_parity`
+
+Library-level parity between a Figma component library and its code counterpart. Components are paired by exact name, then by the same words (ignoring case, punctuation and folders), then by the same UI concept, but only when that concept is unambiguous on both sides. It lists the pairs, the components only in Figma, and the components only in code. Archived, deprecated and private Figma components are reported separately.
+
+```javascript
+figma_check_library_parity({
+  componentsDir: "libs/ui/components",   // file-per-component or folder-per-component (Local Mode)
+  libraryFileKeys: ["abc123"]            // optional: published libraries; default is the active file
+})
+```
+
+Then run `figma_check_design_parity` on each pair for property-level drift. The tool reports differences and decides nothing. Treat one-sided components as gaps to raise with the team.
 
 ### Skills
 
