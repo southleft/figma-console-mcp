@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
-import { confirmStep, notConfirmedResult } from "./confirm.js";
+import { confirmStep, fingerprint, notConfirmedResult } from "./confirm.js";
 
 const logger = createChildLogger({ component: "write-tools" });
 
@@ -150,19 +150,25 @@ async function setCssPaints(
 }
 
 
-/** Name and size of a collection, for the delete confirmation. Null if unreadable. */
+/**
+ * Name, size and owning file of a collection, for the delete confirmation.
+ * null = checked, and it isn't a local collection in the target file;
+ * undefined = couldn't check (e.g. code execution unavailable).
+ */
 async function describeCollection(
 	connector: any,
 	collectionId: string,
-): Promise<{ name: string; variableCount: number; modeCount: number } | null> {
+): Promise<{ name: string; variableCount: number; modeCount: number; fileKey: string | null; fileName: string } | null | undefined> {
 	try {
 		const code = `const c = await figma.variables.getVariableCollectionByIdAsync(${JSON.stringify(collectionId)});
-return c ? { name: c.name, variableCount: c.variableIds.length, modeCount: c.modes.length } : null;`;
+return c && !c.remote ? { name: c.name, variableCount: c.variableIds.length, modeCount: c.modes.length, fileKey: figma.fileKey || null, fileName: figma.root.name } : null;`;
 		const res = await connector.executeCodeViaUI(code, 10000);
+		if (res && typeof res === "object" && res.success === false) return undefined;
 		const value = res && typeof res === "object" && "result" in res ? res.result : res;
-		return value && typeof value.name === "string" ? value : null;
+		if (value === null) return null;
+		return value && typeof value.name === "string" ? value : undefined;
 	} catch {
-		return null;
+		return undefined;
 	}
 }
 
@@ -611,22 +617,44 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 
 				// The person confirms before a whole collection disappears (when the
 				// client can show a form; otherwise behavior is unchanged). The answer
-				// arrives on a re-run of this handler, so nothing above writes.
+				// arrives on a re-run of this handler — possibly minutes later — so
+				// nothing above writes, and the key is bound to the file + collection:
+				// if the active file changed meanwhile, the user is asked again.
 				const info = await describeCollection(connector, collectionId);
-				const label = info
-					? `"${info.name}" (${info.variableCount} variable${info.variableCount === 1 ? "" : "s"}, ${info.modeCount} mode${info.modeCount === 1 ? "" : "s"})`
-					: collectionId;
-				const step = confirmStep(server, ctx, "confirm_delete_collection", {
-					message: `Delete the variable collection ${label}? Every variable in it is deleted, and anything bound to them loses the binding. Only Figma's Undo can bring it back.`,
-					fields: {
-						confirm: {
-							type: "boolean",
-							title: `Delete ${info ? `"${info.name}"` : "this collection"}`,
-							default: false,
+				if (info === null) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: JSON.stringify({
+									error: `Collection ${collectionId} isn't a local collection in the file Figma Console is targeting. Nothing was deleted.`,
+									hint: "Check the active file with figma_list_open_files (switch with figma_navigate, or pin it with lock: true), and get collection IDs from figma_get_variables in that file.",
+								}),
+							},
+						],
+						isError: true,
+					};
+				}
+				const n = info?.variableCount;
+				const what = info
+					? `In "${info.fileName}", delete the variable collection "${info.name}" (${n} variable${n === 1 ? "" : "s"}, ${info.modeCount} mode${info.modeCount === 1 ? "" : "s"})?`
+					: `Delete the variable collection ${collectionId} in the active Figma file?`;
+				const step = confirmStep(
+					server,
+					ctx,
+					`confirm_delete_collection_${fingerprint(info?.fileKey, info?.fileName, collectionId, n)}`,
+					{
+						message: `${what} Every variable in it is deleted, and anything bound to them loses the binding. Only Figma's Undo can bring it back.`,
+						fields: {
+							confirm: {
+								type: "boolean",
+								title: info ? `Delete "${info.name}"` : "Delete this collection",
+								default: false,
+							},
 						},
+						required: ["confirm"],
 					},
-					required: ["confirm"],
-				});
+				);
 				if (step.status === "ask") return step.result as any;
 				if (step.status === "declined" || step.status === "cancelled") {
 					return notConfirmedResult("the collection delete", step);
@@ -643,7 +671,7 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 							type: "text" as const,
 							text: JSON.stringify({
 								success: true,
-								message: `Collection "${result.deleted.name}" and ${result.deleted.variableCount} variables deleted successfully`,
+								message: `Collection "${result?.deleted?.name ?? info?.name ?? collectionId}" and ${result?.deleted?.variableCount ?? n ?? "its"} variables deleted successfully`,
 								deleted: result.deleted,
 								timestamp: Date.now(),
 								warning:

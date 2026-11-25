@@ -73,6 +73,24 @@ type HandlerCtx =
 	  }
 	| undefined;
 
+/**
+ * Short stable fingerprint of what the user is being asked to approve. Build
+ * it into the confirmStep key (e.g. `confirm_delete_${fingerprint(fileKey, ids)}`):
+ * the answer arrives on a re-run of the handler, possibly minutes later, and if
+ * the target file or the affected items changed in between, the key no longer
+ * matches — so the old answer is ignored and the user is asked again about
+ * what will actually happen. (FNV-1a; not a security boundary.)
+ */
+export function fingerprint(...parts: Array<string | number | null | undefined>): string {
+	let h = 0x811c9dc5;
+	const text = parts.map((p) => String(p ?? "")).join("\u0000");
+	for (let i = 0; i < text.length; i++) {
+		h ^= text.charCodeAt(i);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h.toString(36);
+}
+
 export function confirmationsDisabled(): boolean {
 	// `process` may be absent in Cloudflare Workers without nodejs_compat.
 	const env = typeof process !== "undefined" ? process.env : undefined;

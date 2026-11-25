@@ -45,7 +45,7 @@ import {
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { createChildLogger } from "./logger.js";
-import { confirmStep, notConfirmedResult } from "./confirm.js";
+import { confirmStep, fingerprint, notConfirmedResult } from "./confirm.js";
 import type { ComposedColor } from "./tokens/types.js";
 import {
 	augmentWithExtendedCollections,
@@ -736,9 +736,19 @@ async function handleImport(
 			.slice(0, 8)
 			.map((e) => e.path.replace("::", " / "))
 			.join(", ");
-		const outcome = confirmStep(server, ctx, "confirm_replace_deletes", {
+		// The answer comes back on a re-run of this handler. Key it to the file
+		// and the exact deletion set so a changed target re-asks instead.
+		const targetKey: string | null =
+			(typeof variableData?.fileKey === "string" && variableData.fileKey) || fileKey || null;
+		const targetName = (targetKey && opts.resolveFileName?.(targetKey)) || null;
+		const where = targetName ? `In "${targetName}", ` : targetKey ? `In Figma file ${targetKey}, ` : "";
+		const outcome = confirmStep(
+			server,
+			ctx,
+			`confirm_replace_${fingerprint(targetKey, ...diff.toDelete.map((e) => e.path).sort())}`,
+			{
 			message:
-				`figma_import_tokens (replace) will PERMANENTLY DELETE ${n} Figma variable${n === 1 ? "" : "s"} that ${n === 1 ? "isn't" : "aren't"} in the token file: ${sample}${n > 8 ? `, and ${n - 8} more` : ""}. ` +
+				`${where}figma_import_tokens (replace) will PERMANENTLY DELETE ${n} Figma variable${n === 1 ? "" : "s"} that ${n === 1 ? "isn't" : "aren't"} in the token file: ${sample}${n > 8 ? `, and ${n - 8} more` : ""}. ` +
 				`It will also create ${diff.toCreate.length}, update ${diff.toUpdate.length} and rename ${diff.toRename.length}. ` +
 				"Anything bound to a deleted variable loses that binding.",
 			fields: {

@@ -1,7 +1,7 @@
 /**
  * Elicitation-based confirmations (v2 multi-round-trip model).
  */
-import { confirmStep, confirmationsDisabled, supportsForm } from "../src/core/confirm";
+import { confirmStep, confirmationsDisabled, fingerprint, supportsForm } from "../src/core/confirm";
 
 const req = { message: "Delete?", fields: { confirm: { type: "boolean" as const } }, required: ["confirm"] };
 const server = (caps: unknown) => ({ server: { getClientCapabilities: () => caps } }) as any;
@@ -64,5 +64,16 @@ describe("confirmStep", () => {
 		process.env.FIGMA_CONSOLE_CONFIRM_DESTRUCTIVE = "off";
 		expect(confirmationsDisabled()).toBe(true);
 		expect(confirmStep(server({ elicitation: {} }), ctx(), "k", req).status).toBe("unsupported");
+	});
+
+	it("ignores an answer given for a different target (fingerprinted key)", () => {
+		const s = server({ elicitation: {} });
+		const shown = `confirm_${fingerprint("fileA", "Coll::x")}`;
+		const now = `confirm_${fingerprint("fileB", "Coll::x")}`;
+		expect(shown).not.toEqual(now);
+		expect(fingerprint("fileA", "Coll::x")).toEqual(fingerprint("fileA", "Coll::x"));
+		// The user approved the prompt about file A; the handler now targets file B → ask again.
+		const step = confirmStep(s, ctx({ [shown]: { action: "accept", content: { confirm: true } } }), now, req);
+		expect(step.status).toBe("ask");
 	});
 });
