@@ -13,7 +13,7 @@ import { McpAgent } from "agents/mcp";
 // Shared tool modules are typed against the v2 McpServer; McpAgent still hands us a v1 one.
 // The registerTool(name, { inputSchema: z.object(...) }, cb) calls they make work on both at runtime.
 import type { McpServer as ToolServer } from "@modelcontextprotocol/server";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer as SdkMcpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { BrowserManager, type Env } from "./browser-manager.js";
@@ -30,7 +30,7 @@ import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerLibraryTools, registerLibraryVariableTools } from "./core/library-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
-import { wrapServerForIdentity } from "./core/identity.js";
+import { withToolIdentity } from "./core/identity.js";
 import { applyToolAnnotations } from "./core/tool-annotations.js";
 import { isFigmaPAT, validateFigmaPAT } from "./core/figma-pat.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
@@ -113,6 +113,12 @@ async function serveSSEWithToken(request: Request, env: Env, ctx: ExecutionConte
 // scripts/release.sh keeps this current (it rewrites every `version: "x.y.z"` here).
 const cloudBuild = { version: "1.46.0" };
 
+/**
+ * v1 McpServer whose registerTool/tool stamp every tool's response and thrown
+ * error with our MCP name so cross-MCP attribution is unambiguous.
+ */
+const McpServer = withToolIdentity(SdkMcpServer);
+
 export class FigmaConsoleMCPv3 extends McpAgent {
 	private get toolServer(): ToolServer {
 		return this.server as unknown as ToolServer;
@@ -123,14 +129,10 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 	// 0.30+ removes the split but needs a newer workerd and compatibility_date.
 	// @ts-expect-error -- same McpServer class from two SDK copies
 	server = (() => {
-		const s = new McpServer({
+		return new McpServer({
 			name: "Figma Console MCP",
 			version: "1.46.0",
 		});
-		// Identity wrap — every tool's response and thrown error gets stamped
-		// with our MCP name so cross-MCP attribution is unambiguous.
-		wrapServerForIdentity(s as unknown as ToolServer);
-		return s;
 	})();
 
 	private browserManager: BrowserManager | null = null;
@@ -1272,7 +1274,6 @@ export default {
 				name: "Figma Console MCP",
 				version: "1.46.0",
 			});
-			wrapServerForIdentity(statelessServer as unknown as ToolServer);
 
 			// ================================================================
 			// Cloud Write Relay — Pairing Tool (stateless /mcp path)

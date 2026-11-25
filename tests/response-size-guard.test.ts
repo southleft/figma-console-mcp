@@ -7,7 +7,7 @@
  * every tool is gone for the rest of the session.
  */
 
-import { capToolResponse, MAX_TOOL_RESPONSE_BYTES, wrapServerForIdentity } from "../src/core/identity";
+import { capToolResponse, MAX_TOOL_RESPONSE_BYTES, withToolIdentity } from "../src/core/identity";
 
 const text = (s: string) => ({ content: [{ type: "text", text: s }] });
 
@@ -45,11 +45,15 @@ describe("capToolResponse", () => {
 	});
 });
 
-describe("wrapServerForIdentity applies the cap to every registered tool", () => {
+describe("withToolIdentity applies the cap to every registered tool", () => {
 	it("guards a handler that returns too much", async () => {
 		let registered: any;
-		const server: any = { registerTool: (...args: any[]) => { registered = args[args.length - 1]; } };
-		wrapServerForIdentity(server);
+		class FakeServer {
+			registerTool(...args: any[]) {
+				registered = args[args.length - 1];
+			}
+		}
+		const server: any = new (withToolIdentity(FakeServer))();
 		server.registerTool("huge", { description: "desc" }, async () => text("z".repeat(MAX_TOOL_RESPONSE_BYTES + 1)));
 		const out = await registered({});
 		expect(out.isError).toBe(true);

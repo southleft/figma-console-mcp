@@ -9,7 +9,7 @@
  * field makes attribution unambiguous.
  */
 
-import type { McpServer } from "@modelcontextprotocol/server";
+import { z } from "zod";
 
 export const MCP_NAME = "figma-console-mcp";
 
@@ -131,133 +131,166 @@ export function capToolResponse(
 	};
 }
 
+export interface ToolIdentityOptions {
+	/** Runs at the start of every tool call (local mode uses it for activity tracking). */
+	onToolCall?: () => void;
+}
+
+type ToolHandler = (...args: unknown[]) => unknown;
+const IDENTIFIED = Symbol.for("figma-console-mcp.identifiedToolHandler");
+
 /**
- * Monkey-patch an MCP server instance so every tool registered on it gets
- * identity tagging applied to its responses and an identity prefix on any
- * Error it throws — without modifying the ~97 individual tool handlers.
+ * Wrap one tool callback so its result is tagged with `_mcp`, capped at
+ * MAX_TOOL_RESPONSE_BYTES, and any Error it throws carries the
+ * `[figma-console-mcp]` prefix. The SDK turns a thrown error into an
+ * `isError` result whose text is the message, so the prefix reaches the
+ * client on both SDK versions. Idempotent: wrapping twice is a no-op.
+ */
+export function identifyToolHandler<F extends ToolHandler>(
+	handler: F,
+	options: ToolIdentityOptions = {},
+): F {
+	if ((handler as unknown as Record<symbol, unknown>)[IDENTIFIED]) return handler;
+	const wrapped = async (...args: unknown[]): Promise<unknown> => {
+		options.onToolCall?.();
+		try {
+			const result = await handler(...args);
+			return capToolResponse(tagToolResponse(result));
+		} catch (err) {
+			if (err instanceof Error && !err.message.startsWith(ERROR_PREFIX)) {
+				err.message = `${ERROR_PREFIX} ${err.message}`;
+			}
+			throw err;
+		}
+	};
+	Object.defineProperty(wrapped, IDENTIFIED, { value: true });
+	return wrapped as unknown as F;
+}
+
+/**
+ * Subclass an McpServer class so every tool registered on it goes through
+ * identifyToolHandler, and its schemas drop `propertyNames: {type:"string"}`
+ * (see quietStringRecordKeys) — without modifying the ~100 tool handlers.
  *
- * Call this once, immediately after constructing the McpServer, BEFORE any
- * tool registration calls run. The wrap is idempotent at the response level
- * (tools that already tag themselves via withIdentity or adaptiveResponse
- * won't get double-tagged).
+ * Works on both SDKs because it relies only on their public registration
+ * methods: the callback is always the last argument. v2 McpServer has only
+ * `registerTool`; v1 (Cloudflare, agents' McpAgent) also has `tool`, which
+ * does NOT route through `registerTool`, so both are overridden when present.
+ * Nothing else on the server is touched: the low-level request handlers, the
+ * skills extension, resources and ext-apps registration all see a stock
+ * McpServer.
+ *
+ *   const IdentifiedMcpServer = withToolIdentity(McpServer);
+ *   const server = new IdentifiedMcpServer({ name, version });
  *
  * Adds attribution coverage to every response path uniformly — see
  * project_lauren_cross_mcp_confusion for why this matters.
  */
-export function wrapServerForIdentity(
-	server: McpServer,
-	options: { onToolCall?: () => void } = {},
-): void {
-	// We have to bypass the McpServer.tool overload types because we're
-	// composing over arbitrary call signatures. The runtime behavior is
-	// the same regardless of which overload the caller invokes.
-	// v2 McpServer has only registerTool. The Cloudflare build still passes a v1
-	// McpServer (agents' McpAgent), whose tool() does NOT route through
-	// registerTool, so wrap whichever of the two exist.
-	type AnyTool = (...args: unknown[]) => unknown;
-	const target = server as unknown as Record<"tool" | "registerTool", AnyTool | undefined>;
-	for (const method of ["tool", "registerTool"] as const) {
-		if (typeof target[method] === "function") wrapToolMethod(target, method, options);
-	}
-	wrapListTools(server);
-}
-
-function wrapToolMethod(
-	target: Record<string, ((...args: unknown[]) => unknown) | undefined>,
-	method: string,
-	options: { onToolCall?: () => void },
-): void {
-	const originalTool = (target[method] as (...args: unknown[]) => unknown).bind(target);
-
-	target[method] = function (...args: unknown[]): unknown {
-		if (args.length === 0 || typeof args[args.length - 1] !== "function") {
-			return originalTool(...args);
-		}
-
-		const handler = args[args.length - 1] as (...a: unknown[]) => unknown;
-
-		const wrappedHandler = async (
-			...handlerArgs: unknown[]
-		): Promise<unknown> => {
-			options.onToolCall?.();
-			try {
-				const result = await handler(...handlerArgs);
-				return capToolResponse(tagToolResponse(result));
-			} catch (err) {
-				if (err instanceof Error && !err.message.startsWith(ERROR_PREFIX)) {
-					err.message = `${ERROR_PREFIX} ${err.message}`;
-				}
-				throw err;
-			}
-		};
-
-		return originalTool(...args.slice(0, -1), wrappedHandler);
-	};
-}
-
-/** v2 keys tools/list by method string; v1 by a zod schema whose method literal is "tools/list". */
-function isToolsListKey(key: unknown): boolean {
-	if (key === "tools/list") return true;
-	const literal = (key as { shape?: { method?: { value?: unknown } } } | null)?.shape?.method?.value;
-	return literal === "tools/list";
-}
-
-function wrapListTools(server: unknown): void {
-	// zod 4 emits `propertyNames: {type:"string"}` for every z.record(). It says
-	// nothing (JSON object keys are always strings), and Gemini rejects the
-	// keyword with a 400, so drop it from tools/list. The SDK registers that
-	// handler lazily on the first tool registration, which runs after this.
-	// v2 keys handlers by method string, and custom (non-spec) methods such as
-	// the skills extension's skills/list use a 3-arg (method, schemas, handler)
-	// form, so forward every argument untouched for anything but tools/list.
-	type SetRequestHandler = (method: unknown, ...rest: unknown[]) => unknown;
-	const protocol = (
-		server as unknown as { server?: { setRequestHandler: SetRequestHandler } }
-	).server;
-	if (typeof protocol?.setRequestHandler !== "function") return;
-	const originalSetRequestHandler = protocol.setRequestHandler.bind(protocol);
-	protocol.setRequestHandler = function (method, ...rest) {
-		const handler = rest[rest.length - 1] as (...a: unknown[]) => unknown;
-		if (!isToolsListKey(method) || rest.length !== 1)
-			return originalSetRequestHandler(method, ...rest);
-		return originalSetRequestHandler(method, async (...a: unknown[]) => {
-			const result = (await handler(...a)) as {
-				tools?: Array<Record<string, unknown>>;
-			};
-			if (!Array.isArray(result?.tools)) return result;
-			return {
-				...result,
-				tools: result.tools.map((tool) => ({
-					...tool,
-					inputSchema: stripStringPropertyNames(tool.inputSchema),
-					...(tool.outputSchema
-						? { outputSchema: stripStringPropertyNames(tool.outputSchema) }
-						: {}),
-				})),
-			};
+export function withToolIdentity<T extends abstract new (...args: any[]) => object>(
+	Base: T,
+	options: ToolIdentityOptions = {},
+): T {
+	abstract class IdentifiedServer extends Base {}
+	const baseProto = Base.prototype as Record<string, unknown>;
+	for (const method of ["registerTool", "tool"]) {
+		const original = baseProto[method];
+		if (typeof original !== "function") continue;
+		Object.defineProperty(IdentifiedServer.prototype, method, {
+			configurable: true,
+			writable: true,
+			value: function (this: object, ...args: unknown[]): unknown {
+				return (original as ToolHandler).apply(
+					this,
+					prepareToolRegistration(args, options),
+				);
+			},
 		});
-	};
+	}
+	return IdentifiedServer as unknown as T;
+}
+
+/** Apply identity to the callback and quiet record keys in the schemas of one registration call. */
+function prepareToolRegistration(
+	args: unknown[],
+	options: ToolIdentityOptions,
+): unknown[] {
+	if (args.length === 0 || typeof args[args.length - 1] !== "function") return args;
+	const seen = new WeakSet<object>();
+	for (const arg of args.slice(1, -1)) quietStringRecordKeys(arg, seen);
+	return [
+		...args.slice(0, -1),
+		identifyToolHandler(args[args.length - 1] as ToolHandler, options),
+	];
+}
+
+interface ZodLike {
+	_zod: { def: Record<string, unknown> };
+}
+
+function isZodSchema(value: unknown): value is ZodLike {
+	return (
+		value !== null &&
+		typeof value === "object" &&
+		typeof (value as { _zod?: { def?: unknown } })._zod?.def === "object"
+	);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	if (value === null || typeof value !== "object") return false;
+	const proto = Object.getPrototypeOf(value);
+	return proto === Object.prototype || proto === null;
+}
+
+/** A bare z.string() key: converts to exactly `propertyNames: {type:"string"}`. */
+function isBareStringKey(key: unknown): boolean {
+	if (!isZodSchema(key)) return false;
+	const def = key._zod.def;
+	return (
+		def.type === "string" &&
+		def.format === undefined &&
+		!(Array.isArray(def.checks) && def.checks.length > 0) &&
+		!z.globalRegistry.has(key as unknown as z.ZodType)
+	);
 }
 
 /**
- * Return a copy of a JSON Schema with every `propertyNames: {type:"string"}`
- * removed. Other propertyNames constraints (patterns, enums) are kept.
+ * zod 4 converts every z.record(z.string(), …) to JSON Schema with
+ * `propertyNames: {type:"string"}`. It says nothing (JSON object keys are
+ * always strings), and Gemini rejects the keyword with a 400, so tools/list
+ * must not carry it.
+ *
+ * Both SDKs build tools/list JSON Schema with zod's own converter, and zod
+ * merges registry metadata into each schema's output — so registering
+ * `propertyNames: undefined` for a string-keyed record drops the keyword on
+ * v1 (z.toJSONSchema) and v2 (`~standard.jsonSchema`) alike. Records whose
+ * keys actually constrain (patterns, enums, formats) keep their propertyNames.
+ *
+ * Walks zod schemas and plain objects (raw shapes, registration configs);
+ * anything else is ignored.
  */
-export function stripStringPropertyNames(schema: unknown): unknown {
-	if (Array.isArray(schema)) return schema.map(stripStringPropertyNames);
-	if (schema === null || typeof schema !== "object") return schema;
-	const out: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(schema)) {
-		if (
-			key === "propertyNames" &&
-			value !== null &&
-			typeof value === "object" &&
-			Object.keys(value).length === 1 &&
-			(value as Record<string, unknown>).type === "string"
-		) {
-			continue;
-		}
-		out[key] = stripStringPropertyNames(value);
+export function quietStringRecordKeys(
+	value: unknown,
+	seen: WeakSet<object> = new WeakSet(),
+): void {
+	if (value === null || typeof value !== "object" || seen.has(value)) return;
+	seen.add(value);
+	if (Array.isArray(value)) {
+		for (const item of value) quietStringRecordKeys(item, seen);
+		return;
 	}
-	return out;
+	if (isZodSchema(value)) {
+		const def = value._zod.def;
+		if (def.type === "record" && isBareStringKey(def.keyType)) {
+			const schema = value as unknown as z.ZodType;
+			z.globalRegistry.add(schema, {
+				...(z.globalRegistry.get(schema) ?? {}),
+				propertyNames: undefined,
+			});
+		}
+		for (const child of Object.values(def)) quietStringRecordKeys(child, seen);
+		return;
+	}
+	if (isPlainObject(value)) {
+		for (const child of Object.values(value)) quietStringRecordKeys(child, seen);
+	}
 }

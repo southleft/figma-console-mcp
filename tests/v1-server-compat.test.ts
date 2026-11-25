@@ -7,12 +7,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { registerSlotTools } from "../src/core/slot-tools";
-import { wrapServerForIdentity } from "../src/core/identity";
+import { withToolIdentity } from "../src/core/identity";
 
 describe("v1 McpServer runs the v2-style shared tool modules", () => {
 	it("lists, validates, and calls tools", async () => {
-		const server = new McpServer({ name: "cloud", version: "0" });
-		wrapServerForIdentity(server as any);
+		const server = new (withToolIdentity(McpServer))({ name: "cloud", version: "0" });
 		const connector = { getSlots: jest.fn().mockResolvedValue({ success: true, slots: [] }) };
 		registerSlotTools(server as any, async () => connector as any);
 
