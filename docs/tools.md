@@ -26,6 +26,10 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_capture_screenshot` | Render a node from the plugin runtime (reflects unsaved changes) | Local / Cloud |
 | **👁️ Real-Time Awareness** | `figma_get_selection` | Get the nodes currently selected in Figma | Local |
 | | `figma_get_design_changes` | Get buffered document-change events | Local |
+| **✅ Design-System Adherence** | `figma_resolve_components` | Map the UI a request needs to real components; gaps go to the person, not the agent | Local / Cloud |
+| | `figma_audit_adherence` | Score a generated frame: components vs. hand-built look-alikes, tokens vs. hardcoded values | Local / Cloud |
+| | `figma_audit_code_adherence` | Score generated code: system components and tokens vs. re-implementations and literals | Local / Cloud |
+| | `figma_bind_tokens` | Bind spacing, radius, size and type to existing variables; apply text/effect styles by name | Local / Cloud |
 | **🔁 Token Sync** | `figma_export_tokens` | Export Figma variables to DTCG JSON + CSS (replaces Style Dictionary) | Local / Cloud |
 | | `figma_import_tokens` | Push code-side token edits back to Figma (diff-aware merge) | Local / Cloud |
 | **🧬 Design System Extraction** | `figma_ds_analyze` | Scan production codebase(s): component inventory, classification, architecture | Local |
@@ -589,6 +593,101 @@ figma_import_tokens({
 Partial-success semantics throughout — per-variable errors don't fail the batch; results are returned in `applyResult.errors[]`.
 
 **Cloud Mode:** Pass tokens inline via `payload` (single file) or `files` (multi-file). Omit `configPath`. The apply phase works in Cloud Mode because it routes through the paired Desktop Bridge plugin via the Cloud Plugin Relay — transport-agnostic.
+
+---
+
+## ✅ Design-System Adherence Tools
+
+Generate with the design system, and never invent. These tools keep an agent to the components and tokens that exist, tell the person when something is missing, and give an independent grader evidence to judge from. The `generate-with-design-system`, `generate-code-with-design-system` and `grade-generation` skills (served by this server, see [Skills](#skills)) walk through the full workflow.
+
+### `figma_resolve_components`
+
+Run before building. Pass the UI a request needs in plain words; each item comes back as:
+
+- **matched**: build with this component (key and nodeId included)
+- **possible**: something might fit; a person decides
+- **gap**: the system has nothing for it
+
+Matching is deterministic: component names, variant values, descriptions, and a table of UI synonyms (button/CTA, select/dropdown, modal/dialog…). Archived, deprecated and private (`_`, `.`) components are never offered. When the client supports elicitation, the **person** is asked how to handle every possible match and gap (use a candidate, add a labeled `GAP: …` placeholder, or stop). Otherwise the result tells the agent to stop and report the gaps.
+
+```javascript
+figma_resolve_components({
+  needs: ["primary button", "date picker", "user avatar", "pricing card"],
+  libraryFileKeys: ["abc123"]   // optional: published libraries (REST, needs FIGMA_ACCESS_TOKEN)
+})
+```
+
+Each item carries an `action`: `build-with-component`, `placeholder`, `skip`, or `ask-user`. If anything is still `ask-user`, the result includes an instruction to stop before building.
+
+### `figma_audit_adherence`
+
+Run after building. A deterministic audit of a frame (or the selected node):
+
+| Finding | Severity |
+|---|---|
+| Hand-built layer named like a system component (`imitates-component`) | error |
+| New component created inside the composition (`new-component`) | error |
+| Instance of a component outside the allowed libraries (`off-system-component`, with `libraryFileKeys`) | error |
+| Hand-drawn vector (`hand-drawn-vector`), frame that looks like a hand-built button/card/… (`looks-hand-built`) | warning |
+| Color, spacing, radius, typography or effect not bound to a variable or style | warning |
+| Styling overridden inside an instance (`style-override`) | info |
+
+It returns `componentCoverage`, `tokenCoverage`, a 0–100 `score`, the components used (local or library), declared `GAP: …` placeholders, and `pass` (no errors, score ≥ `minScore`, default 90). It runs through the Desktop Bridge's code execution, so no plugin update is needed.
+
+```javascript
+figma_audit_adherence({ nodeId: "12:345", minScore: 90 })
+```
+
+### `figma_audit_code_adherence`
+
+The code-side twin. A static check of generated code (React, Vue, Svelte, HTML, CSS):
+
+- **errors**: re-implementing a component the system has (`reimplements-component`; wrappers that render the system component are fine), and referencing a token that doesn't exist (`unknown-token`, when `tokensPath` or `tokens` is given)
+- **warnings**: raw `<button>`, `<input>`, `<select>`, `<textarea>`, `<dialog>` or `<table>` where the system has a component; hardcoded colors and spacing/radius/type lengths; Tailwind arbitrary values like `bg-[#fff]` or `p-[13px]`
+- **info**: inline styles
+
+```javascript
+figma_audit_code_adherence({
+  files: ["src/pages/Checkout.tsx"],
+  designSystem: {
+    packages: ["@/components/ui"],      // imports that are the design system
+    componentsDir: "src/components/ui", // learn component names from file names (Local Mode)
+    tokensPath: "src/index.css"         // CSS custom properties or DTCG JSON
+  }
+})
+```
+
+Every finding has a `file:line`. Pass `sources` (`{ path, content }`) instead of `files` in Cloud Mode.
+
+### `figma_bind_tokens`
+
+Binds a node's spacing, radius, size, stroke, opacity and typography to existing variables, and applies text or effect styles, by name or id. Shorthands: `padding`, `paddingX`, `paddingY`, `gap`, `cornerRadius`.
+
+```javascript
+figma_bind_tokens({
+  nodeId: "12:345",
+  bindings: { padding: "space/md", gap: "space/sm", cornerRadius: "radius/lg" },
+  textStyle: "Body/Medium"   // text nodes
+})
+```
+
+It never creates a variable or style. An unknown or ambiguous name fails for that field and lists the closest real names, so a missing token gets reported instead of replaced with a raw value. For colors, use `figma_set_fills` / `figma_set_strokes` with a variable.
+
+### Skills
+
+The server ships skills (Claude Code shows them as `/figma-console:<name>`; restart Claude Code after an update to pick up changes):
+
+| Skill | Use it to |
+|---|---|
+| `generate-with-design-system` | Build a screen or section in Figma from the system, stopping on gaps |
+| `generate-code-with-design-system` | The same for code |
+| `grade-generation` | Have an independent grader subagent check a generation and return PASS/FAIL with evidence |
+| `design-code-parity` | Keep a Figma library and its code library in line |
+| `design-tokens-sync` | Export and import tokens between Figma and code |
+| `accessibility-review` | Review designs and code against WCAG |
+| `troubleshoot-connection` | Fix connection, routing, token and timeout problems |
+
+Skills over MCP needs a client that supports the extension (Claude Code v2.1.331 or later).
 
 ---
 
