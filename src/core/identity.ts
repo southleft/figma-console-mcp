@@ -131,6 +131,16 @@ export function capToolResponse(
 	};
 }
 
+/**
+ * Apply what identifyToolHandler applies to a result (`_mcp` tag + size cap)
+ * outside a handler — e.g. a task's final result delivered by tasks/get.
+ * Idempotent; results without a content array (a task handle, an
+ * input-required round) pass through unchanged.
+ */
+export function stampToolResult(result: unknown): unknown {
+	return capToolResponse(tagToolResponse(result));
+}
+
 export interface ToolIdentityOptions {
 	/** Runs at the start of every tool call (local mode uses it for activity tracking). */
 	onToolCall?: () => void;

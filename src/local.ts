@@ -99,6 +99,7 @@ import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
 import { registerLayoutTools } from "./core/layout-tools.js";
 import { applyToolAnnotations } from "./core/tool-annotations.js";
+import { LOCAL_TASK_TOOLS, defaultTaskStore, enableTasksForTools } from "./core/tasks.js";
 import { registerAdherenceTools } from "./core/adherence-tools.js";
 import { registerTokenBindingTools } from "./core/token-binding-tools.js";
 
@@ -4006,6 +4007,11 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			logger.warn({ unclassified }, "Tools registered without annotation hints");
 		}
 
+		// MCP Tasks pilot: slow tools answer 2026-07-28 clients that declare the
+		// tasks extension with a task handle (the client polls tasks/get) instead
+		// of blocking. Every other client still gets the synchronous result.
+		enableTasksForTools(server, LOCAL_TASK_TOOLS);
+
 		logger.info(
 			"All MCP tools registered successfully (including write operations)",
 		);
@@ -4360,6 +4366,9 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 	 */
 	async shutdown(): Promise<void> {
 		logger.info("Shutting down MCP server...");
+
+		// Signal any running MCP tasks to stop (their results can't outlive the process).
+		defaultTaskStore.abortAll();
 
 		try {
 			if (this.httpEndpoint) {
