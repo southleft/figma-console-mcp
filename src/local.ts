@@ -3419,6 +3419,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// Design-system adherence: resolve needs → components (gaps go to the
 		// person), and audit generated compositions for invented / hardcoded work.
 		registerAdherenceTools(server, {
+			readFile: async (path: string) => (await import("node:fs/promises")).readFile(path, "utf8"),
+			listDir: async (path: string) => (await import("node:fs/promises")).readdir(path),
 			getDesktopConnector: () => this.getDesktopConnector(),
 			getFigmaAPI: () => this.getFigmaAPI(),
 			getLocalCatalog: async () => {

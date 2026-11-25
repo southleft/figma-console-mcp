@@ -23,10 +23,15 @@ import {
 } from "./adherence/matching.js";
 import { GAP_PREFIX, buildAuditCode } from "./adherence/audit-code.js";
 import { extractFileKey } from "./figma-api.js";
+import { auditCode, type CodeSource, componentNamesFromFiles, scoreCodeAudit, tokenNamesFrom } from "./adherence/code-audit.js";
 
 const logger = createChildLogger({ component: "adherence-tools" });
 
 export interface AdherenceToolDeps {
+	/** Local mode: read files from disk (absent in Cloud Mode — pass `sources`). */
+	readFile?: (path: string) => Promise<string>;
+	/** Local mode: list a directory's file names. */
+	listDir?: (path: string) => Promise<string[]>;
 	getDesktopConnector: () => Promise<any>;
 	/** Components defined in the active file (local design system), if any. */
 	getLocalCatalog?: () => Promise<CatalogEntry[]>;
@@ -400,6 +405,92 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 				});
 			} catch (err) {
 				logger.error({ err }, "figma_audit_adherence failed");
+				return text({ error: err instanceof Error ? err.message : String(err) }, true);
+			}
+		},
+	);
+
+	server.registerTool(
+		"figma_audit_code_adherence",
+		{
+			description:
+				"Check generated CODE against the design system — the code-side twin of figma_audit_adherence and the evidence for an independent grader. Flags: re-implementing a component the system already has (error), references to tokens that don't exist (error, when tokensPath/tokens is given), raw <button>/<input>/<select>/<textarea>/<dialog>/<table> where the system has a component, hardcoded colors and spacing/radius/type lengths instead of tokens, Tailwind arbitrary values like bg-[#fff] or p-[13px], and inline styles. Counts system component usage from imports of designSystem.packages. Returns componentCoverage, tokenCoverage, a 0–100 score and pass/fail (minScore, default 90; any error fails), with file:line for every finding. Static and deterministic. Pass files (local paths) or sources ({path, content}).",
+			inputSchema: z.object({
+				files: z.array(z.string()).optional().describe("Local file paths to check (Local Mode)."),
+				sources: z
+					.array(z.object({ path: z.string(), content: z.string() }))
+					.optional()
+					.describe("Inline file contents (works in every mode)."),
+				designSystem: z
+					.object({
+						packages: z.array(z.string()).optional().describe('Import sources that are the design system, e.g. ["@acme/ui", "@/components/ui"].'),
+						components: z.array(z.string()).optional().describe("Component names the system provides, if not discoverable from imports."),
+						componentsDir: z
+							.string()
+							.optional()
+							.describe('Folder of the system\'s component files (e.g. "src/components/ui"); names come from file names (dropdown-menu.tsx → DropdownMenu). Local Mode.'),
+						tokensPath: z.string().optional().describe("Token file (CSS custom properties or DTCG/nested JSON) — enables unknown-token checks."),
+						tokens: z.array(z.string()).optional().describe("Token names, as an alternative to tokensPath."),
+					})
+					.describe("What counts as the design system."),
+				minScore: z.number().min(0).max(100).optional().describe("Pass threshold. Default 90."),
+				maxFindings: z.number().int().min(1).max(500).optional().describe("Findings returned. Default 100."),
+			}),
+		},
+		async (args) => {
+			try {
+				const sources: CodeSource[] = [...(args.sources ?? [])];
+				const unreadable: string[] = [];
+				if (args.files?.length) {
+					if (!deps.readFile) {
+						return text({ error: "Reading files needs Local Mode. Pass `sources` with the file contents instead." }, true);
+					}
+					for (const f of args.files) {
+						try {
+							sources.push({ path: f, content: await deps.readFile(f) });
+						} catch {
+							unreadable.push(f);
+						}
+					}
+				}
+				if (sources.length === 0) return text({ error: "No code to check: pass files or sources.", unreadable }, true);
+
+				let components = args.designSystem.components;
+				if (args.designSystem.componentsDir) {
+					if (!deps.listDir) return text({ error: "componentsDir needs Local Mode; pass designSystem.components instead." }, true);
+					components = [...(components ?? []), ...componentNamesFromFiles(await deps.listDir(args.designSystem.componentsDir))];
+				}
+				let tokens = args.designSystem.tokens;
+				if (args.designSystem.tokensPath) {
+					if (!deps.readFile) return text({ error: "tokensPath needs Local Mode; pass designSystem.tokens instead." }, true);
+					tokens = [...(tokens ?? []), ...tokenNamesFrom(args.designSystem.tokensPath, await deps.readFile(args.designSystem.tokensPath))];
+				}
+				const result = auditCode(sources, { ...args.designSystem, components, tokens });
+				const verdict = scoreCodeAudit(result, args.minScore ?? 90);
+				const sevRank: Record<string, number> = { error: 0, warning: 1, info: 2 };
+				result.findings.sort((a, b) => sevRank[a.severity] - sevRank[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
+				const byRule: Record<string, number> = {};
+				for (const f of result.findings) byRule[f.rule] = (byRule[f.rule] ?? 0) + 1;
+				const maxFindings = args.maxFindings ?? 100;
+				return text({
+					success: true,
+					...verdict,
+					minScore: args.minScore ?? 90,
+					files: result.files,
+					...(unreadable.length ? { unreadable } : {}),
+					stats: result.stats,
+					componentsUsed: result.componentsUsed,
+					counts: { errors: verdict.errors, warnings: verdict.warnings, byRule },
+					findings: result.findings.slice(0, maxFindings),
+					findingsTruncated: result.findings.length > maxFindings,
+					...(args.designSystem.packages?.length || components?.length
+						? {}
+						: { warning: "No designSystem.packages or components given, so component usage and re-implementations can't be checked — only tokens and literals." }),
+					scoring:
+						"componentCoverage = system component uses ÷ (uses + re-implementations + raw elements the system covers). tokenCoverage = valid token references ÷ (token references + hardcoded literals). score = mean × 100. Fails on any error or score < minScore.",
+				});
+			} catch (err) {
+				logger.error({ err }, "figma_audit_code_adherence failed");
 				return text({ error: err instanceof Error ? err.message : String(err) }, true);
 			}
 		},

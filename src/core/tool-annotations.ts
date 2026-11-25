@@ -98,6 +98,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
 	// Design-system adherence (resolve may ask the person; neither writes).
 	figma_resolve_components: "read",
 	figma_audit_adherence: "read",
+	figma_audit_code_adherence: "read",
 
 	// ── Audits & reports (compute only) ──────────────────────────────────────
 	figma_lint_design: "read",
