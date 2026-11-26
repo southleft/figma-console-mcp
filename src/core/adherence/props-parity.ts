@@ -47,6 +47,8 @@ export interface ComponentDecisions {
 	omit?: string[];
 	/** Code prop → the Figma axis/property it is deliberately paired with. */
 	pairWith?: Record<string, string>;
+	/** The component's public props per its contract; props outside it (runtime state) are ignored. */
+	publicProps?: string[];
 }
 
 export interface PropsParity {
@@ -344,7 +346,8 @@ export function compareComponentProps(
 
 	// Recorded pairings onto STATE axes count as mapped.
 	for (const [prop] of Object.entries(decisions.pairWith ?? {})) usedProps.add(prop);
-	const codeOnlyFinal = codeOnlyProps.filter((p) => !usedProps.has(p.name));
+	const publicProps = decisions.publicProps ? new Set(decisions.publicProps) : null;
+	const codeOnlyFinal = codeOnlyProps.filter((p) => !usedProps.has(p.name) && (!publicProps || publicProps.has(p.name)));
 	const driftFinal =
 		axes.some((a) => a.mappedBy === "none" || a.figmaOnlyValues.length || a.codeOnlyValues.length) ||
 		codeOnlyFinal.length > 0 ||
@@ -369,7 +372,7 @@ export function decisionsFromContracts(contracts: any[]): Map<string, ComponentD
 	for (const c of contracts) {
 		const tag: string | undefined = c?.name ?? c?.id;
 		if (!tag) continue;
-		const d: ComponentDecisions = { omit: [], pairWith: {} };
+		const d: ComponentDecisions = { omit: [], pairWith: {}, publicProps: (c.props ?? []).map((p: any) => p?.name).filter(Boolean) };
 		for (const p of c.props ?? []) {
 			const f = p?.bindings?.figma;
 			if (!f || !p.name) continue;

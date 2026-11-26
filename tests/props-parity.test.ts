@@ -101,3 +101,14 @@ describe("recorded decisions", () => {
 		expect(r.status).toBe("drift");
 	});
 });
+
+describe("contract public props", () => {
+	it("ignores runtime props the contract doesn't declare", () => {
+		const tabs = indexCem({ modules: [{ declarations: [{ name: "ALTabs", tagName: "al-tabs", attributes: [attr("isScrollable", "boolean"), attr("variant", "'pill'")], slots: [] }] }] }, ["AL"]).get("tabs")!;
+		const dec = decisionsFromContracts([{ name: "al-tabs", props: [{ name: "variant", bindings: { figma: { pairWith: "Variant" } } }] }]).get("tabs");
+		const r = compareComponentProps({ name: "Tabs", variantAxes: [{ name: "Variant", values: ["Default", "Pill"] }] }, tabs, dec);
+		expect(r.codeOnlyProps).toEqual([]);
+		expect(r.status).toBe("in-sync");
+	});
+});
+
