@@ -98,7 +98,8 @@ function isDsSource(from: string, packages: string[]): boolean {
 
 /**
  * Every import statement in a file, including ones a formatter wrapped over
- * several lines (`import {\n  Button,\n  Card,\n} from "@acme/ui"`).
+ * several lines (an import clause with one name per line, closed by
+ * the package specifier on the last line).
  * `line` is where the statement starts; `endLine` where it ends.
  */
 const IMPORT_STMT_RE = /^[ \t]*import\s+(?:type\s+)?([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/gm;
