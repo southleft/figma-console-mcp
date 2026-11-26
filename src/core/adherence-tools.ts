@@ -26,6 +26,7 @@ import {
 import { GAP_PREFIX, buildAuditCode } from "./adherence/audit-code.js";
 import { extractFileKey } from "./figma-api.js";
 import { auditCode, type CodeSource, componentNamesFromFiles, scoreCodeAudit, tokenNamesFrom } from "./adherence/code-audit.js";
+import { compareComponentProps, indexCem } from "./adherence/props-parity.js";
 
 const logger = createChildLogger({ component: "adherence-tools" });
 
@@ -107,14 +108,15 @@ const out = [];
 for (const n of figma.root.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPONENT"] })) {
   if (out.length >= 5000) break;
   if (n.type === "COMPONENT" && n.parent && n.parent.type === "COMPONENT_SET") continue;
-  let axes = [];
+  let axes = [], props = [];
   try {
-    const defs = n.type === "COMPONENT_SET" ? n.componentPropertyDefinitions : {};
+    const defs = n.componentPropertyDefinitions || {};
     axes = Object.entries(defs).filter(([, d]) => d.type === "VARIANT").map(([k, d]) => ({ name: k.split("#")[0], values: d.variantOptions || [] }));
+    props = Object.entries(defs).filter(([, d]) => d.type !== "VARIANT").map(([k, d]) => ({ name: k.split("#")[0], type: d.type }));
   } catch (e) {}
   let dv;
   try { if (n.type === "COMPONENT_SET" && n.defaultVariant) dv = { name: n.defaultVariant.name, key: n.defaultVariant.key, nodeId: n.defaultVariant.id }; } catch (e) {}
-  out.push({ name: n.name, key: n.key, nodeId: n.id, type: n.type, description: n.description || undefined, variantAxes: axes, defaultVariant: dv, source: "local" });
+  out.push({ name: n.name, key: n.key, nodeId: n.id, type: n.type, description: n.description || undefined, variantAxes: axes, properties: props, defaultVariant: dv, source: "local" });
 }
 return out;`;
 	const res = await connector.executeCodeViaUI(code, 60000, fileKey);
@@ -169,6 +171,10 @@ const RESOLVE_DESCRIPTION = `Before generating a design or code from a design sy
 When the client supports it, the PERSON is asked how to handle each possible/gap item (stop, use a candidate, or a clearly labeled "${GAP_PREFIX} …" placeholder) and the decisions are returned. Otherwise the result says to stop and report the gaps to the user. Never substitute a hand-built look-alike for a gap. Searches the active file's components by default; pass libraryFileKeys/libraryFileUrls for published libraries (REST, needs FIGMA_ACCESS_TOKEN). Then verify the result with figma_audit_adherence.`;
 
 const AUDIT_DESCRIPTION = `Score how faithfully a generated composition uses the design system — the check to run after building a screen/section, and the evidence for an independent grader. Walks the frame (nodeId, or the single selected node) and reports: component instances used (local vs. library, by name), hand-built layers imitating a system component (error), new components created inside the composition (error), hand-drawn vectors (warning), styling not bound to variables/styles (colors, spacing, radius, typography, effects), instance style overrides, and declared "${GAP_PREFIX} …" placeholders. Returns componentCoverage, tokenCoverage, a 0–100 score, and pass/fail against minScore (default 90; any error fails). Pass libraryFileKeys to also fail instances of components that aren't from those libraries (off-system). Deterministic: same file, same result. Requires the Desktop Bridge.`;
+
+function libraryKeysUsed(args: { libraryFileKeys?: string[] }): boolean {
+	return (args.libraryFileKeys ?? []).length > 0;
+}
 
 export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDeps): void {
 	server.registerTool(
@@ -538,23 +544,71 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 				components: z.array(z.string()).optional().describe("Code component names (alternative or addition to componentsDir)."),
 				libraryFileKeys: z.array(z.string()).optional().describe("Published Figma library file keys (REST)."),
 				includeLocal: z.boolean().optional().describe("Include components defined in the active Figma file. Default true."),
+				manifestPath: z
+					.string()
+					.optional()
+					.describe("custom-elements.json (Custom Elements Manifest) of the code library — enables property-level parity: Figma variant axes and component properties vs. code props and slots. React wrappers built with @lit/react share these props. Local Mode."),
+				manifestJson: z.string().optional().describe("The manifest's contents, as an alternative to manifestPath (any mode)."),
+				classPrefixes: z.array(z.string()).optional().describe('Class-name prefixes to strip when matching, e.g. ["AL"] for ALButton → Button.'),
 			}),
 		},
 		async (args) => {
 			try {
+				let cem: any = null;
+				if (args.manifestJson) cem = JSON.parse(args.manifestJson);
+				else if (args.manifestPath) {
+					if (!deps.readFile) return text({ error: "manifestPath needs Local Mode; pass manifestJson instead." }, true);
+					cem = JSON.parse(await deps.readFile(args.manifestPath));
+				}
+				const cemIndex = cem ? indexCem(cem, args.classPrefixes ?? []) : null;
 				let code = [...(args.components ?? [])];
+				if (cemIndex && code.length === 0 && !args.componentsDir) {
+					// Code components straight from the manifest's custom elements.
+					const names = new Set<string>();
+					for (const c of cemIndex.values()) {
+						const raw = c.tagName ? c.tagName.replace(/^[a-z]+-/, "") : c.className ?? "";
+						names.add(raw.split("-").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : "")).join(""));
+					}
+					code = [...names].filter(Boolean);
+				}
 				if (args.componentsDir) {
 					if (!deps.listDir) return text({ error: "componentsDir needs Local Mode; pass components instead." }, true);
 					code = [...code, ...componentNamesFromFiles(await deps.listDir(args.componentsDir))];
 				}
 				code = [...new Set(code)];
 				if (code.length === 0) return text({ error: "No code components given: pass componentsDir or components." }, true);
-				const { catalog, sources } = await loadCatalog(deps, args.libraryFileKeys ?? [], args.includeLocal !== false);
+				// Property-level parity needs component property definitions, which only
+				// the plugin can read — so with a manifest, the local side comes from it.
+				const { catalog, sources } = await loadCatalog(
+					cemIndex ? { ...deps, getLocalCatalog: undefined } : deps,
+					args.libraryFileKeys ?? [],
+					args.includeLocal !== false,
+				);
 				if (catalog.length === 0) {
 					return text({ error: "No Figma components found to compare against.", sources, hint: "Open the Desktop Bridge in the library file, or pass libraryFileKeys." }, true);
 				}
 				const r = pairLibraries(catalog, code);
+				let props: any[] | undefined;
+				if (cemIndex) {
+					const byKey = new Map(catalog.map((c) => [c.key, c]));
+					props = r.pairs.map((p) => {
+						const fig = byKey.get(p.figma.key)!;
+						const codeComp = cemIndex.get(p.code.toLowerCase().replace(/[^a-z0-9]/g, "")) ?? cemIndex.get(fig.name.split("/").pop()!.toLowerCase().replace(/[^a-z0-9]/g, ""));
+						if (!codeComp) return { component: fig.name, status: "no-manifest-entry", note: `No custom element in the manifest matches "${p.code}".` };
+						if (!fig.properties && libraryKeysUsed(args)) {
+							return { component: fig.name, status: "unknown", note: "Property definitions are only readable from the open file (Desktop Bridge), not from a published library over REST." };
+						}
+						return compareComponentProps({ name: fig.name, variantAxes: fig.variantAxes ?? [], properties: fig.properties }, codeComp);
+					});
+				}
 				const coverage = r.pairs.length / Math.max(1, r.pairs.length + r.figmaOnly.length + r.codeOnly.length);
+				const propSummary = props
+					? {
+							inSync: props.filter((x) => x.status === "in-sync").length,
+							drift: props.filter((x) => x.status === "drift").length,
+							unchecked: props.filter((x) => x.status !== "in-sync" && x.status !== "drift").length,
+						}
+					: undefined;
 				return text({
 					success: true,
 					summary: {
@@ -562,12 +616,21 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 						figmaOnly: r.figmaOnly.length,
 						codeOnly: r.codeOnly.length,
 						coverage: Math.round(coverage * 1000) / 1000,
+						...(propSummary ? { properties: propSummary } : {}),
 					},
 					sources,
 					pairs: r.pairs,
 					figmaOnly: r.figmaOnly,
 					codeOnly: r.codeOnly,
 					...(r.retiredInFigma.length ? { retiredInFigma: r.retiredInFigma } : {}),
+					...(props
+						? {
+								propertyParity: props.filter((x) => x.status !== "in-sync"),
+								inSyncComponents: props.filter((x) => x.status === "in-sync").map((x) => x.component),
+								propertyRules:
+									"State axes: hover/focus/active need no prop; other states (Disabled, Error…) must map to a boolean prop. Other axes: same-name enum prop (values compared; Figma 'Default' = the code's omitted value), or a boolean flag (Shape=Pill → isPill, Label=Hidden → hideLabel). Figma 'Slot X' / 'Show X' / 'Text' properties map to slots or flags. Code-only props exclude non-visual ones (href, aria-*, value…).",
+							}
+						: {}),
 					nextSteps: [
 						"For each pair, run figma_check_design_parity (nodeId + codeSpec from the code file) to find property-level drift.",
 						"figmaOnly / codeOnly are gaps on the other side: report them to the person; don't create components to close them without approval.",

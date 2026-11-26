@@ -24,6 +24,8 @@ export interface CatalogEntry {
 	variantAxes?: Array<{ name: string; values: string[] }>;
 	/** For component sets: the variant to instantiate by default (instantiate variant keys, not set keys). */
 	defaultVariant?: { name: string; key: string; nodeId?: string };
+	/** Non-variant component properties (BOOLEAN / TEXT / INSTANCE_SWAP / SLOT), when known. */
+	properties?: Array<{ name: string; type: string }>;
 	/** "local" (this file) or the library file key it came from */
 	source: string;
 }

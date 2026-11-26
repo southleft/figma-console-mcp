@@ -685,7 +685,27 @@ figma_check_library_parity({
 })
 ```
 
-Then run `figma_check_design_parity` on each pair for property-level drift. The tool reports differences and decides nothing. Treat one-sided components as gaps to raise with the team.
+**Property-level parity.** Pass the code library's Custom Elements Manifest (`custom-elements.json`) and each pair is also compared prop by prop. React wrappers built with `@lit/react` share the same props, so one manifest covers both.
+
+```javascript
+figma_check_library_parity({
+  manifestPath: "libs/ui/custom-elements.json",
+  componentsDir: "libs/ui/components",
+  classPrefixes: ["AL"]          // ALButton → Button
+})
+```
+
+Mapping rules, in order (each mapping says which rule made it):
+- **State axes**: Hover/Focus/Active need no prop; other states (Disabled, Error…) must map to a boolean (`isDisabled`, `isError`).
+- **Same name**: `Variant` ↔ `variant`, values compared. Figma's `Default` is the value code expresses by omitting the prop.
+- **Same values, different name**: `Orientation: Row/Column` ↔ `direction: 'row' | 'column'`; one Figma value may be the code's omitted default (`Horizontal` ↔ no `variant`).
+- **Slot toggles**: `Footer: Yes/No` ↔ a `footer` slot.
+- **Boolean flags**: `Shape: Default/Pill` ↔ `isPill`; `Shape: Label/Dot` ↔ `isDot`; `Label: Hidden` ↔ `hideLabel`.
+- **Content properties**: `Show Text` ↔ `hideText`, `Slot Before` ↔ a `before` slot, `Show Helper` ↔ `fieldNote`.
+
+It reports Figma values and properties with no code counterpart, appearance-affecting code props with no Figma counterpart (non-visual ones like `href` or `aria-*` are ignored), and the components that are fully in sync. Property definitions are read from the open file through the Desktop Bridge.
+
+Then run `figma_check_design_parity` on a pair to compare visual specs (colors, spacing, typography) against code. The tool reports differences and decides nothing. Treat one-sided components and props as gaps to raise with the team.
 
 ### Skills
 
