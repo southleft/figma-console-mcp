@@ -26,7 +26,7 @@ import {
 import { GAP_PREFIX, buildAuditCode } from "./adherence/audit-code.js";
 import { extractFileKey } from "./figma-api.js";
 import { auditCode, type CodeSource, componentNamesFromFiles, scoreCodeAudit, tokenNamesFrom } from "./adherence/code-audit.js";
-import { compareComponentProps, indexCem } from "./adherence/props-parity.js";
+import { type ComponentDecisions, compareComponentProps, decisionsFromContracts, indexCem } from "./adherence/props-parity.js";
 
 const logger = createChildLogger({ component: "adherence-tools" });
 
@@ -550,6 +550,20 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 					.describe("custom-elements.json (Custom Elements Manifest) of the code library — enables property-level parity: Figma variant axes and component properties vs. code props and slots. React wrappers built with @lit/react share these props. Local Mode."),
 				manifestJson: z.string().optional().describe("The manifest's contents, as an alternative to manifestPath (any mode)."),
 				classPrefixes: z.array(z.string()).optional().describe('Class-name prefixes to strip when matching, e.g. ["AL"] for ALButton → Button.'),
+				contractsDir: z
+					.string()
+					.optional()
+					.describe("Folder of component contract files (*.contract.json with props[].bindings.figma.omit / pairWith) — decisions already on record: omitted props aren't drift, and recorded pairings beat automatic matching. Local Mode."),
+				decisions: z
+					.record(
+						z.string(),
+						z.object({
+							omit: z.array(z.string()).optional().describe("Code props deliberately not in Figma."),
+							pairWith: z.record(z.string(), z.string()).optional().describe("Code prop → Figma axis/property name."),
+						}),
+					)
+					.optional()
+					.describe('Inline decisions per component (key: code component or tag name), e.g. { "button": { "omit": ["fullWidth"], "pairWith": { "isPill": "Shape" } } }.'),
 			}),
 		},
 		async (args) => {
@@ -561,6 +575,22 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 					cem = JSON.parse(await deps.readFile(args.manifestPath));
 				}
 				const cemIndex = cem ? indexCem(cem, args.classPrefixes ?? []) : null;
+				const decisionIndex = new Map<string, ComponentDecisions>();
+				if (args.contractsDir) {
+					if (!deps.listDir || !deps.readFile) return text({ error: "contractsDir needs Local Mode; pass decisions instead." }, true);
+					const files = (await deps.listDir(args.contractsDir)).filter((f) => f.endsWith(".contract.json"));
+					const contracts: any[] = [];
+					for (const f of files) {
+						try {
+							contracts.push(JSON.parse(await deps.readFile(`${args.contractsDir.replace(/\/$/, "")}/${f}`)));
+						} catch {}
+					}
+					for (const [k, v] of decisionsFromContracts(contracts)) decisionIndex.set(k, v);
+				}
+				for (const [k, v] of Object.entries(args.decisions ?? {})) {
+					decisionIndex.set(k.toLowerCase().replace(/[^a-z0-9]/g, ""), v);
+					decisionIndex.set(k.toLowerCase().replace(/^[a-z]+-/, "").replace(/[^a-z0-9]/g, ""), v);
+				}
 				let code = [...(args.components ?? [])];
 				if (cemIndex && code.length === 0 && !args.componentsDir) {
 					// Code components straight from the manifest's custom elements.
@@ -598,7 +628,10 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 						if (!fig.properties && libraryKeysUsed(args)) {
 							return { component: fig.name, status: "unknown", note: "Property definitions are only readable from the open file (Desktop Bridge), not from a published library over REST." };
 						}
-						return compareComponentProps({ name: fig.name, variantAxes: fig.variantAxes ?? [], properties: fig.properties }, codeComp);
+						const nk = (x?: string) => (x ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+						const dec =
+							decisionIndex.get(nk(codeComp.tagName)) ?? decisionIndex.get(nk(p.code)) ?? decisionIndex.get(nk(fig.name.split("/").pop()));
+						return compareComponentProps({ name: fig.name, variantAxes: fig.variantAxes ?? [], properties: fig.properties }, codeComp, dec);
 					});
 				}
 				const coverage = r.pairs.length / Math.max(1, r.pairs.length + r.figmaOnly.length + r.codeOnly.length);

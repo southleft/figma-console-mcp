@@ -41,6 +41,14 @@ export interface AxisComparison {
 	stateProps?: Record<string, string | null>;
 }
 
+/** Decisions already on record for one component (e.g. from design-system contracts). */
+export interface ComponentDecisions {
+	/** Code props deliberately not expressed in Figma. */
+	omit?: string[];
+	/** Code prop → the Figma axis/property it is deliberately paired with. */
+	pairWith?: Record<string, string>;
+}
+
 export interface PropsParity {
 	component: string;
 	codeTag?: string;
@@ -50,6 +58,8 @@ export interface PropsParity {
 	codeOnlyProps: Array<{ name: string; type: string }>;
 	/** Figma content properties (Show X / Slot X / Text) with no code prop or slot */
 	figmaOnlyProperties: string[];
+	/** Code props skipped because a recorded decision omits them from Figma. */
+	omittedByDecision?: string[];
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -136,12 +146,55 @@ function findBooleanFor(code: CodeComponent, hints: string[]): CodeProp | undefi
 	return undefined;
 }
 
-export function compareComponentProps(figma: FigmaComponentShape, code: CodeComponent): PropsParity {
+export function compareComponentProps(
+	figma: FigmaComponentShape,
+	code: CodeComponent,
+	decisions: ComponentDecisions = {},
+): PropsParity {
 	const axes: AxisComparison[] = [];
 	const usedProps = new Set<string>();
+	const omitted = new Set(decisions.omit ?? []);
+	for (const o of omitted) usedProps.add(o);
+
+	// Recorded pairings win over every heuristic.
+	const pairedTo = new Map<string, CodeProp[]>();
+	for (const [prop, axisName] of Object.entries(decisions.pairWith ?? {})) {
+		const cp = code.props.find((p) => p.name === prop);
+		if (!cp) continue;
+		pairedTo.set(norm(axisName), [...(pairedTo.get(norm(axisName)) ?? []), cp]);
+	}
 
 	for (const axis of figma.variantAxes) {
 		const fValues = axis.values;
+		const forced = pairedTo.get(norm(axis.name));
+		if (forced && !STATE_AXIS.test(axis.name)) {
+			for (const p of forced) usedProps.add(p.name);
+			const enumProp = forced.find((p) => p.kind === "enum");
+			if (enumProp) {
+				const cv = new Set((enumProp.values ?? []).map(normValue));
+				const fv = new Set(fValues.map(normValue));
+				const missing = fValues.filter((v) => !cv.has(normValue(v)) && normValue(v) !== "default");
+				axes.push({
+					figmaAxis: axis.name,
+					codeProp: enumProp.name,
+					mappedBy: "same-name",
+					// One unmatched Figma value is the code's omitted default.
+					figmaOnlyValues: missing.length <= 1 ? [] : missing,
+					codeOnlyValues: (enumProp.values ?? []).filter((v) => !fv.has(normValue(v))),
+				});
+			} else {
+				// Boolean pairings: the axis must have a value for "on" besides its off value.
+				const hasOn = fValues.some((v) => !OFF_VALUES.has(norm(v)));
+				axes.push({
+					figmaAxis: axis.name,
+					codeProp: forced.map((p) => p.name).join(", "),
+					mappedBy: "boolean-flag",
+					figmaOnlyValues: [],
+					codeOnlyValues: hasOn || fValues.length >= 2 ? [] : forced.map((p) => `${p.name}=true`),
+				});
+			}
+			continue;
+		}
 		// 1. State axis: interactions need no prop; other states need a boolean.
 		if (STATE_AXIS.test(axis.name)) {
 			const stateProps: Record<string, string | null> = {};
@@ -289,9 +342,42 @@ export function compareComponentProps(figma: FigmaComponentShape, code: CodeComp
 		.filter((p) => !usedProps.has(p.name) && !NON_VISUAL_PROPS.has(norm(p.name)) && (p.kind === "enum" || p.kind === "boolean"))
 		.map((p) => ({ name: p.name, type: p.typeText }));
 
-	const drift =
+	// Recorded pairings onto STATE axes count as mapped.
+	for (const [prop] of Object.entries(decisions.pairWith ?? {})) usedProps.add(prop);
+	const codeOnlyFinal = codeOnlyProps.filter((p) => !usedProps.has(p.name));
+	const driftFinal =
 		axes.some((a) => a.mappedBy === "none" || a.figmaOnlyValues.length || a.codeOnlyValues.length) ||
-		codeOnlyProps.length > 0 ||
+		codeOnlyFinal.length > 0 ||
 		figmaOnlyProperties.length > 0;
-	return { component: figma.name, codeTag: code.tagName, status: drift ? "drift" : "in-sync", axes, codeOnlyProps, figmaOnlyProperties };
+	return {
+		component: figma.name,
+		codeTag: code.tagName,
+		status: driftFinal ? "drift" : "in-sync",
+		axes,
+		codeOnlyProps: codeOnlyFinal,
+		figmaOnlyProperties,
+		...(omitted.size ? { omittedByDecision: [...omitted] } : {}),
+	};
+}
+
+/**
+ * Decisions from contract files: `{ name: "al-button", props: [{ name, bindings: { figma: { omit, pairWith } } }] }`
+ * (the Altitude contract format). Keyed like indexCem (normalized tag, with and without prefix).
+ */
+export function decisionsFromContracts(contracts: any[]): Map<string, ComponentDecisions> {
+	const out = new Map<string, ComponentDecisions>();
+	for (const c of contracts) {
+		const tag: string | undefined = c?.name ?? c?.id;
+		if (!tag) continue;
+		const d: ComponentDecisions = { omit: [], pairWith: {} };
+		for (const p of c.props ?? []) {
+			const f = p?.bindings?.figma;
+			if (!f || !p.name) continue;
+			if (f.omit === true || p.figmaOmit === true || p.omit === true) d.omit!.push(p.name);
+			if (typeof f.pairWith === "string") d.pairWith![p.name] = f.pairWith;
+		}
+		out.set(norm(tag), d);
+		out.set(norm(tag.replace(/^[a-z]+-/, "")), d);
+	}
+	return out;
 }

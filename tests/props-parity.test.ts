@@ -76,3 +76,28 @@ describe("property parity", () => {
 		expect(r.status).toBe("drift");
 	});
 });
+
+import { decisionsFromContracts } from "../src/core/adherence/props-parity";
+describe("recorded decisions", () => {
+	const contracts = [
+		{ name: "al-button", props: [{ name: "fullWidth", bindings: { figma: { omit: true } } }, { name: "isPill", bindings: { figma: { pairWith: "Shape" } } }] },
+		{ name: "al-heading", props: [{ name: "isBold", bindings: { figma: { pairWith: "Weight" } } }] },
+	];
+	const dec = decisionsFromContracts(contracts);
+	it("skips omitted props and honors pairings", () => {
+		const r = compareComponentProps(
+			{ name: "Button", variantAxes: [{ name: "Shape", values: ["Default", "Pill"] }], properties: [{ name: "Show Text", type: "BOOLEAN" }] },
+			get("button"),
+			dec.get("button"),
+		);
+		expect(r.codeOnlyProps.map((p) => p.name)).not.toContain("fullWidth");
+		expect(r.omittedByDecision).toEqual(["fullWidth"]);
+		expect(r.axes[0]).toMatchObject({ codeProp: "isPill", mappedBy: "boolean-flag" });
+	});
+	it("flags a paired boolean whose axis has no 'on' value", () => {
+		const heading = indexCem({ modules: [{ declarations: [{ name: "ALHeading", tagName: "al-heading", attributes: [attr("isBold", "boolean")], slots: [{ name: "" }] }] }] }, ["AL"]).get("heading")!;
+		const r = compareComponentProps({ name: "Heading", variantAxes: [{ name: "Weight", values: ["Default"] }] }, heading, dec.get("heading"));
+		expect(r.axes[0].codeOnlyValues).toEqual(["isBold=true"]);
+		expect(r.status).toBe("drift");
+	});
+});

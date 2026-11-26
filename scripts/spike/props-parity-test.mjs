@@ -9,7 +9,7 @@ await client.connect(new StdioClientTransport({ command: process.execPath, args:
 const call = async (name, args) => { const r = await client.callTool({ name, arguments: args }, undefined, { timeout: 180000 }); try { return JSON.parse(r.content[0].text); } catch { return r; } };
 for (let i = 0; i < 45; i++) { const s = await call("figma_list_open_files", {}); if ((s.files ?? []).some(f => f.fileKey === FIGMA)) break; await new Promise(r => setTimeout(r, 2000)); }
 await call("figma_navigate", { url: `https://www.figma.com/design/${FIGMA}/x`, lock: true });
-const r = await call("figma_check_library_parity", { manifestPath: MANIFEST, componentsDir: DIR, classPrefixes: ["AL"] });
+const r = await call("figma_check_library_parity", { manifestPath: MANIFEST, componentsDir: DIR, classPrefixes: ["AL"], ...(process.env.CONTRACTS ? { contractsDir: process.env.CONTRACTS } : {}) });
 if (OUT) writeFileSync(OUT, JSON.stringify(r, null, 2));
 console.log("SUMMARY:", JSON.stringify(r.summary), r.error ?? "");
 console.log("IN SYNC:", (r.inSyncComponents ?? []).join(", "));
