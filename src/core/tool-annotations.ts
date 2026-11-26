@@ -54,11 +54,11 @@ const KIND_HINTS: Record<ToolKind, Omit<ToolHints, "openWorldHint">> = {
  */
 export const TOOL_KINDS: Record<string, ToolKind> = {
 	figma_enable_toolsets: "session",
-	figma_call: "destructive",
+	figma_call: "destructive", // runs any enabled tool, including deletes
 	figma_find_usages: "read",
 	figma_get_library_analytics: "read",
 	figma_extend_library_collection: "create",
-	figma_manage_dev_resources: "destructive", // delete removes links (asks first) // runs any enabled tool, including deletes
+	figma_manage_dev_resources: "destructive", // delete removes links (asks first)
 	// ── Connection, console, status ──────────────────────────────────────────
 	figma_get_status: "read",
 	figma_diagnose: "read",

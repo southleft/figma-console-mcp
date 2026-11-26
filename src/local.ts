@@ -237,10 +237,14 @@ class LocalFigmaConsoleMCP {
 			},
 			{
 				instructions: `## Figma Console MCP - Visual Design Workflow
-
+${
+	parseToolsetsEnv(process.env.FIGMA_TOOLSETS) === "all"
+		? ""
+		: `
 ### TOOLSETS (load what the task needs)
 Only the core tools are listed at first, to save tokens. For variables/tokens, component authoring, design↔code parity, docs/history, FigJam, Slides, motion, deep inspection or debugging, call figma_enable_toolsets({ toolsets: [...] }) first. If the new tools don't appear, run them through figma_call({ tool, arguments }).
-
+`
+}
 This MCP server enables AI-assisted design creation in Figma. Follow these mandatory workflows:
 
 ### VISUAL VALIDATION WORKFLOW (Required)
@@ -2452,6 +2456,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						.optional()
 						.default(0)
 						.describe("Offset for pagination"),
+					includePrivate: z
+						.boolean()
+						.optional()
+						.describe("Include private (./_ prefixed) and archived or deprecated components (hidden by default)."),
 				}),
 			},
 			async ({
@@ -2460,6 +2468,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				libraryFileKey,
 				libraryFileUrl,
 				limit,
+				includePrivate,
 				offset,
 			}) => {
 				try {
@@ -2551,7 +2560,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 						const { compactSearchResult, isPrivateOrRetiredName } = await import("./core/design-system-manifest.js");
 						// Private / archived components aren't meant for use.
-						results = results.filter((item) => !isPrivateOrRetiredName(item.name));
+						if (!includePrivate) results = results.filter((item) => !isPrivateOrRetiredName(item.name));
 
 						// Apply search filter
 						if (query) {
@@ -2658,6 +2667,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						category,
 						limit: effectiveLimit,
 						offset: offset || 0,
+						includePrivate,
 					});
 
 					return {

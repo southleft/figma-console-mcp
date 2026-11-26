@@ -194,6 +194,29 @@ describe("TaskStore", () => {
 			expect(store.update("task-unknown", {})).toBe(false);
 		});
 
+		it("doesn't count time spent waiting for the person against the run limit", async () => {
+			const c = clock();
+			const store = new TaskStore({ now: c.now, maxRunMs: 30 * 60 * 1000 });
+			const work = jest.fn(async (_s: AbortSignal, responses?: Record<string, unknown>) => (responses?.k ? ok("done") : ask("k")));
+			const { taskId } = store.create(work)!;
+			await tick();
+			expect(store.get(taskId)!.status).toBe("input_required");
+			c.advance(31 * 60 * 1000); // the person answers 31 minutes later
+			expect(store.get(taskId)!.status).toBe("input_required");
+			store.update(taskId, { k: { action: "accept" } });
+			await tick();
+			expect(store.get(taskId)!.status).toBe("completed");
+		});
+
+		it("abandons a task whose question is never answered, after the retention period", async () => {
+			const c = clock();
+			const store = new TaskStore({ now: c.now });
+			const { taskId } = store.create(async () => ask("k"))!;
+			await tick();
+			c.advance(HOUR + 1);
+			expect(store.get(taskId)?.status).toBe("cancelled");
+		});
+
 		it("fails rather than loop when the work asks again for an answered key", async () => {
 			const store = new TaskStore();
 			const { taskId } = store.create(async () => ask("k"))!;

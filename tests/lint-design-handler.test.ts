@@ -134,5 +134,17 @@ describe("figma_lint_design handler (code.js)", () => {
 		const by2 = await lint(node("Page", { fills: solid("#FFFFFF"), w: 400, h: 100, children: [tableRow] }));
 		expect((by2["wcag-target-size"] ?? []).length).toBe(2);
 	});
+
+	it("linting a single control doesn't treat its inner parts as separate targets", async () => {
+		const box = node("Checkbox box", { type: "INSTANCE", x: 0, y: 2, w: 16, h: 16, strokes: solid("#7C7A70") });
+		const root = node("Checkbox", { type: "COMPONENT", w: 120, h: 24, fills: solid("#FFFFFF"), children: [box] });
+		const by = await lint(root);
+		expect((by["wcag-target-size"] ?? []).map((n: any) => n.name)).not.toContain("Checkbox box");
+	});
+
+	it("reports both ratios and names the side closest to passing", async () => {
+		const by = await lint(signUpForm("#3C3C35"));
+		expect(by["wcag-non-text-contrast"][0]).toMatchObject({ element: "stroke", strokeRatio: "1.7:1", elementIs: expect.stringMatching(/closest to passing/) });
+	});
 });
 

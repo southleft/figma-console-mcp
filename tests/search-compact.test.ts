@@ -11,7 +11,7 @@ describe("compact component search results", () => {
 		expect(r).toEqual({ name: "Atoms/Button", key: "k", description: "One." });
 	});
 	it("recognises private and retired components by name", () => {
-		for (const n of [".Calendar", "Atoms/_Base", "Archive/Old Card", "Deprecated Button", "Card (do not use)"]) expect(isPrivateOrRetiredName(n)).toBe(true);
-		for (const n of ["Atoms/Button", "Molecules/Date.Picker", "Card"]) expect(isPrivateOrRetiredName(n)).toBe(false);
+		for (const n of [".Calendar", "Atoms/_Base", "Archive/Old Card", "Deprecated Button", "Card (do not use)", "Legacy/Modal", "Button [deprecated]"]) expect(isPrivateOrRetiredName(n)).toBe(true);
+		for (const n of ["Atoms/Button", "Molecules/Date.Picker", "Card", "Icons/Archive", "Archive Button", "Icon / Archive Box", "Old Paper Texture"]) expect(isPrivateOrRetiredName(n)).toBe(false);
 	});
 });

@@ -22,7 +22,12 @@ function pageOf(n) { let p = n; while (p && p.type !== "PAGE") p = p.parent; ret
 const hits = []; let total = 0; let orphaned = 0; let scanned = 0; let truncated = false;
 // Nodes whose ancestry never reaches a page aren't in the document (e.g. frames a
 // plugin created and never placed). Nobody sees them, so they're counted apart.
+const seen = new Set();
 function add(node, field) {
+  // A paint binding appears both in node.boundVariables.fills/strokes and on the paint itself: count once.
+  const key = node.id + "|" + field;
+  if (seen.has(key)) return;
+  seen.add(key);
   const page = pageOf(node);
   if (!page) { orphaned++; return; }
   total++;

@@ -125,8 +125,15 @@ export function registerDevResourceTools(server: McpServer, getDesktopConnector:
 					}
 				}
 				if (args.action === "delete") {
-					const step = confirmStep(server, ctx, `confirm_delete_dev_resources_${fingerprint(args.fileKey, ...items.map((i) => `${i.nodeId}|${i.url}`))}`, {
-						message: `Remove ${items.length} dev resource link${items.length === 1 ? "" : "s"} from ${new Set(items.map((i) => i.nodeId)).size} node(s)? Developers lose these links in Dev Mode.`,
+					// Bind the approval to the file actually targeted, so an answer given while one
+					// file was active can't apply after the active file changes.
+					let target: { fileKey?: string; fileName?: string } = {};
+					try {
+						const r = await (await getDesktopConnector()).executeCodeViaUI(`return { fileKey: figma.fileKey || null, fileName: figma.root.name };`, 10000, args.fileKey);
+						target = (r && typeof r === "object" && "result" in r ? r.result : r) ?? {};
+					} catch {}
+					const step = confirmStep(server, ctx, `confirm_delete_dev_resources_${fingerprint(target.fileKey ?? args.fileKey, target.fileName, ...items.map((i) => `${i.nodeId}|${i.url}`))}`, {
+						message: `${target.fileName ? `In "${target.fileName}", remove` : "Remove"} ${items.length} dev resource link${items.length === 1 ? "" : "s"} from ${new Set(items.map((i) => i.nodeId)).size} node(s)? Developers lose these links in Dev Mode.`,
 						fields: { confirm: { type: "boolean", title: "Remove the links", default: false } },
 						required: ["confirm"],
 					});

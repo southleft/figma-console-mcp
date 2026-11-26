@@ -410,7 +410,15 @@ export function searchComponents(
 
 /** Private ("." / "_" prefixed segment) or archived / deprecated by name. */
 export function isPrivateOrRetiredName(name: string): boolean {
-	return name.split("/").some((seg) => /^\s*[._]/.test(seg)) || /archiv|deprecat|do not use|don't use/i.test(name);
+	const segs = name.split("/").map((seg) => seg.trim());
+	return (
+		segs.some((seg) => /^[._]/.test(seg)) ||
+		// A whole folder or name segment that marks retirement ("Archive/…", "Deprecated Button"),
+		// not any name that merely contains the word ("Icons/Archive" is an archive icon).
+		segs.slice(0, -1).some((seg) => /^(archived?|deprecated|old|legacy|do not use|don't use)$/i.test(seg)) ||
+		/^(deprecated|archived)\b/i.test(segs[segs.length - 1] ?? "") ||
+		/[([](deprecated|archived|do not use|don't use)[)\]]/i.test(name)
+	);
 }
 
 /** First sentence of a description, at most 120 characters. */

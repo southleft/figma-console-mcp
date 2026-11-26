@@ -104,6 +104,9 @@ interface TaskRecord {
 	work: TaskWork;
 	/** True while a run of `work` is in flight (counts toward maxConcurrent). */
 	running: boolean;
+	/** When the current run started: the run limit counts from here, not from creation,
+	 * so time spent waiting for the person's answer (input_required) doesn't count. */
+	runStartedAtMs?: number;
 	runTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -271,8 +274,12 @@ export class TaskStore {
 		for (const [id, record] of this.tasks) {
 			if (record.finishedAtMs !== undefined) {
 				if (now - record.finishedAtMs >= this.retentionMs) this.tasks.delete(id);
-			} else if (now - record.createdAtMs >= this.maxRunMs) {
+			} else if (record.running && record.runStartedAtMs !== undefined && now - record.runStartedAtMs >= this.maxRunMs) {
 				this.timeOut(record);
+			} else if (!record.running && now - record.updatedAtMs >= this.retentionMs) {
+				// Waiting on an answer that never came: give up after the retention period.
+				this.finish(record, { status: "cancelled", statusMessage: "No answer was received; the task was abandoned." });
+				record.controller.abort(new Error("Task abandoned"));
 			}
 		}
 	}
@@ -300,11 +307,12 @@ export class TaskStore {
 
 	private run(record: TaskRecord): void {
 		record.running = true;
+		record.runStartedAtMs = this.now();
 		const answers = Object.keys(record.answered).length > 0 ? { ...record.answered } : undefined;
 		// The run timer is unref'd so an idle server can still exit.
 		record.runTimer = setTimeout(
 			() => this.timeOut(record),
-			Math.max(0, record.createdAtMs + this.maxRunMs - this.now()),
+			this.maxRunMs,
 		);
 		record.runTimer.unref?.();
 		Promise.resolve()

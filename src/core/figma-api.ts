@@ -358,10 +358,6 @@ export class FigmaAPI {
   }
 
   /**
-   * GET /v1/files/:file_key/styles
-   * Get styles from a file
-   */
-  /**
    * GET /v1/analytics/libraries/:file_key/{component|style|variable}/{actions|usages}
    * Library analytics (Enterprise; token needs the library_analytics:read scope).
    */
@@ -376,6 +372,10 @@ export class FigmaAPI {
     return this.request(`/analytics/libraries/${fileKey}/${asset}/${metric}?${q.toString()}`);
   }
 
+  /**
+   * GET /v1/files/:file_key/styles
+   * Get styles from a file
+   */
   async getStyles(fileKey: string): Promise<any> {
     return this.request(`/files/${fileKey}/styles`);
   }

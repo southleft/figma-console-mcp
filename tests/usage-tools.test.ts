@@ -17,7 +17,8 @@ describe("figma_find_usages script", () => {
 		const v = { id: "VariableID:1:1", name: "space/md" };
 		const kids = [
 			{ id: "3:1", name: "A", type: "FRAME", boundVariables: { itemSpacing: { id: v.id } } },
-			{ id: "3:2", name: "B", type: "RECTANGLE", boundVariables: {}, fills: [{ boundVariables: { color: { id: v.id } } }] },
+			// Figma reports a fill binding in BOTH places: boundVariables.fills and the paint itself.
+			{ id: "3:2", name: "B", type: "RECTANGLE", boundVariables: { fills: [{ id: v.id }] }, fills: [{ boundVariables: { color: { id: v.id } } }] },
 			{ id: "3:3", name: "C", type: "RECTANGLE", boundVariables: {} },
 		];
 		const pg: any = { type: "PAGE", name: "P", children: kids, parent: null };

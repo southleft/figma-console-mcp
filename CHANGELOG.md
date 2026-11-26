@@ -12,7 +12,7 @@ The biggest update to how the server talks to AI clients since it began. It is r
 ### ⚠️ Upgrading from 1.x
 
 - **Tools now load in toolsets (Local Mode).** A core set is always listed: status, navigation, component search and resolve, building, token binding, audit, lint, screenshots and `figma_execute`. The rest are grouped into toolsets (`inspect`, `variables`, `components`, `parity`, `docs`, `debug`, `motion`, `figjam`, `slides`, `extraction`) that the AI switches on with `figma_enable_toolsets` when a task needs them. AI clients handle this on their own.
-- **Scripts or automations that call a non-core tool by name** without enabling its toolset first now get an error naming the toolset to enable. Set **`FIGMA_TOOLSETS=all`** to list every tool as before, or `FIGMA_TOOLSETS=variables,parity` to preload the toolsets you always use.
+- **Scripts or automations that call a non-core tool by name** without enabling its toolset first now get the protocol error `Tool <name> disabled`. Set **`FIGMA_TOOLSETS=all`** to list every tool as before, or `FIGMA_TOOLSETS=variables,parity` to preload the toolsets you always use. (`figma_call` on a tool whose toolset is off names the toolset to enable.)
 - **`figma_get_variables`** no longer lists `useConsoleFallback` and `parseFromConsole`. Both had done nothing since the CDP removal. Calls that still pass them work, because unknown arguments are ignored.
 - **Cloud Mode is unchanged.** It still lists every tool and runs on SDK v1.
 

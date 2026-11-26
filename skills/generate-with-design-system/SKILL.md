@@ -5,7 +5,7 @@ description: Build a screen, section, or flow in Figma using only the file's or 
 
 # Generate in Figma with the design system
 
-> **Tools:** this skill uses tools outside the core set. Call `figma_enable_toolsets({ toolsets: ["inspect", "docs"] })` once at the start. If your client doesn't show the new tools afterwards, call them through `figma_call({ tool, arguments })`.
+> **Tools (Local Mode):** this skill uses tools outside the core set. If they aren't in your tool list, call `figma_enable_toolsets({ toolsets: ["inspect", "docs"] })` once at the start; if they still don't appear, call them through `figma_call({ tool, arguments })`. Cloud Mode lists every tool, so skip this there.
 
 The rule is simple: **build with what exists, and mark what doesn't, right where it belongs.** A missing component, a missing part of a component, or a missing token is something to point out, not a problem for you to solve with a look-alike. If the system has no pagination, the layout gets a labeled note where the pagination would be, saying so. If you're unsure whether a component fits, the person decides.
 

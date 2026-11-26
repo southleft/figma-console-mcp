@@ -4700,9 +4700,12 @@ figma.ui.onmessage = async (msg) => {
         return lintControlWordRegex.test(words) && !lintGroupWordRegex.test(words);
       }
       function lintHasInteractiveAncestor(node) {
+        // Includes the lint root: linting a single control (a Checkbox) must not
+        // treat its inner control-named parts as separate targets.
         var p = node.parent;
-        while (p && p !== rootNode && p.type !== 'PAGE') {
+        while (p && p.type !== 'PAGE') {
           try { if (lintIsControlNode(p)) return true; } catch (e) { return false; }
+          if (p === rootNode) break;
           p = p.parent;
         }
         return false;
@@ -5011,17 +5014,22 @@ figma.ui.onmessage = async (msg) => {
               var fillRatio = uiFill ? lintContrastRatio(uiFill.r, uiFill.g, uiFill.b, uiBg.r, uiBg.g, uiBg.b) : 0;
               var strokeRatio = uiStroke ? lintContrastRatio(uiStroke.r, uiStroke.g, uiStroke.b, uiBg.r, uiBg.g, uiBg.b) : 0;
               if ((uiFill || uiStroke) && fillRatio < 3.0 && strokeRatio < 3.0) {
+                // Either side reaching 3:1 passes, so report the side CLOSEST to passing:
+                // raising that one is the smallest fix. Both ratios are reported too.
                 var useStroke = strokeRatio >= fillRatio && uiStroke;
-                var worst = useStroke ? uiStroke : uiFill;
+                var closest = useStroke ? uiStroke : uiFill;
                 if (totalFindings < maxFindings) {
                   findings['wcag-non-text-contrast'].push({
                     id: nodeId,
                     name: nodeName,
                     ratio: (useStroke ? strokeRatio : fillRatio).toFixed(1) + ':1',
                     required: '3.0:1',
-                    component: lintRgbToHex(worst.r, worst.g, worst.b),
+                    component: lintRgbToHex(closest.r, closest.g, closest.b),
                     bg: lintRgbToHex(uiBg.r, uiBg.g, uiBg.b),
                     element: useStroke ? 'stroke' : 'fill',
+                    elementIs: 'closest to passing (raising it to 3:1 fixes this)',
+                    fillRatio: uiFill ? fillRatio.toFixed(1) + ':1' : null,
+                    strokeRatio: uiStroke ? strokeRatio.toFixed(1) + ':1' : null,
                     note: 'Neither the fill (' + fillRatio.toFixed(1) + ':1) nor the border (' + strokeRatio.toFixed(1) + ':1) reaches 3:1 against the background, so nothing identifies the control.'
                   });
                   totalFindings++;

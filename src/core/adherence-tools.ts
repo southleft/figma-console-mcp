@@ -260,7 +260,10 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 				if (unresolved.length > 0 && args.askUser !== false) {
 					const fields: Record<string, any> = {};
 					const fieldFor: Record<string, number> = {};
-					for (const { it, i } of unresolved.slice(0, 15)) {
+					// A form holds at most 15 questions; the rest keep their defaults and say so.
+					const asked = unresolved.slice(0, 15);
+					const notAsked = unresolved.length - asked.length;
+					for (const { it, i } of asked) {
 						const opts: string[] = [];
 						const names: string[] = [];
 						it.candidates.slice(0, 2).forEach((c, ci) => {
@@ -281,8 +284,8 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 							default: it.status === "gap" ? "placeholder" : "stop",
 						};
 					}
-					const gapList = unresolved.filter(({ it }) => it.status === "gap").map(({ it }) => it.need);
-					const possibleList = unresolved.filter(({ it }) => it.status === "possible").map(({ it }) => it.need);
+					const gapList = asked.filter(({ it }) => it.status === "gap").map(({ it }) => it.need);
+					const possibleList = asked.filter(({ it }) => it.status === "possible").map(({ it }) => it.need);
 					const step = confirmStep(
 						server,
 						ctx,
@@ -293,6 +296,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 									gapList.length ? `The design system has nothing for: ${gapList.join(", ")}.` : "",
 									possibleList.length ? `Unclear matches for: ${possibleList.join(", ")}.` : "",
 									"Choose how to handle each one. Missing items default to a labeled gap note in the spot where they belong; nothing is invented.",
+									notAsked ? `${notAsked} more item${notAsked === 1 ? " isn't" : "s aren't"} shown here and keep their defaults (missing → gap note; unclear → asked again).` : "",
 								]
 									.filter(Boolean)
 									.join(" "),
@@ -314,7 +318,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 						}
 					} else if (step.status === "declined" || step.status === "cancelled") {
 						decisionSource = "user";
-						decisions = Object.fromEntries(unresolved.map(({ i }) => [i, { decision: "stop" as const }]));
+						decisions = Object.fromEntries(asked.map(({ i }) => [i, { decision: "stop" as const }]));
 					}
 				}
 

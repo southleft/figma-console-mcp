@@ -233,6 +233,20 @@ export function parseToolsetsEnv(value: string | undefined): "all" | Set<string>
 	return out;
 }
 
+/**
+ * Toolsets switched on during this process. The local HTTP endpoint builds a
+ * fresh server per request (2026-07-28 is sessionless), so what
+ * figma_enable_toolsets turns on must outlive the server that handled it.
+ * Process-wide by design: on a shared HTTP server, enabling a toolset enables
+ * it for every client of that server.
+ */
+const enabledThisProcess = new Set<string>();
+
+/** Test hook. */
+export function resetEnabledToolsets(): void {
+	enabledThisProcess.clear();
+}
+
 type Registered = Record<string, { enabled: boolean; enable(): void; disable(): void; handler?: unknown; inputSchema?: unknown; description?: string }>;
 const registry = (server: object): Registered => (server as unknown as { _registeredTools: Registered })._registeredTools ?? {};
 
@@ -249,7 +263,7 @@ export function applyToolsets(server: object, selection: "all" | Set<string>): {
 		const set = toolsetOf(name);
 		if (!set) unknown.push(name);
 		// Set the flag directly: this runs before connect, so no list_changed is wanted.
-		if (selection === "all" || !set || selection.has(set)) {
+		if (selection === "all" || !set || selection.has(set) || enabledThisProcess.has(set)) {
 			tool.enabled = true;
 			enabled.push(name);
 		} else {
@@ -282,6 +296,7 @@ export function registerToolsetTools(server: ToolsetServer): void {
 			const reg = registry(server);
 			const now: string[] = [];
 			for (const set of toolsets) {
+				enabledThisProcess.add(set);
 				for (const name of TOOLSETS[set]?.tools ?? []) {
 					const t = reg[name];
 					if (!t) continue;
