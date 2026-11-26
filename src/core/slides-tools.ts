@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
 
@@ -74,10 +74,12 @@ export function registerSlidesTools(
 	// READ TOOLS — Query slide data
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figma_list_slides",
-		`List all slides in the current Figma Slides presentation with their IDs, names, grid positions, and skip status. Only works in Slides files.`,
-		{},
+		{
+			description: `List all slides in the current Figma Slides presentation with their IDs, names, grid positions, and skip status. Only works in Slides files.`,
+			inputSchema: z.object({}),
+		},
 		async () => {
 			try {
 				const connector = await getDesktopConnector();
@@ -113,23 +115,23 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_get_slide_content",
-		`Get the content tree of a specific slide including all text, shapes, and frames. Returns node hierarchy with properties.`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide, e.g. '1:23'"),
+			description: `Get the content tree of a specific slide including all text, shapes, and frames. Returns node hierarchy with properties.`,
+			inputSchema: z.object({
+				slideId: z
+					.string()
+					.max(50)
+					.describe("The node ID of the slide, e.g. '1:23'"),
+			}),
 		},
 		async ({ slideId }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.getSlideContent({ slideId });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_get_slide_content failed");
@@ -149,18 +151,18 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_get_slide_grid",
-		`Get the 2D slide grid layout showing how slides are organized in rows and columns.`,
-		{},
+		{
+			description: `Get the 2D slide grid layout showing how slides are organized in rows and columns.`,
+			inputSchema: z.object({}),
+		},
 		async () => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.getSlideGrid();
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_get_slide_grid failed");
@@ -180,23 +182,20 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_get_slide_transition",
-		`Get the current transition settings for a slide (style, duration, easing curve, timing).`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide"),
+			description: `Get the current transition settings for a slide (style, duration, easing curve, timing).`,
+			inputSchema: z.object({
+				slideId: z.string().max(50).describe("The node ID of the slide"),
+			}),
 		},
 		async ({ slideId }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.getSlideTransition({ slideId });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_get_slide_transition failed");
@@ -216,18 +215,18 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_get_text_styles",
-		`Get all local text styles in the current file. Returns style IDs, names, font info, and sizes. Use these IDs when setting textStyleId on text nodes via figma_execute.`,
-		{},
+		{
+			description: `Get all local text styles in the current file. Returns style IDs, names, font info, and sizes. Use these IDs when setting textStyleId on text nodes via figma_execute.`,
+			inputSchema: z.object({}),
+		},
 		async () => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.getTextStyles();
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_get_text_styles failed");
@@ -246,18 +245,18 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_get_focused_slide",
-		`Get the slide currently focused in single-slide view.`,
-		{},
+		{
+			description: `Get the slide currently focused in single-slide view.`,
+			inputSchema: z.object({}),
+		},
 		async () => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.getFocusedSlide();
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_get_focused_slide failed");
@@ -281,31 +280,31 @@ export function registerSlidesTools(
 	// WRITE TOOLS — Create and modify slides
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figma_create_slide",
-		`Create a new blank slide in the Figma Slides presentation. Optionally specify grid position.`,
 		{
-			row: z
-				.number()
-				.int()
-				.min(0)
-				.optional()
-				.describe("Row index in the slide grid (0-based)"),
-			col: z
-				.number()
-				.int()
-				.min(0)
-				.optional()
-				.describe("Column index in the slide grid (0-based)"),
+			description: `Create a new blank slide in the Figma Slides presentation. Optionally specify grid position.`,
+			inputSchema: z.object({
+				row: z
+					.number()
+					.int()
+					.min(0)
+					.optional()
+					.describe("Row index in the slide grid (0-based)"),
+				col: z
+					.number()
+					.int()
+					.min(0)
+					.optional()
+					.describe("Column index in the slide grid (0-based)"),
+			}),
 		},
 		async ({ row, col }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.createSlide({ row, col });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_create_slide failed");
@@ -325,23 +324,23 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_delete_slide",
-		`Delete a slide from the presentation. WARNING: This is a destructive operation (can be undone with Figma's undo).`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide to delete"),
+			description: `Delete a slide from the presentation. WARNING: This is a destructive operation (can be undone with Figma's undo).`,
+			inputSchema: z.object({
+				slideId: z
+					.string()
+					.max(50)
+					.describe("The node ID of the slide to delete"),
+			}),
 		},
 		async ({ slideId }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.deleteSlide({ slideId });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_delete_slide failed");
@@ -361,23 +360,23 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_duplicate_slide",
-		`Duplicate an existing slide. The clone is placed adjacent to the original.`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide to duplicate"),
+			description: `Duplicate an existing slide. The clone is placed adjacent to the original.`,
+			inputSchema: z.object({
+				slideId: z
+					.string()
+					.max(50)
+					.describe("The node ID of the slide to duplicate"),
+			}),
 		},
 		async ({ slideId }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.duplicateSlide({ slideId });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_duplicate_slide failed");
@@ -397,25 +396,25 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_reorder_slides",
-		`Reorder slides by providing a new 2D array of slide IDs. Each inner array represents a row in the grid. WARNING: This is a destructive operation.`,
 		{
-			grid: z
-				.array(z.array(z.string().max(50)).max(MAX_GRID_ROW))
-				.max(MAX_GRID_ROWS)
-				.describe(
-					"2D array of slide IDs representing the new order, e.g. [['1:2','1:3'],['1:4']]",
-				),
+			description: `Reorder slides by providing a new 2D array of slide IDs. Each inner array represents a row in the grid. WARNING: This is a destructive operation.`,
+			inputSchema: z.object({
+				grid: z
+					.array(z.array(z.string().max(50)).max(MAX_GRID_ROW))
+					.max(MAX_GRID_ROWS)
+					.describe(
+						"2D array of slide IDs representing the new order, e.g. [['1:2','1:3'],['1:4']]",
+					),
+			}),
 		},
 		async ({ grid }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.reorderSlides({ grid });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_reorder_slides failed");
@@ -435,29 +434,26 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_set_slide_transition",
-		`Set the transition effect for a slide (style, duration, easing curve). Triggers on click by default.`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide"),
-			style: z
-				.enum(TRANSITION_STYLES)
-				.describe("Transition style"),
-			duration: z
-				.number()
-				.min(0.01)
-				.max(10)
-				.optional()
-				.default(0.4)
-				.describe("Duration in seconds (0.01 to 10)"),
-			curve: z
-				.enum(EASING_CURVES)
-				.optional()
-				.default("EASE_IN_AND_OUT")
-				.describe("Easing curve"),
+			description: `Set the transition effect for a slide (style, duration, easing curve). Triggers on click by default.`,
+			inputSchema: z.object({
+				slideId: z.string().max(50).describe("The node ID of the slide"),
+				style: z.enum(TRANSITION_STYLES).describe("Transition style"),
+				duration: z
+					.number()
+					.min(0.01)
+					.max(10)
+					.optional()
+					.default(0.4)
+					.describe("Duration in seconds (0.01 to 10)"),
+				curve: z
+					.enum(EASING_CURVES)
+					.optional()
+					.default("EASE_IN_AND_OUT")
+					.describe("Easing curve"),
+			}),
 		},
 		async ({ slideId, style, duration, curve }) => {
 			try {
@@ -469,9 +465,7 @@ export function registerSlidesTools(
 					curve,
 				});
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_set_slide_transition failed");
@@ -491,26 +485,23 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_skip_slide",
-		`Toggle whether a slide is skipped during presentation mode.`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide"),
-			skip: z
-				.boolean()
-				.describe("True to skip the slide, false to include it"),
+			description: `Toggle whether a slide is skipped during presentation mode.`,
+			inputSchema: z.object({
+				slideId: z.string().max(50).describe("The node ID of the slide"),
+				skip: z
+					.boolean()
+					.describe("True to skip the slide, false to include it"),
+			}),
 		},
 		async ({ slideId, skip }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.skipSlide({ slideId, skip });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_skip_slide failed");
@@ -530,68 +521,80 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_add_text_to_slide",
-		`Add a new text element to a specific slide. Supports custom fonts, colors, alignment, and text formatting.`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide"),
-			text: z
-				.string()
-				.max(MAX_TEXT_LENGTH)
-				.describe("The text content"),
-			x: z.number().optional().default(100).describe("X position"),
-			y: z.number().optional().default(100).describe("Y position"),
-			fontSize: z
-				.number()
-				.min(1)
-				.max(MAX_FONT_SIZE)
-				.optional()
-				.default(24)
-				.describe("Font size in pixels"),
-			fontFamily: z
-				.string()
-				.optional()
-				.default("Inter")
-				.describe("Font family (e.g., 'Manrope', 'IBM Plex Sans')"),
-			fontStyle: z
-				.string()
-				.optional()
-				.default("Regular")
-				.describe("Font style/weight (e.g., 'Bold', 'SemiBold', 'Medium')"),
-			color: z
-				.string()
-				.regex(/^#[0-9a-fA-F]{6}$/)
-				.optional()
-				.describe("Text fill color as hex (e.g., '#FFFFFF')"),
-			textAlign: z
-				.enum(["LEFT", "CENTER", "RIGHT"])
-				.optional()
-				.describe("Horizontal text alignment"),
-			width: z
-				.number()
-				.min(1)
-				.max(MAX_DIMENSION)
-				.optional()
-				.describe("Text box width for wrapping. When set, enables text wrapping."),
-			lineHeight: z
-				.number()
-				.min(1)
-				.max(500)
-				.optional()
-				.describe("Line height in pixels"),
-			letterSpacing: z
-				.number()
-				.optional()
-				.describe("Letter spacing in pixels"),
-			textCase: z
-				.enum(["ORIGINAL", "UPPER", "LOWER", "TITLE"])
-				.optional()
-				.describe("Text case transformation"),
+			description: `Add a new text element to a specific slide. Supports custom fonts, colors, alignment, and text formatting.`,
+			inputSchema: z.object({
+				slideId: z.string().max(50).describe("The node ID of the slide"),
+				text: z.string().max(MAX_TEXT_LENGTH).describe("The text content"),
+				x: z.number().optional().default(100).describe("X position"),
+				y: z.number().optional().default(100).describe("Y position"),
+				fontSize: z
+					.number()
+					.min(1)
+					.max(MAX_FONT_SIZE)
+					.optional()
+					.default(24)
+					.describe("Font size in pixels"),
+				fontFamily: z
+					.string()
+					.optional()
+					.default("Inter")
+					.describe("Font family (e.g., 'Manrope', 'IBM Plex Sans')"),
+				fontStyle: z
+					.string()
+					.optional()
+					.default("Regular")
+					.describe("Font style/weight (e.g., 'Bold', 'SemiBold', 'Medium')"),
+				color: z
+					.string()
+					.regex(/^#[0-9a-fA-F]{6}$/)
+					.optional()
+					.describe("Text fill color as hex (e.g., '#FFFFFF')"),
+				textAlign: z
+					.enum(["LEFT", "CENTER", "RIGHT"])
+					.optional()
+					.describe("Horizontal text alignment"),
+				width: z
+					.number()
+					.min(1)
+					.max(MAX_DIMENSION)
+					.optional()
+					.describe(
+						"Text box width for wrapping. When set, enables text wrapping.",
+					),
+				lineHeight: z
+					.number()
+					.min(1)
+					.max(500)
+					.optional()
+					.describe("Line height in pixels"),
+				letterSpacing: z
+					.number()
+					.optional()
+					.describe("Letter spacing in pixels"),
+				textCase: z
+					.enum(["ORIGINAL", "UPPER", "LOWER", "TITLE"])
+					.optional()
+					.describe("Text case transformation"),
+			}),
 		},
-		async ({ slideId, text, x, y, fontSize, fontFamily, fontStyle, color, textAlign, width, lineHeight, letterSpacing, textCase }) => {
+		async ({
+			slideId,
+			text,
+			x,
+			y,
+			fontSize,
+			fontFamily,
+			fontStyle,
+			color,
+			textAlign,
+			width,
+			lineHeight,
+			letterSpacing,
+			textCase,
+		}) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.addTextToSlide({
@@ -610,9 +613,7 @@ export function registerSlidesTools(
 					textCase,
 				});
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_add_text_to_slide failed");
@@ -632,35 +633,31 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_add_shape_to_slide",
-		`Add a rectangle or ellipse shape to a specific slide with optional fill color.`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide"),
-			shapeType: z
-				.enum(SLIDE_SHAPE_TYPES)
-				.describe("Shape type"),
-			x: z.number().describe("X position"),
-			y: z.number().describe("Y position"),
-			width: z
-				.number()
-				.min(1)
-				.max(MAX_DIMENSION)
-				.describe("Width in pixels"),
-			height: z
-				.number()
-				.min(1)
-				.max(MAX_DIMENSION)
-				.describe("Height in pixels"),
-			fillColor: z
-				.string()
-				.regex(/^#[0-9a-fA-F]{6}$/, "Must be a 6-digit hex color like '#FF5733'")
-				.optional()
-				.default("#CCCCCC")
-				.describe("Hex color e.g. '#FF5733'"),
+			description: `Add a rectangle or ellipse shape to a specific slide with optional fill color.`,
+			inputSchema: z.object({
+				slideId: z.string().max(50).describe("The node ID of the slide"),
+				shapeType: z.enum(SLIDE_SHAPE_TYPES).describe("Shape type"),
+				x: z.number().describe("X position"),
+				y: z.number().describe("Y position"),
+				width: z.number().min(1).max(MAX_DIMENSION).describe("Width in pixels"),
+				height: z
+					.number()
+					.min(1)
+					.max(MAX_DIMENSION)
+					.describe("Height in pixels"),
+				fillColor: z
+					.string()
+					.regex(
+						/^#[0-9a-fA-F]{6}$/,
+						"Must be a 6-digit hex color like '#FF5733'",
+					)
+					.optional()
+					.default("#CCCCCC")
+					.describe("Hex color e.g. '#FF5733'"),
+			}),
 		},
 		async ({ slideId, shapeType, x, y, width, height, fillColor }) => {
 			try {
@@ -675,9 +672,7 @@ export function registerSlidesTools(
 					fillColor,
 				});
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_add_shape_to_slide failed");
@@ -697,27 +692,27 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_set_slide_background",
-		`Set the background color of a slide. Creates or updates a full-slide background rectangle.`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide"),
-			color: z
-				.string()
-				.regex(/^#[0-9a-fA-F]{6}$/, "Must be a 6-digit hex color like '#181818'")
-				.describe("Background color as hex (e.g., '#181818')"),
+			description: `Set the background color of a slide. Creates or updates a full-slide background rectangle.`,
+			inputSchema: z.object({
+				slideId: z.string().max(50).describe("The node ID of the slide"),
+				color: z
+					.string()
+					.regex(
+						/^#[0-9a-fA-F]{6}$/,
+						"Must be a 6-digit hex color like '#181818'",
+					)
+					.describe("Background color as hex (e.g., '#181818')"),
+			}),
 		},
 		async ({ slideId, color }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.setSlideBackground({ slideId, color });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_set_slide_background failed");
@@ -741,22 +736,20 @@ export function registerSlidesTools(
 	// NAVIGATION TOOLS — Control slide view
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figma_set_slides_view_mode",
-		`Toggle the Figma Slides viewport between grid view and single-slide view.`,
 		{
-			mode: z
-				.enum(VIEW_MODES)
-				.describe("View mode"),
+			description: `Toggle the Figma Slides viewport between grid view and single-slide view.`,
+			inputSchema: z.object({
+				mode: z.enum(VIEW_MODES).describe("View mode"),
+			}),
 		},
 		async ({ mode }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.setSlidesViewMode({ mode });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_set_slides_view_mode failed");
@@ -776,23 +769,23 @@ export function registerSlidesTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_focus_slide",
-		`Navigate to and focus a specific slide in single-slide view.`,
 		{
-			slideId: z
-				.string()
-				.max(50)
-				.describe("The node ID of the slide to focus"),
+			description: `Navigate to and focus a specific slide in single-slide view.`,
+			inputSchema: z.object({
+				slideId: z
+					.string()
+					.max(50)
+					.describe("The node ID of the slide to focus"),
+			}),
 		},
 		async ({ slideId }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.focusSlide({ slideId });
 				return {
-					content: [
-						{ type: "text" as const, text: JSON.stringify(result) },
-					],
+					content: [{ type: "text" as const, text: JSON.stringify(result) }],
 				};
 			} catch (error) {
 				logger.error({ error }, "figma_focus_slide failed");

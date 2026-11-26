@@ -3,18 +3,33 @@
  * MCP tool definitions for Figma REST API data extraction
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
 import type { FigmaAPI, FigmaUrlInfo } from "./figma-api.js";
-import { extractFileKey, extractFigmaUrlInfo, formatVariables, formatComponentData, withTimeout, normalizeNodeId } from "./figma-api.js";
+import {
+	extractFileKey,
+	extractFigmaUrlInfo,
+	formatVariables,
+	formatComponentData,
+	withTimeout,
+	normalizeNodeId,
+} from "./figma-api.js";
 import { createChildLogger } from "./logger.js";
 import { identifiedError, withIdentity } from "./identity.js";
 import { EnrichmentService } from "./enrichment/index.js";
 import type { EnrichmentOptions } from "./types/enriched.js";
-import { extractNodeSpec, validateReconstructionSpec, listVariants } from "./figma-reconstruction-spec.js";
-import { augmentWithExtendedCollections, countOverrides, extendedCollectionView } from "./extended-collections.js";
+import {
+	extractNodeSpec,
+	validateReconstructionSpec,
+	listVariants,
+} from "./figma-reconstruction-spec.js";
+import {
+	augmentWithExtendedCollections,
+	countOverrides,
+	extendedCollectionView,
+} from "./extended-collections.js";
 
 const logger = createChildLogger({ component: "figma-tools" });
 
@@ -26,7 +41,9 @@ const enrichmentService = new EnrichmentService(logger);
  * Returns a registry of component names, paths, and exports.
  * Works with any framework — looks for index.ts/tsx/js barrel exports.
  */
-function scanCodebaseComponents(componentsDir: string): { name: string; path: string; exports: string[] }[] {
+function scanCodebaseComponents(
+	componentsDir: string,
+): { name: string; path: string; exports: string[] }[] {
 	const registry: { name: string; path: string; exports: string[] }[] = [];
 	try {
 		if (!fs.existsSync(componentsDir)) return registry;
@@ -39,14 +56,26 @@ function scanCodebaseComponents(componentsDir: string): { name: string; path: st
 			let barrelPath = "";
 			for (const bf of barrelFiles) {
 				const candidate = path.join(compDir, bf);
-				if (fs.existsSync(candidate)) { barrelPath = candidate; break; }
+				if (fs.existsSync(candidate)) {
+					barrelPath = candidate;
+					break;
+				}
 			}
 			if (!barrelPath) {
 				// No barrel — check for a main component file matching the directory name
-				const mainFiles = [`${dir.name}.tsx`, `${dir.name}.ts`, `${dir.name}.jsx`, `${dir.name}.js`];
+				const mainFiles = [
+					`${dir.name}.tsx`,
+					`${dir.name}.ts`,
+					`${dir.name}.jsx`,
+					`${dir.name}.js`,
+				];
 				for (const mf of mainFiles) {
 					if (fs.existsSync(path.join(compDir, mf))) {
-						registry.push({ name: dir.name, path: `src/components/${dir.name}`, exports: [dir.name] });
+						registry.push({
+							name: dir.name,
+							path: `src/components/${dir.name}`,
+							exports: [dir.name],
+						});
 						break;
 					}
 				}
@@ -59,26 +88,45 @@ function scanCodebaseComponents(componentsDir: string): { name: string; path: st
 				// Match: export { Foo, Bar } from ...
 				const namedExports = content.matchAll(/export\s*\{([^}]+)\}/g);
 				for (const match of namedExports) {
-					const names = match[1].split(",").map(n => n.trim().split(/\s+as\s+/).pop()?.trim() || "").filter(Boolean);
-					exportNames.push(...names.filter(n => !n.startsWith("type ")));
+					const names = match[1]
+						.split(",")
+						.map(
+							(n) =>
+								n
+									.trim()
+									.split(/\s+as\s+/)
+									.pop()
+									?.trim() || "",
+						)
+						.filter(Boolean);
+					exportNames.push(...names.filter((n) => !n.startsWith("type ")));
 				}
 				// Match: export default ...
 				if (content.includes("export default")) {
 					exportNames.push("default");
 				}
 				// Filter out type-only exports
-				const cleanExports = exportNames.filter(n => !n.startsWith("type") || n[4] !== " ");
+				const cleanExports = exportNames.filter(
+					(n) => !n.startsWith("type") || n[4] !== " ",
+				);
 				registry.push({
 					name: dir.name,
 					path: `src/components/${dir.name}`,
 					exports: cleanExports.length > 0 ? cleanExports : [dir.name],
 				});
 			} catch {
-				registry.push({ name: dir.name, path: `src/components/${dir.name}`, exports: [dir.name] });
+				registry.push({
+					name: dir.name,
+					path: `src/components/${dir.name}`,
+					exports: [dir.name],
+				});
 			}
 		}
 	} catch (err) {
-		logger.debug({ err, componentsDir }, "Could not scan codebase components directory");
+		logger.debug(
+			{ err, componentsDir },
+			"Could not scan codebase components directory",
+		);
 	}
 	return registry;
 }
@@ -96,7 +144,10 @@ const MAX_CACHE_ENTRIES = 10; // LRU eviction
 /**
  * Check if cache entry is still valid based on TTL
  */
-function isCacheValid(timestamp: number, ttlMs: number = CACHE_TTL_MS): boolean {
+function isCacheValid(
+	timestamp: number,
+	ttlMs: number = CACHE_TTL_MS,
+): boolean {
 	return Date.now() - timestamp < ttlMs;
 }
 
@@ -115,10 +166,10 @@ function estimateTokens(data: any): number {
  */
 const RESPONSE_SIZE_THRESHOLDS = {
 	// Conservative thresholds to leave room for conversation context
-	IDEAL_SIZE_KB: 100,        // Target size for optimal performance
-	WARNING_SIZE_KB: 200,      // Start considering compression
-	CRITICAL_SIZE_KB: 500,     // Must compress to avoid context exhaustion
-	MAX_SIZE_KB: 1000,         // Absolute maximum before emergency compression
+	IDEAL_SIZE_KB: 100, // Target size for optimal performance
+	WARNING_SIZE_KB: 200, // Start considering compression
+	CRITICAL_SIZE_KB: 500, // Must compress to avoid context exhaustion
+	MAX_SIZE_KB: 1000, // Absolute maximum before emergency compression
 } as const;
 
 /**
@@ -143,13 +194,16 @@ function adaptiveResponse(
 		toolName: string;
 		compressionCallback?: (adjustedLevel: string) => any;
 		suggestedActions?: string[];
-	}
+	},
 ): { content: any[] } {
 	// Tag every response with our MCP identity so LLMs can attribute it
 	// unambiguously when other Figma-related MCPs are also connected.
-	const tagged = responseData && typeof responseData === "object" && !Array.isArray(responseData)
-		? withIdentity(responseData as Record<string, unknown>)
-		: { _mcp: "figma-console-mcp", data: responseData };
+	const tagged =
+		responseData &&
+		typeof responseData === "object" &&
+		!Array.isArray(responseData)
+			? withIdentity(responseData as Record<string, unknown>)
+			: { _mcp: "figma-console-mcp", data: responseData };
 
 	const sizeKB = calculateSizeKB(tagged);
 
@@ -196,10 +250,10 @@ function adaptiveResponse(
 
 	// Map compression level to verbosity level
 	const verbosityMap: Record<string, string> = {
-		"info": "standard",
-		"warning": "summary",
-		"critical": "summary",
-		"emergency": "inventory"
+		info: "standard",
+		warning: "summary",
+		critical: "summary",
+		emergency: "inventory",
 	};
 
 	// If compression needed, apply callback to reduce data
@@ -222,7 +276,7 @@ function adaptiveResponse(
 				finalSizeKB: calculateSizeKB(finalData).toFixed(2),
 				compressionLevel,
 			},
-			"Response compressed to prevent context exhaustion"
+			"Response compressed to prevent context exhaustion",
 		);
 	}
 
@@ -230,16 +284,17 @@ function adaptiveResponse(
 	if (shouldCompress) {
 		if (options.suggestedActions && options.suggestedActions.length > 0) {
 			aiInstruction += `To get more detail:\n`;
-			options.suggestedActions.forEach(action => {
+			options.suggestedActions.forEach((action) => {
 				aiInstruction += `• ${action}\n`;
 			});
 		}
 	}
 
 	// Build response content (tagged with identity so cross-MCP attribution is clear)
-	const taggedFinal = finalData && typeof finalData === "object" && !Array.isArray(finalData)
-		? withIdentity(finalData as Record<string, unknown>)
-		: { _mcp: "figma-console-mcp", data: finalData };
+	const taggedFinal =
+		finalData && typeof finalData === "object" && !Array.isArray(finalData)
+			? withIdentity(finalData as Record<string, unknown>)
+			: { _mcp: "figma-console-mcp", data: finalData };
 
 	const content: any[] = [
 		{
@@ -267,7 +322,7 @@ function adaptiveResponse(
  */
 function adaptiveVerbosity(
 	data: any,
-	requestedVerbosity: "inventory" | "summary" | "standard" | "full"
+	requestedVerbosity: "inventory" | "summary" | "standard" | "full",
 ): {
 	adjustedVerbosity: "inventory" | "summary" | "standard" | "full";
 	sizeKB: number;
@@ -339,7 +394,7 @@ function adaptiveVerbosity(
 				sizeKB: sizeKB.toFixed(2),
 				threshold: compressionReason,
 			},
-			"Adaptive compression applied"
+			"Adaptive compression applied",
 		);
 	}
 
@@ -357,44 +412,62 @@ function adaptiveVerbosity(
  * Returns high-level overview with counts and names
  */
 /** Present-and-defined — `0`, `false` and `""` are real variable values, not "missing" */
-const hasModeValue = (valuesByMode: any, modeId: string | null | undefined): boolean =>
-	!!valuesByMode && !!modeId && Object.prototype.hasOwnProperty.call(valuesByMode, modeId) && valuesByMode[modeId] !== undefined;
+const hasModeValue = (
+	valuesByMode: any,
+	modeId: string | null | undefined,
+): boolean =>
+	!!valuesByMode &&
+	!!modeId &&
+	Object.prototype.hasOwnProperty.call(valuesByMode, modeId) &&
+	valuesByMode[modeId] !== undefined;
 
 function generateSummary(data: any): any {
 	const summary = {
 		fileKey: data.fileKey,
 		timestamp: data.timestamp,
-		source: data.source || 'cache',
+		source: data.source || "cache",
 		overview: {
 			total_variables: data.variables?.length || 0,
 			total_collections: data.variableCollections?.length || 0,
 		},
-		collections: data.variableCollections?.map((c: any) => ({
-			id: c.id,
-			name: c.name,
-			modes: c.modes?.map((m: any) => ({ id: m.modeId, name: m.name, ...(m.parentModeId ? { parentModeId: m.parentModeId } : {}) })),
-			variable_count: c.variableIds?.length || 0,
-			...(c.isExtension
-				? (() => {
-					const counts = countOverrides(c);
-					const parent = data.variableCollections?.find((p: any) => p.id === c.parentVariableCollectionId);
-					return {
-						isExtension: true,
-						extends: parent ? parent.name : c.parentVariableCollectionId,
-						parentVariableCollectionId: c.parentVariableCollectionId,
-						overridden_variables: counts.variables,
-						overridden_values: counts.values,
-						hint: `Filter with collection="${c.name}" to see every variable's value in this collection, marked overridden or inherited.`,
-					};
-				})()
-				: {}),
-		})) || [],
+		collections:
+			data.variableCollections?.map((c: any) => ({
+				id: c.id,
+				name: c.name,
+				modes: c.modes?.map((m: any) => ({
+					id: m.modeId,
+					name: m.name,
+					...(m.parentModeId ? { parentModeId: m.parentModeId } : {}),
+				})),
+				variable_count: c.variableIds?.length || 0,
+				...(c.isExtension
+					? (() => {
+							const counts = countOverrides(c);
+							const parent = data.variableCollections?.find(
+								(p: any) => p.id === c.parentVariableCollectionId,
+							);
+							return {
+								isExtension: true,
+								extends: parent ? parent.name : c.parentVariableCollectionId,
+								parentVariableCollectionId: c.parentVariableCollectionId,
+								overridden_variables: counts.variables,
+								overridden_values: counts.values,
+								hint: `Filter with collection="${c.name}" to see every variable's value in this collection, marked overridden or inherited.`,
+							};
+						})()
+					: {}),
+			})) || [],
 		variables_by_type: {} as Record<string, number>,
 		variable_names: [] as string[],
-		...(data.extendedCollectionsWarning ? { warnings: [data.extendedCollectionsWarning] } : {}),
+		...(data.extendedCollectionsWarning
+			? { warnings: [data.extendedCollectionsWarning] }
+			: {}),
 	};
-	const extendedCount = (data.variableCollections ?? []).filter((c: any) => c.isExtension).length;
-	if (extendedCount > 0) (summary.overview as any).extended_collections = extendedCount;
+	const extendedCount = (data.variableCollections ?? []).filter(
+		(c: any) => c.isExtension,
+	).length;
+	if (extendedCount > 0)
+		(summary.overview as any).extended_collections = extendedCount;
 
 	// Count variables by type
 	const typeCount: Record<string, number> = {};
@@ -421,7 +494,7 @@ function applyFilters(
 		namePattern?: string;
 		mode?: string;
 	},
-	verbosity: "inventory" | "summary" | "standard" | "full" = "standard"
+	verbosity: "inventory" | "summary" | "standard" | "full" = "standard",
 ): any {
 	let filteredVariables = [...(data.variables || [])];
 	let filteredCollections = [...(data.variableCollections || [])];
@@ -429,36 +502,38 @@ function applyFilters(
 	// Filter by collection name or ID
 	if (filters.collection) {
 		const collectionFilter = filters.collection.toLowerCase();
-		filteredCollections = filteredCollections.filter((c: any) =>
-			c.name?.toLowerCase().includes(collectionFilter) ||
-			c.id === filters.collection
+		filteredCollections = filteredCollections.filter(
+			(c: any) =>
+				c.name?.toLowerCase().includes(collectionFilter) ||
+				c.id === filters.collection,
 		);
 
 		const collectionIds = new Set(filteredCollections.map((c: any) => c.id));
 		filteredVariables = filteredVariables.filter((v: any) =>
-			collectionIds.has(v.variableCollectionId)
+			collectionIds.has(v.variableCollectionId),
 		);
 		// An extended collection owns no variables of its own (they keep their
 		// parent's variableCollectionId) — so the filter above finds nothing for it.
 		// Add its variables AS THEY APPEAR IN IT: values per extended mode, each
 		// override or inheritance resolved through the chain.
 		for (const c of filteredCollections) {
-			if (c.isExtension) filteredVariables.push(...extendedCollectionView(data, c));
+			if (c.isExtension)
+				filteredVariables.push(...extendedCollectionView(data, c));
 		}
 	}
 
 	// Filter by variable name pattern (regex or substring)
 	if (filters.namePattern) {
 		try {
-			const regex = new RegExp(filters.namePattern, 'i');
+			const regex = new RegExp(filters.namePattern, "i");
 			filteredVariables = filteredVariables.filter((v: any) =>
-				regex.test(v.name)
+				regex.test(v.name),
 			);
 		} catch (e) {
 			// If regex fails, fall back to substring match
 			const pattern = filters.namePattern.toLowerCase();
 			filteredVariables = filteredVariables.filter((v: any) =>
-				v.name?.toLowerCase().includes(pattern)
+				v.name?.toLowerCase().includes(pattern),
 			);
 		}
 	}
@@ -472,9 +547,10 @@ function applyFilters(
 		if (data.variableCollections || filteredCollections.length > 0) {
 			for (const collection of filteredCollections) {
 				if (collection.modes) {
-					const mode = collection.modes.find((m: any) =>
-						m.modeId === filters.mode ||
-						m.name?.toLowerCase().includes(modeFilter)
+					const mode = collection.modes.find(
+						(m: any) =>
+							m.modeId === filters.mode ||
+							m.name?.toLowerCase().includes(modeFilter),
 					);
 					if (mode) {
 						targetModeId = mode.modeId;
@@ -500,12 +576,14 @@ function applyFilters(
 					return true;
 				}
 				// Try to match by mode name through collections
-				const collection = filteredCollections.find((c: any) =>
-					c.id === v.variableCollectionId
+				const collection = filteredCollections.find(
+					(c: any) => c.id === v.variableCollectionId,
 				);
 				if (collection?.modes) {
-					const mode = collection.modes.find((m: any) =>
-						m.name?.toLowerCase().includes(filters.mode!.toLowerCase()) || m.modeId === filters.mode
+					const mode = collection.modes.find(
+						(m: any) =>
+							m.name?.toLowerCase().includes(filters.mode!.toLowerCase()) ||
+							m.modeId === filters.mode,
 					);
 					return !!mode && hasModeValue(v.valuesByMode, mode.modeId);
 				}
@@ -513,7 +591,6 @@ function applyFilters(
 			return false;
 		});
 	}
-
 
 	// Transform valuesByMode based on verbosity level
 	// This is critical for reducing response size with multi-mode variables
@@ -523,7 +600,9 @@ function applyFilters(
 			// Use original collections array for lookup, not filtered, since we need mode metadata
 			// Handle both variableCollections and collections property names
 			const collections = data.variableCollections || data.collections || [];
-			const collection = collections.find((c: any) => c.id === v.variableCollectionId);
+			const collection = collections.find(
+				(c: any) => c.id === v.variableCollectionId,
+			);
 
 			if (verbosity === "inventory") {
 				// Inventory: Remove valuesByMode entirely, add mode count
@@ -577,9 +656,13 @@ function applyFilters(
 				variableCollectionId: v.variableCollectionId,
 				...(v.modeNames && { modeNames: v.modeNames }),
 				...(v.modeCount && { modeCount: v.modeCount }),
-				...(v.definedInCollectionId && { definedInCollectionId: v.definedInCollectionId }),
+				...(v.definedInCollectionId && {
+					definedInCollectionId: v.definedInCollectionId,
+				}),
 				...(v.overriddenModeIds && { overriddenModeIds: v.overriddenModeIds }),
-				...(v.extendedCollectionOverrides && { extendedCollectionOverrides: v.extendedCollectionOverrides }),
+				...(v.extendedCollectionOverrides && {
+					extendedCollectionOverrides: v.extendedCollectionOverrides,
+				}),
 			}));
 		} else if (verbosity === "standard") {
 			filteredVariables = filteredVariables.map((v: any) => ({
@@ -592,9 +675,13 @@ function applyFilters(
 				...(v.scopes && { scopes: v.scopes }),
 				...(v.selectedMode && { selectedMode: v.selectedMode }),
 				...(v.modeMetadata && { modeMetadata: v.modeMetadata }),
-				...(v.definedInCollectionId && { definedInCollectionId: v.definedInCollectionId }),
+				...(v.definedInCollectionId && {
+					definedInCollectionId: v.definedInCollectionId,
+				}),
 				...(v.overriddenModeIds && { overriddenModeIds: v.overriddenModeIds }),
-				...(v.extendedCollectionOverrides && { extendedCollectionOverrides: v.extendedCollectionOverrides }),
+				...(v.extendedCollectionOverrides && {
+					extendedCollectionOverrides: v.extendedCollectionOverrides,
+				}),
 			}));
 		}
 		// For "full" verbosity, return all fields (no filtering)
@@ -614,7 +701,7 @@ function applyFilters(
 function paginateVariables(
 	data: any,
 	page: number = 1,
-	pageSize: number = 50
+	pageSize: number = 50,
 ): {
 	data: any;
 	pagination: {
@@ -658,7 +745,7 @@ function paginateVariables(
  * Manage LRU cache eviction
  */
 function evictOldestCacheEntry(
-	cache: Map<string, { data: any; timestamp: number }>
+	cache: Map<string, { data: any; timestamp: number }>,
 ): void {
 	if (cache.size >= MAX_CACHE_ENTRIES) {
 		// Find oldest entry
@@ -674,7 +761,10 @@ function evictOldestCacheEntry(
 
 		if (oldestKey) {
 			cache.delete(oldestKey);
-			logger.info({ evictedKey: oldestKey }, 'Evicted oldest cache entry (LRU)');
+			logger.info(
+				{ evictedKey: oldestKey },
+				"Evicted oldest cache entry (LRU)",
+			);
 		}
 	}
 }
@@ -689,21 +779,28 @@ function evictOldestCacheEntry(
 export function resolveVariableAliases(
 	variables: any[],
 	allVariablesMap: Map<string, any>,
-	collectionsMap: Map<string, any>
+	collectionsMap: Map<string, any>,
 ): any[] {
 	// Helper to format color value to hex
 	const formatColorToHex = (color: any): string | null => {
-		if (typeof color === 'string') return color;
-		if (color && typeof color.r === 'number' && typeof color.g === 'number' && typeof color.b === 'number') {
+		if (typeof color === "string") return color;
+		if (
+			color &&
+			typeof color.r === "number" &&
+			typeof color.g === "number" &&
+			typeof color.b === "number"
+		) {
 			const r = Math.round(color.r * 255);
 			const g = Math.round(color.g * 255);
 			const b = Math.round(color.b * 255);
-			const a = typeof color.a === 'number' ? color.a : 1;
+			const a = typeof color.a === "number" ? color.a : 1;
 			if (a < 1) {
-				const aHex = Math.round(a * 255).toString(16).padStart(2, '0');
-				return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}${aHex}`.toUpperCase();
+				const aHex = Math.round(a * 255)
+					.toString(16)
+					.padStart(2, "0");
+				return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}${aHex}`.toUpperCase();
 			}
-			return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+			return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`.toUpperCase();
 		}
 		return null;
 	};
@@ -729,19 +826,27 @@ export function resolveVariableAliases(
 	};
 
 	// Helper to resolve a single value, following alias chains
-	const resolveValue = (value: any, resolvedType: string, visited: Set<string> = new Set(), depth = 0): { resolved: any; aliasChain?: string[] } => {
+	const resolveValue = (
+		value: any,
+		resolvedType: string,
+		visited: Set<string> = new Set(),
+		depth = 0,
+	): { resolved: any; aliasChain?: string[] } => {
 		if (depth > 10) {
-			logger.warn({ depth }, 'Max alias resolution depth reached');
+			logger.warn({ depth }, "Max alias resolution depth reached");
 			return { resolved: null, aliasChain: Array.from(visited) };
 		}
 
 		// Check if this is an alias
-		if (value && typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
+		if (value && typeof value === "object" && value.type === "VARIABLE_ALIAS") {
 			const targetId = value.id;
 
 			// Prevent circular references
 			if (visited.has(targetId)) {
-				logger.warn({ targetId, visited: Array.from(visited) }, 'Circular alias reference detected');
+				logger.warn(
+					{ targetId, visited: Array.from(visited) },
+					"Circular alias reference detected",
+				);
 				return { resolved: null, aliasChain: Array.from(visited) };
 			}
 
@@ -749,54 +854,99 @@ export function resolveVariableAliases(
 
 			const targetVar = allVariablesMap.get(targetId);
 			if (!targetVar) {
-				logger.debug({ targetId }, 'Target variable not found in map');
+				logger.debug({ targetId }, "Target variable not found in map");
 				return { resolved: null, aliasChain: Array.from(visited) };
 			}
 
 			// Get the target's collection to find its default mode
-			const targetCollection = collectionsMap.get(targetVar.variableCollectionId);
+			const targetCollection = collectionsMap.get(
+				targetVar.variableCollectionId,
+			);
 			const targetModeId = getDefaultModeId(targetCollection, targetVar);
 
 			if (!targetModeId) {
-				logger.debug({ targetId, collectionId: targetVar.variableCollectionId }, 'Could not determine target mode ID');
+				logger.debug(
+					{ targetId, collectionId: targetVar.variableCollectionId },
+					"Could not determine target mode ID",
+				);
 				return { resolved: null, aliasChain: Array.from(visited) };
 			}
 
 			const targetValue = targetVar.valuesByMode?.[targetModeId];
 			if (targetValue === undefined) {
-				logger.debug({ targetId, targetModeId, availableModes: Object.keys(targetVar.valuesByMode || {}) }, 'Target value not found for mode');
+				logger.debug(
+					{
+						targetId,
+						targetModeId,
+						availableModes: Object.keys(targetVar.valuesByMode || {}),
+					},
+					"Target value not found for mode",
+				);
 				return { resolved: null, aliasChain: Array.from(visited) };
 			}
 
 			// Recursively resolve
-			const result = resolveValue(targetValue, targetVar.resolvedType, visited, depth + 1);
+			const result = resolveValue(
+				targetValue,
+				targetVar.resolvedType,
+				visited,
+				depth + 1,
+			);
 			return {
 				resolved: result.resolved,
-				aliasChain: [targetVar.name, ...(result.aliasChain || [])]
+				aliasChain: [targetVar.name, ...(result.aliasChain || [])],
 			};
 		}
 
 		// Composed color ("grey/900 at 50%"): { color, opacity }, opacity a
 		// percent, either part possibly an alias. Figma applies the opacity only
 		// to a fully opaque color; a semi-transparent color keeps its own alpha.
-		if (resolvedType === 'COLOR' && value && typeof value === 'object' && 'color' in value && 'opacity' in value && !('r' in value)) {
-			const color = resolveValue(value.color, 'COLOR', new Set(visited), depth + 1);
-			const opacity = resolveValue(value.opacity, 'FLOAT', new Set(visited), depth + 1);
-			const chain = [...(color.aliasChain || []), ...(opacity.aliasChain || [])];
-			if (typeof color.resolved !== 'string' || typeof opacity.resolved !== 'number') {
+		if (
+			resolvedType === "COLOR" &&
+			value &&
+			typeof value === "object" &&
+			"color" in value &&
+			"opacity" in value &&
+			!("r" in value)
+		) {
+			const color = resolveValue(
+				value.color,
+				"COLOR",
+				new Set(visited),
+				depth + 1,
+			);
+			const opacity = resolveValue(
+				value.opacity,
+				"FLOAT",
+				new Set(visited),
+				depth + 1,
+			);
+			const chain = [
+				...(color.aliasChain || []),
+				...(opacity.aliasChain || []),
+			];
+			if (
+				typeof color.resolved !== "string" ||
+				typeof opacity.resolved !== "number"
+			) {
 				return { resolved: null, aliasChain: chain };
 			}
 			const hex = color.resolved.toUpperCase();
 			if (hex.length === 9) return { resolved: hex, aliasChain: chain };
-			const alpha = Math.round(Math.max(0, Math.min(1, opacity.resolved / 100)) * 255);
+			const alpha = Math.round(
+				Math.max(0, Math.min(1, opacity.resolved / 100)) * 255,
+			);
 			return {
-				resolved: alpha >= 255 ? hex : `${hex}${alpha.toString(16).padStart(2, '0').toUpperCase()}`,
+				resolved:
+					alpha >= 255
+						? hex
+						: `${hex}${alpha.toString(16).padStart(2, "0").toUpperCase()}`,
 				aliasChain: chain,
 			};
 		}
 
 		// Not an alias - format the value based on type
-		if (resolvedType === 'COLOR') {
+		if (resolvedType === "COLOR") {
 			return { resolved: formatColorToHex(value) };
 		}
 
@@ -804,11 +954,14 @@ export function resolveVariableAliases(
 	};
 
 	// Process each variable
-	return variables.map(variable => {
+	return variables.map((variable) => {
 		const collection = collectionsMap.get(variable.variableCollectionId);
 		const modes = collection?.modes || [];
 
-		const resolvedValuesByMode: Record<string, { value: any; aliasTo?: string }> = {};
+		const resolvedValuesByMode: Record<
+			string,
+			{ value: any; aliasTo?: string }
+		> = {};
 
 		// Use the full cached variable's valuesByMode if the response variable was stripped by verbosity filtering
 		const fullVariable = allVariablesMap.get(variable.id);
@@ -821,18 +974,22 @@ export function resolveVariableAliases(
 			const rawValue = valuesByMode?.[modeId];
 			if (rawValue === undefined) continue;
 
-			const { resolved, aliasChain } = resolveValue(rawValue, variable.resolvedType, new Set());
+			const { resolved, aliasChain } = resolveValue(
+				rawValue,
+				variable.resolvedType,
+				new Set(),
+			);
 
 			const modeName = mode.name || modeId;
 			resolvedValuesByMode[modeName] = {
 				value: resolved,
-				...(aliasChain && aliasChain.length > 0 && { aliasTo: aliasChain[0] })
+				...(aliasChain && aliasChain.length > 0 && { aliasTo: aliasChain[0] }),
 			};
 		}
 
 		return {
 			...variable,
-			resolvedValuesByMode
+			resolvedValuesByMode,
 		};
 	});
 }
@@ -865,7 +1022,11 @@ export function registerFigmaAPITools(
 	 * instructions. Identity prefix lets LLMs disambiguate this error from
 	 * errors thrown by other Figma-related MCP servers running in parallel.
 	 */
-	function restAuthError(context: string, originalError: string, extra?: string): Error {
+	function restAuthError(
+		context: string,
+		originalError: string,
+		extra?: string,
+	): Error {
 		const remediation = isRemoteMode
 			? "Re-authenticate via the OAuth flow in your MCP client, or pass a Figma personal access token (figd_...) as a Bearer token."
 			: "Set FIGMA_ACCESS_TOKEN in your MCP client config to a Figma personal access token. Generate one at https://www.figma.com/developers/api#access-tokens.";
@@ -879,43 +1040,46 @@ export function registerFigmaAPITools(
 	// NOTE: For specific use cases, consider using specialized tools:
 	// - figma_get_component_for_development: For UI component implementation
 	// - figma_get_file_for_plugin: For plugin development
-	server.tool(
+	server.registerTool(
 		"figma_get_file_data",
-		"Get full file structure and document tree. WARNING: Can consume large amounts of tokens. NOT recommended for component descriptions (use figma_get_component instead). Best for understanding file structure or finding component nodeIds. Start with verbosity='summary' and depth=1 for initial exploration.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
-				),
-			depth: z
-				.number()
-				.min(0)
-				.max(3)
-				.optional()
-				.default(1)
-				.describe(
-					"How many levels of children to include (default: 1, max: 3). Start with 1 to prevent context exhaustion. Use 0 for full tree only when absolutely necessary."
-				),
-			verbosity: z
-				.enum(["summary", "standard", "full"])
-				.optional()
-				.default("summary")
-				.describe(
-					"Controls payload size: 'summary' (IDs/names/types only, ~90% smaller - RECOMMENDED), 'standard' (essential properties, ~50% smaller), 'full' (everything). Default: summary for token efficiency."
-				),
-			nodeIds: z
-				.array(z.string())
-				.optional()
-				.describe("Specific node IDs to retrieve (optional)"),
-			enrich: z
-				.boolean()
-				.optional()
-				.describe(
-					"Set to true when user asks for: file statistics, health metrics, design system audit, or quality analysis. Adds statistics, health scores, and audit summaries. Default: false"
-				),
+			description:
+				"Get full file structure and document tree. WARNING: Can consume large amounts of tokens. NOT recommended for component descriptions (use figma_get_component instead). Best for understanding file structure or finding component nodeIds. Start with verbosity='summary' and depth=1 for initial exploration.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe(
+						"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected.",
+					),
+				depth: z
+					.number()
+					.min(0)
+					.max(3)
+					.optional()
+					.default(1)
+					.describe(
+						"How many levels of children to include (default: 1, max: 3). Start with 1 to prevent context exhaustion. Use 0 for full tree only when absolutely necessary.",
+					),
+				verbosity: z
+					.enum(["summary", "standard", "full"])
+					.optional()
+					.default("summary")
+					.describe(
+						"Controls payload size: 'summary' (IDs/names/types only, ~90% smaller - RECOMMENDED), 'standard' (essential properties, ~50% smaller), 'full' (everything). Default: summary for token efficiency.",
+					),
+				nodeIds: z
+					.array(z.string())
+					.optional()
+					.describe("Specific node IDs to retrieve (optional)"),
+				enrich: z
+					.boolean()
+					.optional()
+					.describe(
+						"Set to true when user asks for: file statistics, health metrics, design system audit, or quality analysis. Adds statistics, health scores, and audit summaries. Default: false",
+					),
+			}),
 		},
 		async ({ fileUrl, depth, nodeIds, enrich, verbosity }) => {
 			try {
@@ -924,7 +1088,8 @@ export function registerFigmaAPITools(
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
-					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					const errorMessage =
+						apiError instanceof Error ? apiError.message : String(apiError);
 					throw restAuthError(
 						"Cannot retrieve file data. REST API authentication required.",
 						errorMessage,
@@ -936,7 +1101,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma.",
 					);
 				}
 
@@ -945,20 +1110,29 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, depth, nodeIds, enrich, verbosity }, "Fetching file data");
+				logger.info(
+					{ fileKey, depth, nodeIds, enrich, verbosity },
+					"Fetching file data",
+				);
 
 				const wantsNodes = Array.isArray(nodeIds) && nodeIds.length > 0;
 				// With nodeIds, the document is just the page list (depth 1): the file
 				// endpoint counts depth from the document root, so passing ids + depth
 				// there cut the requested nodes off entirely. The nodes themselves come
 				// from the nodes endpoint, where depth counts from each node.
-				const fileData = await api.getFile(fileKey, wantsNodes ? { depth: 1 } : { depth });
+				const fileData = await api.getFile(
+					fileKey,
+					wantsNodes ? { depth: 1 } : { depth },
+				);
 				const nodesData = wantsNodes
 					? await api.getNodes(fileKey, nodeIds, depth ? { depth } : undefined)
 					: null;
 
 				// Apply verbosity filtering to reduce payload size
-				const filterNode = (node: any, level: "summary" | "standard" | "full"): any => {
+				const filterNode = (
+					node: any,
+					level: "summary" | "standard" | "full",
+				): any => {
 					if (!node) return node;
 
 					if (level === "summary") {
@@ -968,7 +1142,9 @@ export function registerFigmaAPITools(
 							name: node.name,
 							type: node.type,
 							...(node.children && {
-								children: node.children.map((child: any) => filterNode(child, level))
+								children: node.children.map((child: any) =>
+									filterNode(child, level),
+								),
 							}),
 						};
 					}
@@ -984,23 +1160,41 @@ export function registerFigmaAPITools(
 						};
 
 						// Include bounds for layout calculations
-						if (node.absoluteBoundingBox) filtered.absoluteBoundingBox = node.absoluteBoundingBox;
+						if (node.absoluteBoundingBox)
+							filtered.absoluteBoundingBox = node.absoluteBoundingBox;
 						if (node.size) filtered.size = node.size;
 
 						// Auto-layout and sizing (fixed/hug/fill, min/max constraints)
 						for (const k of [
-							"layoutMode", "layoutSizingHorizontal", "layoutSizingVertical",
-							"primaryAxisSizingMode", "counterAxisSizingMode", "layoutWrap",
-							"primaryAxisAlignItems", "counterAxisAlignItems", "counterAxisSpacing", "layoutPositioning",
-							"minWidth", "maxWidth", "minHeight", "maxHeight",
-							"paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "itemSpacing",
+							"layoutMode",
+							"layoutSizingHorizontal",
+							"layoutSizingVertical",
+							"primaryAxisSizingMode",
+							"counterAxisSizingMode",
+							"layoutWrap",
+							"primaryAxisAlignItems",
+							"counterAxisAlignItems",
+							"counterAxisSpacing",
+							"layoutPositioning",
+							"minWidth",
+							"maxWidth",
+							"minHeight",
+							"maxHeight",
+							"paddingLeft",
+							"paddingRight",
+							"paddingTop",
+							"paddingBottom",
+							"itemSpacing",
 						]) {
-							if (node[k] !== undefined && node[k] !== null) filtered[k] = node[k];
+							if (node[k] !== undefined && node[k] !== null)
+								filtered[k] = node[k];
 						}
 
 						// Include component/instance info for plugin work
 						if (node.componentId) filtered.componentId = node.componentId;
-						if (node.componentPropertyReferences) filtered.componentPropertyReferences = node.componentPropertyReferences;
+						if (node.componentPropertyReferences)
+							filtered.componentPropertyReferences =
+								node.componentPropertyReferences;
 
 						// Include basic styling (but not full details)
 						if (node.fills && node.fills.length > 0) {
@@ -1013,11 +1207,14 @@ export function registerFigmaAPITools(
 
 						// Include plugin data if present
 						if (node.pluginData) filtered.pluginData = node.pluginData;
-						if (node.sharedPluginData) filtered.sharedPluginData = node.sharedPluginData;
+						if (node.sharedPluginData)
+							filtered.sharedPluginData = node.sharedPluginData;
 
 						// Recursively filter children
 						if (node.children) {
-							filtered.children = node.children.map((child: any) => filterNode(child, level));
+							filtered.children = node.children.map((child: any) =>
+								filterNode(child, level),
+							);
 						}
 
 						return filtered;
@@ -1027,9 +1224,10 @@ export function registerFigmaAPITools(
 					return node;
 				};
 
-				const filteredDocument = verbosity !== "full"
-					? filterNode(fileData.document, verbosity || "standard")
-					: fileData.document;
+				const filteredDocument =
+					verbosity !== "full"
+						? filterNode(fileData.document, verbosity || "standard")
+						: fileData.document;
 
 				// Requested nodes, filtered at the same verbosity. A node the API
 				// can't find comes back as null rather than silently disappearing.
@@ -1040,7 +1238,11 @@ export function registerFigmaAPITools(
 					// keys each node under a dashed alias, which doubled every node.
 					for (const id of [...new Set(nodeIds!.map(normalizeNodeId))]) {
 						const doc = nodesData.nodes[id]?.document;
-						out[id] = doc ? (level === "full" ? doc : filterNode(doc, level)) : null;
+						out[id] = doc
+							? level === "full"
+								? doc
+								: filterNode(doc, level)
+							: null;
 					}
 					return out;
 				};
@@ -1054,13 +1256,13 @@ export function registerFigmaAPITools(
 					components: fileData.components
 						? Object.keys(fileData.components).length
 						: 0,
-					styles: fileData.styles
-						? Object.keys(fileData.styles).length
-						: 0,
+					styles: fileData.styles ? Object.keys(fileData.styles).length : 0,
 					verbosity: verbosity || "standard",
 					...(wantsNodes && {
 						requestedNodes: nodeIds,
-						nodes: filterNodes((verbosity || "standard") as "summary" | "standard" | "full"),
+						nodes: filterNodes(
+							(verbosity || "standard") as "summary" | "standard" | "full",
+						),
 					}),
 				};
 
@@ -1073,7 +1275,7 @@ export function registerFigmaAPITools(
 
 					response = await enrichmentService.enrichFileData(
 						{ ...response, ...fileData },
-						enrichmentOptions
+						enrichmentOptions,
 					);
 				}
 
@@ -1119,19 +1321,17 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									error: errorMessage,
-									message: "Failed to retrieve Figma file data",
-									hint: "Make sure FIGMA_ACCESS_TOKEN is configured and the file is accessible",
-								}
-							),
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to retrieve Figma file data",
+								hint: "Make sure FIGMA_ACCESS_TOKEN is configured and the file is accessible",
+							}),
 						},
 					],
 					isError: true,
 				};
 			}
-		}
+		},
 	);
 
 	/**
@@ -1143,122 +1343,43 @@ export function registerFigmaAPITools(
 	 *   3. REST API — requires Enterprise plan (returns 403 otherwise)
 	 *   4. Styles API — partial fallback for non-Enterprise (styles, not variables)
 	 *
-	 * The legacy `parseFromConsole` two-call console-snippet workflow was
-	 * removed in the Phase 3 cleanup. Setting parseFromConsole=true now
-	 * throws an identified error pointing the caller at the bridge.
+	 * The legacy `parseFromConsole` / `useConsoleFallback` parameters were
+	 * removed from the schema; unknown keys are ignored, so old callers still work.
 	 */
-	server.tool(
+	server.registerTool(
 		"figma_get_variables",
-		"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Returns a compact summary by default — pass format='full' for the complete dataset or format='filtered' with collection/namePattern/mode filters for specific variables. Supports verbosity control to prevent token exhaustion. Resolution order: Desktop Bridge plugin (works on any plan) → Variables REST API (Enterprise only) → Styles API as a partial fallback. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
-				),
-			includePublished: z
-				.boolean()
-				.optional()
-				.default(true)
-				.describe("Include published variables from libraries"),
-			verbosity: z
-				.enum(["inventory", "summary", "standard", "full"])
-				.optional()
-				.default("standard")
-				.describe(
-					"Controls payload size: 'inventory' (names/IDs only, ~95% smaller, use with filtered), 'summary' (names/values only, ~80% smaller), 'standard' (essential properties, ~45% smaller), 'full' (everything). Default: standard"
-				),
-			enrich: z
-				.boolean()
-				.optional()
-				.describe(
-					"Set to true when user asks for: CSS/Sass/Tailwind exports, code examples, design tokens, usage information, dependencies, or any export format. Adds resolved values, dependency graphs, and usage analysis. Default: false"
-				),
-			include_usage: z
-				.boolean()
-				.optional()
-				.describe("Include usage in styles and components (requires enrich=true)"),
-			include_dependencies: z
-				.boolean()
-				.optional()
-				.describe("Include variable dependency graph (requires enrich=true)"),
-			include_exports: z
-				.boolean()
-				.optional()
-				.describe("Include export format examples (requires enrich=true)"),
+			description:
+				"Read the file's variables (design tokens): collections, modes and values. Returns a compact summary by default; use format 'filtered' with collection/namePattern/mode for specific variables. For code (CSS, Sass, Tailwind, TypeScript) pass export_formats. Works on any plan through the Desktop Bridge.",
+			inputSchema: z.object({
+				fileUrl: z.string().url().optional().describe("Figma file URL. Only needed when the Desktop Bridge isn't connected."),
+				includePublished: z.boolean().optional().default(true).describe("Include variables from published libraries."),
+				verbosity: z
+					.enum(["inventory", "summary", "standard", "full"])
+					.optional()
+					.default("standard")
+					.describe("Detail per variable: inventory (names/IDs), summary (names/values), standard, full."),
+				enrich: z.boolean().optional().describe("Add resolved values, usage and dependencies."),
+				include_usage: z.boolean().optional().describe("With enrich: where each variable is used."),
+				include_dependencies: z.boolean().optional().describe("With enrich: the alias dependency graph."),
+				include_exports: z.boolean().optional().describe("With enrich: code examples."),
 				export_formats: z
-				.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
-				.optional()
-				.describe("Which code formats to generate examples for. Use when user mentions specific formats like 'CSS', 'Tailwind', 'SCSS', 'TypeScript', etc. Automatically enables enrichment."),
-			format: z
-				.enum(["summary", "filtered", "full"])
-				.optional()
-				.describe(
-					"Response format: 'summary' (~2K tokens with overview and names only), 'filtered' (apply collection/name/mode filters), 'full' (complete dataset from cache or fetch). " +
-					"Default: summary (token-efficient). When format is omitted, filter params (collection/namePattern/mode) auto-select 'filtered', and enrichment/export/resolveAliases/returnAsLinks params auto-select 'full'. " +
-					"Full format returns all data but may be auto-summarized if >25K tokens."
-				),
-			collection: z
-				.string()
-				.optional()
-				.describe("Filter variables by collection name or ID. Case-insensitive substring match. Only applies when format='filtered'. Example: 'Primitives' or 'VariableCollectionId:123'"),
-			namePattern: z
-				.string()
-				.optional()
-				.describe("Filter variables by name using regex pattern or substring. Case-insensitive. Only applies when format='filtered'. Example: 'color/brand' or '^typography'"),
-			mode: z
-				.string()
-				.optional()
-				.describe("Filter variables by mode name or ID. Only returns variables that have values for this mode. Only applies when format='filtered'. Example: 'Light' or 'Dark'"),
-			returnAsLinks: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe("Return variables as resource_link references instead of full data. Drastically reduces payload size (100+ variables = ~20KB vs >1MB). Recommended for large variable sets — combine with format='filtered' + namePattern/collection/mode to fetch only the variables you need. Default: false"),
-			refreshCache: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe("Force refresh cache by fetching fresh data from Figma. Use when data may have changed since last fetch. Default: false (use cached data if available and fresh)"),
-			useConsoleFallback: z
-				.boolean()
-				.optional()
-				.default(true)
-				.describe(
-					"DEPRECATED — has no effect. The console-snippet workflow was removed in the Phase 3 CDP cleanup; the Desktop Bridge plugin now handles all non-REST variable extraction automatically. Kept for parameter compatibility only — safe to ignore."
-				),
-			parseFromConsole: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe(
-					"DEPRECATED — setting this to true now raises an explicit error. The Puppeteer-based console parser no longer exists. Open the Figma Console MCP Desktop Bridge plugin in Figma Desktop and call figma_get_variables() without parseFromConsole; the plugin returns full variable data through the WebSocket bridge."
-				),
-			page: z
-				.number()
-				.int()
-				.min(1)
-				.optional()
-				.describe("Page number for paginated results (1-based, default 1). Applies to format='filtered' (always paginated, 50 per page by default) and to format='full' when page or pageSize is given. Use when the response is too large."),
-			pageSize: z
-				.number()
-				.int()
-				.min(1)
-				.max(100)
-				.optional()
-				.describe("Number of variables per page (1-100, default 50). Giving page or pageSize with format='full' paginates the full dataset; the response then includes a `pagination` object."),
-			resolveAliases: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe(
-					"Automatically resolve variable aliases to their final values (hex colors, numbers, etc.). " +
-					"When true, each variable will include a 'resolvedValuesByMode' field with the actual values " +
-					"instead of just alias references. Useful for getting color hex values without manual resolution. " +
-					"Default: false."
-				),
+					.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
+					.optional()
+					.describe("Code formats to generate (implies enrich)."),
+				format: z
+					.enum(["summary", "filtered", "full"])
+					.optional()
+					.describe("summary (default; names only), filtered (collection/namePattern/mode; paginated), full (everything; large). Filters imply filtered."),
+				collection: z.string().optional().describe("Collection name or ID (case-insensitive substring)."),
+				namePattern: z.string().optional().describe("Variable name regex or substring, e.g. 'color/brand'."),
+				mode: z.string().optional().describe("Mode name or ID, e.g. 'Dark'."),
+				returnAsLinks: z.boolean().optional().default(false).describe("Return resource links instead of full data (large sets)."),
+				refreshCache: z.boolean().optional().default(false).describe("Ignore the cache and re-read from Figma."),
+				page: z.number().int().min(1).optional().describe("Page (1-based) for filtered or paginated full results."),
+				pageSize: z.number().int().min(1).max(100).optional().describe("Variables per page (default 50)."),
+				resolveAliases: z.boolean().optional().default(false).describe("Add resolvedValuesByMode with final values instead of alias references."),
+			}),
 		},
 		async ({
 			fileUrl,
@@ -1275,11 +1396,9 @@ export function registerFigmaAPITools(
 			mode,
 			returnAsLinks,
 			refreshCache,
-			useConsoleFallback,
-			parseFromConsole,
 			page,
 			pageSize,
-			resolveAliases
+			resolveAliases,
 		}) => {
 			// Smart format default (token efficiency): when the caller doesn't pick a
 			// format, use the cheapest one their other parameters allow. Explicit
@@ -1311,12 +1430,11 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									error: "No Figma file URL available",
-									message: "Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
-								}
-							),
+							text: JSON.stringify({
+								error: "No Figma file URL available",
+								message:
+									"Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma.",
+							}),
 						},
 					],
 					isError: true,
@@ -1330,12 +1448,10 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									error: `Invalid Figma URL: ${url}`,
-									message: "Could not extract file key from URL"
-								}
-							),
+							text: JSON.stringify({
+								error: `Invalid Figma URL: ${url}`,
+								message: "Could not extract file key from URL",
+							}),
 						},
 					],
 					isError: true,
@@ -1349,7 +1465,10 @@ export function registerFigmaAPITools(
 			const branchId = urlInfo.branchId;
 
 			if (branchId) {
-				logger.info({ mainFileKey, branchId, effectiveFileKey: fileKey }, 'Branch URL detected, using branch key for API calls');
+				logger.info(
+					{ mainFileKey, branchId, effectiveFileKey: fileKey },
+					"Branch URL detected, using branch key for API calls",
+				);
 			}
 
 			try {
@@ -1359,7 +1478,7 @@ export function registerFigmaAPITools(
 				let cachedData: any = null;
 				let shouldFetch = true;
 
-				if (variablesCache && !parseFromConsole) {
+				if (variablesCache) {
 					const cacheEntry = variablesCache.get(fileKey);
 
 					if (cacheEntry) {
@@ -1376,15 +1495,21 @@ export function registerFigmaAPITools(
 									cacheAge: Date.now() - cacheEntry.timestamp,
 									variableCount: cachedData.variables?.length,
 								},
-								'Using cached variables data'
+								"Using cached variables data",
 							);
 						} else if (!isValid) {
-							logger.info({ fileKey, cacheAge: Date.now() - cacheEntry.timestamp }, 'Cache expired, will refresh');
+							logger.info(
+								{ fileKey, cacheAge: Date.now() - cacheEntry.timestamp },
+								"Cache expired, will refresh",
+							);
 						} else if (refreshCache) {
-							logger.info({ fileKey }, 'Refresh cache requested, will fetch fresh data');
+							logger.info(
+								{ fileKey },
+								"Refresh cache requested, will fetch fresh data",
+							);
 						}
 					} else {
-						logger.info({ fileKey }, 'No cache entry found, will fetch data');
+						logger.info({ fileKey }, "No cache entry found, will fetch data");
 					}
 				}
 
@@ -1394,24 +1519,31 @@ export function registerFigmaAPITools(
 					let responseData = cachedData;
 					let paginationInfo: any = null;
 
-					if (format === 'summary') {
+					if (format === "summary") {
 						// Return compact summary
 						responseData = generateSummary(cachedData);
-						logger.info({ fileKey, estimatedTokens: estimateTokens(responseData) }, 'Generated summary from cache');
-					} else if (format === 'filtered') {
+						logger.info(
+							{ fileKey, estimatedTokens: estimateTokens(responseData) },
+							"Generated summary from cache",
+						);
+					} else if (format === "filtered") {
 						// Apply filters with verbosity-aware valuesByMode transformation
-						responseData = applyFilters(cachedData, {
-							collection,
-							namePattern,
-							mode,
-						}, verbosity || 'standard');
+						responseData = applyFilters(
+							cachedData,
+							{
+								collection,
+								namePattern,
+								mode,
+							},
+							verbosity || "standard",
+						);
 
 						// ALWAYS apply pagination for filtered results to prevent 1MB limit
 						// Default to page 1, pageSize 50 if not specified
 						const paginated = paginateVariables(
 							responseData,
 							page || 1,
-							pageSize || 50
+							pageSize || 50,
 						);
 						responseData = paginated.data;
 						paginationInfo = paginated.pagination;
@@ -1422,11 +1554,12 @@ export function registerFigmaAPITools(
 
 						// CRITICAL FIX: Only include collections referenced by paginated variables
 						const referencedCollectionIds = new Set(
-							responseData.variables.map((v: any) => v.variableCollectionId)
+							responseData.variables.map((v: any) => v.variableCollectionId),
 						);
-						responseData.variableCollections = responseData.variableCollections.filter(
-							(c: any) => referencedCollectionIds.has(c.id)
-						);
+						responseData.variableCollections =
+							responseData.variableCollections.filter((c: any) =>
+								referencedCollectionIds.has(c.id),
+							);
 
 						// Filter variables to minimal needed fields
 						responseData.variables = responseData.variables.map((v: any) => {
@@ -1442,12 +1575,14 @@ export function registerFigmaAPITools(
 								// If mode filter specified, include just that single mode's value
 								if (mode && v.valuesByMode) {
 									// Find the mode ID from the collection
-									const collection = responseData.variableCollections.find((c: any) =>
-										c.id === v.variableCollectionId
+									const collection = responseData.variableCollections.find(
+										(c: any) => c.id === v.variableCollectionId,
 									);
 									if (collection?.modes) {
-										const modeObj = collection.modes.find((m: any) =>
-											m.name?.toLowerCase().includes(mode.toLowerCase()) || m.modeId === mode
+										const modeObj = collection.modes.find(
+											(m: any) =>
+												m.name?.toLowerCase().includes(mode.toLowerCase()) ||
+												m.modeId === mode,
 										);
 										if (modeObj && v.valuesByMode[modeObj.modeId]) {
 											result.value = v.valuesByMode[modeObj.modeId];
@@ -1483,34 +1618,35 @@ export function registerFigmaAPITools(
 						});
 
 						// Filter collections to remove massive variableIds arrays
-						responseData.variableCollections = responseData.variableCollections.map((c: any) => {
-							if (effectiveVerbosity === "inventory") {
-								// Ultra-minimal: just ID and name, mode names only (no full mode objects)
-								return {
-									id: c.id,
-									name: c.name,
-									modeNames: c.modes?.map((m: any) => m.name) || [],
-								};
-							}
-							if (effectiveVerbosity === "summary") {
-								return {
-									id: c.id,
-									name: c.name,
-									modes: c.modes, // Keep modes for user to understand mode structure
-								};
-							}
-							if (effectiveVerbosity === "standard") {
-								return {
-									id: c.id,
-									name: c.name,
-									modes: c.modes,
-									defaultModeId: c.defaultModeId,
-								};
-							}
-							// For full, remove variableIds array to reduce size
-							const { variableIds, ...rest } = c;
-							return rest;
-						});
+						responseData.variableCollections =
+							responseData.variableCollections.map((c: any) => {
+								if (effectiveVerbosity === "inventory") {
+									// Ultra-minimal: just ID and name, mode names only (no full mode objects)
+									return {
+										id: c.id,
+										name: c.name,
+										modeNames: c.modes?.map((m: any) => m.name) || [],
+									};
+								}
+								if (effectiveVerbosity === "summary") {
+									return {
+										id: c.id,
+										name: c.name,
+										modes: c.modes, // Keep modes for user to understand mode structure
+									};
+								}
+								if (effectiveVerbosity === "standard") {
+									return {
+										id: c.id,
+										name: c.name,
+										modes: c.modes,
+										defaultModeId: c.defaultModeId,
+									};
+								}
+								// For full, remove variableIds array to reduce size
+								const { variableIds, ...rest } = c;
+								return rest;
+							});
 
 						logger.info(
 							{
@@ -1522,7 +1658,7 @@ export function registerFigmaAPITools(
 								totalPages: paginationInfo.totalPages,
 								verbosity: effectiveVerbosity,
 							},
-							'Applied filters, pagination, and verbosity filtering to cached data'
+							"Applied filters, pagination, and verbosity filtering to cached data",
 						);
 
 						// Apply alias resolution if requested
@@ -1541,12 +1677,12 @@ export function registerFigmaAPITools(
 							responseData.variables = resolveVariableAliases(
 								responseData.variables,
 								allVariablesMap,
-								collectionsMap
+								collectionsMap,
 							);
 
 							logger.info(
 								{ fileKey, resolvedCount: responseData.variables.length },
-								'Applied alias resolution to filtered variables'
+								"Applied alias resolution to filtered variables",
 							);
 						}
 					} else {
@@ -1554,7 +1690,11 @@ export function registerFigmaAPITools(
 						// silently ignored here, returning everything with no
 						// pagination object.
 						if (page !== undefined || pageSize !== undefined) {
-							const paginated = paginateVariables(responseData, page || 1, pageSize || 50);
+							const paginated = paginateVariables(
+								responseData,
+								page || 1,
+								pageSize || 50,
+							);
 							responseData = paginated.data;
 							paginationInfo = paginated.pagination;
 						}
@@ -1563,23 +1703,23 @@ export function registerFigmaAPITools(
 						if (estimatedTokens > 25000) {
 							logger.warn(
 								{ fileKey, estimatedTokens },
-								'Full data exceeds MCP token limit (25K), auto-summarizing. Use format=summary or format=filtered to get specific data.'
+								"Full data exceeds MCP token limit (25K), auto-summarizing. Use format=summary or format=filtered to get specific data.",
 							);
 							const summary = generateSummary(responseData);
 							return {
 								content: [
 									{
 										type: "text",
-										text: JSON.stringify(
-											{
-												fileKey,
-												source: 'cache_auto_summarized',
-												warning: 'Full dataset exceeds MCP token limit (25,000 tokens)',
-												suggestion: 'Use format="summary" for overview or format="filtered" with collection/namePattern/mode filters to get specific variables',
-												estimatedTokens,
-												summary,
-											}
-										),
+										text: JSON.stringify({
+											fileKey,
+											source: "cache_auto_summarized",
+											warning:
+												"Full dataset exceeds MCP token limit (25,000 tokens)",
+											suggestion:
+												'Use format="summary" for overview or format="filtered" with collection/namePattern/mode filters to get specific variables',
+											estimatedTokens,
+											summary,
+										}),
 									},
 								],
 							};
@@ -1587,7 +1727,11 @@ export function registerFigmaAPITools(
 					}
 
 					// Apply alias resolution for 'full' format if not already applied (filtered format handles it above)
-					if (resolveAliases && format !== 'filtered' && responseData.variables?.length > 0) {
+					if (
+						resolveAliases &&
+						format !== "filtered" &&
+						responseData.variables?.length > 0
+					) {
 						// Build maps from ALL cached variables for resolution
 						const allVariablesMap = new Map<string, any>();
 						const collectionsMap = new Map<string, any>();
@@ -1602,12 +1746,12 @@ export function registerFigmaAPITools(
 						responseData.variables = resolveVariableAliases(
 							responseData.variables,
 							allVariablesMap,
-							collectionsMap
+							collectionsMap,
 						);
 
 						logger.info(
 							{ fileKey, resolvedCount: responseData.variables.length, format },
-							'Applied alias resolution to variables (full/summary format)'
+							"Applied alias resolution to variables (full/summary format)",
 						);
 					}
 
@@ -1616,7 +1760,7 @@ export function registerFigmaAPITools(
 					if (returnAsLinks) {
 						const summary = {
 							fileKey,
-							source: 'cache',
+							source: "cache",
 							totalVariables: responseData.variables?.length || 0,
 							totalCollections: responseData.variableCollections?.length || 0,
 							...(paginationInfo && { pagination: paginationInfo }),
@@ -1636,19 +1780,19 @@ export function registerFigmaAPITools(
 								type: "resource_link",
 								uri: `figma://variable/${v.id}`,
 								name: v.name || v.id,
-								description: `${v.resolvedType || 'VARIABLE'} from ${fileKey}`,
+								description: `${v.resolvedType || "VARIABLE"} from ${fileKey}`,
 							});
 						});
 
 						logger.info(
 							{
 								fileKey,
-								format: 'resource_links',
+								format: "resource_links",
 								variableCount: responseData.variables?.length || 0,
 								linkCount: content.length - 1, // -1 for summary text
 								estimatedSizeKB: (content.length * 150) / 1024,
 							},
-							`Returning variables as resource_links`
+							`Returning variables as resource_links`,
 						);
 
 						return { content };
@@ -1657,29 +1801,29 @@ export function registerFigmaAPITools(
 					// Default: return full data
 					const responsePayload = {
 						fileKey,
-						source: 'cache',
-						format: format || 'full',
+						source: "cache",
+						format: format || "full",
 						timestamp: cachedData.timestamp,
 						data: responseData,
 						...(paginationInfo && { pagination: paginationInfo }),
 					};
 					// Remove pretty printing to reduce payload size by 30-40%
 					const responseText = JSON.stringify(responsePayload);
-					const responseSizeBytes = Buffer.byteLength(responseText, 'utf8');
+					const responseSizeBytes = Buffer.byteLength(responseText, "utf8");
 					const responseSizeMB = (responseSizeBytes / (1024 * 1024)).toFixed(2);
 
 					logger.info(
 						{
 							fileKey,
-							format: format || 'full',
-							verbosity: verbosity || 'standard',
+							format: format || "full",
+							verbosity: verbosity || "standard",
 							variableCount: responseData.variables?.length || 0,
 							collectionCount: responseData.variableCollections?.length || 0,
 							responseSizeBytes,
 							responseSizeMB: `${responseSizeMB} MB`,
 							isUnder1MB: responseSizeBytes < 1024 * 1024,
 						},
-						`Response size check: ${responseSizeMB} MB`
+						`Response size check: ${responseSizeMB} MB`,
 					);
 
 					return {
@@ -1705,24 +1849,34 @@ export function registerFigmaAPITools(
 				// 1. If Desktop Bridge connected → Try Desktop Bridge FIRST (instant, all plans, full Plugin API data)
 				// 2. If no Desktop Bridge OR it fails → Try REST API as fallback (Enterprise users)
 				// 3. If both fail → Console snippet fallback (manual user step)
-				logger.info({ hasToken, hasDesktopConnection }, "Authentication method detection");
+				logger.info(
+					{ hasToken, hasDesktopConnection },
+					"Authentication method detection",
+				);
 
 				// Try REST API only when Desktop Bridge is NOT available
-				if (hasToken && !parseFromConsole && !hasDesktopConnection) {
+				if (hasToken && !hasDesktopConnection) {
 					try {
-						logger.info({ fileKey, includePublished, verbosity, enrich }, "Fetching variables via REST API (priority: token detected)");
+						logger.info(
+							{ fileKey, includePublished, verbosity, enrich },
+							"Fetching variables via REST API (priority: token detected)",
+						);
 						const api = await getFigmaAPI();
 
 						// Wrap API call with timeout to prevent indefinite hangs (30s timeout)
-						const { local, published, localError, publishedError } = await withTimeout(
-							api.getAllVariables(fileKey),
-							30000,
-							'Figma Variables API'
-						);
+						const { local, published, localError, publishedError } =
+							await withTimeout(
+								api.getAllVariables(fileKey),
+								30000,
+								"Figma Variables API",
+							);
 
 						// If local variables failed (e.g., 403 without Enterprise), fall through to Desktop Bridge
 						if (localError) {
-							logger.warn({ error: localError, fileKey }, "REST API failed to get local variables, falling back to Desktop Bridge");
+							logger.warn(
+								{ error: localError, fileKey },
+								"REST API failed to get local variables, falling back to Desktop Bridge",
+							);
 							throw new Error(localError);
 						}
 
@@ -1745,9 +1899,9 @@ export function registerFigmaAPITools(
 									fileKey,
 									source: "rest_api",
 									timestamp: Date.now(),
-									variables: (localFormatted.variables || []).map(
-										(v: any) => ({ ...v }),
-									),
+									variables: (localFormatted.variables || []).map((v: any) => ({
+										...v,
+									})),
 									variableCollections: (localFormatted.collections || []).map(
 										(c: any) => ({ ...c }),
 									),
@@ -1763,15 +1917,18 @@ export function registerFigmaAPITools(
 						// Honor format='summary' on the REST path (historically only the
 						// cache and Desktop Bridge paths summarized). Runs AFTER the
 						// cache write so summary calls still populate the full dataset.
-						if (format === 'summary') {
+						if (format === "summary") {
 							const summary = generateSummary({
 								fileKey,
 								timestamp: Date.now(),
-								source: 'rest_api',
+								source: "rest_api",
 								variables: localFormatted.variables,
 								variableCollections: localFormatted.collections,
 							});
-							logger.info({ fileKey, estimatedTokens: estimateTokens(summary) }, 'Generated summary from REST API data');
+							logger.info(
+								{ fileKey, estimatedTokens: estimateTokens(summary) },
+								"Generated summary from REST API data",
+							);
 							return {
 								content: [
 									{
@@ -1795,12 +1952,12 @@ export function registerFigmaAPITools(
 									variableKeys: Object.keys(localFormatted.variables[0]),
 									collectionCount: localFormatted.collections?.length,
 								},
-								'Variable structure before filtering'
+								"Variable structure before filtering",
 							);
 						}
 
 						// Apply collection/name/mode filtering if format is 'filtered'
-						if (format === 'filtered') {
+						if (format === "filtered") {
 							// Create properly structured data for applyFilters
 							const dataToFilter = {
 								variables: localFormatted.variables,
@@ -1810,7 +1967,7 @@ export function registerFigmaAPITools(
 							const filteredLocal = applyFilters(
 								dataToFilter,
 								{ collection, namePattern, mode },
-								verbosity || "standard"
+								verbosity || "standard",
 							);
 
 							localFormatted = {
@@ -1829,7 +1986,7 @@ export function registerFigmaAPITools(
 								const filteredPublished = applyFilters(
 									dataToFilterPublished,
 									{ collection, namePattern, mode },
-									verbosity || "standard"
+									verbosity || "standard",
 								);
 
 								publishedFormatted = {
@@ -1841,14 +1998,14 @@ export function registerFigmaAPITools(
 						}
 
 						// Apply verbosity filtering after collection/name/mode filters
-						if (verbosity && verbosity !== 'full') {
+						if (verbosity && verbosity !== "full") {
 							const verbosityFiltered = applyFilters(
 								{
 									variables: localFormatted.variables,
 									variableCollections: localFormatted.collections,
 								},
 								{},
-								verbosity
+								verbosity,
 							);
 
 							localFormatted = {
@@ -1864,7 +2021,7 @@ export function registerFigmaAPITools(
 										variableCollections: publishedFormatted.collections,
 									},
 									{},
-									verbosity
+									verbosity,
 								);
 
 								publishedFormatted = {
@@ -1894,13 +2051,16 @@ export function registerFigmaAPITools(
 								hasPrevPage: currentPage > 1,
 							};
 
-							localFormatted.variables = localFormatted.variables.slice(startIdx, endIdx);
+							localFormatted.variables = localFormatted.variables.slice(
+								startIdx,
+								endIdx,
+							);
 
 							if (includePublished && publishedFormatted) {
-								publishedFormatted.variables = publishedFormatted.variables.slice(startIdx, endIdx);
+								publishedFormatted.variables =
+									publishedFormatted.variables.slice(startIdx, endIdx);
 							}
 						}
-
 
 						// (Cache write happens above, pre-mutation — the response below
 						// is built from the filtered/paginated working copies.)
@@ -1933,20 +2093,20 @@ export function registerFigmaAPITools(
 							localFormatted.variables = resolveVariableAliases(
 								localFormatted.variables,
 								allVariablesMap,
-								collectionsMap
+								collectionsMap,
 							);
 
 							if (publishedFormatted?.variables) {
 								publishedFormatted.variables = resolveVariableAliases(
 									publishedFormatted.variables,
 									allVariablesMap,
-									collectionsMap
+									collectionsMap,
 								);
 							}
 
 							logger.info(
 								{ fileKey, resolvedCount: localFormatted.variables.length },
-								'Applied alias resolution to REST API variables'
+								"Applied alias resolution to REST API variables",
 							);
 						}
 
@@ -1973,11 +2133,11 @@ export function registerFigmaAPITools(
 							logger.info(
 								{
 									fileKey,
-									format: 'resource_links',
+									format: "resource_links",
 									variableCount: localFormatted.variables.length,
 									linkCount: content.length - 1,
 								},
-								`Returning REST API variables as resource_links`
+								`Returning REST API variables as resource_links`,
 							);
 
 							return { content };
@@ -2006,21 +2166,28 @@ export function registerFigmaAPITools(
 
 						// Mark REST API as successful
 						restApiSucceeded = true;
-						logger.info({ fileKey }, "REST API fetch successful, skipping Desktop Bridge");
+						logger.info(
+							{ fileKey },
+							"REST API fetch successful, skipping Desktop Bridge",
+						);
 
 						// Use adaptive response to prevent context exhaustion
 						return adaptiveResponse(responseData, {
 							toolName: "figma_get_variables",
 							compressionCallback: (adjustedLevel: string) => {
 								// Re-apply filters with adjusted verbosity
-								const level = adjustedLevel as "inventory" | "summary" | "standard" | "full";
+								const level = adjustedLevel as
+									| "inventory"
+									| "summary"
+									| "standard"
+									| "full";
 								const refiltered = applyFilters(
 									{
 										variables: localFormatted.variables,
 										variableCollections: localFormatted.collections,
 									},
 									{ collection, namePattern, mode },
-									level
+									level,
 								);
 
 								return {
@@ -2041,21 +2208,39 @@ export function registerFigmaAPITools(
 							],
 						});
 					} catch (restError) {
-						const errorMessage = restError instanceof Error ? restError.message : String(restError);
+						const errorMessage =
+							restError instanceof Error
+								? restError.message
+								: String(restError);
 
 						// Detect specific error types for better logging and handling
-						const isTimeout = errorMessage.includes('timed out');
-						const isRateLimit = errorMessage.includes('429') || errorMessage.toLowerCase().includes('rate limit');
-						const isAuthError = errorMessage.includes('403') || errorMessage.includes('401');
+						const isTimeout = errorMessage.includes("timed out");
+						const isRateLimit =
+							errorMessage.includes("429") ||
+							errorMessage.toLowerCase().includes("rate limit");
+						const isAuthError =
+							errorMessage.includes("403") || errorMessage.includes("401");
 
 						if (isTimeout) {
-							logger.warn({ error: errorMessage, fileKey }, "REST API timed out after 30s, falling back to Desktop Bridge");
+							logger.warn(
+								{ error: errorMessage, fileKey },
+								"REST API timed out after 30s, falling back to Desktop Bridge",
+							);
 						} else if (isRateLimit) {
-							logger.warn({ error: errorMessage, fileKey }, "REST API rate limited (429), falling back to Desktop Bridge");
+							logger.warn(
+								{ error: errorMessage, fileKey },
+								"REST API rate limited (429), falling back to Desktop Bridge",
+							);
 						} else if (isAuthError) {
-							logger.warn({ error: errorMessage, fileKey }, "REST API auth error, check FIGMA_ACCESS_TOKEN validity");
+							logger.warn(
+								{ error: errorMessage, fileKey },
+								"REST API auth error, check FIGMA_ACCESS_TOKEN validity",
+							);
 						} else {
-							logger.warn({ error: errorMessage, fileKey }, "REST API failed, will try Desktop Bridge fallback");
+							logger.warn(
+								{ error: errorMessage, fileKey },
+								"REST API failed, will try Desktop Bridge fallback",
+							);
 						}
 						// Don't throw - fall through to Desktop Bridge
 					}
@@ -2063,12 +2248,22 @@ export function registerFigmaAPITools(
 
 				// PRIMARY: Try Desktop Bridge (instant, all plans, full Plugin API data including aliases)
 				// Also used as fallback when REST API fails (403, timeout, rate limit)
-				if (hasDesktopConnection && !parseFromConsole && !restApiSucceeded && getDesktopConnector) {
+				if (
+					hasDesktopConnection &&
+					!restApiSucceeded &&
+					getDesktopConnector
+				) {
 					try {
-						logger.info({ fileKey }, "Attempting to get variables via Desktop connection");
+						logger.info(
+							{ fileKey },
+							"Attempting to get variables via Desktop connection",
+						);
 
 						const connector = await getDesktopConnector();
-						logger.info({ transport: connector.getTransportType?.() || 'websocket' }, "Desktop connector ready");
+						logger.info(
+							{ transport: connector.getTransportType?.() || "websocket" },
+							"Desktop connector ready",
+						);
 
 						// When refreshCache is requested, bypass the plugin UI's stale snapshot
 						// and fetch live data directly from the Figma Plugin API
@@ -2082,23 +2277,27 @@ export function registerFigmaAPITools(
 						// under `result`. The plugin-UI cache path (GET_VARIABLES_DATA) does
 						// not nest. Unwrap when we detect the EXECUTE_CODE shape so both
 						// paths produce a uniform { success, variables, ... } below. See #68.
-						const variableData =
-							desktopResult?.result?.variables
-								? desktopResult.result
-								: desktopResult;
+						const variableData = desktopResult?.result?.variables
+							? desktopResult.result
+							: desktopResult;
 
 						if (variableData?.success && variableData?.variables) {
 							// Extended collections keep their overrides on the collection, not
 							// on the variables — without this every tool reports "no override".
-							const extended = await augmentWithExtendedCollections(connector, variableData, fileKey);
-							if (extended.warning) variableData.extendedCollectionsWarning = extended.warning;
+							const extended = await augmentWithExtendedCollections(
+								connector,
+								variableData,
+								fileKey,
+							);
+							if (extended.warning)
+								variableData.extendedCollectionsWarning = extended.warning;
 							logger.info(
 								{
 									variableCount: variableData.variables.length,
 									collectionCount: variableData.variableCollections?.length,
 									extendedCollections: extended.merged,
 								},
-								"Successfully retrieved variables via Desktop connection!"
+								"Successfully retrieved variables via Desktop connection!",
 							);
 
 							// Prepare data for caching (using the raw data, not enriched)
@@ -2108,7 +2307,12 @@ export function registerFigmaAPITools(
 								timestamp: variableData.timestamp || Date.now(),
 								variables: variableData.variables,
 								variableCollections: variableData.variableCollections,
-								...(variableData.extendedCollectionsWarning ? { extendedCollectionsWarning: variableData.extendedCollectionsWarning } : {}),
+								...(variableData.extendedCollectionsWarning
+									? {
+											extendedCollectionsWarning:
+												variableData.extendedCollectionsWarning,
+										}
+									: {}),
 							};
 
 							// Store in cache with LRU eviction
@@ -2120,7 +2324,7 @@ export function registerFigmaAPITools(
 								});
 								logger.info(
 									{ fileKey, cacheSize: variablesCache.size },
-									'Stored variables in cache'
+									"Stored variables in cache",
 								);
 							}
 
@@ -2128,30 +2332,37 @@ export function registerFigmaAPITools(
 							let responseData = dataForCache;
 							let paginationInfo: any = null;
 
-							if (format === 'summary') {
+							if (format === "summary") {
 								responseData = generateSummary(dataForCache);
-								logger.info({ fileKey, estimatedTokens: estimateTokens(responseData) }, 'Generated summary from fetched data');
-							} else if (format === 'filtered') {
+								logger.info(
+									{ fileKey, estimatedTokens: estimateTokens(responseData) },
+									"Generated summary from fetched data",
+								);
+							} else if (format === "filtered") {
 								// Apply filters with verbosity-aware valuesByMode transformation
-								responseData = applyFilters(dataForCache, {
-									collection,
-									namePattern,
-									mode,
-								}, verbosity || 'standard');
+								responseData = applyFilters(
+									dataForCache,
+									{
+										collection,
+										namePattern,
+										mode,
+									},
+									verbosity || "standard",
+								);
 								logger.info(
 									{
 										fileKey,
 										originalCount: dataForCache.variables?.length,
 										filteredCount: responseData.variables?.length,
 									},
-									'Applied filters to fetched data'
+									"Applied filters to fetched data",
 								);
 
 								// Apply pagination (CRITICAL - was missing!)
 								const paginated = paginateVariables(
 									responseData,
 									page || 1,
-									pageSize || 50
+									pageSize || 50,
 								);
 								responseData = paginated.data;
 								paginationInfo = paginated.pagination;
@@ -2161,58 +2372,75 @@ export function registerFigmaAPITools(
 
 								// Only include collections referenced by paginated variables
 								const referencedCollectionIds = new Set(
-									responseData.variables.map((v: any) => v.variableCollectionId)
+									responseData.variables.map(
+										(v: any) => v.variableCollectionId,
+									),
 								);
-								responseData.variableCollections = responseData.variableCollections.filter(
-									(c: any) => referencedCollectionIds.has(c.id)
-								);
+								responseData.variableCollections =
+									responseData.variableCollections.filter((c: any) =>
+										referencedCollectionIds.has(c.id),
+									);
 
 								// Filter variables by verbosity
-								responseData.variables = responseData.variables.map((v: any) => {
-									if (effectiveVerbosity === "inventory") {
-										return {
-											id: v.id,
-											name: v.name,
-											collectionId: v.variableCollectionId,
-										};
-									}
-									if (effectiveVerbosity === "summary") {
-										return {
-											id: v.id,
-											name: v.name,
-											resolvedType: v.resolvedType,
-											valuesByMode: v.valuesByMode,
-											variableCollectionId: v.variableCollectionId,
-											...(v.definedInCollectionId && { definedInCollectionId: v.definedInCollectionId }),
-											...(v.overriddenModeIds && { overriddenModeIds: v.overriddenModeIds }),
-											...(v.extendedCollectionOverrides && { extendedCollectionOverrides: v.extendedCollectionOverrides }),
-										};
-									}
-									return v; // standard/full
-								});
+								responseData.variables = responseData.variables.map(
+									(v: any) => {
+										if (effectiveVerbosity === "inventory") {
+											return {
+												id: v.id,
+												name: v.name,
+												collectionId: v.variableCollectionId,
+											};
+										}
+										if (effectiveVerbosity === "summary") {
+											return {
+												id: v.id,
+												name: v.name,
+												resolvedType: v.resolvedType,
+												valuesByMode: v.valuesByMode,
+												variableCollectionId: v.variableCollectionId,
+												...(v.definedInCollectionId && {
+													definedInCollectionId: v.definedInCollectionId,
+												}),
+												...(v.overriddenModeIds && {
+													overriddenModeIds: v.overriddenModeIds,
+												}),
+												...(v.extendedCollectionOverrides && {
+													extendedCollectionOverrides:
+														v.extendedCollectionOverrides,
+												}),
+											};
+										}
+										return v; // standard/full
+									},
+								);
 
 								// Filter collections by verbosity
-								responseData.variableCollections = responseData.variableCollections.map((c: any) => {
-									if (effectiveVerbosity === "inventory") {
-										return {
-											id: c.id,
-											name: c.name,
-											modeNames: c.modes?.map((m: any) => m.name) || [],
-										};
-									}
-									if (effectiveVerbosity === "summary") {
-										return {
-											id: c.id,
-											name: c.name,
-											modes: c.modes,
-										};
-									}
-									return c; // standard/full
-								});
+								responseData.variableCollections =
+									responseData.variableCollections.map((c: any) => {
+										if (effectiveVerbosity === "inventory") {
+											return {
+												id: c.id,
+												name: c.name,
+												modeNames: c.modes?.map((m: any) => m.name) || [],
+											};
+										}
+										if (effectiveVerbosity === "summary") {
+											return {
+												id: c.id,
+												name: c.name,
+												modes: c.modes,
+											};
+										}
+										return c; // standard/full
+									});
 							} else {
 								// format === 'full' — honor explicit paging (#98)
 								if (page !== undefined || pageSize !== undefined) {
-									const paginated = paginateVariables(responseData, page || 1, pageSize || 50);
+									const paginated = paginateVariables(
+										responseData,
+										page || 1,
+										pageSize || 50,
+									);
 									responseData = paginated.data;
 									paginationInfo = paginated.pagination;
 								}
@@ -2221,23 +2449,23 @@ export function registerFigmaAPITools(
 								if (estimatedTokens > 25000) {
 									logger.warn(
 										{ fileKey, estimatedTokens },
-										'Full data exceeds MCP token limit (25K), auto-summarizing. Use format=summary or format=filtered to get specific data.'
+										"Full data exceeds MCP token limit (25K), auto-summarizing. Use format=summary or format=filtered to get specific data.",
 									);
 									const summary = generateSummary(responseData);
 									return {
 										content: [
 											{
 												type: "text",
-												text: JSON.stringify(
-													{
-														fileKey,
-														source: 'desktop_connection_auto_summarized',
-														warning: 'Full dataset exceeds MCP token limit (25,000 tokens)',
-														suggestion: 'Use format="summary" for overview or format="filtered" with collection/namePattern/mode filters to get specific variables',
-														estimatedTokens,
-														summary,
-													}
-												),
+												text: JSON.stringify({
+													fileKey,
+													source: "desktop_connection_auto_summarized",
+													warning:
+														"Full dataset exceeds MCP token limit (25,000 tokens)",
+													suggestion:
+														'Use format="summary" for overview or format="filtered" with collection/namePattern/mode filters to get specific variables',
+													estimatedTokens,
+													summary,
+												}),
 											},
 										],
 									};
@@ -2260,12 +2488,12 @@ export function registerFigmaAPITools(
 								responseData.variables = resolveVariableAliases(
 									responseData.variables,
 									allVariablesMap,
-									collectionsMap
+									collectionsMap,
 								);
 
 								logger.info(
 									{ fileKey, resolvedCount: responseData.variables.length },
-									'Applied alias resolution to Desktop variables'
+									"Applied alias resolution to Desktop variables",
 								);
 							}
 
@@ -2273,9 +2501,10 @@ export function registerFigmaAPITools(
 							if (returnAsLinks) {
 								const summary = {
 									fileKey,
-									source: 'desktop_connection',
+									source: "desktop_connection",
 									totalVariables: responseData.variables?.length || 0,
-									totalCollections: responseData.variableCollections?.length || 0,
+									totalCollections:
+										responseData.variableCollections?.length || 0,
 									...(paginationInfo && { pagination: paginationInfo }),
 								};
 
@@ -2292,18 +2521,18 @@ export function registerFigmaAPITools(
 										type: "resource_link",
 										uri: `figma://variable/${v.id}`,
 										name: v.name || v.id,
-										description: `${v.resolvedType || 'VARIABLE'} from ${fileKey}`,
+										description: `${v.resolvedType || "VARIABLE"} from ${fileKey}`,
 									});
 								});
 
 								logger.info(
 									{
 										fileKey,
-										format: 'resource_links',
+										format: "resource_links",
 										variableCount: responseData.variables?.length || 0,
 										linkCount: content.length - 1,
 									},
-									`Returning Desktop variables as resource_links`
+									`Returning Desktop variables as resource_links`,
 								);
 
 								return { content };
@@ -2314,50 +2543,60 @@ export function registerFigmaAPITools(
 								content: [
 									{
 										type: "text",
-										text: JSON.stringify(
-											{
-												fileKey,
-												source: "desktop_connection",
-												format: format || 'full',
-												timestamp: dataForCache.timestamp,
-												data: responseData,
-												...(paginationInfo && { pagination: paginationInfo }),
-												cached: false,
-											}
-										),
+										text: JSON.stringify({
+											fileKey,
+											source: "desktop_connection",
+											format: format || "full",
+											timestamp: dataForCache.timestamp,
+											data: responseData,
+											...(paginationInfo && { pagination: paginationInfo }),
+											cached: false,
+										}),
 									},
 								],
 							};
 						}
 					} catch (desktopError) {
-						const errorMessage = desktopError instanceof Error ? desktopError.message : String(desktopError);
-						const errorStack = desktopError instanceof Error ? desktopError.stack : undefined;
+						const errorMessage =
+							desktopError instanceof Error
+								? desktopError.message
+								: String(desktopError);
+						const errorStack =
+							desktopError instanceof Error ? desktopError.stack : undefined;
 
-						logger.error({
-							error: desktopError,
-							message: errorMessage,
-							stack: errorStack
-						}, "Desktop connection failed, falling back to other methods");
+						logger.error(
+							{
+								error: desktopError,
+								message: errorMessage,
+								stack: errorStack,
+							},
+							"Desktop connection failed, falling back to other methods",
+						);
 
 						// Continue to try REST API fallback
 					}
 				}
 
 				// SECONDARY FALLBACK: Try REST API if Desktop Bridge failed/unavailable and token exists
-				if (hasToken && !parseFromConsole && !restApiSucceeded) {
+				if (hasToken && !restApiSucceeded) {
 					try {
-						logger.info({ fileKey }, "Attempting REST API fallback for variables");
+						logger.info(
+							{ fileKey },
+							"Attempting REST API fallback for variables",
+						);
 						const api = await getFigmaAPI();
 
 						const { local, published, localError } = await withTimeout(
 							api.getAllVariables(fileKey),
 							30000,
-							'Figma Variables API'
+							"Figma Variables API",
 						);
 
 						if (!localError && local) {
 							let localFormatted = formatVariables(local);
-							let publishedFormatted = includePublished ? formatVariables(published) : null;
+							let publishedFormatted = includePublished
+								? formatVariables(published)
+								: null;
 
 							// Cache the FULL dataset pre-mutation in the Desktop shape
 							// (same poisoning fix as the primary REST path above).
@@ -2368,8 +2607,12 @@ export function registerFigmaAPITools(
 										fileKey,
 										source: "rest_api",
 										timestamp: Date.now(),
-										variables: (localFormatted.variables || []).map((v: any) => ({ ...v })),
-										variableCollections: (localFormatted.collections || []).map((c: any) => ({ ...c })),
+										variables: (localFormatted.variables || []).map(
+											(v: any) => ({ ...v }),
+										),
+										variableCollections: (localFormatted.collections || []).map(
+											(c: any) => ({ ...c }),
+										),
 									},
 									timestamp: Date.now(),
 								});
@@ -2377,15 +2620,18 @@ export function registerFigmaAPITools(
 
 							// Honor format='summary' on the REST fallback path too
 							// (after the cache write, so the full dataset is retained).
-							if (format === 'summary') {
+							if (format === "summary") {
 								const summary = generateSummary({
 									fileKey,
 									timestamp: Date.now(),
-									source: 'rest_api',
+									source: "rest_api",
 									variables: localFormatted.variables,
 									variableCollections: localFormatted.collections,
 								});
-								logger.info({ fileKey, estimatedTokens: estimateTokens(summary) }, 'Generated summary from REST API fallback data');
+								logger.info(
+									{ fileKey, estimatedTokens: estimateTokens(summary) },
+									"Generated summary from REST API fallback data",
+								);
 								return {
 									content: [
 										{
@@ -2402,32 +2648,52 @@ export function registerFigmaAPITools(
 							}
 
 							// Apply filters
-							if (format === 'filtered') {
+							if (format === "filtered") {
 								const filteredLocal = applyFilters(
-									{ variables: localFormatted.variables, variableCollections: localFormatted.collections },
+									{
+										variables: localFormatted.variables,
+										variableCollections: localFormatted.collections,
+									},
 									{ collection, namePattern, mode },
-									verbosity || "standard"
+									verbosity || "standard",
 								);
-								localFormatted = { summary: localFormatted.summary, collections: filteredLocal.variableCollections, variables: filteredLocal.variables };
+								localFormatted = {
+									summary: localFormatted.summary,
+									collections: filteredLocal.variableCollections,
+									variables: filteredLocal.variables,
+								};
 							}
 
 							// Apply verbosity
-							if (verbosity && verbosity !== 'full') {
+							if (verbosity && verbosity !== "full") {
 								const verbosityFiltered = applyFilters(
-									{ variables: localFormatted.variables, variableCollections: localFormatted.collections },
+									{
+										variables: localFormatted.variables,
+										variableCollections: localFormatted.collections,
+									},
 									{},
-									verbosity
+									verbosity,
 								);
-								localFormatted = { ...localFormatted, collections: verbosityFiltered.variableCollections, variables: verbosityFiltered.variables };
+								localFormatted = {
+									...localFormatted,
+									collections: verbosityFiltered.variableCollections,
+									variables: verbosityFiltered.variables,
+								};
 							}
 
 							// Apply alias resolution
 							if (resolveAliases && localFormatted.variables?.length > 0) {
 								const allVariablesMap = new Map<string, any>();
 								const collectionsMap = new Map<string, any>();
-								for (const v of localFormatted.variables || []) allVariablesMap.set(v.id, v);
-								for (const c of localFormatted.collections || []) collectionsMap.set(c.id, c);
-								localFormatted.variables = resolveVariableAliases(localFormatted.variables, allVariablesMap, collectionsMap);
+								for (const v of localFormatted.variables || [])
+									allVariablesMap.set(v.id, v);
+								for (const c of localFormatted.collections || [])
+									collectionsMap.set(c.id, c);
+								localFormatted.variables = resolveVariableAliases(
+									localFormatted.variables,
+									allVariablesMap,
+									collectionsMap,
+								);
 							}
 
 							restApiSucceeded = true;
@@ -2435,7 +2701,11 @@ export function registerFigmaAPITools(
 
 							const responseData = {
 								fileKey,
-								local: { summary: localFormatted.summary, collections: localFormatted.collections, variables: localFormatted.variables },
+								local: {
+									summary: localFormatted.summary,
+									collections: localFormatted.collections,
+									variables: localFormatted.variables,
+								},
 								verbosity: verbosity || "standard",
 								enriched: enrich || false,
 							};
@@ -2448,39 +2718,29 @@ export function registerFigmaAPITools(
 								],
 							});
 						} else {
-							logger.warn({ error: localError, fileKey }, "REST API fallback also failed (likely non-Enterprise plan)");
+							logger.warn(
+								{ error: localError, fileKey },
+								"REST API fallback also failed (likely non-Enterprise plan)",
+							);
 						}
 					} catch (restFallbackError) {
-						const msg = restFallbackError instanceof Error ? restFallbackError.message : String(restFallbackError);
+						const msg =
+							restFallbackError instanceof Error
+								? restFallbackError.message
+								: String(restFallbackError);
 						logger.warn({ error: msg, fileKey }, "REST API fallback failed");
 					}
-				}
-
-				// LAST RESORT: parseFromConsole was a Puppeteer-era workflow that read
-				// the magic-string output of a console snippet from the browser's
-				// console buffer. After the Phase 3 CDP cleanup there is no longer a
-				// Puppeteer-attached console for the snippet's output to land in, so
-				// the flag has become a no-op. Tell the caller what to do instead.
-				if (parseFromConsole) {
-					throw identifiedError(
-						"parseFromConsole is no longer supported.\n\n" +
-						"The console-snippet workflow it relied on required a Puppeteer browser " +
-						"connection to Figma Desktop, which was removed in Phase 3 of the cleanup. " +
-						"To extract variables, open the Figma Console MCP Desktop Bridge plugin in " +
-						"Figma Desktop and call figma_get_variables() without parseFromConsole — " +
-						"the plugin returns full variable data through the WebSocket bridge."
-					);
 				}
 
 				// No more fallback options available
 				throw new Error(
 					`Cannot retrieve variables. All methods failed.\n\n` +
-					`Tried methods:\n` +
-					`${hasToken ? '✗ REST API (failed)\n' : ''}` +
-					`✗ Desktop Bridge (failed or not available)\n` +
-					`\nTo fix:\n` +
-					`1. If you have FIGMA_ACCESS_TOKEN: Check your token permissions\n` +
-					`2. Install and run the Figma Desktop Bridge plugin and re-run this tool`
+						`Tried methods:\n` +
+						`${hasToken ? "✗ REST API (failed)\n" : ""}` +
+						`✗ Desktop Bridge (failed or not available)\n` +
+						`\nTo fix:\n` +
+						`1. If you have FIGMA_ACCESS_TOKEN: Check your token permissions\n` +
+						`2. Install and run the Figma Desktop Bridge plugin and re-run this tool`,
 				);
 			} catch (error) {
 				logger.error({ error }, "Failed to get variables");
@@ -2500,7 +2760,8 @@ export function registerFigmaAPITools(
 								type: "text",
 								text: JSON.stringify({
 									error: errorMessage,
-									message: "Failed to retrieve Figma variables — REST token is expired or invalid",
+									message:
+										"Failed to retrieve Figma variables — REST token is expired or invalid",
 									hint: "Generate a new personal access token at figma.com → Settings → Security → Personal access tokens and update FIGMA_ACCESS_TOKEN. Or open the Desktop Bridge plugin in Figma Desktop — variables work on any plan without a REST token.",
 								}),
 							},
@@ -2512,13 +2773,17 @@ export function registerFigmaAPITools(
 				// FIXED: Jump directly to Styles API (fast) instead of full file data (slow)
 				if (errorMessage.includes("403")) {
 					try {
-						logger.info({ fileKey }, "Variables API requires Enterprise, falling back to Styles API");
+						logger.info(
+							{ fileKey },
+							"Variables API requires Enterprise, falling back to Styles API",
+						);
 
 						let api;
 						try {
 							api = await getFigmaAPI();
 						} catch (apiError) {
-							const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+							const errorMessage =
+								apiError instanceof Error ? apiError.message : String(apiError);
 							throw restAuthError(
 								"Cannot retrieve variables or styles. REST API authentication required for both.",
 								errorMessage,
@@ -2531,30 +2796,30 @@ export function registerFigmaAPITools(
 						const formattedStyles = {
 							summary: {
 								total_styles: stylesData.meta?.styles?.length || 0,
-								message: "Variables API requires Enterprise. Here are your design styles instead.",
-								note: "These are Figma Styles (not Variables). Styles are the traditional way to store design tokens in Figma."
+								message:
+									"Variables API requires Enterprise. Here are your design styles instead.",
+								note: "These are Figma Styles (not Variables). Styles are the traditional way to store design tokens in Figma.",
 							},
-							styles: stylesData.meta?.styles || []
+							styles: stylesData.meta?.styles || [],
 						};
 
 						logger.info(
 							{ styleCount: formattedStyles.summary.total_styles },
-							"Successfully retrieved styles as fallback!"
+							"Successfully retrieved styles as fallback!",
 						);
 
 						return {
 							content: [
 								{
 									type: "text",
-									text: JSON.stringify(
-										{
-											fileKey,
-											source: "styles_api",
-											message: "Variables API requires an Enterprise plan. Retrieved your design system styles instead.",
-											data: formattedStyles,
-											fallback_method: true,
-										}
-									),
+									text: JSON.stringify({
+										fileKey,
+										source: "styles_api",
+										message:
+											"Variables API requires an Enterprise plan. Retrieved your design system styles instead.",
+										data: formattedStyles,
+										fallback_method: true,
+									}),
 								},
 							],
 						};
@@ -2566,19 +2831,23 @@ export function registerFigmaAPITools(
 							content: [
 								{
 									type: "text",
-									text: JSON.stringify(
-										{
-											error: "Unable to extract variables or styles from this file",
-											message: "The Variables API requires an Enterprise plan, and the automatic style extraction encountered an error.",
-											possibleReasons: [
-												"The file may be private or require additional permissions",
-												"The file structure may not contain extractable styles",
-												"There may be a network or authentication issue"
-											],
-											suggestion: "Please ensure the file is accessible and try again, or check if your token has the necessary permissions. With the Desktop Bridge plugin open in Figma Desktop, variables work on any plan without a REST token.",
-											technical: styleError instanceof Error ? styleError.message : String(styleError)
-										}
-									),
+									text: JSON.stringify({
+										error:
+											"Unable to extract variables or styles from this file",
+										message:
+											"The Variables API requires an Enterprise plan, and the automatic style extraction encountered an error.",
+										possibleReasons: [
+											"The file may be private or require additional permissions",
+											"The file structure may not contain extractable styles",
+											"There may be a network or authentication issue",
+										],
+										suggestion:
+											"Please ensure the file is accessible and try again, or check if your token has the necessary permissions. With the Desktop Bridge plugin open in Figma Desktop, variables work on any plan without a REST token.",
+										technical:
+											styleError instanceof Error
+												? styleError.message
+												: String(styleError),
+									}),
 								},
 							],
 							isError: true,
@@ -2591,61 +2860,59 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									error: errorMessage,
-									message: "Failed to retrieve Figma variables",
-									hint: errorMessage.includes("403")
-										? "The Variables REST API requires an Enterprise plan. Open the Desktop Bridge plugin in Figma Desktop instead — variables work on any plan through the bridge."
-										: "Make sure FIGMA_ACCESS_TOKEN is configured and has appropriate permissions, or open the Desktop Bridge plugin in Figma Desktop",
-								}
-							),
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to retrieve Figma variables",
+								hint: errorMessage.includes("403")
+									? "The Variables REST API requires an Enterprise plan. Open the Desktop Bridge plugin in Figma Desktop instead — variables work on any plan through the bridge."
+									: "Make sure FIGMA_ACCESS_TOKEN is configured and has appropriate permissions, or open the Desktop Bridge plugin in Figma Desktop",
+							}),
 						},
 					],
 					isError: true,
 				};
 			}
-		}
+		},
 	);
 
 	// Tool 10: Get Component Data
 	const componentDescription = isRemoteMode
 		? "Get a SINGLE component's metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation. TIP: To get ALL components with visual specs in one call, prefer figma_get_design_system_kit instead."
 		: "Get a SINGLE component's metadata or reconstruction specification. Two export formats: (1) 'metadata' (default) - comprehensive documentation with properties, variants, and design tokens for style guides and references, (2) 'reconstruction' - node tree specification compatible with Figma Component Reconstructor plugin for programmatic component creation. IMPORTANT: For local/unpublished components with metadata format, ensure the Figma Desktop Bridge plugin is running (Right-click in Figma → Plugins → Development → Figma Desktop Bridge) to get complete description data. TIP: To get ALL components with visual specs in one call, prefer figma_get_design_system_kit instead.";
-	server.tool(
+	server.registerTool(
 		"figma_get_component",
-		componentDescription,
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
-				),
-			nodeId: z
-				.string()
-				.describe("Component node ID (e.g., '123:456')"),
-			format: z
-				.enum(["metadata", "reconstruction"])
-				.optional()
-				.default("metadata")
-				.describe(
-					"Export format: 'metadata' (default) for comprehensive documentation, 'reconstruction' for node tree specification compatible with Figma Component Reconstructor plugin"
-				),
-			enrich: z
-				.boolean()
-				.optional()
-				.describe(
-					"Set to true when user asks for: design token coverage, hardcoded value analysis, or component quality metrics. Adds token coverage analysis and hardcoded value detection. Default: false. Only applicable for metadata format."
-				),
+			description: componentDescription,
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe(
+						"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected.",
+					),
+				nodeId: z.string().describe("Component node ID (e.g., '123:456')"),
+				format: z
+					.enum(["metadata", "reconstruction"])
+					.optional()
+					.default("metadata")
+					.describe(
+						"Export format: 'metadata' (default) for comprehensive documentation, 'reconstruction' for node tree specification compatible with Figma Component Reconstructor plugin",
+					),
+				enrich: z
+					.boolean()
+					.optional()
+					.describe(
+						"Set to true when user asks for: design token coverage, hardcoded value analysis, or component quality metrics. Adds token coverage analysis and hardcoded value detection. Default: false. Only applicable for metadata format.",
+					),
+			}),
 		},
 		async ({ fileUrl, nodeId, format = "metadata", enrich }) => {
 			try {
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma.",
 					);
 				}
 
@@ -2654,7 +2921,10 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, nodeId, format, enrich }, "Fetching component data");
+				logger.info(
+					{ fileKey, nodeId, format, enrich },
+					"Fetching component data",
+				);
 
 				// PRIORITY 1: Try Desktop Bridge plugin UI first (has reliable description field!)
 				// Metadata only. The plugin's GET_COMPONENT result carries no geometry or
@@ -2663,23 +2933,31 @@ export function registerFigmaAPITools(
 				// always uses the REST node tree below.
 				if (getDesktopConnector && format !== "reconstruction") {
 					try {
-						logger.info({ nodeId }, "Attempting to get component via Desktop Bridge plugin UI");
+						logger.info(
+							{ nodeId },
+							"Attempting to get component via Desktop Bridge plugin UI",
+						);
 
 						const connector = await getDesktopConnector();
 
 						// fileKey: node ids are file-local — without it the ACTIVE file answers,
 						// and may return a different component that shares this id.
-						const desktopResult = await connector.getComponentFromPluginUI(nodeId, fileKey);
+						const desktopResult = await connector.getComponentFromPluginUI(
+							nodeId,
+							fileKey,
+						);
 
 						if (desktopResult.success && desktopResult.component) {
 							logger.info(
 								{
 									componentName: desktopResult.component.name,
 									hasDescription: !!desktopResult.component.description,
-									hasDescriptionMarkdown: !!desktopResult.component.descriptionMarkdown,
-									annotationsCount: desktopResult.component.annotations?.length || 0
+									hasDescriptionMarkdown:
+										!!desktopResult.component.descriptionMarkdown,
+									annotationsCount:
+										desktopResult.component.annotations?.length || 0,
 								},
-								"Successfully retrieved component via Desktop Bridge plugin UI!"
+								"Successfully retrieved component via Desktop Bridge plugin UI!",
 							);
 
 							// Handle metadata format (original behavior)
@@ -2695,47 +2973,62 @@ export function registerFigmaAPITools(
 								formatted = await enrichmentService.enrichComponent(
 									formatted,
 									fileKey,
-									enrichmentOptions
+									enrichmentOptions,
 								);
 							}
 
 							// Surface annotation summary at top level for easy AI consumption
 							const annotations = formatted.annotations || [];
-							const annotationSummary = annotations.length > 0
-								? {
-									count: annotations.length,
-									labels: annotations
-										.filter((a: any) => a.label || a.labelMarkdown)
-										.map((a: any) => a.label || (a.labelMarkdown ? a.labelMarkdown.substring(0, 100) : null))
-										.filter(Boolean),
-									pinnedProperties: annotations
-										.filter((a: any) => a.properties && a.properties.length > 0)
-										.flatMap((a: any) => a.properties.map((p: any) => p.type)),
-									hint: "Use figma_get_annotations for full annotation details including categories and markdown content",
-								}
-								: { count: 0, hint: "No annotations found. Designers can add annotations in Dev Mode to communicate specs." };
+							const annotationSummary =
+								annotations.length > 0
+									? {
+											count: annotations.length,
+											labels: annotations
+												.filter((a: any) => a.label || a.labelMarkdown)
+												.map(
+													(a: any) =>
+														a.label ||
+														(a.labelMarkdown
+															? a.labelMarkdown.substring(0, 100)
+															: null),
+												)
+												.filter(Boolean),
+											pinnedProperties: annotations
+												.filter(
+													(a: any) => a.properties && a.properties.length > 0,
+												)
+												.flatMap((a: any) =>
+													a.properties.map((p: any) => p.type),
+												),
+											hint: "Use figma_get_annotations for full annotation details including categories and markdown content",
+										}
+									: {
+											count: 0,
+											hint: "No annotations found. Designers can add annotations in Dev Mode to communicate specs.",
+										};
 
 							return {
 								content: [
 									{
 										type: "text",
-										text: JSON.stringify(
-											{
-												fileKey,
-												nodeId,
-												component: formatted,
-												annotations: annotationSummary,
-												source: "desktop_bridge_plugin",
-												enriched: enrich || false,
-												note: "Retrieved via Desktop Bridge plugin - description fields and annotations are reliable and current"
-											}
-										),
+										text: JSON.stringify({
+											fileKey,
+											nodeId,
+											component: formatted,
+											annotations: annotationSummary,
+											source: "desktop_bridge_plugin",
+											enriched: enrich || false,
+											note: "Retrieved via Desktop Bridge plugin - description fields and annotations are reliable and current",
+										}),
 									},
 								],
 							};
 						}
 					} catch (desktopError) {
-						logger.warn({ error: desktopError, nodeId }, "Desktop Bridge plugin failed, falling back to REST API");
+						logger.warn(
+							{ error: desktopError, nodeId },
+							"Desktop Bridge plugin failed, falling back to REST API",
+						);
 					}
 				}
 
@@ -2747,7 +3040,8 @@ export function registerFigmaAPITools(
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
-					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					const errorMessage =
+						apiError instanceof Error ? apiError.message : String(apiError);
 					if (format === "reconstruction") {
 						throw restAuthError(
 							"Cannot build a reconstruction spec. It reads the node tree (sizes, positions, auto-layout, min/max constraints) from the Figma REST API, which needs a Figma access token.",
@@ -2767,7 +3061,11 @@ export function registerFigmaAPITools(
 
 				// Reconstruction needs the whole tree: at depth 4, deeper layers came
 				// back with no children key and were silently rebuilt as leaves.
-				const componentData = await api.getComponentData(fileKey, nodeId, format === "reconstruction" ? null : 4);
+				const componentData = await api.getComponentData(
+					fileKey,
+					nodeId,
+					format === "reconstruction" ? null : 4,
+				);
 
 				if (!componentData) {
 					throw new Error(`Component not found: ${nodeId}`);
@@ -2779,11 +3077,14 @@ export function registerFigmaAPITools(
 					const validation = validateReconstructionSpec(reconstructionSpec);
 
 					if (!validation.valid) {
-						logger.warn({ errors: validation.errors }, "Reconstruction spec validation warnings");
+						logger.warn(
+							{ errors: validation.errors },
+							"Reconstruction spec validation warnings",
+						);
 					}
 
 					// Check if this is a COMPONENT_SET - plugin cannot create these
-					if (reconstructionSpec.type === 'COMPONENT_SET') {
+					if (reconstructionSpec.type === "COMPONENT_SET") {
 						const variants = listVariants(componentData.document);
 
 						return {
@@ -2792,16 +3093,17 @@ export function registerFigmaAPITools(
 									type: "text",
 									text: JSON.stringify({
 										error: "COMPONENT_SET_NOT_SUPPORTED",
-										message: "The Figma Component Reconstructor plugin cannot create COMPONENT_SET nodes (variant containers). Please select a specific variant component instead.",
+										message:
+											"The Figma Component Reconstructor plugin cannot create COMPONENT_SET nodes (variant containers). Please select a specific variant component instead.",
 										componentName: reconstructionSpec.name,
 										availableVariants: variants,
 										instructions: [
 											"1. In Figma, expand the component set to see individual variants",
 											"2. Select the specific variant you want to reconstruct",
 											"3. Copy the node ID of that variant",
-											"4. Use figma_get_component with that variant's node ID"
+											"4. Use figma_get_component with that variant's node ID",
 										],
-										note: "COMPONENT_SET is automatically created by Figma when you have variants. The plugin can only create individual COMPONENT nodes."
+										note: "COMPONENT_SET is automatically created by Figma when you have variants. The plugin can only create individual COMPONENT nodes.",
 									}),
 								},
 							],
@@ -2833,7 +3135,7 @@ export function registerFigmaAPITools(
 					formatted = await enrichmentService.enrichComponent(
 						formatted,
 						fileKey,
-						enrichmentOptions
+						enrichmentOptions,
 					);
 				}
 
@@ -2841,17 +3143,19 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									fileKey,
-									nodeId,
-									component: formatted,
-									source: "rest_api",
-									enriched: enrich || false,
-									warning: "Retrieved via REST API - description field may be missing due to known Figma API bug",
-									action_required: formatted.description || formatted.descriptionMarkdown ? null : "To get reliable component descriptions, run the Desktop Bridge plugin in Figma Desktop: Right-click → Plugins → Development → Figma Desktop Bridge, then try again."
-								}
-							),
+							text: JSON.stringify({
+								fileKey,
+								nodeId,
+								component: formatted,
+								source: "rest_api",
+								enriched: enrich || false,
+								warning:
+									"Retrieved via REST API - description field may be missing due to known Figma API bug",
+								action_required:
+									formatted.description || formatted.descriptionMarkdown
+										? null
+										: "To get reliable component descriptions, run the Desktop Bridge plugin in Figma Desktop: Right-click → Plugins → Development → Figma Desktop Bridge, then try again.",
+							}),
 						},
 					],
 				};
@@ -2863,68 +3167,79 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									error: errorMessage,
-									message: "Failed to retrieve component data",
-									hint: "Make sure the node ID is correct and the file is accessible",
-								}
-							),
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to retrieve component data",
+								hint: "Make sure the node ID is correct and the file is accessible",
+							}),
 						},
 					],
 					isError: true,
 				};
 			}
-		}
+		},
 	);
 
 	// Tool 11: Get Styles
-	server.tool(
+	server.registerTool(
 		"figma_get_styles",
-		"Get all styles (color, text, effects, grids) from a Figma file with optional code exports. Use when user asks for: text styles, color palette, design system styles, typography, or style documentation. Returns organized style definitions with resolved values. NOT for design tokens/variables (use figma_get_variables). Set enrich=true for CSS/Tailwind/Sass code examples. Supports verbosity control to manage payload size. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
-				),
-			verbosity: z
-				.enum(["summary", "standard", "full"])
-				.optional()
-				.default("standard")
-				.describe(
-					"Controls payload size: 'summary' (names/types only, ~85% smaller), 'standard' (essential properties, ~40% smaller), 'full' (everything). Default: standard"
-				),
-			enrich: z
-				.boolean()
-				.optional()
-				.describe(
-					"Set to true when user asks for: CSS/Sass/Tailwind code, export formats, usage information, code examples, or design system exports. Adds resolved values, usage analysis, and export format examples. Default: false for backward compatibility"
-				),
-			include_usage: z
-				.boolean()
-				.optional()
-				.describe("Include component usage information (requires enrich=true)"),
-			include_exports: z
-				.boolean()
-				.optional()
-				.describe("Include export format examples (requires enrich=true)"),
-			export_formats: z
-				.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
-				.optional()
-				.describe(
-					"Which code formats to generate examples for. Use when user mentions specific formats like 'CSS', 'Tailwind', 'SCSS', 'TypeScript', etc. Automatically enables enrichment. Default: all formats"
-				),
+			description:
+				"Get all styles (color, text, effects, grids) from a Figma file with optional code exports. Use when user asks for: text styles, color palette, design system styles, typography, or style documentation. Returns organized style definitions with resolved values. NOT for design tokens/variables (use figma_get_variables). Set enrich=true for CSS/Tailwind/Sass code examples. Supports verbosity control to manage payload size. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe(
+						"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected.",
+					),
+				verbosity: z
+					.enum(["summary", "standard", "full"])
+					.optional()
+					.default("standard")
+					.describe(
+						"Controls payload size: 'summary' (names/types only, ~85% smaller), 'standard' (essential properties, ~40% smaller), 'full' (everything). Default: standard",
+					),
+				enrich: z
+					.boolean()
+					.optional()
+					.describe(
+						"Set to true when user asks for: CSS/Sass/Tailwind code, export formats, usage information, code examples, or design system exports. Adds resolved values, usage analysis, and export format examples. Default: false for backward compatibility",
+					),
+				include_usage: z
+					.boolean()
+					.optional()
+					.describe(
+						"Include component usage information (requires enrich=true)",
+					),
+				include_exports: z
+					.boolean()
+					.optional()
+					.describe("Include export format examples (requires enrich=true)"),
+				export_formats: z
+					.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
+					.optional()
+					.describe(
+						"Which code formats to generate examples for. Use when user mentions specific formats like 'CSS', 'Tailwind', 'SCSS', 'TypeScript', etc. Automatically enables enrichment. Default: all formats",
+					),
+			}),
 		},
-		async ({ fileUrl, verbosity, enrich, include_usage, include_exports, export_formats }) => {
+		async ({
+			fileUrl,
+			verbosity,
+			enrich,
+			include_usage,
+			include_exports,
+			export_formats,
+		}) => {
 			try {
 				let api;
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
-					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					const errorMessage =
+						apiError instanceof Error ? apiError.message : String(apiError);
 					throw restAuthError(
 						"Cannot retrieve styles. REST API authentication required.",
 						errorMessage,
@@ -2934,7 +3249,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma.",
 					);
 				}
 
@@ -2943,20 +3258,22 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-			logger.info({ fileKey, verbosity, enrich }, "Fetching styles");
+				logger.info({ fileKey, verbosity, enrich }, "Fetching styles");
 
-			// Get styles via REST API
-			const stylesData = await api.getStyles(fileKey);
-			let styles = stylesData.meta?.styles || [];
+				// Get styles via REST API
+				const stylesData = await api.getStyles(fileKey);
+				let styles = stylesData.meta?.styles || [];
 
-			logger.info(
-				{ styleCount: styles.length },
-				"Successfully retrieved styles via REST API"
-			);
-
+				logger.info(
+					{ styleCount: styles.length },
+					"Successfully retrieved styles via REST API",
+				);
 
 				// Apply verbosity filtering
-				const filterStyle = (style: any, level: "summary" | "standard" | "full"): any => {
+				const filterStyle = (
+					style: any,
+					level: "summary" | "standard" | "full",
+				): any => {
 					if (!style) return style;
 
 					if (level === "summary") {
@@ -2984,7 +3301,9 @@ export function registerFigmaAPITools(
 				};
 
 				if (verbosity !== "full") {
-					styles = styles.map((style: any) => filterStyle(style, verbosity || "standard"));
+					styles = styles.map((style: any) =>
+						filterStyle(style, verbosity || "standard"),
+					);
 				}
 
 				// Apply enrichment if requested
@@ -3005,7 +3324,7 @@ export function registerFigmaAPITools(
 					styles = await enrichmentService.enrichStyles(
 						styles,
 						fileKey,
-						enrichmentOptions
+						enrichmentOptions,
 					);
 				}
 
@@ -3049,47 +3368,48 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									error: errorMessage,
-									message: "Failed to retrieve styles",
-								}
-							),
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to retrieve styles",
+							}),
 						},
 					],
 					isError: true,
 				};
 			}
-		}
+		},
 	);
 
 	// Tool 12: Get Component Image (Visual Reference)
-	server.tool(
+	server.registerTool(
 		"figma_get_component_image",
-		"Render a specific component or node as an image (PNG, JPG, SVG, PDF). Returns image URL valid for 30 days. Use when user asks for: component screenshot, visual preview, rendered output, or 'show me'. NOT for component metadata/properties (use figma_get_component). NOT for getting code/layout data (use figma_get_component_for_development). Best for: visual references, design review, documentation.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected."
-				),
-			nodeId: z
-				.string()
-				.describe("Component node ID to render as image (e.g., '695:313')"),
-			scale: z
-				.number()
-				.min(0.01)
-				.max(4)
-				.optional()
-				.default(2)
-				.describe("Image scale factor (0.01-4, default: 2 for high quality)"),
-			format: z
-				.enum(["png", "jpg", "svg", "pdf"])
-				.optional()
-				.default("png")
-				.describe("Image format (default: png)"),
+			description:
+				"Render a specific component or node as an image (PNG, JPG, SVG, PDF). Returns image URL valid for 30 days. Use when user asks for: component screenshot, visual preview, rendered output, or 'show me'. NOT for component metadata/properties (use figma_get_component). NOT for getting code/layout data (use figma_get_component_for_development). Best for: visual references, design review, documentation.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe(
+						"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected.",
+					),
+				nodeId: z
+					.string()
+					.describe("Component node ID to render as image (e.g., '695:313')"),
+				scale: z
+					.number()
+					.min(0.01)
+					.max(4)
+					.optional()
+					.default(2)
+					.describe("Image scale factor (0.01-4, default: 2 for high quality)"),
+				format: z
+					.enum(["png", "jpg", "svg", "pdf"])
+					.optional()
+					.default("png")
+					.describe("Image format (default: png)"),
+			}),
 		},
 		async ({ fileUrl, nodeId, scale, format }) => {
 			try {
@@ -3100,7 +3420,8 @@ export function registerFigmaAPITools(
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
-					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					const errorMessage =
+						apiError instanceof Error ? apiError.message : String(apiError);
 					throw restAuthError(
 						"Cannot render component image. REST API authentication required.",
 						errorMessage,
@@ -3111,7 +3432,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma.",
 					);
 				}
 
@@ -3120,7 +3441,10 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, nodeId, scale, format }, "Rendering component image");
+				logger.info(
+					{ fileKey, nodeId, scale, format },
+					"Rendering component image",
+				);
 
 				// First, fetch the node to check if it's a COMPONENT_SET
 				const fileData = await api.getNodes(fileKey, [nodeId]);
@@ -3128,33 +3452,32 @@ export function registerFigmaAPITools(
 
 				if (!node) {
 					throw new Error(
-						`Node ${nodeId} not found in file ${fileKey}. Please verify the node ID is correct.`
+						`Node ${nodeId} not found in file ${fileKey}. Please verify the node ID is correct.`,
 					);
 				}
 
 				// Check if this is a COMPONENT_SET - cannot be rendered as image
-				if (node.type === 'COMPONENT_SET') {
+				if (node.type === "COMPONENT_SET") {
 					const variants = listVariants(node);
 
 					return {
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error: "COMPONENT_SET_NOT_RENDERABLE",
-										message: "Node is a COMPONENT_SET which cannot be rendered. Please use a specific variant component ID instead.",
-										componentName: node.name,
-										availableVariants: variants,
-										instructions: [
-											"1. In Figma, expand the component set to see individual variants",
-											"2. Select the specific variant you want to render",
-											"3. Copy the node ID of that variant",
-											"4. Use figma_get_component_image with that variant's node ID"
-										],
-										note: "COMPONENT_SET is a container for variants. Only individual variant components can be rendered as images."
-									}
-								),
+								text: JSON.stringify({
+									error: "COMPONENT_SET_NOT_RENDERABLE",
+									message:
+										"Node is a COMPONENT_SET which cannot be rendered. Please use a specific variant component ID instead.",
+									componentName: node.name,
+									availableVariants: variants,
+									instructions: [
+										"1. In Figma, expand the component set to see individual variants",
+										"2. Select the specific variant you want to render",
+										"3. Copy the node ID of that variant",
+										"4. Use figma_get_component_image with that variant's node ID",
+									],
+									note: "COMPONENT_SET is a container for variants. Only individual variant components can be rendered as images.",
+								}),
 							},
 						],
 					};
@@ -3171,7 +3494,7 @@ export function registerFigmaAPITools(
 
 				if (!imageUrl) {
 					throw new Error(
-						`Failed to render image for node ${nodeId}. The node may not exist or may not be renderable.`
+						`Failed to render image for node ${nodeId}. The node may not exist or may not be renderable.`,
 					);
 				}
 
@@ -3179,17 +3502,15 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									fileKey,
-									nodeId,
-									imageUrl,
-									scale,
-									format,
-									expiresIn: "30 days",
-									note: "Use this image as visual reference for component development. Image URLs expire after 30 days.",
-								}
-							),
+							text: JSON.stringify({
+								fileKey,
+								nodeId,
+								imageUrl,
+								scale,
+								format,
+								expiresIn: "30 days",
+								note: "Use this image as visual reference for component development. Image URLs expire after 30 days.",
+							}),
 						},
 					],
 				};
@@ -3201,45 +3522,50 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									error: errorMessage,
-									message: "Failed to render component image",
-									hint: "Make sure the node ID is correct and the component is renderable",
-								}
-							),
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to render component image",
+								hint: "Make sure the node ID is correct and the component is renderable",
+							}),
 						},
 					],
 					isError: true,
 				};
 			}
-		}
+		},
 	);
 
 	// Tool 13: Get Component for Development (UI Implementation)
-	server.tool(
+	server.registerTool(
 		"figma_get_component_for_development",
-		"Get component data optimized for high-fidelity UI implementation. Returns a deep component tree (depth 4) with design tokens (boundVariables), interaction states (reactions), sizing constraints (min/max/layoutSizing), text behavior (autoResize, truncation), Figma slots (named freeform-content regions on a component, with the components each accepts and any min/max limit violations), and design annotations. Automatically includes 2x rendered image. Use when user asks to: 'build this component', 'implement this in React/Vue', 'generate code for', or needs both visual reference and technical specs for production-quality, accessible, token-aware code. For just metadata/descriptions, use figma_get_component. For just image, use figma_get_component_image. For full annotation details, use figma_get_annotations. To resolve variable IDs to names/values, use figma_get_variables.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called."
-				),
-			nodeId: z
-				.string()
-				.describe("Component node ID to get data for (e.g., '695:313')"),
-			includeImage: z
-				.boolean()
-				.optional()
-				.default(true)
-				.describe("Include rendered image for visual reference (default: true)"),
-			codebasePath: z
-				.string()
-				.optional()
-				.describe("Path to target codebase components directory (e.g., '/Users/me/project/src/components'). When provided, scans for existing components and includes a registry in the response to prevent recreating components that already exist. Strongly recommended for design-to-code workflows."),
+			description:
+				"Get component data optimized for high-fidelity UI implementation. Returns a deep component tree (depth 4) with design tokens (boundVariables), interaction states (reactions), sizing constraints (min/max/layoutSizing), text behavior (autoResize, truncation), Figma slots (named freeform-content regions on a component, with the components each accepts and any min/max limit violations), and design annotations. Automatically includes 2x rendered image. Use when user asks to: 'build this component', 'implement this in React/Vue', 'generate code for', or needs both visual reference and technical specs for production-quality, accessible, token-aware code. For just metadata/descriptions, use figma_get_component. For just image, use figma_get_component_image. For full annotation details, use figma_get_annotations. To resolve variable IDs to names/values, use figma_get_variables.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe(
+						"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called.",
+					),
+				nodeId: z
+					.string()
+					.describe("Component node ID to get data for (e.g., '695:313')"),
+				includeImage: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe(
+						"Include rendered image for visual reference (default: true)",
+					),
+				codebasePath: z
+					.string()
+					.optional()
+					.describe(
+						"Path to target codebase components directory (e.g., '/Users/me/project/src/components'). When provided, scans for existing components and includes a registry in the response to prevent recreating components that already exist. Strongly recommended for design-to-code workflows.",
+					),
+			}),
 		},
 		async ({ fileUrl, nodeId, includeImage, codebasePath }) => {
 			try {
@@ -3247,18 +3573,19 @@ export function registerFigmaAPITools(
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
-					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					const errorMessage =
+						apiError instanceof Error ? apiError.message : String(apiError);
 					throw restAuthError(
 						"Cannot retrieve component for development. REST API authentication required.",
 						errorMessage,
-						"Note: For component metadata, figma_get_component has a Desktop Bridge fallback that works without a token (requires the Desktop Bridge plugin to be connected)."
+						"Note: For component metadata, figma_get_component has a Desktop Bridge fallback that works without a token (requires the Desktop Bridge plugin to be connected).",
 					);
 				}
 
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma.",
 					);
 				}
 
@@ -3267,7 +3594,10 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, nodeId, includeImage }, "Fetching component for development");
+				logger.info(
+					{ fileKey, nodeId, includeImage },
+					"Fetching component for development",
+				);
 
 				// Get node data with depth 4 for nested component structures
 				// (depth 2 was too shallow for complex components like data tables, nested menus, etc.)
@@ -3291,33 +3621,47 @@ export function registerFigmaAPITools(
 					};
 
 					// Layout & positioning
-					if (n.absoluteBoundingBox) result.absoluteBoundingBox = n.absoluteBoundingBox;
-					if (n.relativeTransform) result.relativeTransform = n.relativeTransform;
+					if (n.absoluteBoundingBox)
+						result.absoluteBoundingBox = n.absoluteBoundingBox;
+					if (n.relativeTransform)
+						result.relativeTransform = n.relativeTransform;
 					if (n.size) result.size = n.size;
 					if (n.constraints) result.constraints = n.constraints;
 					if (n.layoutAlign) result.layoutAlign = n.layoutAlign;
 					if (n.layoutGrow) result.layoutGrow = n.layoutGrow;
-					if (n.layoutPositioning) result.layoutPositioning = n.layoutPositioning;
+					if (n.layoutPositioning)
+						result.layoutPositioning = n.layoutPositioning;
 
 					// Auto-layout
 					if (n.layoutMode) result.layoutMode = n.layoutMode;
-					if (n.primaryAxisSizingMode) result.primaryAxisSizingMode = n.primaryAxisSizingMode;
-					if (n.counterAxisSizingMode) result.counterAxisSizingMode = n.counterAxisSizingMode;
-					if (n.primaryAxisAlignItems) result.primaryAxisAlignItems = n.primaryAxisAlignItems;
-					if (n.counterAxisAlignItems) result.counterAxisAlignItems = n.counterAxisAlignItems;
+					if (n.primaryAxisSizingMode)
+						result.primaryAxisSizingMode = n.primaryAxisSizingMode;
+					if (n.counterAxisSizingMode)
+						result.counterAxisSizingMode = n.counterAxisSizingMode;
+					if (n.primaryAxisAlignItems)
+						result.primaryAxisAlignItems = n.primaryAxisAlignItems;
+					if (n.counterAxisAlignItems)
+						result.counterAxisAlignItems = n.counterAxisAlignItems;
 					if (n.paddingLeft !== undefined) result.paddingLeft = n.paddingLeft;
-					if (n.paddingRight !== undefined) result.paddingRight = n.paddingRight;
+					if (n.paddingRight !== undefined)
+						result.paddingRight = n.paddingRight;
 					if (n.paddingTop !== undefined) result.paddingTop = n.paddingTop;
-					if (n.paddingBottom !== undefined) result.paddingBottom = n.paddingBottom;
+					if (n.paddingBottom !== undefined)
+						result.paddingBottom = n.paddingBottom;
 					if (n.itemSpacing !== undefined) result.itemSpacing = n.itemSpacing;
-					if (n.counterAxisSpacing !== undefined) result.counterAxisSpacing = n.counterAxisSpacing;
-					if (n.itemReverseZIndex) result.itemReverseZIndex = n.itemReverseZIndex;
-					if (n.strokesIncludedInLayout) result.strokesIncludedInLayout = n.strokesIncludedInLayout;
+					if (n.counterAxisSpacing !== undefined)
+						result.counterAxisSpacing = n.counterAxisSpacing;
+					if (n.itemReverseZIndex)
+						result.itemReverseZIndex = n.itemReverseZIndex;
+					if (n.strokesIncludedInLayout)
+						result.strokesIncludedInLayout = n.strokesIncludedInLayout;
 					if (n.layoutWrap) result.layoutWrap = n.layoutWrap;
 
 					// Sizing constraints (maps to CSS min/max-width/height, width: auto/100%/fixed)
-					if (n.layoutSizingHorizontal) result.layoutSizingHorizontal = n.layoutSizingHorizontal;
-					if (n.layoutSizingVertical) result.layoutSizingVertical = n.layoutSizingVertical;
+					if (n.layoutSizingHorizontal)
+						result.layoutSizingHorizontal = n.layoutSizingHorizontal;
+					if (n.layoutSizingVertical)
+						result.layoutSizingVertical = n.layoutSizingVertical;
 					if (n.minWidth !== undefined) result.minWidth = n.minWidth;
 					if (n.maxWidth !== undefined) result.maxWidth = n.maxWidth;
 					if (n.minHeight !== undefined) result.minHeight = n.minHeight;
@@ -3326,13 +3670,16 @@ export function registerFigmaAPITools(
 					// Visual properties
 					if (n.fills) result.fills = n.fills;
 					if (n.strokes) result.strokes = n.strokes;
-					if (n.strokeWeight !== undefined) result.strokeWeight = n.strokeWeight;
+					if (n.strokeWeight !== undefined)
+						result.strokeWeight = n.strokeWeight;
 					if (n.strokeAlign) result.strokeAlign = n.strokeAlign;
 					if (n.strokeCap) result.strokeCap = n.strokeCap;
 					if (n.strokeJoin) result.strokeJoin = n.strokeJoin;
 					if (n.dashPattern) result.dashPattern = n.dashPattern;
-					if (n.cornerRadius !== undefined) result.cornerRadius = n.cornerRadius;
-					if (n.rectangleCornerRadii) result.rectangleCornerRadii = n.rectangleCornerRadii;
+					if (n.cornerRadius !== undefined)
+						result.cornerRadius = n.cornerRadius;
+					if (n.rectangleCornerRadii)
+						result.rectangleCornerRadii = n.rectangleCornerRadii;
 					if (n.effects) result.effects = n.effects;
 					if (n.opacity !== undefined) result.opacity = n.opacity;
 					if (n.blendMode) result.blendMode = n.blendMode;
@@ -3344,7 +3691,13 @@ export function registerFigmaAPITools(
 					if (n.styles) result.styles = n.styles;
 
 					// Vector geometry (SVG path data — only for vector/icon nodes, not regular frames)
-					const isVectorLike = n.type === 'VECTOR' || n.type === 'BOOLEAN_OPERATION' || n.type === 'LINE' || n.type === 'REGULAR_POLYGON' || n.type === 'STAR' || n.type === 'ELLIPSE';
+					const isVectorLike =
+						n.type === "VECTOR" ||
+						n.type === "BOOLEAN_OPERATION" ||
+						n.type === "LINE" ||
+						n.type === "REGULAR_POLYGON" ||
+						n.type === "STAR" ||
+						n.type === "ELLIPSE";
 					if (isVectorLike) {
 						if (n.fillGeometry) result.fillGeometry = n.fillGeometry;
 						if (n.strokeGeometry) result.strokeGeometry = n.strokeGeometry;
@@ -3353,8 +3706,10 @@ export function registerFigmaAPITools(
 					// Typography
 					if (n.characters) result.characters = n.characters;
 					if (n.style) result.style = n.style;
-					if (n.characterStyleOverrides) result.characterStyleOverrides = n.characterStyleOverrides;
-					if (n.styleOverrideTable) result.styleOverrideTable = n.styleOverrideTable;
+					if (n.characterStyleOverrides)
+						result.characterStyleOverrides = n.characterStyleOverrides;
+					if (n.styleOverrideTable)
+						result.styleOverrideTable = n.styleOverrideTable;
 
 					// Text behavior (maps to CSS overflow, text-overflow, white-space, text-transform)
 					if (n.textAutoResize) result.textAutoResize = n.textAutoResize;
@@ -3369,8 +3724,16 @@ export function registerFigmaAPITools(
 						if (cpJson.length > 10000) {
 							// Extract just the property names and types, not the full value catalogs
 							const summary: any = {};
-							for (const [key, val] of Object.entries(n.componentProperties as Record<string, any>)) {
-								summary[key] = { type: val.type, value: typeof val.value === 'string' && val.value.length > 200 ? val.value.substring(0, 200) + '...' : val.value };
+							for (const [key, val] of Object.entries(
+								n.componentProperties as Record<string, any>,
+							)) {
+								summary[key] = {
+									type: val.type,
+									value:
+										typeof val.value === "string" && val.value.length > 200
+											? val.value.substring(0, 200) + "..."
+											: val.value,
+								};
 							}
 							result.componentProperties = summary;
 							result._componentPropertiesTruncated = true;
@@ -3378,15 +3741,21 @@ export function registerFigmaAPITools(
 							result.componentProperties = n.componentProperties;
 						}
 					}
-					if (n.componentPropertyDefinitions) result.componentPropertyDefinitions = n.componentPropertyDefinitions;
-					if (n.componentPropertyReferences) result.componentPropertyReferences = n.componentPropertyReferences;
-					if (n.variantProperties) result.variantProperties = n.variantProperties;
+					if (n.componentPropertyDefinitions)
+						result.componentPropertyDefinitions =
+							n.componentPropertyDefinitions;
+					if (n.componentPropertyReferences)
+						result.componentPropertyReferences = n.componentPropertyReferences;
+					if (n.variantProperties)
+						result.variantProperties = n.variantProperties;
 					if (n.componentId) result.componentId = n.componentId;
 
 					// Prototype interactions (hover, click, focus states and transitions)
-					if (n.reactions && n.reactions.length > 0) result.reactions = n.reactions;
+					if (n.reactions && n.reactions.length > 0)
+						result.reactions = n.reactions;
 					if (n.transitionNodeID) result.transitionNodeID = n.transitionNodeID;
-					if (n.transitionDuration !== undefined) result.transitionDuration = n.transitionDuration;
+					if (n.transitionDuration !== undefined)
+						result.transitionDuration = n.transitionDuration;
 					if (n.transitionEasing) result.transitionEasing = n.transitionEasing;
 
 					// State
@@ -3395,7 +3764,9 @@ export function registerFigmaAPITools(
 
 					// Recursively process children
 					if (n.children) {
-						result.children = n.children.map((child: any) => filterForDevelopment(child));
+						result.children = n.children.map((child: any) =>
+							filterForDevelopment(child),
+						);
 					}
 
 					return result;
@@ -3411,46 +3782,72 @@ export function registerFigmaAPITools(
 					try {
 						const connector = await getDesktopConnector();
 						// Fetch annotations with child traversal (depth matches REST traversal)
-						const annotResult = await connector.getAnnotations(nodeId, true, 4, fileKey);
+						const annotResult = await connector.getAnnotations(
+							nodeId,
+							true,
+							4,
+							fileKey,
+						);
 						if (annotResult?.success !== false && annotResult?.data) {
 							const data = annotResult.data;
 							annotations = data.annotations || [];
 							const childAnnotations = data.children || [];
 							const allAnnotations = [
 								...annotations,
-								...childAnnotations.flatMap((c: any) => (c.annotations || []).map((a: any) => ({ ...a, nodeId: c.nodeId, nodeName: c.nodeName })))
+								...childAnnotations.flatMap((c: any) =>
+									(c.annotations || []).map((a: any) => ({
+										...a,
+										nodeId: c.nodeId,
+										nodeName: c.nodeName,
+									})),
+								),
 							];
-							annotationSummary = allAnnotations.length > 0
-								? {
-									count: allAnnotations.length,
-									labels: allAnnotations
-										.filter((a: any) => a.label || a.labelMarkdown)
-										.map((a: any) => ({
-											text: a.labelMarkdown || a.label,
-											...(a.nodeId ? { onNode: a.nodeName } : {}),
-										})),
-									pinnedProperties: allAnnotations
-										.filter((a: any) => a.properties && a.properties.length > 0)
-										.flatMap((a: any) => a.properties.map((p: any) => p.type)),
-								}
-								: { count: 0 };
+							annotationSummary =
+								allAnnotations.length > 0
+									? {
+											count: allAnnotations.length,
+											labels: allAnnotations
+												.filter((a: any) => a.label || a.labelMarkdown)
+												.map((a: any) => ({
+													text: a.labelMarkdown || a.label,
+													...(a.nodeId ? { onNode: a.nodeName } : {}),
+												})),
+											pinnedProperties: allAnnotations
+												.filter(
+													(a: any) => a.properties && a.properties.length > 0,
+												)
+												.flatMap((a: any) =>
+													a.properties.map((p: any) => p.type),
+												),
+										}
+									: { count: 0 };
 						}
 
 						// Also fetch description from bridge if REST returned empty
-						if (!componentData.description && !componentData.descriptionMarkdown) {
-							const bridgeResult = await connector.getComponentFromPluginUI(nodeId, fileKey);
+						if (
+							!componentData.description &&
+							!componentData.descriptionMarkdown
+						) {
+							const bridgeResult = await connector.getComponentFromPluginUI(
+								nodeId,
+								fileKey,
+							);
 							if (bridgeResult?.success && bridgeResult.component) {
 								if (bridgeResult.component.descriptionMarkdown) {
-									componentData.descriptionMarkdown = bridgeResult.component.descriptionMarkdown;
+									componentData.descriptionMarkdown =
+										bridgeResult.component.descriptionMarkdown;
 								}
 								if (bridgeResult.component.description) {
-									componentData.description = bridgeResult.component.description;
+									componentData.description =
+										bridgeResult.component.description;
 								}
 							}
 						}
 					} catch {
 						// Desktop Bridge unavailable — continue without annotations
-						logger.debug("Desktop Bridge unavailable for annotations/description enrichment");
+						logger.debug(
+							"Desktop Bridge unavailable for annotations/description enrichment",
+						);
 					}
 				}
 
@@ -3465,13 +3862,19 @@ export function registerFigmaAPITools(
 						});
 						imageUrl = imageResult.images[nodeId];
 					} catch (error) {
-						logger.warn({ error }, "Failed to render component image, continuing without it");
+						logger.warn(
+							{ error },
+							"Failed to render component image, continuing without it",
+						);
 					}
 				}
 
 				// Extract composition dependencies — every INSTANCE sub-component used
 				// This tells the AI which sub-components must exist before building this component
-				const compositionDeps = new Map<string, { name: string; componentId: string; count: number; props: string[] }>();
+				const compositionDeps = new Map<
+					string,
+					{ name: string; componentId: string; count: number; props: string[] }
+				>();
 				const walkForInstances = (n: any) => {
 					if (!n) return;
 					if (n.type === "INSTANCE" && n.componentId) {
@@ -3483,7 +3886,9 @@ export function registerFigmaAPITools(
 								name: n.name,
 								componentId: n.componentId,
 								count: 1,
-								props: n.componentProperties ? Object.keys(n.componentProperties) : [],
+								props: n.componentProperties
+									? Object.keys(n.componentProperties)
+									: [],
 							});
 						}
 					}
@@ -3506,39 +3911,70 @@ export function registerFigmaAPITools(
 						// Normalize a name to keywords for fuzzy matching
 						// "Input label" → ["input", "label"], "FormLabel" → ["form", "label"], "_Helper text" → ["helper", "text"]
 						const toKeywords = (name: string): string[] =>
-							name.replace(/^_+/, "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_/]/g, " ").toLowerCase().split(/\s+/).filter(w => w.length > 1);
+							name
+								.replace(/^_+/, "")
+								.replace(/([a-z])([A-Z])/g, "$1 $2")
+								.replace(/[-_/]/g, " ")
+								.toLowerCase()
+								.split(/\s+/)
+								.filter((w) => w.length > 1);
 
-						const crossRef = dependencies.map(dep => {
-							const depNameLower = dep.name.replace(/^_/, "").replace(/\s+/g, "").toLowerCase();
+						const crossRef = dependencies.map((dep) => {
+							const depNameLower = dep.name
+								.replace(/^_/, "")
+								.replace(/\s+/g, "")
+								.toLowerCase();
 							const depKeywords = toKeywords(dep.name);
 
-							const match = existingComponents.find(c => {
+							const match = existingComponents.find((c) => {
 								const cNameLower = c.name.toLowerCase();
 								const cKeywords = toKeywords(c.name);
 
 								// Exact name match
 								if (cNameLower === depNameLower) return true;
 								// Export name match
-								if (c.exports.some(e => e.toLowerCase() === depNameLower)) return true;
+								if (c.exports.some((e) => e.toLowerCase() === depNameLower))
+									return true;
 								// Substring containment
-								if (depNameLower.includes(cNameLower) || cNameLower.includes(depNameLower)) return true;
+								if (
+									depNameLower.includes(cNameLower) ||
+									cNameLower.includes(depNameLower)
+								)
+									return true;
 								// Keyword overlap — if most keywords from either name match, it's likely the same component
 								// "Input label" ∩ "FormLabel" → ["label"] overlaps, plus "input" ~ "form" (both form-related)
-								const overlap = depKeywords.filter(k => cKeywords.some(ck => ck.includes(k) || k.includes(ck)));
-								if (overlap.length > 0 && overlap.length >= Math.min(depKeywords.length, cKeywords.length) * 0.5) return true;
+								const overlap = depKeywords.filter((k) =>
+									cKeywords.some((ck) => ck.includes(k) || k.includes(ck)),
+								);
+								if (
+									overlap.length > 0 &&
+									overlap.length >=
+										Math.min(depKeywords.length, cKeywords.length) * 0.5
+								)
+									return true;
 								return false;
 							});
 							return {
 								figmaComponent: dep.name,
 								componentId: dep.componentId,
-								codebaseMatch: match ? { name: match.name, path: match.path, exports: match.exports } : null,
+								codebaseMatch: match
+									? {
+											name: match.name,
+											path: match.path,
+											exports: match.exports,
+										}
+									: null,
 								action: match ? "IMPORT_EXISTING" : "BUILD_NEW",
 							};
 						});
 
 						codebaseRegistry = {
 							scannedPath: codebasePath,
-							existingComponents: existingComponents.map(c => ({ name: c.name, path: c.path, exports: c.exports })),
+							existingComponents: existingComponents.map((c) => ({
+								name: c.name,
+								path: c.path,
+								exports: c.exports,
+							})),
 							componentCount: existingComponents.length,
 							crossReference: crossRef.length > 0 ? crossRef : undefined,
 							ai_instruction: `Found ${existingComponents.length} existing components in the target codebase. Components marked IMPORT_EXISTING MUST be imported — never recreate them. Components marked BUILD_NEW need to be created as standalone components (own directory, file, CSS module, stories) before building the parent.`,
@@ -3554,23 +3990,32 @@ export function registerFigmaAPITools(
 					component: componentData,
 					annotations: annotationSummary,
 					codebaseRegistry: codebaseRegistry || undefined,
-					compositionDependencies: dependencies.length > 0 ? {
-						count: dependencies.length,
-						components: dependencies,
-						ai_instruction: codebaseRegistry
-							? `MANDATORY: Cross-reference each dependency against codebaseRegistry.crossReference above. Components marked IMPORT_EXISTING must be imported from their listed path. Components marked BUILD_NEW must be created as standalone components (own directory, file, CSS module, stories) before building the parent. Never inline sub-component logic.`
-							: "MANDATORY BEFORE WRITING ANY CODE: Scan the target codebase's component directory for existing implementations. If a matching component exists, IMPORT it — never recreate with inline markup. Each sub-component that does NOT exist must be built FIRST as standalone (own directory, file, CSS module, stories, barrel export) before building the parent.",
-					} : undefined,
+					compositionDependencies:
+						dependencies.length > 0
+							? {
+									count: dependencies.length,
+									components: dependencies,
+									ai_instruction: codebaseRegistry
+										? `MANDATORY: Cross-reference each dependency against codebaseRegistry.crossReference above. Components marked IMPORT_EXISTING must be imported from their listed path. Components marked BUILD_NEW must be created as standalone components (own directory, file, CSS module, stories) before building the parent. Never inline sub-component logic.`
+										: "MANDATORY BEFORE WRITING ANY CODE: Scan the target codebase's component directory for existing implementations. If a matching component exists, IMPORT it — never recreate with inline markup. Each sub-component that does NOT exist must be built FIRST as standalone (own directory, file, CSS module, stories, barrel export) before building the parent.",
+								}
+							: undefined,
 					metadata: {
 						purpose: "component_development",
 						treeDepth: 4,
 						note: [
 							imageUrl ? "Image URL provided (valid for 30 days)." : null,
 							"Component data optimized for UI implementation with design tokens (boundVariables), interaction states (reactions), sizing constraints, and text behavior.",
-							annotationSummary.count > 0 ? `${annotationSummary.count} design annotation(s) found — check annotations field for implementation specs.` : null,
-							dependencies.length > 0 ? `COMPOSITION: ${dependencies.length} sub-component(s) detected (${dependencies.map(d => d.name).join(", ")}). Build these as standalone components first, then compose.` : null,
+							annotationSummary.count > 0
+								? `${annotationSummary.count} design annotation(s) found — check annotations field for implementation specs.`
+								: null,
+							dependencies.length > 0
+								? `COMPOSITION: ${dependencies.length} sub-component(s) detected (${dependencies.map((d) => d.name).join(", ")}). Build these as standalone components first, then compose.`
+								: null,
 							"Use figma_get_annotations for full annotation details. Use figma_get_variables to resolve variable IDs to token names/values.",
-						].filter(Boolean).join(" "),
+						]
+							.filter(Boolean)
+							.join(" "),
 					},
 				};
 
@@ -3580,27 +4025,37 @@ export function registerFigmaAPITools(
 
 				if (responseSizeKB > 500) {
 					// Emergency: strip children beyond depth 2 and add truncation note
-					logger.warn({ responseSizeKB, nodeId }, "Component response exceeds 500KB, truncating deep children");
+					logger.warn(
+						{ responseSizeKB, nodeId },
+						"Component response exceeds 500KB, truncating deep children",
+					);
 					const truncate = (n: any, currentDepth: number): any => {
 						if (!n) return n;
 						const copy = { ...n };
 						if (copy.children && currentDepth >= 2) {
 							copy.children = copy.children.map((c: any) => ({
-								id: c.id, name: c.name, type: c.type,
+								id: c.id,
+								name: c.name,
+								type: c.type,
 								...(c.componentId ? { componentId: c.componentId } : {}),
-								...(c.variantProperties ? { variantProperties: c.variantProperties } : {}),
+								...(c.variantProperties
+									? { variantProperties: c.variantProperties }
+									: {}),
 								childCount: c.children?.length,
 							}));
 							copy._truncated = true;
 						} else if (copy.children) {
-							copy.children = copy.children.map((c: any) => truncate(c, currentDepth + 1));
+							copy.children = copy.children.map((c: any) =>
+								truncate(c, currentDepth + 1),
+							);
 						}
 						return copy;
 					};
 					response.component = truncate(componentData, 0);
 					response.metadata.truncated = true;
 					response.metadata.originalSizeKB = responseSizeKB;
-					response.metadata.note += " Response was truncated due to size. Use figma_execute for deeper traversal of specific subtrees.";
+					response.metadata.note +=
+						" Response was truncated due to size. Use figma_execute for deeper traversal of specific subtrees.";
 				}
 
 				return {
@@ -3619,45 +4074,46 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									error: errorMessage,
-									message: "Failed to retrieve component development data",
-								}
-							),
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to retrieve component development data",
+							}),
 						},
 					],
 					isError: true,
 				};
 			}
-		}
+		},
 	);
 
 	// Tool 14: Get File for Plugin Development
-	server.tool(
+	server.registerTool(
 		"figma_get_file_for_plugin",
-		"Get file data optimized for plugin development with filtered properties (IDs, structure, plugin data, component relationships). Excludes visual properties (fills, strokes, effects) to reduce payload. Use when user asks for: plugin development, file structure for manipulation, node IDs for plugin API. NOT for component descriptions (use figma_get_component). NOT for visual/styling data (use figma_get_component_for_development). Supports deeper tree traversal (max depth=5) than figma_get_file_data.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe(
-					"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called."
-				),
-			depth: z
-				.number()
-				.min(0)
-				.max(5)
-				.optional()
-				.default(2)
-				.describe(
-					"How many levels of children to include (default: 2, max: 5). Higher depths are safe here due to filtering."
-				),
-			nodeIds: z
-				.array(z.string())
-				.optional()
-				.describe("Specific node IDs to retrieve (optional)"),
+			description:
+				"Get file data optimized for plugin development with filtered properties (IDs, structure, plugin data, component relationships). Excludes visual properties (fills, strokes, effects) to reduce payload. Use when user asks for: plugin development, file structure for manipulation, node IDs for plugin API. NOT for component descriptions (use figma_get_component). NOT for visual/styling data (use figma_get_component_for_development). Supports deeper tree traversal (max depth=5) than figma_get_file_data.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe(
+						"Figma file URL (e.g., https://figma.com/design/abc123). REQUIRED unless figma_navigate was already called.",
+					),
+				depth: z
+					.number()
+					.min(0)
+					.max(5)
+					.optional()
+					.default(2)
+					.describe(
+						"How many levels of children to include (default: 2, max: 5). Higher depths are safe here due to filtering.",
+					),
+				nodeIds: z
+					.array(z.string())
+					.optional()
+					.describe("Specific node IDs to retrieve (optional)"),
+			}),
 		},
 		async ({ fileUrl, depth, nodeIds }) => {
 			try {
@@ -3665,7 +4121,8 @@ export function registerFigmaAPITools(
 				try {
 					api = await getFigmaAPI();
 				} catch (apiError) {
-					const errorMessage = apiError instanceof Error ? apiError.message : String(apiError);
+					const errorMessage =
+						apiError instanceof Error ? apiError.message : String(apiError);
 					throw restAuthError(
 						"Cannot retrieve file data for plugin development. REST API authentication required.",
 						errorMessage,
@@ -3675,7 +4132,7 @@ export function registerFigmaAPITools(
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
 					throw new Error(
-						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma."
+						"No Figma file URL available. Pass the fileUrl parameter or ensure the Desktop Bridge plugin is open in Figma.",
 					);
 				}
 
@@ -3684,14 +4141,20 @@ export function registerFigmaAPITools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, depth, nodeIds }, "Fetching file data for plugin development");
+				logger.info(
+					{ fileKey, depth, nodeIds },
+					"Fetching file data for plugin development",
+				);
 
 				const wantsNodes = Array.isArray(nodeIds) && nodeIds.length > 0;
 				// With nodeIds, the document is just the page list (depth 1): the file
 				// endpoint counts depth from the document root, so passing ids + depth
 				// there cut the requested nodes off entirely. The nodes themselves come
 				// from the nodes endpoint, where depth counts from each node.
-				const fileData = await api.getFile(fileKey, wantsNodes ? { depth: 1 } : { depth });
+				const fileData = await api.getFile(
+					fileKey,
+					wantsNodes ? { depth: 1 } : { depth },
+				);
 				const nodesData = wantsNodes
 					? await api.getNodes(fileKey, nodeIds, depth ? { depth } : undefined)
 					: null;
@@ -3725,24 +4188,32 @@ export function registerFigmaAPITools(
 
 					// Plugin data (CRITICAL for plugins)
 					if (node.pluginData) result.pluginData = node.pluginData;
-					if (node.sharedPluginData) result.sharedPluginData = node.sharedPluginData;
+					if (node.sharedPluginData)
+						result.sharedPluginData = node.sharedPluginData;
 
 					// Component relationships (important for plugins)
 					if (node.componentId) result.componentId = node.componentId;
 					if (node.mainComponent) result.mainComponent = node.mainComponent;
-					if (node.componentPropertyReferences) result.componentPropertyReferences = node.componentPropertyReferences;
+					if (node.componentPropertyReferences)
+						result.componentPropertyReferences =
+							node.componentPropertyReferences;
 					if (node.instanceOf) result.instanceOf = node.instanceOf;
-					if (node.exposedInstances) result.exposedInstances = node.exposedInstances;
+					if (node.exposedInstances)
+						result.exposedInstances = node.exposedInstances;
 
 					// Component properties (for manipulation)
-					if (node.componentProperties) result.componentProperties = node.componentProperties;
+					if (node.componentProperties)
+						result.componentProperties = node.componentProperties;
 
 					// Characters for text nodes (plugins often need this)
-					if (node.characters !== undefined) result.characters = node.characters;
+					if (node.characters !== undefined)
+						result.characters = node.characters;
 
 					// Recursively process children
 					if (node.children) {
-						result.children = node.children.map((child: any) => filterForPlugin(child));
+						result.children = node.children.map((child: any) =>
+							filterForPlugin(child),
+						);
 					}
 
 					return result;
@@ -3759,9 +4230,7 @@ export function registerFigmaAPITools(
 					components: fileData.components
 						? Object.keys(fileData.components).length
 						: 0,
-					styles: fileData.styles
-						? Object.keys(fileData.styles).length
-						: 0,
+					styles: fileData.styles ? Object.keys(fileData.styles).length : 0,
 					...(wantsNodes && {
 						requestedNodes: nodeIds,
 						nodes: Object.fromEntries(
@@ -3794,9 +4263,11 @@ export function registerFigmaAPITools(
 							if (adjustedLevel !== "inventory") {
 								if (node.visible !== undefined) result.visible = node.visible;
 								if (node.locked !== undefined) result.locked = node.locked;
-								if (node.absoluteBoundingBox) result.absoluteBoundingBox = node.absoluteBoundingBox;
+								if (node.absoluteBoundingBox)
+									result.absoluteBoundingBox = node.absoluteBoundingBox;
 								if (node.pluginData) result.pluginData = node.pluginData;
-								if (node.sharedPluginData) result.sharedPluginData = node.sharedPluginData;
+								if (node.sharedPluginData)
+									result.sharedPluginData = node.sharedPluginData;
 								if (node.componentId) result.componentId = node.componentId;
 							}
 
@@ -3830,66 +4301,79 @@ export function registerFigmaAPITools(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(
-								{
-									error: errorMessage,
-									message: "Failed to retrieve file data for plugin development",
-								}
-							),
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to retrieve file data for plugin development",
+							}),
 						},
 					],
 					isError: true,
 				};
 			}
-		}
+		},
 	);
 
 	// Tool 15: Capture Screenshot via Plugin (Desktop Bridge)
 	// This uses exportAsync() which reads the current plugin runtime state, not the cloud state
 	// Solves race condition where REST API screenshots show stale data after changes
-	server.tool(
+	server.registerTool(
 		"figma_capture_screenshot",
-		"Capture a screenshot of a node using the plugin's exportAsync API. IMPORTANT: This tool captures the CURRENT state from the plugin runtime (not cloud state like REST API), making it reliable for validating changes immediately after making them. Use this instead of figma_get_component_image when you need to verify that changes were applied correctly. Defaults are AI-optimized: PNG at 1x with automatic downscaling so the longest side stays within the 1568px AI vision processing ceiling. PNG is the default because design tool content (flat colors, text, UI components) compresses significantly better as PNG. Use JPG for photographic or gradient-heavy content. Requires Desktop Bridge connection (Figma Desktop with plugin running).",
 		{
-			nodeId: z
-				.string()
-				.optional()
-				.describe(
-					"ID of the node to capture (e.g., '1:234'). If not provided, captures the current page."
-				),
-			format: z
-				.enum(["PNG", "JPG", "SVG"])
-				.optional()
-				.default("PNG")
-				.describe("Image format (default: PNG). Use JPG for photographic or gradient-heavy content."),
-			scale: z
-				.number()
-				.min(0.5)
-				.max(4)
-				.optional()
-				.default(1)
-				.describe("Scale factor (default: 1). The plugin automatically caps the effective scale so the exported image does not exceed 1568px on its longest side (the AI vision processing ceiling)."),
+			description: "Screenshot a node (or the current page) from the live plugin state, so it reflects changes made a moment ago. PNG at 1x by default, capped at 1568px on the longest side.",
+			inputSchema: z.object({
+				nodeId: z
+					.string()
+					.optional()
+					.describe(
+						"Node to capture (default: current page).",
+					),
+				format: z
+					.enum(["PNG", "JPG", "SVG"])
+					.optional()
+					.default("PNG")
+					.describe(
+						"PNG (default), JPG for photos/gradients, or SVG.",
+					),
+				scale: z
+					.number()
+					.min(0.5)
+					.max(4)
+					.optional()
+					.default(1)
+					.describe(
+						"Scale (default 1; capped at 1568px).",
+					),
+			}),
 		},
 		async ({ nodeId, format, scale }) => {
 			try {
-				logger.info({ nodeId, format, scale }, "Capturing screenshot via Desktop Bridge");
+				logger.info(
+					{ nodeId, format, scale },
+					"Capturing screenshot via Desktop Bridge",
+				);
 
 				let result = null;
 
 				// Use the connector abstraction (WebSocket transport)
 				if (getDesktopConnector) {
 					const connector = await getDesktopConnector();
-					logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Screenshot via connector");
-					result = await connector.captureScreenshot(nodeId || '', { format, scale });
+					logger.info(
+						{ transport: connector.getTransportType?.() || "unknown" },
+						"Screenshot via connector",
+					);
+					result = await connector.captureScreenshot(nodeId || "", {
+						format,
+						scale,
+					});
 					// Wrap in expected format only if connector returns raw data without a success flag
-					if (result && typeof result.success === 'undefined' && result.image) {
+					if (result && typeof result.success === "undefined" && result.image) {
 						result = { success: true, image: result };
 					}
 				}
 
 				if (!result) {
 					throw new Error(
-						"Desktop Bridge plugin not found. Ensure the 'Figma Console MCP' plugin is running in Figma Desktop."
+						"Desktop Bridge plugin not found. Ensure the 'Figma Console MCP' plugin is running in Figma Desktop.",
 					);
 				}
 
@@ -3898,9 +4382,17 @@ export function registerFigmaAPITools(
 				}
 
 				// Determine MIME type based on format
-				const mimeType = format === "JPG" ? "image/jpeg" : format === "SVG" ? "image/svg+xml" : "image/png";
+				const mimeType =
+					format === "JPG"
+						? "image/jpeg"
+						: format === "SVG"
+							? "image/svg+xml"
+							: "image/png";
 
-				logger.info({ byteLength: result.image.byteLength, format, mimeType }, "Screenshot captured via plugin");
+				logger.info(
+					{ byteLength: result.image.byteLength, format, mimeType },
+					"Screenshot captured via plugin",
+				);
 
 				// Return as MCP image content type so Claude can actually see and analyze the image
 				return {
@@ -3932,7 +4424,8 @@ export function registerFigmaAPITools(
 				};
 			} catch (error) {
 				logger.error({ error }, "Failed to capture screenshot");
-				const errorMessage = error instanceof Error ? error.message : String(error);
+				const errorMessage =
+					error instanceof Error ? error.message : String(error);
 				return {
 					content: [
 						{
@@ -3940,52 +4433,61 @@ export function registerFigmaAPITools(
 							text: JSON.stringify({
 								error: errorMessage,
 								message: "Failed to capture screenshot via Desktop Bridge",
-								suggestion: "Ensure Figma Desktop is open with the plugin running",
+								suggestion:
+									"Ensure Figma Desktop is open with the plugin running",
 							}),
 						},
 					],
 					isError: true,
 				};
 			}
-		}
+		},
 	);
 
 	// Tool 16: Set Instance Properties (Desktop Bridge)
 	// Updates component properties on an instance using setProperties()
 	// This is the correct way to update TEXT/BOOLEAN/VARIANT properties on component instances
-	server.tool(
+	server.registerTool(
 		"figma_set_instance_properties",
-		"Update component properties on a component instance. IMPORTANT: Use this tool instead of trying to edit text nodes directly when working with component instances. Components often expose TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties that control their content. SLOT properties CANNOT be set here — use figma_append_to_slot to populate slot content. Direct text node editing may fail silently if the component uses properties. This tool handles the #nodeId suffix pattern automatically. Requires Desktop Bridge connection.",
 		{
-			nodeId: z
-				.string()
-				.describe(
-					"ID of the INSTANCE node to update (e.g., '1:234'). Must be a component instance, not a regular frame."
-				),
-			properties: z
-				.record(z.string(), z.union([z.string(), z.boolean()]))
-				.describe(
-					"Properties to set. Keys are property names (e.g., 'Label', 'Show Icon', 'Size'). " +
-					"Values are strings for TEXT/VARIANT properties, booleans for BOOLEAN properties. " +
-					"The tool automatically handles the #nodeId suffix for TEXT/BOOLEAN/INSTANCE_SWAP properties."
-				),
+			description: "Set an instance's component properties (TEXT, BOOLEAN, INSTANCE_SWAP, VARIANT) by name \u2014 the way to change content inside an instance, since editing its text layers directly fails silently. #id suffixes are handled. Slots: use figma_append_to_slot (components toolset).",
+			inputSchema: z.object({
+				nodeId: z
+					.string()
+					.describe(
+						"Instance node ID.",
+					),
+				properties: z
+					.record(z.string(), z.union([z.string(), z.boolean()]))
+					.describe(
+						"Properties to set. Keys are property names (e.g., 'Label', 'Show Icon', 'Size'). " +
+							"Values are strings for TEXT/VARIANT properties, booleans for BOOLEAN properties. " +
+							"The tool automatically handles the #nodeId suffix for TEXT/BOOLEAN/INSTANCE_SWAP properties.",
+					),
+			}),
 		},
 		async ({ nodeId, properties }) => {
 			try {
-				logger.info({ nodeId, properties: Object.keys(properties) }, "Setting instance properties via Desktop Bridge");
+				logger.info(
+					{ nodeId, properties: Object.keys(properties) },
+					"Setting instance properties via Desktop Bridge",
+				);
 
 				let result = null;
 
 				// Use the connector abstraction (WebSocket transport)
 				if (getDesktopConnector) {
 					const connector = await getDesktopConnector();
-					logger.info({ transport: connector.getTransportType?.() || 'unknown' }, "Instance properties via connector");
+					logger.info(
+						{ transport: connector.getTransportType?.() || "unknown" },
+						"Instance properties via connector",
+					);
 					result = await connector.setInstanceProperties(nodeId, properties);
 				}
 
 				if (!result) {
 					throw new Error(
-						"Desktop Bridge plugin not found. Ensure the 'Figma Console MCP' plugin is running in Figma Desktop."
+						"Desktop Bridge plugin not found. Ensure the 'Figma Console MCP' plugin is running in Figma Desktop.",
 					);
 				}
 
@@ -4015,7 +4517,8 @@ export function registerFigmaAPITools(
 				};
 			} catch (error) {
 				logger.error({ error }, "Failed to set instance properties");
-				const errorMessage = error instanceof Error ? error.message : String(error);
+				const errorMessage =
+					error instanceof Error ? error.message : String(error);
 				return {
 					content: [
 						{
@@ -4036,7 +4539,6 @@ export function registerFigmaAPITools(
 					isError: true,
 				};
 			}
-		}
+		},
 	);
-
 }

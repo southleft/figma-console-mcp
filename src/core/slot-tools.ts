@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
 
@@ -17,7 +17,9 @@ const SLOT_CHILD_NODE_TYPES = [
 ] as const;
 
 const preferredValueSchema = z.object({
-	type: z.enum(["COMPONENT", "COMPONENT_SET"]).describe("Type of preferred value"),
+	type: z
+		.enum(["COMPONENT", "COMPONENT_SET"])
+		.describe("Type of preferred value"),
 	key: z.string().describe("Component or component set key"),
 });
 
@@ -25,7 +27,7 @@ const fileKeySchema = z
 	.string()
 	.optional()
 	.describe(
-		"Local Mode only. Run against this specific connected file instead of the active file. Does not change the active file or target lock. Get connected fileKeys from figma_list_open_files. Rejected in Cloud Mode, which pairs with a single plugin instance.",
+		"Local Mode: run in this open file (see figma_list_open_files) without changing the active file.",
 	);
 
 const FILE_KEY_DOC =
@@ -39,40 +41,38 @@ export function registerSlotTools(
 	server: McpServer,
 	getDesktopConnector: () => Promise<any>,
 ): void {
-	server.tool(
+	server.registerTool(
 		"figma_create_slot",
-		`Create a SlotNode inside a component using createSlot(). Automatically creates a linked SLOT component property named after the slot (renaming the slot renames the property). Slots are freeform drop zones for instance content — more flexible than INSTANCE_SWAP. Works on standalone COMPONENTs and variant COMPONENTs inside a COMPONENT_SET (call once per variant). GRID layout is not allowed on slots. Requires Desktop Bridge.${FILE_KEY_DOC}`,
 		{
-			nodeId: z
-				.string()
-				.describe("The COMPONENT node ID to add a slot to"),
-			name: z
-				.string()
-				.optional()
-				.describe("Slot layer name (e.g. 'Content', 'Footer')"),
-			width: z
-				.number()
-				.optional()
-				.describe("Initial slot width in pixels"),
-			height: z
-				.number()
-				.optional()
-				.describe("Initial slot height in pixels"),
-			layoutMode: z
-				.enum(SLOT_LAYOUT_MODES)
-				.optional()
-				.describe("Auto-layout mode for the slot (GRID is not supported)"),
-			fileKey: fileKeySchema,
+			description: `Create a SlotNode inside a component using createSlot(). Automatically creates a linked SLOT component property named after the slot (renaming the slot renames the property). Slots are freeform drop zones for instance content — more flexible than INSTANCE_SWAP. Works on standalone COMPONENTs and variant COMPONENTs inside a COMPONENT_SET (call once per variant). GRID layout is not allowed on slots. Requires Desktop Bridge.${FILE_KEY_DOC}`,
+			inputSchema: z.object({
+				nodeId: z.string().describe("The COMPONENT node ID to add a slot to"),
+				name: z
+					.string()
+					.optional()
+					.describe("Slot layer name (e.g. 'Content', 'Footer')"),
+				width: z.number().optional().describe("Initial slot width in pixels"),
+				height: z.number().optional().describe("Initial slot height in pixels"),
+				layoutMode: z
+					.enum(SLOT_LAYOUT_MODES)
+					.optional()
+					.describe("Auto-layout mode for the slot (GRID is not supported)"),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async ({ nodeId, name, width, height, layoutMode, fileKey }) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.createSlot(nodeId, {
-					name,
-					width,
-					height,
-					layoutMode,
-				}, fileKey);
+				const result = await connector.createSlot(
+					nodeId,
+					{
+						name,
+						width,
+						height,
+						layoutMode,
+					},
+					fileKey,
+				);
 
 				if (!result.success) {
 					throw new Error(result.error || "Failed to create slot");
@@ -108,14 +108,16 @@ export function registerSlotTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_get_slots",
-		`List SlotNode children on a component, component set, or instance. Returns slot IDs, names, property keys, dimensions, and current child nodes. Use on instances before figma_append_to_slot to discover slot names/IDs.${FILE_KEY_DOC}`,
 		{
-			nodeId: z
-				.string()
-				.describe("COMPONENT, COMPONENT_SET, or INSTANCE node ID"),
-			fileKey: fileKeySchema,
+			description: `List SlotNode children on a component, component set, or instance. Returns slot IDs, names, property keys, dimensions, and current child nodes. Use on instances before figma_append_to_slot to discover slot names/IDs.${FILE_KEY_DOC}`,
+			inputSchema: z.object({
+				nodeId: z
+					.string()
+					.describe("COMPONENT, COMPONENT_SET, or INSTANCE node ID"),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async ({ nodeId, fileKey }) => {
 			try {
@@ -152,45 +154,49 @@ export function registerSlotTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_append_to_slot",
-		`Add content to a slot on a component instance. Clones sourceNodeId into the slot, or creates a new node (nodeType). SLOT content cannot be set via figma_set_instance_properties — use this tool instead. Widgets, stickies, and raw ComponentNodes cannot be appended to slots.${FILE_KEY_DOC}`,
 		{
-			slotId: z
-				.string()
-				.optional()
-				.describe("Direct SlotNode ID (from figma_get_slots)"),
-			instanceId: z
-				.string()
-				.optional()
-				.describe("Instance ID — use with slotName when slotId is unknown"),
-			slotName: z
-				.string()
-				.optional()
-				.describe("Slot layer name on the instance (e.g. 'Content')"),
-			sourceNodeId: z
-				.string()
-				.optional()
-				.describe("Node to clone into the slot (default: clone=true)"),
-			nodeType: z
-				.enum(SLOT_CHILD_NODE_TYPES)
-				.optional()
-				.describe("Create a new node in the slot instead of cloning"),
-			properties: z
-				.record(z.string(), z.union([z.string(), z.number()]))
-				.optional()
-				.describe("Properties for created nodes: name, text, width, height"),
-			clone: z
-				.boolean()
-				.optional()
-				.default(true)
-				.describe("When using sourceNodeId, clone the node (default true). Set false to move."),
-			clearExisting: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe("Remove existing slot children before appending"),
-			fileKey: fileKeySchema,
+			description: `Add content to a slot on a component instance. Clones sourceNodeId into the slot, or creates a new node (nodeType). SLOT content cannot be set via figma_set_instance_properties — use this tool instead. Widgets, stickies, and raw ComponentNodes cannot be appended to slots.${FILE_KEY_DOC}`,
+			inputSchema: z.object({
+				slotId: z
+					.string()
+					.optional()
+					.describe("Direct SlotNode ID (from figma_get_slots)"),
+				instanceId: z
+					.string()
+					.optional()
+					.describe("Instance ID — use with slotName when slotId is unknown"),
+				slotName: z
+					.string()
+					.optional()
+					.describe("Slot layer name on the instance (e.g. 'Content')"),
+				sourceNodeId: z
+					.string()
+					.optional()
+					.describe("Node to clone into the slot (default: clone=true)"),
+				nodeType: z
+					.enum(SLOT_CHILD_NODE_TYPES)
+					.optional()
+					.describe("Create a new node in the slot instead of cloning"),
+				properties: z
+					.record(z.string(), z.union([z.string(), z.number()]))
+					.optional()
+					.describe("Properties for created nodes: name, text, width, height"),
+				clone: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe(
+						"When using sourceNodeId, clone the node (default true). Set false to move.",
+					),
+				clearExisting: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe("Remove existing slot children before appending"),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async (args) => {
 			try {
@@ -198,7 +204,9 @@ export function registerSlotTools(
 					throw new Error("Provide slotId OR (instanceId + slotName)");
 				}
 				if (!args.sourceNodeId && !args.nodeType) {
-					throw new Error("Provide sourceNodeId (clone into slot) or nodeType (create new content)");
+					throw new Error(
+						"Provide sourceNodeId (clone into slot) or nodeType (create new content)",
+					);
 				}
 
 				const { fileKey, ...params } = args;
@@ -244,23 +252,22 @@ export function registerSlotTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_reset_slot",
-		`Reset a slot on a component instance to its default (empty) state from the main component. Uses SlotNode.resetSlot().${FILE_KEY_DOC}`,
 		{
-			slotId: z
-				.string()
-				.optional()
-				.describe("Direct SlotNode ID"),
-			instanceId: z
-				.string()
-				.optional()
-				.describe("Instance ID — use with slotName when slotId is unknown"),
-			slotName: z
-				.string()
-				.optional()
-				.describe("Slot layer name on the instance"),
-			fileKey: fileKeySchema,
+			description: `Reset a slot on a component instance to its default (empty) state from the main component. Uses SlotNode.resetSlot().${FILE_KEY_DOC}`,
+			inputSchema: z.object({
+				slotId: z.string().optional().describe("Direct SlotNode ID"),
+				instanceId: z
+					.string()
+					.optional()
+					.describe("Instance ID — use with slotName when slotId is unknown"),
+				slotName: z
+					.string()
+					.optional()
+					.describe("Slot layer name on the instance"),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async ({ slotId, instanceId, slotName, fileKey }) => {
 			try {
@@ -269,7 +276,10 @@ export function registerSlotTools(
 				}
 
 				const connector = await getDesktopConnector();
-				const result = await connector.resetSlot({ slotId, instanceId, slotName }, fileKey);
+				const result = await connector.resetSlot(
+					{ slotId, instanceId, slotName },
+					fileKey,
+				);
 
 				if (!result.success) {
 					throw new Error(result.error || "Failed to reset slot");
@@ -303,26 +313,37 @@ export function registerSlotTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_add_slot_property",
-		`Manually add a SLOT component property and bind it to an existing frame (alternative to figma_create_slot). The frame must be a direct child of the component, must not use GRID layout, and must not be nested inside another slot. Supports description and preferredValues.${FILE_KEY_DOC}`,
 		{
-			nodeId: z.string().describe("COMPONENT or COMPONENT_SET node ID"),
-			propertyName: z.string().describe("Slot property name (e.g. 'Content')"),
-			frameNodeId: z
-				.string()
-				.describe("Frame node ID to bind as the slot content area"),
-			description: z
-				.string()
-				.optional()
-				.describe("Slot property description (SLOT-only)"),
-			preferredValues: z
-				.array(preferredValueSchema)
-				.optional()
-				.describe("Preferred components for slot content (SLOT-only)"),
-			fileKey: fileKeySchema,
+			description: `Manually add a SLOT component property and bind it to an existing frame (alternative to figma_create_slot). The frame must be a direct child of the component, must not use GRID layout, and must not be nested inside another slot. Supports description and preferredValues.${FILE_KEY_DOC}`,
+			inputSchema: z.object({
+				nodeId: z.string().describe("COMPONENT or COMPONENT_SET node ID"),
+				propertyName: z
+					.string()
+					.describe("Slot property name (e.g. 'Content')"),
+				frameNodeId: z
+					.string()
+					.describe("Frame node ID to bind as the slot content area"),
+				description: z
+					.string()
+					.optional()
+					.describe("Slot property description (SLOT-only)"),
+				preferredValues: z
+					.array(preferredValueSchema)
+					.optional()
+					.describe("Preferred components for slot content (SLOT-only)"),
+				fileKey: fileKeySchema,
+			}),
 		},
-		async ({ nodeId, propertyName, frameNodeId, description, preferredValues, fileKey }) => {
+		async ({
+			nodeId,
+			propertyName,
+			frameNodeId,
+			description,
+			preferredValues,
+			fileKey,
+		}) => {
 			try {
 				const connector = await getDesktopConnector();
 				const code = `

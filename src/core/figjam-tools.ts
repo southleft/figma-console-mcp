@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
 
@@ -71,22 +71,21 @@ export function registerFigJamTools(
 	// STICKY NOTE TOOLS
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figjam_create_sticky",
-		`Create a sticky note on a FigJam board. Only works in FigJam files.
+		{
+			description: `Create a sticky note on a FigJam board. Only works in FigJam files.
 
 **Colors:** YELLOW, BLUE, GREEN, PINK, ORANGE, PURPLE, RED, LIGHT_GRAY, GRAY (default: YELLOW)`,
-		{
-			text: z
-				.string()
-				.max(MAX_TEXT_LENGTH)
-				.describe("Text content for the sticky note"),
-			color: z
-				.enum(STICKY_COLORS)
-				.optional()
-				.describe("Sticky color"),
-			x: z.number().optional().describe("X position on canvas"),
-			y: z.number().optional().describe("Y position on canvas"),
+			inputSchema: z.object({
+				text: z
+					.string()
+					.max(MAX_TEXT_LENGTH)
+					.describe("Text content for the sticky note"),
+				color: z.enum(STICKY_COLORS).optional().describe("Sticky color"),
+				x: z.number().optional().describe("X position on canvas"),
+				y: z.number().optional().describe("Y position on canvas"),
+			}),
 		},
 		async ({ text, color, x, y }) => {
 			try {
@@ -113,25 +112,27 @@ export function registerFigJamTools(
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figjam_create_stickies",
-		`Batch create multiple sticky notes on a FigJam board (max ${MAX_BATCH_SIZE}). Use this to populate boards from structured data (meeting notes, brainstorm ideas, etc.).
+		{
+			description: `Batch create multiple sticky notes on a FigJam board (max ${MAX_BATCH_SIZE}). Use this to populate boards from structured data (meeting notes, brainstorm ideas, etc.).
 
 **Colors:** YELLOW, BLUE, GREEN, PINK, ORANGE, PURPLE, RED, LIGHT_GRAY, GRAY`,
-		{
-			stickies: z
-				.array(
-					z.object({
-						text: z.string().max(MAX_TEXT_LENGTH).describe("Text content"),
-						color: z.enum(STICKY_COLORS).optional().describe("Sticky color"),
-						x: z.number().optional().describe("X position"),
-						y: z.number().optional().describe("Y position"),
-					}),
-				)
-				.max(MAX_BATCH_SIZE)
-				.describe(
-					`Array of sticky note specifications (max ${MAX_BATCH_SIZE})`,
-				),
+			inputSchema: z.object({
+				stickies: z
+					.array(
+						z.object({
+							text: z.string().max(MAX_TEXT_LENGTH).describe("Text content"),
+							color: z.enum(STICKY_COLORS).optional().describe("Sticky color"),
+							x: z.number().optional().describe("X position"),
+							y: z.number().optional().describe("Y position"),
+						}),
+					)
+					.max(MAX_BATCH_SIZE)
+					.describe(
+						`Array of sticky note specifications (max ${MAX_BATCH_SIZE})`,
+					),
+			}),
 		},
 		async ({ stickies }) => {
 			try {
@@ -162,31 +163,33 @@ export function registerFigJamTools(
 	// CONNECTOR TOOL
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figjam_create_connector",
-		`Connect two nodes with a connector line in FigJam. Use to create flowcharts, diagrams, and relationship maps.
+		{
+			description: `Connect two nodes with a connector line in FigJam. Use to create flowcharts, diagrams, and relationship maps.
 
 Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from creation results.
 
 **Magnet positions:** AUTO (default), TOP, BOTTOM, LEFT, RIGHT — controls where the connector attaches to each node.`,
-		{
-			startNodeId: z.string().describe("Node ID of the start element"),
-			endNodeId: z.string().describe("Node ID of the end element"),
-			label: z
-				.string()
-				.max(MAX_TEXT_LENGTH)
-				.optional()
-				.describe("Optional text label on the connector"),
-			startMagnet: z
-				.enum(["AUTO", "TOP", "BOTTOM", "LEFT", "RIGHT"])
-				.optional()
-				.default("AUTO")
-				.describe("Magnet position on the start node"),
-			endMagnet: z
-				.enum(["AUTO", "TOP", "BOTTOM", "LEFT", "RIGHT"])
-				.optional()
-				.default("AUTO")
-				.describe("Magnet position on the end node"),
+			inputSchema: z.object({
+				startNodeId: z.string().describe("Node ID of the start element"),
+				endNodeId: z.string().describe("Node ID of the end element"),
+				label: z
+					.string()
+					.max(MAX_TEXT_LENGTH)
+					.optional()
+					.describe("Optional text label on the connector"),
+				startMagnet: z
+					.enum(["AUTO", "TOP", "BOTTOM", "LEFT", "RIGHT"])
+					.optional()
+					.default("AUTO")
+					.describe("Magnet position on the start node"),
+				endMagnet: z
+					.enum(["AUTO", "TOP", "BOTTOM", "LEFT", "RIGHT"])
+					.optional()
+					.default("AUTO")
+					.describe("Magnet position on the end node"),
+			}),
 		},
 		async ({ startNodeId, endNodeId, label, startMagnet, endMagnet }) => {
 			try {
@@ -223,31 +226,69 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 	// SHAPE WITH TEXT TOOL
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figjam_create_shape_with_text",
-		`Create a labeled shape on a FigJam board with optional size, colors, and font control. Use for flowchart nodes, process diagrams, and visual organization.
+		{
+			description: `Create a labeled shape on a FigJam board with optional size, colors, and font control. Use for flowchart nodes, process diagrams, and visual organization.
 
 **Shape types:** ROUNDED_RECTANGLE (default), DIAMOND, ELLIPSE, TRIANGLE_UP, TRIANGLE_DOWN, PARALLELOGRAM_RIGHT, PARALLELOGRAM_LEFT, ENG_DATABASE, ENG_QUEUE, ENG_FILE, ENG_FOLDER`,
-		{
-			text: z
-				.string()
-				.max(MAX_TEXT_LENGTH)
-				.optional()
-				.describe("Text label for the shape"),
-			shapeType: z
-				.enum(SHAPE_TYPES)
-				.optional()
-				.describe("Shape type"),
-			x: z.number().optional().describe("X position on canvas"),
-			y: z.number().optional().describe("Y position on canvas"),
-			width: z.number().min(1).max(10000).optional().describe("Width in pixels"),
-			height: z.number().min(1).max(10000).optional().describe("Height in pixels"),
-			fillColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Fill color as hex (e.g., '#E1F5EE')"),
-			strokeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Stroke/border color as hex"),
-			fontSize: z.number().min(1).max(200).optional().describe("Text font size in pixels"),
-			strokeDashPattern: z.string().optional().describe("Dash pattern as comma-separated numbers (e.g., '10,5' for dashed)"),
+			inputSchema: z.object({
+				text: z
+					.string()
+					.max(MAX_TEXT_LENGTH)
+					.optional()
+					.describe("Text label for the shape"),
+				shapeType: z.enum(SHAPE_TYPES).optional().describe("Shape type"),
+				x: z.number().optional().describe("X position on canvas"),
+				y: z.number().optional().describe("Y position on canvas"),
+				width: z
+					.number()
+					.min(1)
+					.max(10000)
+					.optional()
+					.describe("Width in pixels"),
+				height: z
+					.number()
+					.min(1)
+					.max(10000)
+					.optional()
+					.describe("Height in pixels"),
+				fillColor: z
+					.string()
+					.regex(/^#[0-9a-fA-F]{6}$/)
+					.optional()
+					.describe("Fill color as hex (e.g., '#E1F5EE')"),
+				strokeColor: z
+					.string()
+					.regex(/^#[0-9a-fA-F]{6}$/)
+					.optional()
+					.describe("Stroke/border color as hex"),
+				fontSize: z
+					.number()
+					.min(1)
+					.max(200)
+					.optional()
+					.describe("Text font size in pixels"),
+				strokeDashPattern: z
+					.string()
+					.optional()
+					.describe(
+						"Dash pattern as comma-separated numbers (e.g., '10,5' for dashed)",
+					),
+			}),
 		},
-		async ({ text, shapeType, x, y, width, height, fillColor, strokeColor, fontSize, strokeDashPattern }) => {
+		async ({
+			text,
+			shapeType,
+			x,
+			y,
+			width,
+			height,
+			fillColor,
+			strokeColor,
+			fontSize,
+			strokeDashPattern,
+		}) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.createShapeWithText({
@@ -287,22 +328,45 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 	// SECTION TOOL
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figjam_create_section",
-		`Create a section on a FigJam board. Sections are containers that can hold other elements. Use for grouping related content.\n\n**Note:** After creating a section, place elements inside it by setting their x/y coordinates within the section's bounds, then use figma_execute to call section.appendChild(node) to parent them.`,
 		{
-			name: z.string().max(500).optional().describe("Section name/title"),
-			x: z.number().optional().describe("X position on canvas"),
-			y: z.number().optional().describe("Y position on canvas"),
-			width: z.number().min(1).max(20000).optional().default(1000).describe("Section width in pixels"),
-			height: z.number().min(1).max(20000).optional().default(800).describe("Section height in pixels"),
-			fillColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Fill color as hex"),
+			description: `Create a section on a FigJam board. Sections are containers that can hold other elements. Use for grouping related content.\n\n**Note:** After creating a section, place elements inside it by setting their x/y coordinates within the section's bounds, then use figma_execute to call section.appendChild(node) to parent them.`,
+			inputSchema: z.object({
+				name: z.string().max(500).optional().describe("Section name/title"),
+				x: z.number().optional().describe("X position on canvas"),
+				y: z.number().optional().describe("Y position on canvas"),
+				width: z
+					.number()
+					.min(1)
+					.max(20000)
+					.optional()
+					.default(1000)
+					.describe("Section width in pixels"),
+				height: z
+					.number()
+					.min(1)
+					.max(20000)
+					.optional()
+					.default(800)
+					.describe("Section height in pixels"),
+				fillColor: z
+					.string()
+					.regex(/^#[0-9a-fA-F]{6}$/)
+					.optional()
+					.describe("Fill color as hex"),
+			}),
 		},
 		async ({ name, x, y, width, height, fillColor }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.createSection({
-					name, x, y, width, height, fillColor,
+					name,
+					x,
+					y,
+					width,
+					height,
+					fillColor,
 				});
 				return {
 					content: [{ type: "text" as const, text: JSON.stringify(result) }],
@@ -329,28 +393,30 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 	// TABLE TOOL
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figjam_create_table",
-		`Create a table on a FigJam board with optional cell data. Use for structured data display, comparison matrices, and organized information.
+		{
+			description: `Create a table on a FigJam board with optional cell data. Use for structured data display, comparison matrices, and organized information.
 
 **Data format:** 2D array of strings, e.g. [["Header1", "Header2"], ["Row1Col1", "Row1Col2"]]`,
-		{
-			rows: z
-				.number()
-				.min(1)
-				.max(MAX_TABLE_ROWS)
-				.describe(`Number of rows (1-${MAX_TABLE_ROWS})`),
-			columns: z
-				.number()
-				.min(1)
-				.max(MAX_TABLE_COLUMNS)
-				.describe(`Number of columns (1-${MAX_TABLE_COLUMNS})`),
-			data: z
-				.array(z.array(z.string().max(MAX_TEXT_LENGTH)))
-				.optional()
-				.describe("2D array of cell text content (row-major order)"),
-			x: z.number().optional().describe("X position on canvas"),
-			y: z.number().optional().describe("Y position on canvas"),
+			inputSchema: z.object({
+				rows: z
+					.number()
+					.min(1)
+					.max(MAX_TABLE_ROWS)
+					.describe(`Number of rows (1-${MAX_TABLE_ROWS})`),
+				columns: z
+					.number()
+					.min(1)
+					.max(MAX_TABLE_COLUMNS)
+					.describe(`Number of columns (1-${MAX_TABLE_COLUMNS})`),
+				data: z
+					.array(z.array(z.string().max(MAX_TEXT_LENGTH)))
+					.optional()
+					.describe("2D array of cell text content (row-major order)"),
+				x: z.number().optional().describe("X position on canvas"),
+				y: z.number().optional().describe("Y position on canvas"),
+			}),
 		},
 		async ({ rows, columns, data, x, y }) => {
 			try {
@@ -387,19 +453,21 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 	// CODE BLOCK TOOL
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figjam_create_code_block",
-		`Create a code block on a FigJam board. Use for sharing code snippets, config examples, or technical documentation in collaborative boards.`,
 		{
-			code: z.string().max(MAX_CODE_LENGTH).describe("The code content"),
-			language: z
-				.string()
-				.optional()
-				.describe(
-					"Programming language (e.g., 'JAVASCRIPT', 'PYTHON', 'TYPESCRIPT', 'JSON', 'HTML', 'CSS')",
-				),
-			x: z.number().optional().describe("X position on canvas"),
-			y: z.number().optional().describe("Y position on canvas"),
+			description: `Create a code block on a FigJam board. Use for sharing code snippets, config examples, or technical documentation in collaborative boards.`,
+			inputSchema: z.object({
+				code: z.string().max(MAX_CODE_LENGTH).describe("The code content"),
+				language: z
+					.string()
+					.optional()
+					.describe(
+						"Programming language (e.g., 'JAVASCRIPT', 'PYTHON', 'TYPESCRIPT', 'JSON', 'HTML', 'CSS')",
+					),
+				x: z.number().optional().describe("X position on canvas"),
+				y: z.number().optional().describe("Y position on canvas"),
+			}),
 		},
 		async ({ code, language, x, y }) => {
 			try {
@@ -435,30 +503,32 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 	// LAYOUT HELPER TOOL
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figjam_auto_arrange",
-		`Arrange nodes on a FigJam board in a grid, horizontal row, or vertical column layout. Use after batch-creating elements to organize them neatly.`,
 		{
-			nodeIds: z
-				.array(z.string())
-				.max(MAX_ARRANGE_NODES)
-				.describe(`Array of node IDs to arrange (max ${MAX_ARRANGE_NODES})`),
-			layout: z
-				.enum(["grid", "horizontal", "vertical"])
-				.optional()
-				.default("grid")
-				.describe("Layout type: grid, horizontal, or vertical"),
-			spacing: z
-				.number()
-				.optional()
-				.default(40)
-				.describe("Spacing between nodes in pixels"),
-			columns: z
-				.number()
-				.optional()
-				.describe(
-					"Number of columns for grid layout (defaults to sqrt of node count)",
-				),
+			description: `Arrange nodes on a FigJam board in a grid, horizontal row, or vertical column layout. Use after batch-creating elements to organize them neatly.`,
+			inputSchema: z.object({
+				nodeIds: z
+					.array(z.string())
+					.max(MAX_ARRANGE_NODES)
+					.describe(`Array of node IDs to arrange (max ${MAX_ARRANGE_NODES})`),
+				layout: z
+					.enum(["grid", "horizontal", "vertical"])
+					.optional()
+					.default("grid")
+					.describe("Layout type: grid, horizontal, or vertical"),
+				spacing: z
+					.number()
+					.optional()
+					.default(40)
+					.describe("Spacing between nodes in pixels"),
+				columns: z
+					.number()
+					.optional()
+					.describe(
+						"Number of columns for grid layout (defaults to sqrt of node count)",
+					),
+			}),
 		},
 		async ({ nodeIds, layout, spacing, columns }) => {
 			try {
@@ -545,27 +615,29 @@ Nodes must exist on the board (stickies, shapes, etc.). Use their node IDs from 
 	// READ TOOLS — Query existing FigJam board content
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figjam_get_board_contents",
-		`Read all content from a FigJam board. Returns stickies, shapes, connectors, tables, code blocks, and sections with their text content and positions.
+		{
+			description: `Read all content from a FigJam board. Returns stickies, shapes, connectors, tables, code blocks, and sections with their text content and positions.
 
 Use this to understand what's on a board before modifying it, or to extract structured data from collaborative sessions.
 
 **Filters:** Pass nodeTypes to limit results (e.g., ["STICKY"] for only stickies). Omit for everything.`,
-		{
-			nodeTypes: z
-				.array(z.enum(FIGJAM_NODE_TYPES))
-				.optional()
-				.describe("Filter by node types. Omit for all."),
-			maxNodes: z
-				.number()
-				.min(1)
-				.max(MAX_READ_NODES)
-				.optional()
-				.default(500)
-				.describe(
-					`Maximum nodes to return (1-${MAX_READ_NODES}, default: 500)`,
-				),
+			inputSchema: z.object({
+				nodeTypes: z
+					.array(z.enum(FIGJAM_NODE_TYPES))
+					.optional()
+					.describe("Filter by node types. Omit for all."),
+				maxNodes: z
+					.number()
+					.min(1)
+					.max(MAX_READ_NODES)
+					.optional()
+					.default(500)
+					.describe(
+						`Maximum nodes to return (1-${MAX_READ_NODES}, default: 500)`,
+					),
+			}),
 		},
 		async ({ nodeTypes, maxNodes }) => {
 			try {
@@ -595,12 +667,14 @@ Use this to understand what's on a board before modifying it, or to extract stru
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figjam_get_connections",
-		`Read the connection graph from a FigJam board. Returns all connectors with their start/end node references and labels.
+		{
+			description: `Read the connection graph from a FigJam board. Returns all connectors with their start/end node references and labels.
 
 Use this to understand relationships, flowcharts, and diagrams. Returns edges as {startNodeId, endNodeId, label} plus a summary of connected nodes.`,
-		{},
+			inputSchema: z.object({}),
+		},
 		async () => {
 			try {
 				const connector = await getDesktopConnector();

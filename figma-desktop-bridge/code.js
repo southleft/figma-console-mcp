@@ -9,7 +9,7 @@
 // detect stale cached plugins. Bumped by scripts/release.sh ONLY when plugin files
 // change (see issue #62); server-only releases leave it alone, so it may lag
 // package.json — that's intentional, not drift.
-var PLUGIN_VERSION = '1.41.5'; // Last release in which plugin files changed.
+var PLUGIN_VERSION = '2.0.0'; // Last release in which plugin files changed.
 
 console.log('🌉 [Desktop Bridge] Plugin loaded (v' + PLUGIN_VERSION + ')');
 
@@ -4498,6 +4498,13 @@ figma.ui.onmessage = async (msg) => {
         return '#' + rr.toUpperCase() + gg.toUpperCase() + bb.toUpperCase();
       }
 
+      // Effective alpha of a paint: paint opacity x color alpha.
+      function lintPaintAlpha(p) {
+        var o = (p && p.opacity !== undefined) ? p.opacity : 1;
+        var a = (p && p.color && p.color.a !== undefined) ? p.color.a : 1;
+        return o * a;
+      }
+
       // Walk up ancestors to find nearest solid fill background color
       function lintGetEffectiveBg(node) {
         var current = node.parent;
@@ -4507,7 +4514,8 @@ figma.ui.onmessage = async (msg) => {
               // Iterate reverse (last = topmost visible fill in Figma's stack)
               for (var fi = current.fills.length - 1; fi >= 0; fi--) {
                 var fill = current.fills[fi];
-                if (fill.type === 'SOLID' && fill.visible !== false) {
+                // A transparent fill (0% opacity) paints nothing — keep looking up.
+                if (fill.type === 'SOLID' && fill.visible !== false && lintPaintAlpha(fill) >= 0.1) {
                   var opacity = (fill.opacity !== undefined) ? fill.opacity : 1;
                   return { r: fill.color.r, g: fill.color.g, b: fill.color.b, opacity: opacity };
                 }
@@ -4667,6 +4675,46 @@ figma.ui.onmessage = async (msg) => {
       var defaultNameRegex = /^(Frame|Rectangle|Ellipse|Line|Text|Group|Component|Instance|Vector|Polygon|Star|Section)(\s+\d+)?$/;
       var interactiveNameRegex = /button|link|input|checkbox|radio|switch|toggle|tab|menu-item/i;
 
+      // Is this layer itself interactive? For BEM-style names ("al-c-input__footer")
+      // only the element part counts — "footer" isn't a control just because it
+      // lives inside an input block.
+      function lintIsInteractiveName(name) {
+        if (typeof name !== 'string') return false;
+        var el = name.indexOf('__') >= 0 ? name.slice(name.lastIndexOf('__') + 2) : name;
+        return interactiveNameRegex.test(el);
+      }
+
+      // The outermost interactive layer is the target; its interactive descendants
+      // (the box inside a checkbox, its label) are part of the same target.
+      // Only an actual control can absorb its descendants as one target: an
+      // instance/component whose name is a control word — never a grouping
+      // container ("Radio group", "Button bar", "Tabs", "Data Table").
+      var lintControlWordRegex = /\b(button|link|input|checkbox|radio|switch|toggle|tab|menu-item)\b/i;
+      var lintGroupWordRegex = /\b(group|groups|bar|list|set|container|wrapper|form|toolbar|tabs|table|stack|row|column|section|panel)\b/i;
+      function lintIsControlNode(n) {
+        if (n.type !== 'INSTANCE' && n.type !== 'COMPONENT' && n.type !== 'COMPONENT_SET') return false;
+        // Variant components are named "Checkbox / State=…" or "State=…"; use the set's name.
+        var nm = n.name;
+        if (n.type === 'COMPONENT' && n.parent && n.parent.type === 'COMPONENT_SET') nm = n.parent.name;
+        var words = String(nm).split('/')[0].replace(/([a-z])([A-Z])/g, '$1 $2');
+        return lintControlWordRegex.test(words) && !lintGroupWordRegex.test(words);
+      }
+      function lintHasInteractiveAncestor(node) {
+        // Includes the lint root: linting a single control (a Checkbox) must not
+        // treat its inner control-named parts as separate targets.
+        var p = node.parent;
+        while (p && p.type !== 'PAGE') {
+          // A component set's variants are separate targets, so the set never absorbs them.
+          if (p === rootNode && p.type === 'COMPONENT_SET') break;
+          try { if (lintIsControlNode(p)) return true; } catch (e) { return false; }
+          if (p === rootNode) break;
+          p = p.parent;
+        }
+        return false;
+      }
+      var lintTargets = [];          // every outermost interactive target: { id, box }
+      var lintTargetCandidates = []; // undersized ones, judged after the walk (spacing exception)
+
       // ---- Additional helpers for new WCAG rules ----
 
       // Get the first visible solid fill color from a node (for non-text contrast)
@@ -4675,7 +4723,7 @@ figma.ui.onmessage = async (msg) => {
           var fills = node.fills;
           if (fills && fills.length > 0) {
             for (var i = fills.length - 1; i >= 0; i--) {
-              if (fills[i].type === 'SOLID' && fills[i].visible !== false) {
+              if (fills[i].type === 'SOLID' && fills[i].visible !== false && lintPaintAlpha(fills[i]) >= 0.1) {
                 return { r: fills[i].color.r, g: fills[i].color.g, b: fills[i].color.b };
               }
             }
@@ -4690,7 +4738,7 @@ figma.ui.onmessage = async (msg) => {
           var strokes = node.strokes;
           if (strokes && strokes.length > 0) {
             for (var i = strokes.length - 1; i >= 0; i--) {
-              if (strokes[i].type === 'SOLID' && strokes[i].visible !== false) {
+              if (strokes[i].type === 'SOLID' && strokes[i].visible !== false && lintPaintAlpha(strokes[i]) >= 0.1) {
                 return { r: strokes[i].color.r, g: strokes[i].color.g, b: strokes[i].color.b };
               }
             }
@@ -4914,21 +4962,13 @@ figma.ui.onmessage = async (msg) => {
         // wcag-target-size: Interactive elements < 24x24
         if (activeRuleSet['wcag-target-size'] && !isPage && !isSection && !truncated) {
           try {
-            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && interactiveNameRegex.test(nodeName)) {
+            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && lintIsInteractiveName(nodeName) && !lintGroupWordRegex.test(String(nodeName).replace(/([a-z])([A-Z])/g, '$1 $2')) && !lintHasInteractiveAncestor(node)) {
               var tw = node.width;
               var th = node.height;
+              var tbox = node.absoluteBoundingBox;
+              if (tbox) lintTargets.push({ id: nodeId, box: tbox });
               if ((typeof tw === 'number' && tw < 24) || (typeof th === 'number' && th < 24)) {
-                if (totalFindings < maxFindings) {
-                  findings['wcag-target-size'].push({
-                    id: nodeId,
-                    name: nodeName,
-                    width: tw,
-                    height: th
-                  });
-                  totalFindings++;
-                } else {
-                  truncated = true;
-                }
+                lintTargetCandidates.push({ id: nodeId, name: nodeName, width: tw, height: th, box: tbox });
               }
             }
           } catch (e) { /* slot sublayer */ }
@@ -4964,48 +5004,38 @@ figma.ui.onmessage = async (msg) => {
           } catch (e) { /* slot sublayer or mixed */ }
         }
 
-        // wcag-non-text-contrast: UI components need 3:1 against adjacent color (WCAG 1.4.11)
+        // wcag-non-text-contrast: UI components need 3:1 against adjacent color (WCAG 1.4.11).
+        // The criterion is about the visual information that IDENTIFIES the control:
+        // a field whose border meets 3:1 passes even if its fill is close to the page.
         if (activeRuleSet['wcag-non-text-contrast'] && !isPage && !isSection && !truncated) {
           try {
-            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && interactiveNameRegex.test(nodeName)) {
+            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && lintIsInteractiveName(nodeName)) {
               var uiFill = lintGetNodeFillColor(node);
               var uiStroke = lintGetNodeStrokeColor(node);
               var uiBg = lintGetEffectiveBg(node);
-              // Check fill against background
-              if (uiFill) {
-                var uiRatio = lintContrastRatio(uiFill.r, uiFill.g, uiFill.b, uiBg.r, uiBg.g, uiBg.b);
-                if (uiRatio < 3.0) {
-                  if (totalFindings < maxFindings) {
-                    findings['wcag-non-text-contrast'].push({
-                      id: nodeId,
-                      name: nodeName,
-                      ratio: uiRatio.toFixed(1) + ':1',
-                      required: '3.0:1',
-                      component: lintRgbToHex(uiFill.r, uiFill.g, uiFill.b),
-                      bg: lintRgbToHex(uiBg.r, uiBg.g, uiBg.b),
-                      element: 'fill'
-                    });
-                    totalFindings++;
-                  } else { truncated = true; }
-                }
-              }
-              // Check stroke/border against background
-              if (uiStroke && !truncated) {
-                var strokeRatio = lintContrastRatio(uiStroke.r, uiStroke.g, uiStroke.b, uiBg.r, uiBg.g, uiBg.b);
-                if (strokeRatio < 3.0) {
-                  if (totalFindings < maxFindings) {
-                    findings['wcag-non-text-contrast'].push({
-                      id: nodeId,
-                      name: nodeName,
-                      ratio: strokeRatio.toFixed(1) + ':1',
-                      required: '3.0:1',
-                      component: lintRgbToHex(uiStroke.r, uiStroke.g, uiStroke.b),
-                      bg: lintRgbToHex(uiBg.r, uiBg.g, uiBg.b),
-                      element: 'stroke'
-                    });
-                    totalFindings++;
-                  } else { truncated = true; }
-                }
+              var fillRatio = uiFill ? lintContrastRatio(uiFill.r, uiFill.g, uiFill.b, uiBg.r, uiBg.g, uiBg.b) : 0;
+              var strokeRatio = uiStroke ? lintContrastRatio(uiStroke.r, uiStroke.g, uiStroke.b, uiBg.r, uiBg.g, uiBg.b) : 0;
+              if ((uiFill || uiStroke) && fillRatio < 3.0 && strokeRatio < 3.0) {
+                // Either side reaching 3:1 passes, so report the side CLOSEST to passing:
+                // raising that one is the smallest fix. Both ratios are reported too.
+                var useStroke = strokeRatio >= fillRatio && uiStroke;
+                var closest = useStroke ? uiStroke : uiFill;
+                if (totalFindings < maxFindings) {
+                  findings['wcag-non-text-contrast'].push({
+                    id: nodeId,
+                    name: nodeName,
+                    ratio: (useStroke ? strokeRatio : fillRatio).toFixed(1) + ':1',
+                    required: '3.0:1',
+                    component: lintRgbToHex(closest.r, closest.g, closest.b),
+                    bg: lintRgbToHex(uiBg.r, uiBg.g, uiBg.b),
+                    element: useStroke ? 'stroke' : 'fill',
+                    elementIs: 'closest to passing (raising it to 3:1 fixes this)',
+                    fillRatio: uiFill ? fillRatio.toFixed(1) + ':1' : null,
+                    strokeRatio: uiStroke ? strokeRatio.toFixed(1) + ':1' : null,
+                    note: 'Neither the fill (' + fillRatio.toFixed(1) + ':1) nor the border (' + strokeRatio.toFixed(1) + ':1) reaches 3:1 against the background, so nothing identifies the control.'
+                  });
+                  totalFindings++;
+                } else { truncated = true; }
               }
             }
           } catch (e) { /* slot sublayer */ }
@@ -5594,6 +5624,41 @@ figma.ui.onmessage = async (msg) => {
 
       // ---- Execute walk ----
       walkNode(rootNode, 0);
+
+      // ---- Post-walk: target size with the WCAG 2.5.8 spacing exception ----
+      // An undersized target passes when a 24px circle centred on it intersects no
+      // other target and no other undersized target's circle.
+      if (activeRuleSet['wcag-target-size'] && lintTargetCandidates.length) {
+        var distToBox = function (cx, cy, b) {
+          var dx = Math.max(b.x - cx, 0, cx - (b.x + b.width));
+          var dy = Math.max(b.y - cy, 0, cy - (b.y + b.height));
+          return Math.sqrt(dx * dx + dy * dy);
+        };
+        for (var tci = 0; tci < lintTargetCandidates.length; tci++) {
+          var cand = lintTargetCandidates[tci];
+          var spaced = false;
+          if (cand.box) {
+            var ccx = cand.box.x + cand.box.width / 2, ccy = cand.box.y + cand.box.height / 2;
+            spaced = true;
+            for (var oti = 0; oti < lintTargets.length && spaced; oti++) {
+              var ot = lintTargets[oti];
+              if (ot.id === cand.id) continue;
+              if (distToBox(ccx, ccy, ot.box) < 12) spaced = false;
+            }
+            for (var oci = 0; oci < lintTargetCandidates.length && spaced; oci++) {
+              var oc = lintTargetCandidates[oci];
+              if (oc.id === cand.id || !oc.box) continue;
+              var ocx = oc.box.x + oc.box.width / 2, ocy = oc.box.y + oc.box.height / 2;
+              if (Math.sqrt((ccx - ocx) * (ccx - ocx) + (ccy - ocy) * (ccy - ocy)) < 24) spaced = false;
+            }
+          }
+          if (spaced) continue;
+          if (totalFindings < maxFindings) {
+            findings['wcag-target-size'].push({ id: cand.id, name: cand.name, width: cand.width, height: cand.height, note: 'Under 24x24 and too close to another target for the spacing exception.' });
+            totalFindings++;
+          } else { truncated = true; break; }
+        }
+      }
 
       // ---- Post-walk: heading hierarchy validation ----
       if (activeRuleSet['wcag-heading-hierarchy'] && headingSequence.length >= 2 && !truncated) {

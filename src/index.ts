@@ -10,7 +10,10 @@
  */
 
 import { McpAgent } from "agents/mcp";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+// Shared tool modules are typed against the v2 McpServer; McpAgent still hands us a v1 one.
+// The registerTool(name, { inputSchema: z.object(...) }, cb) calls they make work on both at runtime.
+import type { McpServer as ToolServer } from "@modelcontextprotocol/server";
+import { McpServer as SdkMcpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { BrowserManager, type Env } from "./browser-manager.js";
@@ -27,7 +30,10 @@ import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
 import { registerLibraryTools, registerLibraryVariableTools } from "./core/library-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
-import { wrapServerForIdentity } from "./core/identity.js";
+import { withToolIdentity } from "./core/identity.js";
+import { applyToolAnnotations } from "./core/tool-annotations.js";
+import { registerAdherenceTools } from "./core/adherence-tools.js";
+import { registerTokenBindingTools } from "./core/token-binding-tools.js";
 import { isFigmaPAT, validateFigmaPAT } from "./core/figma-pat.js";
 import { PluginRelayDO, generatePairingCode } from "./core/cloud-websocket-relay.js";
 import { CloudWebSocketConnector } from "./core/cloud-websocket-connector.js";
@@ -36,6 +42,9 @@ import { registerTokensTools } from "./core/tokens-tools.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
 import { registerSlotTools } from "./core/slot-tools.js";
+import { registerDevResourceTools } from "./core/dev-resource-tools.js";
+import { registerUsageTools } from "./core/usage-tools.js";
+import { registerExtendedCollectionTools } from "./core/extended-collection-tools.js";
 import { registerMotionTools } from "./core/motion-tools.js";
 import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
@@ -107,23 +116,28 @@ async function serveSSEWithToken(request: Request, env: Env, ctx: ExecutionConte
  */
 // Server version reported by figma_diagnose in both cloud endpoints.
 // scripts/release.sh keeps this current (it rewrites every `version: "x.y.z"` here).
-const cloudBuild = { version: "1.46.0" };
+const cloudBuild = { version: "2.0.0" };
+
+/**
+ * v1 McpServer whose registerTool/tool stamp every tool's response and thrown
+ * error with our MCP name so cross-MCP attribution is unambiguous.
+ */
+const McpServer = withToolIdentity(SdkMcpServer);
 
 export class FigmaConsoleMCPv3 extends McpAgent {
+	private get toolServer(): ToolServer {
+		return this.server as unknown as ToolServer;
+	}
 	// agents 0.7 types `server` against its own nested SDK 1.26 copy; ours is
 	// 1.32 (security fixes). Only connect() and the transport interface cross
 	// that boundary, and both are unchanged between the two. Moving to agents
 	// 0.30+ removes the split but needs a newer workerd and compatibility_date.
 	// @ts-expect-error -- same McpServer class from two SDK copies
 	server = (() => {
-		const s = new McpServer({
+		return new McpServer({
 			name: "Figma Console MCP",
-			version: "1.46.0",
+			version: "2.0.0",
 		});
-		// Identity wrap — every tool's response and thrown error gets stamped
-		// with our MCP name so cross-MCP attribution is unambiguous.
-		wrapServerForIdentity(s);
-		return s;
 	})();
 
 	private browserManager: BrowserManager | null = null;
@@ -325,10 +339,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 							{
 								type: "text",
 								text: JSON.stringify(
-									responseData,
-									null,
-									2,
-								),
+									responseData),
 							},
 						],
 					};
@@ -344,10 +355,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										error: errorMessage,
 										message: "Failed to retrieve console logs. Make sure to call figma_navigate first to initialize the browser.",
 										hint: "Try: figma_navigate({ url: 'https://www.figma.com/design/your-file' })",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -442,10 +450,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										format,
 										expiresIn: "30 days",
 										note: "Image URL provided above. Use this URL to view or download the screenshot. URLs expire after 30 days.",
-									},
-									null,
-									2
-								),
+									}),
 							},
 						],
 					};
@@ -461,10 +466,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										error: errorMessage,
 										message: "Failed to capture screenshot via Figma API",
 										hint: "Make sure you've called figma_navigate to open a file, or provide a valid nodeId parameter",
-									},
-									null,
-									2
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -534,10 +536,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										logsMatchingFilter: watchedLogs.length,
 									},
 									logs: watchedLogs,
-								},
-								null,
-								2,
-							),
+								}),
 						},
 					],
 				};
@@ -584,10 +583,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										url: currentUrl,
 										consoleCleared: clearConsoleBefore,
 										clearedCount: clearConsoleBefore ? clearedCount : 0,
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 					};
@@ -601,10 +597,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 									{
 										error: String(error),
 										message: "Failed to reload plugin",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -638,10 +631,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										timestamp: Date.now(),
 										ai_instruction:
 											"CRITICAL: Console cleared successfully, but this operation disrupts the monitoring connection. You MUST reconnect the MCP server using `/mcp reconnect figma-console` before calling figma_get_console_logs again. Best practice: Avoid clearing console - filter/parse logs instead to maintain monitoring connection.",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 					};
@@ -655,10 +645,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 									{
 										error: String(error),
 										message: "Failed to clear console buffer",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -675,7 +662,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 					.string()
 					.url()
 					.describe(
-						"Figma URL to navigate to (e.g., https://www.figma.com/design/abc123)",
+						"Figma file URL.",
 					),
 			},
 			async ({ url }) => {
@@ -708,10 +695,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 											url: currentUrl,
 											timestamp: Date.now(),
 											message: "Switched to existing tab for this Figma file. Console monitoring is active.",
-										},
-										null,
-										2,
-									),
+										}),
 								},
 							],
 						};
@@ -732,10 +716,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										url: currentUrl,
 										timestamp: Date.now(),
 										message: "Browser navigated to Figma. Console monitoring is active.",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 					};
@@ -758,10 +739,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 											"Check that the Browser Rendering API is properly configured in wrangler.jsonc",
 											"Try again in a few moments if this is a temporary issue"
 										]
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -793,10 +771,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										consoleMonitor: monitorStatus,
 										initialized: this.browserManager !== null && this.consoleMonitor !== null,
 										timestamp: Date.now(),
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 					};
@@ -810,10 +785,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 									{
 										error: String(error),
 										message: "Failed to retrieve status",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -858,7 +830,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 									"4. Click 'Connect' — the plugin will connect to the cloud relay",
 									"5. Once paired, write tools (variables, components, nodes) work through the cloud"
 								],
-							}, null, 2),
+							}),
 						}],
 					};
 				} catch (error) {
@@ -888,34 +860,43 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		};
 
 		// Register all write/manipulation tools via shared function
-		registerWriteTools(this.server, getCloudDesktopConnector);
+		registerWriteTools(this.toolServer, getCloudDesktopConnector);
 
 		// Register token sync tools — figma_export_tokens and figma_import_tokens.
-		registerTokensTools(this.server, getCloudDesktopConnector, { isRemoteMode: true });
+		registerTokensTools(this.toolServer, getCloudDesktopConnector, { isRemoteMode: true });
 
 		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)
-		registerFigJamTools(this.server, getCloudDesktopConnector);
+		registerFigJamTools(this.toolServer, getCloudDesktopConnector);
 
 		// Register Annotation tools (read/write design annotations via Desktop Bridge)
-		registerAnnotationTools(this.server, getCloudDesktopConnector);
+		registerAnnotationTools(this.toolServer, getCloudDesktopConnector);
 
 		// Register Deep Component tools (Plugin API tree extraction for code generation)
-		registerDeepComponentTools(this.server, getCloudDesktopConnector);
+		registerDeepComponentTools(this.toolServer, getCloudDesktopConnector);
 
 		// Register Figma Slides tools (slide management, transitions, content)
-		registerSlidesTools(this.server, getCloudDesktopConnector);
+		registerSlidesTools(this.toolServer, getCloudDesktopConnector);
 
-		registerSlotTools(this.server, getCloudDesktopConnector);
+		registerSlotTools(this.toolServer, getCloudDesktopConnector);
+		registerDevResourceTools(this.toolServer as any, getCloudDesktopConnector);
+		registerUsageTools(this.toolServer as any, getCloudDesktopConnector);
+		registerExtendedCollectionTools(this.toolServer as any, getCloudDesktopConnector);
 
-		registerMotionTools(this.server, getCloudDesktopConnector);
-		registerCodeLayerTools(this.server, getCloudDesktopConnector);
-		registerShaderTools(this.server, getCloudDesktopConnector);
-		registerLayoutTools(this.server, getCloudDesktopConnector);
+		registerMotionTools(this.toolServer, getCloudDesktopConnector);
+		registerCodeLayerTools(this.toolServer, getCloudDesktopConnector);
+		registerShaderTools(this.toolServer, getCloudDesktopConnector);
+		registerLayoutTools(this.toolServer, getCloudDesktopConnector);
+		// Design-system adherence (components read through the paired plugin; no filesystem).
+		registerTokenBindingTools(this.toolServer as any, getCloudDesktopConnector);
+		registerAdherenceTools(this.toolServer as any, {
+			getDesktopConnector: getCloudDesktopConnector,
+			getFigmaAPI: async () => await this.getFigmaAPI(),
+		});
 
 		// Register Figma API tools (Tools 8-14)
 		// Pass isRemoteMode: true to suppress Desktop Bridge mentions in tool descriptions
 		registerFigmaAPITools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
@@ -925,7 +906,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Register Design-Code Parity & Documentation tools
 		registerDesignCodeTools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
@@ -935,7 +916,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Register Comment tools
 		registerCommentTools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			{ isRemoteMode: true },
@@ -943,7 +924,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Register Version History tools
 		registerVersionTools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			{ isRemoteMode: true },
@@ -951,7 +932,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Register Design System Kit tool
 		registerDesignSystemTools(
-			this.server,
+			this.toolServer,
 			async () => await this.getFigmaAPI(),
 			() => this.browserManager?.getCurrentUrl() || null,
 			undefined, // variablesCache
@@ -960,11 +941,11 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		);
 
 		// Register Library Tools (key-based component inspection across shared libraries)
-		registerLibraryTools(this.server, async () => await this.getFigmaAPI());
+		registerLibraryTools(this.toolServer, async () => await this.getFigmaAPI());
 
 		// Register Library Variable Tools (Plugin-API based — list + import variables
 		// from subscribed team libraries; routes through the cloud Desktop Bridge)
-		registerLibraryVariableTools(this.server, getCloudDesktopConnector);
+		registerLibraryVariableTools(this.toolServer, getCloudDesktopConnector);
 
 		// figma_scan_code_accessibility (axe-core + JSDOM) is Local Mode only.
 		// JSDOM cannot run in Workers: called here it failed on every input
@@ -974,7 +955,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Register figma_diagnose for cloud mode. Plugin state isn't directly
 		// observable from here (the paired plugin's WS lives in the relay DO),
 		// so we report mode and let the cross-MCP disclaimer do most of the work.
-		registerDiagnoseTool(this.server, {
+		registerDiagnoseTool(this.toolServer, {
 			mode: "cloud",
 			getServerVersion: () => cloudBuild.version,
 			getPluginState: () => null,
@@ -986,6 +967,9 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 
 		// Note: MCP Apps (Token Browser, Dashboard) are registered in local.ts only
 		// They require Node.js file system APIs that don't work in Cloudflare Workers
+
+		// Behavior hints (read-only / destructive / idempotent) for every tool.
+		applyToolAnnotations(this.server);
 	}
 }
 
@@ -1260,9 +1244,8 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.46.0",
+				version: "2.0.0",
 			});
-			wrapServerForIdentity(statelessServer);
 
 			// ================================================================
 			// Cloud Write Relay — Pairing Tool (stateless /mcp path)
@@ -1300,7 +1283,7 @@ export default {
 										"4. Click 'Connect' — the plugin will connect to the cloud relay",
 										"5. Once paired, write tools (variables, components, nodes) work through the cloud"
 									],
-								}, null, 2),
+								}),
 							}],
 						};
 					} catch (error) {
@@ -1358,31 +1341,39 @@ export default {
 			}
 
 			// Register all write/manipulation tools via shared function
-			registerWriteTools(statelessServer, getCloudDesktopConnector);
-			registerTokensTools(statelessServer, getCloudDesktopConnector, { isRemoteMode: true });
+			registerWriteTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerTokensTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector, { isRemoteMode: true });
 
 			// Register FigJam-specific tools
-			registerFigJamTools(statelessServer, getCloudDesktopConnector);
+			registerFigJamTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			// Register Annotation tools
-			registerAnnotationTools(statelessServer, getCloudDesktopConnector);
+			registerAnnotationTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			// Register Deep Component tools
-			registerDeepComponentTools(statelessServer, getCloudDesktopConnector);
+			registerDeepComponentTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			// Register Figma Slides tools
-			registerSlidesTools(statelessServer, getCloudDesktopConnector);
+			registerSlidesTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
-			registerSlotTools(statelessServer, getCloudDesktopConnector);
+			registerSlotTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerDevResourceTools(statelessServer as any, getCloudDesktopConnector);
+			registerUsageTools(statelessServer as any, getCloudDesktopConnector);
+			registerExtendedCollectionTools(statelessServer as any, getCloudDesktopConnector);
 
-			registerMotionTools(statelessServer, getCloudDesktopConnector);
-			registerCodeLayerTools(statelessServer, getCloudDesktopConnector);
-			registerShaderTools(statelessServer, getCloudDesktopConnector);
-			registerLayoutTools(statelessServer, getCloudDesktopConnector);
+			registerMotionTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerCodeLayerTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerShaderTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerLayoutTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerTokenBindingTools(statelessServer as any, getCloudDesktopConnector);
+			registerAdherenceTools(statelessServer as any, {
+				getDesktopConnector: getCloudDesktopConnector,
+				getFigmaAPI: async () => statelessApi,
+			});
 
 			// Register REST API tools with the authenticated Figma API
 			registerFigmaAPITools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 				new Map(),  // Fresh variables cache per request
@@ -1391,7 +1382,7 @@ export default {
 			);
 
 			registerDesignCodeTools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 				new Map(), // Fresh variables cache per request
@@ -1400,19 +1391,19 @@ export default {
 			);
 
 			registerCommentTools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 			);
 
 			registerVersionTools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 			);
 
 			registerDesignSystemTools(
-				statelessServer,
+				statelessServer as unknown as ToolServer,
 				async () => statelessApi,
 				getCloudFileUrl,
 				new Map(), // Fresh variables cache per request
@@ -1420,13 +1411,13 @@ export default {
 				getCloudDesktopConnector, // bridge-first variable resolution (works on any plan)
 			);
 
-			registerLibraryTools(statelessServer, async () => statelessApi);
+			registerLibraryTools(statelessServer as unknown as ToolServer, async () => statelessApi);
 
-			registerLibraryVariableTools(statelessServer, getCloudDesktopConnector);
+			registerLibraryVariableTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			// Parity with /sse. (figma_scan_code_accessibility stays Local-only:
 			// JSDOM does not run in Workers — see the note in FigmaConsoleMCPv3.)
-			registerDiagnoseTool(statelessServer, {
+			registerDiagnoseTool(statelessServer as unknown as ToolServer, {
 				mode: "cloud",
 				getServerVersion: () => cloudBuild.version,
 				getPluginState: () => relaySnapshot,
@@ -1434,6 +1425,7 @@ export default {
 				getTokenState: () => ({ hasToken: true, source: isFigmaPAT(bearerToken) ? "bearer" : "oauth" }),
 			});
 
+			applyToolAnnotations(statelessServer);
 			await statelessServer.connect(transport);
 			const response = await transport.handleRequest(request);
 
@@ -2223,7 +2215,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.46.0",
+					version: "2.0.0",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
@@ -2268,7 +2260,7 @@ export default {
 	// Local count and the data-mode="cloud" Cloud count). Remote has no count:
 	// it is the same hosted endpoint before pairing, so it is described, not counted.
 	if (url.pathname === "/") {
-		const landing = { version: "1.46.0" };
+		const landing = { version: "2.0.0" };
 		return new Response(
 			`<!DOCTYPE html>
 <html lang="en">
@@ -2277,13 +2269,13 @@ export default {
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Figma Console MCP: a design-system MCP server for Figma and code</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="An open-source MCP server for design systems. 130+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
+	<meta name="description" content="An open-source MCP server for design systems. 144+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 
 	<!-- Open Graph -->
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="https://figma-console-mcp.southleft.com">
 	<meta property="og:title" content="Figma Console MCP: keep Figma and code on the same design system">
-	<meta property="og:description" content="An open-source MCP server for design systems. 130+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
+	<meta property="og:description" content="An open-source MCP server for design systems. 144+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 	<meta property="og:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 	<meta property="og:image:width" content="1200">
 	<meta property="og:image:height" content="630">
@@ -2291,7 +2283,7 @@ export default {
 	<!-- Twitter -->
 	<meta name="twitter:card" content="summary_large_image">
 	<meta name="twitter:title" content="Figma Console MCP: keep Figma and code on the same design system">
-	<meta name="twitter:description" content="An open-source MCP server for design systems. 130+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
+	<meta name="twitter:description" content="An open-source MCP server for design systems. 144+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 	<meta name="twitter:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 
 	<meta name="theme-color" content="#0F766E">
@@ -2707,6 +2699,25 @@ export default {
 		}
 
 		/* ---------- Hero: eyebrow, trust line, example session ---------- */
+		.release-note {
+			display: flex;
+			width: fit-content;
+			flex-wrap: wrap;
+			gap: 4px 8px;
+			align-items: baseline;
+			margin: 0 0 18px;
+			padding: 6px 12px;
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--radius);
+			background: var(--surface);
+			color: var(--muted);
+			font-size: 14px;
+			line-height: 1.4;
+			max-width: 100%;
+		}
+		.release-note a { color: var(--teal); font-weight: 600; text-decoration: none; }
+		.release-note a:hover { color: var(--teal-hover); text-decoration: underline; }
+		.release-note a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 		.eyebrow {
 			display: inline-block;
 			font-size: 15px;
@@ -3021,6 +3032,7 @@ export default {
 		<!-- Hero -->
 		<section class="hero" aria-labelledby="hero-title">
 			<div class="wrap">
+				<p class="release-note"><a href="https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#200---2026-11-26">New in v2.0</a><span>MCP SDK v2, ~85% fewer tokens per message, and tools that build with your design system and mark what's missing instead of inventing it.</span></p>
 				<p class="eyebrow">Design-system management for frontier AI models</p>
 				<h1 id="hero-title">Keep Figma and code on the same design system.</h1>
 				<p class="hero-lede">Figma Console MCP gives your AI the tools to run a design system across Figma and code. It <strong>audits</strong> the system and <strong>checks components against their code</strong> with results that score the same way every time, <strong>syncs</strong> Figma and code in both directions, <strong>writes</strong> fixes into your files, and <strong>documents</strong> what's there, so the code it writes follows your own stack.</p>
@@ -3326,12 +3338,12 @@ All values are bound to space/* tokens.</code></pre>
 				<div class="modes">
 					<div class="mode">
 						<h3>Local</h3>
-						<p class="count"><span class="number">130+</span><span class="unit">tools</span></p>
+						<p class="count"><span class="number">144+</span><span class="unit">tools</span></p>
 						<p><strong>Everything</strong>, including writes, checks, and design-system extraction. Runs with npx next to Figma Desktop and the Desktop Bridge plugin.</p>
 					</div>
 					<div class="mode">
 						<h3>Cloud</h3>
-						<p class="count"><span data-mode="cloud">105</span><span class="unit">tools</span></p>
+						<p class="count"><span data-mode="cloud">113</span><span class="unit">tools</span></p>
 						<p><strong>For web AI clients</strong> such as Claude.ai. Pair the Desktop Bridge plugin with a code and keep write access.</p>
 					</div>
 					<div class="mode">
