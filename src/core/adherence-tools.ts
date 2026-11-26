@@ -129,15 +129,19 @@ async function loadCatalog(
 	deps: AdherenceToolDeps,
 	libraryKeys: string[],
 	includeLocal: boolean,
+	fileKey?: string,
 ): Promise<{ catalog: CatalogEntry[]; sources: Array<{ source: string; components: number; error?: string }>; variantKeys: Set<string> }> {
 	const catalog: CatalogEntry[] = [];
 	const sources: Array<{ source: string; components: number; error?: string }> = [];
 	const variantKeys = new Set<string>();
 	if (includeLocal) {
 		try {
-			const local = deps.getLocalCatalog
-				? await deps.getLocalCatalog()
-				: await pluginCatalog(await deps.getDesktopConnector());
+			// The cached manifest describes the ACTIVE file; a specific fileKey is read
+			// from that file through the plugin, so the catalog matches what's audited.
+			const local =
+				deps.getLocalCatalog && !fileKey
+					? await deps.getLocalCatalog()
+					: await pluginCatalog(await deps.getDesktopConnector(), fileKey);
 			catalog.push(...local);
 			sources.push({ source: "local", components: local.length });
 		} catch (err) {
@@ -148,8 +152,18 @@ async function loadCatalog(
 		if (!deps.getFigmaAPI) {
 			for (const k of libraryKeys) sources.push({ source: k, components: 0, error: "Library lookup needs the Figma REST API (FIGMA_ACCESS_TOKEN)." });
 		} else {
-			const api = await deps.getFigmaAPI();
+			let api: any = null;
+			let apiError: string | null = null;
+			try {
+				api = await deps.getFigmaAPI();
+			} catch (err) {
+				apiError = err instanceof Error ? err.message : String(err);
+			}
 			for (const k of libraryKeys) {
+				if (!api) {
+					sources.push({ source: k, components: 0, error: `Figma REST API unavailable: ${apiError}` });
+					continue;
+				}
 				try {
 					const lib = await loadLibraryCatalog(api, k);
 					catalog.push(...lib.entries);
@@ -367,7 +381,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 			try {
 				const connector = await deps.getDesktopConnector();
 				const libraryKeys = args.libraryFileKeys ?? [];
-				const { catalog, sources, variantKeys } = await loadCatalog(deps, libraryKeys, true);
+				const { catalog, sources, variantKeys } = await loadCatalog(deps, libraryKeys, true, args.fileKey);
 				const componentNames = [
 					...new Set(
 						catalog
@@ -384,6 +398,16 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 
 				const findings: any[] = raw.findings ?? [];
 				// Off-system components: only checkable against the given libraries.
+				// Asked to check against libraries but none loaded: the off-system check
+				// can't run, so the audit can't vouch for it — fail loudly, don't pass.
+				const offSystemUnchecked = libraryKeys.length > 0 && variantKeys.size === 0;
+				if (offSystemUnchecked) {
+					findings.push({
+						rule: "off-system-check-unavailable",
+						severity: "error",
+						message: `Couldn't load the libraries in libraryFileKeys (${sources.filter((x) => x.error).map((x) => `${x.source}: ${x.error}`).join("; ") || "no components returned"}), so instances weren't checked against them. Fix access (FIGMA_ACCESS_TOKEN, file key) and re-run.`,
+					});
+				}
 				if (libraryKeys.length > 0 && variantKeys.size > 0) {
 					const allowLocal = args.allowLocal !== false;
 					for (const u of raw.componentsUsed ?? []) {
@@ -589,7 +613,6 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 				}
 				for (const [k, v] of Object.entries(args.decisions ?? {})) {
 					decisionIndex.set(k.toLowerCase().replace(/[^a-z0-9]/g, ""), v);
-					decisionIndex.set(k.toLowerCase().replace(/^[a-z]+-/, "").replace(/[^a-z0-9]/g, ""), v);
 				}
 				let code = [...(args.components ?? [])];
 				if (cemIndex && code.length === 0 && !args.componentsDir) {

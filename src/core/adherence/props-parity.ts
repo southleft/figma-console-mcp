@@ -374,10 +374,11 @@ export function decisionsFromContracts(contracts: any[]): Map<string, ComponentD
 		if (!tag) continue;
 		const d: ComponentDecisions = { omit: [], pairWith: {}, publicProps: (c.props ?? []).map((p: any) => p?.name).filter(Boolean) };
 		for (const p of c.props ?? []) {
-			const f = p?.bindings?.figma;
-			if (!f || !p.name) continue;
-			if (f.omit === true || p.figmaOmit === true || p.omit === true) d.omit!.push(p.name);
-			if (typeof f.pairWith === "string") d.pairWith![p.name] = f.pairWith;
+			if (!p?.name) continue;
+			const f = p.bindings?.figma;
+			// An omit may be recorded on the prop itself or on its figma binding.
+			if (p.omit === true || p.figmaOmit === true || f?.omit === true) d.omit!.push(p.name);
+			if (typeof f?.pairWith === "string") d.pairWith![p.name] = f.pairWith;
 		}
 		out.set(norm(tag), d);
 		out.set(norm(tag.replace(/^[a-z]+-/, "")), d);

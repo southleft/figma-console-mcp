@@ -4686,10 +4686,23 @@ figma.ui.onmessage = async (msg) => {
 
       // The outermost interactive layer is the target; its interactive descendants
       // (the box inside a checkbox, its label) are part of the same target.
+      // Only an actual control can absorb its descendants as one target: an
+      // instance/component whose name is a control word — never a grouping
+      // container ("Radio group", "Button bar", "Tabs", "Data Table").
+      var lintControlWordRegex = /\b(button|link|input|checkbox|radio|switch|toggle|tab|menu-item)\b/i;
+      var lintGroupWordRegex = /\b(group|groups|bar|list|set|container|wrapper|form|toolbar|tabs|table|stack|row|column|section|panel)\b/i;
+      function lintIsControlNode(n) {
+        if (n.type !== 'INSTANCE' && n.type !== 'COMPONENT' && n.type !== 'COMPONENT_SET') return false;
+        // Variant components are named "Checkbox / State=…" or "State=…"; use the set's name.
+        var nm = n.name;
+        if (n.type === 'COMPONENT' && n.parent && n.parent.type === 'COMPONENT_SET') nm = n.parent.name;
+        var words = String(nm).split('/')[0].replace(/([a-z])([A-Z])/g, '$1 $2');
+        return lintControlWordRegex.test(words) && !lintGroupWordRegex.test(words);
+      }
       function lintHasInteractiveAncestor(node) {
         var p = node.parent;
         while (p && p !== rootNode && p.type !== 'PAGE') {
-          try { if (lintIsInteractiveName(p.name)) return true; } catch (e) { return false; }
+          try { if (lintIsControlNode(p)) return true; } catch (e) { return false; }
           p = p.parent;
         }
         return false;
@@ -4944,7 +4957,7 @@ figma.ui.onmessage = async (msg) => {
         // wcag-target-size: Interactive elements < 24x24
         if (activeRuleSet['wcag-target-size'] && !isPage && !isSection && !truncated) {
           try {
-            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && lintIsInteractiveName(nodeName) && !lintHasInteractiveAncestor(node)) {
+            if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && lintIsInteractiveName(nodeName) && !lintGroupWordRegex.test(String(nodeName).replace(/([a-z])([A-Z])/g, '$1 $2')) && !lintHasInteractiveAncestor(node)) {
               var tw = node.width;
               var th = node.height;
               var tbox = node.absoluteBoundingBox;

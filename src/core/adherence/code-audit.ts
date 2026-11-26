@@ -71,7 +71,6 @@ const VAR_RE = /var\(\s*--([A-Za-z0-9_-]+)/g;
 /** Tailwind color utilities: bg-card, text-muted-foreground, border-border/50 … */
 const TW_COLOR_CLASS_RE = /(?:^|[\s"'`:])(?:bg|text|border|ring|fill|stroke|from|via|to|outline|divide|accent|caret|decoration|placeholder|shadow)-([a-z][a-z0-9-]*?)(?:\/\d+)?(?=[\s"'`]|$)/g;
 const TOKEN_DEF_RE = /^\s*--[A-Za-z0-9_-]+\s*:/;
-const IMPORT_RE = /^\s*import\s+(?:type\s+)?([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/;
 
 function stripComment(line: string): string {
 	const i = line.indexOf("//");
@@ -97,6 +96,25 @@ function isDsSource(from: string, packages: string[]): boolean {
 	return packages.some((p) => from === p || from.startsWith(`${p}/`));
 }
 
+/**
+ * Every import statement in a file, including ones a formatter wrapped over
+ * several lines (`import {\n  Button,\n  Card,\n} from "@acme/ui"`).
+ * `line` is where the statement starts; `endLine` where it ends.
+ */
+const IMPORT_STMT_RE = /^[ \t]*import\s+(?:type\s+)?([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/gm;
+function parseImports(content: string): Array<{ names: string[]; from: string; line: number; endLine: number }> {
+	const out: Array<{ names: string[]; from: string; line: number; endLine: number }> = [];
+	for (const m of content.matchAll(IMPORT_STMT_RE)) {
+		// A runaway match spanning another statement isn't a real import clause.
+		if (/[;=()]/.test(m[1].replace(/\{[\s\S]*\}/, ""))) continue;
+		const start = m.index ?? 0;
+		const line = content.slice(0, start).split("\n").length;
+		const endLine = line + m[0].split("\n").length - 1;
+		out.push({ names: importedNames(m[1].replace(/\s+/g, " ").trim()), from: m[2], line, endLine });
+	}
+	return out;
+}
+
 /** The concept a component name stands for, using the shared UI synonym table. */
 function concept(name: string): string | undefined {
 	const t = tokenize(name);
@@ -105,18 +123,20 @@ function concept(name: string): string | undefined {
 
 export function auditCode(sources: CodeSource[], ds: CodeDesignSystem): CodeAuditResult {
 	const packages = ds.packages ?? [];
-	const knownTokens = ds.tokens && ds.tokens.length ? new Set(ds.tokens.map((t) => t.replace(/^--/, ""))) : null;
+	// Token names compare case-insensitively: JSON token paths and CSS custom
+	// properties disagree on case often enough that exact matching misfires.
+	const knownTokens = ds.tokens && ds.tokens.length ? new Set(ds.tokens.map((t) => t.replace(/^--/, "").toLowerCase())) : null;
 	const findings: CodeFinding[] = [];
 	const stats = { dsComponentUses: 0, rawElements: 0, reimplementations: 0, tokenRefs: 0, literals: 0, unknownTokens: 0, inlineStyles: 0 };
 	const componentsUsed: Record<string, number> = {};
 
 	// Concepts the system covers, from declared components (+ anything imported from DS packages).
 	const dsComponents = new Set(ds.components ?? []);
+	const importsByFile = new Map<string, ReturnType<typeof parseImports>>();
 	for (const src of sources) {
-		for (const line of src.content.split("\n")) {
-			const m = line.match(IMPORT_RE);
-			if (m && isDsSource(m[2], packages)) for (const n of importedNames(m[1])) if (/^[A-Z]/.test(n)) dsComponents.add(n);
-		}
+		const imports = parseImports(src.content);
+		importsByFile.set(src.path, imports);
+		for (const imp of imports) if (isDsSource(imp.from, packages)) for (const n of imp.names) if (/^[A-Z]/.test(n)) dsComponents.add(n);
 	}
 	const dsConcepts = new Map<string, string>();
 	for (const c of dsComponents) {
@@ -131,27 +151,29 @@ export function auditCode(sources: CodeSource[], ds: CodeDesignSystem): CodeAudi
 		const add = (line: number, rule: string, severity: CodeFinding["severity"], message: string, text: string) =>
 			findings.push({ file: src.path, line, rule, severity, message, snippet: text.trim().slice(0, 160) });
 
-		lines.forEach((rawLine, idx) => {
-			const n = idx + 1;
-			const line = stripComment(rawLine);
-			if (!line.trim() || /^\s*(\*|\/\*)/.test(line)) return;
-
-			const imp = line.match(IMPORT_RE);
-			if (imp) {
-				if (isDsSource(imp[2], packages)) for (const name of importedNames(imp[1])) dsLocal.add(name);
-				else if (imp[2].startsWith(".")) {
-					for (const name of importedNames(imp[1])) {
-						const k = /^[A-Z]/.test(name) ? concept(name) : undefined;
-						// The source isn't necessarily in this audit, so it may be a wrapper
-						// around the system's component: a warning, not an error. (When the
-						// file IS audited, its definition gets the precise check below.)
-						if (k && dsConcepts.has(k)) {
-							add(n, "local-lookalike-import", "warning", `Imports a local "${name}" while the design system has "${dsConcepts.get(k)}". Unless it wraps the system's component, use the system's one.`, rawLine);
-						}
+		// Imports are read whole (they may span lines); their lines are skipped below.
+		const importLines = new Set<number>();
+		for (const imp of importsByFile.get(src.path) ?? []) {
+			for (let l = imp.line; l <= imp.endLine; l++) importLines.add(l);
+			if (isDsSource(imp.from, packages)) for (const name of imp.names) dsLocal.add(name);
+			else if (imp.from.startsWith(".")) {
+				for (const name of imp.names) {
+					const k = /^[A-Z]/.test(name) ? concept(name) : undefined;
+					// The source isn't necessarily in this audit, so it may be a wrapper
+					// around the system's component: a warning, not an error. (When the
+					// file IS audited, its definition gets the precise check below.)
+					if (k && dsConcepts.has(k)) {
+						add(imp.line, "local-lookalike-import", "warning", `Imports a local "${name}" while the design system has "${dsConcepts.get(k)}". Unless it wraps the system's component, use the system's one.`, lines[imp.line - 1] ?? "");
 					}
 				}
-				return;
 			}
+		}
+
+		lines.forEach((rawLine, idx) => {
+			const n = idx + 1;
+			if (importLines.has(n)) return;
+			const line = stripComment(rawLine);
+			if (!line.trim() || /^\s*(\*|\/\*)/.test(line)) return;
 
 			// Locally defined component that duplicates a system one.
 			const def = line.match(/^\s*(?:export\s+)?(?:default\s+)?(?:function|const|class)\s+([A-Z][\w$]*)\b/);
@@ -200,7 +222,7 @@ export function auditCode(sources: CodeSource[], ds: CodeDesignSystem): CodeAudi
 			// Token references.
 			for (const m of line.matchAll(VAR_RE)) {
 				stats.tokenRefs++;
-				if (knownTokens && !knownTokens.has(m[1])) {
+				if (knownTokens && !knownTokens.has(m[1].toLowerCase())) {
 					stats.unknownTokens++;
 					add(n, "unknown-token", "error", `var(--${m[1]}) isn't a token in the design system. Don't invent tokens; use an existing one or report the gap.`, rawLine);
 				}
@@ -208,7 +230,7 @@ export function auditCode(sources: CodeSource[], ds: CodeDesignSystem): CodeAudi
 
 			// Tailwind theme classes that name a known token are token usage.
 			if (knownTokens && !isStyleFile) {
-				for (const m of line.matchAll(TW_COLOR_CLASS_RE)) if (knownTokens.has(m[1])) stats.tokenRefs++;
+				for (const m of line.matchAll(TW_COLOR_CLASS_RE)) if (knownTokens.has(m[1].toLowerCase())) stats.tokenRefs++;
 			}
 
 			// Token definitions (theme files) are where literals belong.
@@ -293,7 +315,7 @@ export function tokenNamesFrom(path: string, content: string): string[] {
 			for (const [k, v] of Object.entries(node)) if (!k.startsWith("$")) walk(v, [...trail, k]);
 		};
 		walk(JSON.parse(content), []);
-		return out.map((n) => n.toLowerCase().replace(/[^a-z0-9.-]+/g, "-"));
+		return out.map((n) => n.replace(/[^A-Za-z0-9.-]+/g, "-"));
 	}
 	return [...content.matchAll(/--([A-Za-z0-9_-]+)\s*:/g)].map((m) => m[1]);
 }

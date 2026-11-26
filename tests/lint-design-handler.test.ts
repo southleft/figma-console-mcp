@@ -124,4 +124,15 @@ describe("figma_lint_design handler (code.js)", () => {
 		const by = await lint(node("Toolbar", { fills: solid("#FFFFFF"), w: 200, h: 40, children: [a, b] }));
 		expect((by["wcag-target-size"] ?? []).length).toBe(2);
 	});
+
+	it("still checks small controls inside a group container (Radio group, Data Table)", async () => {
+		const radio = (x: number) => node("Radio", { type: "INSTANCE", x, y: 0, w: 16, h: 16, strokes: solid("#7C7A70") });
+		const group = node("Radio group", { w: 120, h: 16, children: [radio(0), radio(18), radio(36)] });
+		const by = await lint(node("Form", { fills: solid("#FFFFFF"), w: 300, h: 100, children: [group] }));
+		expect((by["wcag-target-size"] ?? []).map((n: any) => n.name)).toEqual(["Radio", "Radio", "Radio"]);
+		const tableRow = node("Data Table", { type: "INSTANCE", w: 300, h: 40, children: [node("Checkbox", { type: "INSTANCE", x: 0, y: 0, w: 16, h: 16 }), node("Checkbox", { type: "INSTANCE", x: 18, y: 0, w: 16, h: 16 })] });
+		const by2 = await lint(node("Page", { fills: solid("#FFFFFF"), w: 400, h: 100, children: [tableRow] }));
+		expect((by2["wcag-target-size"] ?? []).length).toBe(2);
+	});
 });
+

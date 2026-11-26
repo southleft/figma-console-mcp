@@ -43,10 +43,10 @@ export function expandBindings(bindings: Record<string, string>): { fields: Reco
 	return { fields, unknown };
 }
 
-function buildCode(args: { nodeId: string; fields: Record<string, string>; textStyle?: string; effectStyle?: string }) {
+export function buildCode(args: { nodeId: string; fields: Record<string, string>; textStyle?: string; effectStyle?: string }) {
 	return `
 const node = await figma.getNodeByIdAsync(${JSON.stringify(args.nodeId)});
-if (!node) return { error: "Node ${args.nodeId} not found in this file." };
+if (!node) return { error: "Node " + ${JSON.stringify(args.nodeId)} + " not found in this file." };
 const FIELDS = ${JSON.stringify(args.fields)};
 const vars = await figma.variables.getLocalVariablesAsync();
 const collections = await figma.variables.getLocalVariableCollectionsAsync();
@@ -67,28 +67,8 @@ function findVar(ref) {
   return { error: "not-found", options: close };
 }
 const results = [];
-for (const [field, ref] of Object.entries(FIELDS)) {
-  if (!(field in node)) { results.push({ field, ok: false, error: "This " + node.type + " has no " + field + "." }); continue; }
-  const f = findVar(ref);
-  if (!f.v) { results.push({ field, ok: false, token: ref, error: f.error === "ambiguous" ? "Several variables match — use the collection/name or id." : "No variable with this name exists.", options: f.options }); continue; }
-  const v = f.v;
-  const isText = node.type === "TEXT";
-  const wantsString = field === "fontFamily" || field === "fontStyle";
-  if (wantsString ? v.resolvedType !== "STRING" : v.resolvedType !== "FLOAT") {
-    results.push({ field, ok: false, token: v.name, error: v.name + " is a " + v.resolvedType + " variable; " + field + " needs " + (wantsString ? "STRING" : "FLOAT") + "." });
-    continue;
-  }
-  try {
-    if (isText && ["fontSize","fontFamily","fontStyle","fontWeight","lineHeight","letterSpacing","paragraphSpacing","paragraphIndent"].includes(field)) {
-      const fonts = node.getRangeAllFontNames(0, node.characters.length);
-      for (const fn of fonts) await figma.loadFontAsync(fn);
-      node.setRangeBoundVariable(0, node.characters.length, field, v);
-    } else {
-      node.setBoundVariable(field, v);
-    }
-    results.push({ field, ok: true, token: collName[v.variableCollectionId] + "/" + v.name });
-  } catch (e) { results.push({ field, ok: false, token: v.name, error: String(e && e.message || e) }); }
-}
+// A text style resets the font fields it defines, so apply it BEFORE any
+// field bindings — otherwise it would silently undo them.
 async function findStyle(kind, ref) {
   const list = kind === "text" ? await figma.getLocalTextStylesAsync() : await figma.getLocalEffectStylesAsync();
   return list.find(s => s.id === ref || s.name === ref || s.key === ref) || list.find(s => norm(s.name) === norm(ref)) || null;
@@ -101,6 +81,31 @@ if (TEXT_STYLE) {
     if (!s) results.push({ field: "textStyle", ok: false, token: TEXT_STYLE, error: "No local text style with this name or id.", options: (await figma.getLocalTextStylesAsync()).filter(x => String(TEXT_STYLE).toLowerCase().split(/[^a-z0-9]+/).some(w => w && x.name.toLowerCase().includes(w))).slice(0, 5).map(x => x.name) });
     else { await figma.loadFontAsync(s.fontName); await node.setTextStyleIdAsync(s.id); results.push({ field: "textStyle", ok: true, token: s.name }); }
   }
+}
+for (const [field, ref] of Object.entries(FIELDS)) {
+  const TEXT_FIELDS = ["fontSize","fontFamily","fontStyle","fontWeight","lineHeight","letterSpacing","paragraphSpacing","paragraphIndent"];
+  const textField = node.type === "TEXT" && TEXT_FIELDS.includes(field);
+  // TextNode exposes fontName, not fontFamily/fontStyle — range binding handles those.
+  if (!textField && !(field in node)) { results.push({ field, ok: false, error: "This " + node.type + " has no " + field + "." }); continue; }
+  const f = findVar(ref);
+  if (!f.v) { results.push({ field, ok: false, token: ref, error: f.error === "ambiguous" ? "Several variables match — use the collection/name or id." : "No variable with this name exists.", options: f.options }); continue; }
+  const v = f.v;
+  const isText = node.type === "TEXT";
+  const wantsString = field === "fontFamily" || field === "fontStyle";
+  if (wantsString ? v.resolvedType !== "STRING" : v.resolvedType !== "FLOAT") {
+    results.push({ field, ok: false, token: v.name, error: v.name + " is a " + v.resolvedType + " variable; " + field + " needs " + (wantsString ? "STRING" : "FLOAT") + "." });
+    continue;
+  }
+  try {
+    if (textField) {
+      const fonts = node.getRangeAllFontNames(0, node.characters.length);
+      for (const fn of fonts) await figma.loadFontAsync(fn);
+      node.setRangeBoundVariable(0, node.characters.length, field, v);
+    } else {
+      node.setBoundVariable(field, v);
+    }
+    results.push({ field, ok: true, token: collName[v.variableCollectionId] + "/" + v.name });
+  } catch (e) { results.push({ field, ok: false, token: v.name, error: String(e && e.message || e) }); }
 }
 const EFFECT_STYLE = ${JSON.stringify(args.effectStyle ?? null)};
 if (EFFECT_STYLE) {

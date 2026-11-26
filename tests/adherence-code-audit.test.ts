@@ -73,4 +73,28 @@ export function SubmitButton(props) {
 }` };
 		expect(auditCode([wrapper], ds).findings.filter((f) => f.rule === "reimplements-component")).toEqual([]);
 	});
+
+	it("reads design-system imports a formatter wrapped over several lines", () => {
+		const wrapped = { path: "src/Wrapped.tsx", content: `import {
+  Button,
+  Card,
+} from "@acme/ui";
+function Badge() { return <span />; }
+export const X = () => <Card><Button>Go</Button></Card>;` };
+		const r = auditCode([wrapped], { packages: ["@acme/ui"], components: ["Badge"] });
+		expect(r.stats.dsComponentUses).toBe(2);
+		expect(r.componentsUsed).toEqual({ Card: 1, Button: 1 });
+		expect(r.findings.map((f) => `${f.rule}@${f.line}`)).toContain("reimplements-component@5");
+	});
+
+	it("matches token names case-insensitively (JSON token paths vs var())", () => {
+		const names = tokenNamesFrom("t.json", JSON.stringify({ colorPrimary: { $value: "#00f" } }));
+		expect(names).toContain("colorPrimary");
+		const src = { path: "a.tsx", content: `<p style={{ color: "var(--colorPrimary)" }} />` };
+		const r = auditCode([src], { tokens: names });
+		expect(r.findings.filter((f) => f.rule === "unknown-token")).toEqual([]);
+		const r2 = auditCode([{ path: "b.tsx", content: `<p style={{ color: "var(--colorprimary)" }} />` }], { tokens: ["colorPrimary"] });
+		expect(r2.findings.filter((f) => f.rule === "unknown-token")).toEqual([]);
+	});
 });
+
