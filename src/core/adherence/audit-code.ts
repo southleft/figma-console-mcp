@@ -10,7 +10,8 @@
  *     each either bound (variable or style) or hardcoded
  *   - likely inventions: hand-built frames named like a component, new
  *     components created inside the composition, hand-drawn vectors
- *   - declared gaps: nodes named "GAP: …" (placeholders a person approved)
+ *   - declared gaps: nodes named "GAP: …" — in-place notes for what the system lacks.
+ *     Each must explain itself, and must not stand in for a component the system has.
  *
  * Output is raw facts + per-node findings; scoring happens server-side.
  */
@@ -57,6 +58,7 @@ const stats = {
 };
 const used = {};      // component name -> { key, source, count }
 const gapNames = [];
+const gapDetails = [];
 
 function pathOf(n) {
   const parts = [];
@@ -164,7 +166,15 @@ while (queue.length) {
 
   if (typeof node.name === "string" && node.name.trim().toUpperCase().startsWith(GAP_PREFIX)) {
     stats.gaps++;
-    gapNames.push(node.name.trim().slice(GAP_PREFIX.length).trim());
+    const need = node.name.trim().slice(GAP_PREFIX.length).trim();
+    gapNames.push(need);
+    let note = "";
+    try {
+      const texts = node.type === "TEXT" ? [node] : ("findAll" in node ? node.findAll(n => n.type === "TEXT") : []);
+      note = texts.map(t => t.characters).join(" ").trim();
+    } catch (e) {}
+    const parent = node.parent;
+    gapDetails.push({ nodeId: node.id, need, note, parentName: parent ? parent.name : null, path: pathOf(node), width: Math.round(node.width || 0), height: Math.round(node.height || 0) });
     continue;
   }
 
@@ -229,7 +239,7 @@ while (queue.length) {
 return {
   root: { id: root.id, name: root.name, type: root.type },
   file: { name: figma.root.name, key: figma.fileKey || null },
-  stats, componentsUsed: Object.values(used).sort((a, b) => b.count - a.count), gaps: gapNames, findings,
+  stats, componentsUsed: Object.values(used).sort((a, b) => b.count - a.count), gaps: gapNames, gapDetails, findings,
 };
 `;
 }

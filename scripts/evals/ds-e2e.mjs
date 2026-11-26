@@ -46,7 +46,9 @@ const DECOY_POOL = [
 	"color wheel", "code editor", "spreadsheet formula", "video conference stream", "music equalizer",
 	"qr scanner", "weather forecast", "stock ticker", "heart rate monitor", "chess clock", "karaoke lyrics",
 ];
-const TEMP_PAGE = "🧪 eval (temporary)";
+// This harness's OWN page. It is created fresh each run and removed by id only;
+// a pre-existing page with this name is never touched (the run stops instead).
+const TEMP_PAGE = `🧪 ds-e2e harness ${new Date().toISOString().slice(0, 19)}`;
 
 const argv = process.argv.slice(2);
 const only = argv.includes("--only") ? argv[argv.indexOf("--only") + 1].split(",") : null;
@@ -162,7 +164,7 @@ for (const cfg of wanted) {
 		const build = await exec(
 			cfg.fileKey,
 			`await figma.loadAllPagesAsync();
-for (const p of figma.root.children.filter(p => p.name === ${JSON.stringify(TEMP_PAGE)})) p.remove();
+if (figma.root.children.some(p => p.name === ${JSON.stringify(TEMP_PAGE)})) return { error: "a page named like this run's temporary page already exists; refusing to touch it" };
 const page = figma.createPage(); page.name = ${JSON.stringify(TEMP_PAGE)};
 const pick = ${JSON.stringify(matched.map((m) => ({ key: m.component.defaultVariant?.key ?? m.component.key, nodeId: m.component.defaultVariant?.nodeId ?? m.component.nodeId, name: m.component.name })))};
 const good = figma.createFrame(); good.name = "Eval good"; good.fills = []; good.layoutMode = "VERTICAL"; page.appendChild(good);
@@ -182,6 +184,7 @@ const newComp = figma.createComponent(); newComp.name = "Eval Invented Widget"; 
 await figma.loadFontAsync({ family: "Inter", style: "Regular" }); const t = figma.createText(); t.fontName = { family: "Inter", style: "Regular" }; t.characters = "Hardcoded text"; bad.appendChild(t);
 return { pageId: page.id, goodId: good.id, badId: bad.id, placed };`,
 		);
+		if (!build || build.error || !build.pageId) throw new Error(`build step failed: ${build?.error ?? JSON.stringify(build).slice(0, 300)}`);
 		pageId = build.pageId;
 		check(sys, "build.instances", (build.placed ?? []).length >= Math.min(2, matched.length), { summary: `placed ${build.placed?.length ?? 0} real instances: ${(build.placed ?? []).join(", ")}` });
 
@@ -260,9 +263,14 @@ return v ? v.name : null;`,
 	} finally {
 		const cleanup = await exec(
 			cfg.fileKey,
-			`await figma.loadAllPagesAsync(); const ps = figma.root.children.filter(p => p.name === ${JSON.stringify(TEMP_PAGE)});
-if (ps.length && ps.length < figma.root.children.length) { if (ps.includes(figma.currentPage)) await figma.setCurrentPageAsync(figma.root.children.find(p => !ps.includes(p))); for (const p of ps) p.remove(); }
-return figma.root.children.filter(p => p.name === ${JSON.stringify(TEMP_PAGE)}).length;`,
+			`await figma.loadAllPagesAsync();
+// Remove ONLY the page this run created (by id, and only if it still has this run's name).
+const p = ${JSON.stringify(pageId ?? null)} ? await figma.getNodeByIdAsync(${JSON.stringify(pageId ?? "")}) : null;
+if (p && p.type === "PAGE" && p.name === ${JSON.stringify(TEMP_PAGE)} && figma.root.children.length > 1) {
+  if (figma.currentPage === p) await figma.setCurrentPageAsync(figma.root.children.find(x => x !== p));
+  p.remove();
+}
+return figma.root.children.filter(x => x.name === ${JSON.stringify(TEMP_PAGE)}).length;`,
 		);
 		check(sys, "cleanup", cleanup === 0, { summary: cleanup === 0 ? "temporary page removed" : "temporary page left behind!" });
 		await call("figma_navigate", { url: `https://www.figma.com/design/${cfg.fileKey}/x`, lock: false });

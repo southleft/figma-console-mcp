@@ -28,6 +28,8 @@ export interface CatalogEntry {
 	properties?: Array<{ name: string; type: string }>;
 	/** "local" (this file) or the library file key it came from */
 	source: string;
+	/** Small, square and vector-only: an icon, wherever it lives in the file. */
+	iconLike?: boolean;
 }
 
 export type NeedStatus = "matched" | "possible" | "gap";
@@ -124,7 +126,7 @@ const SYNONYM_GROUPS: string[][] = [
 	["stepper", "steps", "wizard"],
 	["skeleton", "placeholder", "shimmer"],
 	["footer", "bottombar"],
-	["image", "img", "picture", "photo", "thumbnail"],
+	["image", "img", "picture", "photo", "thumbnail", "media"],
 	["heading", "title", "headline"],
 	["empty", "emptystate", "zerostate"],
 	["upload", "dropzone", "fileupload"],
@@ -244,6 +246,7 @@ export function scoreMatch(needTokens: string[] | string, entry: CatalogEntry): 
 		if (baseRaw.has(t.raw)) w = 1; // the component's own word
 		else if (base.has(t.canon)) w = 0.8; // a synonym of it
 		else if (pathRaw.has(t.raw)) w = 0.8; // the need names the folder ("check icon" → Icons/Check)
+		else if (entry.iconLike && /^(icons?|glyphs?|symbols?)$/.test(t.raw)) w = 0.8; // an icon, by its shape
 		else if (variants.has(t.canon)) w = 0.5;
 		else if (path.has(t.canon)) w = 0.45;
 		else if (desc.has(t.canon)) w = 0.35;
@@ -261,7 +264,10 @@ export function scoreMatch(needTokens: string[] | string, entry: CatalogEntry): 
 	if (base.size > 0 && extraBase > 0) score *= 1 - Math.min(0.25, (extraBase / base.size) * 0.25);
 	// Assets and examples aren't the component itself, unless that's what was asked for.
 	const needWords = new Set(need.map((t) => t.raw));
-	const inAsset = folderWords.some((w) => ASSET_FOLDERS.test(w)) && !folderWords.some((w) => needWords.has(w.replace(/s$/, "")));
+	const askedForIcon = [...needWords].some((w) => /^(icons?|glyphs?|symbols?)$/.test(w));
+	const inAsset =
+		(folderWords.some((w) => ASSET_FOLDERS.test(w)) && !folderWords.some((w) => needWords.has(w.replace(/s$/, "")))) ||
+		(entry.iconLike === true && !askedForIcon);
 	const inExample = folderWords.some((w) => EXAMPLE_FOLDERS.test(w)) && !folderWords.some((w) => needWords.has(w.replace(/s$/, "")));
 	if (inAsset) score *= 0.5;
 	else if (inExample) score *= 0.7;
@@ -362,7 +368,7 @@ export function pairLibraries(figma: CatalogEntry[], code: string[]) {
 	const rank = (f: CatalogEntry) => {
 		const segs = f.name.split("/").map((x) => x.trim()).filter(Boolean);
 		const folders = segs.slice(0, -1).flatMap((x) => x.toLowerCase().split(/[^a-z]+/).filter(Boolean));
-		const asset = folders.some((w) => ASSET_FOLDERS.test(w)) ? 2 : folders.some((w) => EXAMPLE_FOLDERS.test(w)) ? 1 : 0;
+		const asset = f.iconLike || folders.some((w) => ASSET_FOLDERS.test(w)) ? 2 : folders.some((w) => EXAMPLE_FOLDERS.test(w)) ? 1 : 0;
 		return asset * 100 + segs.length;
 	};
 	// An icon or illustration of a thing is never the counterpart of a UI component.

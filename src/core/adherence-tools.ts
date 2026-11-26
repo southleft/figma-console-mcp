@@ -22,8 +22,10 @@ import {
 	pairLibraries,
 	pickDefaultVariant,
 	resolveNeeds,
+	tokenize,
 } from "./adherence/matching.js";
 import { GAP_PREFIX, buildAuditCode } from "./adherence/audit-code.js";
+import { type ComponentAnatomy, type PartCheck, anatomyCode, checkParts } from "./adherence/parts.js";
 import { extractFileKey } from "./figma-api.js";
 import { auditCode, type CodeSource, componentNamesFromFiles, scoreCodeAudit, tokenNamesFrom } from "./adherence/code-audit.js";
 import { type CodeComponent, type ComponentDecisions, compareComponentProps, decisionsFromContracts, indexCem } from "./adherence/props-parity.js";
@@ -117,7 +119,17 @@ for (const n of figma.root.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPO
   } catch (e) {}
   let dv;
   try { if (n.type === "COMPONENT_SET" && n.defaultVariant) dv = { name: n.defaultVariant.name, key: n.defaultVariant.key, nodeId: n.defaultVariant.id }; } catch (e) {}
-  out.push({ name: n.name, key: n.key, nodeId: n.id, type: n.type, description: n.description || undefined, variantAxes: axes, properties: props, defaultVariant: dv, source: "local" });
+  // Icon-like: small, roughly square, vector-only (icon sets often sit outside any "Icons" folder).
+  let iconLike = false;
+  try {
+    const rep = n.type === "COMPONENT_SET" ? (n.defaultVariant || n.children[0]) : n;
+    if (rep && rep.width <= 64 && rep.height <= 64 && Math.abs(rep.width - rep.height) <= 4) {
+      const kids = rep.findAll(() => true).slice(0, 200);
+      const VEC = { VECTOR: 1, BOOLEAN_OPERATION: 1, ELLIPSE: 1, RECTANGLE: 1, LINE: 1, POLYGON: 1, STAR: 1, GROUP: 1, FRAME: 1 };
+      iconLike = kids.length > 0 && kids.every(k => VEC[k.type]) && kids.some(k => k.type === "VECTOR" || k.type === "BOOLEAN_OPERATION");
+    }
+  } catch (e) {}
+  out.push({ name: n.name, key: n.key, nodeId: n.id, type: n.type, description: n.description || undefined, variantAxes: axes, properties: props, defaultVariant: dv, source: "local", ...(iconLike ? { iconLike: true } : {}) });
 }
 return out;`;
 	const res = await connector.executeCodeViaUI(code, 60000, fileKey);
@@ -183,7 +195,7 @@ const RESOLVE_DESCRIPTION = `Before generating a design or code from a design sy
 • matched — build with this component (key/nodeId returned; use figma_instantiate_component).
 • possible — something might fit; a person must confirm.
 • gap — the system has nothing for it.
-When the client supports it, the PERSON is asked how to handle each possible/gap item (stop, use a candidate, or a clearly labeled "${GAP_PREFIX} …" placeholder) and the decisions are returned. Otherwise the result says to stop and report the gaps to the user. Never substitute a hand-built look-alike for a gap. Searches the active file's components by default; pass libraryFileKeys/libraryFileUrls for published libraries (REST, needs FIGMA_ACCESS_TOKEN). Then verify the result with figma_audit_adherence.`;
+A gap defaults to an in-place note: a "${GAP_PREFIX} <need>" frame placed where the element belongs, explaining what's missing (placeholderName + placeholderNote). Unclear (possible) items stop for the person unless onUnclear is "placeholder". When the client supports it, the PERSON is asked first and their choices win. Pass parts (e.g. an article card needs image, title, excerpt) to also get part gaps for matched components. Never substitute a hand-built look-alike for a gap. Searches the active file's components by default; pass libraryFileKeys/libraryFileUrls for published libraries (REST, needs FIGMA_ACCESS_TOKEN). Then verify the result with figma_audit_adherence.`;
 
 const AUDIT_DESCRIPTION = `Score how faithfully a generated composition uses the design system — the check to run after building a screen/section, and the evidence for an independent grader. Walks the frame (nodeId, or the single selected node) and reports: component instances used (local vs. library, by name), hand-built layers imitating a system component (error), new components created inside the composition (error), hand-drawn vectors (warning), styling not bound to variables/styles (colors, spacing, radius, typography, effects), instance style overrides, and declared "${GAP_PREFIX} …" placeholders. Returns componentCoverage, tokenCoverage, a 0–100 score, and pass/fail against minScore (default 90; any error fails). Pass libraryFileKeys to also fail instances of components that aren't from those libraries (off-system). Deterministic: same file, same result. Requires the Desktop Bridge.`;
 
@@ -212,12 +224,23 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 					.boolean()
 					.optional()
 					.describe("Ask the person how to handle possible matches and gaps when the client can show a form. Default true."),
+				parts: z
+					.array(z.object({ need: z.string(), parts: z.array(z.string()).max(12) }))
+					.optional()
+					.describe(
+						'Parts each need must have, e.g. [{ need: "article preview card", parts: ["image", "title", "excerpt"] }]. Each matched component is checked for them (properties, variants, slots, layers); missing parts come back as part gaps.',
+					),
+				onUnclear: z
+					.enum(["ask", "placeholder"])
+					.optional()
+					.describe('"ask" (default): unclear matches stop for the person. "placeholder": the person has said to mark unclear items with a gap note naming the candidates.'),
+				fileKey: z.string().optional().describe("Read local components from this open file instead of the active one."),
 			}),
 		},
 		async (args, ctx) => {
 			try {
 				const libraryKeys = libraryKeysFrom(args);
-				const { catalog, sources } = await loadCatalog(deps, libraryKeys, args.includeLocal !== false);
+				const { catalog, sources } = await loadCatalog(deps, libraryKeys, args.includeLocal !== false, args.fileKey);
 				if (catalog.length === 0) {
 					return text(
 						{
@@ -259,7 +282,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 							title: `${it.status === "gap" ? "Missing" : "Unsure"}: ${it.need}`,
 							enum: opts,
 							enumNames: names,
-							default: "stop",
+							default: it.status === "gap" ? "placeholder" : "stop",
 						};
 					}
 					const gapList = unresolved.filter(({ it }) => it.status === "gap").map(({ it }) => it.need);
@@ -273,7 +296,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 								[
 									gapList.length ? `The design system has nothing for: ${gapList.join(", ")}.` : "",
 									possibleList.length ? `Unclear matches for: ${possibleList.join(", ")}.` : "",
-									"Choose how to handle each one. Nothing will be invented without your choice.",
+									"Choose how to handle each one. Missing items default to a labeled gap note in the spot where they belong; nothing is invented.",
 								]
 									.filter(Boolean)
 									.join(" "),
@@ -319,9 +342,49 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 					} else if (d?.decision === "stop") {
 						base.action = "skip";
 						base.decidedBy = "user";
+					} else if (it.status === "gap" || args.onUnclear === "placeholder") {
+						// Nobody chose otherwise: a missing piece is marked in place, never filled in.
+						base.action = "placeholder";
+						base.placeholderName = `${GAP_PREFIX} ${it.need}`;
+						base.decidedBy = it.status === "gap" ? "default" : "onUnclear";
 					} else base.action = "ask-user";
+					if (base.action === "placeholder") {
+						const cands = it.candidates.filter((c) => c.score >= POSSIBLE_THRESHOLD).slice(0, 3).map((c) => `"${c.name}"`);
+						base.placeholderNote =
+							it.status === "gap"
+								? `${it.need}: the design system has no component for this. This is where it would go.`
+								: `${it.need}: no clear match in the design system (closest: ${cands.join(", ")}). This is where it would go.`;
+					}
 					return base;
 				});
+
+				// Part-level gaps for components being built.
+				const partsByNeed = new Map((args.parts ?? []).map((p) => [p.need.trim().toLowerCase(), p.parts]));
+				if (partsByNeed.size) {
+					const toCheck = out.filter((o: any) => o.action === "build-with-component" && partsByNeed.has(String(o.need).trim().toLowerCase()));
+					const localIds = [...new Set(toCheck.map((o: any) => o.component?.source === "local" && o.component?.nodeId).filter(Boolean))] as string[];
+					let anatomy: Record<string, ComponentAnatomy> = {};
+					if (localIds.length) {
+						try {
+							const res = await (await deps.getDesktopConnector()).executeCodeViaUI(anatomyCode(localIds), 60000, args.fileKey);
+							const v = res && typeof res === "object" && "result" in res ? res.result : res;
+							if (v && typeof v === "object") anatomy = v;
+						} catch {}
+					}
+					for (const o of toCheck as any[]) {
+						const entry = catalog.find((c) => c.key === o.component.key) ?? o.component;
+						const checks: PartCheck[] = checkParts(partsByNeed.get(String(o.need).trim().toLowerCase())!, entry, anatomy[o.component.nodeId]);
+						o.parts = checks;
+						const missing = checks.filter((c) => c.status === "missing");
+						if (missing.length) {
+							o.missingParts = missing.map((m) => ({
+								part: m.part,
+								placeholderName: `${GAP_PREFIX} ${o.need} — ${m.part}`,
+								placeholderNote: `${m.part}: "${o.component.name}" has no ${m.part} (no property, variant, slot or layer for it). This is where the ${m.part} would go.`,
+							}));
+						}
+					}
+				}
 
 				const counts = {
 					needs: items.length,
@@ -340,11 +403,20 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 					items: out,
 					rules: [
 						"Build ONLY items whose action is build-with-component, using that component: for a component set, instantiate component.defaultVariant (figma_instantiate_component with its key + nodeId, plus `variant` to pick other values from variantAxes); never the set key.",
-						`For action placeholder, add one plainly labeled frame named exactly "${GAP_PREFIX} <need>" — no styling that imitates a real component.`,
+						`For action placeholder, put one plain frame named exactly placeholderName IN THE SPOT where the missing element belongs (same parent, same position and roughly its size), holding one text layer: placeholderNote plus what it would contain for this request. No styling that imitates a real component.`,
+						`For missingParts on a built component, place each part's gap note directly next to that instance (wrap both in a layout frame named by role, e.g. "Article 1"), where the part would sit. Don't hand-build the part on top of the instance.`,
 						"For action skip, build nothing for it.",
 						"Never hand-build a look-alike, and never create a new component, for anything not matched.",
 						"Bind every color, spacing, radius and text style to the system's variables/styles; run figma_audit_adherence on the result.",
 					],
+					...(out.some((o: any) => o.action === "placeholder" || o.missingParts)
+						? {
+								gapNotes: [
+									...out.filter((o: any) => o.action === "placeholder").map((o: any) => ({ name: o.placeholderName, note: o.placeholderNote })),
+									...out.flatMap((o: any) => (o.missingParts ?? []).map((m: any) => ({ name: m.placeholderName, note: m.placeholderNote }))),
+								],
+							}
+						: {}),
 					...(awaitingUser.length
 						? {
 								ai_instruction: `STOP before building. The design system has no confirmed component for: ${awaitingUser.join(", ")}. Tell the user exactly which items are missing or unclear (list the candidates) and ask how to proceed. Do not substitute, approximate or hand-build them.`,
@@ -429,6 +501,30 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 					}
 				}
 
+				// Gap notes: must explain themselves, and must be real gaps.
+				const gapDetails: Array<{ nodeId: string; need: string; note: string }> = raw.gapDetails ?? [];
+				for (const g of gapDetails) {
+					const needWords = new Set(tokenize(g.need));
+					const extra = String(g.note).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !needWords.has(w));
+					if (extra.length < 4) {
+						findings.push({ nodeId: g.nodeId, name: `${GAP_PREFIX} ${g.need}`, rule: "gap-unexplained", severity: "warning", message: `Gap note for "${g.need}" doesn't explain what goes here and why it's missing. Add one sentence.` });
+					}
+					const [whole, part] = g.need.split(/\s+[—–-]\s+/);
+					const check = part ? part : whole;
+					const hit = resolveNeeds([check], catalog)[0];
+					if (hit?.status === "matched" && hit.component) {
+						const exact = tokenize(hit.component.name.split("/").pop() ?? "").join(" ") === tokenize(check).join(" ");
+						findings.push({
+							nodeId: g.nodeId,
+							name: `${GAP_PREFIX} ${g.need}`,
+							rule: "gap-but-component-exists",
+							severity: exact && !part ? "error" : "warning",
+							message: `Marked as missing, but the system has "${hit.component.name}"${part ? ` — it may cover the ${part}` : ""}. Use it instead of a gap note.`,
+							component: hit.component.name,
+						});
+					}
+				}
+
 				const s = raw.stats;
 				const inventions = s.imitations + s.suspects + s.newComponents + s.handDrawnVectors;
 				const componentCoverage = s.instances + inventions > 0 ? s.instances / (s.instances + inventions) : null;
@@ -458,6 +554,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 					stats: s,
 					componentsUsed: raw.componentsUsed,
 					declaredGaps: raw.gaps,
+					gapNotes: gapDetails,
 					catalogSources: sources,
 					findings: findings.slice(0, maxFindings),
 					findingsTruncated: findings.length > maxFindings,

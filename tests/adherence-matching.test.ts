@@ -136,5 +136,12 @@ describe("default variant", () => {
 		expect(r.pairs).toEqual([]);
 		expect(r.codeOnly).toEqual(["Gizmo", "Widget"]);
 	});
+
+	it("treats small vector-only components as icons even outside an icons folder", () => {
+		const r = resolveNeeds(["data table", "table icon"], [cat("Table", { iconLike: true }), cat("Table / Data Grid")]);
+		expect(r[0]).toMatchObject({ status: "matched", component: { name: "Table / Data Grid" } });
+		expect(r[1].component?.name).toBe("Table");
+		expect(pairLibraries([cat("Gizmo", { iconLike: true })], ["Gizmo"]).pairs).toEqual([]);
+	});
 });
 

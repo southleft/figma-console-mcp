@@ -29,14 +29,13 @@ DESIGN SYSTEM:
 - Code: packages <@acme/ui>, components <list or "inspect package">, tokens <path>
 - Code component counterparts (for parity), if any: <Figma nodeId ↔ code file>
 
-DECLARED GAPS the person approved (may be empty):
-<"GAP: date picker", …>
+GAP POLICY: <"note in place" (default: anything the system lacks gets an explained GAP note where it belongs) | the person's list of approved gaps>
 
 PASS CRITERIA:
 - Adherence score >= <90>, zero adherence errors
 - No WCAG A/AA critical findings
 - Every requested element present; nothing extra; no invented components or tokens
-- Every gap either declared or reported
+- Every missing component or part marked with an explained gap note in the right spot; no gap notes for things the system has
 
 Follow the grade-generation skill's grader procedure and return its verdict format exactly.
 ```
@@ -65,7 +64,10 @@ Compare the artifact to the **request**, not to what you would have built:
 - **Fidelity:** list every element the request asks for, and mark each one present (cite nodeId or file:line), declared gap, or missing.
 - **Nothing extra:** flag elements the request didn't ask for.
 - **No invention:** look at the screenshot and the code for anything that looks like a system component but isn't an instance or import. Confirm it with the audit's `imitates-component`, `looks-hand-built`, `reimplements-component` or `raw-element` findings, or inspect the node with `figma_get_component_for_development_deep({ nodeId, depth: 2 })`.
-- **Gaps declared:** every `GAP:` placeholder or code placeholder should match a person-approved gap from the brief. An undeclared stand-in is a blocking finding.
+- **Gaps marked in place:** for every requested element or part, decide independently whether the system has it. Use `figma_search_components` and `figma_get_component_details`, not the generator's word.
+  - **System lacks it:** there must be a `GAP:` note (from the audit's `gapNotes`) in the spot where it belongs, explaining what goes there. A silent omission or a hand-built fake is blocking.
+  - **System has it:** it must be an instance. A gap note in its place is blocking (`gap-but-component-exists`).
+  - **Placement:** check each note's position on the screenshot. It must be where the element would be (pagination under its table, a card image within the card's group), not collected in a corner.
 - **Visual sanity (Figma):** overlaps, clipped text, broken alignment. These are non-blocking unless they make a requested element unusable.
 
 ### C. Verdict rules
@@ -74,8 +76,9 @@ Compare the artifact to the **request**, not to what you would have built:
   - an adherence error,
   - score below the threshold,
   - a WCAG A/AA critical finding,
-  - a requested element missing without a declared gap,
-  - an invented or undeclared stand-in,
+  - a requested element or part missing without a gap note,
+  - a gap note for something the system has,
+  - an invented stand-in (hand-built look-alike) instead of a gap note,
   - a truncated audit.
 - PASS otherwise. Warnings go in the report but don't fail on their own unless the brief says so.
 - Each blocking finding must quote the tool, the rule, and the nodeId or file:line. If you can't cite it, move it to Notes.
@@ -112,6 +115,6 @@ NOTES (judgment without tool evidence — not used for the verdict)
 2. On FAIL, the orchestrator passes only the **BLOCKING FINDINGS and GAPS** sections to the generator, which fixes them.
 3. The orchestrator spawns a **new** grader (fresh subagent, same brief) for each round. Never reuse a grader that saw an earlier round.
 4. Stop at PASS or after **N rounds** (default 3). A FAIL after N rounds goes to the person with the last verdict verbatim. Don't summarize it into a pass, and don't lower thresholds to get one.
-5. If a finding can only be fixed by inventing something (a missing component or token), the generator stops and the gap goes to the person. That isn't a grader failure.
+5. If a finding can only be fixed by inventing something (a missing component or token), the generator marks it with a gap note instead. That isn't a grader failure.
 
 INCONCLUSIVE isn't a pass. Fix the tooling problem (see `troubleshoot-connection`) and re-grade.
