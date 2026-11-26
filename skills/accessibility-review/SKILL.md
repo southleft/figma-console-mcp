@@ -5,6 +5,8 @@ description: Review a Figma design, a Figma component, or UI code for accessibil
 
 # Accessibility review
 
+> **Tools:** this skill uses tools outside the core set. Call `figma_enable_toolsets({ toolsets: ["parity", "docs"] })` once at the start. If your client doesn't show the new tools afterwards, call them through `figma_call({ tool, arguments })`.
+
 Design-side and code-side tools check different things, so a full review uses both. Report only what the tools found, plus clearly labeled manual checks. Don't turn best-practice hints into WCAG failures.
 
 | Scope | Tool | What it covers |

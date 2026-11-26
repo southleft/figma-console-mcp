@@ -5,6 +5,8 @@ description: Independently grade a generated Figma design or generated UI code a
 
 # Grade a generation with an independent grader
 
+> **Tools:** this skill uses tools outside the core set. Call `figma_enable_toolsets({ toolsets: ["parity", "inspect"] })` once at the start. If your client doesn't show the new tools afterwards, call them through `figma_call({ tool, arguments })`.
+
 The agent that generated the work doesn't grade it. A separate grader, with fresh context, gets only the request and the location of the artifact. It checks with tools first and uses judgment second. **Evidence beats opinion:** every blocking finding must cite tool output (a nodeId with its audit rule, or a file:line with its rule). A finding the grader can't back with evidence is a note, not a FAIL reason.
 
 ## Orchestrator: spawn the grader

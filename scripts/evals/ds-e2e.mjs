@@ -75,6 +75,10 @@ function check(sys, id, pass, detail) {
 	log(`  ${pass ? "PASS" : "FAIL"}  ${id}${detail?.summary ? ` — ${detail.summary}` : ""}`);
 }
 
+// The server starts with core tools only; enable what this harness uses, like a real session.
+const enabled = await call("figma_enable_toolsets", { toolsets: ["parity", "inspect"] });
+if (!enabled.success) throw new Error(`figma_enable_toolsets failed: ${JSON.stringify(enabled).slice(0, 200)}`);
+
 // Wait until the plugin in every configured file has connected to THIS server.
 const wanted = SYSTEMS.filter((s) => !only || only.includes(s.id));
 for (let i = 0; i < 60; i++) {

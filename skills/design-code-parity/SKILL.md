@@ -5,6 +5,8 @@ description: Keep a Figma component library and the code library that mirrors it
 
 # Design ↔ code parity
 
+> **Tools:** this skill uses tools outside the core set. Call `figma_enable_toolsets({ toolsets: ["inspect", "parity", "components", "variables"] })` once at the start. If your client doesn't show the new tools afterwards, call them through `figma_call({ tool, arguments })`.
+
 Find where the Figma library and the code library disagree, and fix only what has a clear owner. **Never silently pick a side.** If nobody has said which side is canonical for a component or property, the discrepancy goes to a person.
 
 ## 0. Establish canonical source

@@ -99,6 +99,7 @@ import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
 import { registerLayoutTools } from "./core/layout-tools.js";
 import { applyToolAnnotations } from "./core/tool-annotations.js";
+import { applyToolsets, parseToolsetsEnv, registerToolsetTools } from "./core/toolsets.js";
 import { LOCAL_TASK_TOOLS, defaultTaskStore, enableTasksForTools } from "./core/tasks.js";
 import { registerAdherenceTools } from "./core/adherence-tools.js";
 import { pickDefaultVariant } from "./core/adherence/matching.js";
@@ -233,12 +234,15 @@ class LocalFigmaConsoleMCP {
 			{
 				instructions: `## Figma Console MCP - Visual Design Workflow
 
+### TOOLSETS (load what the task needs)
+Only the core tools are listed at first, to save tokens. For variables/tokens, component authoring, design↔code parity, docs/history, FigJam, Slides, motion, deep inspection or debugging, call figma_enable_toolsets({ toolsets: [...] }) first. If the new tools don't appear, run them through figma_call({ tool, arguments }).
+
 This MCP server enables AI-assisted design creation in Figma. Follow these mandatory workflows:
 
 ### VISUAL VALIDATION WORKFLOW (Required)
 After creating or modifying ANY visual design elements:
 1. **CREATE**: Execute design code via figma_execute
-2. **SCREENSHOT**: Capture result with figma_take_screenshot
+2. **SCREENSHOT**: Capture result with figma_capture_screenshot
 3. **ANALYZE**: Check alignment, spacing, proportions, visual balance
 4. **ITERATE**: Fix issues and repeat (max 3 iterations)
 5. **VERIFY**: Final screenshot to confirm
@@ -282,7 +286,7 @@ section.appendChild(frame);
 \`\`\`
 
 ### BATCH OPERATIONS (Performance Critical)
-When creating or updating **multiple variables**, ALWAYS prefer batch tools over repeated individual calls:
+When creating or updating **multiple variables** (variables toolset), ALWAYS prefer batch tools over repeated individual calls:
 - **figma_batch_create_variables**: Create up to 100 variables in one call (vs. N calls to figma_create_variable)
 - **figma_batch_update_variables**: Update up to 100 variable values in one call (vs. N calls to figma_update_variable)
 - **figma_setup_design_tokens**: Create a complete token system (collection + modes + variables) atomically in one call
@@ -4006,6 +4010,9 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			);
 		}
 
+		// Toolsets: figma_enable_toolsets + figma_call (always on).
+		registerToolsetTools(server as any);
+
 		// Behavior hints (read-only / destructive / idempotent) for every tool.
 		const unclassified = applyToolAnnotations(server);
 		if (unclassified.length > 0) {
@@ -4016,6 +4023,13 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		// tasks extension with a task handle (the client polls tasks/get) instead
 		// of blocking. Every other client still gets the synchronous result.
 		enableTasksForTools(server, LOCAL_TASK_TOOLS);
+
+		// Start with the core tools only (FIGMA_TOOLSETS=all for every tool); the
+		// rest are switched on with figma_enable_toolsets. Each listed tool's
+		// definition costs tokens on every message, so fewer listed = cheaper.
+		const toolsetSelection = parseToolsetsEnv(process.env.FIGMA_TOOLSETS);
+		const ts = applyToolsets(server, toolsetSelection);
+		logger.info({ toolsets: toolsetSelection === "all" ? "all" : [...toolsetSelection], listed: ts.enabled.length, deferred: ts.disabled.length, unknown: ts.unknown }, "Toolsets applied");
 
 		logger.info(
 			"All MCP tools registered successfully (including write operations)",

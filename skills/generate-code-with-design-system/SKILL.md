@@ -5,6 +5,8 @@ description: Write UI code (React, Vue, Svelte, HTML/CSS, Tailwind) using only t
 
 # Generate code with the design system
 
+> **Tools:** this skill uses tools outside the core set. Call `figma_enable_toolsets({ toolsets: ["inspect", "parity"] })` once at the start. If your client doesn't show the new tools afterwards, call them through `figma_call({ tool, arguments })`.
+
 This works like generating in Figma, just in code. **Use the system's components and tokens, and report what's missing.** Don't write a local `<Button>`, a styled `<div>` card, or a new CSS variable because the system lacks one. Tell the person and let them decide.
 
 ## 1. Discover the code design system (read only)

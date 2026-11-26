@@ -5,6 +5,8 @@ description: Diagnose and fix Figma Console MCP connection problems — "not con
 
 # Troubleshoot the Figma Console connection
 
+> **Tools:** this skill uses tools outside the core set. Call `figma_enable_toolsets({ toolsets: ["debug"] })` once at the start. If your client doesn't show the new tools afterwards, call them through `figma_call({ tool, arguments })`.
+
 Figma Console MCP reaches Figma through the **Desktop Bridge plugin**: the MCP server listens on a WebSocket in ports **9223–9232**, and the plugin, running inside each open Figma file, connects to it. REST tools (versions, comments, library search) additionally need a **Figma access token**. Almost every failure is one of: no plugin running, the wrong file targeted, a busy plugin, a missing token scope, or a message that actually came from a *different* Figma MCP server.
 
 Work through the steps in order. Stop as soon as the problem is identified, and tell the user in plain language what was wrong and what you did.

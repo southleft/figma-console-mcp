@@ -154,6 +154,33 @@ Slides tools are documented in the [Slides guide](/slides). MCP Apps (`figma_bro
 
 ---
 
+## 🧰 Toolsets: tools load on demand (Local Mode)
+
+Every tool the server lists is sent to the model with every message. Listing all of them costs about 59,000 tokens per message. To save that, Local Mode starts with a **core** set of about 30 tools: status, navigation, component search and resolve, building, token binding, audit, lint, screenshots and `figma_execute`. That costs about 12,600 tokens. The model switches on the rest when a task needs them:
+
+```
+figma_enable_toolsets({ toolsets: ["variables", "parity"] })
+```
+
+| Toolset | What it adds |
+|---|---|
+| `inspect` | File data, component dev specs, styles, token values, library components and variables, REST screenshots |
+| `variables` | Create, update, rename and delete variables, collections and modes; import and export tokens |
+| `components` | Component sets and variants, component properties, descriptions, slots |
+| `parity` | Library and property parity, code adherence audit, accessibility audits, design-system reports |
+| `docs` | Component docs, version history, changelogs, blame, comments, annotations |
+| `debug` | Plugin console, plugin reload and pairing, running code across files |
+| `motion` | Animations, shaders, code layers |
+| `figjam` | FigJam boards |
+| `slides` | Figma Slides |
+| `extraction` | `figma_ds_*`: extract a design system from app code |
+
+- **Everything at once:** set `FIGMA_TOOLSETS=all` to list every tool, as earlier versions did.
+- **Preload some groups:** set e.g. `FIGMA_TOOLSETS=variables,parity`; core is always included.
+- **Clients that don't refresh their tool list:** enabling a toolset sends `tools/list_changed`. A client that ignores it can still run the new tools through `figma_call({ tool, arguments })`.
+
+Cloud Mode is unchanged and lists all its tools.
+
 ## 🧭 Navigation & Status Tools
 
 ### `figma_navigate`

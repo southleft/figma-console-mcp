@@ -1,0 +1,341 @@
+/**
+ * Toolsets: load tools on demand instead of all at once.
+ *
+ * Every tool definition the server lists is sent to the model with every
+ * message (~59k tokens for all 138). Most sessions use a small core. So the
+ * server starts with the CORE set only; the rest are grouped into toolsets the
+ * model (or the person) switches on with figma_enable_toolsets when needed.
+ *
+ *   FIGMA_TOOLSETS unset        → core only
+ *   FIGMA_TOOLSETS=all          → every tool (previous behaviour)
+ *   FIGMA_TOOLSETS=variables,parity → core + those toolsets
+ *
+ * Enabling sends tools/list_changed so the client refreshes its list. For a
+ * client that doesn't refresh, figma_call runs any enabled tool by name.
+ */
+import { z } from "zod";
+
+export interface Toolset {
+	description: string;
+	tools: string[];
+}
+
+export const CORE_TOOLS = [
+	"figma_get_status",
+	"figma_diagnose",
+	"figma_list_open_files",
+	"figma_navigate",
+	"figma_reconnect",
+	"figma_get_selection",
+	"figma_capture_screenshot",
+	"figma_execute",
+	"figma_get_design_system_summary",
+	"figma_search_components",
+	"figma_resolve_components",
+	"figma_instantiate_component",
+	"figma_set_instance_properties",
+	"figma_create_child",
+	"figma_clone_node",
+	"figma_move_node",
+	"figma_resize_node",
+	"figma_rename_node",
+	"figma_delete_node",
+	"figma_set_layout",
+	"figma_set_fills",
+	"figma_set_strokes",
+	"figma_set_text",
+	"figma_bind_tokens",
+	"figma_get_variables",
+	"figma_get_text_styles",
+	"figma_audit_adherence",
+	"figma_lint_design",
+];
+
+/** Called by MCP Apps UIs (only registered when ENABLE_MCP_APPS=true). */
+export const APP_TOOLS = ["ds_dashboard_refresh", "token_browser_refresh"];
+
+export const TOOLSETS: Record<string, Toolset> = {
+	inspect: {
+		description: "Deeper reads: file data, component specs for development, styles, token values, library components/variables, REST screenshots, design-change feed.",
+		tools: [
+			"figma_get_file_data",
+			"figma_get_file_for_plugin",
+			"figma_get_component",
+			"figma_get_component_details",
+			"figma_get_component_image",
+			"figma_get_component_for_development",
+			"figma_get_component_for_development_deep",
+			"figma_analyze_component_set",
+			"figma_get_styles",
+			"figma_get_token_values",
+			"figma_browse_tokens",
+			"figma_take_screenshot",
+			"figma_get_design_changes",
+			"figma_get_design_system_kit",
+			"figma_get_library_components",
+			"figma_get_library_component_by_key",
+			"figma_get_library_variables",
+			"figma_import_library_variable",
+			"figma_set_image_fill",
+		],
+	},
+	variables: {
+		description: "Create, update, rename and delete variables, collections and modes; import/export design tokens (DTCG, CSS, Tailwind…).",
+		tools: [
+			"figma_create_variable",
+			"figma_create_variable_collection",
+			"figma_batch_create_variables",
+			"figma_setup_design_tokens",
+			"figma_add_mode",
+			"figma_update_variable",
+			"figma_batch_update_variables",
+			"figma_rename_variable",
+			"figma_rename_mode",
+			"figma_delete_variable",
+			"figma_delete_variable_collection",
+			"figma_import_tokens",
+			"figma_export_tokens",
+		],
+	},
+	components: {
+		description: "Author components: component sets and variants, component properties, descriptions, slots.",
+		tools: [
+			"figma_create_component_set",
+			"figma_arrange_component_set",
+			"figma_add_component_property",
+			"figma_edit_component_property",
+			"figma_delete_component_property",
+			"figma_set_description",
+			"figma_get_slots",
+			"figma_create_slot",
+			"figma_add_slot_property",
+			"figma_append_to_slot",
+			"figma_reset_slot",
+		],
+	},
+	parity: {
+		description: "Design ↔ code: library and property parity, code adherence audit, component/code accessibility audits, design-system health reports.",
+		tools: [
+			"figma_check_library_parity",
+			"figma_check_design_parity",
+			"figma_audit_code_adherence",
+			"figma_audit_component_accessibility",
+			"figma_scan_code_accessibility",
+			"figma_audit_design_system_report",
+			"figma_audit_design_system",
+		],
+	},
+	docs: {
+		description: "Documentation and history: component docs, version history and diffs, changelogs, blame, comments, annotations.",
+		tools: [
+			"figma_generate_component_doc",
+			"figma_get_file_versions",
+			"figma_get_file_at_version",
+			"figma_diff_versions",
+			"figma_get_changes_since_version",
+			"figma_generate_changelog",
+			"figma_blame_node",
+			"figma_get_comments",
+			"figma_post_comment",
+			"figma_delete_comment",
+			"figma_get_annotations",
+			"figma_get_annotation_categories",
+			"figma_set_annotations",
+		],
+	},
+	debug: {
+		description: "Plugin console logs, plugin reload/pairing, and running code across several open files.",
+		tools: [
+			"figma_get_console_logs",
+			"figma_watch_console",
+			"figma_clear_console",
+			"figma_reload_plugin",
+			"figma_pair_plugin",
+			"figma_execute_across_files",
+		],
+	},
+	motion: {
+		description: "Animations, shaders and code layers.",
+		tools: [
+			"figma_get_animations",
+			"figma_apply_animation",
+			"figma_remove_animation",
+			"figma_manage_animation_styles",
+			"figma_export_animation",
+			"figma_list_shaders",
+			"figma_apply_shader",
+			"figma_get_code_layers",
+		],
+	},
+	figjam: {
+		description: "FigJam boards: stickies, connectors, shapes, sections, tables, code blocks.",
+		tools: [
+			"figjam_get_board_contents",
+			"figjam_get_connections",
+			"figjam_create_sticky",
+			"figjam_create_stickies",
+			"figjam_create_connector",
+			"figjam_create_shape_with_text",
+			"figjam_create_section",
+			"figjam_create_table",
+			"figjam_create_code_block",
+			"figjam_auto_arrange",
+		],
+	},
+	slides: {
+		description: "Figma Slides decks: slides, text, shapes, transitions, ordering.",
+		tools: [
+			"figma_list_slides",
+			"figma_get_slide_content",
+			"figma_get_slide_grid",
+			"figma_get_slide_transition",
+			"figma_get_focused_slide",
+			"figma_create_slide",
+			"figma_duplicate_slide",
+			"figma_add_text_to_slide",
+			"figma_add_shape_to_slide",
+			"figma_set_slide_transition",
+			"figma_set_slide_background",
+			"figma_skip_slide",
+			"figma_reorder_slides",
+			"figma_focus_slide",
+			"figma_set_slides_view_mode",
+			"figma_delete_slide",
+		],
+	},
+	extraction: {
+		description: "Extract a design system from an app's code into DTCG tokens, a Storybook package and Figma (figma_ds_*).",
+		tools: ["figma_ds_analyze", "figma_ds_extract_tokens", "figma_ds_scaffold", "figma_ds_setup_storybook", "figma_ds_extract_component", "figma_ds_verify", "figma_ds_status"],
+	},
+};
+
+/** Which toolset a tool belongs to ("core" for the always-on set; undefined if unknown). */
+export function toolsetOf(name: string): string | undefined {
+	// MCP Apps refresh tools are called by the apps' own UI; they stay on when the apps are enabled.
+	if (CORE_TOOLS.includes(name) || name === "figma_enable_toolsets" || name === "figma_call" || APP_TOOLS.includes(name)) return "core";
+	for (const [set, t] of Object.entries(TOOLSETS)) if (t.tools.includes(name)) return set;
+	return undefined;
+}
+
+/** Parse FIGMA_TOOLSETS. Returns "all" or the set of enabled toolset names. */
+export function parseToolsetsEnv(value: string | undefined): "all" | Set<string> {
+	const v = (value ?? "").trim().toLowerCase();
+	if (v === "all" || v === "*") return "all";
+	const out = new Set<string>(["core"]);
+	for (const part of v.split(",").map((s) => s.trim()).filter(Boolean)) {
+		if (part === "all") return "all";
+		if (TOOLSETS[part]) out.add(part);
+	}
+	return out;
+}
+
+type Registered = Record<string, { enabled: boolean; enable(): void; disable(): void; handler?: unknown; inputSchema?: unknown; description?: string }>;
+const registry = (server: object): Registered => (server as unknown as { _registeredTools: Registered })._registeredTools ?? {};
+
+/**
+ * Apply the selection. Call after every tool is registered and BEFORE connect
+ * (no list_changed is sent for the initial state). Unknown tools stay enabled
+ * — never hide a tool by accident. Returns what was enabled/disabled.
+ */
+export function applyToolsets(server: object, selection: "all" | Set<string>): { enabled: string[]; disabled: string[]; unknown: string[] } {
+	const enabled: string[] = [];
+	const disabled: string[] = [];
+	const unknown: string[] = [];
+	for (const [name, tool] of Object.entries(registry(server))) {
+		const set = toolsetOf(name);
+		if (!set) unknown.push(name);
+		// Set the flag directly: this runs before connect, so no list_changed is wanted.
+		if (selection === "all" || !set || selection.has(set)) {
+			tool.enabled = true;
+			enabled.push(name);
+		} else {
+			tool.enabled = false;
+			disabled.push(name);
+		}
+	}
+	return { enabled, disabled, unknown };
+}
+
+interface ToolsetServer {
+	registerTool: (name: string, config: any, handler: (args: any, extra: any) => any) => unknown;
+	sendToolListChanged?: () => void | Promise<void>;
+}
+
+/** Register figma_enable_toolsets and figma_call (both part of core). */
+export function registerToolsetTools(server: ToolsetServer): void {
+	const names = Object.keys(TOOLSETS);
+	const catalog = names.map((n) => `${n}: ${TOOLSETS[n].description}`).join("\n");
+
+	server.registerTool(
+		"figma_enable_toolsets",
+		{
+			description: `Switch on more tools. The server starts with a core set (status, navigation, search/resolve components, build, bind tokens, audit, screenshot, execute). Enable a toolset when the task needs it:\n${catalog}\nReturns the tools now available. Cheap and safe to call; enabling twice is a no-op.`,
+			inputSchema: z.object({
+				toolsets: z.array(z.enum(names as [string, ...string[]])).min(1).describe("Toolsets to switch on."),
+			}),
+		},
+		async ({ toolsets }: { toolsets: string[] }) => {
+			const reg = registry(server);
+			const now: string[] = [];
+			for (const set of toolsets) {
+				for (const name of TOOLSETS[set]?.tools ?? []) {
+					const t = reg[name];
+					if (!t) continue;
+					// Flip the flag directly (enable() would send one list_changed per tool); one notice below.
+					t.enabled = true;
+					now.push(name);
+				}
+			}
+			try {
+				await server.sendToolListChanged?.();
+			} catch {}
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: JSON.stringify({
+							success: true,
+							enabled: toolsets,
+							tools: now,
+							note: "These tools are now listed. If your client doesn't show them yet, call them through figma_call({ tool, arguments }).",
+						}),
+					},
+				],
+			};
+		},
+	);
+
+	server.registerTool(
+		"figma_call",
+		{
+			description: "Run an enabled tool by name, for clients that don't refresh their tool list after figma_enable_toolsets. Pass the tool's normal arguments.",
+			inputSchema: z.object({
+				tool: z.string().describe("Tool name, e.g. figma_export_tokens."),
+				arguments: z.record(z.string(), z.unknown()).optional().describe("The tool's arguments."),
+			}),
+		},
+		async ({ tool, arguments: args }: { tool: string; arguments?: Record<string, unknown> }, extra: any) => {
+			const t = registry(server)[tool] as any;
+			const fail = (msg: string) => ({ content: [{ type: "text" as const, text: JSON.stringify({ error: msg }) }], isError: true });
+			if (!t) return fail(`Unknown tool "${tool}".`);
+			if (tool === "figma_call") return fail("figma_call can't call itself.");
+			if (!t.enabled) {
+				const set = toolsetOf(tool);
+				return fail(`"${tool}" is in the "${set}" toolset, which is off. Call figma_enable_toolsets({ toolsets: ["${set}"] }) first.`);
+			}
+			// Same path as a direct tools/call: the SDK's own validation and execution.
+			const srv = server as any;
+			if (typeof srv.validateToolInput === "function" && typeof srv.executeToolHandler === "function") {
+				try {
+					const input = await srv.validateToolInput(t, args ?? {}, tool);
+					return await srv.executeToolHandler(t, input, extra);
+				} catch (err) {
+					return fail(err instanceof Error ? err.message : String(err));
+				}
+			}
+			const handler = t.handler ?? t.callback;
+			if (typeof handler !== "function") return fail(`"${tool}" can't be called through figma_call.`);
+			return handler(args ?? {}, extra);
+		},
+	);
+}

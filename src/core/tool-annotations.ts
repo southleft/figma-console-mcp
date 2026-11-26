@@ -53,6 +53,8 @@ const KIND_HINTS: Record<ToolKind, Omit<ToolHints, "openWorldHint">> = {
  * a group doesn't matter.
  */
 export const TOOL_KINDS: Record<string, ToolKind> = {
+	figma_enable_toolsets: "session",
+	figma_call: "destructive", // runs any enabled tool, including deletes
 	// ── Connection, console, status ──────────────────────────────────────────
 	figma_get_status: "read",
 	figma_diagnose: "read",

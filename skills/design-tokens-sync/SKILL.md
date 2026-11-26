@@ -5,6 +5,8 @@ description: Sync design tokens between Figma variables and code with figma_expo
 
 # Sync design tokens (Figma ↔ code)
 
+> **Tools:** this skill uses tools outside the core set. Call `figma_enable_toolsets({ toolsets: ["variables"] })` once at the start. If your client doesn't show the new tools afterwards, call them through `figma_call({ tool, arguments })`.
+
 Two tools do all the work: `figma_export_tokens` (Figma → files) and `figma_import_tokens` (files → Figma). **DTCG JSON** is the canonical pivot format. It carries Figma variable IDs in `$extensions["figma-console-mcp"]`, so renames on either side don't create duplicates. Always dry-run first, and confirm the source file before writing.
 
 ## 0. Preconditions
