@@ -206,7 +206,7 @@ Each server writes a port file (`figma-console-mcp-<port>.json` in the OS temp d
 
 #### Sharing one server over HTTP
 
-With `FIGMA_MCP_HTTP_PORT` set (v1.44.0), the server also accepts MCP over Streamable HTTP at `http://127.0.0.1:<port>/mcp`. Each HTTP session gets its own `McpServer` with every tool registered, as each stdio client gets its own process, and all sessions share the one WebSocket bridge and its caches. Sessions end when the client ends them, after 30 minutes idle, or (least recently used first) past 32 open.
+With `FIGMA_MCP_HTTP_PORT` set (v1.44.0), the server also accepts MCP over Streamable HTTP at `http://127.0.0.1:<port>/mcp`. Clients on 2025-era protocols get a session with its own `McpServer`, as each stdio client gets its own process; sessions end when the client ends them, after 30 minutes idle, or (least recently used first) past 32 open. Clients on protocol 2026-07-28 are sessionless: each request is served by a fresh `McpServer`. Every server lists the core tools plus the toolsets switched on in this process (`figma_enable_toolsets` or `FIGMA_TOOLSETS`), so on a shared HTTP server one client enabling a toolset enables it for all of them. All of them share the one WebSocket bridge and its caches.
 
 Only loopback is served: the endpoint binds `127.0.0.1`, rejects any `Host` that isn't localhost (DNS rebinding), and rejects browser `Origin`s other than localhost pages. `FIGMA_MCP_HTTP_TOKEN` adds a bearer token. If the port is taken, the endpoint stays off and `figma_get_status` reports why; stdio is unaffected.
 
