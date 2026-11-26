@@ -100,7 +100,7 @@ const fileKeySchema = z
 	.string()
 	.optional()
 	.describe(
-		"Local Mode only. Run against this specific connected file instead of the active file. Get connected fileKeys from figma_list_open_files. Rejected in Cloud Mode, which pairs with a single plugin instance.",
+		"Local Mode: run in this open file (see figma_list_open_files) without changing the active file.",
 	);
 
 const easingSchema = z

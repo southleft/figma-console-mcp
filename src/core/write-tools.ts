@@ -183,44 +183,30 @@ export function registerWriteTools(
 	server.registerTool(
 		"figma_execute",
 		{
-			description: `Execute arbitrary JavaScript in Figma's plugin context with full access to the figma API. Use for complex operations not covered by other tools. Requires Desktop Bridge plugin. CAUTION: Can modify your document.
-
-**COMPONENT INSTANCES:** For instances (node.type === 'INSTANCE'), use figma_set_instance_properties — direct text editing FAILS SILENTLY. Check instance.componentProperties for available props (may have #nodeId suffixes).
-
-**RESULT ANALYSIS:** Check resultAnalysis.warning for silent failures (empty arrays, null returns).
-
-**VALIDATION:** After creating/modifying visuals: screenshot with figma_capture_screenshot, check alignment/spacing/proportions, iterate up to 3x.
-
-**PLACEMENT:** Always create components inside a Section or Frame, never on blank canvas. Use parent.insertChild(0, bg) for z-ordering backgrounds behind content.
-
-**HOUSEKEEPING (MANDATORY):**
-Before creating: screenshot the target page to see existing content and find clear space.
-When creating: place inside a named Section, positioned BELOW or AWAY from existing content. Never overlap.
-After creating: screenshot to verify clean placement and no overlaps.
-On failure/retry: DELETE any partial artifacts (empty frames, orphaned layers, blank pages) before retrying. Use node.remove() to clean up.
-Pages: NEVER create a new page if one with that name already exists — use the existing one. If you created a blank page during a failed attempt, delete it.
-Layers: If your code creates helper frames, placeholder nodes, or intermediate layers that aren't part of the final result, remove them.
-
-**MULTI-FILE (Local Mode only):** Pass fileKey to run this in a specific connected file without switching the active file/target lock (see figma_list_open_files). To run the same code across several connected files at once, use figma_execute_across_files instead. Cloud Mode pairs with a single plugin instance and rejects fileKey.`,
+			description: `Run JavaScript in the Figma plugin context (full figma API) for anything other tools don't cover. Can modify the document.
+- Instances: change content with figma_set_instance_properties; editing text inside an instance fails silently.
+- Check resultAnalysis.warning for silent failures (empty or null results).
+- Before creating, screenshot the page and pick clear space; build inside a named Section or Frame, never overlapping existing work. Screenshot after.
+- Reuse an existing page with the same name instead of creating another. On failure, remove partial artifacts (node.remove()) before retrying.
+- fileKey runs it in another open file without changing the active one (Local Mode).`,
 			inputSchema: z.object({
 				code: z
 					.string()
 					.describe(
-						"JavaScript code to execute. Has access to the 'figma' global object. " +
-							"Example: 'const rect = figma.createRectangle(); rect.resize(100, 100); return { id: rect.id };'",
+						"Code with the 'figma' global; return a value, e.g. 'return figma.currentPage.selection.length;'",
 					),
 				timeout: z
 					.number()
 					.optional()
 					.default(5000)
 					.describe(
-						"Execution timeout in milliseconds (default: 5000, max: 300000)",
+						"Timeout in ms (default 5000, max 300000).",
 					),
 				fileKey: z
 					.string()
 					.optional()
 					.describe(
-						"Local Mode only. Run against this specific connected file instead of the active file. Does not change the active file or target lock. Get connected fileKeys from figma_list_open_files. Rejected in Cloud Mode, which pairs with a single plugin instance.",
+						"Local Mode: run in this open file (see figma_list_open_files) without changing the active file.",
 					),
 			}),
 		},
@@ -1431,40 +1417,31 @@ return {
 	server.registerTool(
 		"figma_instantiate_component",
 		{
-			description: `Create an instance of a component from the design system.
-
-**CRITICAL: Always pass BOTH componentKey AND nodeId together!**
-Search results return both identifiers. Pass both so the tool can automatically fall back to nodeId if the component isn't published to a library. Most local/unpublished components require nodeId.
-
-**IMPORTANT: Always re-search before instantiating!**
-NodeIds are session-specific and may be stale from previous conversations. ALWAYS search for components at the start of each design session to get current, valid identifiers.
-
-**VISUAL VALIDATION WORKFLOW:**
-After instantiating components, use figma_take_screenshot to verify the result looks correct. Check placement, sizing, and visual balance.`,
+			description: "Place an instance of a component. Pass BOTH componentKey and nodeId from a search or resolve result from this session (node IDs go stale between sessions); unpublished components need nodeId. Screenshot afterwards to check placement.",
 			inputSchema: z.object({
 				componentKey: z
 					.string()
 					.optional()
 					.describe(
-						"The component key from search results. Pass this WITH nodeId for automatic fallback.",
+						"Component (or variant) key from search/resolve.",
 					),
 				nodeId: z
 					.string()
 					.optional()
 					.describe(
-						"The node ID from search results. ALWAYS pass this alongside componentKey - most local components need it.",
+						"Component node ID from search/resolve (pass with componentKey).",
 					),
 				variant: z
 					.record(z.string(), z.string())
 					.optional()
 					.describe(
-						"Variant properties to set (e.g., { Type: 'Simple', State: 'Active' })",
+						"Variant values, e.g. { Size: 'Large' }.",
 					),
 				overrides: z
 					.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
 					.optional()
 					.describe(
-						"Property overrides (e.g., { 'Button Label': 'Click Me' })",
+						"Component property values, e.g. { Label: 'Save' }.",
 					),
 				position: z
 					.object({
@@ -1472,11 +1449,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 						y: z.number(),
 					})
 					.optional()
-					.describe("Position on canvas (default: 0, 0)"),
+					.describe("Canvas position (default 0,0)."),
 				parentId: z
 					.string()
 					.optional()
-					.describe("Parent node ID to append the instance to"),
+					.describe("Parent to place it in."),
 			}),
 		},
 		async ({
@@ -2358,38 +2335,37 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	server.registerTool(
 		"figma_set_text",
 		{
-			description:
-				"Set the text content of a text node. Optionally adjust font size and the font family/style, the text wrap style (BALANCE or PRETTY, like CSS text-wrap), and variable-font axes (fontVariations, e.g. {wght: 550}). Font style names are space-sensitive ('Semi Bold', not 'SemiBold'), but this tool auto-corrects common no-space variants and falls back gracefully — so you don't need raw figma_execute to change typography. text can be left out to change only the styling.",
+			description: "Set a text node's content and optionally its font size, family/style ('Semi Bold'; no-space forms are auto-corrected), wrap style (BALANCE, PRETTY) and variable-font axes. Leave out text to change only styling. For text inside an instance use figma_set_instance_properties.",
 			inputSchema: z.object({
 				nodeId: z.string().describe("The text node ID"),
 				text: z
 					.string()
 					.optional()
 					.describe(
-						"The new text content. Leave out to change only the styling",
+						"New text (omit to change only styling).",
 					),
 				fontSize: z.number().optional().describe("Optional font size to set"),
 				fontFamily: z
 					.string()
 					.optional()
-					.describe("Optional font family to apply (e.g., 'Inter')"),
+					.describe("Font family, e.g. 'Inter'."),
 				fontStyle: z
 					.string()
 					.optional()
 					.describe(
-						"Optional font style/weight to apply (e.g., 'Bold', 'Semi Bold'). No-space variants like 'SemiBold' are auto-corrected.",
+						"Font style, e.g. 'Semi Bold'.",
 					),
 				textWrapStyle: z
 					.enum(["AUTO", "BALANCE", "PRETTY"])
 					.optional()
 					.describe(
-						"How lines break: AUTO (default), BALANCE (even line lengths, for headings) or PRETTY (avoids a lone last word)",
+						"AUTO, BALANCE (even lines) or PRETTY (no lone last word).",
 					),
 				fontVariations: z
 					.record(z.string(), z.number())
 					.optional()
 					.describe(
-						"Variable-font axis values by OpenType tag, e.g. {wght: 550, slnt: -5}. Axes you leave out keep the named style's values",
+						"Variable-font axes, e.g. {wght: 550}.",
 					),
 			}),
 		},
@@ -3370,28 +3346,17 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 		"figma_lint_design",
 		{
 			description:
-				"Run comprehensive accessibility (WCAG 2.2) and design quality checks on the current page or a specific node tree. " +
-				"WCAG conformance checks (10 rules): color contrast (AA), non-text contrast (1.4.11), color-only differentiation (1.4.1), " +
-				"focus indicators (2.4.7), touch targets (2.5.8), image alt text (1.1.1), heading hierarchy (1.3.1), " +
-				"reflow/responsive (1.4.10), reading order (1.3.2), and disabled context (4.1.2). " +
-				"Best-practice readability hints (opt-in via rules: ['best-practice'] or ['all']): text sizing, line height, letter spacing, paragraph spacing. " +
-				"Note: line/paragraph spacing below 1.5x/2x is NOT a WCAG 1.4.12 failure — 1.4.12 requires supporting user spacing overrides without breaking (a code concern, see figma_scan_code_accessibility), not specific design values — so these are non-normative hints scoped to multi-line text only. " +
-				"Design system checks (5 rules): hardcoded colors, missing text styles, default names, detached components, and token misuse (a semantic token bound to the wrong property, e.g. a bg/* or surface/* variable used as a text fill). " +
-				"Layout checks: missing auto-layout, empty containers. " +
-				"Default audit runs WCAG + design-system + layout (best-practice hints excluded). " +
-				"Returns categorized findings with severity levels (critical/warning/info) and WCAG conformance level (a/aa/aaa/best-practice) so teams can filter by target level. " +
-				"Use natural language like 'check my design for accessibility issues' or 'lint this page'. " +
-				"Requires Desktop Bridge plugin.",
+				"Check a node tree (or the current page) for WCAG 2.2 problems — contrast, non-text contrast, color-only meaning, focus indicators, target size, alt text, headings, reflow, reading order, disabled context — plus design-system issues (hardcoded colors, missing text styles, detached components, wrong-role tokens) and layout issues. Findings carry severity and WCAG level. Readability hints (line height, letter spacing…) are opt-in via rules ['best-practice']; they are not WCAG failures.",
 			inputSchema: z.object({
 				nodeId: z
 					.string()
 					.optional()
-					.describe("Node ID to lint (defaults to current page)"),
+					.describe("Node to lint (default: current page)."),
 				rules: z
 					.array(z.string())
 					.optional()
 					.describe(
-						"Rule filter. Default (omitted) = ['wcag','design-system','layout'] — real WCAG conformance plus quality checks, with best-practice hints excluded. Groups: ['wcag'] (10 conformance rules), ['best-practice'] (text-size, line-height, letter-spacing, paragraph-spacing), ['all'] (everything incl. best-practice), ['design-system'], ['layout']. Or specific rule IDs like ['wcag-contrast', 'wcag-focus-indicator', 'wcag-disabled-no-context'].",
+						"Groups or rule IDs. Default ['wcag','design-system','layout']; also 'best-practice', 'all', or IDs like 'wcag-contrast'.",
 					),
 				maxDepth: z
 					.number()
@@ -3421,7 +3386,7 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(result.data || result, null, 2),
+							text: JSON.stringify(result.data || result),
 						},
 					],
 				};
@@ -3485,7 +3450,7 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(result.data || result, null, 2),
+							text: JSON.stringify(result.data || result),
 						},
 					],
 				};

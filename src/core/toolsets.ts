@@ -56,7 +56,7 @@ export const APP_TOOLS = ["ds_dashboard_refresh", "token_browser_refresh"];
 
 export const TOOLSETS: Record<string, Toolset> = {
 	inspect: {
-		description: "Deeper reads: file data, component specs for development, styles, token values, library components/variables, REST screenshots, design-change feed.",
+		description: "file data, component dev specs, styles, library components/variables",
 		tools: [
 			"figma_get_file_data",
 			"figma_get_file_for_plugin",
@@ -80,7 +80,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	variables: {
-		description: "Create, update, rename and delete variables, collections and modes; import/export design tokens (DTCG, CSS, Tailwind…).",
+		description: "edit variables/collections/modes; import/export tokens (DTCG, CSS, Tailwind)",
 		tools: [
 			"figma_create_variable",
 			"figma_create_variable_collection",
@@ -98,7 +98,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	components: {
-		description: "Author components: component sets and variants, component properties, descriptions, slots.",
+		description: "author component sets, variants, properties, slots",
 		tools: [
 			"figma_create_component_set",
 			"figma_arrange_component_set",
@@ -114,7 +114,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	parity: {
-		description: "Design ↔ code: library and property parity, code adherence audit, component/code accessibility audits, design-system health reports.",
+		description: "design↔code parity, code adherence and accessibility audits, DS health reports",
 		tools: [
 			"figma_check_library_parity",
 			"figma_check_design_parity",
@@ -126,7 +126,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	docs: {
-		description: "Documentation and history: component docs, version history and diffs, changelogs, blame, comments, annotations.",
+		description: "component docs, version history, changelogs, comments, annotations",
 		tools: [
 			"figma_generate_component_doc",
 			"figma_get_file_versions",
@@ -144,7 +144,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	debug: {
-		description: "Plugin console logs, plugin reload/pairing, and running code across several open files.",
+		description: "plugin console, reload/pairing, code across files",
 		tools: [
 			"figma_get_console_logs",
 			"figma_watch_console",
@@ -155,7 +155,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	motion: {
-		description: "Animations, shaders and code layers.",
+		description: "animations, shaders, code layers",
 		tools: [
 			"figma_get_animations",
 			"figma_apply_animation",
@@ -168,7 +168,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	figjam: {
-		description: "FigJam boards: stickies, connectors, shapes, sections, tables, code blocks.",
+		description: "FigJam boards",
 		tools: [
 			"figjam_get_board_contents",
 			"figjam_get_connections",
@@ -183,7 +183,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	slides: {
-		description: "Figma Slides decks: slides, text, shapes, transitions, ordering.",
+		description: "Figma Slides",
 		tools: [
 			"figma_list_slides",
 			"figma_get_slide_content",
@@ -204,7 +204,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	extraction: {
-		description: "Extract a design system from an app's code into DTCG tokens, a Storybook package and Figma (figma_ds_*).",
+		description: "extract a design system from app code (figma_ds_*)",
 		tools: ["figma_ds_analyze", "figma_ds_extract_tokens", "figma_ds_scaffold", "figma_ds_setup_storybook", "figma_ds_extract_component", "figma_ds_verify", "figma_ds_status"],
 	},
 };
@@ -269,7 +269,7 @@ export function registerToolsetTools(server: ToolsetServer): void {
 	server.registerTool(
 		"figma_enable_toolsets",
 		{
-			description: `Switch on more tools. The server starts with a core set (status, navigation, search/resolve components, build, bind tokens, audit, screenshot, execute). Enable a toolset when the task needs it:\n${catalog}\nReturns the tools now available. Cheap and safe to call; enabling twice is a no-op.`,
+			description: `Switch on more tools when a task needs them (the core set covers finding, building, binding, auditing). Toolsets:\n${catalog}`,
 			inputSchema: z.object({
 				toolsets: z.array(z.enum(names as [string, ...string[]])).min(1).describe("Toolsets to switch on."),
 			}),
@@ -308,7 +308,7 @@ export function registerToolsetTools(server: ToolsetServer): void {
 	server.registerTool(
 		"figma_call",
 		{
-			description: "Run an enabled tool by name, for clients that don't refresh their tool list after figma_enable_toolsets. Pass the tool's normal arguments.",
+			description: "Run an enabled tool by name with its normal arguments, if your tool list didn't refresh after figma_enable_toolsets.",
 			inputSchema: z.object({
 				tool: z.string().describe("Tool name, e.g. figma_export_tokens."),
 				arguments: z.record(z.string(), z.unknown()).optional().describe("The tool's arguments."),

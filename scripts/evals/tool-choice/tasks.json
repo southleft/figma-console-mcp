@@ -1,0 +1,269 @@
+[
+  {
+    "task": "Is the Figma plugin connected? Check the bridge status.",
+    "expect": [
+      "figma_get_status"
+    ]
+  },
+  {
+    "task": "Which Figma files are open right now?",
+    "expect": [
+      "figma_list_open_files"
+    ]
+  },
+  {
+    "task": "Work in the file https://www.figma.com/design/ABC123/Kit and keep targeting it even if I click into other files.",
+    "expect": [
+      "figma_navigate"
+    ],
+    "args": {
+      "lock": true
+    }
+  },
+  {
+    "task": "Commands keep timing out. Figure out what's wrong with the connection.",
+    "expect": [
+      "figma_diagnose"
+    ]
+  },
+  {
+    "task": "What do I have selected in Figma?",
+    "expect": [
+      "figma_get_selection"
+    ]
+  },
+  {
+    "task": "Show me what frame 12:34 looks like right now.",
+    "expect": [
+      "figma_capture_screenshot"
+    ],
+    "args": {
+      "nodeId": "12:34"
+    }
+  },
+  {
+    "task": "Give me an overview of this design system: how many components, which variable collections.",
+    "expect": [
+      "figma_get_design_system_summary"
+    ]
+  },
+  {
+    "task": "Find the button components in this file.",
+    "expect": [
+      "figma_search_components"
+    ]
+  },
+  {
+    "task": "I need a date picker, a primary button and a user avatar. Which of the system's components should I use, and what's missing?",
+    "expect": [
+      "figma_resolve_components"
+    ]
+  },
+  {
+    "task": "Place an instance of the component with key abc123 (node 1:2) inside frame 5:6.",
+    "expect": [
+      "figma_instantiate_component"
+    ],
+    "args": {
+      "parentId": "5:6"
+    }
+  },
+  {
+    "task": "Set the label of button instance 7:8 to 'Save' and hide its icon.",
+    "expect": [
+      "figma_set_instance_properties"
+    ],
+    "args": {
+      "nodeId": "7:8"
+    }
+  },
+  {
+    "task": "Create an empty frame named 'Header' inside frame 5:6.",
+    "expect": [
+      "figma_create_child"
+    ],
+    "args": {
+      "parentId": "5:6"
+    }
+  },
+  {
+    "task": "Make frame 5:6 a vertical auto layout with a 16px gap that fills its parent's width.",
+    "expect": [
+      "figma_set_layout"
+    ],
+    "args": {
+      "nodeId": "5:6"
+    }
+  },
+  {
+    "task": "Bind frame 5:6's padding to the space/md token and its corner radius to radius/lg.",
+    "expect": [
+      "figma_bind_tokens"
+    ],
+    "args": {
+      "nodeId": "5:6"
+    }
+  },
+  {
+    "task": "Fill rectangle 9:9 with the variable VariableID:1:23.",
+    "expect": [
+      "figma_set_fills"
+    ],
+    "args": {
+      "nodeId": "9:9"
+    }
+  },
+  {
+    "task": "Give rectangle 9:9 a 1px border using the variable VariableID:1:40.",
+    "expect": [
+      "figma_set_strokes"
+    ],
+    "args": {
+      "nodeId": "9:9"
+    }
+  },
+  {
+    "task": "Change text layer 3:3 to say 'Welcome back'.",
+    "expect": [
+      "figma_set_text"
+    ],
+    "args": {
+      "nodeId": "3:3"
+    }
+  },
+  {
+    "task": "List just the color variables in the Primitives collection.",
+    "expect": [
+      "figma_get_variables"
+    ],
+    "args": {
+      "collection": "Primitives"
+    }
+  },
+  {
+    "task": "What text styles does this file define?",
+    "expect": [
+      "figma_get_text_styles"
+    ]
+  },
+  {
+    "task": "I generated frame 5:6. Check that it only uses real design-system components and tokens.",
+    "expect": [
+      "figma_audit_adherence"
+    ],
+    "args": {
+      "nodeId": "5:6"
+    }
+  },
+  {
+    "task": "Check frame 5:6 for color-contrast and other WCAG problems.",
+    "expect": [
+      "figma_lint_design"
+    ],
+    "args": {
+      "nodeId": "5:6"
+    }
+  },
+  {
+    "task": "Delete layer 4:4.",
+    "expect": [
+      "figma_delete_node"
+    ],
+    "args": {
+      "nodeId": "4:4"
+    }
+  },
+  {
+    "task": "Duplicate card 4:4.",
+    "expect": [
+      "figma_clone_node"
+    ],
+    "args": {
+      "nodeId": "4:4"
+    }
+  },
+  {
+    "task": "Move layer 4:4 to x=100, y=200.",
+    "expect": [
+      "figma_move_node"
+    ],
+    "args": {
+      "nodeId": "4:4"
+    }
+  },
+  {
+    "task": "Resize layer 4:4 to 320 by 200.",
+    "expect": [
+      "figma_resize_node"
+    ],
+    "args": {
+      "nodeId": "4:4"
+    }
+  },
+  {
+    "task": "Rename layer 4:4 to 'Hero'.",
+    "expect": [
+      "figma_rename_node"
+    ],
+    "args": {
+      "nodeId": "4:4"
+    }
+  },
+  {
+    "task": "Count every text layer on the current page (nothing else does this directly).",
+    "expect": [
+      "figma_execute"
+    ]
+  },
+  {
+    "task": "Export my Figma variables as CSS custom properties.",
+    "expect": [
+      "figma_enable_toolsets",
+      "figma_get_variables"
+    ],
+    "args": {
+      "toolsets": [
+        "variables"
+      ]
+    },
+    "argsFor": "figma_enable_toolsets"
+  },
+  {
+    "task": "Compare our React component props against the Figma library's variants.",
+    "expect": [
+      "figma_enable_toolsets"
+    ],
+    "args": {
+      "toolsets": [
+        "parity"
+      ]
+    }
+  },
+  {
+    "task": "The bridge dropped. Reconnect to Figma.",
+    "expect": [
+      "figma_reconnect",
+      "figma_diagnose"
+    ]
+  },
+  {
+    "task": "You enabled the variables toolset but your tool list still doesn't show figma_export_tokens. Run it with format 'css'.",
+    "expect": [
+      "figma_call"
+    ],
+    "args": {
+      "tool": "figma_export_tokens"
+    }
+  },
+  {
+    "task": "Add a version-history changelog for this file to the docs.",
+    "expect": [
+      "figma_enable_toolsets"
+    ],
+    "args": {
+      "toolsets": [
+        "docs"
+      ]
+    }
+  }
+]

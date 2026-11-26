@@ -1343,142 +1343,42 @@ export function registerFigmaAPITools(
 	 *   3. REST API — requires Enterprise plan (returns 403 otherwise)
 	 *   4. Styles API — partial fallback for non-Enterprise (styles, not variables)
 	 *
-	 * The legacy `parseFromConsole` two-call console-snippet workflow was
-	 * removed in the Phase 3 cleanup. Setting parseFromConsole=true now
-	 * throws an identified error pointing the caller at the bridge.
+	 * The legacy `parseFromConsole` / `useConsoleFallback` parameters were
+	 * removed from the schema; unknown keys are ignored, so old callers still work.
 	 */
 	server.registerTool(
 		"figma_get_variables",
 		{
 			description:
-				"Extract design tokens and variables from a Figma file with code export support (CSS, Tailwind, TypeScript, Sass). Use when user asks for: design system tokens, variables, color/spacing values, theme data, or code exports. Handles multi-mode variables (Light/Dark themes). NOT for component metadata (use figma_get_component). Returns a compact summary by default — pass format='full' for the complete dataset or format='filtered' with collection/namePattern/mode filters for specific variables. Supports verbosity control to prevent token exhaustion. Resolution order: Desktop Bridge plugin (works on any plan) → Variables REST API (Enterprise only) → Styles API as a partial fallback. TIP: For full design system extraction (tokens + components + styles combined), prefer figma_get_design_system_kit instead — it returns everything in one optimized call.",
+				"Read the file's variables (design tokens): collections, modes and values. Returns a compact summary by default; use format 'filtered' with collection/namePattern/mode for specific variables. For code (CSS, Sass, Tailwind, TypeScript) pass export_formats. Works on any plan through the Desktop Bridge.",
 			inputSchema: z.object({
-				fileUrl: z
-					.string()
-					.url()
-					.optional()
-					.describe(
-						"Figma file URL (e.g., https://figma.com/design/abc123). Auto-detected from WebSocket Desktop Bridge connection. Only required if not connected.",
-					),
-				includePublished: z
-					.boolean()
-					.optional()
-					.default(true)
-					.describe("Include published variables from libraries"),
+				fileUrl: z.string().url().optional().describe("Figma file URL. Only needed when the Desktop Bridge isn't connected."),
+				includePublished: z.boolean().optional().default(true).describe("Include variables from published libraries."),
 				verbosity: z
 					.enum(["inventory", "summary", "standard", "full"])
 					.optional()
 					.default("standard")
-					.describe(
-						"Controls payload size: 'inventory' (names/IDs only, ~95% smaller, use with filtered), 'summary' (names/values only, ~80% smaller), 'standard' (essential properties, ~45% smaller), 'full' (everything). Default: standard",
-					),
-				enrich: z
-					.boolean()
-					.optional()
-					.describe(
-						"Set to true when user asks for: CSS/Sass/Tailwind exports, code examples, design tokens, usage information, dependencies, or any export format. Adds resolved values, dependency graphs, and usage analysis. Default: false",
-					),
-				include_usage: z
-					.boolean()
-					.optional()
-					.describe(
-						"Include usage in styles and components (requires enrich=true)",
-					),
-				include_dependencies: z
-					.boolean()
-					.optional()
-					.describe("Include variable dependency graph (requires enrich=true)"),
-				include_exports: z
-					.boolean()
-					.optional()
-					.describe("Include export format examples (requires enrich=true)"),
+					.describe("Detail per variable: inventory (names/IDs), summary (names/values), standard, full."),
+				enrich: z.boolean().optional().describe("Add resolved values, usage and dependencies."),
+				include_usage: z.boolean().optional().describe("With enrich: where each variable is used."),
+				include_dependencies: z.boolean().optional().describe("With enrich: the alias dependency graph."),
+				include_exports: z.boolean().optional().describe("With enrich: code examples."),
 				export_formats: z
 					.array(z.enum(["css", "sass", "tailwind", "typescript", "json"]))
 					.optional()
-					.describe(
-						"Which code formats to generate examples for. Use when user mentions specific formats like 'CSS', 'Tailwind', 'SCSS', 'TypeScript', etc. Automatically enables enrichment.",
-					),
+					.describe("Code formats to generate (implies enrich)."),
 				format: z
 					.enum(["summary", "filtered", "full"])
 					.optional()
-					.describe(
-						"Response format: 'summary' (~2K tokens with overview and names only), 'filtered' (apply collection/name/mode filters), 'full' (complete dataset from cache or fetch). " +
-							"Default: summary (token-efficient). When format is omitted, filter params (collection/namePattern/mode) auto-select 'filtered', and enrichment/export/resolveAliases/returnAsLinks params auto-select 'full'. " +
-							"Full format returns all data but may be auto-summarized if >25K tokens.",
-					),
-				collection: z
-					.string()
-					.optional()
-					.describe(
-						"Filter variables by collection name or ID. Case-insensitive substring match. Only applies when format='filtered'. Example: 'Primitives' or 'VariableCollectionId:123'",
-					),
-				namePattern: z
-					.string()
-					.optional()
-					.describe(
-						"Filter variables by name using regex pattern or substring. Case-insensitive. Only applies when format='filtered'. Example: 'color/brand' or '^typography'",
-					),
-				mode: z
-					.string()
-					.optional()
-					.describe(
-						"Filter variables by mode name or ID. Only returns variables that have values for this mode. Only applies when format='filtered'. Example: 'Light' or 'Dark'",
-					),
-				returnAsLinks: z
-					.boolean()
-					.optional()
-					.default(false)
-					.describe(
-						"Return variables as resource_link references instead of full data. Drastically reduces payload size (100+ variables = ~20KB vs >1MB). Recommended for large variable sets — combine with format='filtered' + namePattern/collection/mode to fetch only the variables you need. Default: false",
-					),
-				refreshCache: z
-					.boolean()
-					.optional()
-					.default(false)
-					.describe(
-						"Force refresh cache by fetching fresh data from Figma. Use when data may have changed since last fetch. Default: false (use cached data if available and fresh)",
-					),
-				useConsoleFallback: z
-					.boolean()
-					.optional()
-					.default(true)
-					.describe(
-						"DEPRECATED — has no effect. The console-snippet workflow was removed in the Phase 3 CDP cleanup; the Desktop Bridge plugin now handles all non-REST variable extraction automatically. Kept for parameter compatibility only — safe to ignore.",
-					),
-				parseFromConsole: z
-					.boolean()
-					.optional()
-					.default(false)
-					.describe(
-						"DEPRECATED — setting this to true now raises an explicit error. The Puppeteer-based console parser no longer exists. Open the Figma Console MCP Desktop Bridge plugin in Figma Desktop and call figma_get_variables() without parseFromConsole; the plugin returns full variable data through the WebSocket bridge.",
-					),
-				page: z
-					.number()
-					.int()
-					.min(1)
-					.optional()
-					.describe(
-						"Page number for paginated results (1-based, default 1). Applies to format='filtered' (always paginated, 50 per page by default) and to format='full' when page or pageSize is given. Use when the response is too large.",
-					),
-				pageSize: z
-					.number()
-					.int()
-					.min(1)
-					.max(100)
-					.optional()
-					.describe(
-						"Number of variables per page (1-100, default 50). Giving page or pageSize with format='full' paginates the full dataset; the response then includes a `pagination` object.",
-					),
-				resolveAliases: z
-					.boolean()
-					.optional()
-					.default(false)
-					.describe(
-						"Automatically resolve variable aliases to their final values (hex colors, numbers, etc.). " +
-							"When true, each variable will include a 'resolvedValuesByMode' field with the actual values " +
-							"instead of just alias references. Useful for getting color hex values without manual resolution. " +
-							"Default: false.",
-					),
+					.describe("summary (default; names only), filtered (collection/namePattern/mode; paginated), full (everything; large). Filters imply filtered."),
+				collection: z.string().optional().describe("Collection name or ID (case-insensitive substring)."),
+				namePattern: z.string().optional().describe("Variable name regex or substring, e.g. 'color/brand'."),
+				mode: z.string().optional().describe("Mode name or ID, e.g. 'Dark'."),
+				returnAsLinks: z.boolean().optional().default(false).describe("Return resource links instead of full data (large sets)."),
+				refreshCache: z.boolean().optional().default(false).describe("Ignore the cache and re-read from Figma."),
+				page: z.number().int().min(1).optional().describe("Page (1-based) for filtered or paginated full results."),
+				pageSize: z.number().int().min(1).max(100).optional().describe("Variables per page (default 50)."),
+				resolveAliases: z.boolean().optional().default(false).describe("Add resolvedValuesByMode with final values instead of alias references."),
 			}),
 		},
 		async ({
@@ -1496,8 +1396,6 @@ export function registerFigmaAPITools(
 			mode,
 			returnAsLinks,
 			refreshCache,
-			useConsoleFallback,
-			parseFromConsole,
 			page,
 			pageSize,
 			resolveAliases,
@@ -1580,7 +1478,7 @@ export function registerFigmaAPITools(
 				let cachedData: any = null;
 				let shouldFetch = true;
 
-				if (variablesCache && !parseFromConsole) {
+				if (variablesCache) {
 					const cacheEntry = variablesCache.get(fileKey);
 
 					if (cacheEntry) {
@@ -1957,7 +1855,7 @@ export function registerFigmaAPITools(
 				);
 
 				// Try REST API only when Desktop Bridge is NOT available
-				if (hasToken && !parseFromConsole && !hasDesktopConnection) {
+				if (hasToken && !hasDesktopConnection) {
 					try {
 						logger.info(
 							{ fileKey, includePublished, verbosity, enrich },
@@ -2352,7 +2250,6 @@ export function registerFigmaAPITools(
 				// Also used as fallback when REST API fails (403, timeout, rate limit)
 				if (
 					hasDesktopConnection &&
-					!parseFromConsole &&
 					!restApiSucceeded &&
 					getDesktopConnector
 				) {
@@ -2681,7 +2578,7 @@ export function registerFigmaAPITools(
 				}
 
 				// SECONDARY FALLBACK: Try REST API if Desktop Bridge failed/unavailable and token exists
-				if (hasToken && !parseFromConsole && !restApiSucceeded) {
+				if (hasToken && !restApiSucceeded) {
 					try {
 						logger.info(
 							{ fileKey },
@@ -2833,22 +2730,6 @@ export function registerFigmaAPITools(
 								: String(restFallbackError);
 						logger.warn({ error: msg, fileKey }, "REST API fallback failed");
 					}
-				}
-
-				// LAST RESORT: parseFromConsole was a Puppeteer-era workflow that read
-				// the magic-string output of a console snippet from the browser's
-				// console buffer. After the Phase 3 CDP cleanup there is no longer a
-				// Puppeteer-attached console for the snippet's output to land in, so
-				// the flag has become a no-op. Tell the caller what to do instead.
-				if (parseFromConsole) {
-					throw identifiedError(
-						"parseFromConsole is no longer supported.\n\n" +
-							"The console-snippet workflow it relied on required a Puppeteer browser " +
-							"connection to Figma Desktop, which was removed in Phase 3 of the cleanup. " +
-							"To extract variables, open the Figma Console MCP Desktop Bridge plugin in " +
-							"Figma Desktop and call figma_get_variables() without parseFromConsole — " +
-							"the plugin returns full variable data through the WebSocket bridge.",
-					);
 				}
 
 				// No more fallback options available
@@ -4438,21 +4319,20 @@ export function registerFigmaAPITools(
 	server.registerTool(
 		"figma_capture_screenshot",
 		{
-			description:
-				"Capture a screenshot of a node using the plugin's exportAsync API. IMPORTANT: This tool captures the CURRENT state from the plugin runtime (not cloud state like REST API), making it reliable for validating changes immediately after making them. Use this instead of figma_get_component_image when you need to verify that changes were applied correctly. Defaults are AI-optimized: PNG at 1x with automatic downscaling so the longest side stays within the 1568px AI vision processing ceiling. PNG is the default because design tool content (flat colors, text, UI components) compresses significantly better as PNG. Use JPG for photographic or gradient-heavy content. Requires Desktop Bridge connection (Figma Desktop with plugin running).",
+			description: "Screenshot a node (or the current page) from the live plugin state, so it reflects changes made a moment ago. PNG at 1x by default, capped at 1568px on the longest side.",
 			inputSchema: z.object({
 				nodeId: z
 					.string()
 					.optional()
 					.describe(
-						"ID of the node to capture (e.g., '1:234'). If not provided, captures the current page.",
+						"Node to capture (default: current page).",
 					),
 				format: z
 					.enum(["PNG", "JPG", "SVG"])
 					.optional()
 					.default("PNG")
 					.describe(
-						"Image format (default: PNG). Use JPG for photographic or gradient-heavy content.",
+						"PNG (default), JPG for photos/gradients, or SVG.",
 					),
 				scale: z
 					.number()
@@ -4461,7 +4341,7 @@ export function registerFigmaAPITools(
 					.optional()
 					.default(1)
 					.describe(
-						"Scale factor (default: 1). The plugin automatically caps the effective scale so the exported image does not exceed 1568px on its longest side (the AI vision processing ceiling).",
+						"Scale (default 1; capped at 1568px).",
 					),
 			}),
 		},
@@ -4570,13 +4450,12 @@ export function registerFigmaAPITools(
 	server.registerTool(
 		"figma_set_instance_properties",
 		{
-			description:
-				"Update component properties on a component instance. IMPORTANT: Use this tool instead of trying to edit text nodes directly when working with component instances. Components often expose TEXT, BOOLEAN, INSTANCE_SWAP, and VARIANT properties that control their content. SLOT properties CANNOT be set here — use figma_append_to_slot to populate slot content. Direct text node editing may fail silently if the component uses properties. This tool handles the #nodeId suffix pattern automatically. Requires Desktop Bridge connection.",
+			description: "Set an instance's component properties (TEXT, BOOLEAN, INSTANCE_SWAP, VARIANT) by name \u2014 the way to change content inside an instance, since editing its text layers directly fails silently. #id suffixes are handled. Slots: use figma_append_to_slot.",
 			inputSchema: z.object({
 				nodeId: z
 					.string()
 					.describe(
-						"ID of the INSTANCE node to update (e.g., '1:234'). Must be a component instance, not a regular frame.",
+						"Instance node ID.",
 					),
 				properties: z
 					.record(z.string(), z.union([z.string(), z.boolean()]))

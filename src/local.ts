@@ -1086,20 +1086,19 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		server.registerTool(
 			"figma_navigate",
 			{
-				description:
-					"Switch the active Figma file target among files that already have the Desktop Bridge plugin running. Local mode is WebSocket-only — this tool does NOT launch a browser or open files. If the requested URL is already the active file, it confirms the connection. If another connected plugin matches the URL, it switches the active target so subsequent tool calls hit that file. If no connected plugin matches, returns guidance for the user to open the Desktop Bridge plugin in the target file. Use figma_list_open_files to see all connected files.\n\nPass lock: true to PIN this file as the target — new connections, reconnects, and the user's own selection/page changes in other files will no longer move the target. Use this for parallel work (agent edits one file while the user works in another) so commands can't silently route to the wrong file. Switching to another file (or lock: false) releases the pin; it also releases automatically if the pinned file disconnects.",
+				description: "Switch the active file among files where the Desktop Bridge is running (it doesn't open files; see figma_list_open_files). lock: true pins this file so reconnects or the user's clicks in other files can't move the target \u2014 use it when working in one file while the user works in another. Switching files or lock: false releases the pin.",
 				inputSchema: z.object({
 					url: z
 						.string()
 						.url()
 						.describe(
-							"Figma URL to navigate to (e.g., https://www.figma.com/design/abc123)",
+							"Figma file URL.",
 						),
 					lock: z
 						.boolean()
 						.optional()
 						.describe(
-							"Pin this file as the active target so connections, reconnects, and user interaction in other files won't move it. Defaults to false.",
+							"Pin this file as the target (default false).",
 						),
 				}),
 			},
@@ -2398,38 +2397,34 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		server.registerTool(
 			"figma_search_components",
 			{
-				description: `Search for components by name, category, or description. Returns paginated results with component keys for instantiation. Automatically loads the design system cache if needed.
-
-**NEW: Cross-file library search!** Pass a libraryFileKey or libraryFileUrl to search for components in a published shared library (different file). This uses the REST API and requires FIGMA_ACCESS_TOKEN.
-
-Without libraryFileKey/libraryFileUrl, searches the currently open file (local components via Plugin API).`,
+				description: "Search components by name, category or description; returns keys and node IDs to instantiate. Searches the open file, or a published library with libraryFileKey/libraryFileUrl (needs FIGMA_ACCESS_TOKEN).",
 				inputSchema: z.object({
 					query: z
 						.string()
 						.optional()
 						.default("")
-						.describe("Search query to match component names or descriptions"),
+						.describe("Text to match in names or descriptions."),
 					category: z
 						.string()
 						.optional()
-						.describe("Filter by category (e.g., 'Button', 'Input', 'Card')"),
+						.describe("Category filter, e.g. 'Button'."),
 					libraryFileKey: z
 						.string()
 						.optional()
 						.describe(
-							"File key of a published library to search in (for cross-file library access). Overrides local search.",
+							"Published library file key (searches it instead of the open file).",
 						),
 					libraryFileUrl: z
 						.string()
 						.optional()
 						.describe(
-							"URL of a published library file to search in (e.g., https://www.figma.com/design/abc123/...). Alternative to libraryFileKey.",
+							"Published library file URL (alternative to libraryFileKey).",
 						),
 					limit: z
 						.number()
 						.optional()
 						.default(10)
-						.describe("Maximum results to return (default: 10, max: 25)"),
+						.describe("Max results (default 10, max 25)."),
 					offset: z
 						.number()
 						.optional()

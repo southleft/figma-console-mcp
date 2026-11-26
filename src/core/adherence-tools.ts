@@ -191,13 +191,9 @@ async function loadCatalog(
 	return { catalog, sources, variantKeys };
 }
 
-const RESOLVE_DESCRIPTION = `Before generating a design or code from a design system: map each UI element the request needs to a REAL component, and report what's missing instead of inventing it. Pass the needs in plain words (e.g. ["primary button", "date picker", "user avatar", "pricing card"]). Matching is deterministic (names, variants, descriptions, UI synonyms) — no judgment calls:
-• matched — build with this component (key/nodeId returned; use figma_instantiate_component).
-• possible — something might fit; a person must confirm.
-• gap — the system has nothing for it.
-A gap defaults to an in-place note: a "${GAP_PREFIX} <need>" frame placed where the element belongs, explaining what's missing (placeholderName + placeholderNote). Unclear (possible) items stop for the person unless onUnclear is "placeholder". When the client supports it, the PERSON is asked first and their choices win. Pass parts (e.g. an article card needs image, title, excerpt) to also get part gaps for matched components. Never substitute a hand-built look-alike for a gap. Searches the active file's components by default; pass libraryFileKeys/libraryFileUrls for published libraries (REST, needs FIGMA_ACCESS_TOKEN). Then verify the result with figma_audit_adherence.`;
+const RESOLVE_DESCRIPTION = `Before building from a design system, map each UI element the request needs (plain words, e.g. ["primary button", "date picker"]) to a REAL component. Each item comes back matched (build with it), possible (a person confirms), or gap (the system lacks it: put the returned GAP note where it belongs, never a look-alike). Pass parts to check a matched component has what's needed (e.g. a card's image). Searches the active file; pass libraryFileKeys for published libraries. Verify the build with figma_audit_adherence.`;
 
-const AUDIT_DESCRIPTION = `Score how faithfully a generated composition uses the design system — the check to run after building a screen/section, and the evidence for an independent grader. Walks the frame (nodeId, or the single selected node) and reports: component instances used (local vs. library, by name), hand-built layers imitating a system component (error), new components created inside the composition (error), hand-drawn vectors (warning), styling not bound to variables/styles (colors, spacing, radius, typography, effects), instance style overrides, and declared "${GAP_PREFIX} …" placeholders. Returns componentCoverage, tokenCoverage, a 0–100 score, and pass/fail against minScore (default 90; any error fails). Pass libraryFileKeys to also fail instances of components that aren't from those libraries (off-system). Deterministic: same file, same result. Requires the Desktop Bridge.`;
+const AUDIT_DESCRIPTION = `Check a built frame against the design system: hand-built look-alikes of components and new components (errors), hand-drawn vectors, values not bound to variables or styles, instance style overrides, and GAP notes (must explain themselves; a note for a component the system has is an error). Returns componentCoverage, tokenCoverage, a 0–100 score and pass/fail (minScore default 90; any error fails). libraryFileKeys also fails instances from other libraries.`;
 
 function libraryKeysUsed(args: { libraryFileKeys?: string[] }): boolean {
 	return (args.libraryFileKeys ?? []).length > 0;
@@ -219,21 +215,21 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 				includeLocal: z
 					.boolean()
 					.optional()
-					.describe("Search components defined in the active file. Default true."),
+					.describe("Search the active file's components (default true)."),
 				askUser: z
 					.boolean()
 					.optional()
-					.describe("Ask the person how to handle possible matches and gaps when the client can show a form. Default true."),
+					.describe("Ask the person about unclear matches and gaps when the client can show a form (default true)."),
 				parts: z
 					.array(z.object({ need: z.string(), parts: z.array(z.string()).max(12) }))
 					.optional()
 					.describe(
-						'Parts each need must have, e.g. [{ need: "article preview card", parts: ["image", "title", "excerpt"] }]. Each matched component is checked for them (properties, variants, slots, layers); missing parts come back as part gaps.',
+						'Parts a need must have, e.g. [{ need: "article card", parts: ["image", "title"] }]; missing ones come back as part gaps.',
 					),
 				onUnclear: z
 					.enum(["ask", "placeholder"])
 					.optional()
-					.describe('"ask" (default): unclear matches stop for the person. "placeholder": the person has said to mark unclear items with a gap note naming the candidates.'),
+					.describe('"ask" (default) stops on unclear matches; "placeholder" marks them with a GAP note naming the candidates.'),
 				fileKey: z.string().optional().describe("Read local components from this open file instead of the active one."),
 			}),
 		},

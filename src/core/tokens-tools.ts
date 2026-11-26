@@ -993,10 +993,7 @@ async function handleImport(
 								}
 							: null,
 						warnings: parseWarnings,
-					},
-					null,
-					2,
-				),
+					}),
 			},
 		],
 	};

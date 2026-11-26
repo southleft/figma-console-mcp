@@ -441,7 +441,7 @@ export function registerAccessibilityTools(server: McpServer): void {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(formatted, null, 2),
+							text: JSON.stringify(formatted),
 						},
 					],
 				};

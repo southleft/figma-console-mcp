@@ -336,10 +336,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 							{
 								type: "text",
 								text: JSON.stringify(
-									responseData,
-									null,
-									2,
-								),
+									responseData),
 							},
 						],
 					};
@@ -355,10 +352,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										error: errorMessage,
 										message: "Failed to retrieve console logs. Make sure to call figma_navigate first to initialize the browser.",
 										hint: "Try: figma_navigate({ url: 'https://www.figma.com/design/your-file' })",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -453,10 +447,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										format,
 										expiresIn: "30 days",
 										note: "Image URL provided above. Use this URL to view or download the screenshot. URLs expire after 30 days.",
-									},
-									null,
-									2
-								),
+									}),
 							},
 						],
 					};
@@ -472,10 +463,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										error: errorMessage,
 										message: "Failed to capture screenshot via Figma API",
 										hint: "Make sure you've called figma_navigate to open a file, or provide a valid nodeId parameter",
-									},
-									null,
-									2
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -545,10 +533,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										logsMatchingFilter: watchedLogs.length,
 									},
 									logs: watchedLogs,
-								},
-								null,
-								2,
-							),
+								}),
 						},
 					],
 				};
@@ -595,10 +580,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										url: currentUrl,
 										consoleCleared: clearConsoleBefore,
 										clearedCount: clearConsoleBefore ? clearedCount : 0,
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 					};
@@ -612,10 +594,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 									{
 										error: String(error),
 										message: "Failed to reload plugin",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -649,10 +628,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										timestamp: Date.now(),
 										ai_instruction:
 											"CRITICAL: Console cleared successfully, but this operation disrupts the monitoring connection. You MUST reconnect the MCP server using `/mcp reconnect figma-console` before calling figma_get_console_logs again. Best practice: Avoid clearing console - filter/parse logs instead to maintain monitoring connection.",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 					};
@@ -666,10 +642,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 									{
 										error: String(error),
 										message: "Failed to clear console buffer",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -686,7 +659,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 					.string()
 					.url()
 					.describe(
-						"Figma URL to navigate to (e.g., https://www.figma.com/design/abc123)",
+						"Figma file URL.",
 					),
 			},
 			async ({ url }) => {
@@ -719,10 +692,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 											url: currentUrl,
 											timestamp: Date.now(),
 											message: "Switched to existing tab for this Figma file. Console monitoring is active.",
-										},
-										null,
-										2,
-									),
+										}),
 								},
 							],
 						};
@@ -743,10 +713,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										url: currentUrl,
 										timestamp: Date.now(),
 										message: "Browser navigated to Figma. Console monitoring is active.",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 					};
@@ -769,10 +736,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 											"Check that the Browser Rendering API is properly configured in wrangler.jsonc",
 											"Try again in a few moments if this is a temporary issue"
 										]
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -804,10 +768,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 										consoleMonitor: monitorStatus,
 										initialized: this.browserManager !== null && this.consoleMonitor !== null,
 										timestamp: Date.now(),
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 					};
@@ -821,10 +782,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 									{
 										error: String(error),
 										message: "Failed to retrieve status",
-									},
-									null,
-									2,
-								),
+									}),
 							},
 						],
 						isError: true,
@@ -869,7 +827,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 									"4. Click 'Connect' — the plugin will connect to the cloud relay",
 									"5. Once paired, write tools (variables, components, nodes) work through the cloud"
 								],
-							}, null, 2),
+							}),
 						}],
 					};
 				} catch (error) {
@@ -1319,7 +1277,7 @@ export default {
 										"4. Click 'Connect' — the plugin will connect to the cloud relay",
 										"5. Once paired, write tools (variables, components, nodes) work through the cloud"
 									],
-								}, null, 2),
+								}),
 							}],
 						};
 					} catch (error) {
