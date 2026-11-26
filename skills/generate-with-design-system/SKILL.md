@@ -58,9 +58,15 @@ A part with status `unverified` means the tool couldn't see inside the component
 
 Follow the result's `rules` array. If the tool returns an `error` saying no components were found, that's a setup problem (wrong file, missing library key or token), **not** "everything is a gap". Fix the source and re-run.
 
-## 4. STOP only for unclear matches
+## 4. Settle unclear matches: check first, ask only when it's a real toss-up
 
-Missing items don't need a decision: they become gap notes. Unclear matches do. If any item is `ask-user`, build nothing yet and ask:
+Missing items don't need a decision: they become gap notes. Unclear matches (`possible`) need one, but most can be settled by looking. A gap note for something the system can do is a defect, just as much as a fake is.
+
+For each `possible` item, look at its top candidates with `figma_get_component_details` (inspect toolset): description, properties, variants, slots.
+- **One candidate clearly fits** the need and its purpose. For example, a general Card for a stat card or an article preview (its slots or properties hold the content), or Input or Input Stepper for a quantity field. Use it, and say in your report which component you chose and why.
+- **Two or more fit equally well, or none clearly does:** that's the person's call. A component made for something else is not a fit, e.g. a Badge as a stat card, or a single "Pagination Item" as pagination.
+
+If any item is still unsettled (or `ask-user`), build nothing yet and ask:
 
 ```
 Before I build, these have more than one possible component:
@@ -69,7 +75,7 @@ Before I build, these have more than one possible component:
 For each one: use a candidate, mark it with a gap note, or leave it out?
 ```
 
-Wait for the answer, then re-run `figma_resolve_components` (the decisions come back as actions). If the person has already said to mark anything unclear with a note, pass `onUnclear: "placeholder"`.
+Wait for the answer, then re-run `figma_resolve_components` (the decisions come back as actions). If the person has already said to mark anything still unclear with a note, pass `onUnclear: "placeholder"` — after you've checked the candidates as above, not instead of it.
 
 ## 5. Build only with approved parts
 

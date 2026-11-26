@@ -5,6 +5,60 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-11-26
+
+The biggest update to how the server talks to AI clients since it began. It is rebuilt on the MCP SDK v2, much cheaper to run, and built around one rule for generating designs: build with what the design system has, and mark what it doesn't. **Re-import the Desktop Bridge plugin** (`manifest.json`) to get the lint fixes.
+
+### ⚠️ Upgrading from 1.x
+
+- **Tools now load in toolsets (Local Mode).** A core set is always listed: status, navigation, component search and resolve, building, token binding, audit, lint, screenshots and `figma_execute`. The rest are grouped into toolsets (`inspect`, `variables`, `components`, `parity`, `docs`, `debug`, `motion`, `figjam`, `slides`, `extraction`) that the AI switches on with `figma_enable_toolsets` when a task needs them. AI clients handle this on their own.
+- **Scripts or automations that call a non-core tool by name** without enabling its toolset first now get an error naming the toolset to enable. Set **`FIGMA_TOOLSETS=all`** to list every tool as before, or `FIGMA_TOOLSETS=variables,parity` to preload the toolsets you always use.
+- **`figma_get_variables`** no longer lists `useConsoleFallback` and `parseFromConsole`. Both had done nothing since the CDP removal. Calls that still pass them work, because unknown arguments are ignored.
+- **Cloud Mode is unchanged.** It still lists every tool and runs on SDK v1.
+
+### Added
+
+- **MCP SDK v2 and protocol 2026-07-28** for the local server. Clients on 2025-era protocols keep working.
+  - **Skills over MCP:** seven skills are served by the server and load only when used. Covered: generating with the design system (Figma and code), grading a generation, design↔code parity, token sync, accessibility review, and connection troubleshooting.
+  - **MCP Tasks:** slow tools (design-system kit, health audits) can run as tasks the client polls instead of blocking.
+  - **Confirmation prompts:** destructive operations ask the person first (deleting a variable collection, a replace-mode token import, removing dev resources). Each confirmation is tied to the exact file and items, so a file switch between question and answer can't redirect it.
+  - **Behavior hints on every tool** (read-only, destructive, idempotent, open-world), checked by a test.
+- **Toolsets:** `figma_enable_toolsets` and `figma_call`, described under Changed.
+- **Design-system adherence.** Generation builds with real components and marks gaps instead of inventing look-alikes.
+  - **`figma_resolve_components`** maps each UI need to a real component: matched, possible (a person confirms) or gap. A gap comes back as an explained `GAP:` note to place where the element belongs. `parts` checks that a matched component has what the request needs, such as a card's image, and reports missing parts. It returns default-variant keys ready to instantiate, and archived or private components are never offered.
+  - **`figma_audit_adherence`** checks a built frame for hand-built look-alikes, new or off-system components, hand-drawn vectors, values not bound to variables or styles, and instance overrides. It also checks the gap notes: a note that doesn't explain itself is flagged, and a note standing in for a component the system has is an error.
+  - **`figma_audit_code_adherence`** runs the same check on generated code: re-implemented components, unknown tokens, hardcoded colors and lengths, Tailwind arbitrary values, and raw HTML where the system has a component.
+  - **`figma_check_library_parity`** pairs a Figma library with its code library and compares props, variants and states. It reads a Custom Elements Manifest or React source (`cva` variant maps and TypeScript literal unions), and it honors recorded decisions (contracts' `omit`/`pairWith`, or inline).
+  - **`figma_bind_tokens`** binds spacing, radius, size, opacity and typography to existing variables, and applies text and effect styles. It never creates a token; an unknown name comes back with the closest real ones.
+- **New Figma APIs, all in optional toolsets:**
+  - **`figma_manage_dev_resources`** lists, adds, edits or deletes the code, Storybook and docs links on components in bulk.
+  - **`figma_find_usages`** shows where a style, variable or component is used, so you can check the impact before changing or retiring it.
+  - **`figma_get_library_analytics`** reports library usage across the organization: instances, unused assets, insertions and detach rates. It needs Enterprise and a token with `library_analytics:read`.
+  - **`figma_extend_library_collection`** creates an extended collection (a brand or product theme) from a library collection. It also needs Enterprise.
+- **`figma_get_component_for_development_deep`** takes `css: true` to return Figma's generated CSS for the node and its layers.
+- **`figma_get_design_system_summary`** lists Figma Specs documents in the file (title and page). Spec content isn't readable from plugins, so the summary points to Figma's MCP server for it.
+
+### Changed
+
+- **~85% fewer tokens of tool definitions per message.** Every listed tool's definition is sent to the model with every message. Listing all tools cost ~59,600 tokens; the core set costs ~9,200, and a toolset adds only its own tools. Clients refresh their list when a toolset is enabled. Verified in Claude Code, where the enabled tools appeared and ran directly.
+- **Shorter tool descriptions** for the core tools, with every rule kept: about 27% less text. Haiku and Sonnet both picked the right tool and arguments on all 32 tasks of a tool-choice test, before and after.
+- **Smaller results.**
+  - Lint, accessibility, design-system extraction, token and Cloud tool results are compact JSON instead of indented, about half the size for nested data.
+  - Component search returns a one-sentence description per hit, drops repeated fields, and hides private and archived components. On a 25-result search that is 28–41% smaller.
+- **The generation skill builds a section per script, not a node per tool call.** On a full dashboard build this cut tokens from ~166k to ~125k, tool calls from 35 to 22 and time from 7.4 to 2.7 minutes, with the audit still at 100.
+- **Unclear component matches are settled by checking the candidates first.** If one clearly fits, the AI uses it and says why. It asks the person only when it's a genuine toss-up. This prevents gap notes for things the system can do.
+
+### Fixed
+
+- **`figma_lint_design` WCAG false positives** (plugin re-import):
+  - Contrast now accounts for alpha.
+  - A control passes non-text contrast if either its fill or its border reaches 3:1.
+  - Group containers are no longer treated as tap targets.
+  - The spacing exception for target size is applied.
+- **Token export:** a number variable scoped only to color opacity (`COLOR_OPACITY`) exports as a 0–1 number, like `OPACITY`, instead of as a dimension.
+- **Dev-resource and library lookups** are time-bounded. Figma doesn't answer them while a file's window is in the background, so they now report "focus the file's window and retry" instead of hanging.
+
+
 ## [1.46.0] - 2026-10-29
 
 Shaders, layout, wide-gamut color and text typography, built on Figma's Plugin API Updates 130–141. Server-only: no plugin re-import needed.
@@ -1719,6 +1773,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[2.0.0]: https://github.com/southleft/figma-console-mcp/compare/v1.46.0...v2.0.0
 [1.46.0]: https://github.com/southleft/figma-console-mcp/compare/v1.45.1...v1.46.0
 [1.45.1]: https://github.com/southleft/figma-console-mcp/compare/v1.45.0...v1.45.1
 [1.45.0]: https://github.com/southleft/figma-console-mcp/compare/v1.44.2...v1.45.0

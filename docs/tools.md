@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 130 MCP tools, including parameters, return values, and usage examples."
+description: "Complete API reference for all 144 MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **130 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **105 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools. Those run a headless browser session that only the `/sse` endpoint keeps open.
+> **Note:** Local Mode (NPX/Git) provides **144 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **113 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools. Those run a headless browser session that only the `/sse` endpoint keeps open.
 
 ## Quick Reference
 
@@ -156,7 +156,7 @@ Slides tools are documented in the [Slides guide](/slides). MCP Apps (`figma_bro
 
 ## 🧰 Toolsets: tools load on demand (Local Mode)
 
-Every tool the server lists is sent to the model with every message. Listing all of them costs about 59,000 tokens per message. To save that, Local Mode starts with a **core** set of about 30 tools: status, navigation, component search and resolve, building, token binding, audit, lint, screenshots and `figma_execute`. That costs about 12,600 tokens. The model switches on the rest when a task needs them:
+Every tool the server lists is sent to the model with every message. Listing all of them costs about 59,000 tokens per message. To save that, Local Mode starts with a **core** set: status, navigation, component search and resolve, building, token binding, audit, lint, screenshots and `figma_execute`. That costs about 9,200 tokens, about 85% less. The model switches on the rest when a task needs them:
 
 ```
 figma_enable_toolsets({ toolsets: ["variables", "parity"] })

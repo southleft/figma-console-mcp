@@ -116,7 +116,7 @@ async function serveSSEWithToken(request: Request, env: Env, ctx: ExecutionConte
  */
 // Server version reported by figma_diagnose in both cloud endpoints.
 // scripts/release.sh keeps this current (it rewrites every `version: "x.y.z"` here).
-const cloudBuild = { version: "1.46.0" };
+const cloudBuild = { version: "2.0.0" };
 
 /**
  * v1 McpServer whose registerTool/tool stamp every tool's response and thrown
@@ -136,7 +136,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 	server = (() => {
 		return new McpServer({
 			name: "Figma Console MCP",
-			version: "1.46.0",
+			version: "2.0.0",
 		});
 	})();
 
@@ -1244,7 +1244,7 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "1.46.0",
+				version: "2.0.0",
 			});
 
 			// ================================================================
@@ -2215,7 +2215,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "1.46.0",
+					version: "2.0.0",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
@@ -2260,7 +2260,7 @@ export default {
 	// Local count and the data-mode="cloud" Cloud count). Remote has no count:
 	// it is the same hosted endpoint before pairing, so it is described, not counted.
 	if (url.pathname === "/") {
-		const landing = { version: "1.46.0" };
+		const landing = { version: "2.0.0" };
 		return new Response(
 			`<!DOCTYPE html>
 <html lang="en">
@@ -2269,13 +2269,13 @@ export default {
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Figma Console MCP: a design-system MCP server for Figma and code</title>
 	<link rel="icon" type="image/svg+xml" href="https://docs.figma-console-mcp.southleft.com/favicon.svg">
-	<meta name="description" content="An open-source MCP server for design systems. 130+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
+	<meta name="description" content="An open-source MCP server for design systems. 144+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 
 	<!-- Open Graph -->
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="https://figma-console-mcp.southleft.com">
 	<meta property="og:title" content="Figma Console MCP: keep Figma and code on the same design system">
-	<meta property="og:description" content="An open-source MCP server for design systems. 130+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
+	<meta property="og:description" content="An open-source MCP server for design systems. 144+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 	<meta property="og:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 	<meta property="og:image:width" content="1200">
 	<meta property="og:image:height" content="630">
@@ -2283,7 +2283,7 @@ export default {
 	<!-- Twitter -->
 	<meta name="twitter:card" content="summary_large_image">
 	<meta name="twitter:title" content="Figma Console MCP: keep Figma and code on the same design system">
-	<meta name="twitter:description" content="An open-source MCP server for design systems. 130+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
+	<meta name="twitter:description" content="An open-source MCP server for design systems. 144+ tools give AI assistants what they need to manage a design system across Figma and code: health and accessibility audits, design-code parity checks, two-way sync, write access to Figma, and generated docs.">
 	<meta name="twitter:image" content="https://docs.figma-console-mcp.southleft.com/images/og-image.jpg">
 
 	<meta name="theme-color" content="#0F766E">
@@ -2699,6 +2699,25 @@ export default {
 		}
 
 		/* ---------- Hero: eyebrow, trust line, example session ---------- */
+		.release-note {
+			display: flex;
+			width: fit-content;
+			flex-wrap: wrap;
+			gap: 4px 8px;
+			align-items: baseline;
+			margin: 0 0 18px;
+			padding: 6px 12px;
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--radius);
+			background: var(--surface);
+			color: var(--muted);
+			font-size: 14px;
+			line-height: 1.4;
+			max-width: 100%;
+		}
+		.release-note a { color: var(--teal); font-weight: 600; text-decoration: none; }
+		.release-note a:hover { color: var(--teal-hover); text-decoration: underline; }
+		.release-note a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 		.eyebrow {
 			display: inline-block;
 			font-size: 15px;
@@ -3013,6 +3032,7 @@ export default {
 		<!-- Hero -->
 		<section class="hero" aria-labelledby="hero-title">
 			<div class="wrap">
+				<p class="release-note"><a href="https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#200---2026-11-26">New in v2.0</a><span>MCP SDK v2, ~85% fewer tokens per message, and tools that build with your design system and mark what's missing instead of inventing it.</span></p>
 				<p class="eyebrow">Design-system management for frontier AI models</p>
 				<h1 id="hero-title">Keep Figma and code on the same design system.</h1>
 				<p class="hero-lede">Figma Console MCP gives your AI the tools to run a design system across Figma and code. It <strong>audits</strong> the system and <strong>checks components against their code</strong> with results that score the same way every time, <strong>syncs</strong> Figma and code in both directions, <strong>writes</strong> fixes into your files, and <strong>documents</strong> what's there, so the code it writes follows your own stack.</p>
@@ -3318,12 +3338,12 @@ All values are bound to space/* tokens.</code></pre>
 				<div class="modes">
 					<div class="mode">
 						<h3>Local</h3>
-						<p class="count"><span class="number">130+</span><span class="unit">tools</span></p>
+						<p class="count"><span class="number">144+</span><span class="unit">tools</span></p>
 						<p><strong>Everything</strong>, including writes, checks, and design-system extraction. Runs with npx next to Figma Desktop and the Desktop Bridge plugin.</p>
 					</div>
 					<div class="mode">
 						<h3>Cloud</h3>
-						<p class="count"><span data-mode="cloud">105</span><span class="unit">tools</span></p>
+						<p class="count"><span data-mode="cloud">113</span><span class="unit">tools</span></p>
 						<p><strong>For web AI clients</strong> such as Claude.ai. Pair the Desktop Bridge plugin with a code and keep write access.</p>
 					</div>
 					<div class="mode">

@@ -39,7 +39,7 @@ describe("in-place gap notes", () => {
 		const catalog = [comp("Marketing/Gizmo"), comp("Product/Gizmo")];
 		const ask = json(await setup({ catalog }).figma_resolve_components({ needs: ["gizmo"], askUser: false }));
 		expect(ask.items[0].action).toBe("ask-user");
-		expect(ask.ai_instruction).toMatch(/STOP/);
+		expect(ask.ai_instruction).toMatch(/settle the unclear matches/);
 		const note = json(await setup({ catalog }).figma_resolve_components({ needs: ["gizmo"], askUser: false, onUnclear: "placeholder" }));
 		expect(note.items[0]).toMatchObject({ action: "placeholder", decidedBy: "onUnclear" });
 		expect(note.items[0].placeholderNote).toMatch(/Marketing\/Gizmo/);

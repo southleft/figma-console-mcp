@@ -415,7 +415,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 						: {}),
 					...(awaitingUser.length
 						? {
-								ai_instruction: `STOP before building. The design system has no confirmed component for: ${awaitingUser.join(", ")}. Tell the user exactly which items are missing or unclear (list the candidates) and ask how to proceed. Do not substitute, approximate or hand-build them.`,
+								ai_instruction: `Before building, settle the unclear matches: ${awaitingUser.join(", ")}. Check each one's candidates (figma_get_component_details): if one clearly fits the need, use it and say which and why. Ask the user only about items where several fit equally or none clearly does (list the candidates). Never hand-build them, and don't leave a gap note for something a candidate can do.`,
 							}
 						: {}),
 				});
