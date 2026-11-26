@@ -146,5 +146,12 @@ describe("figma_lint_design handler (code.js)", () => {
 		const by = await lint(signUpForm("#3C3C35"));
 		expect(by["wcag-non-text-contrast"][0]).toMatchObject({ element: "stroke", strokeRatio: "1.7:1", elementIs: expect.stringMatching(/closest to passing/) });
 	});
+
+	it("still checks each variant when the linted node is a control's component set", async () => {
+		const v = (x: number) => node("Checkbox / State=Off", { type: "COMPONENT", x, y: 0, w: 16, h: 16, strokes: solid("#7C7A70") });
+		const set = node("Checkbox", { type: "COMPONENT_SET", w: 200, h: 80, fills: solid("#FFFFFF"), children: [v(0), v(20)] });
+		const by = await lint(set);
+		expect((by["wcag-target-size"] ?? []).length).toBe(2);
+	});
 });
 

@@ -4450,7 +4450,7 @@ export function registerFigmaAPITools(
 	server.registerTool(
 		"figma_set_instance_properties",
 		{
-			description: "Set an instance's component properties (TEXT, BOOLEAN, INSTANCE_SWAP, VARIANT) by name \u2014 the way to change content inside an instance, since editing its text layers directly fails silently. #id suffixes are handled. Slots: use figma_append_to_slot.",
+			description: "Set an instance's component properties (TEXT, BOOLEAN, INSTANCE_SWAP, VARIANT) by name \u2014 the way to change content inside an instance, since editing its text layers directly fails silently. #id suffixes are handled. Slots: use figma_append_to_slot (components toolset).",
 			inputSchema: z.object({
 				nodeId: z
 					.string()

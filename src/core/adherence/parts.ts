@@ -35,7 +35,6 @@ export interface PartCheck {
 export function checkParts(parts: string[], entry: Pick<CatalogEntry, "properties" | "variantAxes" | "description">, anatomy?: ComponentAnatomy): PartCheck[] {
 	const props = entry.properties ?? [];
 	const axes = entry.variantAxes ?? [];
-	const known = props.length > 0 || axes.length > 0 || !!anatomy;
 	return parts.map((part) => {
 		const want = tokenize(part);
 		if (want.length === 0) return { part, status: "unverified" as const };
@@ -59,10 +58,12 @@ export function checkParts(parts: string[], entry: Pick<CatalogEntry, "propertie
 		} else if (want.every((w) => TEXT_PARTS.has(w)) && props.some((p) => p.type === "TEXT")) {
 			return { part, status: "present" as const, foundIn: "text property" };
 		}
-		// A slot or swap can take another system component for this part.
-		const open = props.find((p) => p.type === "SLOT" || p.type === "INSTANCE_SWAP");
-		if (!anatomy && !known) return { part, status: "unverified" as const };
-		if (open && !anatomy) return { part, status: "unverified" as const, foundIn: `may fit ${open.type === "SLOT" ? "slot" : "swap"} "${open.name}"` };
+		// Without the component's layers (library components, or a failed read), a part not
+		// named in a property or variant may still be a fixed layer: never claim it's missing.
+		if (!anatomy) {
+			const open = props.find((p) => p.type === "SLOT" || p.type === "INSTANCE_SWAP");
+			return { part, status: "unverified" as const, ...(open ? { foundIn: `may fit ${open.type === "SLOT" ? "slot" : "swap"} "${open.name}"` } : {}) };
+		}
 		return { part, status: "missing" as const };
 	});
 }

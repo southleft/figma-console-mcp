@@ -138,6 +138,22 @@ return out;`;
 	return value;
 }
 
+/** Keys of icon-like components (small, square, vector-only) in a file. Best-effort. */
+export async function iconLikeKeys(connector: any, fileKey?: string): Promise<Set<string>> {
+	const code = `await figma.loadAllPagesAsync();
+const out = []; const VEC = { VECTOR: 1, BOOLEAN_OPERATION: 1, ELLIPSE: 1, RECTANGLE: 1, LINE: 1, POLYGON: 1, STAR: 1, GROUP: 1, FRAME: 1 };
+for (const n of figma.root.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPONENT"] })) {
+  if (n.type === "COMPONENT" && n.parent && n.parent.type === "COMPONENT_SET") continue;
+  const rep = n.type === "COMPONENT_SET" ? (n.defaultVariant || n.children[0]) : n;
+  if (!rep || rep.width > 64 || rep.height > 64 || Math.abs(rep.width - rep.height) > 4) continue;
+  try { const kids = rep.findAll(() => true).slice(0, 200); if (kids.length && kids.every(k => VEC[k.type]) && kids.some(k => k.type === "VECTOR" || k.type === "BOOLEAN_OPERATION")) out.push(n.key); } catch (e) {}
+}
+return out;`;
+	const res = await connector.executeCodeViaUI(code, 30000, fileKey);
+	const v = res && typeof res === "object" && "result" in res ? res.result : res;
+	return new Set(Array.isArray(v) ? v : []);
+}
+
 async function loadCatalog(
 	deps: AdherenceToolDeps,
 	libraryKeys: string[],
@@ -151,10 +167,18 @@ async function loadCatalog(
 		try {
 			// The cached manifest describes the ACTIVE file; a specific fileKey is read
 			// from that file through the plugin, so the catalog matches what's audited.
-			const local =
+			let local =
 				deps.getLocalCatalog && !fileKey
 					? await deps.getLocalCatalog()
 					: await pluginCatalog(await deps.getDesktopConnector(), fileKey);
+			// The cached manifest has no shape data: mark icon-like components (small, square,
+			// vector-only) so an icon named "Table" doesn't win over a "Table / Data Grid".
+			if (deps.getLocalCatalog && !fileKey && local.length && !local.some((e) => e.iconLike !== undefined)) {
+				try {
+					const keys = await iconLikeKeys(await deps.getDesktopConnector());
+					if (keys.size) local = local.map((e) => (keys.has(e.key) ? { ...e, iconLike: true } : e));
+				} catch {}
+			}
 			catalog.push(...local);
 			sources.push({ source: "local", components: local.length });
 		} catch (err) {
@@ -318,7 +342,8 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 						}
 					} else if (step.status === "declined" || step.status === "cancelled") {
 						decisionSource = "user";
-						decisions = Object.fromEntries(asked.map(({ i }) => [i, { decision: "stop" as const }]));
+						// Declining means "don't build these": it covers every unresolved item, shown or not.
+						decisions = Object.fromEntries(unresolved.map(({ i }) => [i, { decision: "stop" as const }]));
 					}
 				}
 
@@ -419,7 +444,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 						: {}),
 					...(awaitingUser.length
 						? {
-								ai_instruction: `Before building, settle the unclear matches: ${awaitingUser.join(", ")}. Check each one's candidates (figma_get_component_details): if one clearly fits the need, use it and say which and why. Ask the user only about items where several fit equally or none clearly does (list the candidates). Never hand-build them, and don't leave a gap note for something a candidate can do.`,
+								ai_instruction: `Before building, settle the unclear matches: ${awaitingUser.join(", ")}. Check each one's candidates with figma_get_component_details (inspect toolset — figma_enable_toolsets first if it isn't listed): if one clearly fits the need, use it and say which and why. Ask the user only about items where several fit equally or none clearly does (list the candidates). Never hand-build them, and don't leave a gap note for something a candidate can do.`,
 							}
 						: {}),
 				});

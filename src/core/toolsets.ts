@@ -327,26 +327,42 @@ export function registerToolsetTools(server: ToolsetServer): void {
 	server.registerTool(
 		"figma_call",
 		{
-			description: "Run an enabled tool by name with its normal arguments, if your tool list didn't refresh after figma_enable_toolsets.",
+			description:
+				"Run a tool from an enabled toolset by name, if your tool list didn't refresh after figma_enable_toolsets. Core tools and tools that delete or overwrite can't be run this way: call those directly, so your client's per-tool permissions apply.",
 			inputSchema: z.object({
-				tool: z.string().describe("Tool name, e.g. figma_export_tokens."),
-				arguments: z.record(z.string(), z.unknown()).optional().describe("The tool's arguments."),
+				tool: z.string().describe("Tool name, e.g. figma_get_styles."),
+				arguments: z.string().optional().describe('The tool\'s arguments as a JSON object string, e.g. \'{"format":"css"}\'.'),
 			}),
 		},
-		async ({ tool, arguments: args }: { tool: string; arguments?: Record<string, unknown> }, extra: any) => {
+		async ({ tool, arguments: rawArgs }: { tool: string; arguments?: string }, extra: any) => {
 			const t = registry(server)[tool] as any;
 			const fail = (msg: string) => ({ content: [{ type: "text" as const, text: JSON.stringify({ error: msg }) }], isError: true });
 			if (!t) return fail(`Unknown tool "${tool}".`);
-			if (tool === "figma_call") return fail("figma_call can't call itself.");
+			if (tool === "figma_call" || tool === "figma_enable_toolsets") return fail(`${tool} can't be run through figma_call.`);
+			// Never a back door around per-tool permission rules: core tools are always listed,
+			// and destructive tools must be called under their own name.
+			if (toolsetOf(tool) === "core") return fail(`"${tool}" is a core tool and is always listed; call it directly.`);
+			if (t.annotations?.destructiveHint === true) {
+				return fail(`"${tool}" can delete or overwrite, so it isn't run through figma_call (your client's permission for it must apply). Call it directly; if your client doesn't list it, restart the client or set FIGMA_TOOLSETS to include its toolset.`);
+			}
 			if (!t.enabled) {
 				const set = toolsetOf(tool);
 				return fail(`"${tool}" is in the "${set}" toolset, which is off. Call figma_enable_toolsets({ toolsets: ["${set}"] }) first.`);
+			}
+			let args: unknown = {};
+			if (rawArgs && rawArgs.trim()) {
+				try {
+					args = JSON.parse(rawArgs);
+				} catch {
+					return fail("arguments must be a JSON object string.");
+				}
+				if (!args || typeof args !== "object" || Array.isArray(args)) return fail("arguments must be a JSON object string.");
 			}
 			// Same path as a direct tools/call: the SDK's own validation and execution.
 			const srv = server as any;
 			if (typeof srv.validateToolInput === "function" && typeof srv.executeToolHandler === "function") {
 				try {
-					const input = await srv.validateToolInput(t, args ?? {}, tool);
+					const input = await srv.validateToolInput(t, args, tool);
 					return await srv.executeToolHandler(t, input, extra);
 				} catch (err) {
 					return fail(err instanceof Error ? err.message : String(err));
@@ -354,7 +370,7 @@ export function registerToolsetTools(server: ToolsetServer): void {
 			}
 			const handler = t.handler ?? t.callback;
 			if (typeof handler !== "function") return fail(`"${tool}" can't be called through figma_call.`);
-			return handler(args ?? {}, extra);
+			return handler(args, extra);
 		},
 	);
 }

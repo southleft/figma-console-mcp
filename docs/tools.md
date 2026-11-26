@@ -177,7 +177,7 @@ figma_enable_toolsets({ toolsets: ["variables", "parity"] })
 
 - **Everything at once:** set `FIGMA_TOOLSETS=all` to list every tool, as earlier versions did.
 - **Preload some groups:** set e.g. `FIGMA_TOOLSETS=variables,parity`; core is always included.
-- **Clients that don't refresh their tool list:** enabling a toolset sends `tools/list_changed`. A client that ignores it can still run the new tools through `figma_call({ tool, arguments })`.
+- **Clients that don't refresh their tool list:** enabling a toolset sends `tools/list_changed`. A client that ignores it can still run the new tools through `figma_call({ tool, arguments })` (arguments as a JSON string). `figma_call` won't run core tools or tools that delete or overwrite: call those by name, so your client's per-tool permissions apply.
 
 Cloud Mode is unchanged and lists all its tools.
 

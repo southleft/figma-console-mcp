@@ -99,3 +99,22 @@ describe("audit of gap notes", () => {
 		expect(r.findings.find((f: any) => f.rule === "gap-but-component-exists")).toMatchObject({ severity: "error", component: "Pagination" });
 	});
 });
+
+describe("checkParts without layers", () => {
+	it("never reports a part missing for a component whose layers weren't read (library)", () => {
+		const r = checkParts(["image"], { properties: [{ name: "Title", type: "TEXT" }], variantAxes: [{ name: "Size", values: ["S", "L"] }] }, undefined);
+		expect(r[0].status).toBe("unverified");
+	});
+});
+
+describe("icon detection on the cached local catalog", () => {
+	it("marks icon-like components so a table icon doesn't beat the data grid", async () => {
+		const tools: Record<string, any> = {};
+		const server = { getClientCapabilities: () => undefined, registerTool: (n: string, _c: any, h: any) => (tools[n] = h) };
+		const catalog = [comp("Table"), comp("Table / Data Grid")];
+		const conn = { executeCodeViaUI: async (code: string) => (code.includes("const VEC =") ? { success: true, result: ["k-Table"] } : { success: true, result: [] }) };
+		registerAdherenceTools(server as any, { getDesktopConnector: async () => conn, getLocalCatalog: async () => catalog });
+		const r = JSON.parse((await tools.figma_resolve_components({ needs: ["data table"], askUser: false })).content[0].text);
+		expect(r.items[0]).toMatchObject({ status: "matched", component: { name: "Table / Data Grid" } });
+	});
+});

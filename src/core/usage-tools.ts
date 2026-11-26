@@ -16,10 +16,11 @@ import { createChildLogger } from "./logger.js";
 
 const logger = createChildLogger({ component: "usage-tools" });
 
-export function buildUsageCode(kind: "style" | "variable" | "component", id: string, sample: number, maxNodes: number): string {
-	return `const KIND = ${JSON.stringify(kind)}, ID = ${JSON.stringify(id)}, SAMPLE = ${sample}, MAX_NODES = ${maxNodes};
+export function buildUsageCode(kind: "style" | "variable" | "component", id: string, sample: number, maxNodes: number, budgetMs = 100000): string {
+	return `const KIND = ${JSON.stringify(kind)}, ID = ${JSON.stringify(id)}, SAMPLE = ${sample}, MAX_NODES = ${maxNodes}, BUDGET_MS = ${budgetMs};
 function pageOf(n) { let p = n; while (p && p.type !== "PAGE") p = p.parent; return p ? p.name : null; }
-const hits = []; let total = 0; let orphaned = 0; let scanned = 0; let truncated = false;
+const hits = []; let total = 0; let orphaned = 0; let scanned = 0; let truncated = false; let aliasedBy = null;
+const DEADLINE = Date.now() + BUDGET_MS;
 // Nodes whose ancestry never reaches a page aren't in the document (e.g. frames a
 // plugin created and never placed). Nobody sees them, so they're counted apart.
 const seen = new Set();
@@ -47,18 +48,45 @@ if (KIND === "style") {
 } else {
   target = await figma.variables.getVariableByIdAsync(ID);
   if (!target) return { error: "No variable with id " + ID + " in this file." };
+  // Variables that alias the target, directly or through a chain (primitive → semantic → …).
+  // Layers bound to those use the target too.
+  const all = await figma.variables.getLocalVariablesAsync();
+  const via = new Map([[ID, null]]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const v of all) {
+      if (via.has(v.id)) continue;
+      for (const val of Object.values(v.valuesByMode || {})) {
+        const ref = val && val.type === "VARIABLE_ALIAS" ? val.id : val && val.color && val.color.type === "VARIABLE_ALIAS" ? val.color.id : null;
+        if (ref && via.has(ref)) { via.set(v.id, v.name); grew = true; break; }
+      }
+    }
+  }
+  aliasedBy = [...via.entries()].filter(([id]) => id !== ID).map(([id, name]) => ({ id, name }));
+  const label = (id, field) => (id === ID ? field : field + " (via " + via.get(id) + ")");
+  const hit = (v) => {
+    if (!v) return null;
+    if (v.id && via.has(v.id)) return v.id;
+    if (Array.isArray(v)) { for (const x of v) if (x && via.has(x.id)) return x.id; }
+    return null;
+  };
   await figma.loadAllPagesAsync();
-  const matches = (v) => v && (v.id === ID || (Array.isArray(v) && v.some(x => x && x.id === ID)));
   outer: for (const page of figma.root.children) {
     const stack = [...page.children];
     while (stack.length) {
       const n = stack.pop();
-      if (++scanned > MAX_NODES) { truncated = true; break outer; }
+      if (++scanned > MAX_NODES || Date.now() > DEADLINE) { truncated = true; break outer; }
       const bv = n.boundVariables || {};
-      for (const [field, v] of Object.entries(bv)) if (matches(v)) add(n, field);
+      for (const [field, v] of Object.entries(bv)) {
+        if (field === "componentProperties" && v && typeof v === "object" && !Array.isArray(v) && !v.id) {
+          for (const [prop, alias] of Object.entries(v)) { const id = hit(alias); if (id) add(n, label(id, "componentProperties." + prop)); }
+          continue;
+        }
+        const id = hit(v); if (id) add(n, label(id, field));
+      }
       for (const prop of ["fills", "strokes"]) {
         const paints = n[prop];
-        if (Array.isArray(paints) && paints.some(p => p.boundVariables && p.boundVariables.color && p.boundVariables.color.id === ID)) add(n, prop);
+        if (Array.isArray(paints)) for (const p of paints) { const id = p && p.boundVariables && hit(p.boundVariables.color); if (id) add(n, label(id, prop)); }
       }
       if ("children" in n) for (const c of n.children) stack.push(c);
     }
@@ -66,7 +94,7 @@ if (KIND === "style") {
 }
 const pages = {};
 for (const h of hits) pages[h.page] = (pages[h.page] || 0) + 1;
-return { target: { id: target.id, name: target.name, kind: KIND }, total, sample: hits, sampledByPage: pages, ...(orphaned ? { orphaned, orphanedNote: "Also used by " + orphaned + " node(s) that aren't on any page (left outside the document, e.g. by a plugin); not counted in total." } : {}), ...(KIND === "variable" ? { nodesScanned: scanned, truncated } : {}) };`;
+return { target: { id: target.id, name: target.name, kind: KIND }, total, sample: hits, sampledByPage: pages, ...(orphaned ? { orphaned, orphanedNote: "Also used by " + orphaned + " node(s) that aren't on any page (left outside the document, e.g. by a plugin); not counted in total." } : {}), ...(KIND === "variable" ? { nodesScanned: scanned, truncated, aliasedBy, ...(aliasedBy && aliasedBy.length ? { aliasNote: aliasedBy.length + " variable(s) alias this one; layers bound to them are counted (field says 'via …'). Renaming or deleting this variable breaks those aliases too." } : {}) } : {}) };`;
 }
 
 export function registerUsageTools(server: McpServer, getDesktopConnector: () => Promise<any>): void {
@@ -87,7 +115,8 @@ export function registerUsageTools(server: McpServer, getDesktopConnector: () =>
 			const fail = (error: string) => ({ content: [{ type: "text" as const, text: JSON.stringify({ error }) }], isError: true });
 			try {
 				const connector = await getDesktopConnector();
-				const res = await connector.executeCodeViaUI(buildUsageCode(kind, id, sample, maxNodes), 120000, fileKey);
+				// The plugin loop stops itself before the outer timeout, so partial counts come back instead of an error.
+				const res = await connector.executeCodeViaUI(buildUsageCode(kind, id, sample, maxNodes, 100000), 120000, fileKey);
 				const raw = res && typeof res === "object" && "result" in res ? res.result : res;
 				if (!raw || raw.error) return fail(raw?.error ?? res?.error ?? "The plugin didn't return a result.");
 				return {
@@ -97,7 +126,7 @@ export function registerUsageTools(server: McpServer, getDesktopConnector: () =>
 							text: JSON.stringify({
 								success: true,
 								...raw,
-								...(raw.truncated ? { warning: `Stopped after ${raw.nodesScanned} nodes; the total is a lower bound. Raise maxNodes to scan further.` } : {}),
+								...(raw.truncated ? { warning: `Stopped after ${raw.nodesScanned} nodes (node or time limit); the total is a lower bound. Raise maxNodes or scan a smaller file.` } : {}),
 							}),
 						},
 					],

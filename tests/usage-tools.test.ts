@@ -23,7 +23,7 @@ describe("figma_find_usages script", () => {
 		];
 		const pg: any = { type: "PAGE", name: "P", children: kids, parent: null };
 		for (const k of kids as any[]) k.parent = pg;
-		const figma = { loadAllPagesAsync: async () => {}, root: { children: [pg] }, variables: { getVariableByIdAsync: async () => v } };
+		const figma = { loadAllPagesAsync: async () => {}, root: { children: [pg] }, variables: { getVariableByIdAsync: async () => v, getLocalVariablesAsync: async () => [v] } };
 		const r = await run(buildUsageCode("variable", v.id, 10, 1000), figma);
 		expect(r.total).toBe(2);
 		expect(r.sample.map((x: any) => x.field).sort()).toEqual(["fills", "itemSpacing"]);
@@ -33,4 +33,23 @@ describe("figma_find_usages script", () => {
 		const r = await run(buildUsageCode("style", "S:1", 10, 1000), { getStyleByIdAsync: async () => null });
 		expect(r.error).toMatch(/No style/);
 	});
+
+	it("counts layers that use a primitive through semantic aliases, and component-property bindings", async () => {
+		const prim = { id: "VariableID:1:1", name: "color/blue/500", valuesByMode: { m: { r: 0, g: 0, b: 1 } } };
+		const sem = { id: "VariableID:1:2", name: "color/action/primary", valuesByMode: { m: { type: "VARIABLE_ALIAS", id: prim.id } } };
+		const sem2 = { id: "VariableID:1:3", name: "color/action/hover", valuesByMode: { m: { type: "VARIABLE_ALIAS", id: sem.id } } };
+		const kids: any[] = [
+			{ id: "4:1", name: "Btn", type: "FRAME", boundVariables: { fills: [{ id: sem.id }] }, fills: [{ boundVariables: { color: { id: sem.id } } }] },
+			{ id: "4:2", name: "Link", type: "INSTANCE", boundVariables: { componentProperties: { "Show Icon": { type: "VARIABLE_ALIAS", id: sem2.id } } } },
+			{ id: "4:3", name: "Other", type: "FRAME", boundVariables: {} },
+		];
+		const pg: any = { type: "PAGE", name: "P", children: kids, parent: null };
+		for (const k of kids) k.parent = pg;
+		const figma = { loadAllPagesAsync: async () => {}, root: { children: [pg] }, variables: { getVariableByIdAsync: async () => prim, getLocalVariablesAsync: async () => [prim, sem, sem2] } };
+		const r = await run(buildUsageCode("variable", prim.id, 10, 1000), figma);
+		expect(r.total).toBe(2);
+		expect(r.aliasedBy.map((a: any) => a.name).sort()).toEqual(["color/action/hover", "color/action/primary"]);
+		expect(r.sample.map((x: any) => x.field).sort()).toEqual(["componentProperties.Show Icon (via color/action/hover)", "fills (via color/action/primary)"]);
+	});
 });
+

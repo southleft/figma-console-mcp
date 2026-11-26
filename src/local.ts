@@ -455,6 +455,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 * Priority: Browser URL (full URL with branch/node info) → WebSocket file identity (synthesized URL).
 	 * The synthesized URL is compatible with extractFileKey() and extractFigmaUrlInfo().
 	 */
+	/** Spec documents found per file at the last design-system summary rebuild. */
+	private specsByFile = new Map<string, Array<{ id: string; title: string; page: string }>>();
+
 	private getCurrentFileUrl(): string | null {
 		// Synthesize the URL from the WebSocket plugin's reported file identity.
 		// (Pre-Phase-3 this also tried a live Puppeteer browser URL; that path is
@@ -2189,21 +2192,23 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
 
 					// Check cache first
-					// Figma Specs (PRDs/RFCs embedded on the canvas). Their content isn't
-					// readable from plugins — list them so an agent knows they exist and
-					// can use Figma's own MCP server to read or edit them.
-					let specs: Array<{ id: string; title: string; page: string }> = [];
-					try {
-						const r = await (await this.getDesktopConnector()).executeCodeViaUI(
-							`await figma.loadAllPagesAsync(); const out = []; for (const p of figma.root.children) for (const n of p.children) if (n.type === "SPEC_BLOCK") out.push({ id: n.id, title: n.name, page: p.name }); return out.slice(0, 50);`,
-							8000,
-						);
-						const v = r && typeof r === "object" && "result" in r ? r.result : r;
-						if (Array.isArray(v)) specs = v;
-					} catch {}
-					const specsField = specs.length
-						? { specs, specsNote: "Spec documents (Figma Specs). Their content can't be read through this plugin; use Figma's MCP server to read or edit them." }
-						: {};
+					// Figma Specs (PRDs/RFCs embedded on the canvas) are listed with the summary.
+					// Their content isn't readable from plugins. Scanned only when the summary is
+					// rebuilt (it needs every page loaded) and remembered with the cache.
+					const specsFor = (specs: Array<{ id: string; title: string; page: string }> | undefined) =>
+						specs && specs.length
+							? { specs, specsNote: "Spec documents (Figma Specs). Their content can't be read through this plugin; use Figma's MCP server to read or edit them." }
+							: {};
+					const scanSpecs = async () => {
+						try {
+							const r = await (await this.getDesktopConnector()).executeCodeViaUI(
+								`await figma.loadAllPagesAsync(); const out = []; for (const p of figma.root.children) for (const n of p.children) if (n.type === "SPEC_BLOCK") out.push({ id: n.id, title: n.name, page: p.name }); return out.slice(0, 50);`,
+								8000,
+							);
+							const v = r && typeof r === "object" && "result" in r ? r.result : r;
+							if (Array.isArray(v)) this.specsByFile.set(fileKey, v);
+						} catch {}
+					};
 
 					let cacheEntry = cache.get(fileKey);
 					if (cacheEntry && !forceRefresh) {
@@ -2228,7 +2233,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												cacheEntry.manifest.summary.totalComponentSets,
 											tokens: cacheEntry.manifest.summary.totalTokens,
 										},
-										...specsField,
+										...specsFor(this.specsByFile.get(fileKey)),
 										hint: "Use figma_search_components to find specific components by name or category.",
 									}),
 								},
@@ -2237,6 +2242,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					}
 
 					// Need to extract fresh data
+					await scanSpecs();
 					const connector = await this.getDesktopConnector();
 					const manifest = createEmptyManifest(fileKey);
 					manifest.fileUrl = currentUrl || undefined;
@@ -2395,7 +2401,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												`Components fetch failed (${componentsFetchError}) — component data is incomplete and was NOT cached. Check the Desktop Bridge plugin and retry.`,
 											]
 										: undefined,
-									...specsField,
+									...specsFor(this.specsByFile.get(fileKey)),
 									hint: "Use figma_search_components to find specific components by name or category.",
 								}),
 							},
@@ -2654,7 +2660,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									text: JSON.stringify({
 										error: loadFailure,
 										searched: false,
-										hint: "This is NOT a 'no matches' result — the file's components could not be loaded. Very large files can exceed the load timeout; check the Desktop Bridge plugin and retry, or look up a known node directly with figma_get_component_details / figma_get_component. To search a published library instead, pass libraryFileKey.",
+										hint: "This is NOT a 'no matches' result — the file's components could not be loaded. Very large files can exceed the load timeout; check the Desktop Bridge plugin and retry, or look up a known node directly with figma_get_component_details / figma_get_component (inspect toolset). To search a published library instead, pass libraryFileKey.",
 									}),
 								},
 							],
@@ -2689,7 +2695,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									},
 									hint: results.hasMore
 										? `Use offset=${(offset || 0) + effectiveLimit} to get more results.`
-										: "Use figma_get_component_details with a component key for full details. To search a published library, pass libraryFileKey.",
+										: "For full details use figma_get_component_details (inspect toolset; figma_enable_toolsets first if it isn't listed). To search a published library, pass libraryFileKey.",
 								}),
 							},
 						],

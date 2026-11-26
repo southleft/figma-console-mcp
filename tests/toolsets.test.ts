@@ -49,3 +49,26 @@ describe("toolsets across per-request servers (sessionless HTTP)", () => {
 		expect(second._registeredTools.figma_list_slides.enabled).toBe(false);
 	});
 });
+
+describe("figma_call is not a permission bypass", () => {
+	const setup = () => {
+		const reg: Record<string, any> = {};
+		const mk = (name: string, o: any = {}) => (reg[name] = { enabled: true, handler: async (a: any) => ({ content: [{ type: "text", text: JSON.stringify({ ran: name, a }) }] }), ...o });
+		mk("figma_delete_node");
+		mk("figma_export_tokens", { annotations: { destructiveHint: false } });
+		mk("figma_delete_variable", { annotations: { destructiveHint: true } });
+		const server: any = { _registeredTools: reg, registerTool: (n: string, _c: any, h: any) => mk(n, { handler: h }) };
+		registerToolsetTools(server);
+		return (tool: string, args?: string) => reg.figma_call.handler({ tool, arguments: args }, {}).then((r: any) => JSON.parse(r.content[0].text));
+	};
+	it("refuses core and destructive tools", async () => {
+		const call = setup();
+		expect((await call("figma_delete_node")).error).toMatch(/core tool/);
+		expect((await call("figma_delete_variable")).error).toMatch(/delete or overwrite/);
+	});
+	it("runs an enabled, non-destructive toolset tool with JSON arguments", async () => {
+		const call = setup();
+		expect(await call("figma_export_tokens", '{"format":"css"}')).toEqual({ ran: "figma_export_tokens", a: { format: "css" } });
+		expect((await call("figma_export_tokens", "[1]")).error).toMatch(/JSON object/);
+	});
+});

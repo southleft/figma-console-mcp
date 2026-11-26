@@ -4704,6 +4704,8 @@ figma.ui.onmessage = async (msg) => {
         // treat its inner control-named parts as separate targets.
         var p = node.parent;
         while (p && p.type !== 'PAGE') {
+          // A component set's variants are separate targets, so the set never absorbs them.
+          if (p === rootNode && p.type === 'COMPONENT_SET') break;
           try { if (lintIsControlNode(p)) return true; } catch (e) { return false; }
           if (p === rootNode) break;
           p = p.parent;

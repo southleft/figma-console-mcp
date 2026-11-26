@@ -86,3 +86,14 @@ describe("figma_manage_dev_resources", () => {
 		expect(json(await tool({ action: "edit", items: [{ nodeId: "1:1", url: "https://a.example" }] })).error).toMatch(/name and\/or newUrl/);
 	});
 });
+
+describe("dev resources deadline", () => {
+	it("returns finished work and the remaining items when the budget runs out", async () => {
+		const nodes: any = { "1:1": { name: "A", res: [] }, "1:2": { name: "B", res: [] } };
+		const code = buildDevResourceCode("add", { items: [{ nodeId: "1:1", url: "https://a.example" }, { nodeId: "1:2", url: "https://b.example" }] }, -1);
+		const r = await run(code, nodes);
+		expect(r.incomplete).toBe(true);
+		expect(r.remaining).toHaveLength(2);
+		expect(nodes["1:1"].res).toEqual([]);
+	});
+});

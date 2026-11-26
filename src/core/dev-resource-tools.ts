@@ -34,8 +34,11 @@ const isHttpUrl = (u: string) => {
 };
 
 /** Plugin-side script. Exported for tests. */
-export function buildDevResourceCode(action: "list" | "add" | "edit" | "delete", args: { nodeIds?: string[]; items?: DevResourceItem[] }): string {
+export function buildDevResourceCode(action: "list" | "add" | "edit" | "delete", args: { nodeIds?: string[]; items?: DevResourceItem[] }, budgetMs = 60000): string {
 	return `const ACTION = ${JSON.stringify(action)};
+// Stop before the caller's timeout so finished work is reported, not lost.
+const DEADLINE = Date.now() + ${budgetMs};
+let stoppedAt = null;
 const NODE_IDS = ${JSON.stringify(args.nodeIds ?? [])};
 const ITEMS = ${JSON.stringify(args.items ?? [])};
 const BUDGET = 4000;
@@ -53,15 +56,18 @@ if (ACTION === "list") {
   if (NODE_IDS.length) { for (const id of NODE_IDS) nodes.push(await figma.getNodeByIdAsync(id)); }
   else nodes = figma.currentPage.selection.slice();
   for (let i = 0; i < nodes.length; i++) {
+    if (Date.now() > DEADLINE) { stoppedAt = i; break; }
     const n = nodes[i];
     if (!n) { results.push({ nodeId: NODE_IDS[i], error: "not found" }); continue; }
     const r = await list(n);
     results.push(r === null ? { nodeId: n.id, name: n.name, error: "couldn't read (timed out or unsupported)" } : { nodeId: n.id, name: n.name, resources: r });
     if (timedOut >= 2) { results.push({ note: "Stopped: Figma isn't answering dev-resource requests. Focus the file's window in Figma Desktop and retry." }); break; }
   }
-  return { results, timedOut };
+  return { results, timedOut, ...(stoppedAt !== null ? { incomplete: true, remaining: nodes.length - stoppedAt } : {}) };
 }
-for (const it of ITEMS) {
+for (let idx = 0; idx < ITEMS.length; idx++) {
+  const it = ITEMS[idx];
+  if (Date.now() > DEADLINE) { stoppedAt = idx; break; }
   const n = await figma.getNodeByIdAsync(it.nodeId);
   if (!n) { results.push({ ...it, ok: false, error: "node not found" }); continue; }
   try {
@@ -85,7 +91,7 @@ for (const it of ITEMS) {
     if (timedOut >= 2) { results.push({ note: "Stopped: Figma isn't answering dev-resource requests. Focus the file's window in Figma Desktop and retry." }); break; }
   }
 }
-return { results, timedOut };`;
+return { results, timedOut, ...(stoppedAt !== null ? { incomplete: true, remaining: ITEMS.slice(stoppedAt) } : {}) };`;
 }
 
 export function registerDevResourceTools(server: McpServer, getDesktopConnector: () => Promise<any>): void {
@@ -142,9 +148,16 @@ export function registerDevResourceTools(server: McpServer, getDesktopConnector:
 					if (step.status === "accepted" && step.content.confirm !== true) return notConfirmedResult("removing dev resources", { status: "declined" });
 				}
 				const connector = await getDesktopConnector();
+				// Two Figma calls per add (check, then add), each up to 4 s; a selection-based list has
+				// no known size, so it gets a fixed budget. The plugin stops 5 s early and reports
+				// what's left rather than letting the outer timeout discard every result.
+				const perItem = args.action === "add" ? 9000 : 4500;
+				const timeout = args.action === "list" && !args.nodeIds?.length
+					? 120000
+					: Math.min(300000, 15000 + (items.length + (args.nodeIds?.length ?? 0)) * perItem);
 				const res = await connector.executeCodeViaUI(
-					buildDevResourceCode(args.action, { nodeIds: args.nodeIds, items }),
-					Math.min(300000, 15000 + items.length * 4500 + (args.nodeIds?.length ?? 0) * 4500),
+					buildDevResourceCode(args.action, { nodeIds: args.nodeIds, items }, timeout - 5000),
+					timeout,
 					args.fileKey,
 				);
 				const raw = res && typeof res === "object" && "result" in res ? res.result : res;
@@ -156,10 +169,11 @@ export function registerDevResourceTools(server: McpServer, getDesktopConnector:
 						{
 							type: "text" as const,
 							text: JSON.stringify({
-								success: failed.length === 0 && !raw.timedOut,
+								success: failed.length === 0 && !raw.timedOut && !raw.incomplete,
 								action: args.action,
 								...(args.action === "list" ? { nodes: results } : { done: results.filter((r) => r.ok).length, failed, results }),
 								...(raw.timedOut ? { warning: "Some requests timed out. Figma answers dev-resource calls only while the file's window is focused in Figma Desktop." } : {}),
+								...(raw.incomplete ? { incomplete: true, remaining: raw.remaining, note: "Stopped at the time limit. Re-run with the remaining items." } : {}),
 							}),
 						},
 					],
