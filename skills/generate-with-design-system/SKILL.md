@@ -99,6 +99,19 @@ Wait for the answer, then re-run `figma_resolve_components` (the decisions come 
 
 **Missing tokens:** if no variable or style exists for a value you need, leave that property unset (no raw value), add a Figma annotation on the node naming the missing token (`figma_set_annotations`), and list it in your report.
 
+**Build a section per call, not a node per call.** Every tool call re-sends the whole conversation, so 40 small calls cost far more than 5 larger ones. Once resolve and the token lookups have given you the ids, build each section (header, KPI row, table area…) with **one** `figma_execute` script:
+- Use only what earlier steps returned: component variant keys/node ids from resolve, variable ids from `figma_get_variables`, text style ids from `figma_get_text_styles`. A value you didn't look up is a value you invented.
+- Inside the script:
+  - **Instances:** `(await figma.getNodeByIdAsync(variantNodeId)).createInstance()`, or `figma.importComponentByKeyAsync(key)` for library components. Set content with `instance.setProperties({...})`, using the names from `componentProperties`.
+  - **Layout frames:** auto layout, with spacing bound via `frame.setBoundVariable("itemSpacing", variable)`. The same goes for padding fields and corner radii.
+  - **Colors:** `figma.variables.setBoundVariableForPaint(paint, "color", variable)`.
+  - **Text:** `await text.setTextStyleIdAsync(styleId)` after loading its font.
+- Return only ids and names, e.g. `{ header: "12:3", kpis: ["12:7", …] }`. Not node dumps: whatever a script returns enters the conversation.
+- Make it re-runnable. Find or create the section by name, and on failure remove what it created before retrying (scripts can time out and keep running, so check the page before a retry).
+- Keep the single-purpose tools for one-off fixes after the audit. `figma_bind_tokens` is still the safest way to bind one node, because it refuses names that don't exist.
+
+The audit in step 6 checks a script-built section exactly like a tool-built one, so nothing gets past it either way.
+
 ## 6. Audit, look, fix (max 3 rounds)
 
 ```
