@@ -5,7 +5,7 @@ description: Sync design tokens between Figma variables and code with figma_expo
 
 # Sync design tokens (Figma ↔ code)
 
-> **Tools:** this skill uses tools outside the core set. Call `figma_enable_toolsets({ toolsets: ["variables"] })` once at the start. If your client doesn't show the new tools afterwards, call them through `figma_call({ tool, arguments })`.
+> **Tools:** this skill uses tools outside the core set. Call `figma_enable_toolsets({ toolsets: ["variables", "inspect"] })` once at the start. If your client doesn't show the new tools afterwards, call them through `figma_call({ tool, arguments })`.
 
 Two tools do all the work: `figma_export_tokens` (Figma → files) and `figma_import_tokens` (files → Figma). **DTCG JSON** is the canonical pivot format. It carries Figma variable IDs in `$extensions["figma-console-mcp"]`, so renames on either side don't create duplicates. Always dry-run first, and confirm the source file before writing.
 
@@ -65,7 +65,13 @@ Calling `figma_export_tokens()` with no config returns a `suggestedScaffold`. Sh
 6. Use `collectionMapping` (`{ "primitives": "Primitive Tokens" }`), `modeMapping` (`{ "light": "Light" }`) and `prefix` (stripped on import) when the names differ between sides.
 7. Check `applyResult.errors[]`. Failures are per item, so the overall result can be a partial success.
 
-## 4. Multi-mode and aliases
+## 4. Before renaming or deleting a variable
+
+Check what uses it first: `figma_find_usages({ kind: "variable", id })` (inspect toolset) gives the bound layers by page. Report the count to the person before a destructive import (replace mode) removes or renames variables in use.
+
+For a brand or product theme on top of a shared library, prefer an extended collection, `figma_extend_library_collection`, over copying the library's variables. It inherits every variable and overrides only what differs.
+
+## 5. Multi-mode and aliases
 
 - Modes: export with `modes: "all"` or `["Light","Dark"]`. `splitByMode: true` produces one file per mode. Import creates missing collections with the token file's full mode list.
 - Aliases are kept as references in DTCG and JSON (`{color.primary}`). CSS, SCSS and Tailwind resolve them, because those formats can't express aliases (`resolveAliases` controls this).
@@ -73,7 +79,7 @@ Calling `figma_export_tokens()` with no config returns a `suggestedScaffold`. Sh
 - Colors with opacity ("grey/900 at 50%") round-trip through `$extensions["figma-console-mcp"].composedColor`. Edit that, not only `$value`, to keep the link.
 - Library aliases show up as `{__library:VariableID:…}`. They're preserved but not resolvable locally. List them for the person.
 
-## 5. Verify the round trip
+## 6. Verify the round trip
 
 After any write:
 1. Export DTCG with `strategy: "dry-run"` and check that the result matches the files you expect.

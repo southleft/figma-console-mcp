@@ -37,9 +37,13 @@ export function registerDeepComponentTools(
 					.describe(
 						"Maximum tree depth to traverse (default: 10). Pass 0 (or a negative value) for UNLIMITED depth — traverses the entire subtree. Unlimited/large results can be big; target a specific child node if the payload is unwieldy.",
 					),
+				css: z
+					.boolean()
+					.optional()
+					.describe("Also return Figma's generated CSS (as Dev Mode shows it) for the node and up to 40 of its layers."),
 			}),
 		},
-		async ({ nodeId, depth = 10 }) => {
+		async ({ nodeId, depth = 10, css = false }) => {
 			try {
 				// depth <= 0 => unlimited (no clamp); positive values pass through as-is.
 				const unlimited = depth <= 0;
@@ -62,9 +66,28 @@ export function registerDeepComponentTools(
 				const responseJson = JSON.stringify(data);
 				const sizeKB = Math.round(responseJson.length / 1024);
 
+				let cssByNode: Record<string, unknown> | undefined;
+				if (css) {
+					const r = await connector.executeCodeViaUI(
+						`const root = await figma.getNodeByIdAsync(${JSON.stringify(nodeId)});
+if (!root) return { error: "not found" };
+const out = {}; const queue = [root];
+while (queue.length && Object.keys(out).length < 40) {
+  const n = queue.shift();
+  if (typeof n.getCSSAsync === "function") { try { out[n.id] = { name: n.name, css: await n.getCSSAsync() }; } catch (e) {} }
+  if ("children" in n) queue.push(...n.children);
+}
+return out;`,
+						30000,
+					);
+					const v = r && typeof r === "object" && "result" in r ? r.result : r;
+					if (v && typeof v === "object" && !v.error) cssByNode = v;
+				}
+
 				const response: any = {
 					nodeId,
 					component: data,
+					...(cssByNode ? { css: cssByNode } : {}),
 					metadata: {
 						purpose: "deep_component_development",
 						treeDepth: depthLabel,

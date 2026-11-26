@@ -85,7 +85,11 @@ Compare the code's token files against Figma variables without writing anything:
 
 Treat every conflict and every delete candidate as **needs decision**. To actually sync, use the `design-tokens-sync` skill.
 
-## 6. Parity report
+## 6. Link components to their code
+
+Once pairs are confirmed, offer to add the links developers see in Dev Mode with `figma_manage_dev_resources({ action: "add", items: [{ nodeId, url, name: "Storybook" | "Code" }] })`. It skips links that already exist. Only link URLs you actually know (the code file's repo URL, the Storybook story); never guess one.
+
+## 7. Parity report
 
 ```
 PARITY REPORT — <library> vs <package>@<version>   (canonical: <design|code|undeclared>)

@@ -56,7 +56,7 @@ export const APP_TOOLS = ["ds_dashboard_refresh", "token_browser_refresh"];
 
 export const TOOLSETS: Record<string, Toolset> = {
 	inspect: {
-		description: "file data, component dev specs, styles, library components/variables",
+		description: "file data, component dev specs and CSS, styles, library components/variables, where an asset is used",
 		tools: [
 			"figma_get_file_data",
 			"figma_get_file_for_plugin",
@@ -77,10 +77,11 @@ export const TOOLSETS: Record<string, Toolset> = {
 			"figma_get_library_variables",
 			"figma_import_library_variable",
 			"figma_set_image_fill",
+			"figma_find_usages",
 		],
 	},
 	variables: {
-		description: "edit variables/collections/modes; import/export tokens (DTCG, CSS, Tailwind)",
+		description: "edit variables/collections/modes; extend library collections; import/export tokens (DTCG, CSS, Tailwind)",
 		tools: [
 			"figma_create_variable",
 			"figma_create_variable_collection",
@@ -95,10 +96,11 @@ export const TOOLSETS: Record<string, Toolset> = {
 			"figma_delete_variable_collection",
 			"figma_import_tokens",
 			"figma_export_tokens",
+			"figma_extend_library_collection",
 		],
 	},
 	components: {
-		description: "author component sets, variants, properties, slots",
+		description: "author component sets, variants, properties, slots; dev resource links",
 		tools: [
 			"figma_create_component_set",
 			"figma_arrange_component_set",
@@ -111,10 +113,11 @@ export const TOOLSETS: Record<string, Toolset> = {
 			"figma_add_slot_property",
 			"figma_append_to_slot",
 			"figma_reset_slot",
+			"figma_manage_dev_resources",
 		],
 	},
 	parity: {
-		description: "design↔code parity, code adherence and accessibility audits, DS health reports",
+		description: "design↔code parity, code adherence and accessibility audits, DS health reports, library analytics",
 		tools: [
 			"figma_check_library_parity",
 			"figma_check_design_parity",
@@ -123,6 +126,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 			"figma_scan_code_accessibility",
 			"figma_audit_design_system_report",
 			"figma_audit_design_system",
+			"figma_get_library_analytics",
 		],
 	},
 	docs: {

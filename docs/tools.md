@@ -181,6 +181,17 @@ figma_enable_toolsets({ toolsets: ["variables", "parity"] })
 
 Cloud Mode is unchanged and lists all its tools.
 
+## 🆕 Design-system management additions
+
+| Tool | Toolset | What it does |
+|---|---|---|
+| `figma_find_usages` | inspect | Where a style, variable or component is used (count and a sample by page). Run it before renaming or retiring an asset |
+| `figma_manage_dev_resources` | components | List, add, edit or delete the links on components to their code, Storybook or docs (Dev Mode). Bulk, skips duplicates, asks before deleting |
+| `figma_extend_library_collection` | variables | Create an extended collection: a local theme of a library's variables that overrides values per mode. Without a key, lists the collections available |
+| `figma_get_library_analytics` | parity | Library usage across the organization: instances, unused assets, insertions and detach rates. Enterprise; token needs `library_analytics:read` |
+| `figma_get_component_for_development_deep` `css: true` | inspect | Adds Figma's generated CSS for the node and its layers |
+| `figma_get_design_system_summary` | core | Now also lists Figma Specs documents in the file (title, page). Spec content isn't readable from plugins; use Figma's MCP server for it |
+
 ## 🧭 Navigation & Status Tools
 
 ### `figma_navigate`

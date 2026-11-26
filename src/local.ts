@@ -94,6 +94,10 @@ import {
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
 import { registerSlotTools } from "./core/slot-tools.js";
+import { registerDevResourceTools } from "./core/dev-resource-tools.js";
+import { registerUsageTools } from "./core/usage-tools.js";
+import { registerAnalyticsTools } from "./core/analytics-tools.js";
+import { registerExtendedCollectionTools } from "./core/extended-collection-tools.js";
 import { registerMotionTools } from "./core/motion-tools.js";
 import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
@@ -2181,6 +2185,22 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
 
 					// Check cache first
+					// Figma Specs (PRDs/RFCs embedded on the canvas). Their content isn't
+					// readable from plugins — list them so an agent knows they exist and
+					// can use Figma's own MCP server to read or edit them.
+					let specs: Array<{ id: string; title: string; page: string }> = [];
+					try {
+						const r = await (await this.getDesktopConnector()).executeCodeViaUI(
+							`await figma.loadAllPagesAsync(); const out = []; for (const p of figma.root.children) for (const n of p.children) if (n.type === "SPEC_BLOCK") out.push({ id: n.id, title: n.name, page: p.name }); return out.slice(0, 50);`,
+							8000,
+						);
+						const v = r && typeof r === "object" && "result" in r ? r.result : r;
+						if (Array.isArray(v)) specs = v;
+					} catch {}
+					const specsField = specs.length
+						? { specs, specsNote: "Spec documents (Figma Specs). Their content can't be read through this plugin; use Figma's MCP server to read or edit them." }
+						: {};
+
 					let cacheEntry = cache.get(fileKey);
 					if (cacheEntry && !forceRefresh) {
 						const categories = getCategories(cacheEntry.manifest);
@@ -2204,6 +2224,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												cacheEntry.manifest.summary.totalComponentSets,
 											tokens: cacheEntry.manifest.summary.totalTokens,
 										},
+										...specsField,
 										hint: "Use figma_search_components to find specific components by name or category.",
 									}),
 								},
@@ -2370,6 +2391,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 												`Components fetch failed (${componentsFetchError}) — component data is incomplete and was NOT cached. Check the Desktop Bridge plugin and retry.`,
 											]
 										: undefined,
+									...specsField,
 									hint: "Use figma_search_components to find specific components by name or category.",
 								}),
 							},
@@ -3413,6 +3435,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		registerSlidesTools(server, () => this.getDesktopConnector());
 
 		registerSlotTools(server, () => this.getDesktopConnector());
+		registerDevResourceTools(server, () => this.getDesktopConnector());
+		registerUsageTools(server, () => this.getDesktopConnector());
+		registerExtendedCollectionTools(server, () => this.getDesktopConnector());
+		registerAnalyticsTools(server, { getFigmaAPI: () => this.getFigmaAPI(), getCurrentUrl: () => this.getCurrentFileUrl() });
 
 		registerMotionTools(server, () => this.getDesktopConnector(), {
 			allowFileWrite: true,

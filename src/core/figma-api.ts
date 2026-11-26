@@ -361,6 +361,21 @@ export class FigmaAPI {
    * GET /v1/files/:file_key/styles
    * Get styles from a file
    */
+  /**
+   * GET /v1/analytics/libraries/:file_key/{component|style|variable}/{actions|usages}
+   * Library analytics (Enterprise; token needs the library_analytics:read scope).
+   */
+  async getLibraryAnalytics(
+    fileKey: string,
+    asset: 'component' | 'style' | 'variable',
+    metric: 'actions' | 'usages',
+    params: { group_by: string; start_date?: string; end_date?: string; cursor?: string },
+  ): Promise<{ rows: any[]; next_page?: boolean; cursor?: string }> {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
+    return this.request(`/analytics/libraries/${fileKey}/${asset}/${metric}?${q.toString()}`);
+  }
+
   async getStyles(fileKey: string): Promise<any> {
     return this.request(`/files/${fileKey}/styles`);
   }

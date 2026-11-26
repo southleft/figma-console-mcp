@@ -42,6 +42,9 @@ import { registerTokensTools } from "./core/tokens-tools.js";
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
 import { registerSlotTools } from "./core/slot-tools.js";
+import { registerDevResourceTools } from "./core/dev-resource-tools.js";
+import { registerUsageTools } from "./core/usage-tools.js";
+import { registerExtendedCollectionTools } from "./core/extended-collection-tools.js";
 import { registerMotionTools } from "./core/motion-tools.js";
 import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
@@ -875,6 +878,9 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		registerSlidesTools(this.toolServer, getCloudDesktopConnector);
 
 		registerSlotTools(this.toolServer, getCloudDesktopConnector);
+		registerDevResourceTools(this.toolServer as any, getCloudDesktopConnector);
+		registerUsageTools(this.toolServer as any, getCloudDesktopConnector);
+		registerExtendedCollectionTools(this.toolServer as any, getCloudDesktopConnector);
 
 		registerMotionTools(this.toolServer, getCloudDesktopConnector);
 		registerCodeLayerTools(this.toolServer, getCloudDesktopConnector);
@@ -1351,6 +1357,9 @@ export default {
 			registerSlidesTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 
 			registerSlotTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			registerDevResourceTools(statelessServer as any, getCloudDesktopConnector);
+			registerUsageTools(statelessServer as any, getCloudDesktopConnector);
+			registerExtendedCollectionTools(statelessServer as any, getCloudDesktopConnector);
 
 			registerMotionTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 			registerCodeLayerTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);

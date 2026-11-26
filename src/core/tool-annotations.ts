@@ -54,7 +54,11 @@ const KIND_HINTS: Record<ToolKind, Omit<ToolHints, "openWorldHint">> = {
  */
 export const TOOL_KINDS: Record<string, ToolKind> = {
 	figma_enable_toolsets: "session",
-	figma_call: "destructive", // runs any enabled tool, including deletes
+	figma_call: "destructive",
+	figma_find_usages: "read",
+	figma_get_library_analytics: "read",
+	figma_extend_library_collection: "create",
+	figma_manage_dev_resources: "destructive", // delete removes links (asks first) // runs any enabled tool, including deletes
 	// ── Connection, console, status ──────────────────────────────────────────
 	figma_get_status: "read",
 	figma_diagnose: "read",
@@ -251,6 +255,7 @@ const REST_TOOLS = new Set<string>([
 	"figma_get_library_component_by_key",
 	"figma_get_design_system_kit",
 	"figma_resolve_components",
+	"figma_get_library_analytics",
 ]);
 
 export function hintsFor(name: string): ToolHints | undefined {
