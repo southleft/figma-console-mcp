@@ -2549,6 +2549,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							}
 						}
 
+						const { compactSearchResult, isPrivateOrRetiredName } = await import("./core/design-system-manifest.js");
+						// Private / archived components aren't meant for use.
+						results = results.filter((item) => !isPrivateOrRetiredName(item.name));
+
 						// Apply search filter
 						if (query) {
 							const queryLower = query.toLowerCase();
@@ -2575,18 +2579,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						const total = results.length;
 						const paginatedResults = results
 							.slice(effectiveOffset, effectiveOffset + effectiveLimit)
-							// Search hits only need a teaser — some design systems carry
-							// multi-KB doc blocks per component, which multiplies across
-							// a result page. figma_get_component_details returns full text.
-							.map((item: any) =>
-								item.description && item.description.length > 200
-									? {
-											...item,
-											description: `${item.description.slice(0, 200)}…`,
-											descriptionTruncated: true,
-										}
-									: item,
-							);
+							// One-sentence teaser per hit; figma_get_component_details has full text.
+							.map((item: any) => compactSearchResult(item));
 
 						return {
 							content: [

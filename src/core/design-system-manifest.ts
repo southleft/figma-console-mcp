@@ -330,7 +330,7 @@ export function componentSearchLoadFailure(
 export function searchComponents(
 	manifest: DesignSystemManifest,
 	query: string,
-	options?: { category?: string; limit?: number; offset?: number }
+	options?: { category?: string; limit?: number; offset?: number; includePrivate?: boolean }
 ): { results: ComponentSearchResult[]; total: number; hasMore: boolean } {
 	const limit = options?.limit ?? 10;
 	const offset = options?.offset ?? 0;
@@ -397,17 +397,34 @@ export function searchComponents(
 		allResults.sort((a, b) => tier(a) - tier(b));
 	}
 
-	const total = allResults.length;
-	// Truncate long doc blocks in search hits — full text is available via
-	// figma_get_component_details.
-	const paginatedResults = allResults.slice(offset, offset + limit).map((r) =>
-		r.description && r.description.length > 200
-			? { ...r, description: `${r.description.slice(0, 200)}…`, descriptionTruncated: true }
-			: r,
-	);
+	// Private ("."/"_" prefixes) and archived/deprecated components aren't meant
+	// for use; leave them out unless asked for.
+	const visible = options?.includePrivate ? allResults : allResults.filter((r) => !isPrivateOrRetiredName(r.name));
+	const total = visible.length;
+	// A one-sentence teaser per hit; full text via figma_get_component_details.
+	const paginatedResults = visible.slice(offset, offset + limit).map(compactSearchResult);
 	const hasMore = offset + limit < total;
 
 	return { results: paginatedResults, total, hasMore };
+}
+
+/** Private ("." / "_" prefixed segment) or archived / deprecated by name. */
+export function isPrivateOrRetiredName(name: string): boolean {
+	return name.split("/").some((seg) => /^\s*[._]/.test(seg)) || /archiv|deprecat|do not use|don't use/i.test(name);
+}
+
+/** First sentence of a description, at most 120 characters. */
+export function descriptionTeaser(desc: string | undefined): string | undefined {
+	if (!desc) return undefined;
+	const first = desc.replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/)[0];
+	return first.length > 120 ? `${first.slice(0, 117)}…` : first;
+}
+
+/** Search hit without fields the name already says (category) or that are noise. */
+export function compactSearchResult<T extends { description?: string; category?: string; descriptionTruncated?: boolean }>(r: T): T {
+	const { category: _c, descriptionTruncated: _t, ...rest } = r as any;
+	const d = descriptionTeaser(r.description);
+	return { ...rest, ...(d ? { description: d } : { description: undefined }) } as T;
 }
 
 /**

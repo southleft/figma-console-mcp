@@ -18,9 +18,16 @@ const logger = createChildLogger({ component: "usage-tools" });
 
 export function buildUsageCode(kind: "style" | "variable" | "component", id: string, sample: number, maxNodes: number): string {
 	return `const KIND = ${JSON.stringify(kind)}, ID = ${JSON.stringify(id)}, SAMPLE = ${sample}, MAX_NODES = ${maxNodes};
-function pageOf(n) { let p = n; while (p && p.type !== "PAGE") p = p.parent; return p ? p.name : "(not on a page — inside another component or hidden)"; }
-const hits = []; let total = 0; let scanned = 0; let truncated = false;
-function add(node, field) { total++; if (hits.length < SAMPLE) hits.push({ nodeId: node.id, name: node.name, type: node.type, page: pageOf(node), field }); }
+function pageOf(n) { let p = n; while (p && p.type !== "PAGE") p = p.parent; return p ? p.name : null; }
+const hits = []; let total = 0; let orphaned = 0; let scanned = 0; let truncated = false;
+// Nodes whose ancestry never reaches a page aren't in the document (e.g. frames a
+// plugin created and never placed). Nobody sees them, so they're counted apart.
+function add(node, field) {
+  const page = pageOf(node);
+  if (!page) { orphaned++; return; }
+  total++;
+  if (hits.length < SAMPLE) hits.push({ nodeId: node.id, name: node.name, type: node.type, page, field });
+}
 let target = null;
 if (KIND === "style") {
   target = await figma.getStyleByIdAsync(ID);
@@ -54,7 +61,7 @@ if (KIND === "style") {
 }
 const pages = {};
 for (const h of hits) pages[h.page] = (pages[h.page] || 0) + 1;
-return { target: { id: target.id, name: target.name, kind: KIND }, total, sample: hits, sampledByPage: pages, ...(KIND === "variable" ? { nodesScanned: scanned, truncated } : {}) };`;
+return { target: { id: target.id, name: target.name, kind: KIND }, total, sample: hits, sampledByPage: pages, ...(orphaned ? { orphaned, orphanedNote: "Also used by " + orphaned + " node(s) that aren't on any page (left outside the document, e.g. by a plugin); not counted in total." } : {}), ...(KIND === "variable" ? { nodesScanned: scanned, truncated } : {}) };`;
 }
 
 export function registerUsageTools(server: McpServer, getDesktopConnector: () => Promise<any>): void {
