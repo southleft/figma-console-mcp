@@ -26,11 +26,17 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_capture_screenshot` | Render a node from the plugin runtime (reflects unsaved changes) | Local / Cloud |
 | **👁️ Real-Time Awareness** | `figma_get_selection` | Get the nodes currently selected in Figma | Local |
 | | `figma_get_design_changes` | Get buffered document-change events | Local |
-| **✅ Design-System Adherence** | `figma_resolve_components` | Map the UI a request needs to real components; gaps go to the person, not the agent | Local / Cloud |
+| **🧰 Toolsets** | `figma_enable_toolsets` | Switch on a toolset (inspect, variables, components, parity, docs…); the client refreshes its tool list | Local |
+| | `figma_call` | Run a non-destructive tool from an enabled toolset by name, for clients that don't refresh their list | Local |
+| **✅ Design-System Adherence** | `figma_resolve_components` | Map the UI a request needs to real components; what the system lacks comes back as an explained `GAP:` note to place where it belongs | Local / Cloud |
 | | `figma_audit_adherence` | Score a generated frame: components vs. hand-built look-alikes, tokens vs. hardcoded values | Local / Cloud |
 | | `figma_audit_code_adherence` | Score generated code: system components and tokens vs. re-implementations and literals | Local / Cloud |
 | | `figma_bind_tokens` | Bind spacing, radius, size and type to existing variables; apply text/effect styles by name | Local / Cloud |
 | | `figma_check_library_parity` | Pair a Figma component library with its code library; list what exists on only one side | Local / Cloud |
+| **🔗 Dev Resources & Usage** | `figma_manage_dev_resources` | List, add, edit or delete the code, Storybook and docs links on components | Local / Cloud |
+| | `figma_find_usages` | Where a style, variable (including through aliases) or component is used | Local / Cloud |
+| | `figma_get_library_analytics` | Library usage across the org: instances, unused assets, detach rates (Enterprise) | Local |
+| | `figma_extend_library_collection` | Create an extended collection from a library collection (Enterprise) | Local / Cloud |
 | **🔁 Token Sync** | `figma_export_tokens` | Export Figma variables to DTCG JSON + CSS (replaces Style Dictionary) | Local / Cloud |
 | | `figma_import_tokens` | Push code-side token edits back to Figma (diff-aware merge) | Local / Cloud |
 | **🧬 Design System Extraction** | `figma_ds_analyze` | Scan production codebase(s): component inventory, classification, architecture | Local |
