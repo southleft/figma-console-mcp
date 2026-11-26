@@ -20,6 +20,7 @@ import {
 	POSSIBLE_THRESHOLD,
 	type NeedResolution,
 	pairLibraries,
+	pickDefaultVariant,
 	resolveNeeds,
 } from "./adherence/matching.js";
 import { GAP_PREFIX, buildAuditCode } from "./adherence/audit-code.js";
@@ -67,7 +68,9 @@ export async function loadLibraryCatalog(api: any, fileKey: string): Promise<{ e
 			}
 		}
 		variantKeys.add(s.key);
+		const dv = pickDefaultVariant<any>(bySet.get(s.node_id) ?? []);
 		entries.push({
+			...(dv ? { defaultVariant: { name: dv.name, key: dv.key, nodeId: dv.node_id } } : {}),
 			name: s.name,
 			key: s.key,
 			nodeId: s.node_id,
@@ -109,7 +112,9 @@ for (const n of figma.root.findAllWithCriteria({ types: ["COMPONENT_SET", "COMPO
     const defs = n.type === "COMPONENT_SET" ? n.componentPropertyDefinitions : {};
     axes = Object.entries(defs).filter(([, d]) => d.type === "VARIANT").map(([k, d]) => ({ name: k.split("#")[0], values: d.variantOptions || [] }));
   } catch (e) {}
-  out.push({ name: n.name, key: n.key, nodeId: n.id, type: n.type, description: n.description || undefined, variantAxes: axes, source: "local" });
+  let dv;
+  try { if (n.type === "COMPONENT_SET" && n.defaultVariant) dv = { name: n.defaultVariant.name, key: n.defaultVariant.key, nodeId: n.defaultVariant.id }; } catch (e) {}
+  out.push({ name: n.name, key: n.key, nodeId: n.id, type: n.type, description: n.description || undefined, variantAxes: axes, defaultVariant: dv, source: "local" });
 }
 return out;`;
 	const res = await connector.executeCodeViaUI(code, 60000, fileKey);
@@ -313,7 +318,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 					decisionsBy: decisionSource,
 					items: out,
 					rules: [
-						"Build ONLY items whose action is build-with-component, using that component (figma_instantiate_component with its key/nodeId).",
+						"Build ONLY items whose action is build-with-component, using that component: for a component set, instantiate component.defaultVariant (figma_instantiate_component with its key + nodeId, plus `variant` to pick other values from variantAxes); never the set key.",
 						`For action placeholder, add one plainly labeled frame named exactly "${GAP_PREFIX} <need>" — no styling that imitates a real component.`,
 						"For action skip, build nothing for it.",
 						"Never hand-build a look-alike, and never create a new component, for anything not matched.",

@@ -77,3 +77,16 @@ describe("adherence matching", () => {
 	});
 });
 
+
+import { pickDefaultVariant } from "../src/core/adherence/matching";
+describe("default variant", () => {
+	it("prefers the variant whose values say Default", () => {
+		const v = pickDefaultVariant([
+			{ name: "State=Hover, Variant=Primary, Size=Md" },
+			{ name: "State=Default, Variant=Primary, Size=Md" },
+			{ name: "State=Default, Variant=Default, Size=Md" },
+		]);
+		expect(v?.name).toBe("State=Default, Variant=Default, Size=Md");
+		expect(pickDefaultVariant([{ name: "A=1" }, { name: "A=2" }])?.name).toBe("A=1");
+	});
+});

@@ -22,11 +22,30 @@ export interface CatalogEntry {
 	description?: string;
 	/** Variant axes, e.g. [{ name: "Size", values: ["sm","md"] }] */
 	variantAxes?: Array<{ name: string; values: string[] }>;
+	/** For component sets: the variant to instantiate by default (instantiate variant keys, not set keys). */
+	defaultVariant?: { name: string; key: string; nodeId?: string };
 	/** "local" (this file) or the library file key it came from */
 	source: string;
 }
 
 export type NeedStatus = "matched" | "possible" | "gap";
+
+/**
+ * The variant a person would reach for first: the one whose values say
+ * "Default" most often (State=Default, Shape=Default …); ties keep source order.
+ */
+export function pickDefaultVariant<T extends { name: string }>(variants: T[]): T | undefined {
+	let best: T | undefined;
+	let bestScore = -1;
+	for (const v of variants) {
+		const score = (v.name.match(/=\s*Default\b/gi) ?? []).length;
+		if (score > bestScore) {
+			best = v;
+			bestScore = score;
+		}
+	}
+	return best;
+}
 
 export interface Candidate {
 	name: string;
@@ -38,6 +57,7 @@ export interface Candidate {
 	/** Why it matched: the need words found in the component */
 	matchedOn: string[];
 	variantAxes?: CatalogEntry["variantAxes"];
+	defaultVariant?: CatalogEntry["defaultVariant"];
 }
 
 export interface NeedResolution {
@@ -240,6 +260,7 @@ export function resolveNeeds(
 				score,
 				matchedOn,
 				variantAxes: entry.variantAxes,
+				defaultVariant: entry.defaultVariant,
 			});
 		}
 		scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));

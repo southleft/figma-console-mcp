@@ -101,6 +101,7 @@ import { registerLayoutTools } from "./core/layout-tools.js";
 import { applyToolAnnotations } from "./core/tool-annotations.js";
 import { LOCAL_TASK_TOOLS, defaultTaskStore, enableTasksForTools } from "./core/tasks.js";
 import { registerAdherenceTools } from "./core/adherence-tools.js";
+import { pickDefaultVariant } from "./core/adherence/matching.js";
 import { registerTokenBindingTools } from "./core/token-binding-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
@@ -3442,6 +3443,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						type: "COMPONENT_SET",
 						description: set.description,
 						variantAxes: (set.variantAxes ?? []).map((a: any) => ({ name: a.name, values: a.values ?? [] })),
+						...((): any => {
+							const dv = pickDefaultVariant<any>(set.variants ?? []);
+							return dv ? { defaultVariant: { name: dv.name, key: dv.key, nodeId: dv.nodeId } } : {};
+						})(),
 						source: "local",
 					});
 				}

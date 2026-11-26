@@ -79,7 +79,7 @@ Wait for the answer, then re-run `figma_resolve_components` (the decisions come 
 - Name layout frames by **role**: "Header", "Main column", "Row 1", "Actions". **Don't** give them component words like Card, Button, Tabs, Menu, Icon, Search or Badge. The audit flags those as hand-built imitations.
 
 **Components.**
-- `figma_instantiate_component({ componentKey, nodeId, variant: { ... }, overrides: { ... }, parentId })`. Always pass both `componentKey` and `nodeId` from the resolve or search result.
+- `figma_instantiate_component({ componentKey, nodeId, variant: { ... }, overrides: { ... }, parentId })`. For a component set, use the resolve result's `component.defaultVariant` key and nodeId (variant keys, never the set key) and pass `variant` for other values; no separate library lookup needed. Always pass both `componentKey` and `nodeId`.
 - Set content through component properties with `figma_set_instance_properties({ nodeId, properties: { Label: "Save", "Show Icon": false } })`. Never edit text inside an instance directly. Those edits fail silently.
 - Pick the variant you need rather than restyling an instance. Style overrides on instances get reported.
 
@@ -96,6 +96,7 @@ Wait for the answer, then re-run `figma_resolve_components` (the decisions come 
 ```
 figma_audit_adherence({ nodeId: "<root frame>", libraryFileKeys: ["<library key>"], minScore: 90 })
 figma_capture_screenshot({ nodeId: "<root frame>" })
+figma_lint_design({ nodeId: "<root frame>", rules: ["wcag"] })
 ```
 
 - `pass: false` with errors means you have work to do:
@@ -108,7 +109,8 @@ figma_capture_screenshot({ nodeId: "<root frame>" })
   - `hand-drawn-vector`: use the system's icon component.
   - `looks-hand-built`: rename it if it's really just layout, or replace it if it's really a component.
 - Info: `style-override` means switch to a variant if one exists.
-- Check the screenshot for alignment, padding balance, FILL vs HUG, and overlaps.
+- Check the screenshot for alignment, padding balance, FILL vs HUG, and overlaps — and for readability. The adherence score can be 100 while text is unreadable: components follow the theme's variable mode (often dark), so a root frame with no background shows light text on a white canvas. Give the root a surface fill bound to the system's background variable so it follows the same mode. Fix every WCAG contrast finding from `figma_lint_design`.
+- A component that doesn't stretch or behave as needed (e.g. an inner field that hugs) is a finding about the component. Report it; don't override its internals.
 - If a fix would require inventing something, stop and add it to the gap list for the person.
 - A truncated audit never passes. Audit a smaller frame or raise `maxNodes`.
 
