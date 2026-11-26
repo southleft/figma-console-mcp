@@ -21,6 +21,8 @@ export interface CodeComponent {
 	className?: string;
 	props: CodeProp[];
 	slots: string[];
+	/** Boolean states the component gets from a native element or primitive it extends (disabled, checked…). */
+	inherited?: string[];
 }
 
 export interface FigmaComponentShape {
@@ -34,7 +36,7 @@ export interface AxisComparison {
 	figmaAxis: string;
 	codeProp?: string;
 	/** How the axis was mapped: same-name, boolean-flag, state, or none */
-	mappedBy: "same-name" | "same-values" | "boolean-flag" | "slot" | "state" | "none";
+	mappedBy: "same-name" | "same-values" | "boolean-flag" | "slot" | "state" | "responsive" | "none";
 	figmaOnlyValues: string[];
 	codeOnlyValues: string[];
 	/** For state axes: each non-interaction state value and the prop it maps to (or null) */
@@ -58,15 +60,20 @@ export interface PropsParity {
 	axes: AxisComparison[];
 	/** Appearance-affecting code props with no Figma axis or property */
 	codeOnlyProps: Array<{ name: string; type: string }>;
-	/** Figma content properties (Show X / Slot X / Text) with no code prop or slot */
+	/** Figma content properties (Show X / Slot X / Text) with no code prop or slot — informational, not drift */
 	figmaOnlyProperties: string[];
 	/** Code props skipped because a recorded decision omits them from Figma. */
 	omittedByDecision?: string[];
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-/** "Display Sm" → "displaysm", "display-sm" → "displaysm" */
-const normValue = norm;
+/** "Display Sm" → "displaysm", "display-sm" → "displaysm"; synonyms fold together. */
+const normValue = (v: string) => {
+	const n = norm(v);
+	return VALUE_CANON.get(n) ?? n;
+};
+/** isDisabled / hasError / showIcon → disabled / error / icon */
+const stripFlag = (n: string) => norm(n.replace(/^(is|has|show|with|should)(?=[A-Z_\s-])/i, "").replace(/^(is|has|show|with)\s+/i, ""));
 
 /** Props that never show up as a design variant. */
 const NON_VISUAL_PROPS = new Set(
@@ -80,12 +87,46 @@ const NON_VISUAL_PROPS = new Set(
 		// behavior, not appearance
 		"triggerHasOwnFocusable", "disableClickOutside", "disableBackdropClick", "multiple", "isDismissed",
 		"isDynamic", "isInteractive", "behavior", "tagName", "isHidden", "isDragging",
+		// React composition / form plumbing
+		"asChild", "as", "forceMount", "defaultOpen", "defaultValue", "defaultChecked", "modal", "orientation_",
 	].map(norm),
 );
 
+/** Prop names / prefixes that configure behaviour rather than appearance. */
+const NON_VISUAL_PATTERN = /^(aria|on[A-Z]|can[A-Z]|default[A-Z]|autoPlay|auto[A-Z])|^(loop|align|side|sideOffset|alignOffset|collisionPadding|trapFocus|activationMode|peek|respectReducedMotion|required|dir|asChild|modal)$/;
+function nonVisual(name: string): boolean {
+	return NON_VISUAL_PROPS.has(norm(name)) || NON_VISUAL_PATTERN.test(name);
+}
+
 /** Figma state values that are interactions, not props. */
-const INTERACTION_STATES = new Set(["default", "rest", "hover", "focus", "focused", "active", "pressed", "focusvisible"]);
-const STATE_AXIS = /^(state|states|interaction|status)$/i;
+const INTERACTION_STATES = new Set(["default", "rest", "hover", "hovered", "focus", "focused", "active", "pressed", "focusvisible"]);
+/** States driven by data or the user at runtime (has a value, is open…), not by an author prop. */
+const RUNTIME_STATES = new Set(["filled", "empty", "placeholder", "inactive", "open", "opened", "closed", "expanded", "collapsed", "typing", "dragging", "visited", "playing", "paused", "muted", "loaded", "visible", "hidden"]);
+/** Code props that hold runtime state (controlled open/expanded…), not a design choice. */
+const RUNTIME_PROPS = new Set(["open", "isopen", "expanded", "isexpanded", "visible", "isvisible", "playing", "isplaying", "muted", "active", "isactive"]);
+/** Axis names whose numeric values are sample data, not variants. */
+const DATA_AXIS = /^(value|percent(age)?|progress|count|amount|level|step|score|rating|number)$/i;
+const isNumericValue = (v: string) => /^-?\d+(\.\d+)?\s*%?$/.test(v.trim());
+/** "Error (Focus)" → "Error": an interaction layered on a state. */
+const baseState = (v: string) => v.replace(/\s*\([^)]*\)\s*$/, "").trim();
+/** Axes that describe the viewport, which code handles with CSS rather than a prop. */
+const RESPONSIVE_AXIS = /^(breakpoints?|viewport|device|screen( size)?|platform)$/i;
+const BOOLEAN_VALUES = new Set(["true", "false", "yes", "no", "on", "off"]);
+/** Variant-value synonyms that mean the same thing across Figma and code. */
+const VALUE_SYNONYMS: string[][] = [
+	["danger", "destructive", "error", "critical", "negative"],
+	["info", "informational", "information", "neutral"],
+	["success", "positive", "confirm"],
+	["warning", "caution", "warn"],
+	["sm", "small"],
+	["md", "medium"],
+	["lg", "large"],
+	["xs", "xsmall", "extrasmall"],
+	["xl", "xlarge", "extralarge"],
+];
+const VALUE_CANON = new Map<string, string>();
+for (const g of VALUE_SYNONYMS) for (const v of g) VALUE_CANON.set(v, g[0]);
+const STATE_AXIS = /^(state|states|interaction|status)$|(state|status)$/i;
 const OFF_VALUES = new Set(["default", "no", "off", "false", "hidden", "none", "regular", "base"]);
 
 export function parseTypeText(typeText: string): Pick<CodeProp, "kind" | "values"> {
@@ -166,8 +207,45 @@ export function compareComponentProps(
 		pairedTo.set(norm(axisName), [...(pairedTo.get(norm(axisName)) ?? []), cp]);
 	}
 
+	const inherited = new Set((code.inherited ?? []).map(norm));
+	const propByFlag = (name: string) =>
+		code.props.find((p) => norm(p.name) === norm(name) || stripFlag(p.name) === stripFlag(name) || norm(p.name) === stripFlag(name));
+
 	for (const axis of figma.variantAxes) {
 		const fValues = axis.values;
+		// An axis with one value, or Figma's unnamed default, carries no design decision.
+		// (Unless a recorded pairing says it should carry one: Weight=Default ↔ isBold.)
+		if ((fValues.length <= 1 || /^property \d+$/i.test(axis.name)) && !pairedTo.get(norm(axis.name))) continue;
+		if (DATA_AXIS.test(axis.name) && fValues.every(isNumericValue)) {
+			axes.push({ figmaAxis: axis.name, mappedBy: "responsive", figmaOnlyValues: [], codeOnlyValues: [] });
+			continue;
+		}
+		// An axis the component inherits from its primitive (orientation…).
+		if (inherited.has(norm(axis.name)) && !code.props.some((p) => norm(p.name) === norm(axis.name))) {
+			axes.push({ figmaAxis: axis.name, codeProp: `${norm(axis.name)} (inherited)`, mappedBy: "same-name", figmaOnlyValues: [], codeOnlyValues: [] });
+			continue;
+		}
+		if (RESPONSIVE_AXIS.test(axis.name)) {
+			axes.push({ figmaAxis: axis.name, mappedBy: "responsive", figmaOnlyValues: [], codeOnlyValues: [] });
+			continue;
+		}
+		// Boolean axes named like props: isDisabled=true|false ↔ disabled, hasError ↔ error.
+		if (fValues.every((v) => BOOLEAN_VALUES.has(norm(v))) && !pairedTo.get(norm(axis.name))) {
+			const p = propByFlag(axis.name);
+			const flag = stripFlag(axis.name);
+			const slot = code.slots.find((sl) => sl && (norm(sl) === flag || norm(sl) === norm(axis.name)));
+			if (p) usedProps.add(p.name);
+			const inh = inherited.has(flag) ? flag : flag === "error" && inherited.has("invalid") ? "invalid" : null;
+			const ok = !!p || slot !== undefined || !!inh || RUNTIME_STATES.has(flag) || INTERACTION_STATES.has(flag);
+			axes.push({
+				figmaAxis: axis.name,
+				codeProp: p?.name ?? (slot !== undefined ? `slot "${slot}"` : inh ? `${inh} (inherited)` : undefined),
+				mappedBy: !ok ? "none" : slot !== undefined && !p ? "slot" : "boolean-flag",
+				figmaOnlyValues: ok ? [] : ["true"],
+				codeOnlyValues: [],
+			});
+			continue;
+		}
 		const forced = pairedTo.get(norm(axis.name));
 		if (forced && !STATE_AXIS.test(axis.name)) {
 			for (const p of forced) usedProps.add(p.name);
@@ -200,10 +278,14 @@ export function compareComponentProps(
 		// 1. State axis: interactions need no prop; other states need a boolean.
 		if (STATE_AXIS.test(axis.name)) {
 			const stateProps: Record<string, string | null> = {};
-			for (const v of fValues) {
-				if (INTERACTION_STATES.has(norm(v))) continue;
-				const p = findBooleanFor(code, [v, `is${v}`]);
-				stateProps[v] = p?.name ?? null;
+			for (const raw of fValues) {
+				const v = baseState(raw);
+				if (INTERACTION_STATES.has(norm(v)) || RUNTIME_STATES.has(norm(v))) continue;
+				if (v !== raw && stateProps[v] !== undefined) continue;
+				const p = findBooleanFor(code, [v, `is${v}`, `has${v}`]) ?? propByFlag(v);
+				// An error state is the native/primitive invalid state (aria-invalid).
+				const inh = inherited.has(norm(v)) ? norm(v) : norm(v) === "error" && inherited.has("invalid") ? "invalid" : null;
+				stateProps[v] = p?.name ?? (inh ? `${inh} (inherited)` : null);
 				if (p) usedProps.add(p.name);
 			}
 			const missing = Object.entries(stateProps).filter(([, p]) => !p).map(([v]) => v);
@@ -341,17 +423,26 @@ export function compareComponentProps(
 	}
 
 	const codeOnlyProps = code.props
-		.filter((p) => !usedProps.has(p.name) && !NON_VISUAL_PROPS.has(norm(p.name)) && (p.kind === "enum" || p.kind === "boolean"))
+		.filter((p) => !usedProps.has(p.name) && !nonVisual(p.name) && (p.kind === "enum" || p.kind === "boolean"))
 		.map((p) => ({ name: p.name, type: p.typeText }));
 
 	// Recorded pairings onto STATE axes count as mapped.
 	for (const [prop] of Object.entries(decisions.pairWith ?? {})) usedProps.add(prop);
 	const publicProps = decisions.publicProps ? new Set(decisions.publicProps) : null;
-	const codeOnlyFinal = codeOnlyProps.filter((p) => !usedProps.has(p.name) && (!publicProps || publicProps.has(p.name)));
+	// A code flag Figma expresses as a boolean property: withIcon ↔ "hasIcon" / "Show Icon".
+	const figmaFlags = new Set((figma.properties ?? []).filter((p) => p.type === "BOOLEAN").map((p) => stripFlag(p.name.split("#")[0])));
+	const codeOnlyFinal = codeOnlyProps.filter(
+		(p) =>
+			!usedProps.has(p.name) &&
+			(!publicProps || publicProps.has(p.name)) &&
+			!(p.type === "boolean" && figmaFlags.has(stripFlag(p.name))) &&
+			!RUNTIME_PROPS.has(norm(p.name)),
+	);
+	// Figma TEXT / INSTANCE_SWAP / content-toggle properties are authoring
+	// conveniences for content that code passes as children or slots, so an
+	// unmatched one is reported (figmaOnlyProperties) but isn't drift.
 	const driftFinal =
-		axes.some((a) => a.mappedBy === "none" || a.figmaOnlyValues.length || a.codeOnlyValues.length) ||
-		codeOnlyFinal.length > 0 ||
-		figmaOnlyProperties.length > 0;
+		axes.some((a) => a.mappedBy === "none" || a.figmaOnlyValues.length || a.codeOnlyValues.length) || codeOnlyFinal.length > 0;
 	return {
 		component: figma.name,
 		codeTag: code.tagName,
@@ -364,8 +455,8 @@ export function compareComponentProps(
 }
 
 /**
- * Decisions from contract files: `{ name: "al-button", props: [{ name, bindings: { figma: { omit, pairWith } } }] }`
- * (the Altitude contract format). Keyed like indexCem (normalized tag, with and without prefix).
+ * Decisions from contract files: `{ name: "x-button", props: [{ name, bindings: { figma: { omit, pairWith } } }] }`
+ * (per-component JSON contracts with props[].omit, bindings.figma and pairWith). Keyed like indexCem (normalized tag, with and without prefix).
  */
 export function decisionsFromContracts(contracts: any[]): Map<string, ComponentDecisions> {
 	const out = new Map<string, ComponentDecisions>();

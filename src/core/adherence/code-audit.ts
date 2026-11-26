@@ -183,7 +183,7 @@ export function auditCode(sources: CodeSource[], ds: CodeDesignSystem): CodeAudi
 				// A wrapper that renders the system component isn't a re-implementation.
 				const sys = k ? dsConcepts.get(k) : undefined;
 				const body = lines.slice(idx + 1, idx + 60).join("\n");
-				const nextDef = body.search(/\n\s*(?:export\s+)?(?:default\s+)?(?:function|const|class)\s+[A-Z]/);
+				const nextDef = body.search(/(?:^|\n)\s*(?:export\s+)?(?:default\s+)?(?:function|const|class)\s+[A-Z]/);
 				const ownBody = nextDef >= 0 ? body.slice(0, nextDef) : body;
 				const wraps = sys ? new RegExp(`<${sys}[\\s/>.]`).test(ownBody) || new RegExp(`<${sys}[\\s/>.]`).test(line) : false;
 				if (sys && !wraps) {

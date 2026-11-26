@@ -26,7 +26,8 @@ import {
 import { GAP_PREFIX, buildAuditCode } from "./adherence/audit-code.js";
 import { extractFileKey } from "./figma-api.js";
 import { auditCode, type CodeSource, componentNamesFromFiles, scoreCodeAudit, tokenNamesFrom } from "./adherence/code-audit.js";
-import { type ComponentDecisions, compareComponentProps, decisionsFromContracts, indexCem } from "./adherence/props-parity.js";
+import { type CodeComponent, type ComponentDecisions, compareComponentProps, decisionsFromContracts, indexCem } from "./adherence/props-parity.js";
+import { reactComponentFromSource } from "./adherence/react-props.js";
 
 const logger = createChildLogger({ component: "adherence-tools" });
 
@@ -562,7 +563,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 		"figma_check_library_parity",
 		{
 			description:
-				"Library-level parity between a Figma component library and its code counterpart: which components exist on both sides, which are only in Figma, and which are only in code. Pairs by exact name, then the same words ignoring case/punctuation/folders, then the same UI concept (only when unambiguous, so nothing is force-paired). Archived/deprecated/private Figma components are listed separately, not counted as missing. Figma side: the active file's components (default) and/or published libraries (libraryFileKeys, REST). Code side: componentsDir (file names, Local Mode) and/or a components list. Then use figma_check_design_parity on each pair for property-level drift. Deterministic; it reports differences and decides nothing.",
+				"Library-level parity between a Figma component library and its code counterpart: which components exist on both sides, which are only in Figma, and which are only in code. Pairs by exact name, then the same words ignoring case/punctuation/folders, then the same UI concept (only when unambiguous, so nothing is force-paired). Archived/deprecated/private Figma components are listed separately, not counted as missing. Figma side: the active file's components (default) and/or published libraries (libraryFileKeys, REST). Code side: componentsDir (file names, Local Mode) and/or a components list. With manifestPath (Custom Elements Manifest) or — for React libraries — componentsDir alone (cva variants and literal-union/boolean props read from source), each pair is also compared prop by prop. Then use figma_check_design_parity on a pair for visual specs. Deterministic; it reports differences and decides nothing.",
 			inputSchema: z.object({
 				componentsDir: z.string().optional().describe('Folder of the code library\'s component files, e.g. "src/components/ui" (Local Mode).'),
 				components: z.array(z.string()).optional().describe("Code component names (alternative or addition to componentsDir)."),
@@ -615,6 +616,27 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 					decisionIndex.set(k.toLowerCase().replace(/[^a-z0-9]/g, ""), v);
 				}
 				let code = [...(args.components ?? [])];
+				// Without a manifest, React sources in componentsDir give prop-level parity:
+				// cva variant groups and literal-union / boolean props.
+				let reactIndex: Map<string, CodeComponent> | null = null;
+				if (!cemIndex && args.componentsDir && deps.listDir && deps.readFile) {
+					reactIndex = new Map();
+					const dir = args.componentsDir.replace(/\/$/, "");
+					for (const entry of await deps.listDir(dir)) {
+						const [name] = componentNamesFromFiles([entry]);
+						if (!name) continue;
+						const candidates = /\.(tsx|jsx)$/i.test(entry)
+							? [`${dir}/${entry}`]
+							: [`${dir}/${entry}/${entry}.tsx`, `${dir}/${entry}/${name}.tsx`, `${dir}/${entry}/index.tsx`, `${dir}/${entry}/${entry}.jsx`];
+						for (const file of candidates) {
+							try {
+								const comp = reactComponentFromSource(await deps.readFile(file), name);
+								reactIndex.set(name.toLowerCase().replace(/[^a-z0-9]/g, ""), comp);
+								break;
+							} catch {}
+						}
+					}
+				}
 				if (cemIndex && code.length === 0 && !args.componentsDir) {
 					// Code components straight from the manifest's custom elements.
 					const names = new Set<string>();
@@ -633,7 +655,7 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 				// Property-level parity needs component property definitions, which only
 				// the plugin can read — so with a manifest, the local side comes from it.
 				const { catalog, sources } = await loadCatalog(
-					cemIndex ? { ...deps, getLocalCatalog: undefined } : deps,
+					cemIndex || (!cemIndex && args.componentsDir) ? { ...deps, getLocalCatalog: undefined } : deps,
 					args.libraryFileKeys ?? [],
 					args.includeLocal !== false,
 				);
@@ -642,7 +664,17 @@ export function registerAdherenceTools(server: McpServer, deps: AdherenceToolDep
 				}
 				const r = pairLibraries(catalog, code);
 				let props: any[] | undefined;
-				if (cemIndex) {
+				if (reactIndex && reactIndex.size > 0) {
+					const byKey = new Map(catalog.map((c) => [c.key, c]));
+					const nk = (x?: string) => (x ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+					props = r.pairs.map((p) => {
+						const fig = byKey.get(p.figma.key)!;
+						const codeComp = reactIndex!.get(nk(p.code));
+						if (!codeComp) return { component: fig.name, status: "unknown", note: `Couldn't read props for "${p.code}" from source.` };
+						const dec = decisionIndex.get(nk(p.code)) ?? decisionIndex.get(nk(fig.name.split("/").pop()));
+						return compareComponentProps({ name: fig.name, variantAxes: fig.variantAxes ?? [], properties: fig.properties }, codeComp, dec);
+					});
+				} else if (cemIndex) {
 					const byKey = new Map(catalog.map((c) => [c.key, c]));
 					props = r.pairs.map((p) => {
 						const fig = byKey.get(p.figma.key)!;

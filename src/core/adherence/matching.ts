@@ -118,7 +118,9 @@ const SYNONYM_GROUPS: string[][] = [
 	["icon", "glyph", "symbol"],
 	["link", "anchor", "hyperlink"],
 	["search", "searchbar", "searchfield"],
-	["datepicker", "calendar", "date"],
+	// A calendar is usually a separate component (often a part OF a date picker).
+	["datepicker", "date"],
+	["calendar"],
 	["stepper", "steps", "wizard"],
 	["skeleton", "placeholder", "shimmer"],
 	["footer", "bottombar"],
@@ -172,27 +174,49 @@ function singular(w: string): string {
 
 /** Lowercase, join known compounds, split camelCase / separators, canonicalize. */
 export function tokenize(text: string): string[] {
+	return tokenizeDetailed(text).map((t) => t.canon);
+}
+
+/** Tokens with both their literal (singularised) form and their synonym-group canon. */
+export function tokenizeDetailed(text: string): Array<{ raw: string; canon: string }> {
 	let t = ` ${text
 		.replace(/([a-z])([A-Z])/g, "$1 $2")
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, " ")} `;
 	for (const [two, one] of COMPOUNDS) t = t.replaceAll(` ${two} `, ` ${one} `);
-	const out: string[] = [];
-	for (const raw of t.split(" ")) {
-		if (!raw || /^\d+$/.test(raw)) continue;
-		const w = singular(raw);
-		if (STOPWORDS.has(w) || STOPWORDS.has(raw)) continue;
-		out.push(CANON.get(w) ?? CANON.get(raw) ?? w);
+	const out: Array<{ raw: string; canon: string }> = [];
+	const seen = new Set<string>();
+	for (const word of t.split(" ")) {
+		if (!word || /^\d+$/.test(word)) continue;
+		const w = singular(word);
+		if (STOPWORDS.has(w) || STOPWORDS.has(word)) continue;
+		const canon = CANON.get(w) ?? CANON.get(word) ?? w;
+		if (seen.has(canon + "|" + w)) continue;
+		seen.add(canon + "|" + w);
+		out.push({ raw: w, canon });
 	}
-	return [...new Set(out)];
+	return out;
 }
+
+/**
+ * Folder words that mark a component as an asset or an example rather than a
+ * reusable UI component (common across design systems). A match inside one of
+ * these is down-weighted unless the need itself asks for that kind of thing.
+ */
+const ASSET_FOLDERS = /^(icons?|iconography|glyphs?|illustrations?|logos?|assets?|emojis?|flags?|avatars? images?|images?|graphics?)$/;
+const EXAMPLE_FOLDERS = /^(blocks?|examples?|patterns?|templates?|demos?|recipes?|samples?|showcase|playground|docs?|documentation)$/;
 
 function componentTerms(entry: CatalogEntry) {
 	// The last path segment of "Forms/Inputs/Text Field" is the component's
 	// real name; earlier segments are folders and count for less.
 	const segments = entry.name.split("/").map((s) => s.trim()).filter(Boolean);
-	const base = new Set(tokenize(segments[segments.length - 1] ?? entry.name));
-	const path = new Set(tokenize(segments.slice(0, -1).join(" ")));
+	const baseDetailed = tokenizeDetailed(segments[segments.length - 1] ?? entry.name);
+	const base = new Set(baseDetailed.map((t) => t.canon));
+	const baseRaw = new Set(baseDetailed.map((t) => t.raw));
+	const pathDetailed = tokenizeDetailed(segments.slice(0, -1).join(" "));
+	const path = new Set(pathDetailed.map((t) => t.canon));
+	const pathRaw = new Set(pathDetailed.map((t) => t.raw));
+	const folderWords = segments.slice(0, -1).flatMap((seg) => seg.toLowerCase().split(/[^a-z]+/).filter(Boolean));
 	const desc = new Set(tokenize(entry.description ?? ""));
 	const variants = new Set(
 		tokenize(
@@ -201,33 +225,47 @@ function componentTerms(entry: CatalogEntry) {
 				.join(" "),
 		),
 	);
-	return { base, path, desc, variants };
+	return { base, baseRaw, path, pathRaw, desc, variants, depth: segments.length, folderWords };
 }
 
 /**
  * Score in [0, 1]. Dominated by the need's words appearing in the component's
  * own name; folder path, variant values and description add supporting weight.
  */
-export function scoreMatch(needTokens: string[], entry: CatalogEntry): { score: number; matchedOn: string[] } {
-	if (needTokens.length === 0) return { score: 0, matchedOn: [] };
-	const { base, path, desc, variants } = componentTerms(entry);
+export function scoreMatch(needTokens: string[] | string, entry: CatalogEntry): { score: number; matchedOn: string[]; depth: number } {
+	const need = typeof needTokens === "string" ? tokenizeDetailed(needTokens) : needTokens.map((t) => ({ raw: t, canon: t }));
+	const { base, baseRaw, path, pathRaw, desc, variants, depth, folderWords } = componentTerms(entry);
+	if (need.length === 0) return { score: 0, matchedOn: [], depth };
 	let total = 0;
+	let nameHits = 0;
 	const matchedOn: string[] = [];
-	for (const t of needTokens) {
+	for (const t of need) {
 		let w = 0;
-		if (base.has(t)) w = 1;
-		else if (variants.has(t)) w = 0.5;
-		else if (path.has(t)) w = 0.45;
-		else if (desc.has(t)) w = 0.35;
-		if (w > 0) matchedOn.push(t);
+		if (baseRaw.has(t.raw)) w = 1; // the component's own word
+		else if (base.has(t.canon)) w = 0.8; // a synonym of it
+		else if (pathRaw.has(t.raw)) w = 0.8; // the need names the folder ("check icon" → Icons/Check)
+		else if (variants.has(t.canon)) w = 0.5;
+		else if (path.has(t.canon)) w = 0.45;
+		else if (desc.has(t.canon)) w = 0.35;
+		if (w > 0) matchedOn.push(t.raw);
+		if (w >= 0.45) nameHits++;
 		total += w;
 	}
-	let score = total / needTokens.length;
+	let score = total / need.length;
+	// Prose alone never makes a candidate: descriptions mention many things.
+	if (nameHits === 0) score = Math.min(score, 0.3);
 	// A component whose name has words the need doesn't mention is a weaker fit
 	// ("Icon Button" for "button"), but only slightly — variants absorb a lot.
-	const extraBase = [...base].filter((t) => !needTokens.includes(t)).length;
+	const needCanon = new Set(need.map((t) => t.canon));
+	const extraBase = [...base].filter((t) => !needCanon.has(t)).length;
 	if (base.size > 0 && extraBase > 0) score *= 1 - Math.min(0.25, (extraBase / base.size) * 0.25);
-	return { score: Math.round(score * 1000) / 1000, matchedOn };
+	// Assets and examples aren't the component itself, unless that's what was asked for.
+	const needWords = new Set(need.map((t) => t.raw));
+	const inAsset = folderWords.some((w) => ASSET_FOLDERS.test(w)) && !folderWords.some((w) => needWords.has(w.replace(/s$/, "")));
+	const inExample = folderWords.some((w) => EXAMPLE_FOLDERS.test(w)) && !folderWords.some((w) => needWords.has(w.replace(/s$/, "")));
+	if (inAsset) score *= 0.5;
+	else if (inExample) score *= 0.7;
+	return { score: Math.round(score * 1000) / 1000, matchedOn, depth };
 }
 
 /**
@@ -247,11 +285,15 @@ export function resolveNeeds(
 ): NeedResolution[] {
 	const maxCandidates = opts.maxCandidates ?? 3;
 	return needs.map((need) => {
-		const tokens = tokenize(need);
-		const scored: Candidate[] = [];
+		const tokens = tokenizeDetailed(need);
+		// A component named exactly what was asked for is the answer: "tabs" is
+		// Tabs, not Tab; "breadcrumbs" is not "Breadcrumbs Item".
+		const literal = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+		const needLiteral = literal(need);
+		const scored: Array<Candidate & { depth: number; exact: boolean }> = [];
 		for (const entry of catalog) {
 			if (isRetired(entry)) continue;
-			const { score, matchedOn } = scoreMatch(tokens, entry);
+			const { score, matchedOn, depth } = scoreMatch(tokens.map((t) => t.raw).join(" "), entry);
 			if (score <= 0) continue;
 			scored.push({
 				name: entry.name,
@@ -263,23 +305,27 @@ export function resolveNeeds(
 				matchedOn,
 				variantAxes: entry.variantAxes,
 				defaultVariant: entry.defaultVariant,
+				depth,
+				exact: literal(entry.name.split("/").pop() ?? entry.name) === needLiteral,
 			});
 		}
-		scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-		const candidates = scored.slice(0, maxCandidates);
-		const best = candidates[0];
+		// Higher score first; among near-equals, the less nested component (a
+		// top-level "Tooltip" over "Charts / Tooltip") — a sub-part or a usage
+		// example lives deeper than the component itself.
+		scored.sort((a, b) => b.score - a.score || Number(b.exact) - Number(a.exact) || a.depth - b.depth || a.name.localeCompare(b.name));
+		const best = scored[0];
+		const rivals = best ? scored.filter((c) => c !== best && c.name !== best.name && c.score >= best.score - 0.05) : [];
+		// Not a tie when the best is the only exact name among its rivals, or it's
+		// strictly less nested than all of them.
+		const tie = best?.exact ? rivals.some((c) => c.exact && c.depth <= best.depth) : rivals.some((c) => c.depth <= best.depth);
+		const candidates = scored.slice(0, maxCandidates).map(({ depth, exact, ...c }) => c);
 		let status: NeedStatus = "gap";
-		if (best && best.score >= MATCH_THRESHOLD) {
-			// Two different components scoring the same is ambiguity, not a match.
-			const tie = candidates[1] && candidates[1].score >= best.score - 0.05 && candidates[1].name !== best.name;
-			status = tie ? "possible" : "matched";
-		} else if (best && best.score >= POSSIBLE_THRESHOLD) {
-			status = "possible";
-		}
+		if (best && best.score >= MATCH_THRESHOLD) status = tie ? "possible" : "matched";
+		else if (best && best.score >= POSSIBLE_THRESHOLD) status = "possible";
 		return {
 			need,
 			status,
-			...(status === "matched" ? { component: best } : {}),
+			...(status === "matched" ? { component: candidates[0] } : {}),
 			candidates: status === "gap" ? candidates.filter((c) => c.score >= POSSIBLE_THRESHOLD / 2) : candidates,
 		};
 	});
@@ -310,18 +356,29 @@ export function pairLibraries(figma: CatalogEntry[], code: string[]) {
 		usedF.add(f);
 		usedC.add(c);
 	};
-	for (const f of live) {
+	// When several Figma components share a name (the component itself, an icon
+	// of it, a sub-part, a usage example), pair the code component with the one
+	// that IS the component: not an asset or example, then the least nested.
+	const rank = (f: CatalogEntry) => {
+		const segs = f.name.split("/").map((x) => x.trim()).filter(Boolean);
+		const folders = segs.slice(0, -1).flatMap((x) => x.toLowerCase().split(/[^a-z]+/).filter(Boolean));
+		const asset = folders.some((w) => ASSET_FOLDERS.test(w)) ? 2 : folders.some((w) => EXAMPLE_FOLDERS.test(w)) ? 1 : 0;
+		return asset * 100 + segs.length;
+	};
+	// An icon or illustration of a thing is never the counterpart of a UI component.
+	const ordered = [...live].filter((f) => rank(f) < 200).sort((a, b) => rank(a) - rank(b));
+	for (const f of ordered) {
 		const c = code.find((x) => !usedC.has(x) && x === base(f.name));
 		if (c) take(f, c, "exact");
 	}
-	for (const f of live) {
+	for (const f of ordered) {
 		if (usedF.has(f)) continue;
 		const c = code.find((x) => !usedC.has(x) && norm(x) === norm(f.name));
 		if (c) take(f, c, "normalized");
 	}
 	const key = (n: string) => tokenize(base(n)).join(" ");
 	const byKeyF = new Map<string, CatalogEntry[]>();
-	for (const f of live) if (!usedF.has(f)) byKeyF.set(key(f.name), [...(byKeyF.get(key(f.name)) ?? []), f]);
+	for (const f of ordered) if (!usedF.has(f)) byKeyF.set(key(f.name), [...(byKeyF.get(key(f.name)) ?? []), f]);
 	const byKeyC = new Map<string, string[]>();
 	for (const c of code) if (!usedC.has(c)) byKeyC.set(key(c), [...(byKeyC.get(key(c)) ?? []), c]);
 	for (const [k, fs] of byKeyF) {
