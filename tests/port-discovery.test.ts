@@ -32,6 +32,7 @@ import {
   cleanupOrphanedProcessesAsync,
   startPeriodicReaper,
   evictOldestInstance,
+  formatPortsBusyMessage,
   refreshPortAdvertisement,
   noteToolCall,
   setAdvertisedMcpHttpUrl,
@@ -1055,5 +1056,37 @@ describe('Reaper self-harm regressions', () => {
         expect(body).toContain("health !== false");
       }
     });
+  });
+});
+
+describe('formatPortsBusyMessage (issue #155)', () => {
+  const inst = (port: number, pid: number, extra: Partial<PortFileData> = {}): PortFileData => ({
+    port,
+    pid,
+    host: 'localhost',
+    startedAt: '2026-11-27T10:00:00.000Z',
+    ...extra,
+  });
+
+  it('names the range and lists each holder sorted by port with pid and start time', () => {
+    const msg = formatPortsBusyMessage(
+      [inst(9225, 222, { lastToolCall: '2026-11-27T10:05:00.000Z' }), inst(9223, 111)],
+      9223,
+      10,
+    );
+    expect(msg).toContain('all 10 ports (9223-9232)');
+    expect(msg).toContain('port 9223: pid 111, started 2026-11-27T10:00:00.000Z, no tool calls yet');
+    expect(msg).toContain('port 9225: pid 222, started 2026-11-27T10:00:00.000Z, last tool call 2026-11-27T10:05:00.000Z');
+    expect(msg.indexOf('port 9223')).toBeLessThan(msg.indexOf('port 9225'));
+    expect(msg).toContain('restart this MCP server');
+    expect(msg).toContain(`idle for more than ${EVICTION_MIN_AGE_MS / 60000} minutes`);
+    // Must not fall back to the misleading "open the plugin" advice
+    expect(msg).not.toContain('Open the Desktop Bridge plugin');
+  });
+
+  it('says other programs may hold the ports when no instance is advertised', () => {
+    const msg = formatPortsBusyMessage([], 9300, 10);
+    expect(msg).toContain('(9300-9309)');
+    expect(msg).toContain('other programs may be holding them');
   });
 });
