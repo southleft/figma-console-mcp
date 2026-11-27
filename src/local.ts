@@ -76,6 +76,7 @@ import {
 	cleanupStalePortFiles,
 	cleanupOrphanedProcesses,
 	evictOldestInstance,
+	formatPortsBusyMessage,
 	refreshPortAdvertisement,
 	noteToolCall,
 	setAdvertisedMcpHttpUrl,
@@ -356,6 +357,17 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			}
 		}
 
+		// No port bound at startup (issue #155): the generic "open the plugin"
+		// advice is wrong here — say which sessions hold the ports instead.
+		if (!this.wsServer && this.wsStartupError?.code === "EADDRINUSE") {
+			const preferred = this.wsPreferredPort || DEFAULT_WS_PORT;
+			const err = new Error(
+				formatPortsBusyMessage(discoverActiveInstances(preferred), preferred),
+			);
+			(err as any).connectionError = this.buildConnectionError(err);
+			throw err;
+		}
+
 		const wsPort = this.wsActualPort || this.wsPreferredPort || DEFAULT_WS_PORT;
 		const err = new Error(
 			"Cannot connect to Figma Desktop.\n\n" +
@@ -411,6 +423,18 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		const isNoClient =
 			errorMsg.includes("No active file") ||
 			errorMsg.includes("No WebSocket client");
+
+		if (!wsServerRunning && this.wsStartupError?.code === "EADDRINUSE") {
+			return {
+				layer: 1,
+				type: "BRIDGE_PORTS_EXHAUSTED",
+				canRetry: false,
+				recoverySteps: [
+					"Close figma-console-mcp sessions (Claude tabs, terminals) you no longer need — the error message lists the pids holding each port",
+					"Restart this MCP server; a session idle for more than 2 minutes is shut down automatically to free a port",
+				],
+			};
+		}
 
 		if (!wsServerRunning) {
 			return {

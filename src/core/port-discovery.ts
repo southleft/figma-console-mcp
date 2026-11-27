@@ -1071,6 +1071,42 @@ export function evictOldestInstance(preferredPort: number = DEFAULT_WS_PORT): bo
 }
 
 /**
+ * Message for a bridge tool call when this server could not bind any port in
+ * the range (all EADDRINUSE, nothing evictable at startup). Lists the
+ * instances holding the ports so the user can tell which sessions to close.
+ * Pure: pass the result of discoverActiveInstances().
+ */
+export function formatPortsBusyMessage(
+  instances: PortFileData[],
+  preferredPort: number = DEFAULT_WS_PORT,
+  rangeSize: number = PORT_RANGE_SIZE,
+): string {
+  const rangeEnd = preferredPort + rangeSize - 1;
+  const lines: string[] = [
+    `This figma-console-mcp server has no bridge port: all ${rangeSize} ports (${preferredPort}-${rangeEnd}) were already taken when it started, so the Desktop Bridge plugin cannot reach it.`,
+    '',
+  ];
+
+  const sorted = [...instances].sort((a, b) => a.port - b.port);
+  if (sorted.length > 0) {
+    lines.push('Ports are held by these other figma-console-mcp sessions:');
+    for (const i of sorted) {
+      const lastUsed = i.lastToolCall ? `, last tool call ${i.lastToolCall}` : ', no tool calls yet';
+      lines.push(`  - port ${i.port}: pid ${i.pid}, started ${i.startedAt}${lastUsed}`);
+    }
+  } else {
+    lines.push('No figma-console-mcp sessions are advertised on these ports, so other programs may be holding them.');
+  }
+
+  lines.push(
+    '',
+    'To fix: close Claude tabs or terminal sessions you no longer need (or kill the pids above), then restart this MCP server.',
+    `On restart, a session that has been idle for more than ${EVICTION_MIN_AGE_MS / 60000} minutes is shut down automatically to free a port.`,
+  );
+  return lines.join('\n');
+}
+
+/**
  * Register process exit handlers to clean up port advertisement file.
  * Should be called once after the port is successfully bound.
  */
