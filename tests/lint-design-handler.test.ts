@@ -153,5 +153,81 @@ describe("figma_lint_design handler (code.js)", () => {
 		const by = await lint(set);
 		expect((by["wcag-target-size"] ?? []).length).toBe(2);
 	});
+
+	describe("focus indicator", () => {
+		const variant = (state: string, ring: boolean) =>
+			node(`State=${state}`, { type: "COMPONENT", w: 26, h: 26, children: [node("box", { w: 26, h: 26, children: ring ? [node("Focus Ring", { w: 26, h: 26, strokes: solid("#8EA6FF") })] : [] })] });
+		const lintSet = (vs: any[]) => lint(node("Checkbox", { type: "COMPONENT_SET", w: 200, h: 80, fills: solid("#FFFFFF"), children: vs }));
+
+		it("finds a focus ring drawn on a child layer", async () => {
+			const by = await lintSet([variant("Default", false), variant("Focus", true)]);
+			expect(by["wcag-focus-indicator"] ?? []).toEqual([]);
+		});
+		it("flags a focus variant that looks the same as its default state", async () => {
+			const by = await lintSet([variant("Default", true), variant("Focus", true)]);
+			expect((by["wcag-focus-indicator"] ?? []).map((f: any) => f.issue)).toEqual(["no-visible-indicator"]);
+		});
+		it("checks every focus variant, not just the first", async () => {
+			const v = (state: string, checked: string, ring: boolean) =>
+				node(`State=${state}, Checked=${checked}`, { type: "COMPONENT", w: 26, h: 26, children: ring ? [node("Focus Ring", { w: 26, h: 26, strokes: solid("#8EA6FF") })] : [] });
+			const by = await lintSet([v("Default", "On", false), v("Default", "Off", false), v("Focus", "On", true), v("Focus", "Off", false)]);
+			expect((by["wcag-focus-indicator"] ?? []).map((f: any) => f.name)).toEqual(["Checkbox / State=Focus, Checked=Off"]);
+		});
+	});
+
+	it("doesn't treat a table as a tab control, but still recognises camelCase controls", async () => {
+		const tbl = node("al-c-table__table", { w: 400, h: 200, fills: solid("#1D1D1A") });
+		const iconButton = node("IconButton", { type: "INSTANCE", w: 40, h: 40, fills: solid("#151515") });
+		const by = await lint(node("Page", { fills: solid("#131311"), w: 600, h: 300, children: [tbl, iconButton] }));
+		const names = (by["wcag-non-text-contrast"] ?? []).map((n: any) => n.name);
+		expect(names).not.toContain("al-c-table__table");
+		expect(names).toContain("IconButton");
+	});
+
+	it("treats 'disabled without context' as a best-practice hint, once per component set", async () => {
+		const set = () => node("Button", { type: "COMPONENT_SET", w: 300, h: 80, fills: solid("#FFFFFF"), children: [
+			node("State=Default", { type: "COMPONENT", w: 100, h: 40 }),
+			node("State=Disabled, Size=Sm", { type: "COMPONENT", w: 100, h: 40 }),
+			node("State=Disabled, Size=Lg", { type: "COMPONENT", w: 100, h: 40 }),
+		] });
+		const wcag = await lint(set());
+		expect(wcag["wcag-disabled-no-context"]).toBeUndefined();
+		let result: any;
+		const root = set();
+		await runLint({ currentPage: root, getNodeByIdAsync: async () => root, getLocalPaintStylesAsync: async () => [], getLocalTextStylesAsync: async () => [], variables: { getLocalVariablesAsync: async () => [], getVariableById: () => null }, ui: { postMessage: (m: any) => (result = m) } }, { type: "LINT_DESIGN", nodeId: root.id, rules: ["best-practice"], requestId: "t" });
+		const cat = result.data.categories.find((c: any) => c.rule === "wcag-disabled-no-context");
+		expect(cat).toMatchObject({ severity: "info", wcagLevel: "best-practice", count: 1 });
+	});
+
+	it("doesn't ask container sets (Checkbox Group, Tabs) for their own focus variant", async () => {
+		for (const name of ["Checkbox Group", "Tabs", "Radio Group"]) {
+			const set = node(name, { type: "COMPONENT_SET", w: 300, h: 80, fills: solid("#FFFFFF"), children: [node("Orientation=Horizontal", { type: "COMPONENT", w: 100, h: 40 })] });
+			const by = await lint(set);
+			expect(by["wcag-focus-indicator"] ?? []).toEqual([]);
+		}
+	});
+
+	it("exempts disabled states from contrast (WCAG 1.4.3 / 1.4.11)", async () => {
+		const label = (fill: string) => node("Label", { type: "TEXT", w: 60, h: 20, fills: solid(fill) });
+		const v = (name: string) => node(name, { type: "COMPONENT", w: 120, h: 40, fills: solid("#131311"), children: [label("#4A4945")] });
+		const set = node("Input", { type: "COMPONENT_SET", w: 300, h: 100, fills: solid("#131311"), children: [v("State=Default"), v("State=Disabled")] });
+		const by = await lint(set);
+		const names = (by["wcag-contrast"] ?? []).map((n: any) => n.id);
+		expect(names).toHaveLength(1); // only the Default variant's label
+	});
+
+	it("reads only content layers for reading order (a focus outline is decoration)", async () => {
+		const knob = Object.assign(node("Knob", { type: "ELLIPSE", x: 2, y: 2, w: 16, h: 16, fills: solid("#FFFFFF") }), { x: 2, y: 2 });
+		const outline = Object.assign(node("Focus Outline", { x: -4, y: -4, w: 52, h: 28, strokes: solid("#8EA6FF") }), { x: -4, y: -4 });
+		const toggle = node("Checked=Off, State=Focus", { type: "COMPONENT", w: 44, h: 20, children: [knob, outline] });
+		const by = await lint(node("Toggle", { type: "COMPONENT_SET", w: 200, h: 80, fills: solid("#FFFFFF"), children: [toggle] }));
+		expect(by["wcag-reading-order"] ?? []).toEqual([]);
+		// Real content out of order is still caught.
+		// node() only sets absoluteBoundingBox; the rule reads layer x/y, so set them too.
+		const t = (name: string, x: number, y: number) => Object.assign(node(name, { type: "TEXT", x, y, w: 50, h: 20, fills: solid("#000000") }), { x, y });
+		const card = node("Card", { w: 200, h: 200, fills: solid("#FFFFFF"), children: [t("Footer", 0, 150), t("Body", 0, 80), t("Title", 0, 0)] });
+		const by2 = await lint(node("Page", { fills: solid("#FFFFFF"), w: 400, h: 400, children: [card] }));
+		expect((by2["wcag-reading-order"] ?? []).map((n: any) => n.name)).toContain("Card");
+	});
 });
 

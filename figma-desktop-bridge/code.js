@@ -4587,13 +4587,16 @@ figma.ui.onmessage = async (msg) => {
         'wcag': [
           'wcag-contrast', 'wcag-target-size',
           'wcag-non-text-contrast', 'wcag-color-only', 'wcag-focus-indicator',
-          'wcag-image-alt', 'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
-          'wcag-disabled-no-context'
+          'wcag-image-alt', 'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order'
         ],
         // Readability best practices — useful hints, NOT WCAG conformance failures.
         // Opt in with rules: ['best-practice'] (or ['all']); excluded from the default set.
+        // 'wcag-disabled-no-context' is a documentation hint for component sets: a
+        // library variant can't know WHY a control is disabled (only the screen using it
+        // can), and native `disabled` conforms to WCAG. So it's a best practice, not AA.
         'best-practice': [
-          'wcag-text-size', 'wcag-line-height', 'wcag-letter-spacing', 'wcag-paragraph-spacing'
+          'wcag-text-size', 'wcag-line-height', 'wcag-letter-spacing', 'wcag-paragraph-spacing',
+          'wcag-disabled-no-context'
         ],
         'design-system': ['hardcoded-color', 'no-text-style', 'default-name', 'detached-component', 'token-misuse'],
         'layout': ['no-autolayout', 'empty-container']
@@ -4611,7 +4614,7 @@ figma.ui.onmessage = async (msg) => {
         'wcag-heading-hierarchy': 'warning',
         'wcag-reflow': 'warning',
         'wcag-reading-order': 'warning',
-        'wcag-disabled-no-context': 'warning',
+        'wcag-disabled-no-context': 'info',
         'wcag-line-height': 'info',
         'wcag-paragraph-spacing': 'info',
         'token-misuse': 'warning',
@@ -4638,7 +4641,7 @@ figma.ui.onmessage = async (msg) => {
         'wcag-heading-hierarchy': 'a',   // 1.3.1 Info and Relationships — Level A
         'wcag-reflow': 'aa',            // 1.4.10 Reflow — Level AA
         'wcag-reading-order': 'a',       // 1.3.2 Meaningful Sequence — Level A
-        'wcag-disabled-no-context': 'aa', // 4.1.2 Name, Role, Value — disabled elements need ARIA context
+        'wcag-disabled-no-context': 'best-practice', // documentation hint; native disabled conforms
         'token-misuse': 'design-system',
         'hardcoded-color': 'design-system',
         'no-text-style': 'design-system',
@@ -4662,7 +4665,7 @@ figma.ui.onmessage = async (msg) => {
         'wcag-heading-hierarchy': 'Heading levels skip a level (e.g., H1 followed by H3). Use H1 through H6 sequentially without skipping levels (WCAG 1.3.1)',
         'wcag-reflow': 'Frame uses fixed positioning without auto-layout. Content must support 400% zoom on 1280px viewport (equivalent to 320px minimum width) without horizontal scrolling or loss of content (WCAG 1.4.10)',
         'wcag-reading-order': 'Visual position of elements does not match layer order. Keyboard navigation and screen reader order must follow a logical sequence (WCAG 1.3.2)',
-        'wcag-disabled-no-context': 'Disabled variant has no tooltip, helper text, or annotation explaining why the element is disabled. Use aria-disabled (not HTML disabled) to keep the element focusable for screen readers, and add a tooltip so all users understand the disabled reason.',
+        'wcag-disabled-no-context': 'Component set has disabled variants but its description gives no guidance on telling users why a control is disabled (helper text or a tooltip where it is used). Best practice, not a WCAG failure.',
         'token-misuse': 'Variable name prefix does not match its usage context (e.g., a bg/* token used as a text fill, or a text/* token used as a background). This may cause contrast issues and indicates a misbound token.',
         'hardcoded-color': 'Fill color is not bound to a variable or style',
         'no-text-style': 'Text node is not using a text style',
@@ -4673,7 +4676,12 @@ figma.ui.onmessage = async (msg) => {
       };
 
       var defaultNameRegex = /^(Frame|Rectangle|Ellipse|Line|Text|Group|Component|Instance|Vector|Polygon|Star|Section)(\s+\d+)?$/;
-      var interactiveNameRegex = /button|link|input|checkbox|radio|switch|toggle|tab|menu-item/i;
+      // Whole words only ("tab" must not match "table"); camelCase is split first
+      // so "IconButton" / "TextInput" still count.
+      var interactiveNameRegex = /\b(button|link|input|checkbox|radio|switch|toggle|tabs?|menu[- ]?item)s?\b/i;
+      function lintNameWords(name) {
+        return String(name).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_]+/g, ' ');
+      }
 
       // Is this layer itself interactive? For BEM-style names ("al-c-input__footer")
       // only the element part counts — "footer" isn't a control just because it
@@ -4681,7 +4689,36 @@ figma.ui.onmessage = async (msg) => {
       function lintIsInteractiveName(name) {
         if (typeof name !== 'string') return false;
         var el = name.indexOf('__') >= 0 ? name.slice(name.lastIndexOf('__') + 2) : name;
-        return interactiveNameRegex.test(el);
+        return interactiveNameRegex.test(lintNameWords(el));
+      }
+
+      // Inside a disabled/inactive state? WCAG 1.4.3 and 1.4.11 exempt inactive UI
+      // components from contrast. A state is a variant named like "State=Disabled", or an
+      // instance whose variant properties select one.
+      var lintDisabledValue = /^(disabled|inactive)$/i;
+      function lintIsDisabledState(node) {
+        var p = node;
+        while (p && p.type !== 'PAGE') {
+          try {
+            if (p.type === 'COMPONENT' && p.parent && p.parent.type === 'COMPONENT_SET') {
+              var parts = String(p.name).split(',');
+              for (var dpi = 0; dpi < parts.length; dpi++) {
+                var kv = parts[dpi].split('=');
+                var val = (kv[1] || kv[0] || '').trim();
+                if (lintDisabledValue.test(val) || (/disabled|inactive/i.test(kv[0]) && /^(true|yes|on)$/i.test(val))) return true;
+              }
+            }
+            if (p.type === 'INSTANCE' && p.variantProperties) {
+              for (var vk in p.variantProperties) {
+                var vv = String(p.variantProperties[vk]);
+                if (lintDisabledValue.test(vv) || (/disabled|inactive/i.test(vk) && /^(true|yes|on)$/i.test(vv))) return true;
+              }
+            }
+          } catch (e) { /* skip */ }
+          if (p === rootNode) break;
+          p = p.parent;
+        }
+        return false;
       }
 
       // The outermost interactive layer is the target; its interactive descendants
@@ -4898,7 +4935,7 @@ figma.ui.onmessage = async (msg) => {
         // ---- WCAG checks ----
 
         // wcag-contrast: TEXT nodes
-        if (activeRuleSet['wcag-contrast'] && nodeType === 'TEXT' && !truncated) {
+        if (activeRuleSet['wcag-contrast'] && nodeType === 'TEXT' && !truncated && !lintIsDisabledState(node)) {
           try {
             var fills = node.fills;
             if (fills && fills.length > 0) {
@@ -5007,7 +5044,7 @@ figma.ui.onmessage = async (msg) => {
         // wcag-non-text-contrast: UI components need 3:1 against adjacent color (WCAG 1.4.11).
         // The criterion is about the visual information that IDENTIFIES the control:
         // a field whose border meets 3:1 passes even if its fill is close to the page.
-        if (activeRuleSet['wcag-non-text-contrast'] && !isPage && !isSection && !truncated) {
+        if (activeRuleSet['wcag-non-text-contrast'] && !isPage && !isSection && !truncated && !lintIsDisabledState(node)) {
           try {
             if ((nodeType === 'FRAME' || nodeType === 'COMPONENT' || nodeType === 'INSTANCE' || nodeType === 'COMPONENT_SET') && lintIsInteractiveName(nodeName)) {
               var uiFill = lintGetNodeFillColor(node);
@@ -5088,23 +5125,20 @@ figma.ui.onmessage = async (msg) => {
         }
 
         // wcag-focus-indicator: Interactive components missing focus variant (WCAG 2.4.7)
+        // The ring is often a child layer ("Focus Ring"), so indicators are looked for on
+        // the variant AND its layers, every focus variant is checked, and an indicator only
+        // counts if it isn't also on the matching non-focus variant (a ring that's always
+        // there doesn't show focus).
         if (activeRuleSet['wcag-focus-indicator'] && nodeType === 'COMPONENT_SET' && !truncated) {
           try {
-            if (interactiveNameRegex.test(nodeName)) {
-              var hasFocusVariant = false;
-              var focusVariantNode = null;
-              var csVariants = node.children;
-              if (csVariants) {
-                for (var fvi = 0; fvi < csVariants.length; fvi++) {
-                  var fvName = csVariants[fvi].name.toLowerCase();
-                  if (/focus|focused/.test(fvName)) {
-                    hasFocusVariant = true;
-                    focusVariantNode = csVariants[fvi];
-                    break;
-                  }
-                }
+            // Containers ("Checkbox Group", "Tabs") don't take focus; their items do.
+            if (interactiveNameRegex.test(lintNameWords(nodeName)) && !lintGroupWordRegex.test(lintNameWords(nodeName))) {
+              var csVariants = node.children || [];
+              var focusVariants = [];
+              for (var fvi = 0; fvi < csVariants.length; fvi++) {
+                if (/focus/i.test(csVariants[fvi].name)) focusVariants.push(csVariants[fvi]);
               }
-              if (!hasFocusVariant) {
+              if (focusVariants.length === 0) {
                 if (totalFindings < maxFindings) {
                   findings['wcag-focus-indicator'].push({
                     id: nodeId,
@@ -5114,35 +5148,77 @@ figma.ui.onmessage = async (msg) => {
                   });
                   totalFindings++;
                 } else { truncated = true; }
-              } else if (focusVariantNode) {
-                // Check if focus variant has a visible stroke/border (focus ring)
-                var focusStroke = lintGetNodeStrokeColor(focusVariantNode);
-                var hasFocusEffect = false;
-                try {
-                  var effects = focusVariantNode.effects;
-                  if (effects) {
-                    for (var ei = 0; ei < effects.length; ei++) {
-                      if (effects[ei].visible !== false && (effects[ei].type === 'DROP_SHADOW' || effects[ei].type === 'INNER_SHADOW')) {
-                        hasFocusEffect = true;
-                        break;
+              } else {
+                // Visible strokes and shadows on a variant and its layers, keyed by layer path.
+                var lintIndicatorSignature = function (variant) {
+                  var sig = {};
+                  var stack = [{ n: variant, path: '' }];
+                  var count = 0;
+                  while (stack.length && count < 400) {
+                    var it = stack.pop(); count++;
+                    var nd = it.n;
+                    if (nd.visible === false) continue;
+                    try {
+                      var strokes = nd.strokes;
+                      var sw = typeof nd.strokeWeight === 'number' ? nd.strokeWeight : 1;
+                      if (strokes && strokes.length && sw > 0) {
+                        for (var si = 0; si < strokes.length; si++) {
+                          if (strokes[si].visible !== false && lintPaintAlpha(strokes[si]) >= 0.1) {
+                            var sc = strokes[si].color || {};
+                            sig[it.path + '|stroke|' + sw + '|' + [sc.r, sc.g, sc.b].map(function (x) { return Math.round((x || 0) * 255); }).join(',')] = true;
+                          }
+                        }
                       }
+                    } catch (e) { /* mixed */ }
+                    try {
+                      var efs = nd.effects;
+                      if (efs) for (var efi = 0; efi < efs.length; efi++) {
+                        if (efs[efi].visible !== false && (efs[efi].type === 'DROP_SHADOW' || efs[efi].type === 'INNER_SHADOW')) sig[it.path + '|effect|' + efs[efi].type + '|' + (efs[efi].spread || 0)] = true;
+                      }
+                    } catch (e) { /* skip */ }
+                    if ('children' in nd && nd.type !== 'INSTANCE') {
+                      for (var ci = 0; ci < nd.children.length; ci++) stack.push({ n: nd.children[ci], path: it.path + '/' + nd.children[ci].name });
+                    } else if (nd.type === 'INSTANCE' && nd.children) {
+                      for (var ii = 0; ii < nd.children.length; ii++) stack.push({ n: nd.children[ii], path: it.path + '/' + nd.children[ii].name });
                     }
                   }
-                } catch (e) { /* skip */ }
-                if (!focusStroke && !hasFocusEffect) {
-                  if (totalFindings < maxFindings) {
-                    findings['wcag-focus-indicator'].push({
-                      id: focusVariantNode.id,
-                      name: nodeName + ' / ' + focusVariantNode.name,
-                      issue: 'no-visible-indicator',
-                      suggestion: 'Focus variant exists but has no visible border, outline, or shadow for the focus indicator'
-                    });
-                    totalFindings++;
-                  } else { truncated = true; }
+                  return sig;
+                };
+                var byName = {};
+                for (var bi = 0; bi < csVariants.length; bi++) byName[csVariants[bi].name.toLowerCase()] = csVariants[bi];
+                for (var fi = 0; fi < focusVariants.length; fi++) {
+                  var fv = focusVariants[fi];
+                  var fSig = lintIndicatorSignature(fv);
+                  var counterpart = null;
+                  var restWords = ['default', 'rest', 'enabled', 'idle', 'normal', 'none', 'off'];
+                  for (var rw = 0; rw < restWords.length && !counterpart; rw++) {
+                    var candidateName = fv.name.toLowerCase().replace(/focus(ed)?(-visible)?/i, restWords[rw]);
+                    if (byName[candidateName] && byName[candidateName] !== fv) counterpart = byName[candidateName];
+                  }
+                  var hasIndicator = false;
+                  if (counterpart) {
+                    var cSig = lintIndicatorSignature(counterpart);
+                    for (var key in fSig) { if (!cSig[key]) { hasIndicator = true; break; } }
+                  } else {
+                    for (var k2 in fSig) { hasIndicator = true; break; }
+                  }
+                  if (!hasIndicator) {
+                    if (totalFindings < maxFindings) {
+                      findings['wcag-focus-indicator'].push({
+                        id: fv.id,
+                        name: nodeName + ' / ' + fv.name,
+                        issue: 'no-visible-indicator',
+                        suggestion: counterpart
+                          ? 'This focus variant looks the same as "' + counterpart.name + '": add a visible focus ring, outline or shadow that the non-focus state doesn\'t have.'
+                          : 'Focus variant has no visible border, outline or shadow on it or its layers.'
+                      });
+                      totalFindings++;
+                    } else { truncated = true; }
+                  }
                 }
               }
             }
-          } catch (e) { /* slot sublayer */ }
+          } catch (e) { /* skip */ }
         }
 
         // wcag-letter-spacing: Negative letter spacing (WCAG 1.4.12)
@@ -5300,14 +5376,21 @@ figma.ui.onmessage = async (msg) => {
               // Only check non-auto-layout frames (auto-layout enforces order)
               if (!roLayoutMode || roLayoutMode === 'NONE') {
                 // Collect children y positions (for vertical reading order)
+                // Only layers that carry content are read: text, instances, or frames
+                // holding text. Shapes, rings and outlines are decoration.
                 var childPositions = [];
                 for (var roi = 0; roi < node.children.length; roi++) {
                   try {
+                    var roc = node.children[roi];
+                    if (roc.visible === false) continue;
+                    var roHasContent = roc.type === 'TEXT' || roc.type === 'INSTANCE' ||
+                      ('findOne' in roc && !!roc.findOne(function (d) { return d.type === 'TEXT'; }));
+                    if (!roHasContent) continue;
                     childPositions.push({
-                      index: roi,
-                      y: node.children[roi].y,
-                      x: node.children[roi].x,
-                      name: node.children[roi].name
+                      index: childPositions.length,
+                      y: roc.y,
+                      x: roc.x,
+                      name: roc.name
                     });
                   } catch (e) { /* skip */ }
                 }
@@ -5387,19 +5470,21 @@ figma.ui.onmessage = async (msg) => {
                     var hasDisabledAnnotation = false;
                     try {
                       var csDesc = (node.description || '').toLowerCase();
-                      if (/disabled.*tooltip|disabled.*helper|disabled.*hint|aria-disabled|why.*disabled|disabled.*reason/i.test(csDesc)) {
+                      if (/disabled[\s\S]*(tooltip|helper|hint|explain|reason)|aria-disabled|why[\s\S]*disabled/i.test(csDesc)) {
                         hasDisabledAnnotation = true;
                       }
                     } catch (e) { /* skip */ }
                     if (!hasContextChild && !hasDisabledAnnotation) {
+                      // Once per component set, not once per disabled variant.
                       if (totalFindings < maxFindings) {
                         findings['wcag-disabled-no-context'].push({
-                          id: dcVariant.id,
-                          name: nodeName + ' / ' + dcVariant.name,
-                          suggestion: 'Disabled elements should remain focusable (use aria-disabled, not HTML disabled). Add a tooltip or helper text explaining why the element is disabled so screen reader users understand the context.'
+                          id: nodeId,
+                          name: nodeName,
+                          suggestion: 'Add guidance to the component description on explaining a disabled state where the component is used (helper text, or a tooltip on an aria-disabled control).'
                         });
                         totalFindings++;
                       } else { truncated = true; }
+                      break;
                     }
                   }
                 } catch (e) { /* skip variant */ }
