@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 130 MCP tools, including parameters, return values, and usage examples."
+description: "Complete API reference for all 145 MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **130 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **105 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools. Those run a headless browser session that only the `/sse` endpoint keeps open.
+> **Note:** Local Mode (NPX/Git) provides **145 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **114 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools. Those run a headless browser session that only the `/sse` endpoint keeps open.
 
 ## Quick Reference
 
@@ -26,6 +26,18 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_capture_screenshot` | Render a node from the plugin runtime (reflects unsaved changes) | Local / Cloud |
 | **👁️ Real-Time Awareness** | `figma_get_selection` | Get the nodes currently selected in Figma | Local |
 | | `figma_get_design_changes` | Get buffered document-change events | Local |
+| **🧰 Toolsets** | `figma_enable_toolsets` | Switch on a toolset (inspect, variables, components, parity, docs…); the client refreshes its tool list | Local |
+| | `figma_call` | Run a non-destructive tool from an enabled toolset by name, for clients that don't refresh their list | Local |
+| **✅ Design-System Adherence** | `figma_resolve_components` | Map the UI a request needs to real components; what the system lacks comes back as an explained `GAP:` note to place where it belongs | Local / Cloud |
+| | `figma_audit_adherence` | Score a generated frame: components vs. hand-built look-alikes, tokens vs. hardcoded values | Local / Cloud |
+| | `figma_audit_code_adherence` | Score generated code: system components and tokens vs. re-implementations and literals | Local / Cloud |
+| | `figma_bind_tokens` | Bind spacing, radius, size and type to existing variables; apply text/effect styles by name | Local / Cloud |
+| | `figma_check_library_parity` | Pair a Figma component library with its code library; list what exists on only one side | Local / Cloud |
+| **🔗 Dev Resources & Usage** | `figma_manage_dev_resources` | List, add, edit or delete the code, Storybook and docs links on components | Local / Cloud |
+| | `figma_find_usages` | Where a style, variable (including through aliases) or component is used | Local / Cloud |
+| | `figma_get_library_analytics` | Library usage across the org: instances, unused assets, detach rates (Enterprise) | Local |
+| | `figma_extend_library_collection` | Create an extended collection from a library or local collection (Enterprise) | Local / Cloud |
+| | `figma_reset_variable_override` | Put a variable in an extended collection back to its inherited value, in one mode or all (Enterprise) | Local / Cloud |
 | **🔁 Token Sync** | `figma_export_tokens` | Export Figma variables to DTCG JSON + CSS (replaces Style Dictionary) | Local / Cloud |
 | | `figma_import_tokens` | Push code-side token edits back to Figma (diff-aware merge) | Local / Cloud |
 | **🧬 Design System Extraction** | `figma_ds_analyze` | Scan production codebase(s): component inventory, classification, architecture | Local |
@@ -148,6 +160,45 @@ This guide provides detailed documentation for each tool, including when to use 
 Slides tools are documented in the [Slides guide](/slides). MCP Apps (`figma_browse_tokens`, `figma_audit_design_system`) are Local Mode tools that register only when `ENABLE_MCP_APPS=true`; see [MCP Apps](/mcp-apps).
 
 ---
+
+## 🧰 Toolsets: tools load on demand (Local Mode)
+
+Every tool the server lists is sent to the model with every message. Listing all of them costs about 59,000 tokens per message. To save that, Local Mode starts with a **core** set: status, navigation, component search and resolve, building, token binding, audit, lint, screenshots and `figma_execute`. That costs about 9,200 tokens, about 85% less. The model switches on the rest when a task needs them:
+
+```
+figma_enable_toolsets({ toolsets: ["variables", "parity"] })
+```
+
+| Toolset | What it adds |
+|---|---|
+| `inspect` | File data, component dev specs, styles, token values, library components and variables, REST screenshots |
+| `variables` | Create, update, rename and delete variables, collections and modes; import and export tokens |
+| `components` | Component sets and variants, component properties, descriptions, slots |
+| `parity` | Library and property parity, code adherence audit, accessibility audits, design-system reports |
+| `docs` | Component docs, version history, changelogs, blame, comments, annotations |
+| `debug` | Plugin console, plugin reload and pairing, running code across files |
+| `motion` | Animations, shaders, code layers |
+| `figjam` | FigJam boards |
+| `slides` | Figma Slides |
+| `extraction` | `figma_ds_*`: extract a design system from app code |
+
+- **Everything at once:** set `FIGMA_TOOLSETS=all` to list every tool, as earlier versions did.
+- **Preload some groups:** set e.g. `FIGMA_TOOLSETS=variables,parity`; core is always included.
+- **Clients that don't refresh their tool list:** enabling a toolset sends `tools/list_changed`. A client that ignores it can still run the new tools through `figma_call({ tool, arguments })` (arguments as a JSON string). `figma_call` won't run core tools or tools that delete or overwrite: call those by name, so your client's per-tool permissions apply.
+
+Cloud Mode is unchanged and lists all its tools.
+
+## 🆕 Design-system management additions
+
+| Tool | Toolset | What it does |
+|---|---|---|
+| `figma_find_usages` | inspect | Where a style, variable or component is used (count and a sample by page). Run it before renaming or retiring an asset |
+| `figma_manage_dev_resources` | components | List, add, edit or delete the links on components to their code, Storybook or docs (Dev Mode). Bulk, skips duplicates, asks before deleting |
+| `figma_extend_library_collection` | variables | Create an extended collection: a theme of a library collection or one of the file's own collections that overrides values per mode. Without a target, lists both kinds |
+| `figma_reset_variable_override` | variables | Remove an extended collection's override so the variable inherits again, in one mode or all |
+| `figma_get_library_analytics` | parity | Library usage across the organization: instances, unused assets, insertions and detach rates. Enterprise; token needs `library_analytics:read` |
+| `figma_get_component_for_development_deep` `css: true` | inspect | Adds Figma's generated CSS for the node and its layers |
+| `figma_get_design_system_summary` | core | Now also lists Figma Specs documents in the file (title, page). Spec content isn't readable from plugins; use Figma's MCP server for it |
 
 ## 🧭 Navigation & Status Tools
 
@@ -589,6 +640,134 @@ figma_import_tokens({
 Partial-success semantics throughout — per-variable errors don't fail the batch; results are returned in `applyResult.errors[]`.
 
 **Cloud Mode:** Pass tokens inline via `payload` (single file) or `files` (multi-file). Omit `configPath`. The apply phase works in Cloud Mode because it routes through the paired Desktop Bridge plugin via the Cloud Plugin Relay — transport-agnostic.
+
+---
+
+## ✅ Design-System Adherence Tools
+
+Generate with the design system, and never invent. These tools keep an agent to the components and tokens that exist, tell the person when something is missing, and give an independent grader evidence to judge from. The `generate-with-design-system`, `generate-code-with-design-system` and `grade-generation` skills (served by this server, see [Skills](#skills)) walk through the full workflow.
+
+### `figma_resolve_components`
+
+Run before building. Pass the UI a request needs in plain words; each item comes back as:
+
+- **matched**: build with this component (key and nodeId included)
+- **possible**: something might fit; a person decides
+- **gap**: the system has nothing for it
+
+Matching is deterministic: component names, variant values, descriptions, and a table of UI synonyms (button/CTA, select/dropdown, modal/dialog…). Archived, deprecated and private (`_`, `.`) components are never offered. When the client supports elicitation, the **person** is asked how to handle every possible match and gap (use a candidate, add a labeled `GAP: …` placeholder, or stop). Otherwise the result tells the agent to stop and report the gaps.
+
+```javascript
+figma_resolve_components({
+  needs: ["primary button", "date picker", "user avatar", "pricing card"],
+  libraryFileKeys: ["abc123"]   // optional: published libraries (REST, needs FIGMA_ACCESS_TOKEN)
+})
+```
+
+Each item carries an `action`: `build-with-component`, `placeholder`, `skip`, or `ask-user`. If anything is still `ask-user`, the result includes an instruction to stop before building.
+
+### `figma_audit_adherence`
+
+Run after building. A deterministic audit of a frame (or the selected node):
+
+| Finding | Severity |
+|---|---|
+| Hand-built layer named like a system component (`imitates-component`) | error |
+| New component created inside the composition (`new-component`) | error |
+| Instance of a component outside the allowed libraries (`off-system-component`, with `libraryFileKeys`) | error |
+| Hand-drawn vector (`hand-drawn-vector`), frame that looks like a hand-built button/card/… (`looks-hand-built`) | warning |
+| Color, spacing, radius, typography or effect not bound to a variable or style | warning |
+| Styling overridden inside an instance (`style-override`) | info |
+
+It returns `componentCoverage`, `tokenCoverage`, a 0–100 `score`, the components used (local or library), declared `GAP: …` placeholders, and `pass` (no errors, score ≥ `minScore`, default 90). It runs through the Desktop Bridge's code execution, so no plugin update is needed.
+
+```javascript
+figma_audit_adherence({ nodeId: "12:345", minScore: 90 })
+```
+
+### `figma_audit_code_adherence`
+
+The code-side twin. A static check of generated code (React, Vue, Svelte, HTML, CSS):
+
+- **errors**: re-implementing a component the system has (`reimplements-component`; wrappers that render the system component are fine), and referencing a token that doesn't exist (`unknown-token`, when `tokensPath` or `tokens` is given)
+- **warnings**: raw `<button>`, `<input>`, `<select>`, `<textarea>`, `<dialog>` or `<table>` where the system has a component; hardcoded colors and spacing/radius/type lengths; Tailwind arbitrary values like `bg-[#fff]` or `p-[13px]`
+- **info**: inline styles
+
+```javascript
+figma_audit_code_adherence({
+  files: ["src/pages/Checkout.tsx"],
+  designSystem: {
+    packages: ["@/components/ui"],      // imports that are the design system
+    componentsDir: "src/components/ui", // learn component names from file names (Local Mode)
+    tokensPath: "src/index.css"         // CSS custom properties or DTCG JSON
+  }
+})
+```
+
+Every finding has a `file:line`. Pass `sources` (`{ path, content }`) instead of `files` in Cloud Mode.
+
+### `figma_bind_tokens`
+
+Binds a node's spacing, radius, size, stroke, opacity and typography to existing variables, and applies text or effect styles, by name or id. Shorthands: `padding`, `paddingX`, `paddingY`, `gap`, `cornerRadius`.
+
+```javascript
+figma_bind_tokens({
+  nodeId: "12:345",
+  bindings: { padding: "space/md", gap: "space/sm", cornerRadius: "radius/lg" },
+  textStyle: "Body/Medium"   // text nodes
+})
+```
+
+It never creates a variable or style. An unknown or ambiguous name fails for that field and lists the closest real names, so a missing token gets reported instead of replaced with a raw value. For colors, use `figma_set_fills` / `figma_set_strokes` with a variable.
+
+### `figma_check_library_parity`
+
+Library-level parity between a Figma component library and its code counterpart. Components are paired by exact name, then by the same words (ignoring case, punctuation and folders), then by the same UI concept, but only when that concept is unambiguous on both sides. It lists the pairs, the components only in Figma, and the components only in code. Archived, deprecated and private Figma components are reported separately.
+
+```javascript
+figma_check_library_parity({
+  componentsDir: "libs/ui/components",   // file-per-component or folder-per-component (Local Mode)
+  libraryFileKeys: ["abc123"]            // optional: published libraries; default is the active file
+})
+```
+
+**Property-level parity.** Pass the code library's Custom Elements Manifest (`custom-elements.json`) and each pair is also compared prop by prop. React wrappers built with `@lit/react` share the same props, so one manifest covers both.
+
+```javascript
+figma_check_library_parity({
+  manifestPath: "libs/ui/custom-elements.json",
+  componentsDir: "libs/ui/components",
+  classPrefixes: ["AL"]          // ALButton → Button
+})
+```
+
+Mapping rules, in order (each mapping says which rule made it):
+- **State axes**: Hover/Focus/Active need no prop; other states (Disabled, Error…) must map to a boolean (`isDisabled`, `isError`).
+- **Same name**: `Variant` ↔ `variant`, values compared. Figma's `Default` is the value code expresses by omitting the prop.
+- **Same values, different name**: `Orientation: Row/Column` ↔ `direction: 'row' | 'column'`; one Figma value may be the code's omitted default (`Horizontal` ↔ no `variant`).
+- **Slot toggles**: `Footer: Yes/No` ↔ a `footer` slot.
+- **Boolean flags**: `Shape: Default/Pill` ↔ `isPill`; `Shape: Label/Dot` ↔ `isDot`; `Label: Hidden` ↔ `hideLabel`.
+- **Content properties**: `Show Text` ↔ `hideText`, `Slot Before` ↔ a `before` slot, `Show Helper` ↔ `fieldNote`.
+
+It reports Figma values and properties with no code counterpart, appearance-affecting code props with no Figma counterpart (non-visual ones like `href` or `aria-*` are ignored), and the components that are fully in sync. Property definitions are read from the open file through the Desktop Bridge.
+
+Then run `figma_check_design_parity` on a pair to compare visual specs (colors, spacing, typography) against code. The tool reports differences and decides nothing. Treat one-sided components and props as gaps to raise with the team.
+
+### Skills
+
+The server ships skills (Claude Code shows them as `/figma-console:<name>`; restart Claude Code after an update to pick up changes):
+
+| Skill | Use it to |
+|---|---|
+| `generate-with-design-system` | Build a screen or section in Figma from the system, stopping on gaps |
+| `generate-code-with-design-system` | The same for code |
+| `grade-generation` | Have an independent grader subagent check a generation and return PASS/FAIL with evidence |
+| `design-code-parity` | Keep a Figma library and its code library in line |
+| `design-tokens-sync` | Export and import tokens between Figma and code |
+| `accessibility-review` | Review designs and code against WCAG |
+| `troubleshoot-connection` | Fix connection, routing, token and timeout problems |
+
+Skills over MCP needs a client that supports the extension (Claude Code v2.1.331 or later).
 
 ---
 
@@ -3421,8 +3600,8 @@ Each finding includes a `wcagLevel` field (`a`, `aa`, or `best-practice`) so tea
 | `wcag-non-text-contrast` | critical | AA | UI component/graphical object below 3:1 against background |
 | `wcag-color-only` | critical | A | Information conveyed only through color (no icon/border indicator) |
 | `wcag-target-size` | critical | AA | Interactive elements smaller than 24x24px |
-| `wcag-focus-indicator` | critical | AA | Interactive component missing focus variant or visible indicator — blocker for keyboard users |
-| `wcag-disabled-no-context` | warning | AA | Disabled variant has no tooltip/helper text explaining why disabled. Recommends aria-disabled over HTML disabled to keep element focusable for screen readers. |
+| `wcag-focus-indicator` | critical | AA | Interactive component missing a focus variant, or a focus variant with no ring, outline or shadow (on the variant or its layers) that its non-focus state doesn't already have — blocker for keyboard users |
+| `wcag-disabled-no-context` | info | Best practice | A component set with disabled variants whose description gives no guidance on explaining a disabled state where it's used (helper text, or a tooltip on an `aria-disabled` control). Reported once per set; native `disabled` conforms to WCAG. |
 | `wcag-text-size` | warning | best-practice | Text below 12px (readability best practice — WCAG 1.4.4 is about zoom support, not minimum size) |
 | `wcag-letter-spacing` | warning | best-practice | Negative letter spacing harms readability |
 | `wcag-image-alt` | warning | A | Image fills without description annotation |

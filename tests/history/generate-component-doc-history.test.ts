@@ -56,7 +56,7 @@ function stubApi(opts: { versions?: any[]; snapshots?: Record<string, any> } = {
 function getDocHandler(api: any) {
 	const captured: Captured[] = [];
 	const mockServer = {
-		tool: (name: string, _d: string, _s: any, handler: any) => {
+		registerTool: (name: string, __cfg: any, handler: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s;
 			captured.push({ name, handler });
 		},
 	} as any;
@@ -258,7 +258,7 @@ describe("figma_generate_component_doc — remote mode", () => {
 	it("reports git history as unavailable rather than attempting to shell out", async () => {
 		const captured: Captured[] = [];
 		const mockServer = {
-			tool: (name: string, _d: string, _s: any, handler: any) => {
+			registerTool: (name: string, __cfg: any, handler: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s;
 				captured.push({ name, handler });
 			},
 		} as any;

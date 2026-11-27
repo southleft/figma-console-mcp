@@ -21,8 +21,8 @@ interface RegisteredTool {
 function createMockServer() {
 	const tools: Record<string, RegisteredTool> = {};
 	return {
-		tool: jest.fn(
-			(name: string, description: string, schema: any, handler: any) => {
+		registerTool: jest.fn(
+			(name: string, __cfg: any, handler: any) => { const description = __cfg?.description ?? ""; const schema = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void description; void schema;
 				tools[name] = { name, description, schema, handler };
 			}
 		),
@@ -136,8 +136,8 @@ describe("Slides Tools", () => {
 	// ========================================================================
 
 	it("registers all 17 Slides tools", () => {
-		expect(server.tool).toHaveBeenCalledTimes(17);
-		const names = server.tool.mock.calls.map((c: any[]) => c[0]);
+		expect(server.registerTool).toHaveBeenCalledTimes(17);
+		const names = server.registerTool.mock.calls.map((c: any[]) => c[0]);
 		expect(names).toContain("figma_list_slides");
 		expect(names).toContain("figma_get_slide_content");
 		expect(names).toContain("figma_get_slide_grid");

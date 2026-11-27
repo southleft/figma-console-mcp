@@ -165,7 +165,7 @@ function makeMockConnector(
 function captureImportHandler(connector: any) {
   const handlers: Record<string, any> = {};
   const fakeServer = {
-    tool: (name: string, _desc: string, _schema: any, cb: any) => {
+    registerTool: (name: string, __cfg: any, cb: any) => { const _desc = __cfg?.description ?? ""; const _schema = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _desc; void _schema;
       handlers[name] = cb;
     },
   } as any;

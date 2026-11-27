@@ -16,9 +16,9 @@ interface RegisteredTool {
 function createMockServer() {
 	const tools: Record<string, RegisteredTool> = {};
 	return {
-		tool: jest.fn(
-			(name: string, description: string, schema: Record<string, unknown>, handler: RegisteredTool["handler"]) => {
-				tools[name] = { name, description, schema, handler };
+		registerTool: jest.fn(
+			(name: string, config: { description?: string; inputSchema?: any }, handler: RegisteredTool["handler"]) => {
+				tools[name] = { name, description: config.description ?? "", schema: config.inputSchema?.shape ?? config.inputSchema, handler };
 			},
 		),
 		_tools: tools,

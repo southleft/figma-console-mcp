@@ -2,7 +2,7 @@ import { registerDiagnoseTool, type DiagnoseToolOptions } from "../src/core/diag
 
 async function report(opts: DiagnoseToolOptions): Promise<string> {
 	let handler: any;
-	const server: any = { tool: (_n: string, _d: string, _s: unknown, h: any) => { handler = h; } };
+	const server: any = { registerTool: (_n: string, __cfg: any, h: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; handler = h; } };
 	registerDiagnoseTool(server, opts);
 	const res = await handler({ verbose: false });
 	return JSON.parse(res.content[0].text).report as string;

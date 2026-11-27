@@ -500,7 +500,7 @@ describe("Schema Compatibility Tests", () => {
 			const captured: CapturedTool[] = [];
 
 			const mockServer = {
-				tool: (name: string, _description: string, schema: any, _handler: any) => {
+				registerTool: (name: string, __cfg: any, _handler: any) => { const _description = __cfg?.description ?? ""; const schema = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _description; void schema;
 					captured.push({ name, schema });
 				},
 			} as any;
