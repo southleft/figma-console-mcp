@@ -58,6 +58,7 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
 	figma_find_usages: "read",
 	figma_get_library_analytics: "read",
 	figma_extend_library_collection: "create",
+	figma_reset_variable_override: "destructive",
 	figma_manage_dev_resources: "destructive", // delete removes links (asks first)
 	// ── Connection, console, status ──────────────────────────────────────────
 	figma_get_status: "read",
