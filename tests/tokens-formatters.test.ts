@@ -13,6 +13,7 @@ import type { TokenDocument } from "../src/core/tokens/index.js";
 import { formatTailwindV4 } from "../src/core/tokens/formatters/tailwind-v4.js";
 import { formatTailwindV3 } from "../src/core/tokens/formatters/tailwind-v3.js";
 import { formatScss } from "../src/core/tokens/formatters/scss.js";
+import { formatCssVars } from "../src/core/tokens/formatters/css-vars.js";
 import { formatTsModule } from "../src/core/tokens/formatters/ts-module.js";
 import {
   formatJsonFlat,
@@ -82,6 +83,54 @@ const ALIAS_DOC: TokenDocument = {
   ],
 };
 
+const GRADIENT_DOC: TokenDocument = {
+  sets: [
+    {
+      name: "Primitives",
+      modes: ["Default"],
+      tokens: [
+        {
+          path: ["gradient", "hero"],
+          type: "gradient",
+          values: {
+            Default: {
+              literal: {
+                type: "linear",
+                angle: 90,
+                stops: [
+                  { color: "#ff0000", position: 0 },
+                  { color: "#0000ff", position: 1 },
+                ],
+              },
+            },
+          },
+        },
+        {
+          path: ["gradient", "ring"],
+          type: "gradient",
+          values: {
+            Default: {
+              literal: {
+                type: "conic",
+                angle: 45,
+                stops: [
+                  { color: "#00aaff", position: 0.25 },
+                  { color: "#ffaa00", position: 0.75 },
+                ],
+              },
+            },
+          },
+        },
+        {
+          path: ["gradient", "bad"],
+          type: "gradient",
+          values: { Default: { literal: { type: "weird", stops: [] } } },
+        },
+      ],
+    },
+  ],
+};
+
 describe("Tailwind v4 formatter", () => {
   it("emits @theme inline block with primitive tokens", () => {
     const r = formatTailwindV4(SIMPLE_DOC, { target: { format: "tailwind-v4" } });
@@ -111,6 +160,23 @@ describe("Tailwind v4 formatter", () => {
     expect(content).toContain("--color-brand: var(--color-primary);");
     expect(content).toContain("skipped — cross-library alias to VariableID:4:4975");
   });
+
+  it("renders gradient tokens as CSS gradient functions, not raw JSON", () => {
+    const r = formatTailwindV4(GRADIENT_DOC, {
+      target: { format: "tailwind-v4" },
+    });
+    const content = r.files[0].content;
+    expect(content).toContain(
+      "--gradient-hero: linear-gradient(90deg, #ff0000 0%, #0000ff 100%);",
+    );
+    expect(content).toContain(
+      "--gradient-ring: conic-gradient(from 45deg, #00aaff 25%, #ffaa00 75%);",
+    );
+    expect(content).not.toContain("--gradient-bad:");
+    expect(
+      r.warnings.some((w) => w.includes("gradient.bad")),
+    ).toBe(true);
+  });
 });
 
 describe("SCSS formatter", () => {
@@ -133,6 +199,21 @@ describe("SCSS formatter", () => {
     const r = formatScss(ALIAS_DOC, { target: { format: "scss" } });
     const content = r.files[0].content;
     expect(content).toContain("$color-brand: $color-primary;");
+  });
+
+  it("renders gradient tokens as CSS gradient functions, not raw JSON", () => {
+    const r = formatScss(GRADIENT_DOC, { target: { format: "scss" } });
+    const content = r.files[0].content;
+    expect(content).toContain(
+      "$gradient-hero: linear-gradient(90deg, #ff0000 0%, #0000ff 100%);",
+    );
+    expect(content).toContain(
+      "$gradient-ring: conic-gradient(from 45deg, #00aaff 25%, #ffaa00 75%);",
+    );
+    expect(content).not.toContain("$gradient-bad:");
+    expect(
+      r.warnings.some((w) => w.includes("gradient.bad")),
+    ).toBe(true);
   });
 });
 
@@ -350,5 +431,135 @@ describe("Dispatcher: all formats route through format()", () => {
         format(SIMPLE_DOC, { target: { format: fmt } }),
       ).not.toThrow();
     }
+  });
+});
+
+describe("gradient rendering across CSS-shaped formatters", () => {
+  // DTCG spec form, 2025.10 color-object stops, and a stop that aliases
+  // another token — the shapes the internal-composite fixture above misses.
+  const doc: TokenDocument = {
+    sets: [
+      {
+        name: "Primitives",
+        modes: ["Default"],
+        tokens: [
+          {
+            path: ["gradient", "spec"],
+            type: "gradient",
+            values: {
+              Default: {
+                literal: [
+                  { color: "#ff0000", position: 0 },
+                  { color: "#0000ff", position: 1 },
+                ] as unknown as Record<string, unknown>,
+              },
+            },
+          },
+          {
+            path: ["gradient", "objects"],
+            type: "gradient",
+            values: {
+              Default: {
+                literal: {
+                  type: "linear",
+                  angle: 180,
+                  stops: [
+                    {
+                      color: { colorSpace: "srgb", components: [1, 0, 0], hex: "#ff0000" },
+                      position: 0,
+                    },
+                    {
+                      color: { colorSpace: "display-p3", components: [0, 0, 1], hex: "#0000ff", alpha: 0.5 },
+                      position: 1,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          {
+            path: ["gradient", "aliased"],
+            type: "gradient",
+            values: {
+              Default: {
+                literal: {
+                  type: "linear",
+                  angle: 90,
+                  stops: [
+                    { color: "{core.red}", position: 0 },
+                    { color: "#0000ff", position: 1 },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const SPEC = "linear-gradient(#ff0000 0%, #0000ff 100%)";
+  const OBJECTS = "linear-gradient(180deg, #ff0000 0%, #0000ff80 100%)";
+  const warnsAboutAlias = (warnings: string[]) =>
+    warnings.some((w) => w.includes("gradient.aliased") && w.includes("{core.red}"));
+
+  it("CSS vars", () => {
+    const r = formatCssVars(doc, { target: { format: "css-vars" } });
+    const content = r.files[0].content;
+    expect(content).toContain(`--gradient-spec: ${SPEC};`);
+    expect(content).toContain(`--gradient-objects: ${OBJECTS};`);
+    expect(content).not.toContain("--gradient-aliased");
+    expect(content).not.toContain("{core.red}");
+    expect(warnsAboutAlias(r.warnings)).toBe(true);
+  });
+
+  it("SCSS", () => {
+    const r = formatScss(doc, { target: { format: "scss" } });
+    const content = r.files[0].content;
+    expect(content).toContain(`$gradient-spec: ${SPEC};`);
+    expect(content).toContain(`$gradient-objects: ${OBJECTS};`);
+    expect(content).not.toContain("{core.red}");
+    expect(warnsAboutAlias(r.warnings)).toBe(true);
+  });
+
+  it("Tailwind v4", () => {
+    const r = formatTailwindV4(doc, { target: { format: "tailwind-v4" } });
+    const content = r.files[0].content;
+    expect(content).toContain(`--gradient-spec: ${SPEC};`);
+    expect(content).toContain(`--gradient-objects: ${OBJECTS};`);
+    expect(content).not.toContain("{core.red}");
+    expect(warnsAboutAlias(r.warnings)).toBe(true);
+  });
+
+  it("Tailwind v3 emits CSS strings under backgroundImage, not raw JSON", () => {
+    const r = formatTailwindV3(doc, { target: { format: "tailwind-v3" } });
+    const content = r.files[0].content;
+    expect(content).toContain("backgroundImage: {");
+    expect(content).toContain(`spec: ${JSON.stringify(SPEC)}`);
+    expect(content).toContain(`objects: ${JSON.stringify(OBJECTS)}`);
+    expect(content).not.toContain("stops");
+    expect(content).not.toContain("{core.red}");
+    expect(warnsAboutAlias(r.warnings)).toBe(true);
+  });
+
+  it("Tailwind v3 renders a gradient reached through a token-level alias", () => {
+    const aliasDoc: TokenDocument = {
+      sets: [
+        {
+          name: "Primitives",
+          modes: ["Default"],
+          tokens: [
+            doc.sets[0].tokens[0],
+            {
+              path: ["gradient", "hero"],
+              type: "gradient",
+              values: { Default: { reference: "{gradient.spec}" } },
+            },
+          ],
+        },
+      ],
+    };
+    const r = formatTailwindV3(aliasDoc, { target: { format: "tailwind-v3" } });
+    expect(r.files[0].content).toContain(`hero: ${JSON.stringify(SPEC)}`);
   });
 });

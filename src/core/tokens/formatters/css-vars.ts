@@ -20,6 +20,7 @@
  */
 
 import { renderComposed, composedFallbackNote, num, referenceInExport } from "./composed-color.js";
+import { renderGradient } from "./gradient.js";
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
 import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
@@ -291,6 +292,12 @@ function emitTokenLines(
     } else {
       warnings.push(`Token ${token.path.join(".")} has an unparseable shadow value — skipping.`);
     }
+    return;
+  }
+  if (token.type === "gradient" && typeof value.literal === "object") {
+    const g = renderGradient(value.literal);
+    if ("css" in g) out.push(`  ${cssName}: ${g.css};`);
+    else warnings.push(`Skipped ${token.path.join(".")} in CSS — ${g.skip}.`);
     return;
   }
 

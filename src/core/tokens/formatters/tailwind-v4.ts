@@ -37,6 +37,7 @@
  */
 
 import { renderComposed, composedFallbackNote, num, referenceInExport } from "./composed-color.js";
+import { renderGradient } from "./gradient.js";
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
 import { buildTokenIndex, referenceTargetPath } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
@@ -246,7 +247,7 @@ function emitTailwindTokenLines(
     return;
   }
 
-  // Composite tokens: typography expands, shadow renders as CSS string.
+  // Composite tokens: typography expands, shadow and gradient render as CSS strings.
   if (token.type === "typography" && typeof value.literal === "object") {
     const t = value.literal as Record<string, unknown>;
     for (const subField of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing"]) {
@@ -259,6 +260,12 @@ function emitTailwindTokenLines(
   if (token.type === "shadow" && typeof value.literal === "object") {
     const css = renderShadow(value.literal);
     if (css) out.push(`  ${cssName}: ${css};`);
+    return;
+  }
+  if (token.type === "gradient" && typeof value.literal === "object") {
+    const g = renderGradient(value.literal);
+    if ("css" in g) out.push(`  ${cssName}: ${g.css};`);
+    else warnings.push(`Skipped ${token.path.join(".")} in Tailwind v4 — ${g.skip}.`);
     return;
   }
 
