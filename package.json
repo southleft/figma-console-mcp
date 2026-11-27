@@ -90,5 +90,10 @@
 		"vite": "^6.0.0",
 		"vite-plugin-singlefile": "^2.0.0",
 		"wrangler": "4.72.0"
+	},
+	"overrides": {
+		"agents": {
+			"@modelcontextprotocol/sdk": "$@modelcontextprotocol/sdk"
+		}
 	}
 }

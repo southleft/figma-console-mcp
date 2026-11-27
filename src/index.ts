@@ -128,11 +128,10 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 	private get toolServer(): ToolServer {
 		return this.server as unknown as ToolServer;
 	}
-	// agents 0.7 types `server` against its own nested SDK 1.26 copy; ours is
-	// 1.32 (security fixes). Only connect() and the transport interface cross
-	// that boundary, and both are unchanged between the two. Moving to agents
-	// 0.30+ removes the split but needs a newer workerd and compatibility_date.
-	// @ts-expect-error -- same McpServer class from two SDK copies
+	// agents 0.7 pins @modelcontextprotocol/sdk 1.26.0, which has security
+	// advisories. package.json "overrides" points it at our patched copy, so
+	// both sides share one McpServer class. Moving to agents 0.30+ removes the
+	// override but needs a newer workerd and compatibility_date.
 	server = (() => {
 		return new McpServer({
 			name: "Figma Console MCP",
