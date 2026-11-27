@@ -1,0 +1,142 @@
+{
+  "id": "trading-dashboard",
+  "prompt": "Design a desktop stock-trading dashboard (1440px wide). Include: a top navigation bar with a search field; a row of four KPI stat cards (portfolio value, day change, buying power, open orders); a price chart panel with time-range tabs (1D, 1W, 1M, 1Y); a watchlist data table of tickers (symbol, price, change, volume) with pagination below it; an order ticket with a buy/sell toggle, a quantity input, an order-type select and a submit button; and a market news section of three article preview cards, each with an image, a headline and an excerpt.",
+  "elements": [
+    {
+      "id": "navigation",
+      "aliases": [
+        "navigation",
+        "navbar",
+        "nav",
+        "header",
+        "top bar",
+        "app bar",
+        "topbar",
+        "appbar"
+      ],
+      "describe": "a top navigation bar"
+    },
+    {
+      "id": "search",
+      "aliases": [
+        "search"
+      ],
+      "describe": "a search field in the navigation bar"
+    },
+    {
+      "id": "stat card",
+      "aliases": [
+        "stat",
+        "stats",
+        "metric",
+        "kpi",
+        "statistic",
+        "card"
+      ],
+      "describe": "four KPI stat cards (portfolio value, day change, buying power, open orders)"
+    },
+    {
+      "id": "chart",
+      "aliases": [
+        "chart",
+        "graph"
+      ],
+      "describe": "a price chart"
+    },
+    {
+      "id": "tabs",
+      "aliases": [
+        "tab",
+        "tabs",
+        "segmented",
+        "segmented control"
+      ],
+      "describe": "time-range tabs (1D, 1W, 1M, 1Y) for the chart"
+    },
+    {
+      "id": "table",
+      "aliases": [
+        "table",
+        "data table",
+        "data grid",
+        "datagrid"
+      ],
+      "describe": "a watchlist data table of tickers (symbol, price, change, volume)"
+    },
+    {
+      "id": "pagination",
+      "aliases": [
+        "pagination",
+        "pager",
+        "paginator"
+      ],
+      "describe": "pagination controls below the watchlist table"
+    },
+    {
+      "id": "buy/sell toggle",
+      "aliases": [
+        "toggle",
+        "toggle group",
+        "segmented",
+        "segmented control",
+        "radio",
+        "radio group",
+        "button group",
+        "switch"
+      ],
+      "describe": "a buy/sell toggle in the order ticket"
+    },
+    {
+      "id": "quantity input",
+      "aliases": [
+        "input",
+        "text field",
+        "textfield",
+        "number input",
+        "field"
+      ],
+      "describe": "a quantity input in the order ticket"
+    },
+    {
+      "id": "order-type select",
+      "aliases": [
+        "select",
+        "dropdown",
+        "combobox",
+        "listbox"
+      ],
+      "describe": "an order-type select in the order ticket"
+    },
+    {
+      "id": "submit button",
+      "aliases": [
+        "button"
+      ],
+      "describe": "a submit button for the order ticket"
+    },
+    {
+      "id": "article preview card",
+      "aliases": [
+        "card",
+        "article",
+        "article card",
+        "news card",
+        "post card"
+      ],
+      "parts": [
+        {
+          "id": "image",
+          "aliases": [
+            "image",
+            "photo",
+            "thumbnail",
+            "media",
+            "picture"
+          ],
+          "describe": "an image on each article preview card"
+        }
+      ],
+      "describe": "three market-news article preview cards"
+    }
+  ]
+}

@@ -24,7 +24,7 @@ This page reflects both servers as of September 2026. Figma's server changes oft
   <Card title="Figma Console MCP" icon="terminal">
     **Made by Southleft.** A design-system-focused server that runs on your machine (or in Cloud Mode) and talks to Figma through the Desktop Bridge plugin and the REST API. Most operations are dedicated, schema-validated tools rather than generated scripts, and it also runs arbitrary Plugin API code through `figma_execute`.
 
-    130 tools. Plugin API + REST API. Open source (MIT).
+    145 tools. Plugin API + REST API. Open source (MIT).
   </Card>
 </Columns>
 
@@ -126,7 +126,7 @@ Neither approach is universally better. A script is flexible and handles one-off
 | **Runs where** | Hosted by Figma | Your machine (`npx` or a git clone), Southleft's hosted Cloud Mode, or your own Cloudflare deployment |
 | **Connection to Figma** | Figma's service | Desktop Bridge plugin over WebSocket, plus the Figma REST API |
 | **Authentication** | OAuth | Personal access token; OAuth for the hosted remote endpoints |
-| **Web AI clients** | Any client that supports remote MCP servers | Cloud Mode: Yes (105 tools) after pairing the Desktop Bridge plugin |
+| **Web AI clients** | Any client that supports remote MCP servers | Cloud Mode: Yes (114 tools) after pairing the Desktop Bridge plugin |
 | **Source code** | Operated by Figma | Open source (MIT), self-hostable |
 
 For Figma's current plan requirements and usage limits, see [Figma's documentation](https://developers.figma.com/docs/figma-mcp-server/). Figma Console MCP is free. It calls the Figma REST API with your own token, so Figma's REST API rate limits apply.
@@ -204,7 +204,7 @@ When this comparison was first written, the official Figma MCP was read-only and
 
 <Columns cols={2}>
   <Card title="Set Up Figma Console MCP" icon="rocket" href="/setup">
-    Full 130 tool access in about 10 minutes.
+    Full 145 tool access in about 10 minutes.
   </Card>
   <Card title="Set Up Figma MCP (Official)" icon="figma" href="https://developers.figma.com/docs/figma-mcp-server/">
     Figma's documentation for its MCP server.
