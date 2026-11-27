@@ -73,7 +73,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.2.5",
-		"@cloudflare/puppeteer": "^1.0.4",
+		"@cloudflare/puppeteer": "^2.0.1",
 		"@modelcontextprotocol/client": "2.4.0",
 		"@modelcontextprotocol/sdk": "^1.32.1",
 		"@types/jest": "^29.5.14",
