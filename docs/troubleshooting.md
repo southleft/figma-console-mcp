@@ -131,7 +131,7 @@ If you see `"valid": false`, the AI will provide step-by-step setup instructions
 
 #### Port 9223 Already in Use
 **Cause:** Another MCP server instance or orphaned process is running on port 9223.
-**Fix:** The server automatically cleans up orphaned MCP processes on startup and falls back to the next available port in the range 9223–9232. The plugin scans the whole range on launch and picks up whichever port the server bound to. If all ten ports are in use, a new server ends the least recently used one — never one started or used in the last two minutes (v1.42.1). If you regularly run more than ten clients, consider [sharing one server over HTTP](#http-endpoint-issues).
+**Fix:** The server automatically cleans up orphaned MCP processes on startup and falls back to the next available port in the range 9223–9232. The plugin scans the whole range on launch and picks up whichever port the server bound to. If all ten ports are in use, a new server ends the least recently used one — never one started or used in the last two minutes (v1.42.1). If every session was used recently, the new server starts without a bridge, and its tools say that all ten ports are taken and list the sessions holding them, with pid, start time and last tool call (v2.1.2). Close the sessions you don't need and restart. If you regularly run more than ten clients, consider [sharing one server over HTTP](#http-endpoint-issues).
 
 #### Plugin Shows "MCP scanning" or "Retry"
 **Cause:** The MCP server is not running yet, or all ports 9223–9232 are occupied.
