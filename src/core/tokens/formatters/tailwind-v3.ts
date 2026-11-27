@@ -35,6 +35,7 @@
 import type { Token, TokenDocument, TokenSet, TokenValue } from "../types.js";
 import { buildTokenIndex, resolveAliasChain } from "../alias-resolver.js";
 import type { FormatOptions, FormatResult } from "./index.js";
+import { renderGradient } from "./gradient.js";
 
 export function formatTailwindV3(
   doc: TokenDocument,
@@ -180,6 +181,7 @@ function mapToNamespace(token: Token): {
   if (token.type === "dimension") return { namespace: "spacing", subPath: slug };
   if (token.type === "fontFamily") return { namespace: "fontFamily", subPath: slug };
   if (token.type === "fontWeight") return { namespace: "fontWeight", subPath: slug };
+  if (token.type === "gradient") return { namespace: "backgroundImage", subPath: slug };
   // Anything else: dump under extend.{path}
   return { namespace: "extend", subPath: slug };
 }
@@ -262,6 +264,12 @@ function formatTokenValue(
   }
   if (typeof effective.literal === "string") return JSON.stringify(effective.literal);
   if (typeof effective.literal === "boolean") return String(effective.literal);
+  if (token.type === "gradient") {
+    const g = renderGradient(effective.literal);
+    if ("css" in g) return JSON.stringify(g.css);
+    warnings.push(`Skipped ${token.path.join(".")} in Tailwind v3 — ${g.skip}.`);
+    return null;
+  }
   // Composite: emit as JSON object literal
   return JSON.stringify(effective.literal);
 }
