@@ -36,7 +36,8 @@ This guide provides detailed documentation for each tool, including when to use 
 | **🔗 Dev Resources & Usage** | `figma_manage_dev_resources` | List, add, edit or delete the code, Storybook and docs links on components | Local / Cloud |
 | | `figma_find_usages` | Where a style, variable (including through aliases) or component is used | Local / Cloud |
 | | `figma_get_library_analytics` | Library usage across the org: instances, unused assets, detach rates (Enterprise) | Local |
-| | `figma_extend_library_collection` | Create an extended collection from a library collection (Enterprise) | Local / Cloud |
+| | `figma_extend_library_collection` | Create an extended collection from a library or local collection (Enterprise) | Local / Cloud |
+| | `figma_reset_variable_override` | Put a variable in an extended collection back to its inherited value, in one mode or all (Enterprise) | Local / Cloud |
 | **🔁 Token Sync** | `figma_export_tokens` | Export Figma variables to DTCG JSON + CSS (replaces Style Dictionary) | Local / Cloud |
 | | `figma_import_tokens` | Push code-side token edits back to Figma (diff-aware merge) | Local / Cloud |
 | **🧬 Design System Extraction** | `figma_ds_analyze` | Scan production codebase(s): component inventory, classification, architecture | Local |
@@ -193,7 +194,8 @@ Cloud Mode is unchanged and lists all its tools.
 |---|---|---|
 | `figma_find_usages` | inspect | Where a style, variable or component is used (count and a sample by page). Run it before renaming or retiring an asset |
 | `figma_manage_dev_resources` | components | List, add, edit or delete the links on components to their code, Storybook or docs (Dev Mode). Bulk, skips duplicates, asks before deleting |
-| `figma_extend_library_collection` | variables | Create an extended collection: a local theme of a library's variables that overrides values per mode. Without a key, lists the collections available |
+| `figma_extend_library_collection` | variables | Create an extended collection: a theme of a library collection or one of the file's own collections that overrides values per mode. Without a target, lists both kinds |
+| `figma_reset_variable_override` | variables | Remove an extended collection's override so the variable inherits again, in one mode or all |
 | `figma_get_library_analytics` | parity | Library usage across the organization: instances, unused assets, insertions and detach rates. Enterprise; token needs `library_analytics:read` |
 | `figma_get_component_for_development_deep` `css: true` | inspect | Adds Figma's generated CSS for the node and its layers |
 | `figma_get_design_system_summary` | core | Now also lists Figma Specs documents in the file (title, page). Spec content isn't readable from plugins; use Figma's MCP server for it |

@@ -5,6 +5,27 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`figma_reset_variable_override`** puts a variable in an extended collection back to the value it inherits, in one mode or all. Figma's API only clears every mode at once, so resetting one mode keeps the others' overrides.
+- **`figma_extend_library_collection` extends the file's own collections** (`collectionId`), not only library ones. Its listing now shows both kinds.
+
+### Fixed
+
+- **Write tools no longer report success for changes Figma refused.** The plugin passed a refused command back as an ordinary result, so tools that didn't check it said "updated successfully" and nothing was written. For example, `figma_update_variable` with a mode id Figma rejects. The server now treats any refused command as an error, with every installed plugin version, so the tool returns Figma's reason. Affected tools that didn't check: variable update, rename, add/rename mode, create collection, and most Slides and FigJam tools.
+- **Extensions of library collections are readable.** `figma_get_variables` filtered by such an extension returned nothing, because its variables belong to the library rather than the file. It now returns every variable with its value in each mode of the extension, marked overridden or inherited.
+- **An extension's `defaultModeId` is its real mode id.** Figma reports it in a short form (`12:0`) that it then refuses as a mode id; it now matches the extension's modes.
+- **A collection filter that matches only empty collections returns them** instead of an empty list, so an empty collection doesn't look missing.
+- **`figma_get_library_analytics`:**
+  - Lists unused assets. Figma only reports assets that are in use, so the tool now compares against what the library publishes. If that list can't be read, the result says unused wasn't checked.
+  - Names variants with their component set (`Button / Variant=Primary, State=Default`); many variants share names like `State=Default`.
+  - Explains an empty result: the file publishes nothing, or nothing uses it yet.
+  - A 404 now says the token's account can't open the file. It used to blame the plan.
+  - No insertions or detachments in the date range is no longer reported as "nothing uses them". Existing uses are shown by metric `usages`.
+  - Unused assets are counted per asset, not per name. Variables are named with their collection, since two collections can share a name.
+
 ## [2.0.0] - 2026-11-26
 
 The biggest update to how the server talks to AI clients since it began. It is rebuilt on the MCP SDK v2, much cheaper to run, and built around one rule for generating designs: build with what the design system has, and mark what it doesn't. **Re-import the Desktop Bridge plugin** (`manifest.json`) to get the lint fixes.

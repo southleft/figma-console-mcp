@@ -514,7 +514,8 @@ Figma Motion (Plugin API beta). Animations play in Figma's preview and in video 
 - `figma_manage_dev_resources` - List, add, edit or delete the code, Storybook and docs links on components (Dev Mode), in bulk
 - `figma_find_usages` - Where a style, variable or component is used, before you change or retire it
 - `figma_get_library_analytics` - Library usage across the org: instances, unused assets, insertions and detach rates (Enterprise; token needs `library_analytics:read`)
-- `figma_extend_library_collection` - Create an extended collection (a brand or product theme) from a library's variables (Enterprise)
+- `figma_extend_library_collection` - Create an extended collection (a brand or product theme) from a library's or the file's own variables (Enterprise)
+- `figma_reset_variable_override` - Put a variable in an extended collection back to its inherited value (Enterprise)
 
 ### 🔬 Components, Nodes & Deep Analysis (Local Mode + Cloud Mode unless noted)
 - `figma_search_components` / `figma_get_component_details` - Find components (local + library) and get their variants, properties, and keys (Local Mode only)

@@ -56,3 +56,146 @@ describe("figma_get_library_analytics", () => {
 		expect(json(await tool({ asset: "style", metric: "usages", groupBy: "team" })).error).toMatch(/only available for actions/);
 	});
 });
+
+// Real response shapes from a live library: Figma returns rows only
+// for assets in use (never a 0 row), names variants without their set, and
+// reports counts as `usages` / `files_using` / `teams_using`.
+describe("figma_get_library_analytics — live API shapes", () => {
+	const setup = (api: any) => {
+		const tools: Record<string, any> = {};
+		registerAnalyticsTools({ registerTool: (n: string, _c: any, h: any) => (tools[n] = h) } as any, { getFigmaAPI: async () => api, getCurrentUrl: () => "https://www.figma.com/design/LIBKEY/x" });
+		return tools.figma_get_library_analytics;
+	};
+	const json = (r: any) => JSON.parse(r.content[0].text);
+	const usageRows = [
+		{ component_key: "k-btn-primary", component_name: "Variant=Primary, State=Default", usages: 309, files_using: 1, teams_using: 1 },
+		{ component_key: "k-done", component_name: "done-circle", usages: 760, files_using: 1, teams_using: 1 },
+		{ component_key: "k-badge-default", component_name: "Variant=Default", usages: 12, files_using: 1, teams_using: 1 },
+	];
+	const published = {
+		meta: {
+			components: [
+				{ key: "k-btn-primary", name: "Variant=Primary, State=Default", containing_frame: { containingComponentSet: { name: "Button" } } },
+				{ key: "k-btn-ghost", name: "Variant=Ghost, State=Default", containing_frame: { containingComponentSet: { name: "Button" } } },
+				{ key: "k-done", name: "done-circle", containing_frame: {} },
+				{ key: "k-badge-default", name: "Variant=Default", containing_frame: { containingComponentSet: { name: "Badge" } } },
+				{ key: "k-old", name: "Old Panel" },
+			],
+		},
+	};
+	const api = (over: any = {}) => ({ getLibraryAnalytics: async () => ({ rows: usageRows }), getComponents: async () => published, ...over });
+
+	it("lists unused components by comparing against what the library publishes", async () => {
+		const r = json(await setup(api())({ asset: "component", metric: "usages" }));
+		expect(r.unused).toEqual(["Button / Variant=Ghost, State=Default", "Old Panel"]);
+		expect(r.unusedCount).toBe(2);
+		expect(r.published).toBe(5);
+	});
+
+	it("names variants with their component set", async () => {
+		const r = json(await setup(api())({ asset: "component", metric: "usages" }));
+		expect(r.top.map((x: any) => x.name)).toEqual(["done-circle", "Button / Variant=Primary, State=Default", "Badge / Variant=Default"]);
+		expect(r.top[1].component_set_name).toBe("Button");
+	});
+
+	it("still answers when the published list can't be read, and says unused wasn't checked", async () => {
+		const r = json(await setup(api({ getComponents: async () => { throw new Error("Figma API error (403)"); } }))({ asset: "component", metric: "usages" }));
+		expect(r.success).toBe(true);
+		expect(r.total).toBe(760 + 309 + 12);
+		expect(r.unused).toBeUndefined();
+		expect(r.notes.join(" ")).toMatch(/unused.*couldn't be checked/i);
+	});
+
+	it("explains an empty result instead of reporting a bare total of 0", async () => {
+		const empty = json(await setup(api({ getLibraryAnalytics: async () => ({ rows: [] }), getComponents: async () => ({ meta: { components: [] } }) }))({ asset: "component", metric: "usages" }));
+		expect(empty.notes.join(" ")).toMatch(/publishes no components/i);
+		const unusedLib = json(await setup(api({ getLibraryAnalytics: async () => ({ rows: [] }) }))({ asset: "component", metric: "usages" }));
+		expect(unusedLib.notes.join(" ")).toMatch(/no usage recorded/i);
+		expect(unusedLib.unusedCount).toBe(5);
+	});
+
+	it("a 404 points at file access, not the plan", async () => {
+		const r = json(await setup({ getLibraryAnalytics: async () => { throw new Error('Figma API error (404): {"status":404,"err":"Not found"}'); } })({ asset: "component", metric: "usages", fileKey: "OTHERKEY" }));
+		expect(r.hint).toMatch(/account can't open it/);
+		expect(r.hint).not.toMatch(/needs an Enterprise plan/);
+	});
+});
+
+// Live production (Carbon, 2026-11-27): 804 published variables, none used,
+// two pairs sharing a name across collections; styles published but no components.
+describe("figma_get_library_analytics — published but unused", () => {
+	const setup = (api: any) => {
+		const tools: Record<string, any> = {};
+		registerAnalyticsTools({ registerTool: (n: string, _c: any, h: any) => (tools[n] = h) } as any, { getFigmaAPI: async () => api, getCurrentUrl: () => "https://www.figma.com/design/LIBKEY/x" });
+		return tools.figma_get_library_analytics;
+	};
+	const json = (r: any) => JSON.parse(r.content[0].text);
+	const publishedVariables = {
+		variableCollections: { "c-grid": { id: "c-grid", name: "Grid" }, "c-mini": { id: "c-mini", name: "Mini grid" } },
+		variables: {
+			a: { id: "a", key: "ka", name: "Left end-margin", variableCollectionId: "c-grid" },
+			b: { id: "b", key: "kb", name: "Left end-margin", variableCollectionId: "c-mini" },
+			c: { id: "c", key: "kc", name: "Layer/layer-02", variableCollectionId: "c-grid" },
+		},
+	};
+	const api = { getLibraryAnalytics: async () => ({ rows: [] }), getPublishedVariables: async () => publishedVariables, getComponents: async () => ({ meta: { components: [] } }) };
+
+	it("counts unused by asset, not by name, and names variables with their collection", async () => {
+		const r = json(await setup(api)({ asset: "variable", metric: "usages" }));
+		expect(r.unusedCount).toBe(3);
+		expect(r.unused).toEqual(["Grid / Left end-margin", "Mini grid / Left end-margin", "Grid / Layer/layer-02"]);
+		expect(r.rankedBy).toBeUndefined();
+	});
+
+	it("says nothing uses the published assets yet, without doubting the file is a library", async () => {
+		const r = json(await setup(api)({ asset: "variable", metric: "usages" }));
+		expect(r.notes.join(" ")).toMatch(/3 published variables.*nothing uses them yet/);
+		expect(r.notes.join(" ")).not.toMatch(/isn't a published library/);
+	});
+
+	it("a file with no published components is told to publish its components, not 'as a library'", async () => {
+		const r = json(await setup(api)({ asset: "component", metric: "usages" }));
+		expect(r.notes.join(" ")).toMatch(/publishes no components/);
+		expect(r.notes.join(" ")).not.toMatch(/as a library first/);
+	});
+});
+
+describe("figma_get_library_analytics — empty actions", () => {
+	it("no insertions or detachments in range doesn't claim the library is unused (a library in use, with 0 actions)", async () => {
+		const tools: Record<string, any> = {};
+		registerAnalyticsTools({ registerTool: (n: string, _c: any, h: any) => (tools[n] = h) } as any, {
+			getFigmaAPI: async () => ({ getLibraryAnalytics: async () => ({ rows: [] }), getComponents: async () => ({ meta: { components: [{ key: "k", name: "Button" }] } }) }),
+			getCurrentUrl: () => "https://www.figma.com/design/LIBKEY/x",
+		});
+		const r = JSON.parse((await tools.figma_get_library_analytics({ asset: "component", metric: "actions" })).content[0].text);
+		expect(r.notes.join(" ")).toMatch(/No insertions or detachments recorded in this date range/);
+		expect(r.notes.join(" ")).not.toMatch(/nothing uses/);
+	});
+});
+
+describe("figma_get_library_analytics — review follow-ups", () => {
+	const setup = (api: any) => {
+		const tools: Record<string, any> = {};
+		registerAnalyticsTools({ registerTool: (n: string, _c: any, h: any) => (tools[n] = h) } as any, { getFigmaAPI: async () => api, getCurrentUrl: () => "https://www.figma.com/design/LIBKEY/x" });
+		return tools.figma_get_library_analytics;
+	};
+	const json = (r: any) => JSON.parse(r.content[0].text);
+
+	it("doesn't list unused assets when paging stopped early (unseen pages may hold them)", async () => {
+		let n = 0;
+		const r = json(await setup({
+			getLibraryAnalytics: async () => ({ rows: [{ component_key: `k${n}`, component_name: `C${n++}`, usages: 1 }], next_page: true, cursor: `c${n}` }),
+			getComponents: async () => ({ meta: { components: [{ key: "k0", name: "C0" }, { key: "never-fetched", name: "Big" }] } }),
+		})({ asset: "component", metric: "usages" }));
+		expect(r.truncated).toBe(true);
+		expect(r.unused).toBeUndefined();
+		expect(r.notes.join(" ")).toMatch(/Unused.*not listed.*first 50 pages/i);
+	});
+
+	it("doesn't fetch the published list for team or file groupings, which can't use it", async () => {
+		const getComponents = jest.fn(async () => ({ meta: { components: [] } }));
+		await setup({ getLibraryAnalytics: async () => ({ rows: [{ team_name: "T", insertions: 1, detachments: 0 }] }), getComponents })({ asset: "component", metric: "actions", groupBy: "team" });
+		await setup({ getLibraryAnalytics: async () => ({ rows: [{ file_name: "F", usages: 3 }] }), getComponents })({ asset: "component", metric: "usages", groupBy: "file" });
+		expect(getComponents).not.toHaveBeenCalled();
+	});
+});

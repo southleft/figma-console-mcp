@@ -81,7 +81,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 		],
 	},
 	variables: {
-		description: "edit variables/collections/modes; extend library collections; import/export tokens (DTCG, CSS, Tailwind)",
+		description: "edit variables/collections/modes; extended collections (create from a library or local collection, reset overrides); import/export tokens (DTCG, CSS, Tailwind)",
 		tools: [
 			"figma_create_variable",
 			"figma_create_variable_collection",
@@ -97,6 +97,7 @@ export const TOOLSETS: Record<string, Toolset> = {
 			"figma_import_tokens",
 			"figma_export_tokens",
 			"figma_extend_library_collection",
+			"figma_reset_variable_override",
 		],
 	},
 	components: {

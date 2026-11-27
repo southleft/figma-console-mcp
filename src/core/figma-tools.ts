@@ -698,6 +698,24 @@ function applyFilters(
 /**
  * Apply pagination to variables
  */
+/**
+ * The collections to return with a page of filtered variables: those the page's
+ * variables belong to. One exception: a collection filter that matched only
+ * empty collections (no variables at all, on any page) keeps them, so an empty
+ * collection reads as empty rather than missing. An out-of-range page, or a
+ * name pattern without a collection filter, still returns none.
+ */
+export function collectionsForPage(
+	collections: any[],
+	variables: any[],
+	opts: { collectionFilter?: string; totalVariables?: number } = {},
+): any[] {
+	if (!Array.isArray(collections)) return collections;
+	if (!variables?.length) return opts.collectionFilter && opts.totalVariables === 0 ? collections : [];
+	const referenced = new Set(variables.map((v: any) => v.variableCollectionId));
+	return collections.filter((c: any) => referenced.has(c.id));
+}
+
 function paginateVariables(
 	data: any,
 	page: number = 1,
@@ -1553,13 +1571,11 @@ export function registerFigmaAPITools(
 						const effectiveVerbosity = verbosity || "inventory";
 
 						// CRITICAL FIX: Only include collections referenced by paginated variables
-						const referencedCollectionIds = new Set(
-							responseData.variables.map((v: any) => v.variableCollectionId),
+						responseData.variableCollections = collectionsForPage(
+							responseData.variableCollections,
+							responseData.variables,
+							{ collectionFilter: collection, totalVariables: paginationInfo?.totalVariables },
 						);
-						responseData.variableCollections =
-							responseData.variableCollections.filter((c: any) =>
-								referencedCollectionIds.has(c.id),
-							);
 
 						// Filter variables to minimal needed fields
 						responseData.variables = responseData.variables.map((v: any) => {
@@ -2371,15 +2387,11 @@ export function registerFigmaAPITools(
 								const effectiveVerbosity = verbosity || "inventory";
 
 								// Only include collections referenced by paginated variables
-								const referencedCollectionIds = new Set(
-									responseData.variables.map(
-										(v: any) => v.variableCollectionId,
-									),
+								responseData.variableCollections = collectionsForPage(
+									responseData.variableCollections,
+									responseData.variables,
+									{ collectionFilter: collection, totalVariables: paginationInfo?.totalVariables },
 								);
-								responseData.variableCollections =
-									responseData.variableCollections.filter((c: any) =>
-										referencedCollectionIds.has(c.id),
-									);
 
 								// Filter variables by verbosity
 								responseData.variables = responseData.variables.map(
