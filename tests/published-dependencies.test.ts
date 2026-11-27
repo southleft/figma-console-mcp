@@ -64,7 +64,7 @@ describe("published dependencies match the npm runtime", () => {
 	const imports = runtimeImportsOfLocalEntry();
 
 	it("walks a real graph (sanity check on the scanner itself)", () => {
-		expect(imports.has("@modelcontextprotocol/sdk")).toBe(true);
+		expect(imports.has("@modelcontextprotocol/server")).toBe(true);
 		expect(imports.has("zod")).toBe(true);
 		expect(imports.size).toBeGreaterThan(5);
 	});

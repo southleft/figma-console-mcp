@@ -275,7 +275,8 @@ function convertVariable(
   // Map resolvedType to TokenType.
   const isOpacity =
     variable.resolvedType === "FLOAT" &&
-    ((variable.scopes?.length === 1 && variable.scopes[0] === "OPACITY") ||
+    // Scoped only to opacity (layer OPACITY and/or COLOR_OPACITY, the alpha of a color) → a 0–1 number.
+    ((!!variable.scopes?.length && variable.scopes.every((sc) => sc === "OPACITY" || sc === "COLOR_OPACITY")) ||
       !!opacityVarRegistry.get(variableById)?.has(variable.id));
   const type = isOpacity ? "number" : mapResolvedType(variable.resolvedType, variable.name, warnings);
 

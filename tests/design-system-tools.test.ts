@@ -21,7 +21,7 @@ interface RegisteredTool {
 function createMockServer() {
 	const tools: Record<string, RegisteredTool> = {};
 	return {
-		tool: jest.fn((name: string, description: string, schema: any, handler: any) => {
+		registerTool: jest.fn((name: string, __cfg: any, handler: any) => { const description = __cfg?.description ?? ""; const schema = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void description; void schema;
 			tools[name] = { name, description, schema, handler };
 		}),
 		_tools: tools,
@@ -384,7 +384,7 @@ describe("Design System Kit Tool", () => {
 	});
 
 	it("registers the figma_get_design_system_kit tool", () => {
-		expect(server.tool).toHaveBeenCalledTimes(1);
+		expect(server.registerTool).toHaveBeenCalledTimes(1);
 		expect(server._getTool("figma_get_design_system_kit")).toBeDefined();
 	});
 

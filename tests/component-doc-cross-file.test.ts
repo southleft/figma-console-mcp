@@ -22,7 +22,7 @@ const node = {
 
 function setup(activeFileKey: string) {
 	const tools: Record<string, any> = {};
-	const server = { tool: (name: string, _d: string, _s: any, handler: any) => { tools[name] = handler; } };
+	const server = { registerTool: (name: string, __cfg: any, handler: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; tools[name] = handler; } };
 	const api = {
 		getNodes: jest.fn().mockResolvedValue({ nodes: { "1:1": { document: node, components: {}, componentSets: {} } } }),
 		getComponents: jest.fn().mockResolvedValue({ meta: { components: [] } }),

@@ -4,10 +4,14 @@
  * Works in both local and Cloudflare Workers modes — no Plugin API dependency.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { FigmaAPI } from "./figma-api.js";
-import { extractFigmaUrlInfo, extractFileKey, normalizeNodeId } from "./figma-api.js";
+import {
+	extractFigmaUrlInfo,
+	extractFileKey,
+	normalizeNodeId,
+} from "./figma-api.js";
 import { createChildLogger } from "./logger.js";
 
 const logger = createChildLogger({ component: "comment-tools" });
@@ -62,7 +66,9 @@ function collectNodeIds(node: any, ids: Set<string>): void {
 	}
 }
 
-function reactionCounts(reactions: any[] | undefined): Record<string, number> | undefined {
+function reactionCounts(
+	reactions: any[] | undefined,
+): Record<string, number> | undefined {
 	if (!reactions?.length) return undefined;
 	const counts: Record<string, number> = {};
 	for (const r of reactions) {
@@ -105,62 +111,81 @@ export function registerCommentTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_get_comments
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_get_comments",
-		"Get comment threads on a Figma file. Returns threads (root comment + replies) sorted by latest activity, in a compact format by default (author handle, message, timestamps, pinned node, reaction counts). Narrow the result with an explicit node_id (includes comments pinned to nested nodes), thread_id or since, and page with limit/offset — files often have hundreds of comments. Use include_resolved to also see resolved threads and format='full' for raw Figma API objects.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted. A node-id in the URL does not filter comments; use node_id explicitly."),
-			as_md: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe("Return comment message bodies as markdown. Default: false"),
-			include_resolved: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe("Include resolved (completed) comment threads. Default: false (only active threads unless thread_id is given)"),
-			node_id: z
-				.string()
-				.optional()
-				.describe("Only threads pinned to this node (e.g. '695:313' or '695-313') or, with include_nested, to any node inside it. Omit or pass an empty string to return threads across the file."),
-			include_nested: z
-				.boolean()
-				.optional()
-				.default(true)
-				.describe("With node_id: also match threads pinned to descendants of the node (one extra REST call). Default: true"),
-			thread_id: z
-				.string()
-				.optional()
-				.describe("Return only the thread containing this comment ID (root or reply), including resolved threads."),
-			since: z
-				.string()
-				.optional()
-				.describe("ISO date/time: only threads with a comment or reply created at or after it."),
-			limit: z
-				.number()
-				.int()
-				.min(1)
-				.max(200)
-				.optional()
-				.default(30)
-				.describe("Maximum threads to return. Default: 30"),
-			offset: z
-				.number()
-				.int()
-				.min(0)
-				.optional()
-				.default(0)
-				.describe("Threads to skip, for paging. Default: 0"),
-			format: z
-				.enum(["compact", "full"])
-				.optional()
-				.default("compact")
-				.describe("'compact' (default) — trimmed fields; 'full' — raw Figma API comment objects."),
+			description:
+				"Get comment threads on a Figma file. Returns threads (root comment + replies) sorted by latest activity, in a compact format by default (author handle, message, timestamps, pinned node, reaction counts). Narrow the result with an explicit node_id (includes comments pinned to nested nodes), thread_id or since, and page with limit/offset — files often have hundreds of comments. Use include_resolved to also see resolved threads and format='full' for raw Figma API objects.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe(
+						"Figma file URL. Uses current URL if omitted. A node-id in the URL does not filter comments; use node_id explicitly.",
+					),
+				as_md: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Return comment message bodies as markdown. Default: false",
+					),
+				include_resolved: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Include resolved (completed) comment threads. Default: false (only active threads unless thread_id is given)",
+					),
+				node_id: z
+					.string()
+					.optional()
+					.describe(
+						"Only threads pinned to this node (e.g. '695:313' or '695-313') or, with include_nested, to any node inside it. Omit or pass an empty string to return threads across the file.",
+					),
+				include_nested: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe(
+						"With node_id: also match threads pinned to descendants of the node (one extra REST call). Default: true",
+					),
+				thread_id: z
+					.string()
+					.optional()
+					.describe(
+						"Return only the thread containing this comment ID (root or reply), including resolved threads.",
+					),
+				since: z
+					.string()
+					.optional()
+					.describe(
+						"ISO date/time: only threads with a comment or reply created at or after it.",
+					),
+				limit: z
+					.number()
+					.int()
+					.min(1)
+					.max(200)
+					.optional()
+					.default(30)
+					.describe("Maximum threads to return. Default: 30"),
+				offset: z
+					.number()
+					.int()
+					.min(0)
+					.optional()
+					.default(0)
+					.describe("Threads to skip, for paging. Default: 0"),
+				format: z
+					.enum(["compact", "full"])
+					.optional()
+					.default("compact")
+					.describe(
+						"'compact' (default) — trimmed fields; 'full' — raw Figma API comment objects.",
+					),
+			}),
 		},
 		async ({
 			fileUrl,
@@ -230,7 +255,17 @@ export function registerCommentTools(
 				const targetNode = node_id || undefined;
 
 				logger.info(
-					{ fileKey, as_md, include_resolved, targetNode, thread_id, since, limit, offset, format },
+					{
+						fileKey,
+						as_md,
+						include_resolved,
+						targetNode,
+						thread_id,
+						since,
+						limit,
+						offset,
+						format,
+					},
 					"Fetching comments",
 				);
 
@@ -239,9 +274,10 @@ export function registerCommentTools(
 				const allComments: any[] = response.comments || [];
 				const threads = buildThreads(allComments);
 
-				let selected = include_resolved || thread_id
-					? threads
-					: threads.filter((t) => !t.root.resolved_at);
+				let selected =
+					include_resolved || thread_id
+						? threads
+						: threads.filter((t) => !t.root.resolved_at);
 
 				let nodeIds: Set<string> | undefined;
 				if (targetNode) {
@@ -303,7 +339,10 @@ export function registerCommentTools(
 						offset,
 						has_more: offset + comments.length < selected.length,
 						...(targetNode
-							? { node_id: normalizeNodeId(targetNode), nested_nodes: nodeIds?.size }
+							? {
+									node_id: normalizeNodeId(targetNode),
+									nested_nodes: nodeIds?.size,
+								}
 							: {}),
 					},
 				};
@@ -339,34 +378,45 @@ export function registerCommentTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_post_comment
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_post_comment",
-		"Post a comment on a Figma file, optionally pinned to a specific design node. Use after figma_check_design_parity to notify designers of drift when code is the canonical source. Supports replies to existing comment threads. Limitation: @mentions are a Figma UI-only feature — including '@name' in the message renders as plain text, not a clickable mention tag, and does not trigger Figma notifications.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			message: z
-				.string()
-				.describe("The comment message text. Supports basic formatting."),
-			node_id: z
-				.string()
-				.optional()
-				.describe("Node ID to pin the comment to (e.g., '695:313'). Comment appears on that element in Figma."),
-			x: z
-				.number()
-				.optional()
-				.describe("X coordinate for comment placement (absolute canvas position). Used with node_id."),
-			y: z
-				.number()
-				.optional()
-				.describe("Y coordinate for comment placement (absolute canvas position). Used with node_id."),
-			reply_to_comment_id: z
-				.string()
-				.optional()
-				.describe("ID of an existing comment to reply to. Creates a threaded reply instead of a new top-level comment."),
+			description:
+				"Post a comment on a Figma file, optionally pinned to a specific design node. Use after figma_check_design_parity to notify designers of drift when code is the canonical source. Supports replies to existing comment threads. Limitation: @mentions are a Figma UI-only feature — including '@name' in the message renders as plain text, not a clickable mention tag, and does not trigger Figma notifications.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				message: z
+					.string()
+					.describe("The comment message text. Supports basic formatting."),
+				node_id: z
+					.string()
+					.optional()
+					.describe(
+						"Node ID to pin the comment to (e.g., '695:313'). Comment appears on that element in Figma.",
+					),
+				x: z
+					.number()
+					.optional()
+					.describe(
+						"X coordinate for comment placement (absolute canvas position). Used with node_id.",
+					),
+				y: z
+					.number()
+					.optional()
+					.describe(
+						"Y coordinate for comment placement (absolute canvas position). Used with node_id.",
+					),
+				reply_to_comment_id: z
+					.string()
+					.optional()
+					.describe(
+						"ID of an existing comment to reply to. Creates a threaded reply instead of a new top-level comment.",
+					),
+			}),
 		},
 		async ({ fileUrl, message, node_id, x, y, reply_to_comment_id }) => {
 			try {
@@ -403,13 +453,18 @@ export function registerCommentTools(
 					};
 				}
 
-				logger.info({ fileKey, node_id, reply_to_comment_id }, "Posting comment");
+				logger.info(
+					{ fileKey, node_id, reply_to_comment_id },
+					"Posting comment",
+				);
 
 				const api = await getFigmaAPI();
 
 				// Build client_meta for pinning to a node/position
 				// Figma API requires node_offset when node_id is present — default to (0,0) if not specified
-				let clientMeta: { node_id?: string; node_offset?: { x: number; y: number } } | undefined;
+				let clientMeta:
+					| { node_id?: string; node_offset?: { x: number; y: number } }
+					| undefined;
 				if (node_id) {
 					clientMeta = {
 						node_id,
@@ -443,7 +498,8 @@ export function registerCommentTools(
 					],
 				};
 			} catch (error) {
-				const message_text = error instanceof Error ? error.message : String(error);
+				const message_text =
+					error instanceof Error ? error.message : String(error);
 				logger.error({ error }, "Failed to post comment");
 
 				return {
@@ -465,18 +521,23 @@ export function registerCommentTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_delete_comment
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_delete_comment",
-		"Delete a comment from a Figma file by its comment ID. Use figma_get_comments to find comment IDs first.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			comment_id: z
-				.string()
-				.describe("The ID of the comment to delete. Get IDs from figma_get_comments."),
+			description:
+				"Delete a comment from a Figma file by its comment ID. Use figma_get_comments to find comment IDs first.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				comment_id: z
+					.string()
+					.describe(
+						"The ID of the comment to delete. Get IDs from figma_get_comments.",
+					),
+			}),
 		},
 		async ({ fileUrl, comment_id }) => {
 			try {

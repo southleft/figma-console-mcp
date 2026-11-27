@@ -26,8 +26,8 @@ interface RegisteredTool {
 function createMockServer() {
 	const tools: Record<string, RegisteredTool> = {};
 	return {
-		tool: jest.fn(
-			(name: string, description: string, schema: any, handler: any) => {
+		registerTool: jest.fn(
+			(name: string, __cfg: any, handler: any) => { const description = __cfg?.description ?? ""; const schema = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void description; void schema;
 				tools[name] = { name, description, schema, handler };
 			},
 		),
@@ -259,7 +259,7 @@ describe("Library Tools — figma_get_library_component_by_key", () => {
 	});
 
 	it("registers the figma_get_library_component_by_key tool", () => {
-		expect(server.tool).toHaveBeenCalledTimes(1);
+		expect(server.registerTool).toHaveBeenCalledTimes(1);
 		expect(
 			server._getTool("figma_get_library_component_by_key"),
 		).toBeDefined();

@@ -4,7 +4,7 @@
  * and generating platform-agnostic component documentation.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { basename, dirname, isAbsolute, relative } from "node:path";
 import type { FigmaAPI } from "./figma-api.js";
@@ -50,28 +50,51 @@ const enrichmentService = new EnrichmentService(logger);
 // ============================================================================
 
 // Re-exported from the shared diff module so existing imports continue to work.
-export { figmaRGBAToHex, normalizeColor, numericClose } from "./diff/property-compare.js";
-import { figmaRGBAToHex, normalizeColor, numericClose } from "./diff/property-compare.js";
+export {
+	figmaRGBAToHex,
+	normalizeColor,
+	numericClose,
+} from "./diff/property-compare.js";
+import {
+	figmaRGBAToHex,
+	normalizeColor,
+	numericClose,
+} from "./diff/property-compare.js";
 
 /** Calculate parity score from discrepancy counts */
-export function calculateParityScore(critical: number, major: number, minor: number, info: number): number {
+export function calculateParityScore(
+	critical: number,
+	major: number,
+	minor: number,
+	info: number,
+): number {
 	return Math.max(0, 100 - (critical * 15 + major * 8 + minor * 3 + info * 1));
 }
 
 /** Extract first solid fill color from Figma node */
 function extractFirstFillColor(fills: any[]): string | null {
 	if (!fills || !Array.isArray(fills)) return null;
-	const solid = fills.find((f: any) => f.type === "SOLID" && f.visible !== false);
+	const solid = fills.find(
+		(f: any) => f.type === "SOLID" && f.visible !== false,
+	);
 	if (!solid?.color) return null;
-	return figmaRGBAToHex({ ...solid.color, a: solid.opacity ?? solid.color.a ?? 1 });
+	return figmaRGBAToHex({
+		...solid.color,
+		a: solid.opacity ?? solid.color.a ?? 1,
+	});
 }
 
 /** Extract first stroke color from Figma node */
 function extractFirstStrokeColor(strokes: any[]): string | null {
 	if (!strokes || !Array.isArray(strokes)) return null;
-	const solid = strokes.find((s: any) => s.type === "SOLID" && s.visible !== false);
+	const solid = strokes.find(
+		(s: any) => s.type === "SOLID" && s.visible !== false,
+	);
 	if (!solid?.color) return null;
-	return figmaRGBAToHex({ ...solid.color, a: solid.opacity ?? solid.color.a ?? 1 });
+	return figmaRGBAToHex({
+		...solid.color,
+		a: solid.opacity ?? solid.color.a ?? 1,
+	});
 }
 
 /** Extract text style properties from a Figma text node */
@@ -105,7 +128,8 @@ function extractSpacingProperties(node: any): {
 	const result: any = {};
 	if (node.paddingTop !== undefined) result.paddingTop = node.paddingTop;
 	if (node.paddingRight !== undefined) result.paddingRight = node.paddingRight;
-	if (node.paddingBottom !== undefined) result.paddingBottom = node.paddingBottom;
+	if (node.paddingBottom !== undefined)
+		result.paddingBottom = node.paddingBottom;
 	if (node.paddingLeft !== undefined) result.paddingLeft = node.paddingLeft;
 	if (node.itemSpacing !== undefined) result.gap = node.itemSpacing;
 	if (node.absoluteBoundingBox) {
@@ -122,7 +146,9 @@ function figmaFontWeight(weight: number): number {
 }
 
 /** Split markdown by H2 headers for platforms that need chunking */
-export function chunkMarkdownByHeaders(markdown: string): Array<{ heading: string; content: string }> {
+export function chunkMarkdownByHeaders(
+	markdown: string,
+): Array<{ heading: string; content: string }> {
 	const chunks: Array<{ heading: string; content: string }> = [];
 	const lines = markdown.split("\n");
 	let currentHeading = "";
@@ -131,7 +157,10 @@ export function chunkMarkdownByHeaders(markdown: string): Array<{ heading: strin
 	for (const line of lines) {
 		if (line.startsWith("## ")) {
 			if (currentHeading || currentContent.length > 0) {
-				chunks.push({ heading: currentHeading, content: currentContent.join("\n").trim() });
+				chunks.push({
+					heading: currentHeading,
+					content: currentContent.join("\n").trim(),
+				});
 			}
 			currentHeading = line.replace("## ", "").trim();
 			currentContent = [];
@@ -140,7 +169,10 @@ export function chunkMarkdownByHeaders(markdown: string): Array<{ heading: strin
 		}
 	}
 	if (currentHeading || currentContent.length > 0) {
-		chunks.push({ heading: currentHeading, content: currentContent.join("\n").trim() });
+		chunks.push({
+			heading: currentHeading,
+			content: currentContent.join("\n").trim(),
+		});
 	}
 	return chunks;
 }
@@ -174,7 +206,9 @@ export function cleanVariantName(rawName: string): string {
 		const value = p.slice(eqIdx + 1).trim();
 		// "False" is not a name. A boolean-like value only means something next to
 		// its property: "Is scrollable=False", "Hover / Is Selected=True".
-		return BOOLEAN_LIKE_VALUE.test(value) ? `${p.slice(0, eqIdx).trim()}=${value}` : value;
+		return BOOLEAN_LIKE_VALUE.test(value)
+			? `${p.slice(0, eqIdx).trim()}=${value}`
+			: value;
 	});
 	return values.join(" / ");
 }
@@ -203,7 +237,9 @@ interface ParsedDescription {
  * Parse a Figma component description into structured sections.
  * Handles markdown-formatted descriptions with headers, bullet points, etc.
  */
-export function parseComponentDescription(description: string): ParsedDescription {
+export function parseComponentDescription(
+	description: string,
+): ParsedDescription {
 	const result: ParsedDescription = {
 		overview: "",
 		whenToUse: [],
@@ -238,13 +274,23 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 	// Normalize line endings and split
 	const lines = normalized.split("\n");
 
-	type Section = "overview" | "when_to_use" | "when_not_to_use" | "content" | "accessibility" | "other";
+	type Section =
+		| "overview"
+		| "when_to_use"
+		| "when_not_to_use"
+		| "content"
+		| "accessibility"
+		| "other";
 	let currentSection: Section = "overview";
 	let currentContentHeading = "";
 	const overviewLines: string[] = [];
 
 	// Known plain-text section header patterns (for descriptions without markdown formatting)
-	const plainTextHeaders: Array<{ pattern: RegExp; section: Section; getHeading?: boolean }> = [
+	const plainTextHeaders: Array<{
+		pattern: RegExp;
+		section: Section;
+		getHeading?: boolean;
+	}> = [
 		{ pattern: /^when\s+to\s+use$/i, section: "when_to_use" },
 		{ pattern: /^when\s+not\s+to\s+use$/i, section: "when_not_to_use" },
 		{ pattern: /^when\s+to\s+not\s+use$/i, section: "when_not_to_use" },
@@ -252,9 +298,21 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 		{ pattern: /^do\s+not\s+use$/i, section: "when_not_to_use" },
 		{ pattern: /^accessibility$/i, section: "accessibility" },
 		{ pattern: /^a11y$/i, section: "accessibility" },
-		{ pattern: /^content\s*(requirements|guidelines)?$/i, section: "content", getHeading: true },
-		{ pattern: /^writing\s*(guidelines)?$/i, section: "content", getHeading: true },
-		{ pattern: /^copy\s*(guidelines)?$/i, section: "content", getHeading: true },
+		{
+			pattern: /^content\s*(requirements|guidelines)?$/i,
+			section: "content",
+			getHeading: true,
+		},
+		{
+			pattern: /^writing\s*(guidelines)?$/i,
+			section: "content",
+			getHeading: true,
+		},
+		{
+			pattern: /^copy\s*(guidelines)?$/i,
+			section: "content",
+			getHeading: true,
+		},
 		{ pattern: /^variants$/i, section: "other" },
 	];
 
@@ -266,8 +324,12 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 		const trimmed = line.trim();
 
 		// Detect section headers: bold text (**Header**), markdown headers (## Header), or plain text exact matches
-		const markdownHeaderMatch = trimmed.match(/^(?:\*\*|#{1,6}\s*)(.+?)(?:\*\*)?$/);
-		const headerText = markdownHeaderMatch ? markdownHeaderMatch[1].trim().replace(/\*\*/g, "") : null;
+		const markdownHeaderMatch = trimmed.match(
+			/^(?:\*\*|#{1,6}\s*)(.+?)(?:\*\*)?$/,
+		);
+		const headerText = markdownHeaderMatch
+			? markdownHeaderMatch[1].trim().replace(/\*\*/g, "")
+			: null;
 
 		// Check if this is a Figma per-property documentation block (e.g., "Show Left Icon: True – Purpose")
 		// These should be routed to "other" to avoid polluting content guidelines and accessibility sections
@@ -282,7 +344,10 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 		if (!headerText) {
 			for (const ph of plainTextHeaders) {
 				if (ph.pattern.test(trimmed)) {
-					plainMatch = { section: ph.section, heading: ph.getHeading ? trimmed : "" };
+					plainMatch = {
+						section: ph.section,
+						heading: ph.getHeading ? trimmed : "",
+					};
 					break;
 				}
 			}
@@ -297,7 +362,10 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 			if (plainMatch) {
 				if (plainMatch.section === "content" && plainMatch.heading) {
 					currentContentHeading = plainMatch.heading;
-					result.contentGuidelines.push({ heading: plainMatch.heading, items: [] });
+					result.contentGuidelines.push({
+						heading: plainMatch.heading,
+						items: [],
+					});
 				}
 				currentSection = plainMatch.section;
 				continue;
@@ -308,31 +376,61 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 			if (lower.includes("when to use") && !lower.includes("not")) {
 				currentSection = "when_to_use";
 				continue;
-			} else if (lower.includes("when not to use") || lower.includes("when to not use") || lower.includes("don't use") || lower.includes("do not use")) {
+			} else if (
+				lower.includes("when not to use") ||
+				lower.includes("when to not use") ||
+				lower.includes("don't use") ||
+				lower.includes("do not use")
+			) {
 				currentSection = "when_not_to_use";
 				continue;
-			} else if (lower.includes("accessibility") || lower.includes("a11y") || lower.includes("aria")) {
+			} else if (
+				lower.includes("accessibility") ||
+				lower.includes("a11y") ||
+				lower.includes("aria")
+			) {
 				currentSection = "accessibility";
 				continue;
-			} else if (lower.includes("content") || lower.includes("title text") || lower.includes("description text") || lower.includes("button label") || lower.includes("writing") || lower.includes("copy")) {
+			} else if (
+				lower.includes("content") ||
+				lower.includes("title text") ||
+				lower.includes("description text") ||
+				lower.includes("button label") ||
+				lower.includes("writing") ||
+				lower.includes("copy")
+			) {
 				currentSection = "content";
 				currentContentHeading = effectiveHeader || "";
-				result.contentGuidelines.push({ heading: effectiveHeader || "", items: [] });
+				result.contentGuidelines.push({
+					heading: effectiveHeader || "",
+					items: [],
+				});
 				continue;
 			} else if (currentSection === "overview") {
 				// A header after overview text means we're moving to a new section
 				currentSection = "other";
 				// Check if this might be a content guideline sub-section
-				if (lower.includes("title") || lower.includes("description") || lower.includes("label") || lower.includes("variant")) {
+				if (
+					lower.includes("title") ||
+					lower.includes("description") ||
+					lower.includes("label") ||
+					lower.includes("variant")
+				) {
 					currentSection = "content";
 					currentContentHeading = effectiveHeader || "";
-					result.contentGuidelines.push({ heading: effectiveHeader || "", items: [] });
+					result.contentGuidelines.push({
+						heading: effectiveHeader || "",
+						items: [],
+					});
 					continue;
 				}
 			} else if (currentSection === "content") {
 				// New sub-heading within content guidelines
 				currentContentHeading = effectiveHeader || "";
-				result.contentGuidelines.push({ heading: effectiveHeader || "", items: [] });
+				result.contentGuidelines.push({
+					heading: effectiveHeader || "",
+					items: [],
+				});
 				continue;
 			}
 		}
@@ -358,7 +456,8 @@ export function parseComponentDescription(description: string): ParsedDescriptio
 				result.whenNotToUse.push(content);
 				break;
 			case "content": {
-				const last = result.contentGuidelines[result.contentGuidelines.length - 1];
+				const last =
+					result.contentGuidelines[result.contentGuidelines.length - 1];
 				if (last) last.items.push(content);
 				break;
 			}
@@ -432,7 +531,10 @@ interface VariantColorData {
  * the main component behind an INSTANCE without a Plugin API round-trip.
  */
 export interface ComponentLookup {
-	components?: Record<string, { name?: string; componentSetId?: string } | undefined>;
+	components?: Record<
+		string,
+		{ name?: string; componentSetId?: string } | undefined
+	>;
 	componentSets?: Record<string, { name?: string } | undefined>;
 }
 
@@ -460,16 +562,27 @@ interface TextStyleData {
  * code — those, and only those, are qualified with their collection. Every other
  * token keeps the plain name people already map to code.
  */
-export function buildVariableNameMap(variables: any[], collections?: any[]): Map<string, string> {
+export function buildVariableNameMap(
+	variables: any[],
+	collections?: any[],
+): Map<string, string> {
 	const collectionNames = new Map<string, string>();
-	if (Array.isArray(collections)) for (const c of collections) if (c?.id && c?.name) collectionNames.set(c.id, c.name);
+	if (Array.isArray(collections))
+		for (const c of collections)
+			if (c?.id && c?.name) collectionNames.set(c.id, c.name);
 	const nameCounts = new Map<string, number>();
-	for (const v of variables) if (v?.name) nameCounts.set(v.name, (nameCounts.get(v.name) ?? 0) + 1);
+	for (const v of variables)
+		if (v?.name) nameCounts.set(v.name, (nameCounts.get(v.name) ?? 0) + 1);
 	const out = new Map<string, string>();
 	for (const v of variables) {
 		if (!v?.id || !v?.name) continue;
 		const collection = collectionNames.get(v.variableCollectionId);
-		out.set(v.id, (nameCounts.get(v.name) ?? 0) > 1 && collection ? `${collection}/${v.name}` : v.name);
+		out.set(
+			v.id,
+			(nameCounts.get(v.name) ?? 0) > 1 && collection
+				? `${collection}/${v.name}`
+				: v.name,
+		);
 	}
 	return out;
 }
@@ -501,12 +614,16 @@ export function visibilityProperty(node: any): string | null {
  */
 export function visibilityNote(node: any): string {
 	const prop = visibilityProperty(node);
-	if (node?.visible === false) return prop ? `hidden — shown when ${prop} = true` : "hidden";
+	if (node?.visible === false)
+		return prop ? `hidden — shown when ${prop} = true` : "hidden";
 	return prop ? `toggled by ${prop}` : "";
 }
 
 /** The component an instance is made from — its component SET's name for a variant */
-export function componentNameOf(instance: any, lookup: ComponentLookup = {}): string {
+export function componentNameOf(
+	instance: any,
+	lookup: ComponentLookup = {},
+): string {
 	const comp = lookup.components?.[instance?.componentId];
 	if (comp?.componentSetId) {
 		const setName = lookup.componentSets?.[comp.componentSetId]?.name;
@@ -520,7 +637,9 @@ export function describeInstance(node: any): string {
 	const variantProps = Object.entries(node?.componentProperties ?? {})
 		.filter(([, p]: [string, any]) => p?.type === "VARIANT")
 		.map(([k, p]: [string, any]) => `${stripPropertyIdSuffix(k)}=${p.value}`);
-	return variantProps.length > 0 ? `${node.name} (${variantProps.join(", ")})` : node?.name ?? "instance";
+	return variantProps.length > 0
+		? `${node.name} (${variantProps.join(", ")})`
+		: (node?.name ?? "instance");
 }
 
 /** Strip Figma's internal "#123:4" id suffix from a component property name */
@@ -532,11 +651,16 @@ function stripPropertyIdSuffix(rawName: string): string {
  * Human-readable name of the main component behind an instance/component id.
  * Variants resolve to "Set name (Value / Value)" since a bare "Size=16" is useless.
  */
-export function resolveMainComponentName(componentId: string | undefined, lookup: ComponentLookup = {}): string | undefined {
+export function resolveMainComponentName(
+	componentId: string | undefined,
+	lookup: ComponentLookup = {},
+): string | undefined {
 	if (!componentId) return undefined;
 	const comp = lookup.components?.[componentId];
 	if (!comp?.name) return undefined;
-	const setName = comp.componentSetId ? lookup.componentSets?.[comp.componentSetId]?.name : undefined;
+	const setName = comp.componentSetId
+		? lookup.componentSets?.[comp.componentSetId]?.name
+		: undefined;
 	if (setName) return `${setName} (${cleanVariantName(comp.name)})`;
 	return comp.name;
 }
@@ -549,11 +673,16 @@ function describePaint(paint: any): string | null {
 	if (!paint || paint.visible === false) return null;
 	if (paint.type === "SOLID") {
 		if (!paint.color) return null;
-		return figmaRGBAToHex({ ...paint.color, a: paint.opacity ?? paint.color.a ?? 1 });
+		return figmaRGBAToHex({
+			...paint.color,
+			a: paint.opacity ?? paint.color.a ?? 1,
+		});
 	}
 	if (typeof paint.type === "string" && paint.type.startsWith("GRADIENT_")) {
 		const kind = paint.type.replace("GRADIENT_", "").toLowerCase();
-		const stops: any[] = Array.isArray(paint.gradientStops) ? paint.gradientStops : [];
+		const stops: any[] = Array.isArray(paint.gradientStops)
+			? paint.gradientStops
+			: [];
 		const stopHexes = stops
 			.filter((st) => st?.color)
 			.map((st) => figmaRGBAToHex({ ...st.color, a: st.color.a ?? 1 }));
@@ -563,14 +692,22 @@ function describePaint(paint: any): string | null {
 	if (paint.type === "IMAGE") return "image fill";
 	if (paint.type === "VIDEO") return "video fill";
 	if (paint.type === "PATTERN") return "pattern fill";
-	return typeof paint.type === "string" ? `${paint.type.toLowerCase()} paint` : null;
+	return typeof paint.type === "string"
+		? `${paint.type.toLowerCase()} paint`
+		: null;
 }
 
 /** Describe a visible effect (shadow / blur) as a table value */
 function describeEffect(effect: any): string | null {
-	if (!effect || effect.visible === false || typeof effect.type !== "string") return null;
+	if (!effect || effect.visible === false || typeof effect.type !== "string")
+		return null;
 	if (effect.type === "DROP_SHADOW" || effect.type === "INNER_SHADOW") {
-		const color = effect.color ? figmaRGBAToHex({ ...effect.color, a: effect.color.a ?? 1 }).toUpperCase() : "";
+		const color = effect.color
+			? figmaRGBAToHex({
+					...effect.color,
+					a: effect.color.a ?? 1,
+				}).toUpperCase()
+			: "";
 		// Scaled instances produce values like 0.39000001549720764
 		const n = (v: number | undefined) => Math.round((v ?? 0) * 100) / 100;
 		return `${effect.type === "DROP_SHADOW" ? "drop" : "inner"} shadow: x ${n(effect.offset?.x)} · y ${n(effect.offset?.y)} · blur ${n(effect.radius)} · spread ${n(effect.spread)}${color ? ` · ${color}` : ""}`;
@@ -593,25 +730,32 @@ const MAX_ICON_SLOT_SIZE = 64;
  * The reported name is the main component (what's actually in the slot) when it
  * can be resolved, falling back to the cleaned layer name.
  */
-function detectIconInstance(node: any, lookup: ComponentLookup): VariantColorData["icons"][number] | null {
+function detectIconInstance(
+	node: any,
+	lookup: ComponentLookup,
+): VariantColorData["icons"][number] | null {
 	if (node.type !== "INSTANCE") return null;
 
 	const layerName: string = node.name || "";
 	const mainName = resolveMainComponentName(node.componentId, lookup);
 	const swapRef = node.componentPropertyReferences?.mainComponent;
-	const swapProperty = typeof swapRef === "string" ? stripPropertyIdSuffix(swapRef) : undefined;
+	const swapProperty =
+		typeof swapRef === "string" ? stripPropertyIdSuffix(swapRef) : undefined;
 
 	const box = node.absoluteBoundingBox || node.size;
 	const width = box?.width ?? box?.x;
 	const height = box?.height ?? box?.y;
-	const iconSized = typeof width !== "number" || typeof height !== "number"
-		? true
-		: Math.max(width, height) <= MAX_ICON_SLOT_SIZE;
+	const iconSized =
+		typeof width !== "number" || typeof height !== "number"
+			? true
+			: Math.max(width, height) <= MAX_ICON_SLOT_SIZE;
 
-	const nameSaysIcon = /icon/i.test(layerName) || (mainName ? /icon/i.test(mainName) : false);
+	const nameSaysIcon =
+		/icon/i.test(layerName) || (mainName ? /icon/i.test(mainName) : false);
 	if (!nameSaysIcon && !(swapProperty && iconSized)) return null;
 
-	const cleanedLayerName = layerName.replace(/^icon\s*\/?\s*/i, "").trim() || layerName;
+	const cleanedLayerName =
+		layerName.replace(/^icon\s*\/?\s*/i, "").trim() || layerName;
 	// Many systems wrap the glyph: an "Icon (small)" instance whose only job is to
 	// hold a swappable "MagnifyingGlass". The wrapper says nothing about WHICH icon
 	// this is — the instance nested inside it does.
@@ -625,7 +769,10 @@ function detectIconInstance(node: any, lookup: ComponentLookup): VariantColorDat
 }
 
 /** Name of the first instance nested inside an icon wrapper (breadth-first, ≤3 levels) */
-function findNestedGlyphName(icon: any, lookup: ComponentLookup): string | undefined {
+function findNestedGlyphName(
+	icon: any,
+	lookup: ComponentLookup,
+): string | undefined {
 	let level: any[] = Array.isArray(icon.children) ? icon.children : [];
 	for (let depth = 0; depth < 3 && level.length > 0; depth++) {
 		for (const child of level) {
@@ -641,7 +788,10 @@ function findNestedGlyphName(icon: any, lookup: ComponentLookup): string | undef
 
 /** True when the node has at least one visible paint (solid, gradient, image…) */
 function hasVisibleSolidFill(node: any): boolean {
-	return Array.isArray(node?.fills) && node.fills.some((f: any) => describePaint(f) !== null);
+	return (
+		Array.isArray(node?.fills) &&
+		node.fills.some((f: any) => describePaint(f) !== null)
+	);
 }
 
 /**
@@ -656,13 +806,19 @@ function findBackgroundLayer(root: any): any | null {
 	if (!rootBox || !Array.isArray(root.children)) return null;
 
 	for (const child of root.children) {
-		if (child.visible === false || child.type === "TEXT" || child.type === "INSTANCE") continue;
+		if (
+			child.visible === false ||
+			child.type === "TEXT" ||
+			child.type === "INSTANCE"
+		)
+			continue;
 		const box = child.absoluteBoundingBox;
 		if (!box || !hasVisibleSolidFill(child)) continue;
-		const covers = Math.abs(box.x - rootBox.x) <= 1
-			&& Math.abs(box.y - rootBox.y) <= 1
-			&& Math.abs(box.width - rootBox.width) <= 1
-			&& Math.abs(box.height - rootBox.height) <= 1;
+		const covers =
+			Math.abs(box.x - rootBox.x) <= 1 &&
+			Math.abs(box.y - rootBox.y) <= 1 &&
+			Math.abs(box.width - rootBox.width) <= 1 &&
+			Math.abs(box.height - rootBox.height) <= 1;
 		if (covers) return child;
 	}
 	return null;
@@ -679,9 +835,10 @@ export function collectAllVariantData(
 ): VariantColorData[] {
 	const variants: VariantColorData[] = [];
 
-	const nodesToWalk = node.type === "COMPONENT_SET" && node.children?.length > 0
-		? node.children
-		: [node];
+	const nodesToWalk =
+		node.type === "COMPONENT_SET" && node.children?.length > 0
+			? node.children
+			: [node];
 
 	for (const variant of nodesToWalk) {
 		const data: VariantColorData = {
@@ -696,9 +853,17 @@ export function collectAllVariantData(
 		};
 
 		const backgroundLayer = findBackgroundLayer(variant);
-		if (backgroundLayer) data.backgroundLayer = backgroundLayer.name || "background layer";
+		if (backgroundLayer)
+			data.backgroundLayer = backgroundLayer.name || "background layer";
 
-		walkVariantNode(variant, data, { varNameMap, lookup, backgroundLayer }, 0, DOC_TREE_DEPTH, null);
+		walkVariantNode(
+			variant,
+			data,
+			{ varNameMap, lookup, backgroundLayer },
+			0,
+			DOC_TREE_DEPTH,
+			null,
+		);
 		variants.push(data);
 	}
 
@@ -745,8 +910,12 @@ function walkVariantNode(
 	// Named by the COMPONENT, not the instance: every tab's "Is Focused" is the Tab
 	// Item's property, so "Tab 1" and "Tab 2" must not split it into two facts.
 	const shownWhen = ownProp
-		? (ownerComponent ? `${ownerComponent}'s ${ownProp}` : ownProp)
-		: hiddenHere ? null : ancestorShownWhen;
+		? ownerComponent
+			? `${ownerComponent}'s ${ownProp}`
+			: ownProp
+		: hiddenHere
+			? null
+			: ancestorShownWhen;
 
 	// Icons are reported once, at the outermost instance — everything beneath it
 	// (vectors, nested instances) is that icon's artwork, not a separate icon.
@@ -765,7 +934,12 @@ function walkVariantNode(
 			// The variant root's own name is "Size=lg, State=hover" — not a layer name.
 			// A paint on a nested INSTANCE (a tab's underline) names the instance with its
 			// variant, so the selected tab's stroke reads as the selected tab's.
-			nodeName: depth === 0 ? "" : node.type === "INSTANCE" ? describeInstance(node) : node.name || "",
+			nodeName:
+				depth === 0
+					? ""
+					: node.type === "INSTANCE"
+						? describeInstance(node)
+						: node.name || "",
 			variableId: varId,
 			variableName: varId ? ctx.varNameMap.get(varId) : undefined,
 			...(hidden ? { hidden: true } : {}),
@@ -822,7 +996,9 @@ function walkVariantNode(
 			data.effects.push({
 				...toEntry({}, `opacity ${Math.round(node.opacity * 100)}%`),
 				variableId: node.boundVariables?.opacity?.id,
-				variableName: node.boundVariables?.opacity?.id ? ctx.varNameMap.get(node.boundVariables.opacity.id) : undefined,
+				variableName: node.boundVariables?.opacity?.id
+					? ctx.varNameMap.get(node.boundVariables.opacity.id)
+					: undefined,
 			});
 		}
 	}
@@ -831,9 +1007,18 @@ function walkVariantNode(
 	if (node.children && Array.isArray(node.children)) {
 		for (const child of node.children) {
 			const isNestedInstance = node.type === "INSTANCE" && depth > 0;
-			walkVariantNode(child, data, ctx, depth + 1, maxDepth, insideIcon, hidden, shownWhen,
+			walkVariantNode(
+				child,
+				data,
+				ctx,
+				depth + 1,
+				maxDepth,
+				insideIcon,
+				hidden,
+				shownWhen,
 				isNestedInstance ? describeInstance(node) : owner,
-				isNestedInstance ? componentNameOf(node, ctx.lookup) : ownerComponent);
+				isNestedInstance ? componentNameOf(node, ctx.lookup) : ownerComponent,
+			);
 		}
 	}
 }
@@ -854,7 +1039,11 @@ export function collectTypographyData(
 	// A COMPONENT_SET resolves to its default (first) variant HERE ONLY. Anything
 	// documenting a set must use collectTypographyAcrossVariants — variants
 	// routinely differ in weight (a selected tab is SemiBold, the rest Regular).
-	if (node.type === "COMPONENT_SET" && node.children?.length > 0 && depth === 0) {
+	if (
+		node.type === "COMPONENT_SET" &&
+		node.children?.length > 0 &&
+		depth === 0
+	) {
 		return collectTypographyData(node.children[0], 0, maxDepth);
 	}
 	const hidden = ancestorHidden || node.visible === false;
@@ -862,8 +1051,15 @@ export function collectTypographyData(
 	if (node.type === "TEXT" && node.style) {
 		const s = node.style;
 		const weightNames: Record<number, string> = {
-			100: "Thin", 200: "ExtraLight", 300: "Light", 400: "Regular",
-			500: "Medium", 600: "SemiBold", 700: "Bold", 800: "ExtraBold", 900: "Black",
+			100: "Thin",
+			200: "ExtraLight",
+			300: "Light",
+			400: "Regular",
+			500: "Medium",
+			600: "SemiBold",
+			700: "Bold",
+			800: "ExtraBold",
+			900: "Black",
 		};
 		results.push({
 			nodeName: node.name || "Text",
@@ -877,15 +1073,26 @@ export function collectTypographyData(
 			...(owner ? { owner } : {}),
 			// REST: characterStyleOverrides maps characters → styleOverrideTable ids; any
 			// non-zero entry means part of the text departs from `style`
-			...(Array.isArray(node.characterStyleOverrides) && node.characterStyleOverrides.some((id: number) => id !== 0)
-				? { mixed: true } : {}),
+			...(Array.isArray(node.characterStyleOverrides) &&
+			node.characterStyleOverrides.some((id: number) => id !== 0)
+				? { mixed: true }
+				: {}),
 		});
 	}
 
 	if (node.children && Array.isArray(node.children)) {
 		for (const child of node.children) {
-			results.push(...collectTypographyData(child, depth + 1, maxDepth, hidden,
-				node.type === "INSTANCE" && depth > 0 ? describeInstance(node) : owner));
+			results.push(
+				...collectTypographyData(
+					child,
+					depth + 1,
+					maxDepth,
+					hidden,
+					node.type === "INSTANCE" && depth > 0
+						? describeInstance(node)
+						: owner,
+				),
+			);
 		}
 	}
 
@@ -910,22 +1117,33 @@ const typographySignature = (ts: TextStyleData) =>
  * property that drives it ("Is Selected=True") or, failing that, by variant name.
  */
 export function collectTypographyAcrossVariants(setNode: any): TypographyRow[] {
-	const variants: any[] = Array.isArray(setNode?.children) ? setNode.children : [];
+	const variants: any[] = Array.isArray(setNode?.children)
+		? setNode.children
+		: [];
 	// A row's identity is (element name, style) — NOT its position in the tree.
 	// Positional identity ("text-8 #4") made ten nav items' badges ten separate
 	// elements, each with its own scope, and printed the same fact three times.
-	const rowKey = (ts: TextStyleData) => `${ts.nodeName}|${typographySignature(ts)}`;
+	const rowKey = (ts: TextStyleData) =>
+		`${ts.nodeName}|${typographySignature(ts)}`;
 	const perVariant = variants.map((v) => {
 		const keys = new Map<string, TextStyleData>();
-		for (const ts of collectTypographyData(v)) if (!keys.has(rowKey(ts))) keys.set(rowKey(ts), ts);
-		return { name: cleanVariantName(v.name || "Unknown"), props: parseVariantProperties(v.name || ""), keys };
+		for (const ts of collectTypographyData(v))
+			if (!keys.has(rowKey(ts))) keys.set(rowKey(ts), ts);
+		return {
+			name: cleanVariantName(v.name || "Unknown"),
+			props: parseVariantProperties(v.name || ""),
+			keys,
+		};
 	});
 
 	const order: string[] = [];
 	const styles = new Map<string, TextStyleData>();
 	for (const pv of perVariant) {
 		for (const [key, ts] of pv.keys) {
-			if (!styles.has(key)) { styles.set(key, ts); order.push(key); }
+			if (!styles.has(key)) {
+				styles.set(key, ts);
+				order.push(key);
+			}
 		}
 	}
 
@@ -944,16 +1162,32 @@ export function collectTypographyAcrossVariants(setNode: any): TypographyRow[] {
 		if (having.length < perVariant.length) {
 			// Which variant property decides where this (element, style) appears?
 			const explanation = explainByVariantProperty(
-				perVariant.map((pv) => ({ props: pv.props, display: pv.keys.has(key) ? "yes" : "no" })),
+				perVariant.map((pv) => ({
+					props: pv.props,
+					display: pv.keys.has(key) ? "yes" : "no",
+				})),
 			);
-			const values = explanation?.groups.filter(([, display]) => display === "yes").map(([pv]) => pv) ?? [];
-			scope = explanation && values.length > 0
-				? `${explanation.property}=${values.join(" | ")}`
-				: scopeLabel(having.map((pv) => pv.name), perVariant.length);
+			const values =
+				explanation?.groups
+					.filter(([, display]) => display === "yes")
+					.map(([pv]) => pv) ?? [];
+			scope =
+				explanation && values.length > 0
+					? `${explanation.property}=${values.join(" | ")}`
+					: scopeLabel(
+							having.map((pv) => pv.name),
+							perVariant.length,
+						);
 		}
 		// Text layers are often auto-named after their content — keep the table readable
-		const base = style.nodeName.length > 40 ? `${style.nodeName.slice(0, 40)}…` : style.nodeName;
-		const label = (stylesPerName.get(style.nodeName) ?? 0) > 1 && style.owner ? `${base} in ${style.owner}` : base;
+		const base =
+			style.nodeName.length > 40
+				? `${style.nodeName.slice(0, 40)}…`
+				: style.nodeName;
+		const label =
+			(stylesPerName.get(style.nodeName) ?? 0) > 1 && style.owner
+				? `${base} in ${style.owner}`
+				: base;
 		return { style: { ...style, nodeName: label }, scope };
 	});
 }
@@ -969,12 +1203,20 @@ function scopeLabel(names: string[], total: number): string {
  * Build an anatomy tree representation from a Figma node structure.
  * Returns a formatted string showing the component's nested structure.
  */
-export function buildAnatomyTree(node: any, depth: number = 0, maxDepth: number = DOC_TREE_DEPTH): string {
+export function buildAnatomyTree(
+	node: any,
+	depth: number = 0,
+	maxDepth: number = DOC_TREE_DEPTH,
+): string {
 	if (depth > maxDepth) return "";
 
 	// For COMPONENT_SET, pick the variant with the deepest children tree for the richest anatomy
 	let targetNode = node;
-	if (node.type === "COMPONENT_SET" && node.children?.length > 0 && depth === 0) {
+	if (
+		node.type === "COMPONENT_SET" &&
+		node.children?.length > 0 &&
+		depth === 0
+	) {
 		let bestChild = node.children[0];
 		let bestDepth = countChildDepth(bestChild);
 		for (let i = 1; i < node.children.length; i++) {
@@ -994,7 +1236,12 @@ export function buildAnatomyTree(node: any, depth: number = 0, maxDepth: number 
 
 /** Count the maximum depth of a node's children tree */
 function countChildDepth(node: any): number {
-	if (!node.children || !Array.isArray(node.children) || node.children.length === 0) return 0;
+	if (
+		!node.children ||
+		!Array.isArray(node.children) ||
+		node.children.length === 0
+	)
+		return 0;
 	let max = 0;
 	for (const child of node.children) {
 		const d = countChildDepth(child);
@@ -1015,25 +1262,33 @@ function buildAnatomyLines(
 ): void {
 	if (depth > maxDepth) return;
 
-	const connector = depth === 0 ? "" : (isLast ? "└── " : "├── ");
-	const childPrefix = depth === 0 ? "" : (isLast ? "    " : "│   ");
+	const connector = depth === 0 ? "" : isLast ? "└── " : "├── ";
+	const childPrefix = depth === 0 ? "" : isLast ? "    " : "│   ";
 
 	// Build node label
 	let label = node.name || node.type;
-	const typeHint = node.type === "TEXT" ? " (TEXT)"
-		: node.type === "INSTANCE" ? " (INSTANCE)"
-		: node.type === "COMPONENT" ? " (COMPONENT)"
-		: node.type === "FRAME" ? ""
-		: node.type === "VECTOR" ? " (VECTOR)"
-		: node.type === "RECTANGLE" ? " (RECTANGLE)"
-		: "";
+	const typeHint =
+		node.type === "TEXT"
+			? " (TEXT)"
+			: node.type === "INSTANCE"
+				? " (INSTANCE)"
+				: node.type === "COMPONENT"
+					? " (COMPONENT)"
+					: node.type === "FRAME"
+						? ""
+						: node.type === "VECTOR"
+							? " (VECTOR)"
+							: node.type === "RECTANGLE"
+								? " (RECTANGLE)"
+								: "";
 
 	// Add layout info for frames
 	let layoutInfo = "";
 	if (node.layoutMode) {
 		const dir = node.layoutMode === "HORIZONTAL" ? "horizontal" : "vertical";
 		layoutInfo = ` — ${dir} auto-layout`;
-		if (node.itemSpacing !== undefined) layoutInfo += `, gap: ${node.itemSpacing}px`;
+		if (node.itemSpacing !== undefined)
+			layoutInfo += `, gap: ${node.itemSpacing}px`;
 	}
 
 	// Add sizing info
@@ -1044,9 +1299,11 @@ function buildAnatomyLines(
 		// is height. (These were hard-wired to width/height, mislabeling every
 		// vertical auto-layout: a fixed-width sidebar printed as "fixed-height".)
 		const vertical = node.layoutMode === "VERTICAL";
-		if (node.primaryAxisSizingMode === "FIXED") parts.push(vertical ? "fixed-height" : "fixed-width");
+		if (node.primaryAxisSizingMode === "FIXED")
+			parts.push(vertical ? "fixed-height" : "fixed-width");
 		if (node.primaryAxisSizingMode === "AUTO") parts.push("hug-content");
-		if (node.counterAxisSizingMode === "FIXED") parts.push(vertical ? "fixed-width" : "fixed-height");
+		if (node.counterAxisSizingMode === "FIXED")
+			parts.push(vertical ? "fixed-width" : "fixed-height");
 		if (node.layoutGrow === 1) parts.push("fill");
 		if (parts.length > 0) sizingInfo = ` [${parts.join(", ")}]`;
 	}
@@ -1055,7 +1312,9 @@ function buildAnatomyLines(
 	// focus ring is real design intent), so the tree must not pretend they don't exist.
 	const note = visibilityNote(node);
 	const hiddenHint = note ? ` (${note})` : "";
-	lines.push(`${prefix}${connector}${label}${typeHint}${suffix}${hiddenHint}${layoutInfo}${sizingInfo}`);
+	lines.push(
+		`${prefix}${connector}${label}${typeHint}${suffix}${hiddenHint}${layoutInfo}${sizingInfo}`,
+	);
 
 	// Recurse into children, collapsing RUNS of siblings that would print
 	// identically (ten nav items, five list rows) into one entry marked ×N. Compared
@@ -1110,9 +1369,18 @@ export function resolvePropertyBinding(
 	// `individualStrokeWeights.BORDER_BOTTOM_WEIGHT` (verified against JSON_REST_V1).
 	const REST_NESTED: Record<string, [string, string]> = {
 		topLeftRadius: ["rectangleCornerRadii", "RECTANGLE_TOP_LEFT_CORNER_RADIUS"],
-		topRightRadius: ["rectangleCornerRadii", "RECTANGLE_TOP_RIGHT_CORNER_RADIUS"],
-		bottomRightRadius: ["rectangleCornerRadii", "RECTANGLE_BOTTOM_RIGHT_CORNER_RADIUS"],
-		bottomLeftRadius: ["rectangleCornerRadii", "RECTANGLE_BOTTOM_LEFT_CORNER_RADIUS"],
+		topRightRadius: [
+			"rectangleCornerRadii",
+			"RECTANGLE_TOP_RIGHT_CORNER_RADIUS",
+		],
+		bottomRightRadius: [
+			"rectangleCornerRadii",
+			"RECTANGLE_BOTTOM_RIGHT_CORNER_RADIUS",
+		],
+		bottomLeftRadius: [
+			"rectangleCornerRadii",
+			"RECTANGLE_BOTTOM_LEFT_CORNER_RADIUS",
+		],
 		strokeTopWeight: ["individualStrokeWeights", "BORDER_TOP_WEIGHT"],
 		strokeRightWeight: ["individualStrokeWeights", "BORDER_RIGHT_WEIGHT"],
 		strokeBottomWeight: ["individualStrokeWeights", "BORDER_BOTTOM_WEIGHT"],
@@ -1120,7 +1388,8 @@ export function resolvePropertyBinding(
 	};
 	const idOf = (k: string): string | undefined => {
 		let b = bound[k];
-		if (b === undefined && REST_NESTED[k]) b = bound[REST_NESTED[k][0]]?.[REST_NESTED[k][1]];
+		if (b === undefined && REST_NESTED[k])
+			b = bound[REST_NESTED[k][0]]?.[REST_NESTED[k][1]];
 		const id = Array.isArray(b) ? b[0]?.id : b?.id;
 		return typeof id === "string" ? id : undefined;
 	};
@@ -1129,15 +1398,20 @@ export function resolvePropertyBinding(
 	let parts: Array<[string, string | undefined]> | null = null;
 	if (key === "cornerRadius") {
 		if (idOf("cornerRadius")) parts = null;
-		else parts = [
-			["top-left", idOf("topLeftRadius")], ["top-right", idOf("topRightRadius")],
-			["bottom-right", idOf("bottomRightRadius")], ["bottom-left", idOf("bottomLeftRadius")],
-		];
+		else
+			parts = [
+				["top-left", idOf("topLeftRadius")],
+				["top-right", idOf("topRightRadius")],
+				["bottom-right", idOf("bottomRightRadius")],
+				["bottom-left", idOf("bottomLeftRadius")],
+			];
 	} else if (key === "strokeWeight" && !idOf("strokeWeight")) {
 		const sides = node?.individualStrokeWeights;
 		const all: Array<[string, string, number]> = [
-			["top", "strokeTopWeight", sides?.top ?? 1], ["right", "strokeRightWeight", sides?.right ?? 1],
-			["bottom", "strokeBottomWeight", sides?.bottom ?? 1], ["left", "strokeLeftWeight", sides?.left ?? 1],
+			["top", "strokeTopWeight", sides?.top ?? 1],
+			["right", "strokeRightWeight", sides?.right ?? 1],
+			["bottom", "strokeBottomWeight", sides?.bottom ?? 1],
+			["left", "strokeLeftWeight", sides?.left ?? 1],
 		];
 		// Only sides that actually paint a border say anything about it
 		parts = all.filter(([, , w]) => w > 0).map(([side, k]) => [side, idOf(k)]);
@@ -1156,18 +1430,33 @@ export function resolvePropertyBinding(
 	}
 	if (new Set(boundIds).size === 1) {
 		const on = parts.filter(([, id]) => id).map(([p]) => p);
-		return { name: `${nameOf(boundIds[0])} (${on.join(", ")} only)`, signature };
+		return {
+			name: `${nameOf(boundIds[0])} (${on.join(", ")} only)`,
+			signature,
+		};
 	}
-	return { name: parts.map(([p, id]) => `${p}: ${id ? nameOf(id) : "unbound"}`).join(", "), signature };
+	return {
+		name: parts
+			.map(([p, id]) => `${p}: ${id ? nameOf(id) : "unbound"}`)
+			.join(", "),
+		signature,
+	};
 }
 
 /** Collect spacing tokens with their bound variable names. */
-function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new Map()): Array<{
+function collectSpacingTokens(
+	node: any,
+	varNameMap: Map<string, string> = new Map(),
+): Array<{
 	property: string;
 	value: number | string;
 	variableName?: string;
 }> {
-	const tokens: Array<{ property: string; value: number | string; variableName?: string }> = [];
+	const tokens: Array<{
+		property: string;
+		value: number | string;
+		variableName?: string;
+	}> = [];
 	const autoLayout = !!node.layoutMode && node.layoutMode !== "NONE";
 
 	const spacingProps = [
@@ -1190,10 +1479,18 @@ function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new M
 		let value: number | string | undefined | null = node[key];
 		// Same rules as the cross-variant table: a border width only where a border
 		// is painted (and per-side weights win); zero padding is reported, not omitted.
-		if (key === "strokeWeight") value = hasVisibleStroke(node) ? describeStrokeWeight(node) : undefined;
-		else if ((key.startsWith("padding") || key === "itemSpacing") && autoLayout) value = value ?? 0;
-		else if (key === "cornerRadius" && (value === undefined || value === null) && Array.isArray(node.rectangleCornerRadii)) {
-			value = node.rectangleCornerRadii.map((r: number) => `${r}px`).join(" / ");
+		if (key === "strokeWeight")
+			value = hasVisibleStroke(node) ? describeStrokeWeight(node) : undefined;
+		else if ((key.startsWith("padding") || key === "itemSpacing") && autoLayout)
+			value = value ?? 0;
+		else if (
+			key === "cornerRadius" &&
+			(value === undefined || value === null) &&
+			Array.isArray(node.rectangleCornerRadii)
+		) {
+			value = node.rectangleCornerRadii
+				.map((r: number) => `${r}px`)
+				.join(" / ");
 		}
 		if (value !== undefined && value !== null) {
 			tokens.push({
@@ -1209,7 +1506,10 @@ function collectSpacingTokens(node: any, varNameMap: Map<string, string> = new M
 
 /** True when the node paints at least one stroke */
 function hasVisibleStroke(node: any): boolean {
-	return Array.isArray(node?.strokes) && node.strokes.some((st: any) => describePaint(st) !== null);
+	return (
+		Array.isArray(node?.strokes) &&
+		node.strokes.some((st: any) => describePaint(st) !== null)
+	);
 }
 
 /**
@@ -1222,21 +1522,26 @@ export function describeStrokeWeight(node: any): number | string {
 	const sides = node.individualStrokeWeights;
 	if (sides && typeof sides === "object") {
 		const order: Array<[string, number]> = [
-			["top", sides.top ?? 0], ["right", sides.right ?? 0],
-			["bottom", sides.bottom ?? 0], ["left", sides.left ?? 0],
+			["top", sides.top ?? 0],
+			["right", sides.right ?? 0],
+			["bottom", sides.bottom ?? 0],
+			["left", sides.left ?? 0],
 		];
 		const weights = order.map(([, w]) => w);
 		if (weights.every((w) => w === weights[0])) return weights[0];
 		const painted = order.filter(([, w]) => w > 0);
 		// "4px bottom" reads better than "0 / 0 / 4 / 0" when few sides are in play
-		if (painted.length <= 2) return painted.map(([side, w]) => `${w}px ${side}`).join(", ");
+		if (painted.length <= 2)
+			return painted.map(([side, w]) => `${w}px ${side}`).join(", ");
 		return `${weights.map((w) => `${w}px`).join(" / ")} (top / right / bottom / left)`;
 	}
 	return node.strokeWeight ?? 0;
 }
 
 /** Parse "Size=lg, State=hover" into ordered [property, value] pairs */
-export function parseVariantProperties(rawName: string): Array<[string, string]> {
+export function parseVariantProperties(
+	rawName: string,
+): Array<[string, string]> {
 	const pairs: Array<[string, string]> = [];
 	for (const part of (rawName || "").split(",")) {
 		const eqIdx = part.indexOf("=");
@@ -1263,13 +1568,23 @@ export function explainByVariantProperty(
 		let complete = true;
 		for (const x of samples) {
 			const propValue = x.props.find(([n]) => n === propName)?.[1];
-			if (propValue === undefined) { complete = false; break; }
+			if (propValue === undefined) {
+				complete = false;
+				break;
+			}
 			if (!groups.has(propValue)) groups.set(propValue, new Set());
 			groups.get(propValue)!.add(x.display);
 		}
 		if (!complete) continue;
-		if (groups.size > 1 && groups.size < samples.length && [...groups.values()].every((vals) => vals.size === 1)) {
-			return { property: propName, groups: [...groups.entries()].map(([pv, vals]) => [pv, [...vals][0]]) };
+		if (
+			groups.size > 1 &&
+			groups.size < samples.length &&
+			[...groups.values()].every((vals) => vals.size === 1)
+		) {
+			return {
+				property: propName,
+				groups: [...groups.entries()].map(([pv, vals]) => [pv, [...vals][0]]),
+			};
 		}
 	}
 	return null;
@@ -1336,28 +1651,39 @@ export function collectSpacingAcrossVariants(
 	setNode: any,
 	varNameMap: Map<string, string> = new Map(),
 ): VariantSpacingComparison {
-	const variants: any[] = Array.isArray(setNode?.children) ? setNode.children : [];
-	const result: VariantSpacingComparison = { variantCount: variants.length, rows: [], inconsistencies: [] };
+	const variants: any[] = Array.isArray(setNode?.children)
+		? setNode.children
+		: [];
+	const result: VariantSpacingComparison = {
+		variantCount: variants.length,
+		rows: [],
+		inconsistencies: [],
+	};
 	if (variants.length === 0) return result;
 
 	for (const { key, label } of SPACING_COMPARISON_PROPS) {
 		const isPadding = key.startsWith("padding") || key === "itemSpacing";
-		const isSet = (v: any) => (key === "strokeWeight"
-			// A border width only means something where a border is painted. REST
-			// reports strokeWeight (default 1) on every node, stroked or not.
-			? hasVisibleStroke(v)
-			: (v[key] !== undefined && v[key] !== null)
-				// Per-corner rounding: REST drops the scalar and sends only the 4-tuple
-				|| (key === "cornerRadius" && Array.isArray(v.rectangleCornerRadii))
-				// Auto-layout: REST omits zero-valued padding/gap, but 0 is a real,
-				// reportable value — leaving it out is indistinguishable from "unknown"
-				|| (isPadding && !!v.layoutMode && v.layoutMode !== "NONE"));
+		const isSet = (v: any) =>
+			key === "strokeWeight"
+				? // A border width only means something where a border is painted. REST
+					// reports strokeWeight (default 1) on every node, stroked or not.
+					hasVisibleStroke(v)
+				: (v[key] !== undefined && v[key] !== null) ||
+					// Per-corner rounding: REST drops the scalar and sends only the 4-tuple
+					(key === "cornerRadius" && Array.isArray(v.rectangleCornerRadii)) ||
+					// Auto-layout: REST omits zero-valued padding/gap, but 0 is a real,
+					// reportable value — leaving it out is indistinguishable from "unknown"
+					(isPadding && !!v.layoutMode && v.layoutMode !== "NONE");
 		if (!variants.some(isSet)) continue;
 
 		const samples = variants.map((v) => {
 			let value: number | string = v[key] ?? 0;
 			// Per-corner radii: `cornerRadius` is absent and the 4-tuple carries the values
-			if (key === "cornerRadius" && (v[key] === undefined || v[key] === null) && Array.isArray(v.rectangleCornerRadii)) {
+			if (
+				key === "cornerRadius" &&
+				(v[key] === undefined || v[key] === null) &&
+				Array.isArray(v.rectangleCornerRadii)
+			) {
 				value = v.rectangleCornerRadii.map((r: number) => `${r}px`).join(" / ");
 			}
 			if (key === "strokeWeight") value = describeStrokeWeight(v);
@@ -1385,17 +1711,23 @@ export function collectSpacingAcrossVariants(
 		}
 
 		// Variable cell: every distinct token in play, plus a marker when some variants have none
-		const variableNames = [...new Set(samples.map((x) => x.variableName).filter((n): n is string => !!n))];
+		const variableNames = [
+			...new Set(
+				samples.map((x) => x.variableName).filter((n): n is string => !!n),
+			),
+		];
 		const bound = samples.filter((x) => x.variableName);
 		const unbound = samples.filter((x) => !x.variableName);
 		const variableParts = variableNames.map((n) => `\`${n}\``);
 		if (bound.length > 0 && unbound.length > 0) variableParts.push("unbound");
-		const variableCell = variableParts.length > 0 ? variableParts.join(", ") : "—";
+		const variableCell =
+			variableParts.length > 0 ? variableParts.join(", ") : "—";
 
 		// Two variants can share a pixel value yet bind different tokens. When the
 		// binding is part of what varies, show it next to the value — otherwise
 		// "sm 8px · lg 8px" reads as a contradiction.
-		const bindingVaries = variableNames.length > 1 || (bound.length > 0 && unbound.length > 0);
+		const bindingVaries =
+			variableNames.length > 1 || (bound.length > 0 && unbound.length > 0);
 		for (const x of samples) {
 			x.display = bindingVaries
 				? `${formatSpacingValue(x.value)} (${x.variableName ? `\`${x.variableName}\`` : "unbound"})`
@@ -1426,11 +1758,20 @@ export function collectSpacingAcrossVariants(
 			}
 			const parts = [...byValue.entries()]
 				.sort((a, b) => b[1].length - a[1].length)
-				.map(([val, names]) => names.length <= 2 ? `${val} — ${names.join(", ")}` : `${val} ×${names.length}`);
+				.map(([val, names]) =>
+					names.length <= 2
+						? `${val} — ${names.join(", ")}`
+						: `${val} ×${names.length}`,
+				);
 			valueCell = `varies: ${parts.join(", ")}`;
 		}
 
-		result.rows.push({ property: label, uniform: false, variableCell, valueCell });
+		result.rows.push({
+			property: label,
+			uniform: false,
+			variableCell,
+			valueCell,
+		});
 
 		// Only an UNEXPLAINED binding split is suspicious. When a variant property
 		// accounts for it (a "Dot" shape that has no padding at all), it's a design
@@ -1440,7 +1781,10 @@ export function collectSpacingAcrossVariants(
 				.slice(0, MAX_NAMED_VARIANTS)
 				.map((x) => `${x.displayName} (${formatSpacingValue(x.value)})`)
 				.join(", ");
-			const more = unbound.length > MAX_NAMED_VARIANTS ? `, +${unbound.length - MAX_NAMED_VARIANTS} more` : "";
+			const more =
+				unbound.length > MAX_NAMED_VARIANTS
+					? `, +${unbound.length - MAX_NAMED_VARIANTS} more`
+					: "";
 			result.inconsistencies.push(
 				`**${label}** is bound to ${variableNames.map((n) => `\`${n}\``).join(", ")} on ${bound.length} of ${samples.length} variants but hardcoded on ${unbound.length}: ${named}${more}.`,
 			);
@@ -1475,7 +1819,10 @@ export function isVariantName(name: string): boolean {
 
 /** Sanitize a component name for use as a file path */
 export function sanitizeComponentName(name: string): string {
-	return name.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "-").trim();
+	return name
+		.replace(/[^a-zA-Z0-9-_ ]/g, "")
+		.replace(/\s+/g, "-")
+		.trim();
 }
 
 /**
@@ -1496,7 +1843,8 @@ async function resolveComponentSetInfo(
 	const empty = { setName: null, setNodeId: null, propertyDefinitions: {} };
 
 	// Strategy 1: Check componentMeta for component_set_id (from /files/:key/components)
-	const meta = componentMeta || allComponentsMeta?.find((c: any) => c.node_id === nodeId);
+	const meta =
+		componentMeta || allComponentsMeta?.find((c: any) => c.node_id === nodeId);
 	const setId = meta?.component_set_id;
 	const setName = meta?.component_set_name || null;
 
@@ -1506,7 +1854,9 @@ async function resolveComponentSetInfo(
 		if (containingFrame?.containingComponentSet && containingFrame?.nodeId) {
 			const frameNodeId = containingFrame.nodeId;
 			try {
-				const setResponse = await api.getNodes(fileKey, [frameNodeId], { depth: 1 });
+				const setResponse = await api.getNodes(fileKey, [frameNodeId], {
+					depth: 1,
+				});
 				const setNode = setResponse?.nodes?.[frameNodeId]?.document;
 				if (setNode?.componentPropertyDefinitions) {
 					return {
@@ -1526,13 +1876,16 @@ async function resolveComponentSetInfo(
 			const sets = setsResponse?.meta?.component_sets;
 			if (sets && Array.isArray(sets)) {
 				// Match by containing_frame name or by node name prefix
-				const nodeName = allComponentsMeta?.find((c: any) => c.node_id === nodeId)?.name || "";
+				const nodeName =
+					allComponentsMeta?.find((c: any) => c.node_id === nodeId)?.name || "";
 				const matchingSet = containingFrame?.name
 					? sets.find((s: any) => s.name === containingFrame.name)
 					: null;
 				if (matchingSet) {
 					const setNodeId = matchingSet.node_id;
-					const setNodeResponse = await api.getNodes(fileKey, [setNodeId], { depth: 1 });
+					const setNodeResponse = await api.getNodes(fileKey, [setNodeId], {
+						depth: 1,
+					});
 					const setNode = setNodeResponse?.nodes?.[setNodeId]?.document;
 					if (setNode?.componentPropertyDefinitions) {
 						return {
@@ -1596,7 +1949,11 @@ function resolveComponentName(
 // Parity Comparators
 // ============================================================================
 
-function compareVisual(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscrepancy[]): void {
+function compareVisual(
+	node: any,
+	codeSpec: CodeSpec,
+	discrepancies: ParityDiscrepancy[],
+): void {
 	const cv = codeSpec.visual;
 	if (!cv) return;
 
@@ -1653,7 +2010,10 @@ function compareVisual(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscr
 	// Corner radius
 	const figmaRadius = node.cornerRadius;
 	if (figmaRadius !== undefined && cv.borderRadius !== undefined) {
-		const codeRadius = typeof cv.borderRadius === "string" ? parseFloat(cv.borderRadius) : cv.borderRadius;
+		const codeRadius =
+			typeof cv.borderRadius === "string"
+				? parseFloat(cv.borderRadius)
+				: cv.borderRadius;
 		if (!isNaN(codeRadius) && !numericClose(figmaRadius, codeRadius)) {
 			discrepancies.push({
 				category: "visual",
@@ -1681,7 +2041,11 @@ function compareVisual(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscr
 	}
 }
 
-export function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscrepancy[]): void {
+export function compareSpacing(
+	node: any,
+	codeSpec: CodeSpec,
+	discrepancies: ParityDiscrepancy[],
+): void {
 	const cs = codeSpec.spacing;
 	if (!cs) return;
 
@@ -1699,7 +2063,8 @@ export function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: Par
 		const dVal = designSpacing[designKey as keyof typeof designSpacing];
 		const cVal = cs[key as keyof typeof cs];
 		if (dVal !== undefined && cVal !== undefined) {
-			const cNum = typeof cVal === "string" ? parseFloat(cVal) : (cVal as number);
+			const cNum =
+				typeof cVal === "string" ? parseFloat(cVal) : (cVal as number);
 			if (!isNaN(cNum) && !numericClose(dVal as number, cNum)) {
 				discrepancies.push({
 					category: "spacing",
@@ -1729,7 +2094,8 @@ export function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: Par
 	}
 
 	if (designSpacing.height !== undefined && cs.height !== undefined) {
-		const cNum = typeof cs.height === "string" ? parseFloat(cs.height) : cs.height;
+		const cNum =
+			typeof cs.height === "string" ? parseFloat(cs.height) : cs.height;
 		if (!isNaN(cNum) && !numericClose(designSpacing.height, cNum, 2)) {
 			discrepancies.push({
 				category: "spacing",
@@ -1745,15 +2111,25 @@ export function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: Par
 	// Min/max size constraints. The code spec accepted these but they were never
 	// compared, so a component whose Figma frame had a 320px min-width passed
 	// parity against code with none.
-	for (const key of ["minWidth", "maxWidth", "minHeight", "maxHeight"] as const) {
-		const dVal = typeof node?.[key] === "number" ? (node[key] as number) : undefined;
+	for (const key of [
+		"minWidth",
+		"maxWidth",
+		"minHeight",
+		"maxHeight",
+	] as const) {
+		const dVal =
+			typeof node?.[key] === "number" ? (node[key] as number) : undefined;
 		const raw = cs[key] as number | string | undefined;
 		const parsed = typeof raw === "string" ? parseFloat(raw) : raw;
 		// Only px can be compared; a non-px length ("20rem") is reported as-is.
-		const cVal = typeof parsed === "number" && !isNaN(parsed)
-			&& !(typeof raw === "string" && /[a-z%]/i.test(raw.replace(/px\s*$/i, "")))
-			? parsed : undefined;
-		const cUnparsed = raw !== undefined && cVal === undefined ? String(raw) : undefined;
+		const cVal =
+			typeof parsed === "number" &&
+			!isNaN(parsed) &&
+			!(typeof raw === "string" && /[a-z%]/i.test(raw.replace(/px\s*$/i, "")))
+				? parsed
+				: undefined;
+		const cUnparsed =
+			raw !== undefined && cVal === undefined ? String(raw) : undefined;
 		const css = key.replace(/[A-Z]/, (c) => `-${c.toLowerCase()}`);
 		if (dVal !== undefined && cUnparsed !== undefined) {
 			discrepancies.push({
@@ -1800,7 +2176,11 @@ export function compareSpacing(node: any, codeSpec: CodeSpec, discrepancies: Par
 	}
 }
 
-function compareTypography(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscrepancy[]): void {
+function compareTypography(
+	node: any,
+	codeSpec: CodeSpec,
+	discrepancies: ParityDiscrepancy[],
+): void {
 	const ct = codeSpec.typography;
 	if (!ct) return;
 
@@ -1840,7 +2220,10 @@ function compareTypography(node: any, codeSpec: CodeSpec, discrepancies: ParityD
 	}
 
 	if (designTypo.fontWeight && ct.fontWeight) {
-		const codeWeight = typeof ct.fontWeight === "string" ? parseInt(ct.fontWeight, 10) : ct.fontWeight;
+		const codeWeight =
+			typeof ct.fontWeight === "string"
+				? parseInt(ct.fontWeight, 10)
+				: ct.fontWeight;
 		if (!isNaN(codeWeight) && designTypo.fontWeight !== codeWeight) {
 			discrepancies.push({
 				category: "typography",
@@ -1854,7 +2237,10 @@ function compareTypography(node: any, codeSpec: CodeSpec, discrepancies: ParityD
 	}
 
 	if (designTypo.lineHeight && ct.lineHeight) {
-		const codeLH = typeof ct.lineHeight === "string" ? parseFloat(ct.lineHeight) : ct.lineHeight;
+		const codeLH =
+			typeof ct.lineHeight === "string"
+				? parseFloat(ct.lineHeight)
+				: ct.lineHeight;
 		if (!isNaN(codeLH) && !numericClose(designTypo.lineHeight, codeLH, 1)) {
 			discrepancies.push({
 				category: "typography",
@@ -1877,7 +2263,10 @@ function compareTokens(
 	if (!ct || !enrichedData) return;
 
 	// Check for hardcoded values in design
-	if (enrichedData.hardcoded_values && enrichedData.hardcoded_values.length > 0) {
+	if (
+		enrichedData.hardcoded_values &&
+		enrichedData.hardcoded_values.length > 0
+	) {
 		for (const hv of enrichedData.hardcoded_values) {
 			discrepancies.push({
 				category: "tokens",
@@ -1886,7 +2275,9 @@ function compareTokens(
 				designValue: `${hv.value} (hardcoded)`,
 				codeValue: null,
 				message: `Design has hardcoded ${hv.type} value "${hv.value}" on ${hv.property}. Should use token${hv.suggested_token ? `: ${hv.suggested_token}` : ""}`,
-				suggestion: hv.suggested_token ? `Use token: ${hv.suggested_token}` : undefined,
+				suggestion: hv.suggested_token
+					? `Use token: ${hv.suggested_token}`
+					: undefined,
 			});
 		}
 	}
@@ -1904,7 +2295,11 @@ function compareTokens(
 
 		for (const tokenName of designTokens) {
 			const normalizedName = tokenName.toLowerCase();
-			if (!codeTokenNames.some((ct) => ct.includes(normalizedName) || normalizedName.includes(ct))) {
+			if (
+				!codeTokenNames.some(
+					(ct) => ct.includes(normalizedName) || normalizedName.includes(ct),
+				)
+			) {
 				discrepancies.push({
 					category: "tokens",
 					property: `token:${tokenName}`,
@@ -1919,7 +2314,11 @@ function compareTokens(
 
 		for (const codeToken of ct.usedTokens) {
 			const normalizedName = codeToken.toLowerCase();
-			if (!designTokenNames.some((dt) => dt.includes(normalizedName) || normalizedName.includes(dt))) {
+			if (
+				!designTokenNames.some(
+					(dt) => dt.includes(normalizedName) || normalizedName.includes(dt),
+				)
+			) {
 				discrepancies.push({
 					category: "tokens",
 					property: `token:${codeToken}`,
@@ -1933,7 +2332,10 @@ function compareTokens(
 	}
 
 	// Token coverage
-	if (enrichedData.token_coverage !== undefined && enrichedData.token_coverage < 80) {
+	if (
+		enrichedData.token_coverage !== undefined &&
+		enrichedData.token_coverage < 80
+	) {
 		discrepancies.push({
 			category: "tokens",
 			property: "tokenCoverage",
@@ -1946,7 +2348,11 @@ function compareTokens(
 	}
 }
 
-function compareComponentAPI(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscrepancy[]): void {
+function compareComponentAPI(
+	node: any,
+	codeSpec: CodeSpec,
+	discrepancies: ParityDiscrepancy[],
+): void {
 	const ca = codeSpec.componentAPI;
 	if (!ca?.props) return;
 
@@ -1964,7 +2370,9 @@ function compareComponentAPI(node: any, codeSpec: CodeSpec, discrepancies: Parit
 	// Check each code prop against Figma properties
 	for (const codeProp of ca.props) {
 		const matchingFigma = figmaPropList.find(
-			(fp) => fp.name.toLowerCase().replace(/[^a-z0-9]/g, "") === codeProp.name.toLowerCase().replace(/[^a-z0-9]/g, ""),
+			(fp) =>
+				fp.name.toLowerCase().replace(/[^a-z0-9]/g, "") ===
+				codeProp.name.toLowerCase().replace(/[^a-z0-9]/g, ""),
 		);
 
 		if (!matchingFigma) {
@@ -1979,10 +2387,16 @@ function compareComponentAPI(node: any, codeSpec: CodeSpec, discrepancies: Parit
 			});
 		} else if (matchingFigma.type === "VARIANT" && codeProp.values) {
 			// Check variant values match
-			const figmaValues = matchingFigma.values.map((v: string) => v.toLowerCase());
+			const figmaValues = matchingFigma.values.map((v: string) =>
+				v.toLowerCase(),
+			);
 			const codeValues = codeProp.values.map((v) => v.toLowerCase());
-			const missingInDesign = codeValues.filter((v) => !figmaValues.includes(v));
-			const missingInCode = figmaValues.filter((v: string) => !codeValues.includes(v));
+			const missingInDesign = codeValues.filter(
+				(v) => !figmaValues.includes(v),
+			);
+			const missingInCode = figmaValues.filter(
+				(v: string) => !codeValues.includes(v),
+			);
 
 			if (missingInDesign.length > 0) {
 				discrepancies.push({
@@ -2010,7 +2424,9 @@ function compareComponentAPI(node: any, codeSpec: CodeSpec, discrepancies: Parit
 	// Check for Figma properties not in code
 	for (const figmaProp of figmaPropList) {
 		const matchingCode = ca.props.find(
-			(cp) => cp.name.toLowerCase().replace(/[^a-z0-9]/g, "") === figmaProp.name.toLowerCase().replace(/[^a-z0-9]/g, ""),
+			(cp) =>
+				cp.name.toLowerCase().replace(/[^a-z0-9]/g, "") ===
+				figmaProp.name.toLowerCase().replace(/[^a-z0-9]/g, ""),
 		);
 		if (!matchingCode) {
 			discrepancies.push({
@@ -2025,14 +2441,19 @@ function compareComponentAPI(node: any, codeSpec: CodeSpec, discrepancies: Parit
 	}
 }
 
-function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscrepancy[]): void {
+function compareAccessibility(
+	node: any,
+	codeSpec: CodeSpec,
+	discrepancies: ParityDiscrepancy[],
+): void {
 	const ca = codeSpec.accessibility;
 	if (!ca) return;
 
 	// Check description/annotations for accessibility hints
 	const description = node.descriptionMarkdown || node.description || "";
 	const descLower = description.toLowerCase();
-	const hasAriaAnnotation = descLower.includes("aria") || descLower.includes("accessibility");
+	const hasAriaAnnotation =
+		descLower.includes("aria") || descLower.includes("accessibility");
 
 	// ---- 1. ARIA Role Parity ----
 	if (ca.role && !hasAriaAnnotation) {
@@ -2052,17 +2473,26 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 		const nodeName = (node.name || "").toLowerCase();
 		const element = ca.semanticElement.toLowerCase();
 		// Check if interactive component uses correct semantic element
-		const interactivePattern = /button|link|input|checkbox|radio|switch|toggle|tab|select/i;
+		const interactivePattern =
+			/button|link|input|checkbox|radio|switch|toggle|tab|select/i;
 		if (interactivePattern.test(nodeName)) {
 			const elementMatchesDesign =
-				(nodeName.includes("button") && (element === "button" || ca.role === "button")) ||
-				(nodeName.includes("link") && (element === "a" || ca.role === "link")) ||
-				(nodeName.includes("input") && (element === "input" || element === "textarea")) ||
-				(nodeName.includes("checkbox") && (element === "input" || ca.role === "checkbox")) ||
-				(nodeName.includes("radio") && (element === "input" || ca.role === "radio")) ||
-				(nodeName.includes("switch") && (ca.role === "switch" || element === "input")) ||
-				(nodeName.includes("select") && (element === "select" || ca.role === "listbox")) ||
-				(nodeName.includes("tab") && (ca.role === "tab" || element === "button"));
+				(nodeName.includes("button") &&
+					(element === "button" || ca.role === "button")) ||
+				(nodeName.includes("link") &&
+					(element === "a" || ca.role === "link")) ||
+				(nodeName.includes("input") &&
+					(element === "input" || element === "textarea")) ||
+				(nodeName.includes("checkbox") &&
+					(element === "input" || ca.role === "checkbox")) ||
+				(nodeName.includes("radio") &&
+					(element === "input" || ca.role === "radio")) ||
+				(nodeName.includes("switch") &&
+					(ca.role === "switch" || element === "input")) ||
+				(nodeName.includes("select") &&
+					(element === "select" || ca.role === "listbox")) ||
+				(nodeName.includes("tab") &&
+					(ca.role === "tab" || element === "button"));
 
 			if (!elementMatchesDesign) {
 				discrepancies.push({
@@ -2094,8 +2524,8 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 	// ---- 4. Focus Indicator Parity ----
 	// Check if design has a focus variant but code doesn't implement focus-visible
 	const variants = node.children || [];
-	const hasFocusVariant = variants.some(
-		(v: any) => /focus|focused/i.test(v.name || ""),
+	const hasFocusVariant = variants.some((v: any) =>
+		/focus|focused/i.test(v.name || ""),
 	);
 
 	if (hasFocusVariant && ca.focusVisible === false) {
@@ -2105,8 +2535,10 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 			severity: "critical",
 			designValue: "focus variant exists",
 			codeValue: "focusVisible: false",
-			message: "Design has a focus variant but code does not implement :focus-visible styles",
-			suggestion: "Add :focus-visible CSS with a visible focus ring matching the design's focus variant (WCAG 2.4.7)",
+			message:
+				"Design has a focus variant but code does not implement :focus-visible styles",
+			suggestion:
+				"Add :focus-visible CSS with a visible focus ring matching the design's focus variant (WCAG 2.4.7)",
 		});
 	} else if (!hasFocusVariant && ca.focusVisible === true) {
 		discrepancies.push({
@@ -2115,14 +2547,16 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 			severity: "minor",
 			designValue: "no focus variant",
 			codeValue: "focusVisible: true",
-			message: "Code implements :focus-visible but design has no focus variant to specify the visual treatment",
-			suggestion: "Add a focus/focused variant in Figma to document the intended focus indicator design",
+			message:
+				"Code implements :focus-visible but design has no focus variant to specify the visual treatment",
+			suggestion:
+				"Add a focus/focused variant in Figma to document the intended focus indicator design",
 		});
 	}
 
 	// ---- 5. Disabled State Parity ----
-	const hasDisabledVariant = variants.some(
-		(v: any) => /disabled|inactive/i.test(v.name || ""),
+	const hasDisabledVariant = variants.some((v: any) =>
+		/disabled|inactive/i.test(v.name || ""),
 	);
 
 	if (hasDisabledVariant && ca.supportsDisabled === false) {
@@ -2132,8 +2566,10 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 			severity: "major",
 			designValue: "disabled variant exists",
 			codeValue: "supportsDisabled: false",
-			message: "Design has a disabled variant but code does not support disabled/aria-disabled state",
-			suggestion: "Implement disabled or aria-disabled attribute support in the component",
+			message:
+				"Design has a disabled variant but code does not support disabled/aria-disabled state",
+			suggestion:
+				"Implement disabled or aria-disabled attribute support in the component",
 		});
 	} else if (!hasDisabledVariant && ca.supportsDisabled === true) {
 		discrepancies.push({
@@ -2142,14 +2578,16 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 			severity: "minor",
 			designValue: "no disabled variant",
 			codeValue: "supportsDisabled: true",
-			message: "Code supports disabled state but design has no disabled variant",
-			suggestion: "Add a disabled variant in Figma showing the visual treatment for disabled state",
+			message:
+				"Code supports disabled state but design has no disabled variant",
+			suggestion:
+				"Add a disabled variant in Figma showing the visual treatment for disabled state",
 		});
 	}
 
 	// ---- 6. Error State Parity ----
-	const hasErrorVariant = variants.some(
-		(v: any) => /error|invalid|danger/i.test(v.name || ""),
+	const hasErrorVariant = variants.some((v: any) =>
+		/error|invalid|danger/i.test(v.name || ""),
 	);
 
 	if (hasErrorVariant && ca.supportsError === false) {
@@ -2159,15 +2597,17 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 			severity: "major",
 			designValue: "error variant exists",
 			codeValue: "supportsError: false",
-			message: "Design has an error variant but code does not support aria-invalid or error messaging",
-			suggestion: "Implement aria-invalid attribute and associated error message (aria-describedby) in the component",
+			message:
+				"Design has an error variant but code does not support aria-invalid or error messaging",
+			suggestion:
+				"Implement aria-invalid attribute and associated error message (aria-describedby) in the component",
 		});
 	}
 
 	// ---- 7. Required Field Parity ----
 	if (ca.ariaRequired !== undefined) {
-		const hasRequiredVariant = variants.some(
-			(v: any) => /required/i.test(v.name || ""),
+		const hasRequiredVariant = variants.some((v: any) =>
+			/required/i.test(v.name || ""),
 		);
 		const hasRequiredInDescription = descLower.includes("required");
 
@@ -2178,8 +2618,10 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 				severity: "minor",
 				designValue: "no required indicator",
 				codeValue: "ariaRequired: true",
-				message: "Code marks field as required but design has no visual required indicator",
-				suggestion: "Add a required indicator (asterisk, label text) in the design and/or a required variant",
+				message:
+					"Code marks field as required but design has no visual required indicator",
+				suggestion:
+					"Add a required indicator (asterisk, label text) in the design and/or a required variant",
 			});
 		}
 	}
@@ -2200,7 +2642,8 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 					designValue: `${Math.round(designWidth)}x${Math.round(designHeight)}`,
 					codeValue: `${codeWidth}x${codeHeight}`,
 					message: `Code renders significantly smaller (${codeWidth}x${codeHeight}px) than design (${Math.round(designWidth)}x${Math.round(designHeight)}px)`,
-					suggestion: "Ensure rendered component meets the design's touch target size. Check CSS min-width/min-height.",
+					suggestion:
+						"Ensure rendered component meets the design's touch target size. Check CSS min-width/min-height.",
 				});
 			}
 			// Check WCAG 2.5.8 minimum (24x24)
@@ -2219,7 +2662,11 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 	}
 
 	// ---- 9. Keyboard Interactions ----
-	if (ca.keyboardInteractions && ca.keyboardInteractions.length > 0 && !descLower.includes("keyboard")) {
+	if (
+		ca.keyboardInteractions &&
+		ca.keyboardInteractions.length > 0 &&
+		!descLower.includes("keyboard")
+	) {
 		discrepancies.push({
 			category: "accessibility",
 			property: "keyboardInteractions",
@@ -2227,12 +2674,17 @@ function compareAccessibility(node: any, codeSpec: CodeSpec, discrepancies: Pari
 			designValue: null,
 			codeValue: ca.keyboardInteractions.join(", "),
 			message: `Code defines keyboard interactions (${ca.keyboardInteractions.join(", ")}) but design has no keyboard documentation`,
-			suggestion: "Document keyboard interactions in the Figma component description for developer handoff",
+			suggestion:
+				"Document keyboard interactions in the Figma component description for developer handoff",
 		});
 	}
 }
 
-function compareNaming(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscrepancy[]): void {
+function compareNaming(
+	node: any,
+	codeSpec: CodeSpec,
+	discrepancies: ParityDiscrepancy[],
+): void {
 	const cm = codeSpec.metadata;
 	if (!cm?.name) return;
 
@@ -2243,7 +2695,10 @@ function compareNaming(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscr
 	const isPascal = (s: string) => /^[A-Z][a-zA-Z0-9]*$/.test(s);
 	const isKebab = (s: string) => /^[a-z][a-z0-9-]*$/.test(s);
 
-	if (isPascal(designName) !== isPascal(codeName) && isKebab(designName) !== isKebab(codeName)) {
+	if (
+		isPascal(designName) !== isPascal(codeName) &&
+		isKebab(designName) !== isKebab(codeName)
+	) {
 		discrepancies.push({
 			category: "naming",
 			property: "componentName",
@@ -2256,14 +2711,23 @@ function compareNaming(node: any, codeSpec: CodeSpec, discrepancies: ParityDiscr
 	}
 }
 
-function compareMetadata(node: any, componentMeta: any, codeSpec: CodeSpec, discrepancies: ParityDiscrepancy[]): void {
+function compareMetadata(
+	node: any,
+	componentMeta: any,
+	codeSpec: CodeSpec,
+	discrepancies: ParityDiscrepancy[],
+): void {
 	const cm = codeSpec.metadata;
 	if (!cm) return;
 
 	const designDesc = node.description || componentMeta?.description || "";
 	if (cm.description && designDesc) {
 		// Only flag if descriptions are meaningfully different (not just formatting)
-		const normalizeDesc = (d: string) => d.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+		const normalizeDesc = (d: string) =>
+			d
+				.toLowerCase()
+				.replace(/[^a-z0-9 ]/g, "")
+				.trim();
 		if (normalizeDesc(designDesc) !== normalizeDesc(cm.description)) {
 			discrepancies.push({
 				category: "metadata",
@@ -2278,8 +2742,17 @@ function compareMetadata(node: any, componentMeta: any, codeSpec: CodeSpec, disc
 
 	if (cm.status && componentMeta?.description) {
 		// Check if design description contains a status
-		const statusKeywords = ["stable", "experimental", "deprecated", "beta", "alpha", "draft"];
-		const designStatus = statusKeywords.find((s) => componentMeta.description.toLowerCase().includes(s));
+		const statusKeywords = [
+			"stable",
+			"experimental",
+			"deprecated",
+			"beta",
+			"alpha",
+			"draft",
+		];
+		const designStatus = statusKeywords.find((s) =>
+			componentMeta.description.toLowerCase().includes(s),
+		);
 		if (designStatus && designStatus !== cm.status.toLowerCase()) {
 			discrepancies.push({
 				category: "metadata",
@@ -2347,7 +2820,15 @@ function generateActionItems(
 				case "spacing":
 					if (d.codeValue !== null && d.codeValue !== undefined) {
 						const prop = d.property;
-						if (["paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "gap"].includes(prop)) {
+						if (
+							[
+								"paddingTop",
+								"paddingRight",
+								"paddingBottom",
+								"paddingLeft",
+								"gap",
+							].includes(prop)
+						) {
 							const figmaProp = prop === "gap" ? "itemSpacing" : prop;
 							item.figmaTool = "figma_execute";
 							item.figmaToolParams = {
@@ -2413,7 +2894,8 @@ function generateActionItems(
 				property: d.property,
 				currentValue: d.codeValue,
 				targetValue: d.designValue,
-				description: d.suggestion || `Update code to match design: ${d.message}`,
+				description:
+					d.suggestion || `Update code to match design: ${d.message}`,
 			};
 		}
 
@@ -2467,7 +2949,7 @@ function buildParityInstruction(
 		"### Action Required",
 		"List discrepancies that represent real spec gaps needing resolution before sign-off.",
 		"For each, state what differs and suggest the fix direction based on the canonical source.",
-		"If no actionable items exist, write: \"None — design and code are aligned on all spec values.\"",
+		'If no actionable items exist, write: "None — design and code are aligned on all spec values."',
 		"",
 		"### Aligned",
 		"Compact bulleted list of properties that matched between design and code (no discrepancy flagged).",
@@ -2520,9 +3002,12 @@ async function detectAtomicLevel(
 		// Requesting the file with `ids` returns every page in document order, but
 		// prunes each page's children to only the path reaching the requested node,
 		// so the single page whose subtree still contains the node is its home page.
-		const pages: any[] = (await api.getFile(fileKey, { ids: [targetId] }))?.document?.children || [];
+		const pages: any[] =
+			(await api.getFile(fileKey, { ids: [targetId] }))?.document?.children ||
+			[];
 		const contains = (n: any): boolean =>
-			n?.id === targetId || (Array.isArray(n?.children) && n.children.some(contains));
+			n?.id === targetId ||
+			(Array.isArray(n?.children) && n.children.some(contains));
 		const idx = pages.findIndex((p) => contains(p));
 		if (idx < 0) return null;
 
@@ -2534,7 +3019,9 @@ async function detectAtomicLevel(
 			["TEMPLATE", "template"],
 		];
 		for (let i = idx; i >= 0; i--) {
-			const stripped = (pages[i]?.name || "").toUpperCase().replace(/[^A-Z]/g, "");
+			const stripped = (pages[i]?.name || "")
+				.toUpperCase()
+				.replace(/[^A-Z]/g, "");
 			for (const [marker, level] of LEVELS) {
 				if (stripped.startsWith(marker)) return level;
 			}
@@ -2571,9 +3058,13 @@ export function generateFrontmatter(
 ): string {
 	// Only state what is actually known. "stable" / "1.0.0" used to be emitted for
 	// every component and read as extracted facts.
-	const status: string | null = componentMeta?.description?.toLowerCase().includes("deprecated")
+	const status: string | null = componentMeta?.description
+		?.toLowerCase()
+		.includes("deprecated")
 		? "deprecated"
-		: codeInfo?.changelog?.[0] ? "stable" : null;
+		: codeInfo?.changelog?.[0]
+			? "stable"
+			: null;
 	const version: string | null = codeInfo?.changelog?.[0]?.version || null;
 	const tags = [componentName.toLowerCase()];
 	if (level) tags.push(level);
@@ -2583,7 +3074,21 @@ export function generateFrontmatter(
 	const lines = [
 		"---",
 		`title: ${componentName}`,
-		...((((description.split(/\n\s*\n|\n#{1,6}\s|\n\*\*/)[0] || description).replace(/\n/g, " ").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/)[0])) ? [`description: ${((description.split(/\n\s*\n|\n#{1,6}\s|\n\*\*/)[0] || description).replace(/\n/g, " ").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/)[0])}`] : []),
+		...((description.split(/\n\s*\n|\n#{1,6}\s|\n\*\*/)[0] || description)
+			.replace(/\n/g, " ")
+			.replace(/\s+/g, " ")
+			.trim()
+			.split(/(?<=[.!?])\s+/)[0]
+			? [
+					`description: ${
+						(description.split(/\n\s*\n|\n#{1,6}\s|\n\*\*/)[0] || description)
+							.replace(/\n/g, " ")
+							.replace(/\s+/g, " ")
+							.trim()
+							.split(/(?<=[.!?])\s+/)[0]
+					}`,
+				]
+			: []),
 		...(status ? [`status: ${status}`] : []),
 		...(version ? [`version: ${version}`] : []),
 		`category: components`,
@@ -2605,8 +3110,12 @@ export function generateFrontmatter(
 		// Pins the code side of this page: without it nothing says whether the
 		// code it describes is still current.
 		lines.push(`sourceCommit: ${sourceRevision.commit}`);
-		if (sourceRevision.dirty) lines.push("sourceDirty: true # documented files had uncommitted changes");
-		if (sourceRevision.webBase) lines.push(`sourceRepository: ${sourceRevision.webBase}`);
+		if (sourceRevision.dirty)
+			lines.push(
+				"sourceDirty: true # documented files had uncommitted changes",
+			);
+		if (sourceRevision.webBase)
+			lines.push(`sourceRepository: ${sourceRevision.webBase}`);
 	}
 	if (latestDesignVersion) {
 		// Quote the label — it's user-authored and may contain YAML-significant
@@ -2637,10 +3146,7 @@ export function generateOverviewSection(
 	/** Directory absolute paths are shown relative to */
 	sourceRoot?: string,
 ): string {
-	const lines: string[] = [
-		`# ${componentName}`,
-		"",
-	];
+	const lines: string[] = [`# ${componentName}`, ""];
 
 	// Never publish an absolute local path (it discloses the author's username and
 	// directory layout) — show it relative to the repo when known, else the file name.
@@ -2651,25 +3157,35 @@ export function generateOverviewSection(
 	const links: string[] = [`**[Open in Figma](${fileUrl})**`];
 	if (codeInfo?.filePath) {
 		const url = sourceUrl?.(codeInfo.filePath);
-		links.push(url ? `**[View Source](${url})**` : `Source: \`${shown(codeInfo.filePath)}\``);
+		links.push(
+			url
+				? `**[View Source](${url})**`
+				: `Source: \`${shown(codeInfo.filePath)}\``,
+		);
 	}
 	if (codeInfo?.storybookUrl) {
 		links.push(`**[Storybook](${codeInfo.storybookUrl})**`);
 	}
 	// A stories FILE is the stories' source, not a running Storybook — say so
 	const storiesFile = codeInfo?.sourceFiles?.find(
-		(f) => f.role.toLowerCase().includes("storybook") || f.role.toLowerCase().includes("stories") || f.path.includes(".stories."),
+		(f) =>
+			f.role.toLowerCase().includes("storybook") ||
+			f.role.toLowerCase().includes("stories") ||
+			f.path.includes(".stories."),
 	);
 	if (storiesFile) {
 		const url = sourceUrl?.(storiesFile.path);
-		links.push(url ? `**[Stories source](${url})**` : `Stories source: \`${shown(storiesFile.path)}\``);
+		links.push(
+			url
+				? `**[Stories source](${url})**`
+				: `Stories source: \`${shown(storiesFile.path)}\``,
+		);
 	}
 	lines.push(links.join(" | "));
 	lines.push("");
 
 	// Collected separately so an empty overview doesn't leave an orphaned heading
 	const section: string[] = [];
-
 
 	// Use parsed overview or fall back to raw description
 	// No filler: libraries that deliberately keep descriptions empty would get a
@@ -2686,7 +3202,9 @@ export function generateOverviewSection(
 			? `[${codeInfo.baseComponent.name}](${codeInfo.baseComponent.url})`
 			: codeInfo.baseComponent.name;
 		if (codeInfo.baseComponent.description) {
-			section.push(`Built on ${baseLink}, ${codeInfo.baseComponent.description}`);
+			section.push(
+				`Built on ${baseLink}, ${codeInfo.baseComponent.description}`,
+			);
 		} else {
 			section.push(`Built on ${baseLink}.`);
 		}
@@ -2727,7 +3245,10 @@ function formatIconCell(icons: VariantColorData["icons"]): string {
 	if (!icons || icons.length === 0) return "—";
 	// A chip with a leading AND a trailing icon has two — show both. A nav with
 	// twenty repeats of the same one shows it once, counted.
-	const groups = new Map<string, { icon: VariantColorData["icons"][number]; total: number; hidden: number }>();
+	const groups = new Map<
+		string,
+		{ icon: VariantColorData["icons"][number]; total: number; hidden: number }
+	>();
 	for (const icon of icons) {
 		const key = `${icon.name}|${icon.swapProperty ?? ""}`;
 		if (!groups.has(key)) groups.set(key, { icon, total: 0, hidden: 0 });
@@ -2736,20 +3257,29 @@ function formatIconCell(icons: VariantColorData["icons"]): string {
 		if (icon.hidden) g.hidden++;
 	}
 	const MAX_ICON_GROUPS = 5;
-	const parts = [...groups.values()].slice(0, MAX_ICON_GROUPS).map(({ icon, total, hidden }) => {
-		if (total === 1) return formatOneIcon(icon);
-		// Count first, then the note: "Placeholder ×9 _(all hidden)_"
-		const label = formatOneIcon({ ...icon, hidden: false });
-		const note = hidden === 0 ? "" : hidden === total ? " _(all hidden)_" : ` _(${hidden} hidden)_`;
-		return `${label} ×${total}${note}`;
-	});
-	if (groups.size > MAX_ICON_GROUPS) parts.push(`+${groups.size - MAX_ICON_GROUPS} more`);
+	const parts = [...groups.values()]
+		.slice(0, MAX_ICON_GROUPS)
+		.map(({ icon, total, hidden }) => {
+			if (total === 1) return formatOneIcon(icon);
+			// Count first, then the note: "Placeholder ×9 _(all hidden)_"
+			const label = formatOneIcon({ ...icon, hidden: false });
+			const note =
+				hidden === 0
+					? ""
+					: hidden === total
+						? " _(all hidden)_"
+						: ` _(${hidden} hidden)_`;
+			return `${label} ×${total}${note}`;
+		});
+	if (groups.size > MAX_ICON_GROUPS)
+		parts.push(`+${groups.size - MAX_ICON_GROUPS} more`);
 	return parts.join("; ");
 }
 
 function formatOneIcon(icon: VariantColorData["icons"][number]): string {
 	const notes: string[] = [];
-	if (icon.swapProperty) notes.push(`default — swappable via **${icon.swapProperty}**`);
+	if (icon.swapProperty)
+		notes.push(`default — swappable via **${icon.swapProperty}**`);
 	if (icon.hidden) notes.push("hidden in this variant");
 	return notes.length > 0 ? `${icon.name} _(${notes.join("; ")})_` : icon.name;
 }
@@ -2764,8 +3294,16 @@ export function generateStatesAndVariantsSection(
 
 	const lines = ["", "## Variants", ""];
 
-	const variants: Array<{ name: string; values: string[]; defaultValue: string }> = [];
-	const booleans: Array<{ name: string; defaultValue: boolean; controls: string[] }> = [];
+	const variants: Array<{
+		name: string;
+		values: string[];
+		defaultValue: string;
+	}> = [];
+	const booleans: Array<{
+		name: string;
+		defaultValue: boolean;
+		controls: string[];
+	}> = [];
 
 	// Which layers each boolean property shows/hides — read from the layers' own
 	// componentPropertyReferences.visible. Nested instances are not descended
@@ -2780,10 +3318,21 @@ export function generateStatesAndVariantsSection(
 		if (!isRoot && n?.type === "INSTANCE") return;
 		for (const c of n?.children ?? []) collectVisibilityRefs(c, false);
 	};
-	for (const root of node.type === "COMPONENT_SET" ? node.children ?? [] : [node]) collectVisibilityRefs(root, true);
+	for (const root of node.type === "COMPONENT_SET"
+		? (node.children ?? [])
+		: [node])
+		collectVisibilityRefs(root, true);
 	const textProps: Array<{ name: string; defaultValue: string }> = [];
-	const instanceSwaps: Array<{ name: string; defaultName: string | null; preferredCount: number }> = [];
-	const slots: Array<{ name: string; preferredCount: number; description: string | null }> = [];
+	const instanceSwaps: Array<{
+		name: string;
+		defaultName: string | null;
+		preferredCount: number;
+	}> = [];
+	const slots: Array<{
+		name: string;
+		preferredCount: number;
+		description: string | null;
+	}> = [];
 
 	for (const [rawName, def] of Object.entries(props) as Array<[string, any]>) {
 		// Strip Figma internal ID suffixes like "#17100:0" from property names
@@ -2795,7 +3344,11 @@ export function generateStatesAndVariantsSection(
 				defaultValue: def.defaultValue || "",
 			});
 		} else if (def.type === "BOOLEAN") {
-			booleans.push({ name, defaultValue: def.defaultValue ?? true, controls: [...(layersByBoolean.get(rawName) ?? [])] });
+			booleans.push({
+				name,
+				defaultValue: def.defaultValue ?? true,
+				controls: [...(layersByBoolean.get(rawName) ?? [])],
+			});
 		} else if (def.type === "TEXT") {
 			textProps.push({ name, defaultValue: def.defaultValue || "" });
 		} else if (def.type === "INSTANCE_SWAP") {
@@ -2803,14 +3356,21 @@ export function generateStatesAndVariantsSection(
 			instanceSwaps.push({
 				name,
 				defaultName: resolveMainComponentName(def.defaultValue, lookup) ?? null,
-				preferredCount: Array.isArray(def.preferredValues) ? def.preferredValues.length : 0,
+				preferredCount: Array.isArray(def.preferredValues)
+					? def.preferredValues.length
+					: 0,
 			});
 		} else if (def.type === "SLOT") {
 			// For a compositional component the slots ARE the API
 			slots.push({
 				name,
-				preferredCount: Array.isArray(def.preferredValues) ? def.preferredValues.length : 0,
-				description: typeof def.description === "string" && def.description.trim() ? def.description.trim() : null,
+				preferredCount: Array.isArray(def.preferredValues)
+					? def.preferredValues.length
+					: 0,
+				description:
+					typeof def.description === "string" && def.description.trim()
+						? def.description.trim()
+						: null,
 			});
 		}
 	}
@@ -2824,8 +3384,13 @@ export function generateStatesAndVariantsSection(
 		const hasIcons = variantData.some((v) => v.icons.length > 0);
 		// Any color at all earns the matrix — a set of transparent (outline/ghost)
 		// variants still has text and icon colors worth tabulating.
-		const hasColors = variantData.some((v) =>
-			v.fills.length > 0 || v.textColors.length > 0 || v.iconColors.length > 0 || v.strokes.length > 0);
+		const hasColors = variantData.some(
+			(v) =>
+				v.fills.length > 0 ||
+				v.textColors.length > 0 ||
+				v.iconColors.length > 0 ||
+				v.strokes.length > 0,
+		);
 
 		if (hasColors || hasIcons) {
 			const headerParts = ["Variant", "Background"];
@@ -2842,18 +3407,26 @@ export function generateStatesAndVariantsSection(
 				const displayName = cleanVariantName(vd.variantName);
 
 				// A hidden layer never stands in for what renders
-				const painted = (list: VariantColorEntry[]) => list.find((c) => !c.hidden);
+				const painted = (list: VariantColorEntry[]) =>
+					list.find((c) => !c.hidden);
 
 				// Get primary fill (background)
 				const bgFill = painted(vd.fills);
 				const bgVal = bgFill
-					? (bgFill.variableName ? `\`${bgFill.variableName}\` (${bgFill.hex})` : bgFill.hex)
+					? bgFill.variableName
+						? `\`${bgFill.variableName}\` (${bgFill.hex})`
+						: bgFill.hex
 					: "—";
 
 				// Get primary text/icon color
-				const textColor = painted(vd.textColors) || painted(vd.iconColors) || painted(vd.strokes);
+				const textColor =
+					painted(vd.textColors) ||
+					painted(vd.iconColors) ||
+					painted(vd.strokes);
 				const textVal = textColor
-					? (textColor.variableName ? `\`${textColor.variableName}\` (${textColor.hex})` : textColor.hex)
+					? textColor.variableName
+						? `\`${textColor.variableName}\` (${textColor.hex})`
+						: textColor.hex
 					: "—";
 
 				const rowParts = [`**${displayName}**`, bgVal];
@@ -2891,33 +3464,54 @@ export function generateStatesAndVariantsSection(
 	// Configurable properties table (all property types)
 	// `variants` belongs in this guard: the table below renders them as its first
 	// rows, so a set with only VARIANT properties used to get no table at all.
-	if (variants.length > 0 || booleans.length > 0 || textProps.length > 0 || instanceSwaps.length > 0 || slots.length > 0) {
+	if (
+		variants.length > 0 ||
+		booleans.length > 0 ||
+		textProps.length > 0 ||
+		instanceSwaps.length > 0 ||
+		slots.length > 0
+	) {
 		lines.push("### Configurable Properties");
 		lines.push("");
 		lines.push("| Property | Type | Default | Description |");
 		lines.push("|----------|------|---------|-------------|");
 
 		for (const v of variants) {
-			lines.push(`| **${v.name}** | \`${v.values.map((val) => `"${val}"`).join(" \\| ")}\` | \`"${v.defaultValue}"\` | Changes visual treatment |`);
+			lines.push(
+				`| **${v.name}** | \`${v.values.map((val) => `"${val}"`).join(" \\| ")}\` | \`"${v.defaultValue}"\` | Changes visual treatment |`,
+			);
 		}
 		for (const b of booleans) {
 			// Describe the property by the layer it actually controls; never invent an
 			// element from the property's name ("Is Focused" → "is focused element")
-			const what = b.controls.length > 0
-				? `Shows/hides ${b.controls.map((l) => `**${l}**`).join(", ")}`
-				: "Boolean toggle";
-			lines.push(`| **${b.name}** | \`boolean\` | \`${b.defaultValue}\` | ${what} |`);
+			const what =
+				b.controls.length > 0
+					? `Shows/hides ${b.controls.map((l) => `**${l}**`).join(", ")}`
+					: "Boolean toggle";
+			lines.push(
+				`| **${b.name}** | \`boolean\` | \`${b.defaultValue}\` | ${what} |`,
+			);
 		}
 		for (const t of textProps) {
-			lines.push(`| **${t.name}** | \`string\` | \`"${t.defaultValue}"\` | Sets ${t.name.toLowerCase()} content |`);
+			lines.push(
+				`| **${t.name}** | \`string\` | \`"${t.defaultValue}"\` | Sets ${t.name.toLowerCase()} content |`,
+			);
 		}
 		for (const sw of instanceSwaps) {
-			const preferred = sw.preferredCount > 0 ? ` (${sw.preferredCount} preferred values)` : "";
-			lines.push(`| **${sw.name}** | \`instance swap\` | ${sw.defaultName ? `\`${sw.defaultName}\`` : "—"} | Swaps the nested ${sw.name.toLowerCase()} instance${preferred} |`);
+			const preferred =
+				sw.preferredCount > 0 ? ` (${sw.preferredCount} preferred values)` : "";
+			lines.push(
+				`| **${sw.name}** | \`instance swap\` | ${sw.defaultName ? `\`${sw.defaultName}\`` : "—"} | Swaps the nested ${sw.name.toLowerCase()} instance${preferred} |`,
+			);
 		}
 		for (const slot of slots) {
-			const preferred = slot.preferredCount > 0 ? ` (${slot.preferredCount} preferred values)` : "";
-			lines.push(`| **${slot.name}** | \`slot\` | — | ${slot.description ?? `Accepts nested content for ${slot.name.toLowerCase()}`}${preferred} |`);
+			const preferred =
+				slot.preferredCount > 0
+					? ` (${slot.preferredCount} preferred values)`
+					: "";
+			lines.push(
+				`| **${slot.name}** | \`slot\` | — | ${slot.description ?? `Accepts nested content for ${slot.name.toLowerCase()}`}${preferred} |`,
+			);
 		}
 		lines.push("");
 	}
@@ -2937,11 +3531,20 @@ interface CollectedColor {
  * Recursively walk a node tree and collect all unique colors from fills, strokes, and text.
  * For COMPONENT_SET nodes, walks the first child (default variant) instead of the set frame.
  */
-function collectNodeColors(node: any, colors: CollectedColor[], depth: number = 0, maxDepth: number = 3): void {
+function collectNodeColors(
+	node: any,
+	colors: CollectedColor[],
+	depth: number = 0,
+	maxDepth: number = 3,
+): void {
 	if (depth > maxDepth) return;
 
 	// For COMPONENT_SET, walk into the first child (default variant) for visual data
-	if (node.type === "COMPONENT_SET" && node.children?.length > 0 && depth === 0) {
+	if (
+		node.type === "COMPONENT_SET" &&
+		node.children?.length > 0 &&
+		depth === 0
+	) {
 		collectNodeColors(node.children[0], colors, 0, maxDepth);
 		return;
 	}
@@ -2952,7 +3555,10 @@ function collectNodeColors(node: any, colors: CollectedColor[], depth: number = 
 	if (node.fills && Array.isArray(node.fills)) {
 		for (const fill of node.fills) {
 			if (fill.type === "SOLID" && fill.color && fill.visible !== false) {
-				const hex = figmaRGBAToHex({ ...fill.color, a: fill.opacity ?? fill.color.a ?? 1 });
+				const hex = figmaRGBAToHex({
+					...fill.color,
+					a: fill.opacity ?? fill.color.a ?? 1,
+				});
 				colors.push({
 					hex,
 					property: isText ? "text" : "fill",
@@ -2967,7 +3573,10 @@ function collectNodeColors(node: any, colors: CollectedColor[], depth: number = 
 	if (node.strokes && Array.isArray(node.strokes)) {
 		for (const stroke of node.strokes) {
 			if (stroke.type === "SOLID" && stroke.color && stroke.visible !== false) {
-				const hex = figmaRGBAToHex({ ...stroke.color, a: stroke.opacity ?? stroke.color.a ?? 1 });
+				const hex = figmaRGBAToHex({
+					...stroke.color,
+					a: stroke.opacity ?? stroke.color.a ?? 1,
+				});
 				colors.push({
 					hex,
 					property: "stroke",
@@ -3013,7 +3622,12 @@ export function generateVisualSpecsSection(
 	// carry a useful name when it actually resolved (not the raw VariableID).
 	if (enrichedData?.variables_used) {
 		for (const v of enrichedData.variables_used as any[]) {
-			if (v.variableId && v.variableName && v.variableName !== v.variableId && !varNameMap.has(v.variableId)) {
+			if (
+				v.variableId &&
+				v.variableName &&
+				v.variableName !== v.variableId &&
+				!varNameMap.has(v.variableId)
+			) {
 				varNameMap.set(v.variableId, v.variableName);
 			}
 		}
@@ -3027,17 +3641,30 @@ export function generateVisualSpecsSection(
 		lines.push("|---------|---------------|-------|");
 
 		const tokenCell = (c: VariantColorEntry) => {
-			const varName = c.variableName || (c.variableId ? varNameMap.get(c.variableId) : undefined);
+			const varName =
+				c.variableName ||
+				(c.variableId ? varNameMap.get(c.variableId) : undefined);
 			return varName ? `\`${varName}\`` : "—";
 		};
 		// Text layers are often auto-named after their content ("Lorem ipsum dolor…")
-		const short = (name: string) => (name.length > 40 ? `${name.slice(0, 40)}…` : name);
+		const short = (name: string) =>
+			name.length > 40 ? `${name.slice(0, 40)}…` : name;
 
-		type Row = { label: string; token: string; value: string; shownWhen?: string; plainHidden?: boolean };
+		type Row = {
+			label: string;
+			token: string;
+			value: string;
+			shownWhen?: string;
+			plainHidden?: boolean;
+		};
 		const rowText = (r: Row, withVisibility: boolean) => {
-			const visibility = !withVisibility ? ""
-				: r.shownWhen ? ` _(hidden — shown when ${r.shownWhen} = true)_`
-				: r.plainHidden ? " _(hidden layer)_" : "";
+			const visibility = !withVisibility
+				? ""
+				: r.shownWhen
+					? ` _(hidden — shown when ${r.shownWhen} = true)_`
+					: r.plainHidden
+						? " _(hidden layer)_"
+						: "";
 			return `| ${r.label}${visibility} | ${r.token} | ${r.value} |`;
 		};
 
@@ -3046,7 +3673,13 @@ export function generateVisualSpecsSection(
 			const rows: Row[] = [];
 			const seen = new Set<string>(); // multi-path icons / repeated shapes → one row
 			const add = (label: string, c: VariantColorEntry) => {
-				const r: Row = { label, token: tokenCell(c), value: c.hex, ...(c.hidden && c.shownWhen ? { shownWhen: c.shownWhen } : {}), ...(c.hidden && !c.shownWhen ? { plainHidden: true } : {}) };
+				const r: Row = {
+					label,
+					token: tokenCell(c),
+					value: c.hex,
+					...(c.hidden && c.shownWhen ? { shownWhen: c.shownWhen } : {}),
+					...(c.hidden && !c.shownWhen ? { plainHidden: true } : {}),
+				};
 				const key = rowText(r, true);
 				if (seen.has(key)) return;
 				seen.add(key);
@@ -3060,25 +3693,45 @@ export function generateVisualSpecsSection(
 					if (!byName.has(e.nodeName)) byName.set(e.nodeName, new Set());
 					byName.get(e.nodeName)!.add(`${e.hex}|${e.variableName ?? ""}`);
 				}
-				return (e: VariantColorEntry) => ((byName.get(e.nodeName)?.size ?? 0) > 1 && e.owner ? ` in ${e.owner}` : "");
+				return (e: VariantColorEntry) =>
+					(byName.get(e.nodeName)?.size ?? 0) > 1 && e.owner
+						? ` in ${e.owner}`
+						: "";
 			};
 
 			// Background — the variant's own surface only. Say so when there isn't one.
-			const bgLabel = vd.backgroundLayer ? `Background (${vd.backgroundLayer})` : "Background";
-			if (vd.fills.length === 0) rows.push({ label: "Background", token: "—", value: "none (transparent)" });
+			const bgLabel = vd.backgroundLayer
+				? `Background (${vd.backgroundLayer})`
+				: "Background";
+			if (vd.fills.length === 0)
+				rows.push({
+					label: "Background",
+					token: "—",
+					value: "none (transparent)",
+				});
 			for (const fill of vd.fills) add(bgLabel, fill);
 			// Fills on inner layers — reported under the layer's name, never as a background
 			const fillQ = qualify(vd.descendantFills);
-			for (const fill of vd.descendantFills) add(`Fill (${fill.nodeName}${fillQ(fill)})`, fill);
-			for (const c of vd.iconColors) add(c.iconLabel ? `Icon (${c.iconLabel})` : "Icon", c);
+			for (const fill of vd.descendantFills)
+				add(`Fill (${fill.nodeName}${fillQ(fill)})`, fill);
+			for (const c of vd.iconColors)
+				add(c.iconLabel ? `Icon (${c.iconLabel})` : "Icon", c);
 			const textQ = qualify(vd.textColors);
-			for (const text of vd.textColors) add(`Text (${short(text.nodeName)}${textQ(text)})`, text);
+			for (const text of vd.textColors)
+				add(`Text (${short(text.nodeName)}${textQ(text)})`, text);
 			// Strokes go through the same writer, so a visible underline and a hidden focus
 			// ring sharing one color don't print as two indistinguishable rows
 			const strokeQ = qualify(vd.strokes);
-			for (const stroke of vd.strokes) add(stroke.nodeName ? `Stroke (${stroke.nodeName}${strokeQ(stroke)})` : "Stroke", stroke);
+			for (const stroke of vd.strokes)
+				add(
+					stroke.nodeName
+						? `Stroke (${stroke.nodeName}${strokeQ(stroke)})`
+						: "Stroke",
+					stroke,
+				);
 			// Shadows, blurs, opacity — dropping them would imply the component is flat
-			for (const fx of vd.effects) add(fx.nodeName ? `Effect (${fx.nodeName})` : "Effect", fx);
+			for (const fx of vd.effects)
+				add(fx.nodeName ? `Effect (${fx.nodeName})` : "Effect", fx);
 			return { name: cleanVariantName(vd.variantName), rows };
 		});
 
@@ -3091,7 +3744,12 @@ export function generateVisualSpecsSection(
 			for (const r of perVariant[0].rows) {
 				if (!r.shownWhen) continue;
 				const key = rowText(r, true);
-				if (!perVariant.every((pv) => pv.rows.some((x) => rowText(x, true) === key))) continue;
+				if (
+					!perVariant.every((pv) =>
+						pv.rows.some((x) => rowText(x, true) === key),
+					)
+				)
+					continue;
 				hoistedKeys.add(key);
 				if (!hoisted.has(r.shownWhen)) hoisted.set(r.shownWhen, []);
 				hoisted.get(r.shownWhen)!.push(r);
@@ -3100,10 +3758,13 @@ export function generateVisualSpecsSection(
 
 		for (const pv of perVariant) {
 			lines.push(`| **${pv.name}** | | |`);
-			for (const r of pv.rows) if (!hoistedKeys.has(rowText(r, true))) lines.push(rowText(r, true));
+			for (const r of pv.rows)
+				if (!hoistedKeys.has(rowText(r, true))) lines.push(rowText(r, true));
 		}
 		for (const [prop, rows] of hoisted) {
-			lines.push(`| **When ${prop} = true** _(every variant; hidden otherwise)_ | | |`);
+			lines.push(
+				`| **When ${prop} = true** _(every variant; hidden otherwise)_ | | |`,
+			);
 			for (const r of rows) lines.push(rowText(r, false));
 		}
 		lines.push("");
@@ -3122,8 +3783,15 @@ export function generateVisualSpecsSection(
 			uniqueColors.sort((a, b) => order[a.property] - order[b.property]);
 
 			for (const c of uniqueColors) {
-				const label = c.property === "fill" ? "Fill" : c.property === "text" ? "Text" : "Stroke";
-				const tokenName = c.variableId ? varNameMap.get(c.variableId) : undefined;
+				const label =
+					c.property === "fill"
+						? "Fill"
+						: c.property === "text"
+							? "Text"
+							: "Stroke";
+				const tokenName = c.variableId
+					? varNameMap.get(c.variableId)
+					: undefined;
 				const value = tokenName ? `${c.hex} (\`${tokenName}\`)` : c.hex;
 				lines.push(`| ${label} | ${c.nodeName} | ${value} |`);
 			}
@@ -3133,25 +3801,34 @@ export function generateVisualSpecsSection(
 
 	// Spacing tokens with variable names
 	const visualNode = resolveVisualNode(node);
-	const comparison = setNode?.type === "COMPONENT_SET" && setNode.children?.length > 1
-		? collectSpacingAcrossVariants(setNode, varNameMap)
-		: null;
-	const spacingTokens = comparison ? [] : collectSpacingTokens(visualNode, varNameMap);
+	const comparison =
+		setNode?.type === "COMPONENT_SET" && setNode.children?.length > 1
+			? collectSpacingAcrossVariants(setNode, varNameMap)
+			: null;
+	const spacingTokens = comparison
+		? []
+		: collectSpacingTokens(visualNode, varNameMap);
 	if (comparison && comparison.rows.length > 0) {
 		lines.push("### Spacing Tokens");
 		lines.push("");
-		lines.push(`_Compared across all ${comparison.variantCount} variants — a single value means every variant agrees._`);
+		lines.push(
+			`_Compared across all ${comparison.variantCount} variants — a single value means every variant agrees._`,
+		);
 		lines.push("");
 		lines.push("| Property | Figma Variable | Value |");
 		lines.push("|----------|---------------|-------|");
 		for (const row of comparison.rows) {
-			lines.push(`| ${row.property} | ${row.variableCell} | ${row.valueCell} |`);
+			lines.push(
+				`| ${row.property} | ${row.variableCell} | ${row.valueCell} |`,
+			);
 		}
 		lines.push("");
 		if (comparison.inconsistencies.length > 0) {
 			lines.push("#### Spacing Inconsistencies");
 			lines.push("");
-			lines.push("_A property tokenized on most variants but hardcoded on a few usually means an accidental edit._");
+			lines.push(
+				"_A property tokenized on most variants but hardcoded on a few usually means an accidental edit._",
+			);
 			lines.push("");
 			for (const note of comparison.inconsistencies) lines.push(`- ${note}`);
 			lines.push("");
@@ -3160,15 +3837,22 @@ export function generateVisualSpecsSection(
 		lines.push("### Spacing Tokens");
 		lines.push("");
 		// A lone variant doesn't speak for its whole set — say which one this is
-		if (isVariantName(visualNode.name || "") || /^[^=,]+=[^=,]+$/.test(visualNode.name || "")) {
-			lines.push(`_Describes the \`${cleanVariantName(visualNode.name)}\` variant only._`);
+		if (
+			isVariantName(visualNode.name || "") ||
+			/^[^=,]+=[^=,]+$/.test(visualNode.name || "")
+		) {
+			lines.push(
+				`_Describes the \`${cleanVariantName(visualNode.name)}\` variant only._`,
+			);
 			lines.push("");
 		}
 		lines.push("| Property | Figma Variable | Value |");
 		lines.push("|----------|---------------|-------|");
 		for (const token of spacingTokens) {
 			const varDisplay = token.variableName ? `\`${token.variableName}\`` : "—";
-			lines.push(`| ${token.property} | ${varDisplay} | ${formatSpacingValue(token.value)} |`);
+			lines.push(
+				`| ${token.property} | ${varDisplay} | ${formatSpacingValue(token.value)} |`,
+			);
 		}
 		lines.push("");
 	} else {
@@ -3177,7 +3861,10 @@ export function generateVisualSpecsSection(
 		const hasSpacing = Object.keys(spacing).length > 0;
 		if (hasSpacing) {
 			lines.push("### Spacing & Layout");
-			if (spacing.paddingTop !== undefined || spacing.paddingRight !== undefined) {
+			if (
+				spacing.paddingTop !== undefined ||
+				spacing.paddingRight !== undefined
+			) {
 				lines.push(
 					`- Padding: ${spacing.paddingTop ?? 0}px ${spacing.paddingRight ?? 0}px ${spacing.paddingBottom ?? 0}px ${spacing.paddingLeft ?? 0}px`,
 				);
@@ -3196,7 +3883,10 @@ export function generateVisualSpecsSection(
 	if (enrichedData?.token_coverage !== undefined) {
 		lines.push("### Token Coverage");
 		lines.push(`Score: ${enrichedData.token_coverage}%`);
-		if (enrichedData.hardcoded_values && enrichedData.hardcoded_values.length > 0) {
+		if (
+			enrichedData.hardcoded_values &&
+			enrichedData.hardcoded_values.length > 0
+		) {
 			lines.push(`| Hardcoded values: ${enrichedData.hardcoded_values.length}`);
 		}
 		lines.push("");
@@ -3205,7 +3895,10 @@ export function generateVisualSpecsSection(
 	return lines.join("\n");
 }
 
-function generateImplementationSection(codeInfo?: CodeDocInfo, sourceRoot?: string): string {
+function generateImplementationSection(
+	codeInfo?: CodeDocInfo,
+	sourceRoot?: string,
+): string {
 	if (!codeInfo) return "";
 
 	const lines = ["", "## Implementation", ""];
@@ -3217,7 +3910,9 @@ function generateImplementationSection(codeInfo?: CodeDocInfo, sourceRoot?: stri
 		lines.push("| File | Role | Variants |");
 		lines.push("|------|------|----------|");
 		for (const sf of codeInfo.sourceFiles) {
-			lines.push(`| \`${displayPath(sf.path, sourceRoot)}\` | ${sf.role} | ${sf.variants ?? "—"} |`);
+			lines.push(
+				`| \`${displayPath(sf.path, sourceRoot)}\` | ${sf.role} | ${sf.variants ?? "—"} |`,
+			);
 		}
 		lines.push("");
 	}
@@ -3266,7 +3961,9 @@ function generateImplementationSection(codeInfo?: CodeDocInfo, sourceRoot?: stri
 				lines.push("");
 			}
 			if (sub.element) {
-				lines.push(`Renders a \`<${sub.element}>\`${sub.dataSlot ? ` with \`data-slot="${sub.dataSlot}"\`` : ""}.`);
+				lines.push(
+					`Renders a \`<${sub.element}>\`${sub.dataSlot ? ` with \`data-slot="${sub.dataSlot}"\`` : ""}.`,
+				);
 				lines.push("");
 			}
 			if (sub.props && sub.props.length > 0) {
@@ -3289,7 +3986,9 @@ function generateImplementationSection(codeInfo?: CodeDocInfo, sourceRoot?: stri
 		lines.push("| Event | Payload | Description |");
 		lines.push("|-------|---------|-------------|");
 		for (const e of codeInfo.events) {
-			lines.push(`| ${e.name} | ${e.payload ?? "—"} | ${e.description ?? "—"} |`);
+			lines.push(
+				`| ${e.name} | ${e.payload ?? "—"} | ${e.description ?? "—"} |`,
+			);
 		}
 		lines.push("");
 	}
@@ -3337,23 +4036,38 @@ function generateAccessibilitySection(
 	} else {
 		// Fallback: check raw description for accessibility content
 		const description = node.descriptionMarkdown || node.description || "";
-		if (description.toLowerCase().includes("aria") || description.toLowerCase().includes("accessibility")) {
+		if (
+			description.toLowerCase().includes("aria") ||
+			description.toLowerCase().includes("accessibility")
+		) {
 			// Extract accessibility-related lines from description
 			const descLines = description.split("\n");
 			for (const line of descLines) {
 				const lower = line.toLowerCase();
-				if (lower.includes("aria") || lower.includes("accessibility") || lower.includes("screen reader") || lower.includes("keyboard") || lower.includes("focus") || lower.includes("wcag") || lower.includes("contrast")) {
+				if (
+					lower.includes("aria") ||
+					lower.includes("accessibility") ||
+					lower.includes("screen reader") ||
+					lower.includes("keyboard") ||
+					lower.includes("focus") ||
+					lower.includes("wcag") ||
+					lower.includes("contrast")
+				) {
 					lines.push(`- ${line.trim().replace(/^[-*•]\s*/, "")}`);
 				}
 			}
 			if (lines.length > 2) {
 				lines.push("");
 			} else {
-				lines.push("_Accessibility mentions found in description but not in structured format. Review the component description for details._");
+				lines.push(
+					"_Accessibility mentions found in description but not in structured format. Review the component description for details._",
+				);
 				lines.push("");
 			}
 		} else {
-			lines.push("_No accessibility annotations found in Figma. Add annotations to the component description._");
+			lines.push(
+				"_No accessibility annotations found in Figma. Add annotations to the component description._",
+			);
 			lines.push("");
 		}
 	}
@@ -3361,9 +4075,7 @@ function generateAccessibilitySection(
 	return lines.join("\n");
 }
 
-function generateDesignAnnotationsSection(
-	node: any,
-): string {
+function generateDesignAnnotationsSection(node: any): string {
 	// Annotations come from the Desktop Bridge plugin (node.annotations)
 	// They are available when the component was fetched via Desktop Bridge
 	const annotations: any[] = node.annotations || [];
@@ -3380,14 +4092,21 @@ function generateDesignAnnotationsSection(
 	}
 
 	const lines = ["", "## Design Annotations", ""];
-	lines.push(`Found **${annotations.length}** annotation(s) on this component:`, "");
+	lines.push(
+		`Found **${annotations.length}** annotation(s) on this component:`,
+		"",
+	);
 
 	for (let i = 0; i < annotations.length; i++) {
 		const ann = annotations[i];
 		const num = i + 1;
 
 		// Header with category if available
-		const categoryLabel = ann.categoryName ? ` (${ann.categoryName})` : (ann.categoryId ? ` (category: ${ann.categoryId})` : "");
+		const categoryLabel = ann.categoryName
+			? ` (${ann.categoryName})`
+			: ann.categoryId
+				? ` (category: ${ann.categoryId})`
+				: "";
 		lines.push(`### Annotation ${num}${categoryLabel}`);
 		lines.push("");
 
@@ -3435,11 +4154,21 @@ function generateChangelogSection(codeInfo?: CodeDocInfo): string {
 /** Layer-structure fingerprint: names, types and nesting — not styling */
 function structureSignature(node: any, depth: number = 0): string {
 	if (depth > DOC_TREE_DEPTH) return "";
-	const kids = Array.isArray(node.children) ? node.children.map((c: any) => structureSignature(c, depth + 1)).join(",") : "";
+	const kids = Array.isArray(node.children)
+		? node.children.map((c: any) => structureSignature(c, depth + 1)).join(",")
+		: "";
 	return `${node.type}:${depth === 0 ? "" : node.name}${node.visible === false ? "!" : ""}[${kids}]`;
 }
 
-const CONTAINER_TYPES = new Set(["FRAME", "GROUP", "INSTANCE", "COMPONENT", "COMPONENT_SET", "SECTION", "BOOLEAN_OPERATION"]);
+const CONTAINER_TYPES = new Set([
+	"FRAME",
+	"GROUP",
+	"INSTANCE",
+	"COMPONENT",
+	"COMPONENT_SET",
+	"SECTION",
+	"BOOLEAN_OPERATION",
+]);
 
 /**
  * Count containers sitting exactly at the fetch-depth limit with no children.
@@ -3447,7 +4176,10 @@ const CONTAINER_TYPES = new Set(["FRAME", "GROUP", "INSTANCE", "COMPONENT", "COM
  * empty frame — so at that level an empty container MAY be hiding real content.
  * `fetchedRoot` is the node the REST call requested (levels count from it).
  */
-export function countPossiblyTruncated(fetchedRoot: any, fetchDepth: number = DOC_TREE_DEPTH): number {
+export function countPossiblyTruncated(
+	fetchedRoot: any,
+	fetchDepth: number = DOC_TREE_DEPTH,
+): number {
 	let count = 0;
 	const walk = (node: any, level: number): void => {
 		if (!node) return;
@@ -3462,7 +4194,10 @@ export function countPossiblyTruncated(fetchedRoot: any, fetchDepth: number = DO
 	return count;
 }
 
-export function generateAnatomySection(node: any, fetchDepth: number = DOC_TREE_DEPTH): string {
+export function generateAnatomySection(
+	node: any,
+	fetchDepth: number = DOC_TREE_DEPTH,
+): string {
 	const lines = ["", "## Component Anatomy", ""];
 
 	// For COMPONENT_SET, list all variants first
@@ -3481,7 +4216,11 @@ export function generateAnatomySection(node: any, fetchDepth: number = DOC_TREE_
 	// scroller frames and adds a fade). Showing one tree would silently drop
 	// everything unique to the others — so: one tree per distinct structure.
 	const MAX_STRUCTURES = 6;
-	const structures: Array<{ node: any; names: string[]; props: Array<Array<[string, string]>> }> = [];
+	const structures: Array<{
+		node: any;
+		names: string[];
+		props: Array<Array<[string, string]>>;
+	}> = [];
 	if (node.type === "COMPONENT_SET" && node.children?.length > 0) {
 		const bySignature = new Map<string, number>();
 		for (const variant of node.children) {
@@ -3501,16 +4240,26 @@ export function generateAnatomySection(node: any, fetchDepth: number = DOC_TREE_
 	if (structures.length > 1) {
 		// Which variant property decides the structure, if one does
 		const explanation = explainByVariantProperty(
-			structures.flatMap((st, i) => st.props.map((props) => ({ props, display: String(i) }))),
+			structures.flatMap((st, i) =>
+				st.props.map((props) => ({ props, display: String(i) })),
+			),
 		);
-		lines.push(`_${node.children.length} variants share ${structures.length} distinct layer structures${explanation ? `, decided by **${explanation.property}**` : ""}._`);
+		lines.push(
+			`_${node.children.length} variants share ${structures.length} distinct layer structures${explanation ? `, decided by **${explanation.property}**` : ""}._`,
+		);
 		lines.push("");
 		structures.slice(0, MAX_STRUCTURES).forEach((st, i) => {
-			const values = explanation?.groups.filter(([, display]) => display === String(i)).map(([pv]) => pv) ?? [];
-			const heading = values.length > 0
-				? `${explanation!.property}=${values.join(" | ")}`
-				: scopeLabel(st.names, -1);
-			lines.push(`**${heading}** (${st.names.length} variant${st.names.length === 1 ? "" : "s"})`);
+			const values =
+				explanation?.groups
+					.filter(([, display]) => display === String(i))
+					.map(([pv]) => pv) ?? [];
+			const heading =
+				values.length > 0
+					? `${explanation!.property}=${values.join(" | ")}`
+					: scopeLabel(st.names, -1);
+			lines.push(
+				`**${heading}** (${st.names.length} variant${st.names.length === 1 ? "" : "s"})`,
+			);
 			lines.push("");
 			lines.push("```");
 			lines.push(buildAnatomyTree(st.node));
@@ -3518,7 +4267,9 @@ export function generateAnatomySection(node: any, fetchDepth: number = DOC_TREE_
 			lines.push("");
 		});
 		if (structures.length > MAX_STRUCTURES) {
-			lines.push(`_+${structures.length - MAX_STRUCTURES} more distinct structures not shown._`);
+			lines.push(
+				`_+${structures.length - MAX_STRUCTURES} more distinct structures not shown._`,
+			);
 			lines.push("");
 		}
 	} else {
@@ -3532,7 +4283,9 @@ export function generateAnatomySection(node: any, fetchDepth: number = DOC_TREE_
 	// incomplete document as a complete one.
 	const truncated = countPossiblyTruncated(node, fetchDepth);
 	if (truncated > 0) {
-		lines.push(`_Note: ${truncated} layer${truncated === 1 ? "" : "s"} sit${truncated === 1 ? "s" : ""} at the depth limit of this extraction (${fetchDepth} levels) with no visible contents. Anything nested deeper is NOT reflected in this document — colors, typography and structure below that point may be incomplete._`);
+		lines.push(
+			`_Note: ${truncated} layer${truncated === 1 ? "" : "s"} sit${truncated === 1 ? "s" : ""} at the depth limit of this extraction (${fetchDepth} levels) with no visible contents. Anything nested deeper is NOT reflected in this document — colors, typography and structure below that point may be incomplete._`,
+		);
 		lines.push("");
 	}
 
@@ -3545,10 +4298,16 @@ export function generateTypographySection(node: any): string {
 		if (rows.length === 0) return "";
 		const out = ["", "## Typography", ""];
 		const scoped = rows.some((r) => r.scope);
-		out.push(`_Compared across all ${node.children.length} variants${scoped ? " — the Applies to column shows where a style is specific to some of them" : "; every variant uses the same styles"}._`);
+		out.push(
+			`_Compared across all ${node.children.length} variants${scoped ? " — the Applies to column shows where a style is specific to some of them" : "; every variant uses the same styles"}._`,
+		);
 		out.push("");
-		out.push(`| Element | Font | Weight | Size | Line Height | Letter Spacing |${scoped ? " Applies to |" : ""}`);
-		out.push(`|---------|------|--------|------|-------------|----------------|${scoped ? "------------|" : ""}`);
+		out.push(
+			`| Element | Font | Weight | Size | Line Height | Letter Spacing |${scoped ? " Applies to |" : ""}`,
+		);
+		out.push(
+			`|---------|------|--------|------|-------------|----------------|${scoped ? "------------|" : ""}`,
+		);
 		for (const { style: ts, scope } of rows) {
 			out.push(
 				`| ${ts.nodeName}${ts.hidden ? " _(hidden layer)_" : ""}${ts.mixed ? " _(mixed styles — base style shown)_" : ""} | ${ts.fontFamily} | ${ts.fontWeightName} (${ts.fontWeight}) | ${ts.fontSize}px | ${ts.lineHeight}px | ${ts.letterSpacing === 0 ? "0" : `${ts.letterSpacing}px`} |${scoped ? ` ${scope || "all variants"} |` : ""}`,
@@ -3562,8 +4321,12 @@ export function generateTypographySection(node: any): string {
 	if (textStyles.length === 0) return "";
 
 	const lines = ["", "## Typography", ""];
-	lines.push("| Element | Font | Weight | Size | Line Height | Letter Spacing |");
-	lines.push("|---------|------|--------|------|-------------|----------------|");
+	lines.push(
+		"| Element | Font | Weight | Size | Line Height | Letter Spacing |",
+	);
+	lines.push(
+		"|---------|------|--------|------|-------------|----------------|",
+	);
 
 	// Deduplicate by font properties
 	const seen = new Set<string>();
@@ -3571,8 +4334,14 @@ export function generateTypographySection(node: any): string {
 		const key = `${ts.fontFamily}:${ts.fontWeight}:${ts.fontSize}:${ts.lineHeight}:${ts.hidden ? "h" : ""}:${ts.mixed ? "m" : ""}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
-		const sameName = textStyles.filter((o) => o.nodeName === ts.nodeName && `${o.fontFamily}:${o.fontWeight}:${o.fontSize}:${o.lineHeight}` !== `${ts.fontFamily}:${ts.fontWeight}:${ts.fontSize}:${ts.lineHeight}`);
-		if (sameName.length > 0 && ts.owner) ts.nodeName = `${ts.nodeName} in ${ts.owner}`;
+		const sameName = textStyles.filter(
+			(o) =>
+				o.nodeName === ts.nodeName &&
+				`${o.fontFamily}:${o.fontWeight}:${o.fontSize}:${o.lineHeight}` !==
+					`${ts.fontFamily}:${ts.fontWeight}:${ts.fontSize}:${ts.lineHeight}`,
+		);
+		if (sameName.length > 0 && ts.owner)
+			ts.nodeName = `${ts.nodeName} in ${ts.owner}`;
 		lines.push(
 			`| ${ts.nodeName}${ts.hidden ? " _(hidden layer)_" : ""}${ts.mixed ? " _(mixed styles — base style shown)_" : ""} | ${ts.fontFamily} | ${ts.fontWeightName} (${ts.fontWeight}) | ${ts.fontSize}px | ${ts.lineHeight}px | ${ts.letterSpacing === 0 ? "0" : `${ts.letterSpacing}px`} |`,
 		);
@@ -3582,8 +4351,14 @@ export function generateTypographySection(node: any): string {
 	return lines.join("\n");
 }
 
-function generateContentGuidelinesSection(parsedDesc: ParsedDescription): string {
-	if (parsedDesc.contentGuidelines.length === 0 && parsedDesc.additionalNotes.length === 0) return "";
+function generateContentGuidelinesSection(
+	parsedDesc: ParsedDescription,
+): string {
+	if (
+		parsedDesc.contentGuidelines.length === 0 &&
+		parsedDesc.additionalNotes.length === 0
+	)
+		return "";
 
 	const lines = ["", "## Content Guidelines", ""];
 
@@ -3596,7 +4371,10 @@ function generateContentGuidelinesSection(parsedDesc: ParsedDescription): string
 		lines.push("");
 	}
 
-	if (parsedDesc.additionalNotes.length > 0 && parsedDesc.contentGuidelines.length === 0) {
+	if (
+		parsedDesc.additionalNotes.length > 0 &&
+		parsedDesc.contentGuidelines.length === 0
+	) {
 		for (const note of parsedDesc.additionalNotes) {
 			lines.push(`- ${note}`);
 		}
@@ -3612,7 +4390,8 @@ export function generateParitySection(
 ): string {
 	// Names match ignoring case/punctuation and a leading is/has, so Figma's
 	// "Is Selected" meets code's `isSelected` / `selected`.
-	const normalize = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, "");
+	const normalize = (name: string) =>
+		name.toLowerCase().replace(/[^a-z0-9]/g, "");
 	const keysFor = (name: string) => {
 		const n = normalize(name);
 		const stripped = n.replace(/^(is|has)(?=[a-z0-9])/, "");
@@ -3620,35 +4399,61 @@ export function generateParitySection(
 	};
 	const BOOL = /^(true|false)$/i;
 
-	type FigmaProp = { name: string; kind: "values" | "boolean"; values: Map<string, string> };
+	type FigmaProp = {
+		name: string;
+		kind: "values" | "boolean";
+		values: Map<string, string>;
+	};
 	const figmaProps = new Map<string, FigmaProp>();
 	if (node.type === "COMPONENT_SET" && node.children) {
 		for (const child of node.children) {
-			for (const [propName, value] of parseVariantProperties(child.name || "")) {
+			for (const [propName, value] of parseVariantProperties(
+				child.name || "",
+			)) {
 				const key = normalize(propName);
-				if (!figmaProps.has(key)) figmaProps.set(key, { name: propName, kind: "values", values: new Map() });
+				if (!figmaProps.has(key))
+					figmaProps.set(key, {
+						name: propName,
+						kind: "values",
+						values: new Map(),
+					});
 				figmaProps.get(key)!.values.set(value.toLowerCase(), value);
 			}
 		}
 	}
 	// A variant property whose only values are True/False is a boolean in all but name
 	for (const p of figmaProps.values()) {
-		if (p.values.size > 0 && [...p.values.keys()].every((v) => BOOL.test(v))) p.kind = "boolean";
+		if (p.values.size > 0 && [...p.values.keys()].every((v) => BOOL.test(v)))
+			p.kind = "boolean";
 	}
 	// BOOLEAN component properties (show/hide toggles) are booleans too
-	for (const [rawName, def] of Object.entries(node.componentPropertyDefinitions ?? {}) as Array<[string, any]>) {
+	for (const [rawName, def] of Object.entries(
+		node.componentPropertyDefinitions ?? {},
+	) as Array<[string, any]>) {
 		if (def?.type !== "BOOLEAN") continue;
 		const name = stripPropertyIdSuffix(rawName);
-		if (!figmaProps.has(normalize(name))) figmaProps.set(normalize(name), { name, kind: "boolean", values: new Map() });
+		if (!figmaProps.has(normalize(name)))
+			figmaProps.set(normalize(name), {
+				name,
+				kind: "boolean",
+				values: new Map(),
+			});
 	}
 
-	type CodeProp = { name: string; kind: "values" | "boolean"; values: Map<string, string> };
+	type CodeProp = {
+		name: string;
+		kind: "values" | "boolean";
+		values: Map<string, string>;
+	};
 	const codeProps: CodeProp[] = [];
 	for (const prop of codeInfo.props ?? []) {
 		const type = prop.type ?? "";
 		const literals = type.match(/["']([^"']+)["']/g);
-		const isBoolean = /^\s*boolean\s*(\|\s*(undefined|null)\s*)*$/i.test(type)
-			|| /^\s*(true\s*\|\s*false|false\s*\|\s*true)\s*(\|\s*(undefined|null)\s*)*$/i.test(type);
+		const isBoolean =
+			/^\s*boolean\s*(\|\s*(undefined|null)\s*)*$/i.test(type) ||
+			/^\s*(true\s*\|\s*false|false\s*\|\s*true)\s*(\|\s*(undefined|null)\s*)*$/i.test(
+				type,
+			);
 		if (isBoolean) {
 			codeProps.push({ name: prop.name, kind: "boolean", values: new Map() });
 		} else if (literals) {
@@ -3666,46 +4471,93 @@ export function generateParitySection(
 	const usedCode = new Set<CodeProp>();
 	for (const fp of figmaProps.values()) {
 		const fKeys = keysFor(fp.name);
-		const match = codeProps.find((cp) => !usedCode.has(cp) && normalize(cp.name) === fKeys[0])
-			?? codeProps.find((cp) => !usedCode.has(cp) && keysFor(cp.name).some((k) => fKeys.includes(k)));
-		if (match) { usedCode.add(match); pairs.push({ figma: fp, code: match }); }
+		const match =
+			codeProps.find(
+				(cp) => !usedCode.has(cp) && normalize(cp.name) === fKeys[0],
+			) ??
+			codeProps.find(
+				(cp) =>
+					!usedCode.has(cp) && keysFor(cp.name).some((k) => fKeys.includes(k)),
+			);
+		if (match) {
+			usedCode.add(match);
+			pairs.push({ figma: fp, code: match });
+		}
 	}
-	const unmatchedFigma = [...figmaProps.values()].filter((fp) => !pairs.some((p) => p.figma === fp));
+	const unmatchedFigma = [...figmaProps.values()].filter(
+		(fp) => !pairs.some((p) => p.figma === fp),
+	);
 	const unmatchedCode = codeProps.filter((cp) => !usedCode.has(cp));
 	// Long-standing behavior: a "variant" prop on one side is compared even with no counterpart
-	for (const fp of unmatchedFigma.filter((p) => normalize(p.name) === "variant" && p.kind === "values")) pairs.push({ figma: fp });
-	for (const cp of unmatchedCode.filter((p) => normalize(p.name) === "variant" && p.kind === "values")) pairs.push({ code: cp });
+	for (const fp of unmatchedFigma.filter(
+		(p) => normalize(p.name) === "variant" && p.kind === "values",
+	))
+		pairs.push({ figma: fp });
+	for (const cp of unmatchedCode.filter(
+		(p) => normalize(p.name) === "variant" && p.kind === "values",
+	))
+		pairs.push({ code: cp });
 
 	const rows: string[] = [];
-	const labelProperty = pairs.length > 1 || (pairs[0] && normalize((pairs[0].figma ?? pairs[0].code)!.name) !== "variant");
+	const labelProperty =
+		pairs.length > 1 ||
+		(pairs[0] &&
+			normalize((pairs[0].figma ?? pairs[0].code)!.name) !== "variant");
 	for (const { figma, code } of pairs) {
 		const propLabel = figma?.name || code?.name || "";
 		const bothBoolean = figma?.kind === "boolean" && code?.kind === "boolean";
 		if (bothBoolean) {
-			rows.push(`| ${figma!.name} ↔ \`${code!.name}\` | Yes | Yes | In sync (boolean) |`);
+			rows.push(
+				`| ${figma!.name} ↔ \`${code!.name}\` | Yes | Yes | In sync (boolean) |`,
+			);
 			continue;
 		}
-		if (figma && code && figma.kind !== code.kind && !(figma.values.size > 0 && code.values.size > 0)) {
-			rows.push(`| ${figma.name} ↔ \`${code.name}\` | Yes | Yes | **Type mismatch** — Figma ${figma.kind === "boolean" ? "True/False" : "named values"}, code \`${codeInfo.props?.find((p) => p.name === code.name)?.type ?? code.kind}\` |`);
+		if (
+			figma &&
+			code &&
+			figma.kind !== code.kind &&
+			!(figma.values.size > 0 && code.values.size > 0)
+		) {
+			rows.push(
+				`| ${figma.name} ↔ \`${code.name}\` | Yes | Yes | **Type mismatch** — Figma ${figma.kind === "boolean" ? "True/False" : "named values"}, code \`${codeInfo.props?.find((p) => p.name === code.name)?.type ?? code.kind}\` |`,
+			);
 			continue;
 		}
-		const allValues = new Set([...(figma?.values.keys() ?? []), ...(code?.values.keys() ?? [])]);
+		const allValues = new Set([
+			...(figma?.values.keys() ?? []),
+			...(code?.values.keys() ?? []),
+		]);
 		for (const valueKey of allValues) {
 			const inFigma = figma?.values.has(valueKey) ?? false;
 			const inCode = code?.values.has(valueKey) ?? false;
-			const display = figma?.values.get(valueKey) || code?.values.get(valueKey) || valueKey;
-			const status = inFigma && inCode
-				? "In sync"
-				: inFigma ? "Figma-only — needs code variant" : "Code-only — needs Figma variant";
-			rows.push(`| ${labelProperty ? `${propLabel}: ${display}` : display} | ${inFigma ? "Yes" : "**No**"} | ${inCode ? "Yes" : "**No**"} | ${status} |`);
+			const display =
+				figma?.values.get(valueKey) || code?.values.get(valueKey) || valueKey;
+			const status =
+				inFigma && inCode
+					? "In sync"
+					: inFigma
+						? "Figma-only — needs code variant"
+						: "Code-only — needs Figma variant";
+			rows.push(
+				`| ${labelProperty ? `${propLabel}: ${display}` : display} | ${inFigma ? "Yes" : "**No**"} | ${inCode ? "Yes" : "**No**"} | ${status} |`,
+			);
 		}
 	}
 
-	const leftoverFigma = unmatchedFigma.filter((p) => !pairs.some((x) => x.figma === p));
-	const leftoverCode = unmatchedCode.filter((p) => !pairs.some((x) => x.code === p));
+	const leftoverFigma = unmatchedFigma.filter(
+		(p) => !pairs.some((x) => x.figma === p),
+	);
+	const leftoverCode = unmatchedCode.filter(
+		(p) => !pairs.some((x) => x.code === p),
+	);
 	// Nothing on either side that could be compared: leave the section out rather
 	// than print a heading with nothing under it.
-	if (rows.length === 0 && leftoverFigma.length === 0 && leftoverCode.length === 0) return "";
+	if (
+		rows.length === 0 &&
+		leftoverFigma.length === 0 &&
+		leftoverCode.length === 0
+	)
+		return "";
 
 	const lines = ["", "## Design-Code Parity", ""];
 	if (rows.length > 0) {
@@ -3714,12 +4566,21 @@ export function generateParitySection(
 		lines.push("|---------|----------|---------|--------|");
 		lines.push(...rows, "");
 	} else {
-		lines.push("_No Figma property matched a code prop by name and type, so nothing was compared._", "");
+		lines.push(
+			"_No Figma property matched a code prop by name and type, so nothing was compared._",
+			"",
+		);
 	}
 	if (leftoverFigma.length > 0 || leftoverCode.length > 0) {
 		lines.push("**Not compared** — no counterpart on the other side:", "");
-		if (leftoverFigma.length > 0) lines.push(`- Figma: ${leftoverFigma.map((p) => `${p.name} (${p.kind === "boolean" ? "True/False" : [...p.values.values()].join(" | ")})`).join(", ")}`);
-		if (leftoverCode.length > 0) lines.push(`- Code: ${leftoverCode.map((p) => `\`${p.name}\``).join(", ")}`);
+		if (leftoverFigma.length > 0)
+			lines.push(
+				`- Figma: ${leftoverFigma.map((p) => `${p.name} (${p.kind === "boolean" ? "True/False" : [...p.values.values()].join(" | ")})`).join(", ")}`,
+			);
+		if (leftoverCode.length > 0)
+			lines.push(
+				`- Code: ${leftoverCode.map((p) => `\`${p.name}\``).join(", ")}`,
+			);
 		lines.push("");
 	}
 	return lines.join("\n");
@@ -3754,149 +4615,286 @@ export function toCompanyDocsEntry(
 // Zod Schemas
 // ============================================================================
 
-const codeSpecSchema = z.object({
-	filePath: z.string().optional().describe("Path to the component source file"),
-	visual: z.object({
-		backgroundColor: z.string().optional(),
-		borderColor: z.string().optional(),
-		borderWidth: z.number().optional(),
-		borderRadius: z.union([z.number(), z.string()]).optional(),
-		opacity: z.number().optional(),
-		fills: z.array(z.object({ color: z.string().optional(), opacity: z.number().optional() })).optional(),
-		strokes: z.array(z.object({ color: z.string().optional(), width: z.number().optional() })).optional(),
-		effects: z.array(z.object({
-			type: z.string(),
-			color: z.string().optional(),
-			offset: z.object({ x: z.number(), y: z.number() }).optional(),
-			blur: z.number().optional(),
-		})).optional(),
-	}).optional().describe("Visual properties from code (colors, borders, effects)"),
-	spacing: z.object({
-		paddingTop: z.number().optional(),
-		paddingRight: z.number().optional(),
-		paddingBottom: z.number().optional(),
-		paddingLeft: z.number().optional(),
-		gap: z.number().optional(),
-		width: z.union([z.number(), z.string()]).optional(),
-		height: z.union([z.number(), z.string()]).optional(),
-		minWidth: z.union([z.number(), z.string()]).optional().describe("px number or CSS length like '320px'"),
-		minHeight: z.union([z.number(), z.string()]).optional(),
-		maxWidth: z.union([z.number(), z.string()]).optional(),
-		maxHeight: z.union([z.number(), z.string()]).optional(),
-		layoutDirection: z.enum(["horizontal", "vertical"]).optional(),
-	}).optional().describe("Spacing and layout properties from code"),
-	typography: z.object({
-		fontFamily: z.string().optional(),
-		fontSize: z.number().optional(),
-		fontWeight: z.union([z.number(), z.string()]).optional(),
-		lineHeight: z.union([z.number(), z.string()]).optional(),
-		letterSpacing: z.number().optional(),
-		textAlign: z.string().optional(),
-		textDecoration: z.string().optional(),
-		textTransform: z.string().optional(),
-	}).optional().describe("Typography properties from code"),
-	tokens: z.object({
-		usedTokens: z.array(z.string()).optional(),
-		hardcodedValues: z.array(z.object({
-			property: z.string(),
-			value: z.union([z.string(), z.number()]),
-		})).optional(),
-		tokenPrefix: z.string().optional(),
-	}).optional().describe("Design token usage in code"),
-	componentAPI: z.object({
-		props: z.array(z.object({
-			name: z.string(),
-			type: z.string(),
-			required: z.boolean().optional(),
-			defaultValue: z.union([z.string(), z.number(), z.boolean()]).optional(),
-			description: z.string().optional(),
-			values: z.array(z.string()).optional(),
-		})).optional(),
-		events: z.array(z.string()).optional(),
-		slots: z.array(z.string()).optional(),
-	}).optional().describe("Component API (props, events, slots)"),
-	accessibility: z.object({
-		role: z.string().optional(),
-		ariaLabel: z.string().optional(),
-		ariaRequired: z.boolean().optional(),
-		keyboardInteractions: z.array(z.string()).optional(),
-		contrastRatio: z.number().optional(),
-		focusVisible: z.boolean().optional(),
-		semanticElement: z.string().optional().describe("Semantic HTML element (e.g., 'button', 'a', 'input')"),
-		supportsDisabled: z.boolean().optional().describe("Whether code supports disabled/aria-disabled state"),
-		supportsError: z.boolean().optional().describe("Whether code supports aria-invalid/error state"),
-		// NOTE: Use array-with-length, NOT z.tuple — tuples emit JSON Schema `items: [...]`
-		// (array of schemas), which Gemini's stricter Function Calling validator rejects with
-		// "is not of type 'object', 'boolean'". See issue #64. A constrained array emits
-		// `items: { type: 'number' }` which all major MCP clients accept.
-		renderedSize: z.array(z.number()).min(2).max(2).optional().describe("Rendered size [width, height] in px"),
-	}).optional().describe("Accessibility properties from code. Tip: use figma_scan_code_accessibility with mapToCodeSpec:true to auto-generate this from component HTML."),
-	metadata: z.object({
-		name: z.string().optional(),
-		description: z.string().optional(),
-		status: z.string().optional(),
-		version: z.string().optional(),
-		tags: z.array(z.string()).optional(),
-	}).optional().describe("Component metadata from code"),
-}).describe("Structured code-side component data. Read the component source code first, then fill in the relevant sections.");
+const codeSpecSchema = z
+	.object({
+		filePath: z
+			.string()
+			.optional()
+			.describe("Path to the component source file"),
+		visual: z
+			.object({
+				backgroundColor: z.string().optional(),
+				borderColor: z.string().optional(),
+				borderWidth: z.number().optional(),
+				borderRadius: z.union([z.number(), z.string()]).optional(),
+				opacity: z.number().optional(),
+				fills: z
+					.array(
+						z.object({
+							color: z.string().optional(),
+							opacity: z.number().optional(),
+						}),
+					)
+					.optional(),
+				strokes: z
+					.array(
+						z.object({
+							color: z.string().optional(),
+							width: z.number().optional(),
+						}),
+					)
+					.optional(),
+				effects: z
+					.array(
+						z.object({
+							type: z.string(),
+							color: z.string().optional(),
+							offset: z.object({ x: z.number(), y: z.number() }).optional(),
+							blur: z.number().optional(),
+						}),
+					)
+					.optional(),
+			})
+			.optional()
+			.describe("Visual properties from code (colors, borders, effects)"),
+		spacing: z
+			.object({
+				paddingTop: z.number().optional(),
+				paddingRight: z.number().optional(),
+				paddingBottom: z.number().optional(),
+				paddingLeft: z.number().optional(),
+				gap: z.number().optional(),
+				width: z.union([z.number(), z.string()]).optional(),
+				height: z.union([z.number(), z.string()]).optional(),
+				minWidth: z
+					.union([z.number(), z.string()])
+					.optional()
+					.describe("px number or CSS length like '320px'"),
+				minHeight: z.union([z.number(), z.string()]).optional(),
+				maxWidth: z.union([z.number(), z.string()]).optional(),
+				maxHeight: z.union([z.number(), z.string()]).optional(),
+				layoutDirection: z.enum(["horizontal", "vertical"]).optional(),
+			})
+			.optional()
+			.describe("Spacing and layout properties from code"),
+		typography: z
+			.object({
+				fontFamily: z.string().optional(),
+				fontSize: z.number().optional(),
+				fontWeight: z.union([z.number(), z.string()]).optional(),
+				lineHeight: z.union([z.number(), z.string()]).optional(),
+				letterSpacing: z.number().optional(),
+				textAlign: z.string().optional(),
+				textDecoration: z.string().optional(),
+				textTransform: z.string().optional(),
+			})
+			.optional()
+			.describe("Typography properties from code"),
+		tokens: z
+			.object({
+				usedTokens: z.array(z.string()).optional(),
+				hardcodedValues: z
+					.array(
+						z.object({
+							property: z.string(),
+							value: z.union([z.string(), z.number()]),
+						}),
+					)
+					.optional(),
+				tokenPrefix: z.string().optional(),
+			})
+			.optional()
+			.describe("Design token usage in code"),
+		componentAPI: z
+			.object({
+				props: z
+					.array(
+						z.object({
+							name: z.string(),
+							type: z.string(),
+							required: z.boolean().optional(),
+							defaultValue: z
+								.union([z.string(), z.number(), z.boolean()])
+								.optional(),
+							description: z.string().optional(),
+							values: z.array(z.string()).optional(),
+						}),
+					)
+					.optional(),
+				events: z.array(z.string()).optional(),
+				slots: z.array(z.string()).optional(),
+			})
+			.optional()
+			.describe("Component API (props, events, slots)"),
+		accessibility: z
+			.object({
+				role: z.string().optional(),
+				ariaLabel: z.string().optional(),
+				ariaRequired: z.boolean().optional(),
+				keyboardInteractions: z.array(z.string()).optional(),
+				contrastRatio: z.number().optional(),
+				focusVisible: z.boolean().optional(),
+				semanticElement: z
+					.string()
+					.optional()
+					.describe("Semantic HTML element (e.g., 'button', 'a', 'input')"),
+				supportsDisabled: z
+					.boolean()
+					.optional()
+					.describe("Whether code supports disabled/aria-disabled state"),
+				supportsError: z
+					.boolean()
+					.optional()
+					.describe("Whether code supports aria-invalid/error state"),
+				// NOTE: Use array-with-length, NOT z.tuple — tuples emit JSON Schema `items: [...]`
+				// (array of schemas), which Gemini's stricter Function Calling validator rejects with
+				// "is not of type 'object', 'boolean'". See issue #64. A constrained array emits
+				// `items: { type: 'number' }` which all major MCP clients accept.
+				renderedSize: z
+					.array(z.number())
+					.min(2)
+					.max(2)
+					.optional()
+					.describe("Rendered size [width, height] in px"),
+			})
+			.optional()
+			.describe(
+				"Accessibility properties from code. Tip: use figma_scan_code_accessibility with mapToCodeSpec:true to auto-generate this from component HTML.",
+			),
+		metadata: z
+			.object({
+				name: z.string().optional(),
+				description: z.string().optional(),
+				status: z.string().optional(),
+				version: z.string().optional(),
+				tags: z.array(z.string()).optional(),
+			})
+			.optional()
+			.describe("Component metadata from code"),
+	})
+	.describe(
+		"Structured code-side component data. Read the component source code first, then fill in the relevant sections.",
+	);
 
-const codeDocInfoSchema = z.object({
-	props: z.array(z.object({
-		name: z.string(),
-		type: z.string(),
-		required: z.boolean().optional(),
-		defaultValue: z.string().optional(),
-		description: z.string().optional(),
-	})).optional().describe("Component props"),
-	events: z.array(z.object({
-		name: z.string(),
-		payload: z.string().optional(),
-		description: z.string().optional(),
-	})).optional().describe("Events emitted by the component"),
-	slots: z.array(z.object({
-		name: z.string(),
-		description: z.string().optional(),
-	})).optional().describe("Named slots"),
-	importStatement: z.string().optional().describe("Import statement for the component"),
-	usageExamples: z.array(z.object({
-		title: z.string(),
-		code: z.string(),
-		language: z.string().optional(),
-	})).optional().describe("Usage examples"),
-	changelog: z.array(z.object({
-		version: z.string(),
-		date: z.string(),
-		changes: z.string(),
-	})).optional().describe("Changelog entries"),
-	filePath: z.string().optional().describe("Component file path"),
-	storybookUrl: z.string().optional().describe("URL of a running Storybook (or the component's story) to link from the doc. Without it, a stories file in sourceFiles is linked as \"Stories source\", not \"Storybook\"."),
-	packageName: z.string().optional().describe("Package name"),
-	variantDefinition: z.string().optional().describe("CVA or variant definition code block"),
-	subComponents: z.array(z.object({
-		name: z.string(),
-		description: z.string().optional(),
-		element: z.string().optional().describe("HTML element rendered (e.g., 'div', 'span')"),
-		dataSlot: z.string().optional().describe("data-slot attribute value"),
-		props: z.array(z.object({
-			name: z.string(),
-			type: z.string(),
-			required: z.boolean().optional(),
-			defaultValue: z.string().optional(),
-			description: z.string().optional(),
-		})).optional(),
-	})).optional().describe("Sub-components that compose this component (e.g., AlertTitle, AlertDescription)"),
-	sourceFiles: z.array(z.object({
-		path: z.string(),
-		role: z.string(),
-		variants: z.number().optional(),
-		description: z.string().optional(),
-	})).optional().describe("All source files related to this component"),
-	baseComponent: z.object({
-		name: z.string(),
-		url: z.string().optional(),
-		description: z.string().optional(),
-	}).optional().describe("Base component this extends (e.g., shadcn/ui Alert)"),
-}).describe("Code-side documentation info. Read the component source code first, then fill in relevant sections. Include variantDefinition for CVA/variant code, subComponents for composable sub-parts, sourceFiles for all related files, and baseComponent for attribution.");
+const codeDocInfoSchema = z
+	.object({
+		props: z
+			.array(
+				z.object({
+					name: z.string(),
+					type: z.string(),
+					required: z.boolean().optional(),
+					defaultValue: z.string().optional(),
+					description: z.string().optional(),
+				}),
+			)
+			.optional()
+			.describe("Component props"),
+		events: z
+			.array(
+				z.object({
+					name: z.string(),
+					payload: z.string().optional(),
+					description: z.string().optional(),
+				}),
+			)
+			.optional()
+			.describe("Events emitted by the component"),
+		slots: z
+			.array(
+				z.object({
+					name: z.string(),
+					description: z.string().optional(),
+				}),
+			)
+			.optional()
+			.describe("Named slots"),
+		importStatement: z
+			.string()
+			.optional()
+			.describe("Import statement for the component"),
+		usageExamples: z
+			.array(
+				z.object({
+					title: z.string(),
+					code: z.string(),
+					language: z.string().optional(),
+				}),
+			)
+			.optional()
+			.describe("Usage examples"),
+		changelog: z
+			.array(
+				z.object({
+					version: z.string(),
+					date: z.string(),
+					changes: z.string(),
+				}),
+			)
+			.optional()
+			.describe("Changelog entries"),
+		filePath: z.string().optional().describe("Component file path"),
+		storybookUrl: z
+			.string()
+			.optional()
+			.describe(
+				'URL of a running Storybook (or the component\'s story) to link from the doc. Without it, a stories file in sourceFiles is linked as "Stories source", not "Storybook".',
+			),
+		packageName: z.string().optional().describe("Package name"),
+		variantDefinition: z
+			.string()
+			.optional()
+			.describe("CVA or variant definition code block"),
+		subComponents: z
+			.array(
+				z.object({
+					name: z.string(),
+					description: z.string().optional(),
+					element: z
+						.string()
+						.optional()
+						.describe("HTML element rendered (e.g., 'div', 'span')"),
+					dataSlot: z.string().optional().describe("data-slot attribute value"),
+					props: z
+						.array(
+							z.object({
+								name: z.string(),
+								type: z.string(),
+								required: z.boolean().optional(),
+								defaultValue: z.string().optional(),
+								description: z.string().optional(),
+							}),
+						)
+						.optional(),
+				}),
+			)
+			.optional()
+			.describe(
+				"Sub-components that compose this component (e.g., AlertTitle, AlertDescription)",
+			),
+		sourceFiles: z
+			.array(
+				z.object({
+					path: z.string(),
+					role: z.string(),
+					variants: z.number().optional(),
+					description: z.string().optional(),
+				}),
+			)
+			.optional()
+			.describe("All source files related to this component"),
+		baseComponent: z
+			.object({
+				name: z.string(),
+				url: z.string().optional(),
+				description: z.string().optional(),
+			})
+			.optional()
+			.describe("Base component this extends (e.g., shadcn/ui Alert)"),
+	})
+	.describe(
+		"Code-side documentation info. Read the component source code first, then fill in relevant sections. Include variantDefinition for CVA/variant code, subComponents for composable sub-parts, sourceFiles for all related files, and baseComponent for attribution.",
+	);
 
 // ============================================================================
 // Tool Registration
@@ -3915,29 +4913,42 @@ export function registerDesignCodeTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_check_design_parity
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_check_design_parity",
-		"Compare a Figma component's design specs against code-side data to find discrepancies. Returns a parity score, categorized discrepancies, and actionable fix items for both design-side (Figma tool calls) and code-side (file edits). Read the component source code first, then pass the data in codeSpec.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			nodeId: z.string().describe("Component node ID (e.g., '695:313')"),
-			codeSpec: codeSpecSchema,
-			canonicalSource: z
-				.enum(["design", "code"])
-				.optional()
-				.default("design")
-				.describe("Which source is the canonical truth. Fixes will target the other side. Default: 'design'"),
-			enrich: z
-				.boolean()
-				.optional()
-				.default(true)
-				.describe("Enable token coverage and enrichment analysis. Default: true"),
+			description:
+				"Compare a Figma component's design specs against code-side data to find discrepancies. Returns a parity score, categorized discrepancies, and actionable fix items for both design-side (Figma tool calls) and code-side (file edits). Read the component source code first, then pass the data in codeSpec.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				nodeId: z.string().describe("Component node ID (e.g., '695:313')"),
+				codeSpec: codeSpecSchema,
+				canonicalSource: z
+					.enum(["design", "code"])
+					.optional()
+					.default("design")
+					.describe(
+						"Which source is the canonical truth. Fixes will target the other side. Default: 'design'",
+					),
+				enrich: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe(
+						"Enable token coverage and enrichment analysis. Default: true",
+					),
+			}),
 		},
-		async ({ fileUrl, nodeId, codeSpec, canonicalSource = "design", enrich = true }) => {
+		async ({
+			fileUrl,
+			nodeId,
+			codeSpec,
+			canonicalSource = "design",
+			enrich = true,
+		}) => {
 			try {
 				const url = fileUrl || getCurrentUrl();
 				if (!url) {
@@ -3951,12 +4962,17 @@ export function registerDesignCodeTools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, nodeId, canonicalSource, enrich }, "Starting design-code parity check");
+				logger.info(
+					{ fileKey, nodeId, canonicalSource, enrich },
+					"Starting design-code parity check",
+				);
 
 				const api = await getFigmaAPI();
 
 				// Fetch component node
-				const nodesResponse = await api.getNodes(fileKey, [nodeId], { depth: 4 });
+				const nodesResponse = await api.getNodes(fileKey, [nodeId], {
+					depth: 4,
+				});
 				const nodeData = nodesResponse?.nodes?.[nodeId];
 				if (!nodeData?.document) {
 					throw new Error(`Node ${nodeId} not found in file ${fileKey}`);
@@ -3968,7 +4984,10 @@ export function registerDesignCodeTools(
 				// that are NOT actual design specs — the real properties live on the variants.
 				const nodeForVisual = resolveVisualNode(node);
 				if (nodeForVisual !== node) {
-					logger.info({ defaultVariant: nodeForVisual.name, type: node.type }, "Using default variant for visual comparison");
+					logger.info(
+						{ defaultVariant: nodeForVisual.name, type: node.type },
+						"Using default variant for visual comparison",
+					);
 				}
 
 				// Fetch component metadata for descriptions
@@ -3987,7 +5006,11 @@ export function registerDesignCodeTools(
 				}
 
 				// Resolve COMPONENT_SET info (property definitions, set name)
-				let setInfo = { setName: null as string | null, setNodeId: null as string | null, propertyDefinitions: {} as Record<string, any> };
+				let setInfo = {
+					setName: null as string | null,
+					setNodeId: null as string | null,
+					propertyDefinitions: {} as Record<string, any>,
+				};
 				if (node.type === "COMPONENT_SET") {
 					// We already have the set — read property definitions directly
 					setInfo = {
@@ -3997,9 +5020,18 @@ export function registerDesignCodeTools(
 					};
 				} else if (node.type === "COMPONENT" && isVariantName(node.name)) {
 					try {
-						setInfo = await resolveComponentSetInfo(api, fileKey, nodeId, componentMeta, allComponentsMeta);
+						setInfo = await resolveComponentSetInfo(
+							api,
+							fileKey,
+							nodeId,
+							componentMeta,
+							allComponentsMeta,
+						);
 						if (setInfo.setName) {
-							logger.info({ setName: setInfo.setName, setNodeId: setInfo.setNodeId }, "Resolved parent component set");
+							logger.info(
+								{ setName: setInfo.setName, setNodeId: setInfo.setNodeId },
+								"Resolved parent component set",
+							);
 						}
 					} catch {
 						logger.warn("Could not resolve parent component set");
@@ -4007,9 +5039,13 @@ export function registerDesignCodeTools(
 				}
 
 				// Build a merged node for componentAPI comparison (use set's property definitions)
-				const nodeForAPI = Object.keys(setInfo.propertyDefinitions).length > 0
-					? { ...node, componentPropertyDefinitions: setInfo.propertyDefinitions }
-					: node;
+				const nodeForAPI =
+					Object.keys(setInfo.propertyDefinitions).length > 0
+						? {
+								...node,
+								componentPropertyDefinitions: setInfo.propertyDefinitions,
+							}
+						: node;
 
 				// Enrichment for token analysis
 				let enrichedData: EnrichedComponent | null = null;
@@ -4054,7 +5090,9 @@ export function registerDesignCodeTools(
 					minor: 2,
 					info: 3,
 				};
-				discrepancies.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+				discrepancies.sort(
+					(a, b) => severityOrder[a.severity] - severityOrder[b.severity],
+				);
 
 				// Calculate scores
 				const counts = { critical: 0, major: 0, minor: 0, info: 0 };
@@ -4064,7 +5102,12 @@ export function registerDesignCodeTools(
 					categoryMap[d.category] = (categoryMap[d.category] || 0) + 1;
 				}
 
-				const parityScore = calculateParityScore(counts.critical, counts.major, counts.minor, counts.info);
+				const parityScore = calculateParityScore(
+					counts.critical,
+					counts.major,
+					counts.minor,
+					counts.info,
+				);
 
 				// Generate action items
 				const actionItems = generateActionItems(
@@ -4074,7 +5117,15 @@ export function registerDesignCodeTools(
 					codeSpec.filePath,
 				);
 
-				const resolvedName = resolveComponentName(node, setInfo.setName, codeSpec.metadata?.name || codeSpec.filePath?.split("/").pop()?.replace(/\.\w+$/, ""));
+				const resolvedName = resolveComponentName(
+					node,
+					setInfo.setName,
+					codeSpec.metadata?.name ||
+						codeSpec.filePath
+							?.split("/")
+							.pop()
+							?.replace(/\.\w+$/, ""),
+				);
 
 				const result: ParityCheckResult = {
 					summary: {
@@ -4088,13 +5139,20 @@ export function registerDesignCodeTools(
 					},
 					discrepancies,
 					actionItems,
-					ai_instruction: buildParityInstruction(resolvedName, parityScore, counts, canonicalSource, discrepancies.length),
+					ai_instruction: buildParityInstruction(
+						resolvedName,
+						parityScore,
+						counts,
+						canonicalSource,
+						discrepancies.length,
+					),
 					designData: {
 						name: node.name,
 						resolvedName,
 						type: node.type,
 						isComponentSet: node.type === "COMPONENT_SET",
-						defaultVariantName: node.type === "COMPONENT_SET" ? nodeForVisual.name : undefined,
+						defaultVariantName:
+							node.type === "COMPONENT_SET" ? nodeForVisual.name : undefined,
 						componentSetName: setInfo.setName,
 						componentSetNodeId: setInfo.setNodeId,
 						fills: nodeForVisual.fills,
@@ -4135,85 +5193,123 @@ export function registerDesignCodeTools(
 	// -----------------------------------------------------------------------
 	// Tool: figma_generate_component_doc
 	// -----------------------------------------------------------------------
-	server.tool(
+	server.registerTool(
 		"figma_generate_component_doc",
-		"Generate AI-complete component documentation from a Figma component. Produces structured markdown with anatomy, per-variant color tokens, typography, content guidelines (parsed from Figma description), design annotations (animation timings, interaction specs, accessibility notes from Dev Mode), icon mapping, spacing tokens, and design-code parity analysis. Merges Figma design data with optional code-side info (CVA definitions, sub-component APIs, source files). Output works with any docs platform. For richest output, read the component source code first and pass codeInfo. Pass history: { figma: true, git: true } to add an ongoing '## History' section: per-version design changes pulled from Figma version history and scoped to this component, plus recent git commits touching its source files.",
 		{
-			fileUrl: z
-				.string()
-				.url()
-				.optional()
-				.describe("Figma file URL. Uses current URL if omitted."),
-			nodeId: z.string().describe("Component node ID (e.g., '695:313')"),
-			codeInfo: codeDocInfoSchema.optional(),
-			sections: z.object({
-				overview: z.boolean().optional().default(true),
-				anatomy: z.boolean().optional().default(true),
-				statesAndVariants: z.boolean().optional().default(true),
-				visualSpecs: z.boolean().optional().default(true),
-				typography: z.boolean().optional().default(true),
-				contentGuidelines: z.boolean().optional().default(true),
-				behavior: z.boolean().optional().default(false),
-				implementation: z.boolean().optional().default(true),
-				accessibility: z.boolean().optional().default(true),
-				designAnnotations: z.boolean().optional().default(true),
-				relatedComponents: z.boolean().optional().default(false),
-				changelog: z.boolean().optional().default(true),
-				parity: z.boolean().optional().default(true),
-			}).optional().describe("Toggle which sections to include"),
-			outputPath: z.string().optional().describe("Suggested output file path"),
-			systemName: z.string().optional().describe("Design system name for headers"),
-			enrich: z.boolean().optional().default(true).describe("Enable enrichment for token data"),
-			includeFrontmatter: z.boolean().optional().default(true).describe("Include YAML frontmatter metadata"),
-			history: z
-				.object({
-					figma: z
-						.boolean()
-						.optional()
-						.default(false)
-						.describe("Pull design history from Figma version history, scoped to this component. Costs roughly one API call per version walked."),
-					git: z
-						.boolean()
-						.optional()
-						.default(false)
-						.describe("Pull code history via `git log` for the component's source files. Local mode only."),
-					versions: z
-						.number()
-						.int()
-						.min(1)
-						.max(MAX_HISTORY_VERSIONS)
-						.optional()
-						.default(DEFAULT_HISTORY_VERSIONS)
-						.describe(`How many Figma versions to walk back. Default ${DEFAULT_HISTORY_VERSIONS}, max ${MAX_HISTORY_VERSIONS}.`),
-					includeAutosaves: z
-						.boolean()
-						.optional()
-						.default(false)
-						.describe("Include unlabeled Figma auto-saves. Default false — autosaves are noisy and often unattributed."),
-					mode: z
-						.enum(["summary", "standard", "detailed"])
-						.optional()
-						.default("standard")
-						.describe("Design-history verbosity. detailed names individual properties and variable bindings."),
-					gitLimit: z
-						.number()
-						.int()
-						.min(1)
-						.max(MAX_GIT_LIMIT)
-						.optional()
-						.default(DEFAULT_GIT_LIMIT)
-						.describe(`How many commits to list. Default ${DEFAULT_GIT_LIMIT}, max ${MAX_GIT_LIMIT}.`),
-					gitPaths: z
-						.array(z.string())
-						.optional()
-						.describe("Explicit paths to log commits for. Defaults to codeInfo.filePath plus codeInfo.sourceFiles[].path."),
-					repoPath: z
-						.string()
-						.optional()
-						.describe("Repo directory to run git in. Defaults to the server's working directory."),
-				})
-				.optional()
-				.describe("Pull an ongoing changelog from Figma version history and/or git. When enabled, replaces the manual '## Changelog' section with a richer '## History' section. Both sources are off by default so existing callers are unaffected."),
+			description:
+				"Generate AI-complete component documentation from a Figma component. Produces structured markdown with anatomy, per-variant color tokens, typography, content guidelines (parsed from Figma description), design annotations (animation timings, interaction specs, accessibility notes from Dev Mode), icon mapping, spacing tokens, and design-code parity analysis. Merges Figma design data with optional code-side info (CVA definitions, sub-component APIs, source files). Output works with any docs platform. For richest output, read the component source code first and pass codeInfo. Pass history: { figma: true, git: true } to add an ongoing '## History' section: per-version design changes pulled from Figma version history and scoped to this component, plus recent git commits touching its source files.",
+			inputSchema: z.object({
+				fileUrl: z
+					.string()
+					.url()
+					.optional()
+					.describe("Figma file URL. Uses current URL if omitted."),
+				nodeId: z.string().describe("Component node ID (e.g., '695:313')"),
+				codeInfo: codeDocInfoSchema.optional(),
+				sections: z
+					.object({
+						overview: z.boolean().optional().default(true),
+						anatomy: z.boolean().optional().default(true),
+						statesAndVariants: z.boolean().optional().default(true),
+						visualSpecs: z.boolean().optional().default(true),
+						typography: z.boolean().optional().default(true),
+						contentGuidelines: z.boolean().optional().default(true),
+						behavior: z.boolean().optional().default(false),
+						implementation: z.boolean().optional().default(true),
+						accessibility: z.boolean().optional().default(true),
+						designAnnotations: z.boolean().optional().default(true),
+						relatedComponents: z.boolean().optional().default(false),
+						changelog: z.boolean().optional().default(true),
+						parity: z.boolean().optional().default(true),
+					})
+					.optional()
+					.describe("Toggle which sections to include"),
+				outputPath: z
+					.string()
+					.optional()
+					.describe("Suggested output file path"),
+				systemName: z
+					.string()
+					.optional()
+					.describe("Design system name for headers"),
+				enrich: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe("Enable enrichment for token data"),
+				includeFrontmatter: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe("Include YAML frontmatter metadata"),
+				history: z
+					.object({
+						figma: z
+							.boolean()
+							.optional()
+							.default(false)
+							.describe(
+								"Pull design history from Figma version history, scoped to this component. Costs roughly one API call per version walked.",
+							),
+						git: z
+							.boolean()
+							.optional()
+							.default(false)
+							.describe(
+								"Pull code history via `git log` for the component's source files. Local mode only.",
+							),
+						versions: z
+							.number()
+							.int()
+							.min(1)
+							.max(MAX_HISTORY_VERSIONS)
+							.optional()
+							.default(DEFAULT_HISTORY_VERSIONS)
+							.describe(
+								`How many Figma versions to walk back. Default ${DEFAULT_HISTORY_VERSIONS}, max ${MAX_HISTORY_VERSIONS}.`,
+							),
+						includeAutosaves: z
+							.boolean()
+							.optional()
+							.default(false)
+							.describe(
+								"Include unlabeled Figma auto-saves. Default false — autosaves are noisy and often unattributed.",
+							),
+						mode: z
+							.enum(["summary", "standard", "detailed"])
+							.optional()
+							.default("standard")
+							.describe(
+								"Design-history verbosity. detailed names individual properties and variable bindings.",
+							),
+						gitLimit: z
+							.number()
+							.int()
+							.min(1)
+							.max(MAX_GIT_LIMIT)
+							.optional()
+							.default(DEFAULT_GIT_LIMIT)
+							.describe(
+								`How many commits to list. Default ${DEFAULT_GIT_LIMIT}, max ${MAX_GIT_LIMIT}.`,
+							),
+						gitPaths: z
+							.array(z.string())
+							.optional()
+							.describe(
+								"Explicit paths to log commits for. Defaults to codeInfo.filePath plus codeInfo.sourceFiles[].path.",
+							),
+						repoPath: z
+							.string()
+							.optional()
+							.describe(
+								"Repo directory to run git in. Defaults to the server's working directory.",
+							),
+					})
+					.optional()
+					.describe(
+						"Pull an ongoing changelog from Figma version history and/or git. When enabled, replaces the manual '## Changelog' section with a richer '## History' section. Both sources are off by default so existing callers are unaffected.",
+					),
+			}),
 		},
 		async ({
 			fileUrl,
@@ -4239,7 +5335,10 @@ export function registerDesignCodeTools(
 					throw new Error(`Invalid Figma URL: ${url}`);
 				}
 
-				logger.info({ fileKey, nodeId, enrich }, "Generating component documentation");
+				logger.info(
+					{ fileKey, nodeId, enrich },
+					"Generating component documentation",
+				);
 
 				const api = await getFigmaAPI();
 
@@ -4260,8 +5359,15 @@ export function registerDesignCodeTools(
 					// fetch too slow or too large. A shallower document that SAYS it is
 					// shallow beats no document — the truncation note below reports it.
 					fetchDepth = SHALLOW_FETCH_DEPTH;
-					logger.warn({ err: deepErr instanceof Error ? deepErr.message : String(deepErr) }, "Deep fetch failed; retrying component doc fetch at reduced depth");
-					nodesResponse = await api.getNodes(fileKey, [nodeId], { depth: SHALLOW_FETCH_DEPTH });
+					logger.warn(
+						{
+							err: deepErr instanceof Error ? deepErr.message : String(deepErr),
+						},
+						"Deep fetch failed; retrying component doc fetch at reduced depth",
+					);
+					nodesResponse = await api.getNodes(fileKey, [nodeId], {
+						depth: SHALLOW_FETCH_DEPTH,
+					});
 				}
 				const nodeData = nodesResponse?.nodes?.[nodeId];
 				if (!nodeData?.document) {
@@ -4272,7 +5378,10 @@ export function registerDesignCodeTools(
 				// Resolve visual node (default variant for COMPONENT_SET, node itself otherwise)
 				const nodeForVisual = resolveVisualNode(node);
 				if (nodeForVisual !== node) {
-					logger.info({ defaultVariant: nodeForVisual.name, type: node.type }, "Using default variant for visual specs in docs");
+					logger.info(
+						{ defaultVariant: nodeForVisual.name, type: node.type },
+						"Using default variant for visual specs in docs",
+					);
 				}
 
 				// Fetch component metadata
@@ -4291,7 +5400,11 @@ export function registerDesignCodeTools(
 				}
 
 				// Resolve COMPONENT_SET info (property definitions, set name)
-				let setInfo = { setName: null as string | null, setNodeId: null as string | null, propertyDefinitions: {} as Record<string, any> };
+				let setInfo = {
+					setName: null as string | null,
+					setNodeId: null as string | null,
+					propertyDefinitions: {} as Record<string, any>,
+				};
 				if (node.type === "COMPONENT_SET") {
 					setInfo = {
 						setName: node.name,
@@ -4300,9 +5413,18 @@ export function registerDesignCodeTools(
 					};
 				} else if (node.type === "COMPONENT" && isVariantName(node.name)) {
 					try {
-						setInfo = await resolveComponentSetInfo(api, fileKey, nodeId, componentMeta, allComponentsMeta);
+						setInfo = await resolveComponentSetInfo(
+							api,
+							fileKey,
+							nodeId,
+							componentMeta,
+							allComponentsMeta,
+						);
 						if (setInfo.setName) {
-							logger.info({ setName: setInfo.setName, setNodeId: setInfo.setNodeId }, "Resolved parent component set for docs");
+							logger.info(
+								{ setName: setInfo.setName, setNodeId: setInfo.setNodeId },
+								"Resolved parent component set for docs",
+							);
 						}
 					} catch {
 						logger.warn("Could not resolve parent component set");
@@ -4310,9 +5432,13 @@ export function registerDesignCodeTools(
 				}
 
 				// Use set's property definitions for variants section if available
-				const nodeForVariants = Object.keys(setInfo.propertyDefinitions).length > 0
-					? { ...node, componentPropertyDefinitions: setInfo.propertyDefinitions }
-					: node;
+				const nodeForVariants =
+					Object.keys(setInfo.propertyDefinitions).length > 0
+						? {
+								...node,
+								componentPropertyDefinitions: setInfo.propertyDefinitions,
+							}
+						: node;
 
 				// Enrichment
 				let enrichedData: EnrichedComponent | null = null;
@@ -4347,7 +5473,11 @@ export function registerDesignCodeTools(
 				const varNameMap = new Map<string, string>();
 				if (enrichedData?.variables_used) {
 					for (const v of enrichedData.variables_used as any[]) {
-						if (v.variableId && v.variableName && v.variableName !== v.variableId) {
+						if (
+							v.variableId &&
+							v.variableName &&
+							v.variableName !== v.variableId
+						) {
 							varNameMap.set(v.variableId, v.variableName);
 						}
 					}
@@ -4360,16 +5490,24 @@ export function registerDesignCodeTools(
 						// resolve nothing (every token prints as "—") or, on an id collision,
 						// resolve to the wrong names. Rejects → caught → hex fallback.
 						const varsResult = await connector.getVariables(fileKey);
-						const varList = varsResult?.variables || varsResult?.result?.variables;
+						const varList =
+							varsResult?.variables || varsResult?.result?.variables;
 						if (Array.isArray(varList)) {
 							for (const [id, name] of buildVariableNameMap(
 								varList,
-								varsResult?.variableCollections || varsResult?.result?.variableCollections,
-							)) varNameMap.set(id, name);
-							logger.info({ count: varList.length }, "Resolved variable names via Desktop Bridge for docs");
+								varsResult?.variableCollections ||
+									varsResult?.result?.variableCollections,
+							))
+								varNameMap.set(id, name);
+							logger.info(
+								{ count: varList.length },
+								"Resolved variable names via Desktop Bridge for docs",
+							);
 						}
 					} catch {
-						logger.warn("Could not load bridge variables for doc token names — colors may fall back to hex");
+						logger.warn(
+							"Could not load bridge variables for doc token names — colors may fall back to hex",
+						);
 					}
 				}
 
@@ -4380,35 +5518,66 @@ export function registerDesignCodeTools(
 					components: nodeData.components,
 					componentSets: nodeData.componentSets,
 				};
-				const variantData = collectAllVariantData(node, varNameMap, componentLookup);
+				const variantData = collectAllVariantData(
+					node,
+					varNameMap,
+					componentLookup,
+				);
 
 				// Resolve clean component name (prefer set name over variant name)
-				const componentName = resolveComponentName(node, setInfo.setName, codeInfo?.filePath?.split("/").pop()?.replace(/\.\w+$/, ""));
+				const componentName = resolveComponentName(
+					node,
+					setInfo.setName,
+					codeInfo?.filePath
+						?.split("/")
+						.pop()
+						?.replace(/\.\w+$/, ""),
+				);
 
 				// Prefer markdown description (has headers/bold markers for parsing) over plain text
 				// REST API getNodes() often returns empty description for COMPONENT_SET nodes,
 				// so fall back to Desktop Bridge plugin API which has the reliable description.
-				let description = node.descriptionMarkdown || node.description || componentMeta?.description || "";
+				let description =
+					node.descriptionMarkdown ||
+					node.description ||
+					componentMeta?.description ||
+					"";
 				if (getDesktopConnector) {
 					try {
 						const connector = await getDesktopConnector();
-						const bridgeResult = await connector.getComponentFromPluginUI(nodeId, fileKey);
+						const bridgeResult = await connector.getComponentFromPluginUI(
+							nodeId,
+							fileKey,
+						);
 						if (bridgeResult.success && bridgeResult.component) {
 							// Fetch description from bridge if REST API returned empty
 							if (!description) {
-								description = bridgeResult.component.descriptionMarkdown || bridgeResult.component.description || "";
+								description =
+									bridgeResult.component.descriptionMarkdown ||
+									bridgeResult.component.description ||
+									"";
 								if (description) {
-									logger.info("Fetched description via Desktop Bridge (REST API returned empty)");
+									logger.info(
+										"Fetched description via Desktop Bridge (REST API returned empty)",
+									);
 								}
 							}
 							// Always fetch annotations from bridge (REST API never has them)
-							if (bridgeResult.component.annotations && bridgeResult.component.annotations.length > 0) {
+							if (
+								bridgeResult.component.annotations &&
+								bridgeResult.component.annotations.length > 0
+							) {
 								node.annotations = bridgeResult.component.annotations;
-								logger.info({ count: node.annotations.length }, "Fetched annotations via Desktop Bridge for documentation");
+								logger.info(
+									{ count: node.annotations.length },
+									"Fetched annotations via Desktop Bridge for documentation",
+								);
 							}
 						}
 					} catch {
-						logger.warn("Desktop Bridge fetch failed, proceeding without bridge-sourced data");
+						logger.warn(
+							"Desktop Bridge fetch failed, proceeding without bridge-sourced data",
+						);
 					}
 				}
 				// Strip any existing query (e.g. the connected file's ?node-id=<page>) before
@@ -4420,11 +5589,14 @@ export function registerDesignCodeTools(
 
 				// Determine canonical source
 				const hasCodeInfo = codeInfo !== undefined && codeInfo !== null;
-				const hasFigmaData = node.type === "COMPONENT" || node.type === "COMPONENT_SET";
+				const hasFigmaData =
+					node.type === "COMPONENT" || node.type === "COMPONENT_SET";
 				const canonicalSource: "figma" | "code" | "reconciled" =
-					hasFigmaData && hasCodeInfo ? "reconciled"
-					: hasCodeInfo ? "code"
-					: "figma";
+					hasFigmaData && hasCodeInfo
+						? "reconciled"
+						: hasCodeInfo
+							? "code"
+							: "figma";
 
 				// -------------------------------------------------------
 				// Ongoing history (opt-in): Figma version history + git log
@@ -4439,11 +5611,16 @@ export function registerDesignCodeTools(
 					// churn as variants are added and removed, so the set is the
 					// stable identity to track across versions.
 					const historyNodeId = setInfo.setNodeId || nodeId;
-					designHistory = await buildDesignHistory(api, fileKey, [historyNodeId], {
-						versions: history.versions,
-						includeAutosaves: history.includeAutosaves,
-						mode: history.mode,
-					});
+					designHistory = await buildDesignHistory(
+						api,
+						fileKey,
+						[historyNodeId],
+						{
+							versions: history.versions,
+							includeAutosaves: history.includeAutosaves,
+							mode: history.mode,
+						},
+					);
 				}
 
 				if (history?.git) {
@@ -4464,7 +5641,7 @@ export function registerDesignCodeTools(
 								: [
 										...(codeInfo?.filePath ? [codeInfo.filePath] : []),
 										...(codeInfo?.sourceFiles?.map((f) => f.path) ?? []),
-									  ];
+									];
 						gitHistory = await buildGitHistory({
 							paths: derivedPaths,
 							limit: history.gitLimit,
@@ -4492,10 +5669,16 @@ export function registerDesignCodeTools(
 				// resolved there could match a same-named file in an unrelated project
 				// and pin the page to the wrong history.
 				const firstAbsolute = codePaths.find((p) => isAbsolute(p));
-				const repoPathForLinks = history?.repoPath ?? (firstAbsolute ? dirname(firstAbsolute) : undefined);
+				const repoPathForLinks =
+					history?.repoPath ??
+					(firstAbsolute ? dirname(firstAbsolute) : undefined);
 				if (!isRemoteMode && codePaths.length > 0 && repoPathForLinks) {
-					sourceRevision = await resolveSourceRevision({ paths: codePaths, repoPath: repoPathForLinks }).catch(() => null);
-					if (sourceRevision && sourceRevision.tracked.size === 0) sourceRevision = null;
+					sourceRevision = await resolveSourceRevision({
+						paths: codePaths,
+						repoPath: repoPathForLinks,
+					}).catch(() => null);
+					if (sourceRevision && sourceRevision.tracked.size === 0)
+						sourceRevision = null;
 				}
 				const sourceUrl = (path: string): string | null => {
 					const rel = sourceRevision?.tracked.get(path);
@@ -4524,13 +5707,44 @@ export function registerDesignCodeTools(
 				const includedSections: string[] = [];
 
 				if (includeFrontmatter) {
-					const atomicLevel = await detectAtomicLevel(api, fileKey, nodeId, setInfo.setNodeId, componentMeta, allComponentsMeta);
-					parts.push(generateFrontmatter(componentName, description, node, componentMeta, fileUrl_, codeInfo, canonicalSource, atomicLevel, latestDesignVersion, sourceRevision, repoPathForLinks));
+					const atomicLevel = await detectAtomicLevel(
+						api,
+						fileKey,
+						nodeId,
+						setInfo.setNodeId,
+						componentMeta,
+						allComponentsMeta,
+					);
+					parts.push(
+						generateFrontmatter(
+							componentName,
+							description,
+							node,
+							componentMeta,
+							fileUrl_,
+							codeInfo,
+							canonicalSource,
+							atomicLevel,
+							latestDesignVersion,
+							sourceRevision,
+							repoPathForLinks,
+						),
+					);
 					parts.push("");
 				}
 
 				if (s.overview) {
-					parts.push(generateOverviewSection(componentName, description, fileUrl_, parsedDesc, codeInfo, sourceUrl, repoPathForLinks));
+					parts.push(
+						generateOverviewSection(
+							componentName,
+							description,
+							fileUrl_,
+							parsedDesc,
+							codeInfo,
+							sourceUrl,
+							repoPathForLinks,
+						),
+					);
 					includedSections.push("overview");
 				}
 
@@ -4543,7 +5757,11 @@ export function registerDesignCodeTools(
 				}
 
 				if (s.statesAndVariants) {
-					const variantsSection = generateStatesAndVariantsSection(nodeForVariants, variantData, componentLookup);
+					const variantsSection = generateStatesAndVariantsSection(
+						nodeForVariants,
+						variantData,
+						componentLookup,
+					);
 					if (variantsSection) {
 						parts.push(variantsSection);
 						includedSections.push("statesAndVariants");
@@ -4551,7 +5769,15 @@ export function registerDesignCodeTools(
 				}
 
 				if (s.visualSpecs) {
-					parts.push(generateVisualSpecsSection(nodeForVisual, enrichedData, variantData, varNameMap, node));
+					parts.push(
+						generateVisualSpecsSection(
+							nodeForVisual,
+							enrichedData,
+							variantData,
+							varNameMap,
+							node,
+						),
+					);
 					includedSections.push("visualSpecs");
 				}
 
@@ -4572,7 +5798,12 @@ export function registerDesignCodeTools(
 				}
 
 				if (s.implementation && codeInfo) {
-					parts.push(generateImplementationSection(codeInfo, repoPathForLinks ?? history?.repoPath));
+					parts.push(
+						generateImplementationSection(
+							codeInfo,
+							repoPathForLinks ?? history?.repoPath,
+						),
+					);
 					includedSections.push("implementation");
 				}
 
@@ -4589,7 +5820,10 @@ export function registerDesignCodeTools(
 
 				if (s.parity && hasCodeInfo && hasFigmaData && codeInfo) {
 					// nodeForVariants carries the SET's property definitions when a single variant was requested
-					const paritySection = generateParitySection(nodeForVariants, codeInfo);
+					const paritySection = generateParitySection(
+						nodeForVariants,
+						codeInfo,
+					);
 					if (paritySection) {
 						parts.push(paritySection);
 						includedSections.push("parity");
@@ -4606,8 +5840,10 @@ export function registerDesignCodeTools(
 							componentName,
 							design: designHistory,
 							git: gitHistory,
-							commitLink: (sha) => (sourceRevision ? commitUrl(sourceRevision, sha) : null),
-							showPath: (p) => displayPath(p, gitHistory?._meta.repo_root ?? repoPathForLinks),
+							commitLink: (sha) =>
+								sourceRevision ? commitUrl(sourceRevision, sha) : null,
+							showPath: (p) =>
+								displayPath(p, gitHistory?._meta.repo_root ?? repoPathForLinks),
 							manual: codeInfo?.changelog ?? null,
 						});
 						if (historySection.trim()) {
@@ -4622,7 +5858,8 @@ export function registerDesignCodeTools(
 
 				const markdown = parts.join("\n");
 				const sanitizedName = sanitizeComponentName(componentName);
-				const suggestedPath = outputPath || `docs/components/${sanitizedName}.md`;
+				const suggestedPath =
+					outputPath || `docs/components/${sanitizedName}.md`;
 
 				// Build enhanced AI instruction
 				const aiInstParts = [
@@ -4636,10 +5873,16 @@ export function registerDesignCodeTools(
 					);
 				}
 				if (designHistory && designHistory.entries.length === 0) {
-					aiInstParts.push("", `Design history returned no rows. ${designHistory.notes.join(" ")}`);
+					aiInstParts.push(
+						"",
+						`Design history returned no rows. ${designHistory.notes.join(" ")}`,
+					);
 				}
 				if (gitHistory && gitHistory.entries.length === 0) {
-					aiInstParts.push("", `Git history returned no rows. ${gitHistory.notes.join(" ")}`);
+					aiInstParts.push(
+						"",
+						`Git history returned no rows. ${gitHistory.notes.join(" ")}`,
+					);
 				}
 				if (!hasCodeInfo) {
 					aiInstParts.push(
@@ -4672,29 +5915,31 @@ export function registerDesignCodeTools(
 					},
 					...(designHistory || gitHistory
 						? {
-							historySummary: {
-								design: designHistory
-									? {
-											requested: true,
-											entries: designHistory.entries.length,
-											versionsScanned: designHistory._meta.versions_scanned,
-											apiCalls: designHistory._meta.api_calls,
-											usedAutosaveFallback: designHistory._meta.used_autosave_fallback === true,
-											latestVersionId: latestDesignVersion?.version_id ?? null,
-											notes: designHistory.notes,
-										}
-									: null,
-								git: gitHistory
-									? {
-											requested: true,
-											entries: gitHistory.entries.length,
-											repoRoot: gitHistory._meta.repo_root,
-											paths: gitHistory._meta.paths,
-											notes: gitHistory.notes,
-										}
-									: null,
-							},
-						}
+								historySummary: {
+									design: designHistory
+										? {
+												requested: true,
+												entries: designHistory.entries.length,
+												versionsScanned: designHistory._meta.versions_scanned,
+												apiCalls: designHistory._meta.api_calls,
+												usedAutosaveFallback:
+													designHistory._meta.used_autosave_fallback === true,
+												latestVersionId:
+													latestDesignVersion?.version_id ?? null,
+												notes: designHistory.notes,
+											}
+										: null,
+									git: gitHistory
+										? {
+												requested: true,
+												entries: gitHistory.entries.length,
+												repoRoot: gitHistory._meta.repo_root,
+												paths: gitHistory._meta.paths,
+												notes: gitHistory.notes,
+											}
+										: null,
+								},
+							}
 						: {}),
 					suggestedOutputPath: suggestedPath,
 					ai_instruction: aiInstParts.join("\n"),
@@ -4705,7 +5950,10 @@ export function registerDesignCodeTools(
 				};
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				logger.error({ error: message, nodeId }, "Documentation generation failed");
+				logger.error(
+					{ error: message, nodeId },
+					"Documentation generation failed",
+				);
 				return {
 					content: [
 						{

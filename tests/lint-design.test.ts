@@ -88,9 +88,8 @@ describe('figma_lint_design', () => {
 			'wcag-contrast', 'wcag-target-size',
 			'wcag-non-text-contrast', 'wcag-color-only', 'wcag-focus-indicator',
 			'wcag-image-alt', 'wcag-heading-hierarchy', 'wcag-reflow', 'wcag-reading-order',
-			'wcag-disabled-no-context',
 		];
-		const BEST_PRACTICE_RULES = ['wcag-text-size', 'wcag-line-height', 'wcag-letter-spacing', 'wcag-paragraph-spacing'];
+		const BEST_PRACTICE_RULES = ['wcag-text-size', 'wcag-line-height', 'wcag-letter-spacing', 'wcag-paragraph-spacing', 'wcag-disabled-no-context'];
 		const DESIGN_SYSTEM_RULES = ['hardcoded-color', 'no-text-style', 'default-name', 'detached-component', 'token-misuse'];
 		const LAYOUT_RULES = ['no-autolayout', 'empty-container'];
 
@@ -98,12 +97,12 @@ describe('figma_lint_design', () => {
 			expect(ALL_RULES).toHaveLength(21);
 		});
 
-		it('should have 10 WCAG conformance rules (best-practice hints decoupled)', () => {
-			expect(WCAG_RULES).toHaveLength(10);
+		it('should have 9 WCAG conformance rules (best-practice hints decoupled)', () => {
+			expect(WCAG_RULES).toHaveLength(9);
 		});
 
-		it('should have 4 best-practice readability rules', () => {
-			expect(BEST_PRACTICE_RULES).toHaveLength(4);
+		it('should have 5 best-practice rules (readability + disabled-state documentation)', () => {
+			expect(BEST_PRACTICE_RULES).toHaveLength(5);
 		});
 
 		it('should not place best-practice readability hints in the WCAG conformance group', () => {
@@ -155,7 +154,7 @@ describe('figma_lint_design', () => {
 			'wcag-heading-hierarchy': 'warning',
 			'wcag-reflow': 'warning',
 			'wcag-reading-order': 'warning',
-			'wcag-disabled-no-context': 'warning',
+			'wcag-disabled-no-context': 'info',
 			'wcag-line-height': 'info',
 			'wcag-paragraph-spacing': 'info',
 			'token-misuse': 'warning',
@@ -174,12 +173,12 @@ describe('figma_lint_design', () => {
 
 		it('should have 13 warning rules', () => {
 			const warnings = Object.entries(SEVERITY_MAP).filter(([, s]) => s === 'warning');
-			expect(warnings).toHaveLength(13);
+			expect(warnings).toHaveLength(12);
 		});
 
 		it('should have 3 info rules', () => {
 			const info = Object.entries(SEVERITY_MAP).filter(([, s]) => s === 'info');
-			expect(info).toHaveLength(3);
+			expect(info).toHaveLength(4);
 		});
 
 		it('should map contrast, target size, and focus indicator as critical', () => {
@@ -227,7 +226,7 @@ describe('figma_lint_design', () => {
 			'wcag-heading-hierarchy': 'a',
 			'wcag-reflow': 'aa',
 			'wcag-reading-order': 'a',
-			'wcag-disabled-no-context': 'aa',
+			'wcag-disabled-no-context': 'best-practice',
 		};
 
 		it('should tag all 14 WCAG rules with conformance levels', () => {
@@ -1171,7 +1170,7 @@ describe('figma_lint_design', () => {
 			'wcag-heading-hierarchy': 'WCAG 1.3.1',
 			'wcag-reflow': 'WCAG 1.4.10',
 			'wcag-reading-order': 'WCAG 1.3.2',
-			'wcag-disabled-no-context': 'WCAG 4.1.2 (disabled elements need ARIA context for screen readers)',
+			'wcag-disabled-no-context': 'Best practice (documentation hint; native disabled conforms to WCAG)',
 		};
 
 		it('should map all 14 WCAG rules to success criteria', () => {

@@ -1,0 +1,30 @@
+{
+  "offLimitsFileKeys": [
+    "<file key the harness must never write to>"
+  ],
+  "systems": [
+    {
+      "id": "wc-system",
+      "name": "Web-components system (with manifest)",
+      "fileKey": "<figma file key>",
+      "componentsDir": "~/path/to/components",
+      "manifestPath": "~/path/to/custom-elements.json",
+      "contractsDir": "~/path/to/contracts (optional)",
+      "classPrefixes": [
+        "XX"
+      ],
+      "package": "@scope/react-package",
+      "tokensPath": "~/path/to/tokens.css",
+      "importPrefix": "XX"
+    },
+    {
+      "id": "react-system",
+      "name": "React system (no manifest)",
+      "fileKey": "<figma file key>",
+      "componentsDir": "~/path/to/src/components",
+      "package": "@scope/ui",
+      "tokensPath": "~/path/to/tokens.css",
+      "appDir": "~/path/to/an/app/that/uses/it (optional)"
+    }
+  ]
+}
