@@ -640,6 +640,88 @@ describe("token sync engine", () => {
       expect(errors.length).toBeGreaterThan(0);
       expect(errors[0]).toMatch(/Unresolvable/i);
     });
+
+    it("keeps resolving non-clashing paths under a shared slug", () => {
+      // "Brand/Light" and "Brand Light" both slugify to "brand-light" but
+      // define different paths. The converter always writes set-qualified
+      // refs, so dropping every key under the shared slug would break
+      // {brand-light.color.primary} — only a path BOTH collections define
+      // is ambiguous.
+      const doc: TokenDocument = {
+        sets: [
+          {
+            name: "Brand/Light",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["color", "primary"],
+                type: "color",
+                values: { Default: { literal: "#111111" } },
+              },
+              {
+                path: ["color", "shared"],
+                type: "color",
+                values: { Default: { literal: "#aaaaaa" } },
+              },
+            ],
+          },
+          {
+            name: "Brand Light",
+            modes: ["Default"],
+            tokens: [
+              {
+                path: ["space", "sm"],
+                type: "dimension",
+                values: { Default: { literal: { value: 4, unit: "px" } } },
+              },
+              {
+                path: ["color", "shared"],
+                type: "color",
+                values: { Default: { literal: "#bbbbbb" } },
+              },
+              {
+                path: ["color", "link"],
+                type: "color",
+                values: {
+                  Default: { reference: "{brand-light.color.primary}" },
+                },
+              },
+            ],
+          },
+        ],
+      };
+      const warnings: string[] = [];
+      const index = buildTokenIndex(doc, warnings);
+
+      expect(
+        resolveReference("{brand-light.color.primary}", "Default", index)
+          .literal,
+      ).toBe("#111111");
+      expect(
+        resolveReference("{brand-light.space.sm}", "Default", index).literal,
+      ).toEqual({ value: 4, unit: "px" });
+      // The one path both collections define is dropped, not misresolved.
+      expect(() =>
+        resolveReference("{brand-light.color.shared}", "Default", index),
+      ).toThrow(/Unresolvable/i);
+
+      // Exactly one slug-clash warning, naming the clashing key.
+      const clashWarnings = warnings.filter((w) => w.includes("slugify to"));
+      expect(clashWarnings).toHaveLength(1);
+      expect(clashWarnings[0]).toContain("{brand-light.color.shared}");
+      expect(clashWarnings[0]).toContain('"Brand/Light"');
+      expect(clashWarnings[0]).toContain('"Brand Light"');
+      // The bare-path warning for color.shared doesn't suggest the
+      // set-qualified key that is itself dropped.
+      const bareWarning = warnings.find((w) =>
+        w.startsWith('Token path "color.shared"'),
+      );
+      expect(bareWarning).toMatch(/Rename the collections/);
+
+      // Only the reference into the clashing key would fail validation;
+      // {brand-light.color.primary} validates cleanly.
+      expect(validateAliases(doc)).toEqual([]);
+    });
   });
 
   describe("tokens.config.json loader", () => {
