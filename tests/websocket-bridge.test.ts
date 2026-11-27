@@ -276,6 +276,32 @@ describe('FigmaWebSocketServer', () => {
       ).rejects.toThrow('Variable not found');
     });
 
+    // The plugin UI's wrappers resolve a plugin-side failure as a RESULT of
+    // { success: false, error } — it must still reject, or tools report
+    // success for writes Figma refused.
+    test('rejects a { success: false } result, but not for EXECUTE_CODE', async () => {
+      server = new FigmaWebSocketServer({ port: TEST_PORT });
+      await server.start();
+
+      const client = await connectClient(server, TEST_PORT);
+      clients.push(client);
+
+      client.on('message', (data: Buffer) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.id) {
+          client.send(JSON.stringify({ id: msg.id, result: { success: false, error: 'mode with id 7874:0 not defined for variable' } }));
+        }
+      });
+
+      await expect(
+        server.sendCommand('UPDATE_VARIABLE', { variableId: 'v', modeId: '7874:0', value: 1 })
+      ).rejects.toThrow('mode with id 7874:0 not defined');
+      await expect(server.sendCommand('EXECUTE_CODE', { code: 'x' })).resolves.toEqual({
+        success: false,
+        error: 'mode with id 7874:0 not defined for variable',
+      });
+    });
+
     test('rejects when no client connected', async () => {
       server = new FigmaWebSocketServer({ port: TEST_PORT });
       await server.start();
