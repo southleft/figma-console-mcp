@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/schema.json",
   "name": "Figma Console MCP",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "theme": "quill",
   "logo": {
     "dark": "/logo/light.svg",
@@ -21,7 +21,7 @@
   "metadata": {
     "og:image": "/images/og-image.jpg",
     "og:title": "Figma Console MCP - Turn Your Design System Into a Living API",
-    "og:description": "A design-system-focused MCP server for Figma. 144 tools give AI assistants bidirectional Figma-code token sync, write access to Figma, and deterministic checks for design-code parity, accessibility, and design-system health.",
+    "og:description": "A design-system-focused MCP server for Figma. 145 tools give AI assistants bidirectional Figma-code token sync, write access to Figma, and deterministic checks for design-code parity, accessibility, and design-system health.",
     "twitter:card": "summary_large_image",
     "twitter:image": "/images/og-image.jpg"
   },

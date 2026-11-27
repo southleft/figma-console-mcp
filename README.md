@@ -8,7 +8,7 @@
 
 > **Your design system as an API.** A design-system-focused Model Context Protocol server for Figma. It works in both directions (Figma ⇄ code), **writes to Figma**, and runs **deterministic checks** for design-code parity, accessibility, and design-system health. It hands the AI exact tokens, variants, bindings, and states as structured data rather than prescribing a framework or house style, so generated code follows your team's own stack and conventions.
 
-> **🆕 v2.0: modern MCP, ~85% fewer tokens per message, design-system adherence (latest v2.0.0):** rebuilt on the MCP SDK v2 (protocol 2026-07-28) with Skills, Tasks and confirmation prompts. Tools now load in toolsets, so each message carries ~9k tokens of tool definitions instead of ~60k (`FIGMA_TOOLSETS=all` brings back the full list). New adherence tools map every UI need to a real component and mark what's missing in place instead of inventing it, audit generated Figma and code against the system, and check library parity down to component props. Plus dev-resource links, "where is this used?", library analytics and extended collections. [See what's new →](CHANGELOG.md#200---2026-11-26)
+> **🆕 v2.1: extended collections end to end, honest write errors, library analytics you can act on (latest v2.1.0):** Write tools now say when Figma refuses a change, instead of reporting success. Extended collections work end to end: extensions of library collections are readable, you can extend the file's own collections, and `figma_reset_variable_override` puts an overridden value back to inherited. Library analytics lists unused components, styles and variables, and names variants by their component set. [See what's new →](CHANGELOG.md#210---2026-11-27)
 
 ## What is this?
 
@@ -62,9 +62,9 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 | Codebase → design system extraction (`figma_ds_*`) | ✅ | ❌ | ❌ |
 | Desktop Bridge plugin | ✅ | ✅ | ❌ |
 | Requires Node.js | Yes | **No** | No |
-| **Total tools available** | **144** | **113** after pairing | Read-only subset |
+| **Total tools available** | **145** | **114** after pairing | Read-only subset |
 
-> **Bottom line:** Remote SSE is **read-only** until you pair the plugin. **Cloud Mode** unlocks write access (113 tools) from web AI clients without Node.js. NPX/Local Git gives the full 144 tools with real-time monitoring.
+> **Bottom line:** Remote SSE is **read-only** until you pair the plugin. **Cloud Mode** unlocks write access (114 tools) from web AI clients without Node.js. NPX/Local Git gives the full 145 tools with real-time monitoring.
 
 ---
 
@@ -72,7 +72,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 
 **Best for:** Designers who want full AI-assisted design capabilities.
 
-**What you get:** All 144 tools including design creation, variable management, and component instantiation.
+**What you get:** All 145 tools including design creation, variable management, and component instantiation.
 
 #### Prerequisites
 
@@ -187,7 +187,7 @@ Create a simple frame with a blue background
 
 **Best for:** Developers who want to modify source code or contribute to the project.
 
-**What you get:** Same 144 tools as NPX, plus full source code access.
+**What you get:** Same 145 tools as NPX, plus full source code access.
 
 #### Quick Setup
 
@@ -276,7 +276,7 @@ Ready for design creation? Follow the [NPX Setup](#-npx-setup-recommended) guide
 
 **Best for:** Using Claude.ai, v0, Replit, or Lovable to create and modify Figma designs — no Node.js required.
 
-**What you get:** 113 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
+**What you get:** 114 tools including full write access — design creation, variable management, component instantiation, and all REST API tools. Only real-time monitoring (console logs, selection tracking, document changes) requires Local Mode.
 
 #### Prerequisites
 
@@ -333,7 +333,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | Feature | NPX (Recommended) | Cloud Mode | Local Git | Remote SSE |
 |---------|-------------------|------------|-----------|------------|
 | **Setup time** | ~10 minutes | ~5 minutes | ~15 minutes | ~2 minutes |
-| **Total tools** | **144** | **113** after pairing | **144** (Local Git) | Read-only subset |
+| **Total tools** | **145** | **114** after pairing | **145** (Local Git) | Read-only subset |
 | **Design creation** | ✅ | ✅ | ✅ | ❌ |
 | **Variable management** | ✅ | ✅ | ✅ | ❌ |
 | **Component instantiation** | ✅ | ✅ | ✅ | ❌ |
@@ -348,7 +348,7 @@ AI Client → Cloud MCP Server → Durable Object Relay → Desktop Bridge Plugi
 | **Automatic updates** | ✅ (`@latest`) | ✅ | Manual (`git pull`) | ✅ |
 | **Source code access** | ❌ | ❌ | ✅ | ❌ |
 
-> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 144 tools.
+> **Key insight:** Remote SSE is read-only. Cloud Mode adds write access for web AI clients without Node.js. NPX/Local Git give the full 145 tools.
 
 **📖 [Complete Feature Comparison](docs/mode-comparison.md)**
 
@@ -791,7 +791,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - The MCP server communicates via **WebSocket** through the Desktop Bridge plugin
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if needed
 - The plugin scans all ports in the range and connects to every active server it finds
-- All 144 tools work through the WebSocket transport
+- All 145 tools work through the WebSocket transport
 
 **Multiple files:** The WebSocket server supports multiple simultaneous plugin connections — one per open Figma file. Each connection is tracked by file key with independent state (selection, document changes, console logs).
 
@@ -950,7 +950,7 @@ The two servers are complementary, and both can run in the same MCP client.
 
 ## 🛤️ Roadmap
 
-**Current Status:** v2.0.0 (Stable). Rebuilt on the MCP SDK v2 (protocol 2026-07-28, still compatible with 2025-era clients) with Skills, Tasks and confirmation prompts; tools load in toolsets (~9k tokens of tool definitions per message instead of ~60k); design-system adherence tools that resolve needs to real components and mark gaps in place; dev-resource links, usage impact, library analytics and extended collections. **144 tools** (Local) / **113 tools** (Cloud) / read-only subset (Remote). Earlier releases are listed below and in the [CHANGELOG](CHANGELOG.md).
+**Current Status:** v2.0.0 (Stable). Rebuilt on the MCP SDK v2 (protocol 2026-07-28, still compatible with 2025-era clients) with Skills, Tasks and confirmation prompts; tools load in toolsets (~9k tokens of tool definitions per message instead of ~60k); design-system adherence tools that resolve needs to real components and mark gaps in place; dev-resource links, usage impact, library analytics and extended collections. **145 tools** (Local) / **114 tools** (Cloud) / read-only subset (Remote). Earlier releases are listed below and in the [CHANGELOG](CHANGELOG.md).
 
 **Recent Releases:**
 - [x] **v2.0.0** - MCP SDK v2 + protocol 2026-07-28 (with Skills, Tasks, confirmations); toolsets cut tool definitions ~85%; design-system adherence (`figma_resolve_components`, `figma_audit_adherence`, `figma_audit_code_adherence`, `figma_check_library_parity`, `figma_bind_tokens`); dev resources, usages, library analytics, extended collections; WCAG lint false-positive fixes. **Breaking:** non-core tools must be enabled first (`FIGMA_TOOLSETS=all` restores the old list). Plugin re-import.

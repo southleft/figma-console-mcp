@@ -1,13 +1,13 @@
 ---
 title: "Tools Reference"
-description: "Complete API reference for all 144 MCP tools, including parameters, return values, and usage examples."
+description: "Complete API reference for all 145 MCP tools, including parameters, return values, and usage examples."
 ---
 
 # Available Tools - Detailed Documentation
 
 This guide provides detailed documentation for each tool, including when to use them and best practices.
 
-> **Note:** Local Mode (NPX/Git) provides **144 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **113 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools. Those run a headless browser session that only the `/sse` endpoint keeps open.
+> **Note:** Local Mode (NPX/Git) provides **145 tools** with full read/write capabilities and real-time monitoring. Remote Mode is **read-only** until paired, and provides **114 tools** (including full write access) when paired with the Desktop Bridge plugin via Cloud Relay. Tools marked "Local" in the table below require Local Mode. Tools marked "Local / Cloud" work in both Local Mode and Cloud Mode (after pairing). Tools marked "All" are listed on every endpoint except Cloud Mode's `/mcp` endpoint, which omits the console, screenshot, navigation, status, and reload tools. Those run a headless browser session that only the `/sse` endpoint keeps open.
 
 ## Quick Reference
 

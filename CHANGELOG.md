@@ -5,7 +5,7 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-11-27
 
 ### Added
 
@@ -1794,6 +1794,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[2.1.0]: https://github.com/southleft/figma-console-mcp/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/southleft/figma-console-mcp/compare/v1.46.0...v2.0.0
 [1.46.0]: https://github.com/southleft/figma-console-mcp/compare/v1.45.1...v1.46.0
 [1.45.1]: https://github.com/southleft/figma-console-mcp/compare/v1.45.0...v1.45.1
