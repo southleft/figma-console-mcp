@@ -5,6 +5,26 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-11-27
+
+Community fixes and a dependency update. **Re-import the Desktop Bridge plugin** (`manifest.json`) to get the selection fix's plugin side; everything else works without it.
+
+### Fixed
+
+- **Colors keep their transparency in visual specs** (#165, thanks @goranai). The design-system kit and library tools reported a 25% black shadow as solid `#000000`. Colors below full opacity now come through with their alpha (`#00000040`).
+- **Aliases no longer resolve into the wrong collection when two collection names slugify alike** (#160, thanks @rahul05ranjan). "Brand/Light" and "Brand Light" both become `brand-light`. A token path that both collections define resolved to whichever was read last; it is now left unresolved with a warning to rename one. Paths only one collection defines still resolve.
+- **Gradient tokens export as CSS gradients** (#161, thanks @rahul05ranjan). CSS variables, SCSS, and Tailwind v3 and v4 wrote gradients as raw JSON. They now become `linear-gradient(...)`, including DTCG's array-of-stops form and color-object stops. Tailwind v3 puts them under `backgroundImage`. A gradient with an unresolved `{alias}` stop is skipped with a warning instead of producing broken CSS.
+- **`figma_get_selection` reports a selection made before the plugin connected** (#157, thanks @pnd280). It used to say "Nothing is selected" until the next selection change. The plugin now sends its selection when it connects, and older plugins get a live read.
+- **`figma_set_layout` keeps a frame's size when it turns auto layout on, and `wrap` works** (#154). Figma makes a frame hug its children when auto layout is switched on, so a 560px frame could shrink or grow. Turning on wrap now also fixes a hugging main axis, which Figma requires for wrapping.
+- **"All bridge ports are taken" is explained** (#155). When all 10 ports were held by other sessions, every tool said to open the plugin. Tools now say the ports are taken and list the sessions holding them (port, pid, start time, last tool call), with what to do.
+- **`figma_set_text` errors no longer add an unrelated "Make sure the node is a TEXT node" hint.**
+
+### Security
+
+- **The npm package audits clean** (`npm audit --omit=dev`: 0 vulnerabilities): `hono` 4.13.23 and `@hono/node-server` 2.1.11.
+- **Cloud Mode uses the patched MCP SDK.** Its `agents` dependency pinned `@modelcontextprotocol/sdk` 1.26.0, which has four high-severity advisories. It now shares the 1.32 copy the rest of the server uses.
+
+
 ## [2.1.1] - 2026-11-27
 
 Accessibility lint accuracy. **Re-import the Desktop Bridge plugin** (`manifest.json`) to get these fixes: they run inside the plugin.
@@ -1811,6 +1831,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[2.1.2]: https://github.com/southleft/figma-console-mcp/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/southleft/figma-console-mcp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/southleft/figma-console-mcp/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/southleft/figma-console-mcp/compare/v1.46.0...v2.0.0
