@@ -116,7 +116,7 @@ async function serveSSEWithToken(request: Request, env: Env, ctx: ExecutionConte
  */
 // Server version reported by figma_diagnose in both cloud endpoints.
 // scripts/release.sh keeps this current (it rewrites every `version: "x.y.z"` here).
-const cloudBuild = { version: "2.1.0" };
+const cloudBuild = { version: "2.1.1" };
 
 /**
  * v1 McpServer whose registerTool/tool stamp every tool's response and thrown
@@ -136,7 +136,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 	server = (() => {
 		return new McpServer({
 			name: "Figma Console MCP",
-			version: "2.1.0",
+			version: "2.1.1",
 		});
 	})();
 
@@ -1244,7 +1244,7 @@ export default {
 
 			const statelessServer = new McpServer({
 				name: "Figma Console MCP",
-				version: "2.1.0",
+				version: "2.1.1",
 			});
 
 			// ================================================================
@@ -2215,7 +2215,7 @@ export default {
 				JSON.stringify({
 					status: "healthy",
 					service: "Figma Console MCP",
-					version: "2.1.0",
+					version: "2.1.1",
 					endpoints: {
 						mcp: ["/sse", "/mcp"],
 						oauth_mcp_spec: ["/.well-known/oauth-authorization-server", "/authorize", "/token", "/oauth/register"],
@@ -2260,7 +2260,7 @@ export default {
 	// Local count and the data-mode="cloud" Cloud count). Remote has no count:
 	// it is the same hosted endpoint before pairing, so it is described, not counted.
 	if (url.pathname === "/") {
-		const landing = { version: "2.1.0" };
+		const landing = { version: "2.1.1" };
 		return new Response(
 			`<!DOCTYPE html>
 <html lang="en">
