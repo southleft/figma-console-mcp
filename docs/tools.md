@@ -3600,8 +3600,8 @@ Each finding includes a `wcagLevel` field (`a`, `aa`, or `best-practice`) so tea
 | `wcag-non-text-contrast` | critical | AA | UI component/graphical object below 3:1 against background |
 | `wcag-color-only` | critical | A | Information conveyed only through color (no icon/border indicator) |
 | `wcag-target-size` | critical | AA | Interactive elements smaller than 24x24px |
-| `wcag-focus-indicator` | critical | AA | Interactive component missing focus variant or visible indicator — blocker for keyboard users |
-| `wcag-disabled-no-context` | warning | AA | Disabled variant has no tooltip/helper text explaining why disabled. Recommends aria-disabled over HTML disabled to keep element focusable for screen readers. |
+| `wcag-focus-indicator` | critical | AA | Interactive component missing a focus variant, or a focus variant with no ring, outline or shadow (on the variant or its layers) that its non-focus state doesn't already have — blocker for keyboard users |
+| `wcag-disabled-no-context` | info | Best practice | A component set with disabled variants whose description gives no guidance on explaining a disabled state where it's used (helper text, or a tooltip on an `aria-disabled` control). Reported once per set; native `disabled` conforms to WCAG. |
 | `wcag-text-size` | warning | best-practice | Text below 12px (readability best practice — WCAG 1.4.4 is about zoom support, not minimum size) |
 | `wcag-letter-spacing` | warning | best-practice | Negative letter spacing harms readability |
 | `wcag-image-alt` | warning | A | Image fills without description annotation |
