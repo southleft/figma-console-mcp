@@ -2466,7 +2466,6 @@ return {
 							type: "text" as const,
 							text: JSON.stringify({
 								error: error instanceof Error ? error.message : String(error),
-								hint: "Make sure the node is a TEXT node",
 							}),
 						},
 					],
