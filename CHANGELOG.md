@@ -5,6 +5,23 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-11-27
+
+Accessibility lint accuracy. **Re-import the Desktop Bridge plugin** (`manifest.json`) to get these fixes: they run inside the plugin.
+
+### Fixed
+
+Linting a real design system's control components with `figma_lint_design` reported WCAG problems that weren't there. All five causes were generic:
+
+- **Focus rings on a child layer are recognised.** Only the variant's own border and shadow were checked, so a ring drawn as a "Focus Ring" layer was missed, and only the first focus variant was looked at. Now every focus variant is checked, layers included, and a ring only counts if the matching non-focus variant doesn't already have it. Container sets ("Checkbox Group", "Tabs") are no longer asked for their own focus variant; their items are.
+- **A table isn't a tab control.** Control names matched as substrings, so "tab" matched "table". That flagged a table's surface for non-text contrast and failed every checkbox inside it for target size. Names now match whole words, and camelCase names like `IconButton` still count.
+- **Disabled states are exempt from contrast**, as WCAG 1.4.3 and 1.4.11 say for inactive components: text and non-text contrast skip disabled variants and instances.
+- **Reading order only counts content.** Text, instances and frames holding text are compared; a focus outline or a toggle's knob is decoration.
+- **"Disabled without context" is a best-practice hint, not a WCAG AA warning.** It fired once per disabled variant of a component set, but only the screen using a control knows why it's disabled, and native `disabled` conforms. It's now reported once per set, in the `best-practice` group.
+
+On Altitude's control components this took the false findings to zero (Table 19 → 0, Checkbox 7 → 0) while the one real issue, a hover state at 4.1:1, is still reported. Each case has a regression test that fails on the previous code.
+
+
 ## [2.1.0] - 2026-11-27
 
 ### Added
@@ -1794,6 +1811,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[2.1.1]: https://github.com/southleft/figma-console-mcp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/southleft/figma-console-mcp/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/southleft/figma-console-mcp/compare/v1.46.0...v2.0.0
 [1.46.0]: https://github.com/southleft/figma-console-mcp/compare/v1.45.1...v1.46.0
