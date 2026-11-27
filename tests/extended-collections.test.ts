@@ -216,6 +216,97 @@ describe("figma_get_variables — extended collections are visible", () => {
 });
 
 // --------------------------------------------------------------------------
+// Extension of a LIBRARY collection (found live-testing, 2026-11-27)
+//
+// Its variables are the library's: getLocalVariablesAsync() doesn't return
+// them, so they're not in data.variables. The snippet now sends them along
+// on the extension (libraryVariables). Shapes below are the real ones,
+// including Figma's short defaultModeId ("12:0") next to the full mode
+// ids ("VariableCollectionId:…/12:0").
+// --------------------------------------------------------------------------
+
+describe("figma_get_variables — extension of a library collection", () => {
+	const EXT = "VariableCollectionId:12:345";
+	const MODE = `${EXT}/12:0`;
+	const ROOT = "VariableCollectionId:0123456789abcdef0123456789abcdef01234567/1:50";
+	const lib = (id: string, name: string, v: number) => ({ id, name, resolvedType: "FLOAT", variableCollectionId: ROOT, valuesByMode: { "1:2": v }, scopes: ["CORNER_RADIUS"], remote: true });
+	const libraryVariables = [lib("VariableID:aaa/1:51", "radius-none", 0), lib("VariableID:bbb/1:52", "radius-sm", 2)];
+	function setupLib() {
+		const tools: Record<string, any> = {};
+		const server = { registerTool: (name: string, ...rest: any[]) => { tools[name] = rest[rest.length - 1]; } };
+		const connector = {
+			getTransportType: () => "websocket",
+			// The file's own data: one empty local collection, no extension, no library variables
+			getVariablesFromPluginUI: jest.fn(async () => ({ success: true, variables: [], variableCollections: [{ id: "c-1", name: "Collection 1", modes: [{ modeId: "1:0", name: "Mode 1" }], variableIds: [] }] })),
+			getVariables: jest.fn(),
+			executeCodeViaUI: jest.fn(async () => ({
+				success: true,
+				result: [{
+					id: EXT, name: "Radius (brand)", isExtension: true, parentVariableCollectionId: ROOT, rootVariableCollectionId: ROOT,
+					defaultModeId: "12:0",
+					modes: [{ modeId: MODE, name: "Mode 1", parentModeId: "1:2" }],
+					variableIds: libraryVariables.map((v) => v.id),
+					variableOverrides: { "VariableID:aaa/1:51": { [MODE]: 3 } },
+					libraryVariables: JSON.parse(JSON.stringify(libraryVariables)),
+				}],
+			})),
+		};
+		registerFigmaAPITools(server as any, async () => ({}) as any, () => "https://www.figma.com/design/abc123/File", new Map(), undefined, async () => connector as any);
+		return async (args: any) => {
+			const res = await tools.figma_get_variables({ includePublished: false, enrich: false, ...args });
+			const body = JSON.parse(res.content[0].text);
+			return body.data ?? body;
+		};
+	}
+
+	it("filtering by the extension returns its variables, overridden and inherited (was: empty)", async () => {
+		const r = await setupLib()({ format: "filtered", collection: "Radius (brand)", verbosity: "standard" });
+		const none = r.variables.find((v: any) => v.name === "radius-none");
+		const sm = r.variables.find((v: any) => v.name === "radius-sm");
+		expect(none.valuesByMode).toEqual({ [MODE]: 3 });
+		expect(none.overriddenModeIds).toEqual([MODE]);
+		expect(sm.valuesByMode).toEqual({ [MODE]: 2 });
+		expect(sm.overriddenModeIds).toEqual([]);
+		expect(r.variableCollections.map((c: any) => c.name)).toEqual(["Radius (brand)"]);
+	});
+
+	it("still resolves the library variables on a second call served from the cache", async () => {
+		const run = setupLib();
+		await run({ format: "summary" });
+		const r = await run({ format: "filtered", collection: "Radius (brand)", verbosity: "standard" });
+		expect(r.variables.map((v: any) => v.name).sort()).toEqual(["radius-none", "radius-sm"]);
+	});
+
+	it("library variables stay out of the file's own variables and out of the collection payload", async () => {
+		const full = await setupLib()({ format: "full" });
+		expect(full.variables).toEqual([]);
+		const ext = full.variableCollections.find((c: any) => c.id === EXT);
+		expect(ext).toBeDefined();
+		expect(ext.libraryVariables).toBeUndefined();
+	});
+
+	it("reports the extension's defaultModeId as a real mode id (Figma gives a short one)", async () => {
+		const full = await setupLib()({ format: "full" });
+		expect(full.variableCollections.find((c: any) => c.id === EXT).defaultModeId).toBe(MODE);
+	});
+
+	it("an empty page or an unmatched name pattern doesn't return every collection", async () => {
+		const run = setupLib();
+		// an out-of-range page is clamped to the last page, which has variables
+		const late = await run({ format: "filtered", collection: "Radius (brand)", page: 5 });
+		expect(late.variables.length).toBeGreaterThan(0);
+		expect(late.variableCollections.map((c: any) => c.name)).toEqual(["Radius (brand)"]);
+		expect((await run({ format: "filtered", namePattern: "no-such-variable" })).variableCollections).toEqual([]);
+	});
+
+	it("a collection filter that matches only an empty collection still returns the collection", async () => {
+		const r = await setupLib()({ format: "filtered", collection: "Collection 1" });
+		expect(r.variables).toEqual([]);
+		expect(r.variableCollections.map((c: any) => c.name)).toEqual(["Collection 1"]);
+	});
+});
+
+// --------------------------------------------------------------------------
 // figma_export_tokens — explicit about extended collections
 // --------------------------------------------------------------------------
 
@@ -255,5 +346,30 @@ describe("figma_export_tokens — extended collections", () => {
 		expect(body.collections.map((c: any) => c.name)).toEqual(["Brand"]);
 		expect(body.warnings.join("\n")).toContain('Extended collection "Brand B" was not exported (3 overridden values across 3 variables)');
 		expect(body.warnings.join("\n")).toContain('Extended collection "Brand B Holiday" was not exported (1 overridden value across 1 variable)');
+	});
+});
+
+describe("EXTENDED_COLLECTIONS_CODE snippet", () => {
+	it("sends library variables along, in parallel, skipping one that fails to load", async () => {
+		const { EXTENDED_COLLECTIONS_CODE } = await import("../src/core/extended-collections");
+		const lib: Record<string, any> = { "V:lib1": { id: "V:lib1", name: "radius-sm", key: "k1", resolvedType: "FLOAT", valuesByMode: { "1:2": 2 }, variableCollectionId: "VC:root" } };
+		let inFlight = 0, maxInFlight = 0;
+		const figma = {
+			variables: {
+				getLocalVariableCollectionsAsync: async () => [{ id: "VC:ext", name: "Ext", isExtension: true, parentVariableCollectionId: "VC:root", rootVariableCollectionId: "VC:root", defaultModeId: "1:0", modes: [{ modeId: "VC:ext/1:0", name: "Mode 1", parentModeId: "1:2" }], variableIds: ["V:local", "V:lib1", "V:broken"], variableOverrides: {} }],
+				getLocalVariablesAsync: async () => [{ id: "V:local" }],
+				getVariableByIdAsync: async (id: string) => {
+					inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+					await new Promise((r) => setTimeout(r, 5));
+					inFlight--;
+					if (id === "V:broken") throw new Error("not loaded");
+					return lib[id] ?? null;
+				},
+			},
+		};
+		const out = await new Function("figma", `return (async () => { ${EXTENDED_COLLECTIONS_CODE} })();`)(figma);
+		expect(out).toHaveLength(1);
+		expect(out[0].libraryVariables.map((v: any) => v.id)).toEqual(["V:lib1"]);
+		expect(maxInFlight).toBe(2);
 	});
 });
