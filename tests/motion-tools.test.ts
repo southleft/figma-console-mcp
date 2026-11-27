@@ -21,7 +21,7 @@ type Handler = (args: Record<string, unknown>) => Promise<{ content: Array<{ tex
 
 function mockServer() {
 	const tools: Record<string, Handler> = {};
-	return { tool: jest.fn((name: string, _d: string, _s: unknown, h: Handler) => { tools[name] = h; }), tools };
+	return { registerTool: jest.fn((name: string, __cfg: any, h: Handler) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; tools[name] = h; }), tools };
 }
 
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;

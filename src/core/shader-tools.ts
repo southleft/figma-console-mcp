@@ -11,7 +11,7 @@
  * so no Desktop Bridge plugin change (or re-import) is needed.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
 
@@ -21,7 +21,7 @@ const fileKeySchema = z
 	.string()
 	.optional()
 	.describe(
-		"Local Mode only. Run against this specific connected file instead of the active file. Get connected fileKeys from figma_list_open_files. Rejected in Cloud Mode, which pairs with a single plugin instance.",
+		"Local Mode: run in this open file (see figma_list_open_files) without changing the active file.",
 	);
 
 export const SHADER_TARGETS = ["fills", "strokes", "effects"] as const;
@@ -177,19 +177,37 @@ function ok(data: unknown) {
 function fail(tool: string, error: unknown) {
 	logger.error({ error }, `${tool} failed`);
 	return {
-		content: [{ type: "text" as const, text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }],
+		content: [
+			{
+				type: "text" as const,
+				text: JSON.stringify({
+					error: error instanceof Error ? error.message : String(error),
+				}),
+			},
+		],
 		isError: true,
 	};
 }
 
-async function run(getDesktopConnector: () => Promise<any>, script: string, timeout: number, fileKey?: string) {
+async function run(
+	getDesktopConnector: () => Promise<any>,
+	script: string,
+	timeout: number,
+	fileKey?: string,
+) {
 	const connector = await getDesktopConnector();
 	const result = await connector.executeCodeViaUI(script, timeout, fileKey);
-	if (!result?.success) throw new Error(result?.error || "Shader script failed");
+	if (!result?.success)
+		throw new Error(result?.error || "Shader script failed");
 	return result.result;
 }
 
-const colorObject = { r: z.number(), g: z.number(), b: z.number(), a: z.number().optional() };
+const colorObject = {
+	r: z.number(),
+	g: z.number(),
+	b: z.number(),
+	a: z.number().optional(),
+};
 
 const shaderValueSchema = z.union([
 	z.number(),
@@ -197,7 +215,10 @@ const shaderValueSchema = z.union([
 	z.string(),
 	z
 		.object({
-			variableId: z.string().optional().describe("Bind the property to a variable instead of a literal"),
+			variableId: z
+				.string()
+				.optional()
+				.describe("Bind the property to a variable instead of a literal"),
 			x: z.number().optional(),
 			y: z.number().optional(),
 			x2: z.number().optional(),
@@ -209,50 +230,125 @@ const shaderValueSchema = z.union([
 			b: z.number().optional(),
 			a: z.number().optional(),
 			color: z.object(colorObject).optional(),
-			stops: z.array(z.object({ position: z.number(), color: z.object(colorObject) })).optional(),
+			stops: z
+				.array(z.object({ position: z.number(), color: z.object(colorObject) }))
+				.optional(),
 		})
-		.describe("Points {x,y}, lines {x,y,x2,y2}, circles {x,y,radius,angle?}, colors {r,g,b,a} (0–1), color points {x,y,color}, gradients {stops}, or {variableId}"),
+		.describe(
+			"Points {x,y}, lines {x,y,x2,y2}, circles {x,y,radius,angle?}, colors {r,g,b,a} (0–1), color points {x,y,color}, gradients {stops}, or {variableId}",
+		),
 ]);
 
-export function registerShaderTools(server: McpServer, getDesktopConnector: () => Promise<any>): void {
-	server.tool(
+export function registerShaderTools(
+	server: McpServer,
+	getDesktopConnector: () => Promise<any>,
+): void {
+	server.registerTool(
 		"figma_list_shaders",
-		"List shaders: the ones applied in this file (fills, strokes and effects), with each property's name, type and default, and the layers using them; plus shaders from the user's libraries (figma.listAvailableShaders). Use the property names with figma_apply_shader. Shaders are created in Figma, not through the Plugin API. Requires Desktop Bridge.",
 		{
-			scope: z.enum(["page", "file"]).optional().default("page").describe("Search the current page (default) or every page"),
-			nodeId: z.string().optional().describe("Only search this node and its descendants"),
-			fileKey: fileKeySchema,
+			description:
+				"List shaders: the ones applied in this file (fills, strokes and effects), with each property's name, type and default, and the layers using them; plus shaders from the user's libraries (figma.listAvailableShaders). Use the property names with figma_apply_shader. Shaders are created in Figma, not through the Plugin API. Requires Desktop Bridge.",
+			inputSchema: z.object({
+				scope: z
+					.enum(["page", "file"])
+					.optional()
+					.default("page")
+					.describe("Search the current page (default) or every page"),
+				nodeId: z
+					.string()
+					.optional()
+					.describe("Only search this node and its descendants"),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async ({ scope, nodeId, fileKey }) => {
 			try {
-				return ok(await run(getDesktopConnector, shaderScript({ scope, nodeId }, LIST_SHADERS_BODY), scope === "file" && !nodeId ? 120000 : 30000, fileKey));
+				return ok(
+					await run(
+						getDesktopConnector,
+						shaderScript({ scope, nodeId }, LIST_SHADERS_BODY),
+						scope === "file" && !nodeId ? 120000 : 30000,
+						fileKey,
+					),
+				);
 			} catch (error) {
 				return fail("figma_list_shaders", error);
 			}
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"figma_apply_shader",
-		"Apply a shader to a node's fills, strokes or effects, or change the properties of one already applied. Set properties by name (e.g. {turbulence: 40, cloudColor: '#E8F4FF'}); names, types and defaults come from figma_list_shaders. Colors take hex strings or {r,g,b,a}, and any property can bind a variable with {variableId}. Pass index to change a shader already in that list; without index the shader is added on top (or replaces the list with replace: true). Fill shaders go on fills or strokes; effect shaders go on effects. Unknown property names change nothing and list the valid ones. Requires Desktop Bridge.",
 		{
-			nodeId: z.string(),
-			shaderId: z.string().optional().describe("Shader id from figma_list_shaders. Optional when index points at a shader already applied"),
-			target: z.enum(SHADER_TARGETS).optional().default("fills"),
-			index: z.number().int().min(0).optional().describe("Change the shader at this position in the target list instead of adding one"),
-			replace: z.boolean().optional().default(false).describe("Replace everything in the target list with this shader"),
-			properties: z.record(z.string(), shaderValueSchema).optional().describe("Property values by name (or key)"),
-			opacity: z.number().min(0).max(1).optional().describe("Fills and strokes only"),
-			blendMode: z
-				.enum(["NORMAL", "DARKEN", "MULTIPLY", "COLOR_BURN", "LIGHTEN", "SCREEN", "COLOR_DODGE", "OVERLAY", "SOFT_LIGHT", "HARD_LIGHT", "DIFFERENCE", "EXCLUSION", "HUE", "SATURATION", "COLOR", "LUMINOSITY"])
-				.optional()
-				.describe("Fills and strokes only"),
-			visible: z.boolean().optional(),
-			fileKey: fileKeySchema,
+			description:
+				"Apply a shader to a node's fills, strokes or effects, or change the properties of one already applied. Set properties by name (e.g. {turbulence: 40, cloudColor: '#E8F4FF'}); names, types and defaults come from figma_list_shaders. Colors take hex strings or {r,g,b,a}, and any property can bind a variable with {variableId}. Pass index to change a shader already in that list; without index the shader is added on top (or replaces the list with replace: true). Fill shaders go on fills or strokes; effect shaders go on effects. Unknown property names change nothing and list the valid ones. Requires Desktop Bridge.",
+			inputSchema: z.object({
+				nodeId: z.string(),
+				shaderId: z
+					.string()
+					.optional()
+					.describe(
+						"Shader id from figma_list_shaders. Optional when index points at a shader already applied",
+					),
+				target: z.enum(SHADER_TARGETS).optional().default("fills"),
+				index: z
+					.number()
+					.int()
+					.min(0)
+					.optional()
+					.describe(
+						"Change the shader at this position in the target list instead of adding one",
+					),
+				replace: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe("Replace everything in the target list with this shader"),
+				properties: z
+					.record(z.string(), shaderValueSchema)
+					.optional()
+					.describe("Property values by name (or key)"),
+				opacity: z
+					.number()
+					.min(0)
+					.max(1)
+					.optional()
+					.describe("Fills and strokes only"),
+				blendMode: z
+					.enum([
+						"NORMAL",
+						"DARKEN",
+						"MULTIPLY",
+						"COLOR_BURN",
+						"LIGHTEN",
+						"SCREEN",
+						"COLOR_DODGE",
+						"OVERLAY",
+						"SOFT_LIGHT",
+						"HARD_LIGHT",
+						"DIFFERENCE",
+						"EXCLUSION",
+						"HUE",
+						"SATURATION",
+						"COLOR",
+						"LUMINOSITY",
+					])
+					.optional()
+					.describe("Fills and strokes only"),
+				visible: z.boolean().optional(),
+				fileKey: fileKeySchema,
+			}),
 		},
 		async ({ fileKey, ...payload }) => {
 			try {
-				return ok(await run(getDesktopConnector, shaderScript(payload, APPLY_SHADER_BODY), 30000, fileKey));
+				return ok(
+					await run(
+						getDesktopConnector,
+						shaderScript(payload, APPLY_SHADER_BODY),
+						30000,
+						fileKey,
+					),
+				);
 			} catch (error) {
 				return fail("figma_apply_shader", error);
 			}
