@@ -80,7 +80,7 @@ flowchart TB
 - **WebSocket + HTTP** — via Desktop Bridge Plugin on ports 9223–9232. No debug flags needed. Supports real-time selection tracking, document change monitoring, and console capture.
 - The server tries port 9223 first, then automatically falls back through ports 9224–9232 if another instance is already running. Orphaned processes are automatically detected and terminated on startup.
 - The HTTP server on the same port exposes `/health` for liveness checks.
-- All 130 tools work through the WebSocket transport.
+- All 145 tools work through the WebSocket transport.
 - **Optional MCP over HTTP** — with `FIGMA_MCP_HTTP_PORT` set, the server also serves MCP (Streamable HTTP) at `http://127.0.0.1:<port>/mcp`, so other local clients can share its plugin connection. Off by default; see [Sharing one server over HTTP](#sharing-one-server-over-http).
 
 **Plugin distribution:**
@@ -106,7 +106,7 @@ flowchart TB
 The main server implements the Model Context Protocol with stdio transport for local mode, plus an optional Streamable HTTP endpoint (`src/core/http-transport.ts`).
 
 **Key Responsibilities:**
-- Tool registration (130 tools in Local Mode, 102 in Cloud Mode)
+- Tool registration (145 tools in Local Mode, 102 in Cloud Mode)
 - Request routing and validation
 - Figma API client management
 - Desktop Bridge communication via WebSocket
@@ -206,7 +206,7 @@ Each server writes a port file (`figma-console-mcp-<port>.json` in the OS temp d
 
 #### Sharing one server over HTTP
 
-With `FIGMA_MCP_HTTP_PORT` set (v1.44.0), the server also accepts MCP over Streamable HTTP at `http://127.0.0.1:<port>/mcp`. Each HTTP session gets its own `McpServer` with every tool registered, as each stdio client gets its own process, and all sessions share the one WebSocket bridge and its caches. Sessions end when the client ends them, after 30 minutes idle, or (least recently used first) past 32 open.
+With `FIGMA_MCP_HTTP_PORT` set (v1.44.0), the server also accepts MCP over Streamable HTTP at `http://127.0.0.1:<port>/mcp`. Clients on 2025-era protocols get a session with its own `McpServer`, as each stdio client gets its own process; sessions end when the client ends them, after 30 minutes idle, or (least recently used first) past 32 open. Clients on protocol 2026-07-28 are sessionless: each request is served by a fresh `McpServer`. Every server lists the core tools plus the toolsets switched on in this process (`figma_enable_toolsets` or `FIGMA_TOOLSETS`), so on a shared HTTP server one client enabling a toolset enables it for all of them. All of them share the one WebSocket bridge and its caches.
 
 Only loopback is served: the endpoint binds `127.0.0.1`, rejects any `Host` that isn't localhost (DNS rebinding), and rejects browser `Origin`s other than localhost pages. `FIGMA_MCP_HTTP_TOKEN` adds a bearer token. If the port is taken, the endpoint stays off and `figma_get_status` reports why; stdio is unaffected.
 
@@ -218,7 +218,7 @@ Figma can't stop a running plugin script, so a timed-out request may still be ru
 
 The MCP server checks if a WebSocket client is connected (instant, under 1ms). If connected, commands route through WebSocket. If no client is connected, setup instructions are returned.
 
-All 130 tools work through the WebSocket transport.
+All 145 tools work through the WebSocket transport.
 
 ---
 

@@ -28,9 +28,10 @@ interface RegisteredTool {
 function createMockServer() {
 	const tools: Record<string, RegisteredTool> = {};
 	return {
-		tool: jest.fn(
-			(name: string, description: string, schema: any, handler: any) => {
-				tools[name] = { name, description, schema, handler };
+		registerTool: jest.fn(
+			(name: string, config: { description?: string; inputSchema?: any }, handler: any) => {
+				const schema = config.inputSchema?.shape ?? config.inputSchema;
+				tools[name] = { name, description: config.description ?? "", schema, handler };
 			}
 		),
 		_tools: tools,
@@ -117,7 +118,7 @@ describe("Write Tools", () => {
 	// ========================================================================
 
 	it("registers all 31 write tools", () => {
-		expect(server.tool).toHaveBeenCalledTimes(31);
+		expect(server.registerTool).toHaveBeenCalledTimes(31);
 	});
 
 	// ========================================================================

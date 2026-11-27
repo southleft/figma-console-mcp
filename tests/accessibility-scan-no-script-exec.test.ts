@@ -23,7 +23,7 @@ function runRealScan(html: string): { pwned: unknown; body: any } {
 		`
 import { registerAccessibilityTools } from ${JSON.stringify(join(ROOT, "src/core/accessibility-tools.ts"))};
 let handler;
-registerAccessibilityTools({ tool: (name, _d, _s, fn) => { if (name === "figma_scan_code_accessibility") handler = fn; } });
+registerAccessibilityTools({ registerTool: (name, __cfg: any, fn) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; if (name === "figma_scan_code_accessibility") handler = fn; } });
 const res = await handler({ html: ${JSON.stringify(html)} });
 console.log(JSON.stringify({ pwned: globalThis.__scanPwned ?? null, body: JSON.parse(res.content[0].text) }));
 `,

@@ -28,7 +28,7 @@ function makeVars(n: number) {
 
 function setup() {
 	const tools: Record<string, any> = {};
-	const server = { tool: (name: string, _d: string, _s: any, handler: any) => { tools[name] = handler; } };
+	const server = { registerTool: (name: string, __cfg: any, handler: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; tools[name] = handler; } };
 	const connector = {
 		getVariablesFromPluginUI: jest.fn().mockResolvedValue(makeVars(25)),
 		getVariables: jest.fn().mockResolvedValue(makeVars(25)),

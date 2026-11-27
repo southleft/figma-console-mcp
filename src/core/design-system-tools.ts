@@ -7,7 +7,7 @@
  * to generate code with structural fidelity to the real design system.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { FigmaAPI } from "./figma-api.js";
 import { extractFileKey, formatComponentData } from "./figma-api.js";
@@ -36,8 +36,19 @@ interface TokenCollection {
 
 interface VisualSpec {
 	fills?: Array<{ type: string; color?: string; opacity?: number }>;
-	strokes?: Array<{ type: string; color?: string; weight?: number; align?: string }>;
-	effects?: Array<{ type: string; color?: string; offset?: { x: number; y: number }; radius?: number; spread?: number }>;
+	strokes?: Array<{
+		type: string;
+		color?: string;
+		weight?: number;
+		align?: string;
+	}>;
+	effects?: Array<{
+		type: string;
+		color?: string;
+		offset?: { x: number; y: number };
+		radius?: number;
+		spread?: number;
+	}>;
 	cornerRadius?: number;
 	rectangleCornerRadii?: number[];
 	opacity?: number;
@@ -75,7 +86,12 @@ interface ComponentSpec {
 	name: string;
 	description?: string;
 	properties?: Record<string, any>;
-	variants?: Array<{ name: string; id: string; visualSpec?: VisualSpec; visualSpecDelta?: Record<string, any> }>;
+	variants?: Array<{
+		name: string;
+		id: string;
+		visualSpec?: VisualSpec;
+		visualSpecDelta?: Record<string, any>;
+	}>;
 	bounds?: { width: number; height: number };
 	imageUrl?: string;
 	visualSpec?: VisualSpec;
@@ -135,11 +151,18 @@ function calculateSizeKB(data: any): number {
 /**
  * Wrap a promise with a timeout to prevent indefinite hangs
  */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+function withTimeout<T>(
+	promise: Promise<T>,
+	ms: number,
+	label: string,
+): Promise<T> {
 	return Promise.race([
 		promise,
 		new Promise<never>((_, reject) =>
-			setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+			setTimeout(
+				() => reject(new Error(`${label} timed out after ${ms}ms`)),
+				ms,
+			),
 		),
 	]);
 }
@@ -147,7 +170,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 /**
  * Convert Figma RGBA (0-1 range) to hex string
  */
-function rgbaToHex(color: { r: number; g: number; b: number; a?: number }): string {
+function rgbaToHex(color: {
+	r: number;
+	g: number;
+	b: number;
+	a?: number;
+}): string {
 	const r = Math.round(color.r * 255);
 	const g = Math.round(color.g * 255);
 	const b = Math.round(color.b * 255);
@@ -187,8 +215,10 @@ export function extractVisualSpec(node: any): VisualSpec | undefined {
 				if (s.color) stroke.color = rgbaToHex(s.color);
 				return stroke;
 			});
-		if (node.strokeWeight !== undefined) spec.strokes!.forEach((s: any) => s.weight = node.strokeWeight);
-		if (node.strokeAlign) spec.strokes!.forEach((s: any) => s.align = node.strokeAlign);
+		if (node.strokeWeight !== undefined)
+			spec.strokes!.forEach((s: any) => (s.weight = node.strokeWeight));
+		if (node.strokeAlign)
+			spec.strokes!.forEach((s: any) => (s.align = node.strokeAlign));
 		if (spec.strokes!.length > 0) hasData = true;
 	}
 
@@ -229,19 +259,26 @@ export function extractVisualSpec(node: any): VisualSpec | undefined {
 			mode: node.layoutMode,
 		};
 		if (node.paddingTop !== undefined) spec.layout.paddingTop = node.paddingTop;
-		if (node.paddingRight !== undefined) spec.layout.paddingRight = node.paddingRight;
-		if (node.paddingBottom !== undefined) spec.layout.paddingBottom = node.paddingBottom;
-		if (node.paddingLeft !== undefined) spec.layout.paddingLeft = node.paddingLeft;
-		if (node.itemSpacing !== undefined) spec.layout.itemSpacing = node.itemSpacing;
-		if (node.primaryAxisAlignItems) spec.layout.primaryAxisAlign = node.primaryAxisAlignItems;
-		if (node.counterAxisAlignItems) spec.layout.counterAxisAlign = node.counterAxisAlignItems;
+		if (node.paddingRight !== undefined)
+			spec.layout.paddingRight = node.paddingRight;
+		if (node.paddingBottom !== undefined)
+			spec.layout.paddingBottom = node.paddingBottom;
+		if (node.paddingLeft !== undefined)
+			spec.layout.paddingLeft = node.paddingLeft;
+		if (node.itemSpacing !== undefined)
+			spec.layout.itemSpacing = node.itemSpacing;
+		if (node.primaryAxisAlignItems)
+			spec.layout.primaryAxisAlign = node.primaryAxisAlignItems;
+		if (node.counterAxisAlignItems)
+			spec.layout.counterAxisAlign = node.counterAxisAlignItems;
 		hasData = true;
 	}
 
 	// Sizing: fixed/hug/fill and min/max constraints. These were missing, so a
 	// component with a 320px min-width came out of the kit with no trace of it.
 	const sizing: NonNullable<VisualSpec["sizing"]> = {};
-	if (node.layoutSizingHorizontal) sizing.horizontal = node.layoutSizingHorizontal;
+	if (node.layoutSizingHorizontal)
+		sizing.horizontal = node.layoutSizingHorizontal;
 	if (node.layoutSizingVertical) sizing.vertical = node.layoutSizingVertical;
 	for (const k of ["minWidth", "maxWidth", "minHeight", "maxHeight"] as const) {
 		if (typeof node[k] === "number") sizing[k] = node[k];
@@ -260,7 +297,8 @@ export function extractVisualSpec(node: any): VisualSpec | undefined {
 		if (s.fontWeight) spec.typography.fontWeight = s.fontWeight;
 		if (s.lineHeightPx) spec.typography.lineHeight = s.lineHeightPx;
 		if (s.letterSpacing) spec.typography.letterSpacing = s.letterSpacing;
-		if (s.textAlignHorizontal) spec.typography.textAlignHorizontal = s.textAlignHorizontal;
+		if (s.textAlignHorizontal)
+			spec.typography.textAlignHorizontal = s.textAlignHorizontal;
 		hasData = true;
 	}
 
@@ -277,7 +315,12 @@ export function extractVisualSpec(node: any): VisualSpec | undefined {
  * the base carry neither field.
  */
 function deltaEncodeVariantSpecs(
-	variants: Array<{ name: string; id: string; visualSpec?: VisualSpec; visualSpecDelta?: Record<string, any> }>,
+	variants: Array<{
+		name: string;
+		id: string;
+		visualSpec?: VisualSpec;
+		visualSpecDelta?: Record<string, any>;
+	}>,
 ): void {
 	const base = variants.find((v) => v.visualSpec);
 	if (!base) return;
@@ -288,10 +331,16 @@ function deltaEncodeVariantSpecs(
 		const spec = variant.visualSpec as Record<string, any>;
 		const delta: Record<string, any> = {};
 
-		for (const key of new Set([...Object.keys(baseSpec), ...Object.keys(spec)])) {
+		for (const key of new Set([
+			...Object.keys(baseSpec),
+			...Object.keys(spec),
+		])) {
 			if (!(key in spec)) {
 				delta[key] = null;
-			} else if (!(key in baseSpec) || JSON.stringify(spec[key]) !== JSON.stringify(baseSpec[key])) {
+			} else if (
+				!(key in baseSpec) ||
+				JSON.stringify(spec[key]) !== JSON.stringify(baseSpec[key])
+			) {
 				delta[key] = spec[key];
 			}
 		}
@@ -411,7 +460,7 @@ function groupVariablesByCollection(formatted: {
  */
 function deduplicateComponents(
 	components: any[],
-	componentSets: any[]
+	componentSets: any[],
 ): { components: any[]; componentSets: any[] } {
 	const setNodeIds = new Set(componentSets.map((s: any) => s.node_id));
 
@@ -423,8 +472,10 @@ function deduplicateComponents(
 			// (some designs nest variants inside intermediate frames)
 			const frameNodeId = c.containing_frame?.nodeId;
 			const setNodeId = c.containing_frame?.containingComponentSet?.nodeId;
-			if ((frameNodeId && setNodeIds.has(frameNodeId)) ||
-				(setNodeId && setNodeIds.has(setNodeId))) {
+			if (
+				(frameNodeId && setNodeIds.has(frameNodeId)) ||
+				(setNodeId && setNodeIds.has(setNodeId))
+			) {
 				return false; // Skip, parent set covers it
 			}
 		}
@@ -437,7 +488,10 @@ function deduplicateComponents(
 /**
  * Compress the kit for large responses
  */
-function compressKit(kit: DesignSystemKit, level: "summary" | "inventory" | "compact"): DesignSystemKit {
+function compressKit(
+	kit: DesignSystemKit,
+	level: "summary" | "inventory" | "compact",
+): DesignSystemKit {
 	const compressed = { ...kit };
 
 	if (compressed.tokens) {
@@ -470,8 +524,12 @@ function compressKit(kit: DesignSystemKit, level: "summary" | "inventory" | "com
 		if (level === "compact") {
 			// Compact: drastically reduce for large systems
 			// Separate component sets (design building blocks) from standalone components
-			const sets = compressed.components.items.filter((c) => c.variants && c.variants.length > 0);
-			const standalone = compressed.components.items.filter((c) => !c.variants || c.variants.length === 0);
+			const sets = compressed.components.items.filter(
+				(c) => c.variants && c.variants.length > 0,
+			);
+			const standalone = compressed.components.items.filter(
+				(c) => !c.variants || c.variants.length === 0,
+			);
 
 			// Keep all sets (they're the main building blocks), limit standalone to 100
 			const limitedStandalone = standalone.slice(0, 100);
@@ -493,14 +551,16 @@ function compressKit(kit: DesignSystemKit, level: "summary" | "inventory" | "com
 								Object.entries(c.properties).map(([k, v]: [string, any]) => [
 									k,
 									{ type: v.type, defaultValue: v.defaultValue },
-								])
-						  )
+								]),
+							)
 						: undefined,
 				})),
 				summary: {
 					...compressed.components.summary,
 					totalComponents: trimmedItems.length,
-					...(standalone.length > 100 ? { omittedStandaloneComponents: standalone.length - 100 } as any : {}),
+					...(standalone.length > 100
+						? ({ omittedStandaloneComponents: standalone.length - 100 } as any)
+						: {}),
 				},
 			};
 		} else if (level === "inventory") {
@@ -516,8 +576,8 @@ function compressKit(kit: DesignSystemKit, level: "summary" | "inventory" | "com
 								Object.entries(c.properties).map(([k, v]: [string, any]) => [
 									k,
 									{ type: v.type, defaultValue: v.defaultValue },
-								])
-						  )
+								]),
+							)
 						: undefined,
 				})),
 			};
@@ -578,52 +638,55 @@ export function registerDesignSystemTools(
 	options?: { isRemoteMode?: boolean },
 	getDesktopConnector?: () => Promise<any>,
 ): void {
-	server.tool(
+	server.registerTool(
 		"figma_get_design_system_kit",
-		"PREFERRED TOOL for design system extraction — replaces separate figma_get_styles, figma_get_variables, and figma_get_component calls. " +
-		"Returns tokens, components, and styles in a single optimized response with adaptive compression for large systems. " +
-		"Includes component visual specs (exact colors, padding, typography, layout), rendered screenshots, " +
-		"token values per mode (light/dark), and resolved style values. " +
-		"Use this instead of calling individual tools to avoid context window overflow. " +
-		"Ideal for AI code generation — use visualSpec for pixel-accurate reproduction. " +
-		"Variant specs are delta-encoded: the base variant carries the full visualSpec, siblings carry visualSpecDelta with only the properties that differ. " +
-		"Tokens/variables are read through the connected Desktop Bridge or cloud relay and work on ANY Figma plan — no Enterprise required. " +
-		"If a tokens fetch ever reports the Variables REST API is plan-limited (403), the bridge/relay is the plan-independent path: ensure it's connected and retry rather than abandoning variables.",
 		{
-			fileKey: z
-				.string()
-				.optional()
-				.describe(
-					"Figma file key. If omitted, extracted from the current browser URL."
-				),
-			include: z
-				.array(z.enum(["tokens", "components", "styles"]))
-				.optional()
-				.default(["tokens", "components", "styles"])
-				.describe("Which sections to include. Defaults to all."),
-			componentIds: z
-				.array(z.string())
-				.optional()
-				.describe(
-					"Optional list of specific component node IDs to include. If omitted, all published components are returned."
-				),
-			includeImages: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe(
-					"Include image URLs for components (adds latency). Default false."
-				),
-			format: z
-				.enum(["full", "summary", "compact"])
-				.optional()
-				.default("full")
-				.describe(
-					"'full' returns complete data with visual specs and resolved values. " +
-					"'summary' strips variant-level visual specs (medium payload). " +
-					"'compact' returns only names, types, and property definitions (smallest payload, best for large design systems). " +
-					"Auto-compresses if response exceeds safe size regardless of format setting."
-				),
+			description:
+				"PREFERRED TOOL for design system extraction — replaces separate figma_get_styles, figma_get_variables, and figma_get_component calls. " +
+				"Returns tokens, components, and styles in a single optimized response with adaptive compression for large systems. " +
+				"Includes component visual specs (exact colors, padding, typography, layout), rendered screenshots, " +
+				"token values per mode (light/dark), and resolved style values. " +
+				"Use this instead of calling individual tools to avoid context window overflow. " +
+				"Ideal for AI code generation — use visualSpec for pixel-accurate reproduction. " +
+				"Variant specs are delta-encoded: the base variant carries the full visualSpec, siblings carry visualSpecDelta with only the properties that differ. " +
+				"Tokens/variables are read through the connected Desktop Bridge or cloud relay and work on ANY Figma plan — no Enterprise required. " +
+				"If a tokens fetch ever reports the Variables REST API is plan-limited (403), the bridge/relay is the plan-independent path: ensure it's connected and retry rather than abandoning variables.",
+			inputSchema: z.object({
+				fileKey: z
+					.string()
+					.optional()
+					.describe(
+						"Figma file key. If omitted, extracted from the current browser URL.",
+					),
+				include: z
+					.array(z.enum(["tokens", "components", "styles"]))
+					.optional()
+					.default(["tokens", "components", "styles"])
+					.describe("Which sections to include. Defaults to all."),
+				componentIds: z
+					.array(z.string())
+					.optional()
+					.describe(
+						"Optional list of specific component node IDs to include. If omitted, all published components are returned.",
+					),
+				includeImages: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"Include image URLs for components (adds latency). Default false.",
+					),
+				format: z
+					.enum(["full", "summary", "compact"])
+					.optional()
+					.default("full")
+					.describe(
+						"'full' returns complete data with visual specs and resolved values. " +
+							"'summary' strips variant-level visual specs (medium payload). " +
+							"'compact' returns only names, types, and property definitions (smallest payload, best for large design systems). " +
+							"Auto-compresses if response exceeds safe size regardless of format setting.",
+					),
+			}),
 		},
 		async ({ fileKey, include, componentIds, includeImages, format }) => {
 			try {
@@ -641,7 +704,7 @@ export function registerDesignSystemTools(
 				if (!resolvedFileKey) {
 					throw new Error(
 						"No file key provided and no Figma file currently open. " +
-						"Provide a fileKey parameter or navigate to a Figma file first."
+							"Provide a fileKey parameter or navigate to a Figma file first.",
 					);
 				}
 
@@ -662,9 +725,11 @@ export function registerDesignSystemTools(
 
 						// Check cache first
 						const cacheKey = `vars:${resolvedFileKey}`;
-						let formatted:
-							| { collections: any[]; variables: any[]; summary: any }
-							| null = null;
+						let formatted: {
+							collections: any[];
+							variables: any[];
+							summary: any;
+						} | null = null;
 
 						if (variablesCache) {
 							const cached = variablesCache.get(cacheKey);
@@ -712,13 +777,23 @@ export function registerDesignSystemTools(
 					try {
 						logger.info({ fileKey: resolvedFileKey }, "Fetching components");
 
-						const [componentsResponse, componentSetsResponse] = await Promise.all([
-							withTimeout(api.getComponents(resolvedFileKey), 30000, "getComponents"),
-							withTimeout(api.getComponentSets(resolvedFileKey), 30000, "getComponentSets"),
-						]);
+						const [componentsResponse, componentSetsResponse] =
+							await Promise.all([
+								withTimeout(
+									api.getComponents(resolvedFileKey),
+									30000,
+									"getComponents",
+								),
+								withTimeout(
+									api.getComponentSets(resolvedFileKey),
+									30000,
+									"getComponentSets",
+								),
+							]);
 
 						const allComponents = componentsResponse?.meta?.components || [];
-						const allComponentSets = componentSetsResponse?.meta?.component_sets || [];
+						const allComponentSets =
+							componentSetsResponse?.meta?.component_sets || [];
 
 						const { components: standaloneComponents, componentSets } =
 							deduplicateComponents(allComponents, allComponentSets);
@@ -729,11 +804,11 @@ export function registerDesignSystemTools(
 
 						if (componentIds && componentIds.length > 0) {
 							const idSet = new Set(componentIds);
-							targetComponents = standaloneComponents.filter(
-								(c: any) => idSet.has(c.node_id)
+							targetComponents = standaloneComponents.filter((c: any) =>
+								idSet.has(c.node_id),
 							);
-							targetSets = componentSets.filter(
-								(s: any) => idSet.has(s.node_id)
+							targetSets = componentSets.filter((s: any) =>
+								idSet.has(s.node_id),
 							);
 						}
 
@@ -759,13 +834,18 @@ export function registerDesignSystemTools(
 										`getNodes(batch ${Math.floor(i / batchSize) + 1})`,
 									);
 									if (nodeResponse?.nodes) {
-										for (const [nodeId, nodeData] of Object.entries(nodeResponse.nodes)) {
+										for (const [nodeId, nodeData] of Object.entries(
+											nodeResponse.nodes,
+										)) {
 											nodeDetailsMap[nodeId] = (nodeData as any)?.document;
 										}
 									}
 								}
 							} catch (err) {
-								logger.warn({ error: err }, "Failed to batch-fetch component node details");
+								logger.warn(
+									{ error: err },
+									"Failed to batch-fetch component node details",
+								);
 							}
 						}
 
@@ -784,16 +864,25 @@ export function registerDesignSystemTools(
 							// Match by component_set_id, containing_frame.nodeId, OR containingComponentSet.nodeId
 							// (some designs nest variants inside intermediate frames)
 							const variants = allComponents
-								.filter((c: any) =>
-									c.component_set_id === set.node_id ||
-									c.containing_frame?.nodeId === set.node_id ||
-									c.containing_frame?.containingComponentSet?.nodeId === set.node_id
+								.filter(
+									(c: any) =>
+										c.component_set_id === set.node_id ||
+										c.containing_frame?.nodeId === set.node_id ||
+										c.containing_frame?.containingComponentSet?.nodeId ===
+											set.node_id,
 								)
 								.map((c: any) => {
-									const entry: { name: string; id: string; visualSpec?: VisualSpec; visualSpecDelta?: Record<string, any> } = { name: c.name, id: c.node_id };
+									const entry: {
+										name: string;
+										id: string;
+										visualSpec?: VisualSpec;
+										visualSpecDelta?: Record<string, any>;
+									} = { name: c.name, id: c.node_id };
 									// Attach visual spec from depth-2 children of the set node
 									if (setNode?.children) {
-										const variantNode = setNode.children.find((ch: any) => ch.id === c.node_id);
+										const variantNode = setNode.children.find(
+											(ch: any) => ch.id === c.node_id,
+										);
 										if (variantNode) {
 											const vs = extractVisualSpec(variantNode);
 											if (vs) entry.visualSpec = vs;
@@ -870,10 +959,13 @@ export function registerDesignSystemTools(
 								for (let i = 0; i < nodeIds.length; i += batchSize) {
 									const batch = nodeIds.slice(i, i + batchSize);
 									const imagesResult = await withTimeout(
-									api.getImages(resolvedFileKey, batch, { scale: 2, format: "png" }),
-									30000,
-									"getImages",
-								);
+										api.getImages(resolvedFileKey, batch, {
+											scale: 2,
+											format: "png",
+										}),
+										30000,
+										"getImages",
+									);
 									if (imagesResult?.images) {
 										for (const spec of componentSpecs) {
 											const url = imagesResult.images[spec.id];
@@ -929,7 +1021,11 @@ export function registerDesignSystemTools(
 						// Resolve actual values for styles (colors, typography, effects)
 						if (styleSpecs.length > 0) {
 							try {
-								const resolvedValues = await resolveStyleValues(api, resolvedFileKey, styleSpecs);
+								const resolvedValues = await resolveStyleValues(
+									api,
+									resolvedFileKey,
+									styleSpecs,
+								);
 								for (const style of styleSpecs) {
 									if (style.nodeId && resolvedValues.has(style.nodeId)) {
 										style.resolvedValue = resolvedValues.get(style.nodeId);
@@ -967,9 +1063,16 @@ export function registerDesignSystemTools(
 				}
 
 				const sections = [];
-				if (kit.tokens) sections.push(`${kit.tokens.summary.totalVariables} tokens in ${kit.tokens.summary.totalCollections} collections`);
-				if (kit.components) sections.push(`${kit.components.summary.totalComponents} components (${kit.components.summary.totalComponentSets} sets)`);
-				if (kit.styles) sections.push(`${kit.styles.summary.totalStyles} styles`);
+				if (kit.tokens)
+					sections.push(
+						`${kit.tokens.summary.totalVariables} tokens in ${kit.tokens.summary.totalCollections} collections`,
+					);
+				if (kit.components)
+					sections.push(
+						`${kit.components.summary.totalComponents} components (${kit.components.summary.totalComponentSets} sets)`,
+					);
+				if (kit.styles)
+					sections.push(`${kit.styles.summary.totalStyles} styles`);
 
 				kit.ai_instruction =
 					"DESIGN SYSTEM SPECIFICATION — STRICT VISUAL FIDELITY REQUIRED\n\n" +
@@ -1011,7 +1114,10 @@ export function registerDesignSystemTools(
 				// Thresholds tuned for consumer AI context windows (~128K tokens ≈ ~400KB text)
 				// ----------------------------------------------------------------
 				const sizeKB = calculateSizeKB(kit);
-				logger.info({ sizeKB: sizeKB.toFixed(0), format }, "Kit assembled, checking compression");
+				logger.info(
+					{ sizeKB: sizeKB.toFixed(0), format },
+					"Kit assembled, checking compression",
+				);
 
 				// Determine compression level from format + size
 				let compressionLevel: "summary" | "inventory" | "compact" | null = null;
@@ -1049,7 +1155,14 @@ export function registerDesignSystemTools(
 							" For full visual specs of specific components, re-call with specific componentIds and format='full'.";
 					}
 
-					logger.info({ originalKB: sizeKB.toFixed(0), compressedKB: compressedSizeKB.toFixed(0), level: compressionLevel }, "Kit compressed");
+					logger.info(
+						{
+							originalKB: sizeKB.toFixed(0),
+							compressedKB: compressedSizeKB.toFixed(0),
+							level: compressionLevel,
+						},
+						"Kit compressed",
+					);
 
 					return {
 						content: [
@@ -1082,7 +1195,10 @@ export function registerDesignSystemTools(
 					// Not a JSON error
 				}
 
-				if (parsedError?.error === "authentication_required" || parsedError?.error === "oauth_error") {
+				if (
+					parsedError?.error === "authentication_required" ||
+					parsedError?.error === "oauth_error"
+				) {
 					return {
 						content: [
 							{
@@ -1108,6 +1224,6 @@ export function registerDesignSystemTools(
 					isError: true,
 				};
 			}
-		}
+		},
 	);
 }

@@ -4,7 +4,7 @@ description: "A design-system-focused MCP server for Figma: bidirectional Figma-
 ---
 
 <Note>
-**Shaders, grid and auto layout, OKLCH and P3 color, text wrap and variable fonts (latest v1.46.0):** apply shaders and set their properties by name (`figma_apply_shader`, `figma_list_shaders`), set auto layout or grid layout in one call with CSS-style grid tracks (`figma_set_layout`), use OKLCH, Display P3 and other CSS colors on fills and strokes, and set text wrap (balance, pretty) and variable-font axes with `figma_set_text` (v1.46.0). v1.45 added Motion: animate layers with presets, custom animation styles or keyframes bound to Timing and Easing tokens, export video, and find code layers. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#1460---2026-10-29)
+**v2.1: extended collections end to end, honest write errors, library analytics you can act on (latest v2.1.1):** Write tools now say when Figma refuses a change, instead of reporting success. Extended collections work end to end: extensions of library collections are readable, you can extend the file's own collections, and `figma_reset_variable_override` puts an overridden value back to inherited. Library analytics lists unused components, styles and variables, and names variants by their component set. [See what's new →](https://github.com/southleft/figma-console-mcp/blob/main/CHANGELOG.md#211---2026-11-27)
 </Note>
 
 # Your Design System as an API
@@ -113,6 +113,24 @@ Real component data. Real token values. Real code that uses your actual design s
 ## Capabilities
 
 <AccordionGroup>
+  <Accordion title="Design-System Adherence (v2.0)" icon="compass">
+    Build with what exists and mark what doesn't.
+    - **Resolve** each UI need, and each part such as a card's image, to a real component with `figma_resolve_components`. Whatever the system lacks becomes an explained `GAP:` note placed where the element belongs, never a look-alike.
+    - **Audit** generated Figma frames (`figma_audit_adherence`) and code (`figma_audit_code_adherence`) for hand-built look-alikes, off-system components and values not bound to tokens.
+    - **Check library parity** between a Figma library and its code library down to props, variants and states (`figma_check_library_parity`).
+    - **Bind** spacing, radius and type to existing variables only (`figma_bind_tokens`).
+  </Accordion>
+
+  <Accordion title="Token-Efficient Toolsets (v2.0)" icon="bolt">
+    A core set of tools is always listed. The rest load in toolsets the AI switches on when a task needs them (`figma_enable_toolsets`), so every message carries ~9k tokens of tool definitions instead of ~60k. `FIGMA_TOOLSETS=all` restores the full list; `figma_call` covers clients that don't refresh their tool list. Skills are served by the server and load on demand.
+  </Accordion>
+
+  <Accordion title="Dev Resources, Usage & Library Analytics (v2.0)" icon="link">
+    - **Link components to code:** add their code, Storybook and docs links in bulk (`figma_manage_dev_resources`).
+    - **Impact before change:** see where a style, variable or component is used before you change it (`figma_find_usages`).
+    - **Enterprise:** library adoption and detach rates (`figma_get_library_analytics`), and extended collections for brand themes from a library or local collection (`figma_extend_library_collection`, with `figma_reset_variable_override` to undo an override).
+  </Accordion>
+
   <Accordion title="Design System Extraction" icon="palette">
     Extract variables, styles, and components as structured data. Export to CSS custom properties, Tailwind config, Sass variables, or JSON.
 
@@ -250,12 +268,12 @@ Real component data. Real token values. Real code that uses your actual design s
 
 <Columns cols={3}>
   <Card title="NPX Setup (Recommended)" icon="bolt" href="/setup#-npx-setup-recommended">
-    **Full capabilities — 130 tools**
+    **Full capabilities — 145 tools**
 
     All tools including real-time monitoring. Requires Node.js and a Figma token.
   </Card>
   <Card title="Cloud Mode" icon="cloud-arrow-up" href="/setup#-cloud-mode-web-ai-clients">
-    **Web AI clients — 105 tools**
+    **Web AI clients — 114 tools**
 
     Full write access from Claude.ai, v0, Replit, or Lovable. Pair with a code — no Node.js needed.
   </Card>
@@ -318,7 +336,7 @@ Real component data. Real token values. Real code that uses your actual design s
     Real scenarios and workflows
   </Card>
   <Card title="All Tools" icon="wrench" href="/tools">
-    Complete reference for 130 tools
+    Complete reference for 145 tools
   </Card>
   <Card title="Troubleshooting" icon="circle-question" href="/troubleshooting">
     Common issues and solutions

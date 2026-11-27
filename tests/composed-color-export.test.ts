@@ -222,3 +222,22 @@ describe("composed colors: review findings", () => {
 		expect(r.warnings.join("\n")).toMatch(/\$value was edited but its composedColor wasn't/);
 	});
 });
+
+describe("opacity-scoped numbers", () => {
+	it("exports a COLOR_OPACITY-scoped float as a plain number, like OPACITY", () => {
+		const payload: any = {
+			collections: [{ id: "P", name: "Primitives", modes: [{ modeId: "9:0", name: "Value" }], variableIds: ["c", "o", "d"] }],
+			variables: [
+				{ id: "c", name: "alpha/muted", resolvedType: "FLOAT", variableCollectionId: "P", scopes: ["COLOR_OPACITY"], valuesByMode: { "9:0": 40 } },
+				{ id: "o", name: "alpha/both", resolvedType: "FLOAT", variableCollectionId: "P", scopes: ["OPACITY", "COLOR_OPACITY"], valuesByMode: { "9:0": 60 } },
+				{ id: "d", name: "space/4", resolvedType: "FLOAT", variableCollectionId: "P", scopes: ["GAP"], valuesByMode: { "9:0": 16 } },
+			],
+		};
+		const r: any = convertFigmaVariablesToDocument(payload, { exportedAt: "2026-11-26T00:00:00.000Z" } as any);
+		const tok = (n: string) => r.document.sets[0].tokens.find((t: any) => t.path.join("/") === n);
+		expect(tok("alpha/muted").type).toBe("number");
+		expect(tok("alpha/both").type).toBe("number");
+		expect(tok("space/4").type).not.toBe("number");
+		expect(JSON.stringify(tok("alpha/muted"))).toContain("\"scopes\":[\"COLOR_OPACITY\"]");
+	});
+});

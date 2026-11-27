@@ -22,8 +22,8 @@ interface RegisteredTool {
 function createMockServer() {
 	const tools: Record<string, RegisteredTool> = {};
 	return {
-		tool: jest.fn(
-			(name: string, description: string, schema: any, handler: any) => {
+		registerTool: jest.fn(
+			(name: string, __cfg: any, handler: any) => { const description = __cfg?.description ?? ""; const schema = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void description; void schema;
 				tools[name] = { name, description, schema, handler };
 			},
 		),
@@ -63,7 +63,7 @@ describe("Multi-File Tools", () => {
 	it("registers exactly 1 tool", () => {
 		const wsServer = createMockWsServer([]);
 		registerMultiFileTools(server as any, () => wsServer as any, async () => ({}));
-		expect(server.tool).toHaveBeenCalledTimes(1);
+		expect(server.registerTool).toHaveBeenCalledTimes(1);
 		expect(server._getTool("figma_execute_across_files")).toBeDefined();
 	});
 

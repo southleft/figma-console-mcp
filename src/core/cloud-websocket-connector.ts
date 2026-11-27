@@ -10,6 +10,7 @@
  */
 
 import type { IFigmaConnector } from './figma-connector.js';
+import { bridgeCommandFailure } from './bridge-result.js';
 
 interface RelayStub {
 	fetch(input: string | Request, init?: RequestInit): Promise<Response>;
@@ -563,6 +564,8 @@ export class CloudWebSocketConnector implements IFigmaConnector {
 		if (data.error) {
 			throw new Error(data.error);
 		}
+		const refused = bridgeCommandFailure(method, data.result);
+		if (refused) throw new Error(refused);
 
 		return data.result;
 	}

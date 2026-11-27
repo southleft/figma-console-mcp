@@ -1,6 +1,7 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
+import { confirmStep, fingerprint, notConfirmedResult } from "./confirm.js";
 
 const logger = createChildLogger({ component: "write-tools" });
 
@@ -124,14 +125,51 @@ function motionValue(type, value) {
  */
 async function setCssPaints(
 	connector: any,
-	payload: { nodeId: string; target: "fills" | "strokes"; paints: unknown[]; strokeWeight?: number },
+	payload: {
+		nodeId: string;
+		target: "fills" | "strokes";
+		paints: unknown[];
+		strokeWeight?: number;
+	},
 	message: string,
 ) {
-	const result = await connector.executeCodeViaUI(`const P = ${JSON.stringify(payload)};\n${CSS_PAINT_BODY}`, 15000);
-	if (!result?.success) throw new Error(result?.error || `Failed to set ${payload.target}`);
+	const result = await connector.executeCodeViaUI(
+		`const P = ${JSON.stringify(payload)};\n${CSS_PAINT_BODY}`,
+		15000,
+	);
+	if (!result?.success)
+		throw new Error(result?.error || `Failed to set ${payload.target}`);
 	return {
-		content: [{ type: "text" as const, text: JSON.stringify({ success: true, message, ...result.result }) }],
+		content: [
+			{
+				type: "text" as const,
+				text: JSON.stringify({ success: true, message, ...result.result }),
+			},
+		],
 	};
+}
+
+
+/**
+ * Name, size and owning file of a collection, for the delete confirmation.
+ * null = checked, and it isn't a local collection in the target file;
+ * undefined = couldn't check (e.g. code execution unavailable).
+ */
+async function describeCollection(
+	connector: any,
+	collectionId: string,
+): Promise<{ name: string; variableCount: number; modeCount: number; fileKey: string | null; fileName: string } | null | undefined> {
+	try {
+		const code = `const c = await figma.variables.getVariableCollectionByIdAsync(${JSON.stringify(collectionId)});
+return c && !c.remote ? { name: c.name, variableCount: c.variableIds.length, modeCount: c.modes.length, fileKey: figma.fileKey || null, fileName: figma.root.name } : null;`;
+		const res = await connector.executeCodeViaUI(code, 10000);
+		if (res && typeof res === "object" && res.success === false) return undefined;
+		const value = res && typeof res === "object" && "result" in res ? res.result : res;
+		if (value === null) return null;
+		return value && typeof value.name === "string" ? value : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 export function registerWriteTools(
@@ -142,47 +180,35 @@ export function registerWriteTools(
 	// EXECUTION TOOL
 	// ============================================================================
 
-	server.tool(
+	server.registerTool(
 		"figma_execute",
-		`Execute arbitrary JavaScript in Figma's plugin context with full access to the figma API. Use for complex operations not covered by other tools. Requires Desktop Bridge plugin. CAUTION: Can modify your document.
-
-**COMPONENT INSTANCES:** For instances (node.type === 'INSTANCE'), use figma_set_instance_properties — direct text editing FAILS SILENTLY. Check instance.componentProperties for available props (may have #nodeId suffixes).
-
-**RESULT ANALYSIS:** Check resultAnalysis.warning for silent failures (empty arrays, null returns).
-
-**VALIDATION:** After creating/modifying visuals: screenshot with figma_capture_screenshot, check alignment/spacing/proportions, iterate up to 3x.
-
-**PLACEMENT:** Always create components inside a Section or Frame, never on blank canvas. Use parent.insertChild(0, bg) for z-ordering backgrounds behind content.
-
-**HOUSEKEEPING (MANDATORY):**
-Before creating: screenshot the target page to see existing content and find clear space.
-When creating: place inside a named Section, positioned BELOW or AWAY from existing content. Never overlap.
-After creating: screenshot to verify clean placement and no overlaps.
-On failure/retry: DELETE any partial artifacts (empty frames, orphaned layers, blank pages) before retrying. Use node.remove() to clean up.
-Pages: NEVER create a new page if one with that name already exists — use the existing one. If you created a blank page during a failed attempt, delete it.
-Layers: If your code creates helper frames, placeholder nodes, or intermediate layers that aren't part of the final result, remove them.
-
-**MULTI-FILE (Local Mode only):** Pass fileKey to run this in a specific connected file without switching the active file/target lock (see figma_list_open_files). To run the same code across several connected files at once, use figma_execute_across_files instead. Cloud Mode pairs with a single plugin instance and rejects fileKey.`,
 		{
-			code: z
-				.string()
-				.describe(
-					"JavaScript code to execute. Has access to the 'figma' global object. " +
-						"Example: 'const rect = figma.createRectangle(); rect.resize(100, 100); return { id: rect.id };'",
-				),
-			timeout: z
-				.number()
-				.optional()
-				.default(5000)
-				.describe(
-					"Execution timeout in milliseconds (default: 5000, max: 300000)",
-				),
-			fileKey: z
-				.string()
-				.optional()
-				.describe(
-					"Local Mode only. Run against this specific connected file instead of the active file. Does not change the active file or target lock. Get connected fileKeys from figma_list_open_files. Rejected in Cloud Mode, which pairs with a single plugin instance.",
-				),
+			description: `Run JavaScript in the Figma plugin context (full figma API) for anything other tools don't cover. Can modify the document.
+- Instances: change content with figma_set_instance_properties; editing text inside an instance fails silently.
+- Check resultAnalysis.warning for silent failures (empty or null results).
+- Before creating, screenshot the page and pick clear space; build inside a named Section or Frame, never overlapping existing work. Screenshot after.
+- Reuse an existing page with the same name instead of creating another. On failure, remove partial artifacts (node.remove()) before retrying.
+- fileKey runs it in another open file without changing the active one (Local Mode).`,
+			inputSchema: z.object({
+				code: z
+					.string()
+					.describe(
+						"Code with the 'figma' global; return a value, e.g. 'return figma.currentPage.selection.length;'",
+					),
+				timeout: z
+					.number()
+					.optional()
+					.default(5000)
+					.describe(
+						"Timeout in ms (default 5000, max 300000).",
+					),
+				fileKey: z
+					.string()
+					.optional()
+					.describe(
+						"Local Mode: run in this open file (see figma_list_open_files) without changing the active file.",
+					),
+			}),
 		},
 		async ({ code, timeout, fileKey }) => {
 			try {
@@ -197,16 +223,14 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: result.success,
-									result: result.result,
-									error: result.error,
-									resultAnalysis: result.resultAnalysis,
-									fileContext: result.fileContext,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: result.success,
+								result: result.result,
+								error: result.error,
+								resultAnalysis: result.resultAnalysis,
+								fileContext: result.fileContext,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -215,21 +239,20 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					{ error },
 					"Failed to execute code in Figma plugin context",
 				);
-				const errorMessage = error instanceof Error ? error.message : String(error);
+				const errorMessage =
+					error instanceof Error ? error.message : String(error);
 				const busy = /timed out|still busy/.test(errorMessage);
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error: errorMessage,
-									message: "Failed to execute code in Figma plugin context",
-									hint: busy
-										? "Figma can't stop a running script. Wait for it to finish (or close and reopen the Desktop Bridge plugin), then retry. For long scripts, pass a larger timeout (up to 300000 ms) or split the work into smaller calls."
-										: "Make sure the Desktop Bridge plugin is running in Figma",
-								},
-							),
+							text: JSON.stringify({
+								error: errorMessage,
+								message: "Failed to execute code in Figma plugin context",
+								hint: busy
+									? "Figma can't stop a running script. Wait for it to finish (or close and reopen the Desktop Bridge plugin), then retry. For long scripts, pass a larger timeout (up to 300000 ms) or split the work into smaller calls."
+									: "Make sure the Desktop Bridge plugin is running in Figma",
+							}),
 						},
 					],
 					isError: true,
@@ -243,33 +266,36 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 	// ============================================================================
 
 	// Tool: Update a variable's value
-	server.tool(
+	server.registerTool(
 		"figma_update_variable",
-		"Update a single variable's value and/or its description. Pass modeId+value to change the value in a mode; pass description to set the 'How to use this variable' text shown in the Variables panel (and exported as DTCG $description). At least one of {modeId+value} or {description} is required. For many value updates at once, use figma_batch_update_variables (10-50x faster). Use figma_get_variables first for IDs. COLOR: hex '#FF0000', FLOAT: number, STRING: text, BOOLEAN: true/false. Requires Desktop Bridge plugin.",
 		{
-			variableId: z
-				.string()
-				.describe(
-					"The variable ID to update (e.g., 'VariableID:123:456'). Get this from figma_get_variables.",
-				),
-			modeId: z
-				.string()
-				.optional()
-				.describe(
-					"The mode ID to update the value in (e.g., '1:0'). Required when updating a value. Get this from the variable's collection modes.",
-				),
-			value: z
-				.union([z.string(), z.number(), z.boolean()])
-				.optional()
-				.describe(
-					"The new value (requires modeId). For COLOR: hex string like '#FF0000'. For FLOAT: number. For STRING: text. For BOOLEAN: true/false.",
-				),
-			description: z
-				.string()
-				.optional()
-				.describe(
-					"Set the variable's description (the 'How to use this variable' field; exported as DTCG $description). Pass an empty string to clear it.",
-				),
+			description:
+				"Update a single variable's value and/or its description. Pass modeId+value to change the value in a mode; pass description to set the 'How to use this variable' text shown in the Variables panel (and exported as DTCG $description). At least one of {modeId+value} or {description} is required. For many value updates at once, use figma_batch_update_variables (10-50x faster). Use figma_get_variables first for IDs. COLOR: hex '#FF0000', FLOAT: number, STRING: text, BOOLEAN: true/false. Requires Desktop Bridge plugin.",
+			inputSchema: z.object({
+				variableId: z
+					.string()
+					.describe(
+						"The variable ID to update (e.g., 'VariableID:123:456'). Get this from figma_get_variables.",
+					),
+				modeId: z
+					.string()
+					.optional()
+					.describe(
+						"The mode ID to update the value in (e.g., '1:0'). Required when updating a value. Get this from the variable's collection modes.",
+					),
+				value: z
+					.union([z.string(), z.number(), z.boolean()])
+					.optional()
+					.describe(
+						"The new value (requires modeId). For COLOR: hex string like '#FF0000'. For FLOAT: number. For STRING: text. For BOOLEAN: true/false.",
+					),
+				description: z
+					.string()
+					.optional()
+					.describe(
+						"Set the variable's description (the 'How to use this variable' field; exported as DTCG $description). Pass an empty string to clear it.",
+					),
+			}),
 		},
 		async ({ variableId, modeId, value, description }) => {
 			try {
@@ -315,14 +341,12 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Variable "${variable?.name ?? variableId}" updated successfully (${updated.join(" + ")})`,
-									variable,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Variable "${variable?.name ?? variableId}" updated successfully (${updated.join(" + ")})`,
+								variable,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -332,14 +356,11 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									message: "Failed to update variable",
-									hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to update variable",
+								hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
+							}),
 						},
 					],
 					isError: true,
@@ -349,39 +370,38 @@ Layers: If your code creates helper frames, placeholder nodes, or intermediate l
 	);
 
 	// Tool: Create a new variable
-	server.tool(
+	server.registerTool(
 		"figma_create_variable",
-		"Create a single Figma variable. For multiple variables, use figma_batch_create_variables instead (10-50x faster). Use figma_get_variables first to get collection IDs. Supports COLOR, FLOAT, STRING, BOOLEAN, and motion TIMING/EASING. Requires Desktop Bridge plugin.",
 		{
-			name: z
-				.string()
-				.describe("Name for the new variable (e.g., 'primary-blue')"),
-			collectionId: z
-				.string()
-				.describe(
-					"The collection ID to create the variable in (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
-				),
-			resolvedType: z
-				.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"])
-				.describe(`The variable type: COLOR, FLOAT, STRING, BOOLEAN, or the motion types TIMING and EASING. ${MOTION_VALUE_DOC}`),
-			description: z
-				.string()
-				.optional()
-				.describe("Optional description for the variable"),
-			valuesByMode: z
-				.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
-				.optional()
-				.describe(
-					"Optional initial values by mode ID. Example: { '1:0': '#FF0000', '1:1': '#0000FF' }",
-				),
+			description:
+				"Create a single Figma variable. For multiple variables, use figma_batch_create_variables instead (10-50x faster). Use figma_get_variables first to get collection IDs. Supports COLOR, FLOAT, STRING, BOOLEAN, and motion TIMING/EASING. Requires Desktop Bridge plugin.",
+			inputSchema: z.object({
+				name: z
+					.string()
+					.describe("Name for the new variable (e.g., 'primary-blue')"),
+				collectionId: z
+					.string()
+					.describe(
+						"The collection ID to create the variable in (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
+					),
+				resolvedType: z
+					.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"])
+					.describe(
+						`The variable type: COLOR, FLOAT, STRING, BOOLEAN, or the motion types TIMING and EASING. ${MOTION_VALUE_DOC}`,
+					),
+				description: z
+					.string()
+					.optional()
+					.describe("Optional description for the variable"),
+				valuesByMode: z
+					.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+					.optional()
+					.describe(
+						"Optional initial values by mode ID. Example: { '1:0': '#FF0000', '1:1': '#0000FF' }",
+					),
+			}),
 		},
-		async ({
-			name,
-			collectionId,
-			resolvedType,
-			description,
-			valuesByMode,
-		}) => {
+		async ({ name, collectionId, resolvedType, description, valuesByMode }) => {
 			try {
 				const connector = await getDesktopConnector();
 				let result;
@@ -399,7 +419,8 @@ for (const modeId of Object.keys(values)) variable.setValueForMode(modeId, motio
 return { id: variable.id, name: variable.name, resolvedType: variable.resolvedType, valuesByMode: variable.valuesByMode, variableCollectionId: variable.variableCollectionId };`,
 						10000,
 					);
-					if (!run.success) throw new Error(run.error || "Failed to create variable");
+					if (!run.success)
+						throw new Error(run.error || "Failed to create variable");
 					result = { variable: run.result };
 				} else {
 					result = await connector.createVariable(
@@ -417,14 +438,12 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Variable "${name}" created successfully`,
-									variable: result.variable,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Variable "${name}" created successfully`,
+								variable: result.variable,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -434,14 +453,11 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									message: "Failed to create variable",
-									hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to create variable",
+								hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
+							}),
 						},
 					],
 					isError: true,
@@ -451,25 +467,28 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 	);
 
 	// Tool: Create a new variable collection
-	server.tool(
+	server.registerTool(
 		"figma_create_variable_collection",
-		"Create an empty variable collection. To create a collection WITH variables and modes in one step, use figma_setup_design_tokens instead. Requires Desktop Bridge plugin.",
 		{
-			name: z
-				.string()
-				.describe("Name for the new collection (e.g., 'Brand Colors')"),
-			initialModeName: z
-				.string()
-				.optional()
-				.describe(
-					"Name for the initial mode (default mode is created automatically). Example: 'Light'",
-				),
-			additionalModes: z
-				.array(z.string())
-				.optional()
-				.describe(
-					"Additional mode names to create. Example: ['Dark', 'High Contrast']",
-				),
+			description:
+				"Create an empty variable collection. To create a collection WITH variables and modes in one step, use figma_setup_design_tokens instead. Requires Desktop Bridge plugin.",
+			inputSchema: z.object({
+				name: z
+					.string()
+					.describe("Name for the new collection (e.g., 'Brand Colors')"),
+				initialModeName: z
+					.string()
+					.optional()
+					.describe(
+						"Name for the initial mode (default mode is created automatically). Example: 'Light'",
+					),
+				additionalModes: z
+					.array(z.string())
+					.optional()
+					.describe(
+						"Additional mode names to create. Example: ['Dark', 'High Contrast']",
+					),
+			}),
 		},
 		async ({ name, initialModeName, additionalModes }) => {
 			try {
@@ -483,14 +502,12 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Collection "${name}" created successfully`,
-									collection: result.collection,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Collection "${name}" created successfully`,
+								collection: result.collection,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -500,14 +517,11 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									message: "Failed to create variable collection",
-									hint: "Make sure the Desktop Bridge plugin is running in Figma",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to create variable collection",
+								hint: "Make sure the Desktop Bridge plugin is running in Figma",
+							}),
 						},
 					],
 					isError: true,
@@ -517,15 +531,18 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 	);
 
 	// Tool: Delete a variable
-	server.tool(
+	server.registerTool(
 		"figma_delete_variable",
-		"Delete a Figma variable. WARNING: This is a destructive operation that cannot be undone (except with Figma's undo). Use figma_get_variables first to get variable IDs. Requires the Desktop Bridge plugin to be running.",
 		{
-			variableId: z
-				.string()
-				.describe(
-					"The variable ID to delete (e.g., 'VariableID:123:456'). Get this from figma_get_variables.",
-				),
+			description:
+				"Delete a Figma variable. WARNING: This is a destructive operation that cannot be undone (except with Figma's undo). Use figma_get_variables first to get variable IDs. Requires the Desktop Bridge plugin to be running.",
+			inputSchema: z.object({
+				variableId: z
+					.string()
+					.describe(
+						"The variable ID to delete (e.g., 'VariableID:123:456'). Get this from figma_get_variables.",
+					),
+			}),
 		},
 		async ({ variableId }) => {
 			try {
@@ -536,16 +553,14 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Variable "${result.deleted.name}" deleted successfully`,
-									deleted: result.deleted,
-									timestamp: Date.now(),
-									warning:
-										"This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Variable "${result.deleted.name}" deleted successfully`,
+								deleted: result.deleted,
+								timestamp: Date.now(),
+								warning:
+									"This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
+							}),
 						},
 					],
 				};
@@ -555,14 +570,11 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									message: "Failed to delete variable",
-									hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to delete variable",
+								hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
+							}),
 						},
 					],
 					isError: true,
@@ -572,35 +584,85 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 	);
 
 	// Tool: Delete a variable collection
-	server.tool(
+	server.registerTool(
 		"figma_delete_variable_collection",
-		"Delete a Figma variable collection and ALL its variables. WARNING: This is a destructive operation that deletes all variables in the collection and cannot be undone (except with Figma's undo). Requires the Desktop Bridge plugin to be running.",
 		{
-			collectionId: z
-				.string()
-				.describe(
-					"The collection ID to delete (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
-				),
+			description:
+				"Delete a Figma variable collection and ALL its variables. WARNING: This is a destructive operation that deletes all variables in the collection and cannot be undone (except with Figma's undo). Requires the Desktop Bridge plugin to be running.",
+			inputSchema: z.object({
+				collectionId: z
+					.string()
+					.describe(
+						"The collection ID to delete (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
+					),
+			}),
 		},
-		async ({ collectionId }) => {
+		async ({ collectionId }, ctx) => {
 			try {
 				const connector = await getDesktopConnector();
+
+				// The person confirms before a whole collection disappears (when the
+				// client can show a form; otherwise behavior is unchanged). The answer
+				// arrives on a re-run of this handler — possibly minutes later — so
+				// nothing above writes, and the key is bound to the file + collection:
+				// if the active file changed meanwhile, the user is asked again.
+				const info = await describeCollection(connector, collectionId);
+				if (info === null) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: JSON.stringify({
+									error: `Collection ${collectionId} isn't a local collection in the file Figma Console is targeting. Nothing was deleted.`,
+									hint: "Check the active file with figma_list_open_files (switch with figma_navigate, or pin it with lock: true), and get collection IDs from figma_get_variables in that file.",
+								}),
+							},
+						],
+						isError: true,
+					};
+				}
+				const n = info?.variableCount;
+				const what = info
+					? `In "${info.fileName}", delete the variable collection "${info.name}" (${n} variable${n === 1 ? "" : "s"}, ${info.modeCount} mode${info.modeCount === 1 ? "" : "s"})?`
+					: `Delete the variable collection ${collectionId} in the active Figma file?`;
+				const step = confirmStep(
+					server,
+					ctx,
+					`confirm_delete_collection_${fingerprint(info?.fileKey, info?.fileName, collectionId, n)}`,
+					{
+						message: `${what} Every variable in it is deleted, and anything bound to them loses the binding. Only Figma's Undo can bring it back.`,
+						fields: {
+							confirm: {
+								type: "boolean",
+								title: info ? `Delete "${info.name}"` : "Delete this collection",
+								default: false,
+							},
+						},
+						required: ["confirm"],
+					},
+				);
+				if (step.status === "ask") return step.result as any;
+				if (step.status === "declined" || step.status === "cancelled") {
+					return notConfirmedResult("the collection delete", step);
+				}
+				if (step.status === "accepted" && step.content.confirm !== true) {
+					return notConfirmedResult("the collection delete", { status: "declined" });
+				}
+
 				const result = await connector.deleteVariableCollection(collectionId);
 
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Collection "${result.deleted.name}" and ${result.deleted.variableCount} variables deleted successfully`,
-									deleted: result.deleted,
-									timestamp: Date.now(),
-									warning:
-										"This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Collection "${result?.deleted?.name ?? info?.name ?? collectionId}" and ${result?.deleted?.variableCount ?? n ?? "its"} variables deleted successfully`,
+								deleted: result.deleted,
+								timestamp: Date.now(),
+								warning:
+									"This action cannot be undone programmatically. Use Figma's Edit > Undo if needed.",
+							}),
 						},
 					],
 				};
@@ -610,14 +672,11 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									message: "Failed to delete variable collection",
-									hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to delete variable collection",
+								hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
+							}),
 						},
 					],
 					isError: true,
@@ -627,20 +686,23 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 	);
 
 	// Tool: Rename a variable
-	server.tool(
+	server.registerTool(
 		"figma_rename_variable",
-		"Rename an existing Figma variable. This updates the variable's name while preserving all its values and settings. Requires the Desktop Bridge plugin to be running.",
 		{
-			variableId: z
-				.string()
-				.describe(
-					"The variable ID to rename (e.g., 'VariableID:123:456'). Get this from figma_get_variables.",
-				),
-			newName: z
-				.string()
-				.describe(
-					"The new name for the variable. Can include slashes for grouping (e.g., 'colors/primary/background').",
-				),
+			description:
+				"Rename an existing Figma variable. This updates the variable's name while preserving all its values and settings. Requires the Desktop Bridge plugin to be running.",
+			inputSchema: z.object({
+				variableId: z
+					.string()
+					.describe(
+						"The variable ID to rename (e.g., 'VariableID:123:456'). Get this from figma_get_variables.",
+					),
+				newName: z
+					.string()
+					.describe(
+						"The new name for the variable. Can include slashes for grouping (e.g., 'colors/primary/background').",
+					),
+			}),
 		},
 		async ({ variableId, newName }) => {
 			try {
@@ -651,15 +713,13 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Variable renamed from "${result.oldName}" to "${result.variable.name}"`,
-									oldName: result.oldName,
-									variable: result.variable,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Variable renamed from "${result.oldName}" to "${result.variable.name}"`,
+								oldName: result.oldName,
+								variable: result.variable,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -669,14 +729,11 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									message: "Failed to rename variable",
-									hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to rename variable",
+								hint: "Make sure the Desktop Bridge plugin is running and the variable ID is correct",
+							}),
 						},
 					],
 					isError: true,
@@ -686,20 +743,23 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 	);
 
 	// Tool: Add a mode to a collection
-	server.tool(
+	server.registerTool(
 		"figma_add_mode",
-		"Add a new mode to an existing Figma variable collection. Modes allow variables to have different values for different contexts (e.g., Light/Dark themes, device sizes). Requires the Desktop Bridge plugin to be running.",
 		{
-			collectionId: z
-				.string()
-				.describe(
-					"The collection ID to add the mode to (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
-				),
-			modeName: z
-				.string()
-				.describe(
-					"The name for the new mode (e.g., 'Dark', 'Mobile', 'High Contrast').",
-				),
+			description:
+				"Add a new mode to an existing Figma variable collection. Modes allow variables to have different values for different contexts (e.g., Light/Dark themes, device sizes). Requires the Desktop Bridge plugin to be running.",
+			inputSchema: z.object({
+				collectionId: z
+					.string()
+					.describe(
+						"The collection ID to add the mode to (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
+					),
+				modeName: z
+					.string()
+					.describe(
+						"The name for the new mode (e.g., 'Dark', 'Mobile', 'High Contrast').",
+					),
+			}),
 		},
 		async ({ collectionId, modeName }) => {
 			try {
@@ -710,15 +770,13 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Mode "${modeName}" added to collection "${result.collection.name}"`,
-									newMode: result.newMode,
-									collection: result.collection,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Mode "${modeName}" added to collection "${result.collection.name}"`,
+								newMode: result.newMode,
+								collection: result.collection,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -728,14 +786,11 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									message: "Failed to add mode to collection",
-									hint: "Make sure the Desktop Bridge plugin is running, the collection ID is correct, and you haven't exceeded Figma's mode limit",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to add mode to collection",
+								hint: "Make sure the Desktop Bridge plugin is running, the collection ID is correct, and you haven't exceeded Figma's mode limit",
+							}),
 						},
 					],
 					isError: true,
@@ -745,25 +800,28 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 	);
 
 	// Tool: Rename a mode in a collection
-	server.tool(
+	server.registerTool(
 		"figma_rename_mode",
-		"Rename an existing mode in a Figma variable collection. Requires the Desktop Bridge plugin to be running.",
 		{
-			collectionId: z
-				.string()
-				.describe(
-					"The collection ID containing the mode (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
-				),
-			modeId: z
-				.string()
-				.describe(
-					"The mode ID to rename (e.g., '123:0'). Get this from the collection's modes array in figma_get_variables.",
-				),
-			newName: z
-				.string()
-				.describe(
-					"The new name for the mode (e.g., 'Dark Theme', 'Tablet').",
-				),
+			description:
+				"Rename an existing mode in a Figma variable collection. Requires the Desktop Bridge plugin to be running.",
+			inputSchema: z.object({
+				collectionId: z
+					.string()
+					.describe(
+						"The collection ID containing the mode (e.g., 'VariableCollectionId:123:456'). Get this from figma_get_variables.",
+					),
+				modeId: z
+					.string()
+					.describe(
+						"The mode ID to rename (e.g., '123:0'). Get this from the collection's modes array in figma_get_variables.",
+					),
+				newName: z
+					.string()
+					.describe(
+						"The new name for the mode (e.g., 'Dark Theme', 'Tablet').",
+					),
+			}),
 		},
 		async ({ collectionId, modeId, newName }) => {
 			try {
@@ -778,15 +836,13 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Mode renamed from "${result.oldName}" to "${newName}"`,
-									oldName: result.oldName,
-									collection: result.collection,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Mode renamed from "${result.oldName}" to "${newName}"`,
+								oldName: result.oldName,
+								collection: result.collection,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -796,14 +852,11 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									message: "Failed to rename mode",
-									hint: "Make sure the Desktop Bridge plugin is running, the collection ID and mode ID are correct",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to rename mode",
+								hint: "Make sure the Desktop Bridge plugin is running, the collection ID and mode ID are correct",
+							}),
 						},
 					],
 					isError: true,
@@ -820,40 +873,50 @@ return { id: variable.id, name: variable.name, resolvedType: variable.resolvedTy
 	// Use these instead of calling individual tools repeatedly.
 
 	// Tool: Batch create variables
-	server.tool(
+	server.registerTool(
 		"figma_batch_create_variables",
-		"Create multiple variables in one operation. Use instead of calling figma_create_variable repeatedly — up to 50x faster for bulk operations. Get collection IDs from figma_get_variables first. Requires Desktop Bridge plugin.",
 		{
-			collectionId: z
-				.string()
-				.describe(
-					"Collection ID to create all variables in (e.g., 'VariableCollectionId:123:456')",
-				),
-			variables: z
-				.array(
-					z.object({
-						name: z.string().describe("Variable name (e.g., 'primary-blue')"),
-						resolvedType: z
-							.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"])
-							.describe(`Variable type. ${MOTION_VALUE_DOC}`),
-						description: z
-							.string()
-							.optional()
-							.describe("Optional description"),
-						valuesByMode: z
-							.record(
-								z.string(),
-								z.union([z.string(), z.number(), z.boolean()]),
-							)
-							.optional()
-							.describe(
-								"Values by mode ID. For COLOR: hex like '#FF0000'. To alias another variable, pass its ID (e.g. 'VariableID:1:23') as the value. Example: { '1:0': '#FF0000' }",
-							),
-					}),
-				)
-				.min(1)
-				.max(100)
-				.describe("Array of variables to create (1-100)"),
+			description:
+				"Create multiple variables in one operation. Use instead of calling figma_create_variable repeatedly — up to 50x faster for bulk operations. Get collection IDs from figma_get_variables first. Requires Desktop Bridge plugin.",
+			inputSchema: z.object({
+				collectionId: z
+					.string()
+					.describe(
+						"Collection ID to create all variables in (e.g., 'VariableCollectionId:123:456')",
+					),
+				variables: z
+					.array(
+						z.object({
+							name: z.string().describe("Variable name (e.g., 'primary-blue')"),
+							resolvedType: z
+								.enum([
+									"COLOR",
+									"FLOAT",
+									"STRING",
+									"BOOLEAN",
+									"TIMING",
+									"EASING",
+								])
+								.describe(`Variable type. ${MOTION_VALUE_DOC}`),
+							description: z
+								.string()
+								.optional()
+								.describe("Optional description"),
+							valuesByMode: z
+								.record(
+									z.string(),
+									z.union([z.string(), z.number(), z.boolean()]),
+								)
+								.optional()
+								.describe(
+									"Values by mode ID. For COLOR: hex like '#FF0000'. To alias another variable, pass its ID (e.g. 'VariableID:1:23') as the value. Example: { '1:0': '#FF0000' }",
+								),
+						}),
+					)
+					.min(1)
+					.max(100)
+					.describe("Array of variables to create (1-100)"),
+			}),
 		},
 		async ({ collectionId, variables }) => {
 			try {
@@ -914,14 +977,11 @@ return {
 						content: [
 							{
 								type: "text" as const,
-								text: JSON.stringify(
-									{
-										error: result.error,
-										message:
-											"Batch create failed during execution",
-										hint: "Check that the collection ID is valid and the Desktop Bridge plugin is running",
-									},
-								),
+								text: JSON.stringify({
+									error: result.error,
+									message: "Batch create failed during execution",
+									hint: "Check that the collection ID is valid and the Desktop Bridge plugin is running",
+								}),
 							},
 						],
 						isError: true,
@@ -932,14 +992,12 @@ return {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Batch created ${result.result?.created ?? 0} variables (${result.result?.failed ?? 0} failed)`,
-									...result.result,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Batch created ${result.result?.created ?? 0} variables (${result.result?.failed ?? 0} failed)`,
+								...result.result,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -949,16 +1007,11 @@ return {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error
-											? error.message
-											: String(error),
-									message: "Failed to batch create variables",
-									hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to batch create variables",
+								hint: "Make sure the Desktop Bridge plugin is running and the collection ID is correct",
+							}),
 						},
 					],
 					isError: true,
@@ -968,31 +1021,30 @@ return {
 	);
 
 	// Tool: Batch update variables
-	server.tool(
+	server.registerTool(
 		"figma_batch_update_variables",
-		"Update multiple variable values in one operation. Use instead of calling figma_update_variable repeatedly — up to 50x faster for bulk updates. Get variable/mode IDs from figma_get_variables first. Requires Desktop Bridge plugin.",
 		{
-			updates: z
-				.array(
-					z.object({
-						variableId: z
-							.string()
-							.describe(
-								"Variable ID (e.g., 'VariableID:123:456')",
-							),
-						modeId: z
-							.string()
-							.describe("Mode ID (e.g., '1:0')"),
-						value: z
-							.union([z.string(), z.number(), z.boolean()])
-							.describe(
-								"New value. COLOR: hex like '#FF0000'. FLOAT: number. STRING: text. BOOLEAN: true/false.",
-							),
-					}),
-				)
-				.min(1)
-				.max(100)
-				.describe("Array of updates to apply (1-100)"),
+			description:
+				"Update multiple variable values in one operation. Use instead of calling figma_update_variable repeatedly — up to 50x faster for bulk updates. Get variable/mode IDs from figma_get_variables first. Requires Desktop Bridge plugin.",
+			inputSchema: z.object({
+				updates: z
+					.array(
+						z.object({
+							variableId: z
+								.string()
+								.describe("Variable ID (e.g., 'VariableID:123:456')"),
+							modeId: z.string().describe("Mode ID (e.g., '1:0')"),
+							value: z
+								.union([z.string(), z.number(), z.boolean()])
+								.describe(
+									"New value. COLOR: hex like '#FF0000'. FLOAT: number. STRING: text. BOOLEAN: true/false.",
+								),
+						}),
+					)
+					.min(1)
+					.max(100)
+					.describe("Array of updates to apply (1-100)"),
+			}),
 		},
 		async ({ updates }) => {
 			try {
@@ -1044,14 +1096,11 @@ return {
 						content: [
 							{
 								type: "text" as const,
-								text: JSON.stringify(
-									{
-										error: result.error,
-										message:
-											"Batch update failed during execution",
-										hint: "Check that variable IDs and mode IDs are valid",
-									},
-								),
+								text: JSON.stringify({
+									error: result.error,
+									message: "Batch update failed during execution",
+									hint: "Check that variable IDs and mode IDs are valid",
+								}),
 							},
 						],
 						isError: true,
@@ -1062,14 +1111,12 @@ return {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Batch updated ${result.result?.updated ?? 0} variables (${result.result?.failed ?? 0} failed)`,
-									...result.result,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Batch updated ${result.result?.updated ?? 0} variables (${result.result?.failed ?? 0} failed)`,
+								...result.result,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -1079,16 +1126,11 @@ return {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error
-											? error.message
-											: String(error),
-									message: "Failed to batch update variables",
-									hint: "Make sure the Desktop Bridge plugin is running and variable/mode IDs are correct",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to batch update variables",
+								hint: "Make sure the Desktop Bridge plugin is running and variable/mode IDs are correct",
+							}),
 						},
 					],
 					isError: true,
@@ -1098,46 +1140,54 @@ return {
 	);
 
 	// Tool: Setup design tokens (collection + modes + variables atomically)
-	server.tool(
+	server.registerTool(
 		"figma_setup_design_tokens",
-		"Create a complete design token structure in one operation: collection, modes, and all variables. Ideal for importing CSS custom properties or design tokens into Figma. Values may be literals OR DTCG-style brace references ('{color.blue.600}', or set-qualified '{primitives.color.blue.600}') that resolve to variable ALIASES — first against variables created in this same call, then against existing local variables. Unresolvable references skip that value with a per-item warning (the rest of the batch still applies), so semantic collections referencing primitives no longer need raw figma_execute. Requires Desktop Bridge plugin.",
 		{
-			collectionName: z
-				.string()
-				.describe("Name for the token collection (e.g., 'Brand Tokens')"),
-			modes: z
-				.array(z.string())
-				.min(1)
-				.max(4)
-				.describe(
-					"Mode names (first becomes default). Example: ['Light', 'Dark']",
-				),
-			tokens: z
-				.array(
-					z.object({
-						name: z
-							.string()
-							.describe("Token name (e.g., 'color/primary')"),
-						resolvedType: z
-							.enum(["COLOR", "FLOAT", "STRING", "BOOLEAN", "TIMING", "EASING"])
-							.describe(`Token type. ${MOTION_VALUE_DOC}`),
-						description: z
-							.string()
-							.optional()
-							.describe("Optional description"),
-						values: z
-							.record(
-								z.string(),
-								z.union([z.string(), z.number(), z.boolean()]),
-							)
-							.describe(
-								"Values keyed by mode NAME (not ID). Example: { 'Light': '#FFFFFF', 'Dark': '#000000' }. A string value wrapped in braces is an ALIAS reference resolved to another variable: '{color.blue.600}' matches variable name 'color/blue/600' — first among variables created in THIS call, then existing local variables (exact match, then case-insensitive). Set-qualified references ('{primitives.color.blue.600}') strip the leading collection name. Unresolvable references skip that value and surface in the response's warnings[].",
-							),
-					}),
-				)
-				.min(1)
-				.max(100)
-				.describe("Token definitions (1-100)"),
+			description:
+				"Create a complete design token structure in one operation: collection, modes, and all variables. Ideal for importing CSS custom properties or design tokens into Figma. Values may be literals OR DTCG-style brace references ('{color.blue.600}', or set-qualified '{primitives.color.blue.600}') that resolve to variable ALIASES — first against variables created in this same call, then against existing local variables. Unresolvable references skip that value with a per-item warning (the rest of the batch still applies), so semantic collections referencing primitives no longer need raw figma_execute. Requires Desktop Bridge plugin.",
+			inputSchema: z.object({
+				collectionName: z
+					.string()
+					.describe("Name for the token collection (e.g., 'Brand Tokens')"),
+				modes: z
+					.array(z.string())
+					.min(1)
+					.max(4)
+					.describe(
+						"Mode names (first becomes default). Example: ['Light', 'Dark']",
+					),
+				tokens: z
+					.array(
+						z.object({
+							name: z.string().describe("Token name (e.g., 'color/primary')"),
+							resolvedType: z
+								.enum([
+									"COLOR",
+									"FLOAT",
+									"STRING",
+									"BOOLEAN",
+									"TIMING",
+									"EASING",
+								])
+								.describe(`Token type. ${MOTION_VALUE_DOC}`),
+							description: z
+								.string()
+								.optional()
+								.describe("Optional description"),
+							values: z
+								.record(
+									z.string(),
+									z.union([z.string(), z.number(), z.boolean()]),
+								)
+								.describe(
+									"Values keyed by mode NAME (not ID). Example: { 'Light': '#FFFFFF', 'Dark': '#000000' }. A string value wrapped in braces is an ALIAS reference resolved to another variable: '{color.blue.600}' matches variable name 'color/blue/600' — first among variables created in THIS call, then existing local variables (exact match, then case-insensitive). Set-qualified references ('{primitives.color.blue.600}') strip the leading collection name. Unresolvable references skip that value and surface in the response's warnings[].",
+								),
+						}),
+					)
+					.min(1)
+					.max(100)
+					.describe("Token definitions (1-100)"),
+			}),
 		},
 		async ({ collectionName, modes, tokens }) => {
 			try {
@@ -1316,14 +1366,11 @@ return {
 						content: [
 							{
 								type: "text" as const,
-								text: JSON.stringify(
-									{
-										error: result.error,
-										message:
-											"Design token setup failed during execution",
-										hint: "Check the token definitions and ensure the Desktop Bridge plugin is running",
-									},
-								),
+								text: JSON.stringify({
+									error: result.error,
+									message: "Design token setup failed during execution",
+									hint: "Check the token definitions and ensure the Desktop Bridge plugin is running",
+								}),
 							},
 						],
 						isError: true,
@@ -1334,14 +1381,12 @@ return {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Created collection "${collectionName}" with ${modes.length} mode(s) and ${result.result?.created ?? 0} tokens`,
-									...result.result,
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Created collection "${collectionName}" with ${modes.length} mode(s) and ${result.result?.created ?? 0} tokens`,
+								...result.result,
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -1351,16 +1396,11 @@ return {
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error
-											? error.message
-											: String(error),
-									message: "Failed to setup design tokens",
-									hint: "Make sure the Desktop Bridge plugin is running in Figma",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to setup design tokens",
+								hint: "Make sure the Desktop Bridge plugin is running in Figma",
+							}),
 						},
 					],
 					isError: true,
@@ -1374,54 +1414,47 @@ return {
 	// ============================================================================
 
 	// Tool: Instantiate Component
-	server.tool(
+	server.registerTool(
 		"figma_instantiate_component",
-		`Create an instance of a component from the design system.
-
-**CRITICAL: Always pass BOTH componentKey AND nodeId together!**
-Search results return both identifiers. Pass both so the tool can automatically fall back to nodeId if the component isn't published to a library. Most local/unpublished components require nodeId.
-
-**IMPORTANT: Always re-search before instantiating!**
-NodeIds are session-specific and may be stale from previous conversations. ALWAYS search for components at the start of each design session to get current, valid identifiers.
-
-**VISUAL VALIDATION WORKFLOW:**
-After instantiating components, use figma_take_screenshot to verify the result looks correct. Check placement, sizing, and visual balance.`,
 		{
-			componentKey: z
-				.string()
-				.optional()
-				.describe(
-					"The component key from search results. Pass this WITH nodeId for automatic fallback.",
-				),
-			nodeId: z
-				.string()
-				.optional()
-				.describe(
-					"The node ID from search results. ALWAYS pass this alongside componentKey - most local components need it.",
-				),
-			variant: z
-				.record(z.string(), z.string())
-				.optional()
-				.describe(
-					"Variant properties to set (e.g., { Type: 'Simple', State: 'Active' })",
-				),
-			overrides: z
-				.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
-				.optional()
-				.describe(
-					"Property overrides (e.g., { 'Button Label': 'Click Me' })",
-				),
-			position: z
-				.object({
-					x: z.number(),
-					y: z.number(),
-				})
-				.optional()
-				.describe("Position on canvas (default: 0, 0)"),
-			parentId: z
-				.string()
-				.optional()
-				.describe("Parent node ID to append the instance to"),
+			description: "Place an instance of a component. Pass BOTH componentKey and nodeId from a search or resolve result from this session (node IDs go stale between sessions); unpublished components need nodeId. Screenshot afterwards to check placement.",
+			inputSchema: z.object({
+				componentKey: z
+					.string()
+					.optional()
+					.describe(
+						"Component (or variant) key from search/resolve.",
+					),
+				nodeId: z
+					.string()
+					.optional()
+					.describe(
+						"Component node ID from search/resolve (pass with componentKey).",
+					),
+				variant: z
+					.record(z.string(), z.string())
+					.optional()
+					.describe(
+						"Variant values, e.g. { Size: 'Large' }.",
+					),
+				overrides: z
+					.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+					.optional()
+					.describe(
+						"Component property values, e.g. { Label: 'Save' }.",
+					),
+				position: z
+					.object({
+						x: z.number(),
+						y: z.number(),
+					})
+					.optional()
+					.describe("Canvas position (default 0,0)."),
+				parentId: z
+					.string()
+					.optional()
+					.describe("Parent to place it in."),
+			}),
 		},
 		async ({
 			componentKey,
@@ -1455,20 +1488,18 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message:
-										result.warnings && result.warnings.length
-											? "Component instantiated, but some overrides did not apply (see warnings)"
-											: "Component instantiated successfully",
-									instance: result.instance,
-									...(result.warnings && result.warnings.length
-										? { warnings: result.warnings }
-										: {}),
-									timestamp: Date.now(),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message:
+									result.warnings && result.warnings.length
+										? "Component instantiated, but some overrides did not apply (see warnings)"
+										: "Component instantiated successfully",
+								instance: result.instance,
+								...(result.warnings && result.warnings.length
+									? { warnings: result.warnings }
+									: {}),
+								timestamp: Date.now(),
+							}),
 						},
 					],
 				};
@@ -1478,14 +1509,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									message: "Failed to instantiate component",
-									hint: "Make sure the component key is correct and the Desktop Bridge plugin is running",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								message: "Failed to instantiate component",
+								hint: "Make sure the component key is correct and the Desktop Bridge plugin is running",
+							}),
 						},
 					],
 					isError: true,
@@ -1499,20 +1527,23 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// ============================================================================
 
 	// Tool: Set Node Description
-	server.tool(
+	server.registerTool(
 		"figma_set_description",
-		"Set the description text on a component, component set, or style. Descriptions appear in Dev Mode and help document design intent. Supports plain text and markdown formatting.",
 		{
-			nodeId: z
-				.string()
-				.describe(
-					"The node ID of the component or style to update (e.g., '123:456')",
-				),
-			description: z.string().describe("The plain text description to set"),
-			descriptionMarkdown: z
-				.string()
-				.optional()
-				.describe("Optional rich text description using markdown formatting"),
+			description:
+				"Set the description text on a component, component set, or style. Descriptions appear in Dev Mode and help document design intent. Supports plain text and markdown formatting.",
+			inputSchema: z.object({
+				nodeId: z
+					.string()
+					.describe(
+						"The node ID of the component or style to update (e.g., '123:456')",
+					),
+				description: z.string().describe("The plain text description to set"),
+				descriptionMarkdown: z
+					.string()
+					.optional()
+					.describe("Optional rich text description using markdown formatting"),
+			}),
 		},
 		async ({ nodeId, description, descriptionMarkdown }) => {
 			try {
@@ -1531,13 +1562,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: "Description set successfully",
-									node: result.node,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: "Description set successfully",
+								node: result.node,
+							}),
 						},
 					],
 				};
@@ -1547,13 +1576,10 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									hint: "Make sure the node supports descriptions (components, component sets, styles)",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the node supports descriptions (components, component sets, styles)",
+							}),
 						},
 					],
 					isError: true,
@@ -1563,42 +1589,52 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Add Component Property
-	server.tool(
+	server.registerTool(
 		"figma_add_component_property",
-		"Add a new component property to a component or component set. Properties enable dynamic content and behavior in component instances. Supported types: BOOLEAN (toggle), TEXT (string), INSTANCE_SWAP (component swap), VARIANT (variant selection), SLOT (freeform slot — prefer figma_create_slot for new slots).",
 		{
-			nodeId: z.string().describe("The component or component set node ID"),
-			propertyName: z
-				.string()
-				.describe(
-					"Name for the new property (e.g., 'Show Icon', 'Button Label', 'Content')",
-				),
-			type: z
-				.enum(["BOOLEAN", "TEXT", "INSTANCE_SWAP", "VARIANT", "SLOT"])
-				.describe(
-					"Property type: BOOLEAN for toggles, TEXT for strings, INSTANCE_SWAP for component swaps, VARIANT for variant selection, SLOT for freeform slot areas",
-				),
-			defaultValue: z
-				.union([z.string(), z.number(), z.boolean()])
-				.optional()
-				.describe(
-					"Default value. Required for TEXT (string), INSTANCE_SWAP (component id), and VARIANT (a non-empty variant option name — Figma rejects empty). Optional for BOOLEAN (defaults false). Omit for SLOT.",
-				),
-			description: z
-				.string()
-				.optional()
-				.describe("Property description (SLOT properties only)"),
-			preferredValues: z
-				.array(
-					z.object({
-						type: z.enum(["COMPONENT", "COMPONENT_SET"]),
-						key: z.string(),
-					}),
-				)
-				.optional()
-				.describe("Preferred components (INSTANCE_SWAP and SLOT only)"),
+			description:
+				"Add a new component property to a component or component set. Properties enable dynamic content and behavior in component instances. Supported types: BOOLEAN (toggle), TEXT (string), INSTANCE_SWAP (component swap), VARIANT (variant selection), SLOT (freeform slot — prefer figma_create_slot for new slots).",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The component or component set node ID"),
+				propertyName: z
+					.string()
+					.describe(
+						"Name for the new property (e.g., 'Show Icon', 'Button Label', 'Content')",
+					),
+				type: z
+					.enum(["BOOLEAN", "TEXT", "INSTANCE_SWAP", "VARIANT", "SLOT"])
+					.describe(
+						"Property type: BOOLEAN for toggles, TEXT for strings, INSTANCE_SWAP for component swaps, VARIANT for variant selection, SLOT for freeform slot areas",
+					),
+				defaultValue: z
+					.union([z.string(), z.number(), z.boolean()])
+					.optional()
+					.describe(
+						"Default value. Required for TEXT (string), INSTANCE_SWAP (component id), and VARIANT (a non-empty variant option name — Figma rejects empty). Optional for BOOLEAN (defaults false). Omit for SLOT.",
+					),
+				description: z
+					.string()
+					.optional()
+					.describe("Property description (SLOT properties only)"),
+				preferredValues: z
+					.array(
+						z.object({
+							type: z.enum(["COMPONENT", "COMPONENT_SET"]),
+							key: z.string(),
+						}),
+					)
+					.optional()
+					.describe("Preferred components (INSTANCE_SWAP and SLOT only)"),
+			}),
 		},
-		async ({ nodeId, propertyName, type, defaultValue, description, preferredValues }) => {
+		async ({
+			nodeId,
+			propertyName,
+			type,
+			defaultValue,
+			description,
+			preferredValues,
+		}) => {
 			try {
 				const connector = await getDesktopConnector();
 				const options: Record<string, unknown> = {};
@@ -1623,7 +1659,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					);
 				}
 				const resolvedDefault =
-					type === "SLOT" ? "" : (defaultValue ?? (type === "BOOLEAN" ? false : ""));
+					type === "SLOT"
+						? ""
+						: (defaultValue ?? (type === "BOOLEAN" ? false : ""));
 
 				const result = await connector.addComponentProperty(
 					nodeId,
@@ -1641,14 +1679,12 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: "Component property added",
-									propertyName: result.propertyName,
-									hint: "The property name includes a unique suffix (e.g., 'Show Icon#123:456'). Use the full name for editing/deleting.",
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: "Component property added",
+								propertyName: result.propertyName,
+								hint: "The property name includes a unique suffix (e.g., 'Show Icon#123:456'). Use the full name for editing/deleting.",
+							}),
 						},
 					],
 				};
@@ -1658,13 +1694,10 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									hint: "Cannot add properties to variant components. Add to the parent component set instead.",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Cannot add properties to variant components. Add to the parent component set instead.",
+							}),
 						},
 					],
 					isError: true,
@@ -1674,36 +1707,39 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Edit Component Property
-	server.tool(
+	server.registerTool(
 		"figma_edit_component_property",
-		"Edit an existing component property. Can change the name, default value, or preferred values (for INSTANCE_SWAP). Use the full property name including the unique suffix.",
 		{
-			nodeId: z.string().describe("The component or component set node ID"),
-			propertyName: z
-				.string()
-				.describe(
-					"The full property name with suffix (e.g., 'Show Icon#123:456')",
-				),
-			newValue: z
-				.object({
-					name: z.string().optional().describe("New name for the property"),
-					defaultValue: z
-						.union([z.string(), z.number(), z.boolean()])
-						.optional()
-						.describe("New default value"),
-					preferredValues: z
-						.array(
-							z.object({
-								type: z
-									.enum(["COMPONENT", "COMPONENT_SET"])
-									.describe("Type of preferred value"),
-								key: z.string().describe("Component or component set key"),
-							}),
-						)
-						.optional()
-						.describe("Preferred values (INSTANCE_SWAP only)"),
-				})
-				.describe("Object with the values to update"),
+			description:
+				"Edit an existing component property. Can change the name, default value, or preferred values (for INSTANCE_SWAP). Use the full property name including the unique suffix.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The component or component set node ID"),
+				propertyName: z
+					.string()
+					.describe(
+						"The full property name with suffix (e.g., 'Show Icon#123:456')",
+					),
+				newValue: z
+					.object({
+						name: z.string().optional().describe("New name for the property"),
+						defaultValue: z
+							.union([z.string(), z.number(), z.boolean()])
+							.optional()
+							.describe("New default value"),
+						preferredValues: z
+							.array(
+								z.object({
+									type: z
+										.enum(["COMPONENT", "COMPONENT_SET"])
+										.describe("Type of preferred value"),
+									key: z.string().describe("Component or component set key"),
+								}),
+							)
+							.optional()
+							.describe("Preferred values (INSTANCE_SWAP only)"),
+					})
+					.describe("Object with the values to update"),
+			}),
 		},
 		async ({ nodeId, propertyName, newValue }) => {
 			try {
@@ -1722,13 +1758,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: "Component property updated",
-									propertyName: result.propertyName,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: "Component property updated",
+								propertyName: result.propertyName,
+							}),
 						},
 					],
 				};
@@ -1738,12 +1772,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
 						},
 					],
 					isError: true,
@@ -1753,16 +1784,19 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Delete Component Property
-	server.tool(
+	server.registerTool(
 		"figma_delete_component_property",
-		"Delete a component property. Works with BOOLEAN, TEXT, INSTANCE_SWAP, and SLOT properties (not VARIANT). This is a destructive operation.",
 		{
-			nodeId: z.string().describe("The component or component set node ID"),
-			propertyName: z
-				.string()
-				.describe(
-					"The full property name with suffix (e.g., 'Show Icon#123:456')",
-				),
+			description:
+				"Delete a component property. Works with BOOLEAN, TEXT, INSTANCE_SWAP, and SLOT properties (not VARIANT). This is a destructive operation.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The component or component set node ID"),
+				propertyName: z
+					.string()
+					.describe(
+						"The full property name with suffix (e.g., 'Show Icon#123:456')",
+					),
+			}),
 		},
 		async ({ nodeId, propertyName }) => {
 			try {
@@ -1780,12 +1814,10 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: "Component property deleted",
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: "Component property deleted",
+							}),
 						},
 					],
 				};
@@ -1795,13 +1827,10 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									hint: "Cannot delete VARIANT properties. BOOLEAN, TEXT, INSTANCE_SWAP, and SLOT can be deleted.",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Cannot delete VARIANT properties. BOOLEAN, TEXT, INSTANCE_SWAP, and SLOT can be deleted.",
+							}),
 						},
 					],
 					isError: true,
@@ -1815,20 +1844,23 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	// ============================================================================
 
 	// Tool: Resize Node
-	server.tool(
+	server.registerTool(
 		"figma_resize_node",
-		"Resize a node to specific dimensions. By default respects child constraints; use withConstraints=false to ignore them.",
 		{
-			nodeId: z.string().describe("The node ID to resize"),
-			width: z.number().describe("New width in pixels"),
-			height: z.number().describe("New height in pixels"),
-			withConstraints: z
-				.boolean()
-				.optional()
-				.default(true)
-				.describe(
-					"Whether to apply child constraints during resize (default: true)",
-				),
+			description:
+				"Resize a node to specific dimensions. By default respects child constraints; use withConstraints=false to ignore them.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The node ID to resize"),
+				width: z.number().describe("New width in pixels"),
+				height: z.number().describe("New height in pixels"),
+				withConstraints: z
+					.boolean()
+					.optional()
+					.default(true)
+					.describe(
+						"Whether to apply child constraints during resize (default: true)",
+					),
+			}),
 		},
 		async ({ nodeId, width, height, withConstraints }) => {
 			try {
@@ -1848,13 +1880,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Node resized to ${width}x${height}`,
-									node: result.node,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Node resized to ${width}x${height}`,
+								node: result.node,
+							}),
 						},
 					],
 				};
@@ -1864,12 +1894,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
 						},
 					],
 					isError: true,
@@ -1879,13 +1906,15 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Move Node
-	server.tool(
+	server.registerTool(
 		"figma_move_node",
-		"Move a node to a new position within its parent.",
 		{
-			nodeId: z.string().describe("The node ID to move"),
-			x: z.number().describe("New X position"),
-			y: z.number().describe("New Y position"),
+			description: "Move a node to a new position within its parent.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The node ID to move"),
+				x: z.number().describe("New X position"),
+				y: z.number().describe("New Y position"),
+			}),
 		},
 		async ({ nodeId, x, y }) => {
 			try {
@@ -1900,13 +1929,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Node moved to (${x}, ${y})`,
-									node: result.node,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Node moved to (${x}, ${y})`,
+								node: result.node,
+							}),
 						},
 					],
 				};
@@ -1916,12 +1943,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
 						},
 					],
 					isError: true,
@@ -1931,40 +1955,53 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Set Node Fills
-	server.tool(
+	server.registerTool(
 		"figma_set_fills",
-		"Set the fill colors on a node. Accepts hex or CSS colors, including oklch() and color(display-p3 …). To bind a fill to a design token / color variable, pass that fill's variableId — the variable drives the color and this works on any Figma plan via the bridge (no raw figma_execute needed).",
 		{
-			nodeId: z.string().describe("The node ID to modify"),
-			fills: z
-				.array(
-					z.object({
-						type: z
-							.literal("SOLID")
-							.describe("Fill type (currently only SOLID supported)"),
-						color: z
-							.string()
-							.optional()
-							.describe(`${CSS_COLOR_DOC} Optional when variableId is provided.`),
-						opacity: z
-							.number()
-							.optional()
-							.describe("Opacity 0-1 (default: 1)"),
-						variableId: z
-							.string()
-							.optional()
-							.describe(
-								"Bind this fill's color to a Figma variable by id (e.g. 'VariableID:1:23' from figma_get_variables). When set, the variable drives the color. Import library variables first via figma_import_library_variable.",
-							),
-					}),
-				)
-				.describe("Array of fill objects"),
+			description:
+				"Set the fill colors on a node. Accepts hex or CSS colors, including oklch() and color(display-p3 …). To bind a fill to a design token / color variable, pass that fill's variableId — the variable drives the color and this works on any Figma plan via the bridge (no raw figma_execute needed).",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The node ID to modify"),
+				fills: z
+					.array(
+						z.object({
+							type: z
+								.literal("SOLID")
+								.describe("Fill type (currently only SOLID supported)"),
+							color: z
+								.string()
+								.optional()
+								.describe(
+									`${CSS_COLOR_DOC} Optional when variableId is provided.`,
+								),
+							opacity: z
+								.number()
+								.optional()
+								.describe("Opacity 0-1 (default: 1)"),
+							variableId: z
+								.string()
+								.optional()
+								.describe(
+									"Bind this fill's color to a Figma variable by id (e.g. 'VariableID:1:23' from figma_get_variables). When set, the variable drives the color. Import library variables first via figma_import_library_variable.",
+								),
+						}),
+					)
+					.describe("Array of fill objects"),
+			}),
 		},
 		async ({ nodeId, fills }) => {
 			try {
 				const connector = await getDesktopConnector();
-				if (fills.some((f) => f.color !== undefined && !HEX_COLOR_RE.test(f.color.trim()))) {
-					return await setCssPaints(connector, { nodeId, target: "fills", paints: fills }, "Fills updated");
+				if (
+					fills.some(
+						(f) => f.color !== undefined && !HEX_COLOR_RE.test(f.color.trim()),
+					)
+				) {
+					return await setCssPaints(
+						connector,
+						{ nodeId, target: "fills", paints: fills },
+						"Fills updated",
+					);
 				}
 				const result = await connector.setNodeFills(nodeId, fills);
 
@@ -1976,13 +2013,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: "Fills updated",
-									node: result.node,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: "Fills updated",
+								node: result.node,
+							}),
 						},
 					],
 				};
@@ -1992,12 +2027,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
 						},
 					],
 					isError: true,
@@ -2007,20 +2039,32 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Set Image Fill on nodes
-	server.tool(
+	server.registerTool(
 		"figma_set_image_fill",
-		"Set an image fill on one or more Figma nodes. The imageData parameter accepts a base64-encoded " +
-		"image string (JPEG/PNG). The image is decoded in the browser bridge and passed " +
-		"as raw bytes to the Figma plugin. Requires Desktop Bridge plugin.",
 		{
-			nodeIds: z.array(z.string()).describe("Array of node IDs to apply the image fill to"),
-			imageData: z.string().describe("Base64-encoded image data (JPEG/PNG)"),
-			scaleMode: z.enum(["FILL", "FIT", "CROP", "TILE"]).optional().describe("How the image fills the node (default: FILL)"),
+			description:
+				"Set an image fill on one or more Figma nodes. The imageData parameter accepts a base64-encoded " +
+				"image string (JPEG/PNG). The image is decoded in the browser bridge and passed " +
+				"as raw bytes to the Figma plugin. Requires Desktop Bridge plugin.",
+			inputSchema: z.object({
+				nodeIds: z
+					.array(z.string())
+					.describe("Array of node IDs to apply the image fill to"),
+				imageData: z.string().describe("Base64-encoded image data (JPEG/PNG)"),
+				scaleMode: z
+					.enum(["FILL", "FIT", "CROP", "TILE"])
+					.optional()
+					.describe("How the image fills the node (default: FILL)"),
+			}),
 		},
 		async ({ nodeIds, imageData, scaleMode }) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.setImageFill(nodeIds, imageData, scaleMode || "FILL");
+				const result = await connector.setImageFill(
+					nodeIds,
+					imageData,
+					scaleMode || "FILL",
+				);
 
 				if (!result.success) {
 					throw new Error(result.error || "Failed to set image fill");
@@ -2057,39 +2101,52 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Set Node Strokes
-	server.tool(
+	server.registerTool(
 		"figma_set_strokes",
-		"Set the stroke (border) on a node. Accepts hex or CSS colors (including oklch() and color(display-p3 …)) and an optional stroke weight. To bind a stroke to a design token / color variable, pass that stroke's variableId — works on any Figma plan via the bridge.",
 		{
-			nodeId: z.string().describe("The node ID to modify"),
-			strokes: z
-				.array(
-					z.object({
-						type: z.literal("SOLID").describe("Stroke type"),
-						color: z
-							.string()
-							.optional()
-							.describe(`${CSS_COLOR_DOC} Optional when variableId is provided.`),
-						opacity: z.number().optional().describe("Opacity 0-1"),
-						variableId: z
-							.string()
-							.optional()
-							.describe(
-								"Bind this stroke's color to a Figma variable by id (e.g. 'VariableID:1:23' from figma_get_variables). When set, the variable drives the color.",
-							),
-					}),
-				)
-				.describe("Array of stroke objects"),
-			strokeWeight: z
-				.number()
-				.optional()
-				.describe("Stroke thickness in pixels"),
+			description:
+				"Set the stroke (border) on a node. Accepts hex or CSS colors (including oklch() and color(display-p3 …)) and an optional stroke weight. To bind a stroke to a design token / color variable, pass that stroke's variableId — works on any Figma plan via the bridge.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The node ID to modify"),
+				strokes: z
+					.array(
+						z.object({
+							type: z.literal("SOLID").describe("Stroke type"),
+							color: z
+								.string()
+								.optional()
+								.describe(
+									`${CSS_COLOR_DOC} Optional when variableId is provided.`,
+								),
+							opacity: z.number().optional().describe("Opacity 0-1"),
+							variableId: z
+								.string()
+								.optional()
+								.describe(
+									"Bind this stroke's color to a Figma variable by id (e.g. 'VariableID:1:23' from figma_get_variables). When set, the variable drives the color.",
+								),
+						}),
+					)
+					.describe("Array of stroke objects"),
+				strokeWeight: z
+					.number()
+					.optional()
+					.describe("Stroke thickness in pixels"),
+			}),
 		},
 		async ({ nodeId, strokes, strokeWeight }) => {
 			try {
 				const connector = await getDesktopConnector();
-				if (strokes.some((f) => f.color !== undefined && !HEX_COLOR_RE.test(f.color.trim()))) {
-					return await setCssPaints(connector, { nodeId, target: "strokes", paints: strokes, strokeWeight }, "Strokes updated");
+				if (
+					strokes.some(
+						(f) => f.color !== undefined && !HEX_COLOR_RE.test(f.color.trim()),
+					)
+				) {
+					return await setCssPaints(
+						connector,
+						{ nodeId, target: "strokes", paints: strokes, strokeWeight },
+						"Strokes updated",
+					);
 				}
 				const result = await connector.setNodeStrokes(
 					nodeId,
@@ -2105,13 +2162,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: "Strokes updated",
-									node: result.node,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: "Strokes updated",
+								node: result.node,
+							}),
 						},
 					],
 				};
@@ -2121,12 +2176,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
 						},
 					],
 					isError: true,
@@ -2136,11 +2188,14 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Clone Node
-	server.tool(
+	server.registerTool(
 		"figma_clone_node",
-		"Duplicate a node. The clone is placed at a slight offset from the original.",
 		{
-			nodeId: z.string().describe("The node ID to clone"),
+			description:
+				"Duplicate a node. The clone is placed at a slight offset from the original.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The node ID to clone"),
+			}),
 		},
 		async ({ nodeId }) => {
 			try {
@@ -2155,13 +2210,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: "Node cloned",
-									clonedNode: result.node,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: "Node cloned",
+								clonedNode: result.node,
+							}),
 						},
 					],
 				};
@@ -2171,12 +2224,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
 						},
 					],
 					isError: true,
@@ -2186,11 +2236,14 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Delete Node
-	server.tool(
+	server.registerTool(
 		"figma_delete_node",
-		"Delete a node from the canvas. WARNING: This is a destructive operation (can be undone with Figma's undo).",
 		{
-			nodeId: z.string().describe("The node ID to delete"),
+			description:
+				"Delete a node from the canvas. WARNING: This is a destructive operation (can be undone with Figma's undo).",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The node ID to delete"),
+			}),
 		},
 		async ({ nodeId }) => {
 			try {
@@ -2205,13 +2258,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: "Node deleted",
-									deleted: result.deleted,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: "Node deleted",
+								deleted: result.deleted,
+							}),
 						},
 					],
 				};
@@ -2221,12 +2272,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
 						},
 					],
 					isError: true,
@@ -2236,12 +2284,14 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Rename Node
-	server.tool(
+	server.registerTool(
 		"figma_rename_node",
-		"Rename a node in the layer panel.",
 		{
-			nodeId: z.string().describe("The node ID to rename"),
-			newName: z.string().describe("The new name for the node"),
+			description: "Rename a node in the layer panel.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The node ID to rename"),
+				newName: z.string().describe("The new name for the node"),
+			}),
 		},
 		async ({ nodeId, newName }) => {
 			try {
@@ -2256,13 +2306,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Node renamed to "${newName}"`,
-									node: result.node,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Node renamed to "${newName}"`,
+								node: result.node,
+							}),
 						},
 					],
 				};
@@ -2272,12 +2320,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
 						},
 					],
 					isError: true,
@@ -2287,46 +2332,78 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Set Text Content
-	server.tool(
+	server.registerTool(
 		"figma_set_text",
-		"Set the text content of a text node. Optionally adjust font size and the font family/style, the text wrap style (BALANCE or PRETTY, like CSS text-wrap), and variable-font axes (fontVariations, e.g. {wght: 550}). Font style names are space-sensitive ('Semi Bold', not 'SemiBold'), but this tool auto-corrects common no-space variants and falls back gracefully — so you don't need raw figma_execute to change typography. text can be left out to change only the styling.",
 		{
-			nodeId: z.string().describe("The text node ID"),
-			text: z.string().optional().describe("The new text content. Leave out to change only the styling"),
-			fontSize: z.number().optional().describe("Optional font size to set"),
-			fontFamily: z
-				.string()
-				.optional()
-				.describe("Optional font family to apply (e.g., 'Inter')"),
-			fontStyle: z
-				.string()
-				.optional()
-				.describe(
-					"Optional font style/weight to apply (e.g., 'Bold', 'Semi Bold'). No-space variants like 'SemiBold' are auto-corrected.",
-				),
-			textWrapStyle: z
-				.enum(["AUTO", "BALANCE", "PRETTY"])
-				.optional()
-				.describe("How lines break: AUTO (default), BALANCE (even line lengths, for headings) or PRETTY (avoids a lone last word)"),
-			fontVariations: z
-				.record(z.string(), z.number())
-				.optional()
-				.describe("Variable-font axis values by OpenType tag, e.g. {wght: 550, slnt: -5}. Axes you leave out keep the named style's values"),
+			description: "Set a text node's content and optionally its font size, family/style ('Semi Bold'; no-space forms are auto-corrected), wrap style (BALANCE, PRETTY) and variable-font axes. Leave out text to change only styling. For text inside an instance use figma_set_instance_properties.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("The text node ID"),
+				text: z
+					.string()
+					.optional()
+					.describe(
+						"New text (omit to change only styling).",
+					),
+				fontSize: z.number().optional().describe("Optional font size to set"),
+				fontFamily: z
+					.string()
+					.optional()
+					.describe("Font family, e.g. 'Inter'."),
+				fontStyle: z
+					.string()
+					.optional()
+					.describe(
+						"Font style, e.g. 'Semi Bold'.",
+					),
+				textWrapStyle: z
+					.enum(["AUTO", "BALANCE", "PRETTY"])
+					.optional()
+					.describe(
+						"AUTO, BALANCE (even lines) or PRETTY (no lone last word).",
+					),
+				fontVariations: z
+					.record(z.string(), z.number())
+					.optional()
+					.describe(
+						"Variable-font axes, e.g. {wght: 550}.",
+					),
+			}),
 		},
-		async ({ nodeId, text, fontSize, fontFamily, fontStyle, textWrapStyle, fontVariations }) => {
+		async ({
+			nodeId,
+			text,
+			fontSize,
+			fontFamily,
+			fontStyle,
+			textWrapStyle,
+			fontVariations,
+		}) => {
 			try {
 				const connector = await getDesktopConnector();
 				const styleOnly = text === undefined;
-				if (styleOnly && fontSize === undefined && !fontFamily && !fontStyle && !textWrapStyle && !fontVariations) {
-					throw new Error("Nothing to change: pass text, or a font or wrap option");
+				if (
+					styleOnly &&
+					fontSize === undefined &&
+					!fontFamily &&
+					!fontStyle &&
+					!textWrapStyle &&
+					!fontVariations
+				) {
+					throw new Error(
+						"Nothing to change: pass text, or a font or wrap option",
+					);
 				}
 				let node: unknown;
 				if (!styleOnly) {
 					// Variable-font axes are set by the follow-up script, so the
 					// family and style go there too when fontVariations is given.
 					const fontOpts = fontVariations
-						? fontSize !== undefined ? { fontSize } : undefined
-						: fontSize || fontFamily || fontStyle ? { fontSize, fontFamily, fontStyle } : undefined;
+						? fontSize !== undefined
+							? { fontSize }
+							: undefined
+						: fontSize || fontFamily || fontStyle
+							? { fontSize, fontFamily, fontStyle }
+							: undefined;
 					const result = await connector.setTextContent(nodeId, text, fontOpts);
 					if (!result.success) {
 						throw new Error(result.error || "Failed to set text");
@@ -2336,10 +2413,26 @@ After instantiating components, use figma_take_screenshot to verify the result l
 				let styling: Record<string, unknown> | undefined;
 				if (styleOnly || textWrapStyle || fontVariations) {
 					const payload = styleOnly
-						? { nodeId, fontSize, fontFamily, fontStyle, textWrapStyle, fontVariations }
-						: { nodeId, textWrapStyle, fontVariations, ...(fontVariations ? { fontFamily, fontStyle } : {}) };
-					const res = await connector.executeCodeViaUI(`const P = ${JSON.stringify(payload)};\n${TEXT_STYLE_BODY}`, 15000);
-					if (!res?.success) throw new Error(res?.error || "Failed to set text styling");
+						? {
+								nodeId,
+								fontSize,
+								fontFamily,
+								fontStyle,
+								textWrapStyle,
+								fontVariations,
+							}
+						: {
+								nodeId,
+								textWrapStyle,
+								fontVariations,
+								...(fontVariations ? { fontFamily, fontStyle } : {}),
+							};
+					const res = await connector.executeCodeViaUI(
+						`const P = ${JSON.stringify(payload)};\n${TEXT_STYLE_BODY}`,
+						15000,
+					);
+					if (!res?.success)
+						throw new Error(res?.error || "Failed to set text styling");
 					styling = res.result;
 					node = node ?? res.result.node;
 				}
@@ -2348,14 +2441,20 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: styleOnly ? "Text styling updated" : "Text content updated",
-									node,
-									...(styling ? { fontName: styling.fontName, fontSize: styling.fontSize, textWrapStyle: styling.textWrapStyle } : {}),
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: styleOnly
+									? "Text styling updated"
+									: "Text content updated",
+								node,
+								...(styling
+									? {
+											fontName: styling.fontName,
+											fontSize: styling.fontSize,
+											textWrapStyle: styling.textWrapStyle,
+										}
+									: {}),
+							}),
 						},
 					],
 				};
@@ -2365,12 +2464,9 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
 						},
 					],
 					isError: true,
@@ -2380,37 +2476,40 @@ After instantiating components, use figma_take_screenshot to verify the result l
 	);
 
 	// Tool: Create Child Node
-	server.tool(
+	server.registerTool(
 		"figma_create_child",
-		"Create a new child node inside a parent container. Always place inside an existing Section or Frame — never on a bare page. If no suitable parent exists, create a Section first. Clean up any empty or orphaned nodes if the operation fails.",
 		{
-			parentId: z.string().describe("The parent node ID"),
-			nodeType: z
-				.enum(["RECTANGLE", "ELLIPSE", "FRAME", "TEXT", "LINE"])
-				.describe("Type of node to create"),
-			properties: z
-				.object({
-					name: z.string().optional().describe("Name for the new node"),
-					x: z.number().optional().describe("X position within parent"),
-					y: z.number().optional().describe("Y position within parent"),
-					width: z.number().optional().describe("Width (default: 100)"),
-					height: z.number().optional().describe("Height (default: 100)"),
-					fills: z
-						.array(
-							z.object({
-								type: z.literal("SOLID"),
-								color: z.string(),
-							}),
-						)
-						.optional()
-						.describe("Fill colors (hex strings)"),
-					text: z
-						.string()
-						.optional()
-						.describe("Text content (for TEXT nodes only)"),
-				})
-				.optional()
-				.describe("Properties for the new node"),
+			description:
+				"Create a new child node inside a parent container. Always place inside an existing Section or Frame — never on a bare page. If no suitable parent exists, create a Section first. Clean up any empty or orphaned nodes if the operation fails.",
+			inputSchema: z.object({
+				parentId: z.string().describe("The parent node ID"),
+				nodeType: z
+					.enum(["RECTANGLE", "ELLIPSE", "FRAME", "TEXT", "LINE"])
+					.describe("Type of node to create"),
+				properties: z
+					.object({
+						name: z.string().optional().describe("Name for the new node"),
+						x: z.number().optional().describe("X position within parent"),
+						y: z.number().optional().describe("Y position within parent"),
+						width: z.number().optional().describe("Width (default: 100)"),
+						height: z.number().optional().describe("Height (default: 100)"),
+						fills: z
+							.array(
+								z.object({
+									type: z.literal("SOLID"),
+									color: z.string(),
+								}),
+							)
+							.optional()
+							.describe("Fill colors (hex strings)"),
+						text: z
+							.string()
+							.optional()
+							.describe("Text content (for TEXT nodes only)"),
+					})
+					.optional()
+					.describe("Properties for the new node"),
+			}),
 		},
 		async ({ parentId, nodeType, properties }) => {
 			try {
@@ -2429,13 +2528,11 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Created ${nodeType} node`,
-									node: result.node,
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Created ${nodeType} node`,
+								node: result.node,
+							}),
 						},
 					],
 				};
@@ -2445,13 +2542,10 @@ After instantiating components, use figma_take_screenshot to verify the result l
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									hint: "Make sure the parent node supports children (frames, groups, etc.)",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the parent node supports children (frames, groups, etc.)",
+							}),
 						},
 					],
 					isError: true,
@@ -2931,47 +3025,49 @@ return {
 	// Tool: Arrange Component Set (Professional Layout with Native Visualization)
 	// Rearranges variants IN PLACE (sets x/y on existing children) so the component
 	// set's identity is preserved and placed instances are unaffected
-	server.tool(
+	server.registerTool(
 		"figma_arrange_component_set",
-		`Organize a component set with Figma's native purple dashed visualization. Use after creating variants, adding states (hover/disabled/pressed), or when component sets need cleanup.
+		{
+			description: `Organize a component set with Figma's native purple dashed visualization. Use after creating variants, adding states (hover/disabled/pressed), or when component sets need cleanup.
 
 Non-destructive: rearranges the existing variants in place (grid positions on the existing set's children), so the component set keeps its node ID and all placed instances remain intact. Arranges variants in a labeled grid (columns = last property like State, rows = other properties like Type+Size) and wraps the set in a white container with title, row/column labels. Safe to run on component sets with placed instances, and safe to re-run.`,
-		{
-			componentSetId: z
-				.string()
-				.optional()
-				.describe(
-					"Node ID of the component set to arrange. If not provided, will look for a selected component set.",
-				),
-			componentSetName: z
-				.string()
-				.optional()
-				.describe(
-					"Name of the component set to find. Used if componentSetId not provided.",
-				),
-			options: z
-				.object({
-					gap: z
-						.number()
-						.optional()
-						.default(24)
-						.describe("Gap between grid cells in pixels (default: 24)"),
-					cellPadding: z
-						.number()
-						.optional()
-						.default(20)
-						.describe(
-							"Padding inside each cell around the variant (default: 20)",
-						),
-					columnProperty: z
-						.string()
-						.optional()
-						.describe(
-							"Property to use for columns (default: auto-detect last property, usually 'State')",
-						),
-				})
-				.optional()
-				.describe("Layout options"),
+			inputSchema: z.object({
+				componentSetId: z
+					.string()
+					.optional()
+					.describe(
+						"Node ID of the component set to arrange. If not provided, will look for a selected component set.",
+					),
+				componentSetName: z
+					.string()
+					.optional()
+					.describe(
+						"Name of the component set to find. Used if componentSetId not provided.",
+					),
+				options: z
+					.object({
+						gap: z
+							.number()
+							.optional()
+							.default(24)
+							.describe("Gap between grid cells in pixels (default: 24)"),
+						cellPadding: z
+							.number()
+							.optional()
+							.default(20)
+							.describe(
+								"Padding inside each cell around the variant (default: 20)",
+							),
+						columnProperty: z
+							.string()
+							.optional()
+							.describe(
+								"Property to use for columns (default: auto-detect last property, usually 'State')",
+							),
+					})
+					.optional()
+					.describe("Layout options"),
+			}),
 		},
 		async ({ componentSetId, componentSetName, options }) => {
 			try {
@@ -2993,14 +3089,12 @@ Non-destructive: rearranges the existing variants in place (grid positions on th
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									...result.result,
-									hint: result.result?.success
-										? "Component set arranged in place (same node ID, placed instances unaffected) inside a white container frame with properly aligned row and column labels. The purple dashed border is visible. Use figma_capture_screenshot to validate the layout."
-										: undefined,
-								},
-							),
+							text: JSON.stringify({
+								...result.result,
+								hint: result.result?.success
+									? "Component set arranged in place (same node ID, placed instances unaffected) inside a white container frame with properly aligned row and column labels. The purple dashed border is visible. Use figma_capture_screenshot to validate the layout."
+									: undefined,
+							}),
 						},
 					],
 				};
@@ -3010,13 +3104,10 @@ Non-destructive: rearranges the existing variants in place (grid positions on th
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									hint: "Make sure the Desktop Bridge plugin is running and a component set exists.",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the Desktop Bridge plugin is running and a component set exists.",
+							}),
 						},
 					],
 					isError: true,
@@ -3027,9 +3118,10 @@ Non-destructive: rearranges the existing variants in place (grid positions on th
 
 	// Tool: Create Component Set with variants (structured command — no hand-written
 	// figma_execute scripts, no 30s execution-cap juggling for callers)
-	server.tool(
+	server.registerTool(
 		"figma_create_component_set",
-		`Create a component set with variants in one call — replaces hand-written figma.combineAsVariants scripts.
+		{
+			description: `Create a component set with variants in one call — replaces hand-written figma.combineAsVariants scripts.
 
 Two modes:
 1. **Generate from a base component**: pass baseComponentId + properties (variant axes). The base is cloned for every combination of the axes ({ State: ['default','hover','disabled'], Size: ['sm','lg'] } → 6 variants), each named 'Prop=Value' comma-joined (e.g. 'State=hover, Size=sm'), then combined into a set. The base component itself becomes the FIRST variant (same node ID), so existing instances of the base survive as instances of that variant.
@@ -3040,60 +3132,74 @@ Figma derives the variant property definitions from the names; they live on the 
 Set autoArrange:true to lay the new set out as a labeled grid inside a white container (same layout as figma_arrange_component_set). Requires Desktop Bridge plugin.
 
 SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count (~1.2s/variant, 30s floor / 2min cap), but above ~40 variants the single-pass clone+combine gets slow and heavy base components may still push the limit — prefer splitting large matrices into multiple sets (e.g. one set per Size).`,
-		{
-			baseComponentId: z
-				.string()
-				.optional()
-				.describe(
-					"Node ID of an existing COMPONENT to use as the base. Cloned per property combination; becomes the set's first variant (keeps its node ID, so placed instances survive). Mutually exclusive with componentIds.",
-				),
-			properties: z
-				.record(z.string(), z.array(z.string()))
-				.optional()
-				.describe(
-					"Variant property axes — required with baseComponentId. Example: { State: ['default','hover','disabled'], Size: ['sm','lg'] } creates 6 variants. Max 100 combinations. Names and values must not contain '=' or ','.",
-				),
-			componentIds: z
-				.array(z.string())
-				.optional()
-				.describe(
-					"Node IDs of existing COMPONENT nodes to combine as variants. Mutually exclusive with baseComponentId. Components already inside a component set are rejected.",
-				),
-			variantProperties: z
-				.array(z.record(z.string(), z.string()))
-				.optional()
-				.describe(
-					"Only with componentIds: one property map per component, aligned by index — e.g. [{ State: 'default' }, { State: 'hover' }]. Each component is renamed to 'Prop=Value, ...' before combining. Without this, existing names are kept (names lacking '=' become 'Property 1=<name>').",
-				),
-			name: z
-				.string()
-				.optional()
-				.describe("Name for the component set (e.g., 'Button'). Defaults to Figma's derived name."),
-			parentId: z
-				.string()
-				.optional()
-				.describe(
-					"Node ID of the container (frame/section) to create the set in. Defaults to the current page.",
-				),
-			position: z
-				.object({ x: z.number(), y: z.number() })
-				.optional()
-				.describe("Position of the set within its parent."),
-			autoArrange: z
-				.boolean()
-				.optional()
-				.default(false)
-				.describe(
-					"If true, arrange the new set in a labeled grid (columns = last property, rows = other properties) inside a white container — same in-place layout as figma_arrange_component_set.",
-				),
-			arrangeOptions: z
-				.object({
-					gap: z.number().optional().describe("Gap between grid cells in pixels (default: 24)"),
-					cellPadding: z.number().optional().describe("Padding inside each cell around the variant (default: 20)"),
-					columnProperty: z.string().optional().describe("Property to use for columns (default: last property)"),
-				})
-				.optional()
-				.describe("Grid layout options, used when autoArrange is true."),
+			inputSchema: z.object({
+				baseComponentId: z
+					.string()
+					.optional()
+					.describe(
+						"Node ID of an existing COMPONENT to use as the base. Cloned per property combination; becomes the set's first variant (keeps its node ID, so placed instances survive). Mutually exclusive with componentIds.",
+					),
+				properties: z
+					.record(z.string(), z.array(z.string()))
+					.optional()
+					.describe(
+						"Variant property axes — required with baseComponentId. Example: { State: ['default','hover','disabled'], Size: ['sm','lg'] } creates 6 variants. Max 100 combinations. Names and values must not contain '=' or ','.",
+					),
+				componentIds: z
+					.array(z.string())
+					.optional()
+					.describe(
+						"Node IDs of existing COMPONENT nodes to combine as variants. Mutually exclusive with baseComponentId. Components already inside a component set are rejected.",
+					),
+				variantProperties: z
+					.array(z.record(z.string(), z.string()))
+					.optional()
+					.describe(
+						"Only with componentIds: one property map per component, aligned by index — e.g. [{ State: 'default' }, { State: 'hover' }]. Each component is renamed to 'Prop=Value, ...' before combining. Without this, existing names are kept (names lacking '=' become 'Property 1=<name>').",
+					),
+				name: z
+					.string()
+					.optional()
+					.describe(
+						"Name for the component set (e.g., 'Button'). Defaults to Figma's derived name.",
+					),
+				parentId: z
+					.string()
+					.optional()
+					.describe(
+						"Node ID of the container (frame/section) to create the set in. Defaults to the current page.",
+					),
+				position: z
+					.object({ x: z.number(), y: z.number() })
+					.optional()
+					.describe("Position of the set within its parent."),
+				autoArrange: z
+					.boolean()
+					.optional()
+					.default(false)
+					.describe(
+						"If true, arrange the new set in a labeled grid (columns = last property, rows = other properties) inside a white container — same in-place layout as figma_arrange_component_set.",
+					),
+				arrangeOptions: z
+					.object({
+						gap: z
+							.number()
+							.optional()
+							.describe("Gap between grid cells in pixels (default: 24)"),
+						cellPadding: z
+							.number()
+							.optional()
+							.describe(
+								"Padding inside each cell around the variant (default: 20)",
+							),
+						columnProperty: z
+							.string()
+							.optional()
+							.describe("Property to use for columns (default: last property)"),
+					})
+					.optional()
+					.describe("Grid layout options, used when autoArrange is true."),
+			}),
 		},
 		async ({
 			baseComponentId,
@@ -3205,16 +3311,14 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									success: true,
-									message: `Created component set "${data.componentSet?.name ?? name ?? ""}" with ${data.variantCount ?? "?"} variants`,
-									...data,
-									...(sizeWarning ? { sizeWarning } : {}),
-									...(arrange ? { arrange } : {}),
-									hint: "To place instances, pass a VARIANT's key/nodeId from variants[] to figma_instantiate_component — not the set's key. Property definitions live on the set (componentPropertyDefinitions). Use figma_capture_screenshot to verify the result.",
-								},
-							),
+							text: JSON.stringify({
+								success: true,
+								message: `Created component set "${data.componentSet?.name ?? name ?? ""}" with ${data.variantCount ?? "?"} variants`,
+								...data,
+								...(sizeWarning ? { sizeWarning } : {}),
+								...(arrange ? { arrange } : {}),
+								hint: "To place instances, pass a VARIANT's key/nodeId from variants[] to figma_instantiate_component — not the set's key. Property definitions live on the set (componentPropertyDefinitions). Use figma_capture_screenshot to verify the result.",
+							}),
 						},
 					],
 				};
@@ -3224,13 +3328,10 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(
-								{
-									error:
-										error instanceof Error ? error.message : String(error),
-									hint: "Make sure the Desktop Bridge plugin is running. baseComponentId/componentIds must reference COMPONENT nodes that are not already inside a component set. Node IDs are session-specific — re-search components if they may be stale.",
-								},
-							),
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+								hint: "Make sure the Desktop Bridge plugin is running. baseComponentId/componentIds must reference COMPONENT nodes that are not already inside a component set. Node IDs are session-specific — re-search components if they may be stale.",
+							}),
 						},
 					],
 					isError: true,
@@ -3240,32 +3341,38 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 	);
 
 	// Tool: Lint Design for accessibility and quality issues
-	server.tool(
+	server.registerTool(
 		"figma_lint_design",
-		"Run comprehensive accessibility (WCAG 2.2) and design quality checks on the current page or a specific node tree. " +
-		"WCAG conformance checks (10 rules): color contrast (AA), non-text contrast (1.4.11), color-only differentiation (1.4.1), " +
-		"focus indicators (2.4.7), touch targets (2.5.8), image alt text (1.1.1), heading hierarchy (1.3.1), " +
-		"reflow/responsive (1.4.10), reading order (1.3.2), and disabled context (4.1.2). " +
-		"Best-practice readability hints (opt-in via rules: ['best-practice'] or ['all']): text sizing, line height, letter spacing, paragraph spacing. " +
-		"Note: line/paragraph spacing below 1.5x/2x is NOT a WCAG 1.4.12 failure — 1.4.12 requires supporting user spacing overrides without breaking (a code concern, see figma_scan_code_accessibility), not specific design values — so these are non-normative hints scoped to multi-line text only. " +
-		"Design system checks (5 rules): hardcoded colors, missing text styles, default names, detached components, and token misuse (a semantic token bound to the wrong property, e.g. a bg/* or surface/* variable used as a text fill). " +
-		"Layout checks: missing auto-layout, empty containers. " +
-		"Default audit runs WCAG + design-system + layout (best-practice hints excluded). " +
-		"Returns categorized findings with severity levels (critical/warning/info) and WCAG conformance level (a/aa/aaa/best-practice) so teams can filter by target level. " +
-		"Use natural language like 'check my design for accessibility issues' or 'lint this page'. " +
-		"Requires Desktop Bridge plugin.",
 		{
-			nodeId: z.string().optional().describe("Node ID to lint (defaults to current page)"),
-			rules: z.array(z.string()).optional().describe("Rule filter. Default (omitted) = ['wcag','design-system','layout'] — real WCAG conformance plus quality checks, with best-practice hints excluded. Groups: ['wcag'] (10 conformance rules), ['best-practice'] (text-size, line-height, letter-spacing, paragraph-spacing), ['all'] (everything incl. best-practice), ['design-system'], ['layout']. Or specific rule IDs like ['wcag-contrast', 'wcag-focus-indicator', 'wcag-disabled-no-context']."),
-			maxDepth: z.number().optional().describe("Maximum tree depth to traverse (default: 10)"),
-			maxFindings: z.number().optional().describe("Maximum findings before stopping (default: 100)"),
+			description:
+				"Check a node tree (or the current page) for WCAG 2.2 problems — contrast, non-text contrast, color-only meaning, focus indicators, target size, alt text, headings, reflow, reading order, disabled context — plus design-system issues (hardcoded colors, missing text styles, detached components, wrong-role tokens) and layout issues. Findings carry severity and WCAG level. Readability hints (line height, letter spacing…) are opt-in via rules ['best-practice']; they are not WCAG failures.",
+			inputSchema: z.object({
+				nodeId: z
+					.string()
+					.optional()
+					.describe("Node to lint (default: current page)."),
+				rules: z
+					.array(z.string())
+					.optional()
+					.describe(
+						"Groups or rule IDs. Default ['wcag','design-system','layout']; also 'best-practice', 'all', or IDs like 'wcag-contrast'.",
+					),
+				maxDepth: z
+					.number()
+					.optional()
+					.describe("Maximum tree depth to traverse (default: 10)"),
+				maxFindings: z
+					.number()
+					.optional()
+					.describe("Maximum findings before stopping (default: 100)"),
+			}),
 		},
 		async ({ nodeId, rules, maxDepth, maxFindings }) => {
 			try {
 				const connector = await getDesktopConnector();
 				const result = await connector.lintDesign(
 					nodeId,
-					rules || ['wcag', 'design-system', 'layout'],
+					rules || ["wcag", "design-system", "layout"],
 					maxDepth || 10,
 					maxFindings || 100,
 				);
@@ -3278,7 +3385,7 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(result.data || result, null, 2),
+							text: JSON.stringify(result.data || result),
 						},
 					],
 				};
@@ -3301,22 +3408,38 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 	);
 
 	// Tool: Audit Component Accessibility
-	server.tool(
+	server.registerTool(
 		"figma_audit_component_accessibility",
-		"Deep accessibility audit for a specific component or component set. Produces a scorecard covering: " +
-		"state coverage (default/hover/focus/disabled/error/active/loading), focus indicator quality and contrast, " +
-		"non-color differentiation (WCAG 1.4.1), target size consistency (WCAG 2.5.8), annotation completeness, " +
-		"and color-blind simulation (protanopia/deuteranopia/tritanopia). Returns per-category scores (0-100) " +
-		"and prioritized recommendations. Use after designing a component to validate accessibility before handoff. " +
-		"Requires Desktop Bridge plugin.",
 		{
-			nodeId: z.string().optional().describe("Node ID of a COMPONENT_SET, COMPONENT, or INSTANCE to audit. Falls back to current selection if omitted."),
-			targetSize: z.number().optional().describe("Minimum touch target size in px (default: 24 per WCAG 2.5.8). Use 44 for iOS or 48 for Android guidelines."),
+			description:
+				"Deep accessibility audit for a specific component or component set. Produces a scorecard covering: " +
+				"state coverage (default/hover/focus/disabled/error/active/loading), focus indicator quality and contrast, " +
+				"non-color differentiation (WCAG 1.4.1), target size consistency (WCAG 2.5.8), annotation completeness, " +
+				"and color-blind simulation (protanopia/deuteranopia/tritanopia). Returns per-category scores (0-100) " +
+				"and prioritized recommendations. Use after designing a component to validate accessibility before handoff. " +
+				"Requires Desktop Bridge plugin.",
+			inputSchema: z.object({
+				nodeId: z
+					.string()
+					.optional()
+					.describe(
+						"Node ID of a COMPONENT_SET, COMPONENT, or INSTANCE to audit. Falls back to current selection if omitted.",
+					),
+				targetSize: z
+					.number()
+					.optional()
+					.describe(
+						"Minimum touch target size in px (default: 24 per WCAG 2.5.8). Use 44 for iOS or 48 for Android guidelines.",
+					),
+			}),
 		},
 		async ({ nodeId, targetSize }) => {
 			try {
 				const connector = await getDesktopConnector();
-				const result = await connector.auditComponentAccessibility(nodeId, targetSize);
+				const result = await connector.auditComponentAccessibility(
+					nodeId,
+					targetSize,
+				);
 
 				if (!result.success) {
 					throw new Error(result.error || "Audit failed");
@@ -3326,7 +3449,7 @@ SIZE GUIDANCE: hard cap 100 variants. The timeout auto-scales with variant count
 					content: [
 						{
 							type: "text" as const,
-							text: JSON.stringify(result.data || result, null, 2),
+							text: JSON.stringify(result.data || result),
 						},
 					],
 				};

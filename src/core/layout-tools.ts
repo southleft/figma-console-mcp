@@ -10,7 +10,7 @@
  * Desktop Bridge plugin change (or re-import) is needed.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { createChildLogger } from "./logger.js";
 
@@ -28,22 +28,33 @@ export interface GridTrack {
  */
 export function parseGridTracks(input: string | number): GridTrack[] {
 	if (typeof input === "number") {
-		if (!Number.isInteger(input) || input < 1) throw new Error(`Track count must be a positive whole number, got ${input}`);
-		return Array.from({ length: input }, () => ({ type: "FLEX" as const, value: 1 }));
+		if (!Number.isInteger(input) || input < 1)
+			throw new Error(
+				`Track count must be a positive whole number, got ${input}`,
+			);
+		return Array.from({ length: input }, () => ({
+			type: "FLEX" as const,
+			value: 1,
+		}));
 	}
-	const expanded = input.replace(/repeat\(\s*(\d+)\s*,\s*([^)]+)\)/gi, (_, n: string, body: string) =>
-		Array.from({ length: Number(n) }, () => body.trim()).join(" "),
+	const expanded = input.replace(
+		/repeat\(\s*(\d+)\s*,\s*([^)]+)\)/gi,
+		(_, n: string, body: string) =>
+			Array.from({ length: Number(n) }, () => body.trim()).join(" "),
 	);
 	const tokens = expanded.trim().split(/\s+/).filter(Boolean);
 	if (tokens.length === 0) throw new Error("No grid tracks given");
 	return tokens.map((token) => {
 		const t = token.toLowerCase();
-		if (t === "auto" || t === "hug" || t === "fit-content") return { type: "HUG" as const };
+		if (t === "auto" || t === "hug" || t === "fit-content")
+			return { type: "HUG" as const };
 		const fr = /^(\d*\.?\d+)?fr$/.exec(t);
 		if (fr) return { type: "FLEX" as const, value: fr[1] ? Number(fr[1]) : 1 };
 		const px = /^(\d*\.?\d+)(px)?$/.exec(t);
 		if (px) return { type: "FIXED" as const, value: Number(px[1]) };
-		throw new Error(`Can't read grid track "${token}". Use Nfr, Npx, auto, or repeat(n, …)`);
+		throw new Error(
+			`Can't read grid track "${token}". Use Nfr, Npx, auto, or repeat(n, …)`,
+		);
 	});
 }
 
@@ -161,61 +172,139 @@ export function layoutScript(payload: unknown): string {
 const sizing = z.enum(["FIXED", "HUG", "FILL"]);
 const gridAlign = z.enum(["MIN", "CENTER", "MAX", "AUTO"]);
 
-export function registerLayoutTools(server: McpServer, getDesktopConnector: () => Promise<any>): void {
-	server.tool(
+export function registerLayoutTools(
+	server: McpServer,
+	getDesktopConnector: () => Promise<any>,
+): void {
+	server.registerTool(
 		"figma_set_layout",
-		"Set a frame's auto layout or grid layout in one call, and place its children. Auto layout: mode HORIZONTAL or VERTICAL, gap, padding, primaryAlign (MIN, CENTER, MAX, SPACE_BETWEEN, SPACE_EVENLY, SPACE_AROUND), counterAlign, wrap with counterAxisGap and alignContent, and sizing (FIXED, HUG, FILL). Grid: mode GRID with tracks written CSS-style (grid.columns: '240px 1fr 1fr', 'repeat(3, 1fr)', 'auto 1fr', or a count), gaps, autoRows, autoFlow, and per-child row, column, spans and alignment. Only the fields you pass change: turning auto layout on keeps the frame's size, and turning wrap on fixes a hugging main axis. Returns the resulting layout, with grid tracks as CSS. Requires Desktop Bridge.",
 		{
-			nodeId: z.string().describe("Frame, component or instance to lay out"),
-			mode: z.enum(["NONE", "HORIZONTAL", "VERTICAL", "GRID"]).optional(),
-			gap: z.number().min(0).optional().describe("Space between items. On a grid, sets both row and column gaps"),
-			counterAxisGap: z.number().min(0).optional().describe("Space between wrapped rows or columns (wrap only)"),
-			padding: z
-				.union([
-					z.number().min(0),
-					z.object({ top: z.number().min(0).optional(), right: z.number().min(0).optional(), bottom: z.number().min(0).optional(), left: z.number().min(0).optional() }),
-				])
-				.optional()
-				.describe("One number for all sides, or {top, right, bottom, left}"),
-			primaryAlign: z.enum(["MIN", "CENTER", "MAX", "SPACE_BETWEEN", "SPACE_EVENLY", "SPACE_AROUND"]).optional(),
-			counterAlign: z.enum(["MIN", "CENTER", "MAX", "BASELINE"]).optional(),
-			wrap: z.boolean().optional().describe("Wrap children onto new lines (HORIZONTAL or VERTICAL)"),
-			alignContent: z.enum(["AUTO", "SPACE_BETWEEN"]).optional().describe("How wrapped lines are spaced"),
-			reverseZIndex: z.boolean().optional().describe("Stack earlier children on top (canvas stacking)"),
-			width: z.number().positive().optional(),
-			height: z.number().positive().optional(),
-			horizontalSizing: sizing.optional(),
-			verticalSizing: sizing.optional(),
-			grid: z
-				.object({
-					columns: z.union([z.string(), z.number().int().min(1)]).optional().describe("'1fr 2fr 120px', 'repeat(4, 1fr)', 'auto 1fr' (auto = hug), or a count of equal columns"),
-					rows: z.union([z.string(), z.number().int().min(1)]).optional().describe("Same format as columns. Leave out with autoRows"),
-					columnGap: z.number().min(0).optional(),
-					rowGap: z.number().min(0).optional(),
-					autoRows: z.boolean().optional().describe("Add and remove rows automatically as children are added"),
-					autoFlow: z.boolean().optional().describe("Place children in order, left to right then top to bottom, instead of by row and column"),
-				})
-				.optional(),
-			children: z
-				.array(
-					z.object({
-						nodeId: z.string().describe("A child, or a node to move into this frame"),
-						row: z.number().int().min(0).optional().describe("Grid row (0-based)"),
-						column: z.number().int().min(0).optional().describe("Grid column (0-based)"),
-						rowSpan: z.number().int().min(1).optional(),
-						columnSpan: z.number().int().min(1).optional(),
-						horizontalAlign: gridAlign.optional().describe("Alignment inside its grid cell"),
-						verticalAlign: gridAlign.optional().describe("Alignment inside its grid cell"),
-						horizontalSizing: sizing.optional(),
-						verticalSizing: sizing.optional(),
-						positioning: z.enum(["AUTO", "ABSOLUTE"]).optional().describe("ABSOLUTE takes the child out of the layout flow"),
-					}),
-				)
-				.optional(),
-			fileKey: z
-				.string()
-				.optional()
-				.describe("Local Mode only. Run against this specific connected file instead of the active file. Get connected fileKeys from figma_list_open_files. Rejected in Cloud Mode, which pairs with a single plugin instance."),
+			description:
+				"Set a frame's auto layout or grid layout in one call, and place its children. Auto layout: mode HORIZONTAL or VERTICAL, gap, padding, primaryAlign (MIN, CENTER, MAX, SPACE_BETWEEN, SPACE_EVENLY, SPACE_AROUND), counterAlign, wrap with counterAxisGap and alignContent, and sizing (FIXED, HUG, FILL). Grid: mode GRID with tracks written CSS-style (grid.columns: '240px 1fr 1fr', 'repeat(3, 1fr)', 'auto 1fr', or a count), gaps, autoRows, autoFlow, and per-child row, column, spans and alignment. Only the fields you pass change. Returns the resulting layout, with grid tracks as CSS. Requires Desktop Bridge.",
+			inputSchema: z.object({
+				nodeId: z.string().describe("Frame, component or instance to lay out"),
+				mode: z.enum(["NONE", "HORIZONTAL", "VERTICAL", "GRID"]).optional(),
+				gap: z
+					.number()
+					.min(0)
+					.optional()
+					.describe(
+						"Space between items. On a grid, sets both row and column gaps",
+					),
+				counterAxisGap: z
+					.number()
+					.min(0)
+					.optional()
+					.describe("Space between wrapped rows or columns (wrap only)"),
+				padding: z
+					.union([
+						z.number().min(0),
+						z.object({
+							top: z.number().min(0).optional(),
+							right: z.number().min(0).optional(),
+							bottom: z.number().min(0).optional(),
+							left: z.number().min(0).optional(),
+						}),
+					])
+					.optional()
+					.describe("One number for all sides, or {top, right, bottom, left}"),
+				primaryAlign: z
+					.enum([
+						"MIN",
+						"CENTER",
+						"MAX",
+						"SPACE_BETWEEN",
+						"SPACE_EVENLY",
+						"SPACE_AROUND",
+					])
+					.optional(),
+				counterAlign: z.enum(["MIN", "CENTER", "MAX", "BASELINE"]).optional(),
+				wrap: z
+					.boolean()
+					.optional()
+					.describe("Wrap children onto new lines (HORIZONTAL or VERTICAL)"),
+				alignContent: z
+					.enum(["AUTO", "SPACE_BETWEEN"])
+					.optional()
+					.describe("How wrapped lines are spaced"),
+				reverseZIndex: z
+					.boolean()
+					.optional()
+					.describe("Stack earlier children on top (canvas stacking)"),
+				width: z.number().positive().optional(),
+				height: z.number().positive().optional(),
+				horizontalSizing: sizing.optional(),
+				verticalSizing: sizing.optional(),
+				grid: z
+					.object({
+						columns: z
+							.union([z.string(), z.number().int().min(1)])
+							.optional()
+							.describe(
+								"'1fr 2fr 120px', 'repeat(4, 1fr)', 'auto 1fr' (auto = hug), or a count of equal columns",
+							),
+						rows: z
+							.union([z.string(), z.number().int().min(1)])
+							.optional()
+							.describe("Same format as columns. Leave out with autoRows"),
+						columnGap: z.number().min(0).optional(),
+						rowGap: z.number().min(0).optional(),
+						autoRows: z
+							.boolean()
+							.optional()
+							.describe(
+								"Add and remove rows automatically as children are added",
+							),
+						autoFlow: z
+							.boolean()
+							.optional()
+							.describe(
+								"Place children in order, left to right then top to bottom, instead of by row and column",
+							),
+					})
+					.optional(),
+				children: z
+					.array(
+						z.object({
+							nodeId: z
+								.string()
+								.describe("A child, or a node to move into this frame"),
+							row: z
+								.number()
+								.int()
+								.min(0)
+								.optional()
+								.describe("Grid row (0-based)"),
+							column: z
+								.number()
+								.int()
+								.min(0)
+								.optional()
+								.describe("Grid column (0-based)"),
+							rowSpan: z.number().int().min(1).optional(),
+							columnSpan: z.number().int().min(1).optional(),
+							horizontalAlign: gridAlign
+								.optional()
+								.describe("Alignment inside its grid cell"),
+							verticalAlign: gridAlign
+								.optional()
+								.describe("Alignment inside its grid cell"),
+							horizontalSizing: sizing.optional(),
+							verticalSizing: sizing.optional(),
+							positioning: z
+								.enum(["AUTO", "ABSOLUTE"])
+								.optional()
+								.describe("ABSOLUTE takes the child out of the layout flow"),
+						}),
+					)
+					.optional(),
+				fileKey: z
+					.string()
+					.optional()
+					.describe(
+						"Local Mode: run in this open file (see figma_list_open_files) without changing the active file.",
+					),
+			}),
 		},
 		async ({ fileKey, grid, ...rest }) => {
 			try {
@@ -223,18 +312,38 @@ export function registerLayoutTools(server: McpServer, getDesktopConnector: () =
 				if (grid) {
 					payload.grid = {
 						...grid,
-						columns: grid.columns !== undefined ? parseGridTracks(grid.columns) : undefined,
-						rows: grid.rows !== undefined ? parseGridTracks(grid.rows) : undefined,
+						columns:
+							grid.columns !== undefined
+								? parseGridTracks(grid.columns)
+								: undefined,
+						rows:
+							grid.rows !== undefined ? parseGridTracks(grid.rows) : undefined,
 					};
 				}
 				const connector = await getDesktopConnector();
-				const result = await connector.executeCodeViaUI(layoutScript(payload), 30000, fileKey);
-				if (!result?.success) throw new Error(result?.error || "Failed to set layout");
-				return { content: [{ type: "text" as const, text: JSON.stringify(result.result) }] };
+				const result = await connector.executeCodeViaUI(
+					layoutScript(payload),
+					30000,
+					fileKey,
+				);
+				if (!result?.success)
+					throw new Error(result?.error || "Failed to set layout");
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(result.result) },
+					],
+				};
 			} catch (error) {
 				logger.error({ error }, "figma_set_layout failed");
 				return {
-					content: [{ type: "text" as const, text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }],
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify({
+								error: error instanceof Error ? error.message : String(error),
+							}),
+						},
+					],
 					isError: true,
 				};
 			}

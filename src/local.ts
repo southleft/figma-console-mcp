@@ -14,12 +14,21 @@
  * - FIGMA_ACCESS_TOKEN environment variable for API access
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import type { SkillCatalog } from "@modelcontextprotocol/server/ext/skills";
+import { loadSkills } from "@modelcontextprotocol/server/ext/skills/node";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { fileURLToPath } from "url";
 import { dirname, resolve, join } from "path";
-import { realpathSync, existsSync, readFileSync, mkdirSync, copyFileSync, writeFileSync } from "fs";
+import {
+	realpathSync,
+	existsSync,
+	readFileSync,
+	mkdirSync,
+	copyFileSync,
+	writeFileSync,
+} from "fs";
 import { homedir } from "os";
 import { getConfig } from "./core/config.js";
 import { createChildLogger } from "./core/logger.js";
@@ -36,17 +45,24 @@ import { registerVersionTools } from "./core/version-tools.js";
 import { registerAnnotationTools } from "./core/annotation-tools.js";
 import { registerDeepComponentTools } from "./core/deep-component-tools.js";
 import { registerDesignSystemTools } from "./core/design-system-tools.js";
-import { registerLibraryTools, registerLibraryVariableTools } from "./core/library-tools.js";
+import {
+	registerLibraryTools,
+	registerLibraryVariableTools,
+} from "./core/library-tools.js";
 import { registerAccessibilityTools } from "./core/accessibility-tools.js";
 import { registerDiagnoseTool } from "./core/diagnose-tool.js";
 import { registerWriteTools } from "./core/write-tools.js";
 import { registerMultiFileTools } from "./core/multi-file-tools.js";
 import { registerDesignSystemExtractionTools } from "./core/design-system-extraction-tools.js";
 import { registerTokensTools } from "./core/tokens-tools.js";
-import { wrapServerForIdentity } from "./core/identity.js";
+import { withToolIdentity } from "./core/identity.js";
 import { PACKAGE_ROOT } from "./core/resolve-package-root.js";
 import type { IFigmaConnector } from "./core/figma-connector.js";
-import { FigmaWebSocketServer, getBundledPluginVersion, getServerVersion } from "./core/websocket-server.js";
+import {
+	FigmaWebSocketServer,
+	getBundledPluginVersion,
+	getServerVersion,
+} from "./core/websocket-server.js";
 import { WebSocketConnector } from "./core/websocket-connector.js";
 import {
 	DEFAULT_WS_PORT,
@@ -64,7 +80,11 @@ import {
 	setAdvertisedMcpHttpUrl,
 	HEARTBEAT_INTERVAL_MS,
 } from "./core/port-discovery.js";
-import { parseHttpPort, startLocalHttpTransport, type LocalHttpHandle } from "./core/http-transport.js";
+import {
+	parseHttpPort,
+	startLocalHttpTransport,
+	type LocalHttpHandle,
+} from "./core/http-transport.js";
 import { onStdinClosed } from "./core/stdin-lifecycle.js";
 import { registerTokenBrowserApp } from "./apps/token-browser/server.js";
 import {
@@ -74,12 +94,29 @@ import {
 import { registerFigJamTools } from "./core/figjam-tools.js";
 import { registerSlidesTools } from "./core/slides-tools.js";
 import { registerSlotTools } from "./core/slot-tools.js";
+import { registerDevResourceTools } from "./core/dev-resource-tools.js";
+import { registerUsageTools } from "./core/usage-tools.js";
+import { registerAnalyticsTools } from "./core/analytics-tools.js";
+import { registerExtendedCollectionTools } from "./core/extended-collection-tools.js";
 import { registerMotionTools } from "./core/motion-tools.js";
 import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
 import { registerLayoutTools } from "./core/layout-tools.js";
+import { applyToolAnnotations } from "./core/tool-annotations.js";
+import { applyToolsets, parseToolsetsEnv, registerToolsetTools } from "./core/toolsets.js";
+import { LOCAL_TASK_TOOLS, defaultTaskStore, enableTasksForTools } from "./core/tasks.js";
+import { registerAdherenceTools } from "./core/adherence-tools.js";
+import { pickDefaultVariant } from "./core/adherence/matching.js";
+import { registerTokenBindingTools } from "./core/token-binding-tools.js";
 
 const logger = createChildLogger({ component: "local-server" });
+
+/**
+ * McpServer whose registerTool stamps every tool response (and every thrown
+ * error) with our MCP identity, so LLMs can attribute output unambiguously
+ * when multiple Figma-related MCPs are connected. See withToolIdentity.
+ */
+const IdentifiedMcpServer = withToolIdentity(McpServer, { onToolCall: noteToolCall });
 
 /**
  * Copy plugin files to a stable directory (~/.figma-console-mcp/plugin/).
@@ -104,7 +141,9 @@ function setupStablePluginDir(sourcePluginDir: string): string | null {
 
 		// Write a version marker so we can detect stale copies
 		try {
-			const pkg = JSON.parse(readFileSync(join(sourcePluginDir, "..", "package.json"), "utf-8"));
+			const pkg = JSON.parse(
+				readFileSync(join(sourcePluginDir, "..", "package.json"), "utf-8"),
+			);
 			writeFileSync(join(stableDir, ".version"), pkg.version, "utf-8");
 		} catch {
 			// Non-critical — version marker is for diagnostics only
@@ -113,7 +152,10 @@ function setupStablePluginDir(sourcePluginDir: string): string | null {
 		logger.info({ stableDir }, "Plugin files copied to stable directory");
 		return join(stableDir, "manifest.json");
 	} catch (error) {
-		logger.warn({ error }, "Could not set up stable plugin directory (non-critical)");
+		logger.warn(
+			{ error },
+			"Could not set up stable plugin directory (non-critical)",
+		);
 		return null;
 	}
 }
@@ -124,6 +166,8 @@ function setupStablePluginDir(sourcePluginDir: string): string | null {
  */
 class LocalFigmaConsoleMCP {
 	private server: McpServer;
+	/** Skills over MCP (io.modelcontextprotocol/skills); attached to every McpServer we build. */
+	private skills: SkillCatalog | null = null;
 	private figmaAPI: FigmaAPI | null = null;
 	private wsServer: FigmaWebSocketServer | null = null;
 	private wsStartupError: { code: string; port: number } | null = null;
@@ -172,7 +216,7 @@ class LocalFigmaConsoleMCP {
 	private invalidateVariablesCache(): void {
 		if (this.variablesCache.size > 0) {
 			this.variablesCache.clear();
-			logger.info('Variables cache invalidated after write operation');
+			logger.info("Variables cache invalidated after write operation");
 		}
 	}
 
@@ -185,7 +229,7 @@ class LocalFigmaConsoleMCP {
 	 * run; the optional HTTP endpoint builds one per request (see http-transport.ts).
 	 */
 	private createMcpServer(): McpServer {
-		const server = new McpServer(
+		const server = new IdentifiedMcpServer(
 			{
 				name: "Figma Console MCP (Local)",
 				// Was hard-coded "0.1.0" — every client saw that regardless of the release
@@ -193,13 +237,20 @@ class LocalFigmaConsoleMCP {
 			},
 			{
 				instructions: `## Figma Console MCP - Visual Design Workflow
-
+${
+	parseToolsetsEnv(process.env.FIGMA_TOOLSETS) === "all"
+		? ""
+		: `
+### TOOLSETS (load what the task needs)
+Only the core tools are listed at first, to save tokens. For variables/tokens, component authoring, design↔code parity, docs/history, FigJam, Slides, motion, deep inspection or debugging, call figma_enable_toolsets({ toolsets: [...] }) first. If the new tools don't appear, run them through figma_call({ tool, arguments }).
+`
+}
 This MCP server enables AI-assisted design creation in Figma. Follow these mandatory workflows:
 
 ### VISUAL VALIDATION WORKFLOW (Required)
 After creating or modifying ANY visual design elements:
 1. **CREATE**: Execute design code via figma_execute
-2. **SCREENSHOT**: Capture result with figma_take_screenshot
+2. **SCREENSHOT**: Capture result with figma_capture_screenshot
 3. **ANALYZE**: Check alignment, spacing, proportions, visual balance
 4. **ITERATE**: Fix issues and repeat (max 3 iterations)
 5. **VERIFY**: Final screenshot to confirm
@@ -243,7 +294,7 @@ section.appendChild(frame);
 \`\`\`
 
 ### BATCH OPERATIONS (Performance Critical)
-When creating or updating **multiple variables**, ALWAYS prefer batch tools over repeated individual calls:
+When creating or updating **multiple variables** (variables toolset), ALWAYS prefer batch tools over repeated individual calls:
 - **figma_batch_create_variables**: Create up to 100 variables in one call (vs. N calls to figma_create_variable)
 - **figma_batch_update_variables**: Update up to 100 variable values in one call (vs. N calls to figma_update_variable)
 - **figma_setup_design_tokens**: Create a complete token system (collection + modes + variables) atomically in one call
@@ -257,10 +308,6 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			},
 		);
 
-		// Stamp every tool response (and every thrown error) with our MCP identity
-		// so LLMs can attribute output unambiguously when multiple Figma-related
-		// MCPs are connected. Idempotent for already-tagged responses.
-		wrapServerForIdentity(server, { onToolCall: noteToolCall });
 		return server;
 	}
 
@@ -279,7 +326,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				);
 			}
 
-			logger.debug({ authMethod: accessToken.startsWith('figu_') ? 'OAuth' : 'PAT' }, 'Initializing Figma API');
+			logger.debug(
+				{ authMethod: accessToken.startsWith("figu_") ? "OAuth" : "PAT" },
+				"Initializing Figma API",
+			);
 
 			this.figmaAPI = new FigmaAPI({ accessToken });
 		}
@@ -299,7 +349,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				logger.debug("Desktop connector initialized via WebSocket bridge");
 				return wsConnector;
 			} catch (wsError) {
-				const errorMsg = wsError instanceof Error ? wsError.message : String(wsError);
+				const errorMsg =
+					wsError instanceof Error ? wsError.message : String(wsError);
 				logger.debug({ error: errorMsg }, "WebSocket connector init failed");
 			}
 		}
@@ -307,9 +358,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		const wsPort = this.wsActualPort || this.wsPreferredPort || DEFAULT_WS_PORT;
 		const err = new Error(
 			"Cannot connect to Figma Desktop.\n\n" +
-			"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n" +
-			`The plugin will connect automatically to ws://localhost:${wsPort}.\n` +
-			"No special launch flags needed."
+				"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n" +
+				`The plugin will connect automatically to ws://localhost:${wsPort}.\n` +
+				"No special launch flags needed.",
 		);
 		// Attach structured connection error for programmatic agent recovery
 		(err as any).connectionError = this.buildConnectionError(err);
@@ -324,7 +375,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 */
 	private bridgeToolError(error: unknown, message: string, hint: string) {
 		const errorMsg = error instanceof Error ? error.message : String(error);
-		const connectionError = (error as any)?.connectionError || this.buildConnectionError(error);
+		const connectionError =
+			(error as any)?.connectionError || this.buildConnectionError(error);
 		return {
 			content: [
 				{
@@ -354,13 +406,15 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	} {
 		const errorMsg = error instanceof Error ? error.message : String(error);
 		const wsServerRunning = this.wsServer?.isStarted() ?? false;
-		const isTimeout = errorMsg.includes('timed out');
-		const isNoClient = errorMsg.includes('No active file') || errorMsg.includes('No WebSocket client');
+		const isTimeout = errorMsg.includes("timed out");
+		const isNoClient =
+			errorMsg.includes("No active file") ||
+			errorMsg.includes("No WebSocket client");
 
 		if (!wsServerRunning) {
 			return {
 				layer: 1,
-				type: 'MCP_SERVER_UNAVAILABLE',
+				type: "MCP_SERVER_UNAVAILABLE",
 				canRetry: true,
 				recoverySteps: [
 					"Ensure your AI client is running with figma-console-mcp configured",
@@ -373,7 +427,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		if (isTimeout) {
 			return {
 				layer: 2,
-				type: 'BRIDGE_COMMAND_TIMEOUT',
+				type: "BRIDGE_COMMAND_TIMEOUT",
 				canRetry: true,
 				recoverySteps: [
 					"The plugin may be unresponsive — close and reopen the Desktop Bridge plugin in Figma",
@@ -385,7 +439,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 		return {
 			layer: isNoClient ? 2 : 2,
-			type: isNoClient ? 'BRIDGE_NOT_CONNECTED' : 'BRIDGE_ERROR',
+			type: isNoClient ? "BRIDGE_NOT_CONNECTED" : "BRIDGE_ERROR",
 			canRetry: !isNoClient,
 			recoverySteps: [
 				"Open Figma Desktop with your target file",
@@ -401,6 +455,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 	 * Priority: Browser URL (full URL with branch/node info) → WebSocket file identity (synthesized URL).
 	 * The synthesized URL is compatible with extractFileKey() and extractFigmaUrlInfo().
 	 */
+	/** Spec documents found per file at the last design-system summary rebuild. */
+	private specsByFile = new Map<string, Array<{ id: string; title: string; page: string }>>();
+
 	private getCurrentFileUrl(): string | null {
 		// Synthesize the URL from the WebSocket plugin's reported file identity.
 		// (Pre-Phase-3 this also tried a live Puppeteer browser URL; that path is
@@ -408,9 +465,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		const wsFileInfo = this.wsServer?.getConnectedFileInfo() ?? null;
 		if (wsFileInfo?.fileKey) {
 			const pageIdParam = wsFileInfo.currentPageId
-				? `?node-id=${wsFileInfo.currentPageId.replace(/:/g, '-')}`
-				: '';
-			return `https://www.figma.com/design/${wsFileInfo.fileKey}/${encodeURIComponent(wsFileInfo.fileName || 'Untitled')}${pageIdParam}`;
+				? `?node-id=${wsFileInfo.currentPageId.replace(/:/g, "-")}`
+				: "";
+			return `https://www.figma.com/design/${wsFileInfo.fileKey}/${encodeURIComponent(wsFileInfo.fileName || "Untitled")}${pageIdParam}`;
 		}
 
 		return null;
@@ -430,8 +487,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			// The user may open the plugin later
 			logger.warn(
 				`WebSocket transport not available yet.\n\n` +
-				`Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n` +
-				`No special launch flags needed — the plugin connects automatically.`,
+					`Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).\n` +
+					`No special launch flags needed — the plugin connects automatically.`,
 			);
 		}
 	}
@@ -452,44 +509,51 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			const thisFile = fileURLToPath(import.meta.url);
 			// From dist/local.js → go up to package root, then into figma-desktop-bridge
 			const packageRoot = dirname(dirname(thisFile));
-			const manifestPath = resolve(packageRoot, "figma-desktop-bridge", "manifest.json");
+			const manifestPath = resolve(
+				packageRoot,
+				"figma-desktop-bridge",
+				"manifest.json",
+			);
 			return existsSync(manifestPath) ? manifestPath : null;
 		} catch {
 			return null;
 		}
 	}
 
-
-
 	/**
 	 * Register all MCP tools
 	 */
 	private registerTools(server: McpServer): void {
 		// Tool 1: Get Console Logs
-		server.tool(
+		server.registerTool(
 			"figma_get_console_logs",
-			"Retrieve console logs captured by the Desktop Bridge plugin: console output from code run through it (figma_execute and the other write tools) and from the bridge itself. It does NOT capture another plugin's console — Figma runs one plugin at a time in a file, each in its own sandbox, so the bridge cannot see a plugin you are developing. To debug your own plugin's logic, run that code through figma_execute and read the logs here, or use Figma's own developer console for the plugin.",
 			{
-				count: z
-					.number()
-					.optional()
-					.default(100)
-					.describe("Number of recent logs to retrieve"),
-				level: z
-					.enum(["log", "info", "warn", "error", "debug", "all"])
-					.optional()
-					.default("all")
-					.describe("Filter by log level"),
-				since: z
-					.number()
-					.optional()
-					.describe("Only logs after this timestamp (Unix ms)"),
+				description:
+					"Retrieve console logs captured by the Desktop Bridge plugin: console output from code run through it (figma_execute and the other write tools) and from the bridge itself. It does NOT capture another plugin's console — Figma runs one plugin at a time in a file, each in its own sandbox, so the bridge cannot see a plugin you are developing. To debug your own plugin's logic, run that code through figma_execute and read the logs here, or use Figma's own developer console for the plugin.",
+				inputSchema: z.object({
+					count: z
+						.number()
+						.optional()
+						.default(100)
+						.describe("Number of recent logs to retrieve"),
+					level: z
+						.enum(["log", "info", "warn", "error", "debug", "all"])
+						.optional()
+						.default("all")
+						.describe("Filter by log level"),
+					since: z
+						.number()
+						.optional()
+						.describe("Only logs after this timestamp (Unix ms)"),
+				}),
 			},
 			async ({ count, level, since }) => {
 				try {
 					// Try console monitor first, fall back to WebSocket console buffer
 					let logs: import("./core/types/index.js").ConsoleLogEntry[];
-					let status: ReturnType<NonNullable<typeof this.wsServer>["getConsoleStatus"]>;
+					let status: ReturnType<
+						NonNullable<typeof this.wsServer>["getConsoleStatus"]
+					>;
 					let source: "websocket" = "websocket";
 
 					if (this.wsServer?.isClientConnected()) {
@@ -550,16 +614,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error: errorMessage,
-										message: "Failed to retrieve console logs.",
-										troubleshooting: [
-											"Open the Desktop Bridge plugin in Figma for WebSocket-based console capture",
-											"Ensure the Desktop Bridge plugin is open and connected in Figma",
-										],
-									},
-								),
+								text: JSON.stringify({
+									error: errorMessage,
+									message: "Failed to retrieve console logs.",
+									troubleshooting: [
+										"Open the Desktop Bridge plugin in Figma for WebSocket-based console capture",
+										"Ensure the Desktop Bridge plugin is open and connected in Figma",
+									],
+								}),
 							},
 						],
 						isError: true,
@@ -572,28 +634,32 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Bridge-first: the plugin's exportAsync works on any Figma plan with no REST
 		// token, and reflects the current runtime state (no cloud-sync lag).
 		// Note: For screenshots of specific components, use figma_get_component_image instead
-		server.tool(
+		server.registerTool(
 			"figma_take_screenshot",
-			`Export an image of the current Figma page or specific node. Uses the Desktop Bridge plugin (exportAsync) when connected — works on any plan, no REST token needed, reflects current runtime state. Falls back to the Figma REST API when the bridge is unavailable or for PDF format. Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image.`,
 			{
-				nodeId: z
-					.string()
-					.optional()
-					.describe(
-						"Optional node ID to screenshot (e.g., '123:456'). If omitted, uses the node-id from the Desktop Bridge plugin's reported file URL when present. To screenshot what the user is currently looking at on the canvas, prefer figma_capture_screenshot (uses the plugin's exportAsync and reflects the current state).",
-					),
-				scale: z
-					.number()
-					.min(0.01)
-					.max(4)
-					.optional()
-					.default(2)
-					.describe("Image scale factor (0.01-4, default: 2 for high quality)"),
-				format: z
-					.enum(["png", "jpg", "svg", "pdf"])
-					.optional()
-					.default("png")
-					.describe("Image format (default: png)"),
+				description: `Export an image of the current Figma page or specific node. Uses the Desktop Bridge plugin (exportAsync) when connected — works on any plan, no REST token needed, reflects current runtime state. Falls back to the Figma REST API when the bridge is unavailable or for PDF format. Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image.`,
+				inputSchema: z.object({
+					nodeId: z
+						.string()
+						.optional()
+						.describe(
+							"Optional node ID to screenshot (e.g., '123:456'). If omitted, uses the node-id from the Desktop Bridge plugin's reported file URL when present. To screenshot what the user is currently looking at on the canvas, prefer figma_capture_screenshot (uses the plugin's exportAsync and reflects the current state).",
+						),
+					scale: z
+						.number()
+						.min(0.01)
+						.max(4)
+						.optional()
+						.default(2)
+						.describe(
+							"Image scale factor (0.01-4, default: 2 for high quality)",
+						),
+					format: z
+						.enum(["png", "jpg", "svg", "pdf"])
+						.optional()
+						.default("png")
+						.describe("Image format (default: png)"),
+				}),
 			},
 			async ({ nodeId, scale, format }) => {
 				// Callers routinely paste URL-format ids (123-456); both the Plugin
@@ -625,7 +691,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						const bridgeScale = Math.min(Math.max(scale, 0.5), 4);
 
 						logger.info(
-							{ nodeId: bridgeNodeId, format: bridgeFormat, scale: bridgeScale },
+							{
+								nodeId: bridgeNodeId,
+								format: bridgeFormat,
+								scale: bridgeScale,
+							},
 							"Capturing screenshot via Desktop Bridge (bridge-first)",
 						);
 
@@ -642,7 +712,9 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						}
 
 						if (!result?.success || !result.image?.base64) {
-							throw new Error(result?.error || "Bridge screenshot returned no image");
+							throw new Error(
+								result?.error || "Bridge screenshot returned no image",
+							);
 						}
 
 						const bridgeMimeType =
@@ -762,16 +834,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										fileKey,
-										nodeId: targetNodeId,
-										scale,
-										format,
-										byteLength: imageBuffer.byteLength,
-										note: "Screenshot captured successfully. The image is included below for visual analysis.",
-									},
-								),
+								text: JSON.stringify({
+									fileKey,
+									nodeId: targetNodeId,
+									scale,
+									format,
+									byteLength: imageBuffer.byteLength,
+									note: "Screenshot captured successfully. The image is included below for visual analysis.",
+								}),
 							},
 							{
 								type: "image",
@@ -795,15 +865,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error: errorMessage,
-										message: "Failed to capture screenshot via Figma API",
-										hint: isAuthError
-											? "Your FIGMA_ACCESS_TOKEN is expired or invalid. Generate a new personal access token at figma.com → Settings → Security → Personal access tokens, then update FIGMA_ACCESS_TOKEN in your MCP config. Alternatively, open the Desktop Bridge plugin in Figma Desktop — screenshots work through the bridge without any REST token."
-											: "Make sure you've called figma_navigate to open a file, or provide a valid nodeId parameter. Tip: with the Desktop Bridge plugin open, screenshots don't need a REST token at all.",
-									},
-								),
+								text: JSON.stringify({
+									error: errorMessage,
+									message: "Failed to capture screenshot via Figma API",
+									hint: isAuthError
+										? "Your FIGMA_ACCESS_TOKEN is expired or invalid. Generate a new personal access token at figma.com → Settings → Security → Personal access tokens, then update FIGMA_ACCESS_TOKEN in your MCP config. Alternatively, open the Desktop Bridge plugin in Figma Desktop — screenshots work through the bridge without any REST token."
+										: "Make sure you've called figma_navigate to open a file, or provide a valid nodeId parameter. Tip: with the Desktop Bridge plugin open, screenshots don't need a REST token at all.",
+								}),
 							},
 						],
 						isError: true,
@@ -813,20 +881,23 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 3: Watch Console (Real-time streaming)
-		server.tool(
+		server.registerTool(
 			"figma_watch_console",
-			"Stream console logs captured by the Desktop Bridge plugin in real-time for a specified duration (max 5 minutes). Covers code run through the bridge (figma_execute and the write tools) — not other plugins, which run in their own sandboxes. Returns all logs captured during the watch period with summary statistics. NOT for retrieving past logs (use figma_get_console_logs). Best for: watching long-running figma_execute scripts, debugging race conditions, monitoring async operations.",
 			{
-				duration: z
-					.number()
-					.optional()
-					.default(30)
-					.describe("How long to watch in seconds"),
-				level: z
-					.enum(["log", "info", "warn", "error", "debug", "all"])
-					.optional()
-					.default("all")
-					.describe("Filter by log level"),
+				description:
+					"Stream console logs captured by the Desktop Bridge plugin in real-time for a specified duration (max 5 minutes). Covers code run through the bridge (figma_execute and the write tools) — not other plugins, which run in their own sandboxes. Returns all logs captured during the watch period with summary statistics. NOT for retrieving past logs (use figma_get_console_logs). Best for: watching long-running figma_execute scripts, debugging race conditions, monitoring async operations.",
+				inputSchema: z.object({
+					duration: z
+						.number()
+						.optional()
+						.default(30)
+						.describe("How long to watch in seconds"),
+					level: z
+						.enum(["log", "info", "warn", "error", "debug", "all"])
+						.optional()
+						.default("all")
+						.describe("Filter by log level"),
+				}),
 			},
 			async ({ duration, level }) => {
 				if (!this.wsServer?.isClientConnected()) {
@@ -878,15 +949,18 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 4: Reload Plugin
-		server.tool(
+		server.registerTool(
 			"figma_reload_plugin",
-			"Reload the current Figma page/plugin to test code changes. Optionally clears console logs before reload. Use when user says: 'reload plugin', 'refresh page', 'restart plugin', 'test my changes'. Returns reload confirmation and current URL. Best for rapid iteration during plugin development.",
 			{
-				clearConsole: z
-					.boolean()
-					.optional()
-					.default(true)
-					.describe("Clear console logs before reload"),
+				description:
+					"Reload the current Figma page/plugin to test code changes. Optionally clears console logs before reload. Use when user says: 'reload plugin', 'refresh page', 'restart plugin', 'test my changes'. Returns reload confirmation and current URL. Best for rapid iteration during plugin development.",
+				inputSchema: z.object({
+					clearConsole: z
+						.boolean()
+						.optional()
+						.default(true)
+						.describe("Clear console logs before reload"),
+				}),
 			},
 			async ({ clearConsole: clearConsoleBefore }) => {
 				try {
@@ -940,16 +1014,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error: String(error),
-										message: "Failed to reload plugin",
-										troubleshooting: [
-											"Open the Desktop Bridge plugin in Figma for WebSocket-based reload",
-											"Ensure the Desktop Bridge plugin is open and connected in Figma",
-										],
-									},
-								),
+								text: JSON.stringify({
+									error: String(error),
+									message: "Failed to reload plugin",
+									troubleshooting: [
+										"Open the Desktop Bridge plugin in Figma for WebSocket-based reload",
+										"Ensure the Desktop Bridge plugin is open and connected in Figma",
+									],
+								}),
 							},
 						],
 						isError: true,
@@ -959,10 +1031,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 5: Clear Console
-		server.tool(
+		server.registerTool(
 			"figma_clear_console",
-			"Clear the console log buffer. Safely clears the buffer without disrupting the connection. Returns number of logs cleared.",
-			{},
+			{
+				description:
+					"Clear the console log buffer. Safely clears the buffer without disrupting the connection. Returns number of logs cleared.",
+				inputSchema: z.object({}),
+			},
 			async () => {
 				try {
 					let clearedCount = 0;
@@ -989,8 +1064,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						responseData.ai_instruction =
 							"Console buffer cleared via WebSocket. No reconnection needed — monitoring continues automatically.";
 					} else {
-						responseData.ai_instruction =
-							"Console cleared successfully.";
+						responseData.ai_instruction = "Console cleared successfully.";
 					}
 
 					return {
@@ -1007,12 +1081,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error: String(error),
-										message: "Failed to clear console buffer",
-									},
-								),
+								text: JSON.stringify({
+									error: String(error),
+									message: "Failed to clear console buffer",
+								}),
 							},
 						],
 						isError: true,
@@ -1022,22 +1094,24 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 6: Navigate / switch active file
-		server.tool(
+		server.registerTool(
 			"figma_navigate",
-			"Switch the active Figma file target among files that already have the Desktop Bridge plugin running. Local mode is WebSocket-only — this tool does NOT launch a browser or open files. If the requested URL is already the active file, it confirms the connection. If another connected plugin matches the URL, it switches the active target so subsequent tool calls hit that file. If no connected plugin matches, returns guidance for the user to open the Desktop Bridge plugin in the target file. Use figma_list_open_files to see all connected files.\n\nPass lock: true to PIN this file as the target — new connections, reconnects, and the user's own selection/page changes in other files will no longer move the target. Use this for parallel work (agent edits one file while the user works in another) so commands can't silently route to the wrong file. Switching to another file (or lock: false) releases the pin; it also releases automatically if the pinned file disconnects.",
 			{
-				url: z
-					.string()
-					.url()
-					.describe(
-						"Figma URL to navigate to (e.g., https://www.figma.com/design/abc123)",
-					),
-				lock: z
-					.boolean()
-					.optional()
-					.describe(
-						"Pin this file as the active target so connections, reconnects, and user interaction in other files won't move it. Defaults to false.",
-					),
+				description: "Switch the active file among files where the Desktop Bridge is running (it doesn't open files; see figma_list_open_files). lock: true pins this file so reconnects or the user's clicks in other files can't move the target \u2014 use it when working in one file while the user works in another. Switching files or lock: false releases the pin.",
+				inputSchema: z.object({
+					url: z
+						.string()
+						.url()
+						.describe(
+							"Figma file URL.",
+						),
+					lock: z
+						.boolean()
+						.optional()
+						.describe(
+							"Pin this file as the target (default false).",
+						),
+				}),
 			},
 			async ({ url, lock }) => {
 				try {
@@ -1052,7 +1126,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							const fileInfo = this.wsServer.getConnectedFileInfo();
 							// Check if the requested URL points to the same file already connected via WebSocket
 							const requestedFileKey = extractFileKey(url);
-							const isSameFile = !!(requestedFileKey && fileInfo?.fileKey && requestedFileKey === fileInfo.fileKey);
+							const isSameFile = !!(
+								requestedFileKey &&
+								fileInfo?.fileKey &&
+								requestedFileKey === fileInfo.fileKey
+							);
 
 							if (isSameFile) {
 								// Apply/release the pin even when already active, so
@@ -1064,22 +1142,20 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									content: [
 										{
 											type: "text",
-											text: JSON.stringify(
-												{
-													status: "already_connected",
-													timestamp: Date.now(),
-													connectedFile: {
-														fileName: fileInfo!.fileName,
-														fileKey: fileInfo!.fileKey,
-													},
-													locked: this.wsServer.isTargetLocked(),
-													message:
-														"Already connected to this file via WebSocket. All tools are ready to use — no navigation needed." +
-														(lock ? " Target is now pinned to this file." : ""),
-													ai_instruction:
-														"The requested file is already connected via WebSocket. You can proceed with any tool calls (figma_get_variables, figma_get_file_data, figma_execute, etc.) without further navigation.",
+											text: JSON.stringify({
+												status: "already_connected",
+												timestamp: Date.now(),
+												connectedFile: {
+													fileName: fileInfo!.fileName,
+													fileKey: fileInfo!.fileKey,
 												},
-											),
+												locked: this.wsServer.isTargetLocked(),
+												message:
+													"Already connected to this file via WebSocket. All tools are ready to use — no navigation needed." +
+													(lock ? " Target is now pinned to this file." : ""),
+												ai_instruction:
+													"The requested file is already connected via WebSocket. You can proceed with any tool calls (figma_get_variables, figma_get_file_data, figma_execute, etc.) without further navigation.",
+											}),
 										},
 									],
 								};
@@ -1088,34 +1164,39 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							// Check if the requested file is connected via multi-client WebSocket
 							if (requestedFileKey) {
 								const connectedFiles = this.wsServer.getConnectedFiles();
-								const targetFile = connectedFiles.find(f => f.fileKey === requestedFileKey);
+								const targetFile = connectedFiles.find(
+									(f) => f.fileKey === requestedFileKey,
+								);
 								if (targetFile) {
 									this.wsServer.setActiveFile(requestedFileKey, lock ?? false);
 									return {
 										content: [
 											{
 												type: "text",
-												text: JSON.stringify(
-													{
-														status: "switched_active_file",
-														timestamp: Date.now(),
-														activeFile: {
-															fileName: targetFile.fileName,
-															fileKey: targetFile.fileKey,
-														},
-														locked: this.wsServer.isTargetLocked(),
-														connectedFiles: connectedFiles.map(f => ({
-															fileName: f.fileName,
-															fileKey: f.fileKey,
-															isActive: f.fileKey === requestedFileKey,
-														})),
-														message: `Switched active file to "${targetFile.fileName}". All tools now target this file.` +
-															(lock ? " Target is pinned — it won't move until you switch files or the plugin disconnects." : ""),
-														ai_instruction:
-															"Active file has been switched via WebSocket. All subsequent tool calls (figma_get_variables, figma_execute, etc.) will target this file. No browser navigation needed." +
-															(lock ? " The target is now pinned to this file." : ""),
+												text: JSON.stringify({
+													status: "switched_active_file",
+													timestamp: Date.now(),
+													activeFile: {
+														fileName: targetFile.fileName,
+														fileKey: targetFile.fileKey,
 													},
-												),
+													locked: this.wsServer.isTargetLocked(),
+													connectedFiles: connectedFiles.map((f) => ({
+														fileName: f.fileName,
+														fileKey: f.fileKey,
+														isActive: f.fileKey === requestedFileKey,
+													})),
+													message:
+														`Switched active file to "${targetFile.fileName}". All tools now target this file.` +
+														(lock
+															? " Target is pinned — it won't move until you switch files or the plugin disconnects."
+															: ""),
+													ai_instruction:
+														"Active file has been switched via WebSocket. All subsequent tool calls (figma_get_variables, figma_execute, etc.) will target this file. No browser navigation needed." +
+														(lock
+															? " The target is now pinned to this file."
+															: ""),
+												}),
 											},
 										],
 									};
@@ -1126,28 +1207,28 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 								content: [
 									{
 										type: "text",
-										text: JSON.stringify(
-											{
-												status: "websocket_file_not_connected",
-												timestamp: Date.now(),
-												connectedFile: fileInfo
-													? {
-															fileName: fileInfo.fileName,
-															fileKey: fileInfo.fileKey,
-														}
-													: undefined,
-												connectedFiles: this.wsServer.getConnectedFiles().map(f => ({
+										text: JSON.stringify({
+											status: "websocket_file_not_connected",
+											timestamp: Date.now(),
+											connectedFile: fileInfo
+												? {
+														fileName: fileInfo.fileName,
+														fileKey: fileInfo.fileKey,
+													}
+												: undefined,
+											connectedFiles: this.wsServer
+												.getConnectedFiles()
+												.map((f) => ({
 													fileName: f.fileName,
 													fileKey: f.fileKey,
 													isActive: f.isActive,
 												})),
-												requestedFileKey,
-												message:
-													"The requested file is not connected via WebSocket. Open the Desktop Bridge plugin in the target file — it will auto-connect. Use figma_list_open_files to see all connected files.",
-												ai_instruction:
-													"The requested file is not in the connected files list. The user needs to open the Desktop Bridge plugin in the target Figma file. Once opened, it will auto-connect and appear in figma_list_open_files. Then use figma_navigate to switch to it.",
-											},
-										),
+											requestedFileKey,
+											message:
+												"The requested file is not connected via WebSocket. Open the Desktop Bridge plugin in the target file — it will auto-connect. Use figma_list_open_files to see all connected files.",
+											ai_instruction:
+												"The requested file is not in the connected files list. The user needs to open the Desktop Bridge plugin in the target Figma file. Once opened, it will auto-connect and appear in figma_list_open_files. Then use figma_navigate to switch to it.",
+										}),
 									},
 								],
 							};
@@ -1171,16 +1252,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error: errorMessage,
-										message: "Failed to navigate to Figma URL",
-										troubleshooting: [
-											"In WebSocket mode: navigate manually in Figma and ensure Desktop Bridge plugin is open",
-											"Ensure the Desktop Bridge plugin is open in the target file",
-										],
-									},
-								),
+								text: JSON.stringify({
+									error: errorMessage,
+									message: "Failed to navigate to Figma URL",
+									troubleshooting: [
+										"In WebSocket mode: navigate manually in Figma and ensure Desktop Bridge plugin is open",
+										"Ensure the Desktop Bridge plugin is open in the target file",
+									],
+								}),
 							},
 						],
 						isError: true,
@@ -1190,11 +1269,19 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 7: Get Status (with setup validation)
-		server.tool(
+		server.registerTool(
 			"figma_get_status",
-			"Check connection status to Figma Desktop. Reports transport status and connection health via the Desktop Bridge plugin (WebSocket transport). Use probe:true for an active roundtrip verification that the plugin is actually responding.",
 			{
-				probe: z.boolean().optional().describe("When true, sends a live roundtrip command to the plugin to verify the connection is actually responsive (not just TCP-open). Returns probeResult with success/latency. Recommended for health checks."),
+				description:
+					"Check connection status to Figma Desktop. Reports transport status and connection health via the Desktop Bridge plugin (WebSocket transport). Use probe:true for an active roundtrip verification that the plugin is actually responding.",
+				inputSchema: z.object({
+					probe: z
+						.boolean()
+						.optional()
+						.describe(
+							"When true, sends a live roundtrip command to the plugin to verify the connection is actually responsive (not just TCP-open). Returns probeResult with success/latency. Recommended for health checks.",
+						),
+				}),
 			},
 			async ({ probe }) => {
 				try {
@@ -1248,11 +1335,17 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							: 2;
 
 					// Active probe: verify the plugin actually responds to commands
-					let probeResult: { success: boolean; latencyMs: number; error?: string } | undefined;
+					let probeResult:
+						| { success: boolean; latencyMs: number; error?: string }
+						| undefined;
 					if (probe) {
 						const probeStart = Date.now();
 						try {
-							const result = await this.wsServer!.sendCommand('GET_FILE_INFO', {}, 3000);
+							const result = await this.wsServer!.sendCommand(
+								"GET_FILE_INFO",
+								{},
+								3000,
+							);
 							probeResult = {
 								success: !!(result && result.fileInfo),
 								latencyMs: Date.now() - probeStart,
@@ -1271,143 +1364,175 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						? undefined
 						: failureLayer === 1
 							? [
-								"Ensure your AI client (Claude Code, Cursor, etc.) is running with figma-console-mcp configured",
-								"Check if all ports 9223-9232 are occupied: lsof -i :9223-9232 | grep LISTEN",
-								"Kill stale processes if needed: pkill -f figma-console-mcp",
-								"Restart your AI client — the MCP server will start automatically on the next tool call",
-							]
+									"Ensure your AI client (Claude Code, Cursor, etc.) is running with figma-console-mcp configured",
+									"Check if all ports 9223-9232 are occupied: lsof -i :9223-9232 | grep LISTEN",
+									"Kill stale processes if needed: pkill -f figma-console-mcp",
+									"Restart your AI client — the MCP server will start automatically on the next tool call",
+								]
 							: [
-								"Open Figma Desktop with your target file",
-								"Go to Plugins → Development → Figma Desktop Bridge",
-								"Click 'Run' to open the plugin",
-								"Wait 3 seconds for the WebSocket connection to establish",
-								"Call figma_get_status with probe:true to verify the connection",
-							];
+									"Open Figma Desktop with your target file",
+									"Go to Plugins → Development → Figma Desktop Bridge",
+									"Click 'Run' to open the plugin",
+									"Wait 3 seconds for the WebSocket connection to establish",
+									"Call figma_get_status with probe:true to verify the connection",
+								];
 
 					return {
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										mode: "local",
-										currentFileName:
-											currentFileName ||
-											"(unable to retrieve - Desktop Bridge may need to be opened)",
-										currentFileKey: currentFileKey || undefined,
-										editorType: this.wsServer?.getEditorType() || "figma",
-										monitoredPageUrl: currentUrl,
-										monitorWorkerCount: 0,
-										transport: {
-											active: activeTransport,
-											mcpHttp: this.httpEndpoint
-												? { url: this.httpEndpoint.url, sessions: this.httpEndpoint.sessionCount(), auth: process.env.FIGMA_MCP_HTTP_TOKEN ? "bearer" : "none" }
-												: this.httpStartupError
-													? { error: this.httpStartupError }
-													: undefined,
-											websocket: {
-												available: wsConnected,
-												serverRunning: this.wsServer?.isStarted() ?? false,
-												// Version of the plugin files this server ships — what a
-												// manifest re-import installs. pluginUpdateAvailable on
-												// connected files compares against THIS, not the server
-												// version (which can be newer on server-only releases).
-												bundledPluginVersion: getBundledPluginVersion(),
-												port: this.wsActualPort ? String(this.wsActualPort) : null,
-												preferredPort: String(this.wsPreferredPort),
-												portFallbackUsed: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort,
-												startupError: this.wsStartupError ? {
-													code: this.wsStartupError.code,
-													port: this.wsStartupError.port,
-													message: `All ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use`,
-												} : undefined,
-												otherInstances: (() => {
-													try {
-														const instances = discoverActiveInstances(this.wsPreferredPort);
-														const others = instances.filter(i => i.pid !== process.pid);
-														if (others.length === 0) return undefined;
-														return others.map(i => ({
-															port: i.port,
-															pid: i.pid,
-															startedAt: i.startedAt,
-															mcpHttpUrl: i.mcpHttpUrl,
-														}));
-													} catch { return undefined; }
-												})(),
-												connectedFile: wsFileInfo ? {
-													fileName: wsFileInfo.fileName,
-													fileKey: wsFileInfo.fileKey,
-													currentPage: wsFileInfo.currentPage,
-													connectedAt: new Date(wsFileInfo.connectedAt).toISOString(),
-													pluginVersion: wsFileInfo.pluginVersion ?? undefined,
-													pluginUpdateAvailable: wsFileInfo.pluginUpdateAvailable || undefined,
-												} : undefined,
-												connectedFiles: (() => {
-													const files = this.wsServer?.getConnectedFiles();
-													if (!files || files.length === 0) return undefined;
-													return files.map(f => ({
-														fileName: f.fileName,
-														fileKey: f.fileKey,
-														currentPage: f.currentPage,
-														editorType: f.editorType || 'figma',
-														isActive: f.isActive,
-														connectedAt: new Date(f.connectedAt).toISOString(),
-														pluginVersion: f.pluginVersion ?? undefined,
-														pluginUpdateAvailable: f.pluginUpdateAvailable || undefined,
+								text: JSON.stringify({
+									mode: "local",
+									currentFileName:
+										currentFileName ||
+										"(unable to retrieve - Desktop Bridge may need to be opened)",
+									currentFileKey: currentFileKey || undefined,
+									editorType: this.wsServer?.getEditorType() || "figma",
+									monitoredPageUrl: currentUrl,
+									monitorWorkerCount: 0,
+									transport: {
+										active: activeTransport,
+										mcpHttp: this.httpEndpoint
+											? {
+													url: this.httpEndpoint.url,
+													sessions: this.httpEndpoint.sessionCount(),
+													auth: process.env.FIGMA_MCP_HTTP_TOKEN
+														? "bearer"
+														: "none",
+												}
+											: this.httpStartupError
+												? { error: this.httpStartupError }
+												: undefined,
+										websocket: {
+											available: wsConnected,
+											serverRunning: this.wsServer?.isStarted() ?? false,
+											// Version of the plugin files this server ships — what a
+											// manifest re-import installs. pluginUpdateAvailable on
+											// connected files compares against THIS, not the server
+											// version (which can be newer on server-only releases).
+											bundledPluginVersion: getBundledPluginVersion(),
+											port: this.wsActualPort
+												? String(this.wsActualPort)
+												: null,
+											preferredPort: String(this.wsPreferredPort),
+											portFallbackUsed:
+												this.wsActualPort !== null &&
+												this.wsActualPort !== this.wsPreferredPort,
+											startupError: this.wsStartupError
+												? {
+														code: this.wsStartupError.code,
+														port: this.wsStartupError.port,
+														message: `All ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use`,
+													}
+												: undefined,
+											otherInstances: (() => {
+												try {
+													const instances = discoverActiveInstances(
+														this.wsPreferredPort,
+													);
+													const others = instances.filter(
+														(i) => i.pid !== process.pid,
+													);
+													if (others.length === 0) return undefined;
+													return others.map((i) => ({
+														port: i.port,
+														pid: i.pid,
+														startedAt: i.startedAt,
+														mcpHttpUrl: i.mcpHttpUrl,
 													}));
-												})(),
-												currentSelection: (() => {
-													const sel = this.wsServer?.getCurrentSelection();
-													if (!sel || sel.count === 0) return undefined;
-													return {
-														count: sel.count,
-														nodes: sel.nodes.slice(0, 5).map((n: any) => `${n.name} (${n.type})`),
-														page: sel.page,
-													};
-												})(),
-												lastPongAt: this.wsServer?.getActiveClientLastPongAt() ? new Date(this.wsServer.getActiveClientLastPongAt()!).toISOString() : undefined,
-											},
+												} catch {
+													return undefined;
+												}
+											})(),
+											connectedFile: wsFileInfo
+												? {
+														fileName: wsFileInfo.fileName,
+														fileKey: wsFileInfo.fileKey,
+														currentPage: wsFileInfo.currentPage,
+														connectedAt: new Date(
+															wsFileInfo.connectedAt,
+														).toISOString(),
+														pluginVersion:
+															wsFileInfo.pluginVersion ?? undefined,
+														pluginUpdateAvailable:
+															wsFileInfo.pluginUpdateAvailable || undefined,
+													}
+												: undefined,
+											connectedFiles: (() => {
+												const files = this.wsServer?.getConnectedFiles();
+												if (!files || files.length === 0) return undefined;
+												return files.map((f) => ({
+													fileName: f.fileName,
+													fileKey: f.fileKey,
+													currentPage: f.currentPage,
+													editorType: f.editorType || "figma",
+													isActive: f.isActive,
+													connectedAt: new Date(f.connectedAt).toISOString(),
+													pluginVersion: f.pluginVersion ?? undefined,
+													pluginUpdateAvailable:
+														f.pluginUpdateAvailable || undefined,
+												}));
+											})(),
+											currentSelection: (() => {
+												const sel = this.wsServer?.getCurrentSelection();
+												if (!sel || sel.count === 0) return undefined;
+												return {
+													count: sel.count,
+													nodes: sel.nodes
+														.slice(0, 5)
+														.map((n: any) => `${n.name} (${n.type})`),
+													page: sel.page,
+												};
+											})(),
+											lastPongAt: this.wsServer?.getActiveClientLastPongAt()
+												? new Date(
+														this.wsServer.getActiveClientLastPongAt()!,
+													).toISOString()
+												: undefined,
 										},
-										setup: {
-											valid: setupValid,
-											failureLayer,
-											probeResult,
-											recoverySteps,
-											message: activeTransport === "websocket"
+									},
+									setup: {
+										valid: setupValid,
+										failureLayer,
+										probeResult,
+										recoverySteps,
+										message:
+											activeTransport === "websocket"
 												? this.wsActualPort !== this.wsPreferredPort
 													? `✅ Connected to Figma Desktop via WebSocket Bridge (port ${this.wsActualPort}, fallback from ${this.wsPreferredPort})`
 													: "✅ Connected to Figma Desktop via WebSocket Bridge"
 												: this.wsStartupError?.code === "EADDRINUSE"
 													? `❌ All WebSocket ports ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use`
-													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
-													? `❌ WebSocket server running on port ${this.wsActualPort} (fallback) but no plugin connected. Restart the Desktop Bridge plugin in Figma to reconnect.`
-													: "❌ No connection to Figma Desktop",
-											setupInstructions: !setupValid
-												? this.wsStartupError?.code === "EADDRINUSE"
-													? {
+													: this.wsActualPort !== null &&
+															this.wsActualPort !== this.wsPreferredPort
+														? `❌ WebSocket server running on port ${this.wsActualPort} (fallback) but no plugin connected. Restart the Desktop Bridge plugin in Figma to reconnect.`
+														: "❌ No connection to Figma Desktop",
+										setupInstructions: !setupValid
+											? this.wsStartupError?.code === "EADDRINUSE"
+												? {
 														cause: `All ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use by other MCP server instances.`,
 														fix: "Close some of the other Claude Desktop tabs or terminal sessions running the MCP server, then restart this one.",
 													}
-													: {
-														instructions: `Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge). No special launch flags needed.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() : ''}`,
+												: {
+														instructions: `Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge). No special launch flags needed.${this.getPluginPath() ? " Plugin manifest: " + this.getPluginPath() : ""}`,
 													}
-												: undefined,
-											ai_instruction: !setupValid
-												? this.wsStartupError?.code === "EADDRINUSE"
-													? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use — most likely multiple Claude Desktop tabs or terminal sessions are running the Figma Console MCP server. Ask the user to close some sessions and restart.`
-													: this.wsActualPort !== null && this.wsActualPort !== this.wsPreferredPort
-														? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected. TELL THE USER: Close and reopen the Desktop Bridge plugin in Figma to reconnect. The plugin scans the whole port range (9223–9232) on launch and will pick up this server automatically.`
-														: `No connection to Figma Desktop. Open the Desktop Bridge plugin in Figma to connect.${this.getPluginPath() ? ' Plugin manifest: ' + this.getPluginPath() + ' (Plugins → Development → Import plugin from manifest; on macOS the folder is hidden — press Cmd+Shift+G in the dialog and paste the path).' : ''}`
-												: activeTransport === "websocket"
-													? `Connected via WebSocket Bridge to "${currentFileName || "unknown file"}" on port ${this.wsActualPort}. All design tools and console monitoring tools are available. Console logs are captured from the plugin sandbox (code.js). IMPORTANT: Always verify the file name before destructive operations when multiple files have the plugin open.`
-													: "All tools are ready to use.",
-										},
-										pluginPath: this.getPluginPath() || undefined,
-										consoleMonitor: null,
-										initialized: setupValid,
-										timestamp: Date.now(),
+											: undefined,
+										ai_instruction: !setupValid
+											? this.wsStartupError?.code === "EADDRINUSE"
+												? `All WebSocket ports in range ${this.wsPreferredPort}-${this.wsPreferredPort + 9} are in use — most likely multiple Claude Desktop tabs or terminal sessions are running the Figma Console MCP server. Ask the user to close some sessions and restart.`
+												: this.wsActualPort !== null &&
+														this.wsActualPort !== this.wsPreferredPort
+													? `Server is running on fallback port ${this.wsActualPort} (port ${this.wsPreferredPort} was taken by another instance). The Desktop Bridge plugin is not connected. TELL THE USER: Close and reopen the Desktop Bridge plugin in Figma to reconnect. The plugin scans the whole port range (9223–9232) on launch and will pick up this server automatically.`
+													: `No connection to Figma Desktop. Open the Desktop Bridge plugin in Figma to connect.${this.getPluginPath() ? " Plugin manifest: " + this.getPluginPath() + " (Plugins → Development → Import plugin from manifest; on macOS the folder is hidden — press Cmd+Shift+G in the dialog and paste the path)." : ""}`
+											: activeTransport === "websocket"
+												? `Connected via WebSocket Bridge to "${currentFileName || "unknown file"}" on port ${this.wsActualPort}. All design tools and console monitoring tools are available. Console logs are captured from the plugin sandbox (code.js). IMPORTANT: Always verify the file name before destructive operations when multiple files have the plugin open.`
+												: "All tools are ready to use.",
 									},
-								),
+									pluginPath: this.getPluginPath() || undefined,
+									consoleMonitor: null,
+									initialized: setupValid,
+									timestamp: Date.now(),
+								}),
 							},
 						],
 					};
@@ -1417,12 +1542,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error: String(error),
-										message: "Failed to retrieve status",
-									},
-								),
+								text: JSON.stringify({
+									error: String(error),
+									message: "Failed to retrieve status",
+								}),
 							},
 						],
 						isError: true,
@@ -1436,10 +1559,13 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// ============================================================================
 
 		// Tool: Force reconnect to Figma Desktop
-		server.tool(
+		server.registerTool(
 			"figma_reconnect",
-			"Force a complete reconnection to Figma Desktop. Use when connection seems stale or after switching files.",
-			{},
+			{
+				description:
+					"Force a complete reconnection to Figma Desktop. Use when connection seems stale or after switching files.",
+				inputSchema: z.object({}),
+			},
 			async () => {
 				try {
 					// figma_reconnect is informational in WebSocket-only mode — the
@@ -1450,7 +1576,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					if (!this.wsServer?.isClientConnected()) {
 						throw new Error(
 							"Cannot connect to Figma Desktop.\n\n" +
-							"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge)."
+								"Open the Desktop Bridge plugin in Figma (Plugins → Development → Figma Desktop Bridge).",
 						);
 					}
 
@@ -1492,10 +1618,11 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					if (!fileInfo.success) {
 						const probeErr = new Error(
 							"Desktop Bridge socket is open but the plugin is not responding to commands " +
-							"(automatic plugin reload was attempted and did not help). " +
-							"Close and reopen the Figma Console MCP plugin in Figma Desktop (Plugins → Development → Figma Console MCP)."
+								"(automatic plugin reload was attempted and did not help). " +
+								"Close and reopen the Figma Console MCP plugin in Figma Desktop (Plugins → Development → Figma Console MCP).",
 						);
-						(probeErr as any).connectionError = this.buildConnectionError(probeErr);
+						(probeErr as any).connectionError =
+							this.buildConnectionError(probeErr);
 						throw probeErr;
 					}
 					const fileName: string | null = fileInfo.result?.fileName || null;
@@ -1504,19 +1631,17 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										status: "connected",
-										transport: "websocket",
-										probeVerified: true,
-										selfHealed: selfHealed || undefined,
-										fileName,
-										timestamp: Date.now(),
-										message: selfHealed
-											? `Plugin was unresponsive; automatically reloaded it and verified the connection. Connected to: "${fileName || "(unnamed file)"}"`
-											: `Connection verified via live roundtrip. Connected to: "${fileName || "(unnamed file)"}"`,
-									},
-								),
+								text: JSON.stringify({
+									status: "connected",
+									transport: "websocket",
+									probeVerified: true,
+									selfHealed: selfHealed || undefined,
+									fileName,
+									timestamp: Date.now(),
+									message: selfHealed
+										? `Plugin was unresponsive; automatically reloaded it and verified the connection. Connected to: "${fileName || "(unnamed file)"}"`
+										: `Connection verified via live roundtrip. Connected to: "${fileName || "(unnamed file)"}"`,
+								}),
 							},
 						],
 					};
@@ -1526,15 +1651,12 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										message: "Failed to reconnect to Figma Desktop",
-										hint: "Open the Desktop Bridge plugin in Figma",
-										connectionError: this.buildConnectionError(error),
-									},
-								),
+								text: JSON.stringify({
+									error: error instanceof Error ? error.message : String(error),
+									message: "Failed to reconnect to Figma Desktop",
+									hint: "Open the Desktop Bridge plugin in Figma",
+									connectionError: this.buildConnectionError(error),
+								}),
 							},
 						],
 						isError: true,
@@ -1548,15 +1670,20 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// ============================================================================
 
 		// Tool: Get current user selection in Figma
-		server.tool(
+		server.registerTool(
 			"figma_get_selection",
-			"Get the currently selected nodes in Figma. Returns node IDs, names, types, and dimensions. WebSocket-only — requires Desktop Bridge plugin. Use this to understand what the user is pointing at instead of asking them to describe it.",
 			{
-				verbose: z
-					.boolean()
-					.optional()
-					.default(false)
-					.describe("If true, fetches additional details (fills, strokes, styles) for each selected node via figma_execute"),
+				description:
+					"Get the currently selected nodes in Figma. Returns node IDs, names, types, and dimensions. WebSocket-only — requires Desktop Bridge plugin. Use this to understand what the user is pointing at instead of asking them to describe it.",
+				inputSchema: z.object({
+					verbose: z
+						.boolean()
+						.optional()
+						.default(false)
+						.describe(
+							"If true, fetches additional details (fills, strokes, styles) for each selected node via figma_execute",
+						),
+				}),
 			},
 			async ({ verbose }) => {
 				try {
@@ -1564,28 +1691,34 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 
 					if (!this.wsServer?.isClientConnected()) {
 						return {
-							content: [{
-								type: "text",
-								text: JSON.stringify({
-									error: "WebSocket not connected. Open the Desktop Bridge plugin in Figma.",
-									selection: null,
-								}),
-							}],
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										error:
+											"WebSocket not connected. Open the Desktop Bridge plugin in Figma.",
+										selection: null,
+									}),
+								},
+							],
 							isError: true,
 						};
 					}
 
 					if (!selection || selection.count === 0) {
 						return {
-							content: [{
-								type: "text",
-								text: JSON.stringify({
-									selection: [],
-									count: 0,
-									page: selection?.page ?? "unknown",
-									message: "Nothing is selected in Figma. Select one or more elements to use this tool.",
-								}),
-							}],
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										selection: [],
+										count: 0,
+										page: selection?.page ?? "unknown",
+										message:
+											"Nothing is selected in Figma. Select one or more elements to use this tool.",
+									}),
+								},
+							],
 						};
 					}
 
@@ -1597,10 +1730,16 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					};
 
 					// If verbose, fetch additional details for selected nodes
-					if (verbose && selection.nodes.length > 0 && selection.nodes.length <= 10) {
+					if (
+						verbose &&
+						selection.nodes.length > 0 &&
+						selection.nodes.length <= 10
+					) {
 						try {
 							const connector = await this.getDesktopConnector();
-							const nodeIds = selection.nodes.map((n: any) => `"${n.id}"`).join(",");
+							const nodeIds = selection.nodes
+								.map((n: any) => `"${n.id}"`)
+								.join(",");
 							const details = await connector.executeCodeViaUI(
 								`var ids = [${nodeIds}];
 								var results = [];
@@ -1632,20 +1771,24 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					}
 
 					return {
-						content: [{
-							type: "text",
-							text: JSON.stringify(result),
-						}],
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify(result),
+							},
+						],
 					};
 				} catch (error) {
 					return {
-						content: [{
-							type: "text",
-							text: JSON.stringify({
-								error: error instanceof Error ? error.message : String(error),
-								message: "Failed to get selection",
-							}),
-						}],
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									error: error instanceof Error ? error.message : String(error),
+									message: "Failed to get selection",
+								}),
+							},
+						],
 						isError: true,
 					};
 				}
@@ -1653,35 +1796,47 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool: Get recent design changes
-		server.tool(
+		server.registerTool(
 			"figma_get_design_changes",
-			"Get recent document changes detected in Figma. Returns buffered change events including which nodes changed, whether styles were modified, and change counts. WebSocket-only — events are captured via Desktop Bridge plugin. Use this to understand what changed since you last checked.",
 			{
-				since: z
-					.number()
-					.optional()
-					.describe("Only return changes after this Unix timestamp (ms). Useful for incremental polling."),
-				count: z
-					.number()
-					.optional()
-					.describe("Maximum number of change events to return (chronological order, oldest to newest; returns the last N events)"),
-				clear: z
-					.boolean()
-					.optional()
-					.default(false)
-					.describe("Clear the change buffer after reading. Set to true for polling workflows."),
+				description:
+					"Get recent document changes detected in Figma. Returns buffered change events including which nodes changed, whether styles were modified, and change counts. WebSocket-only — events are captured via Desktop Bridge plugin. Use this to understand what changed since you last checked.",
+				inputSchema: z.object({
+					since: z
+						.number()
+						.optional()
+						.describe(
+							"Only return changes after this Unix timestamp (ms). Useful for incremental polling.",
+						),
+					count: z
+						.number()
+						.optional()
+						.describe(
+							"Maximum number of change events to return (chronological order, oldest to newest; returns the last N events)",
+						),
+					clear: z
+						.boolean()
+						.optional()
+						.default(false)
+						.describe(
+							"Clear the change buffer after reading. Set to true for polling workflows.",
+						),
+				}),
 			},
 			async ({ since, count, clear }) => {
 				try {
 					if (!this.wsServer?.isClientConnected()) {
 						return {
-							content: [{
-								type: "text",
-								text: JSON.stringify({
-									error: "WebSocket not connected. Open the Desktop Bridge plugin in Figma.",
-									changes: [],
-								}),
-							}],
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										error:
+											"WebSocket not connected. Open the Desktop Bridge plugin in Figma.",
+										changes: [],
+									}),
+								},
+							],
 							isError: true,
 						};
 					}
@@ -1705,31 +1860,35 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					}
 
 					return {
-						content: [{
-							type: "text",
-							text: JSON.stringify({
-								changes,
-								summary: {
-									eventCount: changes.length,
-									nodeChangeEvents: totalNodeChanges,
-									styleChangeEvents: totalStyleChanges,
-									uniqueNodesChanged: allChangedNodeIds.size,
-									oldestTimestamp: changes[0]?.timestamp,
-									newestTimestamp: changes[changes.length - 1]?.timestamp,
-								},
-								bufferCleared: clear,
-							}),
-						}],
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									changes,
+									summary: {
+										eventCount: changes.length,
+										nodeChangeEvents: totalNodeChanges,
+										styleChangeEvents: totalStyleChanges,
+										uniqueNodesChanged: allChangedNodeIds.size,
+										oldestTimestamp: changes[0]?.timestamp,
+										newestTimestamp: changes[changes.length - 1]?.timestamp,
+									},
+									bufferCleared: clear,
+								}),
+							},
+						],
 					};
 				} catch (error) {
 					return {
-						content: [{
-							type: "text",
-							text: JSON.stringify({
-								error: error instanceof Error ? error.message : String(error),
-								message: "Failed to get design changes",
-							}),
-						}],
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									error: error instanceof Error ? error.message : String(error),
+									message: "Failed to get design changes",
+								}),
+							},
+						],
 						isError: true,
 					};
 				}
@@ -1737,21 +1896,27 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool: List all open files connected via WebSocket
-		server.tool(
+		server.registerTool(
 			"figma_list_open_files",
-			"List all Figma files currently connected via the Desktop Bridge plugin. Shows which files have the plugin open and which one is the active target for tool calls. Use figma_navigate to switch between files. WebSocket multi-client mode — each file with the Desktop Bridge plugin maintains its own connection.",
-			{},
+			{
+				description:
+					"List all Figma files currently connected via the Desktop Bridge plugin. Shows which files have the plugin open and which one is the active target for tool calls. Use figma_navigate to switch between files. WebSocket multi-client mode — each file with the Desktop Bridge plugin maintains its own connection.",
+				inputSchema: z.object({}),
+			},
 			async () => {
 				try {
 					if (!this.wsServer?.isClientConnected()) {
 						return {
-							content: [{
-								type: "text",
-								text: JSON.stringify({
-									error: "No files connected. Open the Desktop Bridge plugin in Figma to connect files.",
-									files: [],
-								}),
-							}],
+							content: [
+								{
+									type: "text",
+									text: JSON.stringify({
+										error:
+											"No files connected. Open the Desktop Bridge plugin in Figma to connect files.",
+										files: [],
+									}),
+								},
+							],
 							isError: true,
 						};
 					}
@@ -1761,39 +1926,44 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					const targetLocked = this.wsServer.isTargetLocked();
 
 					return {
-						content: [{
-							type: "text",
-							text: JSON.stringify({
-								transport: "websocket",
-								activeFileKey,
-								targetLocked,
-								files: connectedFiles.map(f => ({
-									fileName: f.fileName,
-									fileKey: f.fileKey,
-									currentPage: f.currentPage,
-									isActive: f.isActive,
-									connectedAt: f.connectedAt,
-									url: f.fileKey
-										? `https://www.figma.com/design/${f.fileKey}/${encodeURIComponent(f.fileName || 'Untitled')}`
-										: undefined,
-								})),
-								totalFiles: connectedFiles.length,
-								message: connectedFiles.length === 1
-									? `Connected to 1 file: "${connectedFiles[0].fileName}"`
-									: `Connected to ${connectedFiles.length} files. Active: "${connectedFiles.find(f => f.isActive)?.fileName || 'none'}"`,
-								ai_instruction: `Use figma_navigate with a file URL to switch the active file. All tools target the active file by default. ${targetLocked ? "The active target is currently PINNED (locked) — it won't move on reconnects or user interaction until you switch files. " : "To work in one file while the user works in another, call figma_navigate with lock: true to pin the target so it can't silently switch. "}`,
-							}),
-						}],
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									transport: "websocket",
+									activeFileKey,
+									targetLocked,
+									files: connectedFiles.map((f) => ({
+										fileName: f.fileName,
+										fileKey: f.fileKey,
+										currentPage: f.currentPage,
+										isActive: f.isActive,
+										connectedAt: f.connectedAt,
+										url: f.fileKey
+											? `https://www.figma.com/design/${f.fileKey}/${encodeURIComponent(f.fileName || "Untitled")}`
+											: undefined,
+									})),
+									totalFiles: connectedFiles.length,
+									message:
+										connectedFiles.length === 1
+											? `Connected to 1 file: "${connectedFiles[0].fileName}"`
+											: `Connected to ${connectedFiles.length} files. Active: "${connectedFiles.find((f) => f.isActive)?.fileName || "none"}"`,
+									ai_instruction: `Use figma_navigate with a file URL to switch the active file. All tools target the active file by default. ${targetLocked ? "The active target is currently PINNED (locked) — it won't move on reconnects or user interaction until you switch files. " : "To work in one file while the user works in another, call figma_navigate with lock: true to pin the target so it can't silently switch. "}`,
+								}),
+							},
+						],
 					};
 				} catch (error) {
 					return {
-						content: [{
-							type: "text",
-							text: JSON.stringify({
-								error: error instanceof Error ? error.message : String(error),
-								message: "Failed to list open files",
-							}),
-						}],
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({
+									error: error instanceof Error ? error.message : String(error),
+									message: "Failed to list open files",
+								}),
+							},
+						],
 						isError: true,
 					};
 				}
@@ -1846,8 +2016,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 			try {
 				const variablesData = unwrapBridgeVariables(await connector.getVariables(fileKey));
 				if (variablesData) {
-					for (const collection of variablesData.variableCollections ||
-						[]) {
+					for (const collection of variablesData.variableCollections || []) {
 						manifest.collections.push({
 							id: collection.id,
 							name: collection.name,
@@ -1858,7 +2027,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							defaultModeId: collection.defaultModeId,
 						});
 					}
-					const colorHex = makeFigmaColorResolver(variablesData.variables || [], manifest.collections);
+					const colorHex = makeFigmaColorResolver(
+						variablesData.variables || [],
+						manifest.collections,
+					);
 					for (const variable of variablesData.variables || []) {
 						const tokenName = variable.name;
 						const defaultModeId = manifest.collections.find(
@@ -1986,17 +2158,20 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		// Phase-2 write-tools dedupe excised them along with the surrounding writes.)
 		// ============================================================================
 
-		server.tool(
+		server.registerTool(
 			"figma_get_design_system_summary",
-			"Get a compact overview of the design system. Returns categories, component counts, and token collection names WITHOUT full details. Use this first to understand what's available, then use figma_search_components to find specific components. This tool is optimized for minimal token usage.",
 			{
-				forceRefresh: z
-					.boolean()
-					.optional()
-					.default(false)
-					.describe(
-						"Force refresh the cached data (use sparingly - extraction can take minutes for large files)",
-					),
+				description:
+					"Get a compact overview of the design system. Returns categories, component counts, and token collection names WITHOUT full details. Use this first to understand what's available, then use figma_search_components to find specific components. This tool is optimized for minimal token usage.",
+				inputSchema: z.object({
+					forceRefresh: z
+						.boolean()
+						.optional()
+						.default(false)
+						.describe(
+							"Force refresh the cached data (use sparingly - extraction can take minutes for large files)",
+						),
+				}),
 			},
 			async ({ forceRefresh }) => {
 				try {
@@ -2004,7 +2179,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						DesignSystemManifestCache,
 						createEmptyManifest,
 						makeFigmaColorResolver,
-				unwrapBridgeVariables,
+						unwrapBridgeVariables,
 						getCategories,
 						getTokenSummary,
 					} = await import("./core/design-system-manifest.js");
@@ -2017,6 +2192,24 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					const fileKey = fileKeyMatch ? fileKeyMatch[2] : "unknown";
 
 					// Check cache first
+					// Figma Specs (PRDs/RFCs embedded on the canvas) are listed with the summary.
+					// Their content isn't readable from plugins. Scanned only when the summary is
+					// rebuilt (it needs every page loaded) and remembered with the cache.
+					const specsFor = (specs: Array<{ id: string; title: string; page: string }> | undefined) =>
+						specs && specs.length
+							? { specs, specsNote: "Spec documents (Figma Specs). Their content can't be read through this plugin; use Figma's MCP server to read or edit them." }
+							: {};
+					const scanSpecs = async () => {
+						try {
+							const r = await (await this.getDesktopConnector()).executeCodeViaUI(
+								`await figma.loadAllPagesAsync(); const out = []; for (const p of figma.root.children) for (const n of p.children) if (n.type === "SPEC_BLOCK") out.push({ id: n.id, title: n.name, page: p.name }); return out.slice(0, 50);`,
+								8000,
+							);
+							const v = r && typeof r === "object" && "result" in r ? r.result : r;
+							if (Array.isArray(v)) this.specsByFile.set(fileKey, v);
+						} catch {}
+					};
+
 					let cacheEntry = cache.get(fileKey);
 					if (cacheEntry && !forceRefresh) {
 						const categories = getCategories(cacheEntry.manifest);
@@ -2025,31 +2218,31 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							content: [
 								{
 									type: "text",
-									text: JSON.stringify(
-										{
-											success: true,
-											cached: true,
-											cacheAge: Math.round(
-												(Date.now() - cacheEntry.timestamp) / 1000,
-											),
-											fileKey,
-											categories: categories.slice(0, 15),
-											tokens: tokenSummary,
-											totals: {
-												components: cacheEntry.manifest.summary.totalComponents,
-												componentSets:
-													cacheEntry.manifest.summary.totalComponentSets,
-												tokens: cacheEntry.manifest.summary.totalTokens,
-											},
-											hint: "Use figma_search_components to find specific components by name or category.",
+									text: JSON.stringify({
+										success: true,
+										cached: true,
+										cacheAge: Math.round(
+											(Date.now() - cacheEntry.timestamp) / 1000,
+										),
+										fileKey,
+										categories: categories.slice(0, 15),
+										tokens: tokenSummary,
+										totals: {
+											components: cacheEntry.manifest.summary.totalComponents,
+											componentSets:
+												cacheEntry.manifest.summary.totalComponentSets,
+											tokens: cacheEntry.manifest.summary.totalTokens,
 										},
-									),
+										...specsFor(this.specsByFile.get(fileKey)),
+										hint: "Use figma_search_components to find specific components by name or category.",
+									}),
 								},
 							],
 						};
 					}
 
 					// Need to extract fresh data
+					await scanSpecs();
 					const connector = await this.getDesktopConnector();
 					const manifest = createEmptyManifest(fileKey);
 					manifest.fileUrl = currentUrl || undefined;
@@ -2058,8 +2251,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 					try {
 						const variablesData = unwrapBridgeVariables(await connector.getVariables(fileKey));
 						if (variablesData) {
-							for (const collection of variablesData
-								.variableCollections || []) {
+							for (const collection of variablesData.variableCollections ||
+								[]) {
 								manifest.collections.push({
 									id: collection.id,
 									name: collection.name,
@@ -2070,7 +2263,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 									defaultModeId: collection.defaultModeId,
 								});
 							}
-							const colorHex = makeFigmaColorResolver(variablesData.variables || [], manifest.collections);
+							const colorHex = makeFigmaColorResolver(
+								variablesData.variables || [],
+								manifest.collections,
+							);
 							for (const variable of variablesData.variables || []) {
 								const tokenName = variable.name;
 								const defaultModeId = manifest.collections.find(
@@ -2144,7 +2340,8 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 							}
 						} else {
 							componentsFetchError =
-								componentsResult?.error || "getLocalComponents returned no data";
+								componentsResult?.error ||
+								"getLocalComponents returned no data";
 						}
 					} catch (error) {
 						componentsFetchError =
@@ -2181,29 +2378,32 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										// A failed components fetch must not read as "this design
-										// system has no components" (#120): report failure and
-										// leave the component counts unknown.
-										success: !componentsFetchError,
-										cached: false,
-										fileKey,
-										categories: categories.slice(0, 15),
-										tokens: tokenSummary,
-										totals: {
-											components: componentsFetchError ? null : manifest.summary.totalComponents,
-											componentSets: componentsFetchError ? null : manifest.summary.totalComponentSets,
-											tokens: manifest.summary.totalTokens,
-										},
-										warnings: componentsFetchError
-											? [
+								text: JSON.stringify({
+									// A failed components fetch must not read as "this design
+									// system has no components" (#120): report failure and
+									// leave the component counts unknown.
+									success: !componentsFetchError,
+									cached: false,
+									fileKey,
+									categories: categories.slice(0, 15),
+									tokens: tokenSummary,
+									totals: {
+										components: componentsFetchError
+											? null
+											: manifest.summary.totalComponents,
+										componentSets: componentsFetchError
+											? null
+											: manifest.summary.totalComponentSets,
+										tokens: manifest.summary.totalTokens,
+									},
+									warnings: componentsFetchError
+										? [
 												`Components fetch failed (${componentsFetchError}) — component data is incomplete and was NOT cached. Check the Desktop Bridge plugin and retry.`,
 											]
-											: undefined,
-										hint: "Use figma_search_components to find specific components by name or category.",
-									},
-								),
+										: undefined,
+									...specsFor(this.specsByFile.get(fileKey)),
+									hint: "Use figma_search_components to find specific components by name or category.",
+								}),
 							},
 						],
 					};
@@ -2213,13 +2413,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-										hint: "Make sure the Desktop Bridge plugin is running in Figma",
-									},
-								),
+								text: JSON.stringify({
+									error: error instanceof Error ? error.message : String(error),
+									hint: "Make sure the Desktop Bridge plugin is running in Figma",
+								}),
 							},
 						],
 						isError: true,
@@ -2229,54 +2426,62 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		);
 
 		// Tool 2: Search Components (~3000 tokens response max, paginated)
-		server.tool(
+		server.registerTool(
 			"figma_search_components",
-			`Search for components by name, category, or description. Returns paginated results with component keys for instantiation. Automatically loads the design system cache if needed.
-
-**NEW: Cross-file library search!** Pass a libraryFileKey or libraryFileUrl to search for components in a published shared library (different file). This uses the REST API and requires FIGMA_ACCESS_TOKEN.
-
-Without libraryFileKey/libraryFileUrl, searches the currently open file (local components via Plugin API).`,
 			{
-				query: z
-					.string()
-					.optional()
-					.default("")
-					.describe("Search query to match component names or descriptions"),
-				category: z
-					.string()
-					.optional()
-					.describe("Filter by category (e.g., 'Button', 'Input', 'Card')"),
-				libraryFileKey: z
-					.string()
-					.optional()
-					.describe(
-						"File key of a published library to search in (for cross-file library access). Overrides local search.",
-					),
-				libraryFileUrl: z
-					.string()
-					.optional()
-					.describe(
-						"URL of a published library file to search in (e.g., https://www.figma.com/design/abc123/...). Alternative to libraryFileKey.",
-					),
-				limit: z
-					.number()
-					.optional()
-					.default(10)
-					.describe("Maximum results to return (default: 10, max: 25)"),
-				offset: z
-					.number()
-					.optional()
-					.default(0)
-					.describe("Offset for pagination"),
+				description: "Search components by name, category or description; returns keys and node IDs to instantiate. Searches the open file, or a published library with libraryFileKey/libraryFileUrl (needs FIGMA_ACCESS_TOKEN).",
+				inputSchema: z.object({
+					query: z
+						.string()
+						.optional()
+						.default("")
+						.describe("Text to match in names or descriptions."),
+					category: z
+						.string()
+						.optional()
+						.describe("Category filter, e.g. 'Button'."),
+					libraryFileKey: z
+						.string()
+						.optional()
+						.describe(
+							"Published library file key (searches it instead of the open file).",
+						),
+					libraryFileUrl: z
+						.string()
+						.optional()
+						.describe(
+							"Published library file URL (alternative to libraryFileKey).",
+						),
+					limit: z
+						.number()
+						.optional()
+						.default(10)
+						.describe("Max results (default 10, max 25)."),
+					offset: z
+						.number()
+						.optional()
+						.default(0)
+						.describe("Offset for pagination"),
+					includePrivate: z
+						.boolean()
+						.optional()
+						.describe("Include private (./_ prefixed) and archived or deprecated components (hidden by default)."),
+				}),
 			},
-			async ({ query, category, libraryFileKey, libraryFileUrl, limit, offset }) => {
+			async ({
+				query,
+				category,
+				libraryFileKey,
+				libraryFileUrl,
+				limit,
+				includePrivate,
+				offset,
+			}) => {
 				try {
 					// Determine if this is a library search or local search
 					let resolvedLibraryKey = libraryFileKey;
 					if (!resolvedLibraryKey && libraryFileUrl) {
-						const { extractFileKey } = await import(
-							"./core/figma-api.js"
-						);
+						const { extractFileKey } = await import("./core/figma-api.js");
 						resolvedLibraryKey = extractFileKey(libraryFileUrl) ?? undefined;
 					}
 
@@ -2292,19 +2497,16 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 									);
 									return { meta: { components: [] } };
 								}),
-								api
-									.getComponentSets(resolvedLibraryKey)
-									.catch((err: Error) => {
-										logger.warn(
-											{ error: err },
-											"Failed to fetch component sets from library",
-										);
-										return { meta: { component_sets: [] } };
-									}),
+								api.getComponentSets(resolvedLibraryKey).catch((err: Error) => {
+									logger.warn(
+										{ error: err },
+										"Failed to fetch component sets from library",
+									);
+									return { meta: { component_sets: [] } };
+								}),
 							]);
 
-						const rawComponents =
-							componentsResponse?.meta?.components || [];
+						const rawComponents = componentsResponse?.meta?.components || [];
 						const rawComponentSets =
 							componentSetsResponse?.meta?.component_sets || [];
 
@@ -2322,9 +2524,11 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							const variants = rawComponents.filter((c: any) => {
 								const ccs = c.containing_frame?.containingComponentSet;
 								// Match via containingComponentSet object (preferred)
-								if (ccs && typeof ccs === "object" && ccs.nodeId === cs.node_id) return true;
+								if (ccs && typeof ccs === "object" && ccs.nodeId === cs.node_id)
+									return true;
 								// Fallback: match via containing_frame.nodeId (some API versions)
-								if (ccs && c.containing_frame?.nodeId === cs.node_id) return true;
+								if (ccs && c.containing_frame?.nodeId === cs.node_id)
+									return true;
 								// Fallback: match via component_set_id field
 								if (c.component_set_id === cs.node_id) return true;
 								return false;
@@ -2360,6 +2564,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							}
 						}
 
+						const { compactSearchResult, isPrivateOrRetiredName } = await import("./core/design-system-manifest.js");
+						// Private / archived components aren't meant for use.
+						if (!includePrivate) results = results.filter((item) => !isPrivateOrRetiredName(item.name));
+
 						// Apply search filter
 						if (query) {
 							const queryLower = query.toLowerCase();
@@ -2386,18 +2594,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						const total = results.length;
 						const paginatedResults = results
 							.slice(effectiveOffset, effectiveOffset + effectiveLimit)
-							// Search hits only need a teaser — some design systems carry
-							// multi-KB doc blocks per component, which multiplies across
-							// a result page. figma_get_component_details returns full text.
-							.map((item: any) =>
-								item.description && item.description.length > 200
-									? {
-										...item,
-										description: `${item.description.slice(0, 200)}…`,
-										descriptionTruncated: true,
-									}
-									: item,
-							);
+							// One-sentence teaser per hit; figma_get_component_details has full text.
+							.map((item: any) => compactSearchResult(item));
 
 						return {
 							content: [
@@ -2436,13 +2634,11 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							content: [
 								{
 									type: "text",
-									text: JSON.stringify(
-										{
-											error:
-												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
-											hint: "If you're trying to search a published library from another file, pass the libraryFileKey or libraryFileUrl parameter.",
-										},
-									),
+									text: JSON.stringify({
+										error:
+											"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
+										hint: "If you're trying to search a published library from another file, pass the libraryFileKey or libraryFileUrl parameter.",
+									}),
 								},
 							],
 							isError: true,
@@ -2464,7 +2660,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 									text: JSON.stringify({
 										error: loadFailure,
 										searched: false,
-										hint: "This is NOT a 'no matches' result — the file's components could not be loaded. Very large files can exceed the load timeout; check the Desktop Bridge plugin and retry, or look up a known node directly with figma_get_component_details / figma_get_component. To search a published library instead, pass libraryFileKey.",
+										hint: "This is NOT a 'no matches' result — the file's components could not be loaded. Very large files can exceed the load timeout; check the Desktop Bridge plugin and retry, or look up a known node directly with figma_get_component_details / figma_get_component (inspect toolset). To search a published library instead, pass libraryFileKey.",
 									}),
 								},
 							],
@@ -2477,31 +2673,30 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						category,
 						limit: effectiveLimit,
 						offset: offset || 0,
+						includePrivate,
 					});
 
 					return {
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										source: "local",
-										query: query || "(all)",
-										category: category || "(all)",
-										results: results.results,
-										warnings: cacheWarning ? [cacheWarning] : undefined,
-										pagination: {
-											offset: offset || 0,
-											limit: effectiveLimit,
-											total: results.total,
-											hasMore: results.hasMore,
-										},
-										hint: results.hasMore
-											? `Use offset=${(offset || 0) + effectiveLimit} to get more results.`
-											: "Use figma_get_component_details with a component key for full details. To search a published library, pass libraryFileKey.",
+								text: JSON.stringify({
+									success: true,
+									source: "local",
+									query: query || "(all)",
+									category: category || "(all)",
+									results: results.results,
+									warnings: cacheWarning ? [cacheWarning] : undefined,
+									pagination: {
+										offset: offset || 0,
+										limit: effectiveLimit,
+										total: results.total,
+										hasMore: results.hasMore,
 									},
-								),
+									hint: results.hasMore
+										? `Use offset=${(offset || 0) + effectiveLimit} to get more results.`
+										: "For full details use figma_get_component_details (inspect toolset; figma_enable_toolsets first if it isn't listed). To search a published library, pass libraryFileKey.",
+								}),
 							},
 						],
 					};
@@ -2511,12 +2706,9 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
+								text: JSON.stringify({
+									error: error instanceof Error ? error.message : String(error),
+								}),
 							},
 						],
 						isError: true,
@@ -2526,18 +2718,21 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		);
 
 		// Tool 3: Get Component Details (~500 tokens per component)
-		server.tool(
+		server.registerTool(
 			"figma_get_component_details",
-			"Get full details for a specific component including all variants, properties, and keys needed for instantiation. Use the component key or name from figma_search_components.",
 			{
-				componentKey: z
-					.string()
-					.optional()
-					.describe("The component key (preferred for exact match)"),
-				componentName: z
-					.string()
-					.optional()
-					.describe("The component name (used if key not provided)"),
+				description:
+					"Get full details for a specific component including all variants, properties, and keys needed for instantiation. Use the component key or name from figma_search_components.",
+				inputSchema: z.object({
+					componentKey: z
+						.string()
+						.optional()
+						.describe("The component key (preferred for exact match)"),
+					componentName: z
+						.string()
+						.optional()
+						.describe("The component name (used if key not provided)"),
+				}),
 			},
 			async ({ componentKey, componentName }) => {
 				try {
@@ -2546,11 +2741,9 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							content: [
 								{
 									type: "text",
-									text: JSON.stringify(
-										{
-											error: "Either componentKey or componentName is required",
-										},
-									),
+									text: JSON.stringify({
+										error: "Either componentKey or componentName is required",
+									}),
 								},
 							],
 							isError: true,
@@ -2564,12 +2757,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							content: [
 								{
 									type: "text",
-									text: JSON.stringify(
-										{
-											error:
-												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
-										},
-									),
+									text: JSON.stringify({
+										error:
+											"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
+									}),
 								},
 							],
 							isError: true,
@@ -2616,12 +2807,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							content: [
 								{
 									type: "text",
-									text: JSON.stringify(
-										{
-											error: `Component not found: ${componentKey || componentName}`,
-											hint: "Use figma_search_components to find available components.",
-										},
-									),
+									text: JSON.stringify({
+										error: `Component not found: ${componentKey || componentName}`,
+										hint: "Use figma_search_components to find available components.",
+									}),
 								},
 							],
 							isError: true,
@@ -2632,17 +2821,15 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										type: isComponentSet ? "componentSet" : "component",
-										component,
-										instantiation: {
-											key: component.key,
-											example: `Use figma_instantiate_component with componentKey: "${component.key}"`,
-										},
+								text: JSON.stringify({
+									success: true,
+									type: isComponentSet ? "componentSet" : "component",
+									component,
+									instantiation: {
+										key: component.key,
+										example: `Use figma_instantiate_component with componentKey: "${component.key}"`,
 									},
-								),
+								}),
 							},
 						],
 					};
@@ -2652,12 +2839,9 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
+								text: JSON.stringify({
+									error: error instanceof Error ? error.message : String(error),
+								}),
 							},
 						],
 						isError: true,
@@ -2667,26 +2851,29 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		);
 
 		// Tool 4: Get Token Values (~2000 tokens response max)
-		server.tool(
+		server.registerTool(
 			"figma_get_token_values",
-			"Get actual values for design tokens (colors, spacing, etc). Use after figma_get_design_system_summary to get specific token values for implementation.",
 			{
-				type: z
-					.enum(["colors", "spacing", "all"])
-					.optional()
-					.default("all")
-					.describe("Type of tokens to retrieve"),
-				filter: z
-					.string()
-					.optional()
-					.describe(
-						"Filter token names (e.g., 'primary' to get all primary colors)",
-					),
-				limit: z
-					.number()
-					.optional()
-					.default(50)
-					.describe("Maximum tokens to return (default: 50)"),
+				description:
+					"Get actual values for design tokens (colors, spacing, etc). Use after figma_get_design_system_summary to get specific token values for implementation.",
+				inputSchema: z.object({
+					type: z
+						.enum(["colors", "spacing", "all"])
+						.optional()
+						.default("all")
+						.describe("Type of tokens to retrieve"),
+					filter: z
+						.string()
+						.optional()
+						.describe(
+							"Filter token names (e.g., 'primary' to get all primary colors)",
+						),
+					limit: z
+						.number()
+						.optional()
+						.default(50)
+						.describe("Maximum tokens to return (default: 50)"),
+				}),
 			},
 			async ({ type, filter, limit }) => {
 				try {
@@ -2697,12 +2884,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							content: [
 								{
 									type: "text",
-									text: JSON.stringify(
-										{
-											error:
-												"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
-										},
-									),
+									text: JSON.stringify({
+										error:
+											"Could not load design system data. Make sure the Desktop Bridge plugin is running.",
+									}),
 								},
 							],
 							isError: true,
@@ -2751,15 +2936,13 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										success: true,
-										type,
-										filter: filter || "(none)",
-										tokens: result,
-										hint: "Use these exact token names and values when generating designs.",
-									},
-								),
+								text: JSON.stringify({
+									success: true,
+									type,
+									filter: filter || "(none)",
+									tokens: result,
+									hint: "Use these exact token names and values when generating designs.",
+								}),
 							},
 						],
 					};
@@ -2769,12 +2952,9 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						content: [
 							{
 								type: "text",
-								text: JSON.stringify(
-									{
-										error:
-											error instanceof Error ? error.message : String(error),
-									},
-								),
+								text: JSON.stringify({
+									error: error instanceof Error ? error.message : String(error),
+								}),
 							},
 						],
 						isError: true,
@@ -2784,9 +2964,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		);
 
 		// Tool 5: Instantiate Component
-		server.tool(
+		server.registerTool(
 			"figma_get_library_components",
-			`Discover published components from a shared/team library file.
+			{
+				description: `Discover published components from a shared/team library file.
 
 **USE THIS when you need to use components from a published design system library** (a different file than the one currently open). This bridges the gap between library discovery and instantiation.
 
@@ -2800,42 +2981,43 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 **MULTI-FILE TIP:** If you need to find a specific component and REST API search returns too many results, you can switch to the library file via figma_navigate, use figma_execute to find the exact component and its variant key, then switch back.
 
 **NOTE:** Requires FIGMA_ACCESS_TOKEN to be set (uses the Figma REST API to read the library file).`,
-			{
-				libraryFileUrl: z
-					.string()
-					.optional()
-					.describe(
-						"The URL of the library file (e.g., https://www.figma.com/design/abc123/My-Design-System). Either this or libraryFileKey is required.",
-					),
-				libraryFileKey: z
-					.string()
-					.optional()
-					.describe(
-						"The file key of the library file (e.g., 'abc123'). Either this or libraryFileUrl is required.",
-					),
-				query: z
-					.string()
-					.optional()
-					.describe(
-						"Search query to filter components by name (e.g., 'Button', 'Card'). Leave empty to get all components.",
-					),
-				limit: z
-					.number()
-					.optional()
-					.default(25)
-					.describe("Maximum results to return (default: 25, max: 100)"),
-				offset: z
-					.number()
-					.optional()
-					.default(0)
-					.describe("Offset for pagination"),
-				includeVariants: z
-					.boolean()
-					.optional()
-					.default(false)
-					.describe(
-						"Include individual variant components (default: false, only returns component sets)",
-					),
+				inputSchema: z.object({
+					libraryFileUrl: z
+						.string()
+						.optional()
+						.describe(
+							"The URL of the library file (e.g., https://www.figma.com/design/abc123/My-Design-System). Either this or libraryFileKey is required.",
+						),
+					libraryFileKey: z
+						.string()
+						.optional()
+						.describe(
+							"The file key of the library file (e.g., 'abc123'). Either this or libraryFileUrl is required.",
+						),
+					query: z
+						.string()
+						.optional()
+						.describe(
+							"Search query to filter components by name (e.g., 'Button', 'Card'). Leave empty to get all components.",
+						),
+					limit: z
+						.number()
+						.optional()
+						.default(25)
+						.describe("Maximum results to return (default: 25, max: 100)"),
+					offset: z
+						.number()
+						.optional()
+						.default(0)
+						.describe("Offset for pagination"),
+					includeVariants: z
+						.boolean()
+						.optional()
+						.default(false)
+						.describe(
+							"Include individual variant components (default: false, only returns component sets)",
+						),
+				}),
 			},
 			async ({
 				libraryFileUrl,
@@ -2849,9 +3031,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					// Resolve file key from URL or direct key
 					let fileKey = libraryFileKey;
 					if (!fileKey && libraryFileUrl) {
-						const { extractFileKey } = await import(
-							"./core/figma-api.js"
-						);
+						const { extractFileKey } = await import("./core/figma-api.js");
 						fileKey = extractFileKey(libraryFileUrl) ?? undefined;
 						if (!fileKey) {
 							return {
@@ -2893,8 +3073,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					// Fetch both components and component sets in parallel
 					// Surface errors instead of swallowing them — token/scope issues need to be visible
 					const apiErrors: string[] = [];
-					const [componentsResponse, componentSetsResponse] =
-						await Promise.all([
+					const [componentsResponse, componentSetsResponse] = await Promise.all(
+						[
 							api.getComponents(fileKey).catch((err: Error) => {
 								const msg = err.message || String(err);
 								logger.warn(
@@ -2913,10 +3093,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 								apiErrors.push(`Component Sets API: ${msg}`);
 								return { meta: { component_sets: [] } };
 							}),
-						]);
+						],
+					);
 
-					const rawComponents =
-						componentsResponse?.meta?.components || [];
+					const rawComponents = componentsResponse?.meta?.components || [];
 					const rawComponentSets =
 						componentSetsResponse?.meta?.component_sets || [];
 
@@ -2924,23 +3104,30 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					// REST API returns containingComponentSet as an object { name, nodeId }
 					const isVariantOf = (c: any, csNodeId: string): boolean => {
 						const ccs = c.containing_frame?.containingComponentSet;
-						if (ccs && typeof ccs === "object" && ccs.nodeId === csNodeId) return true;
+						if (ccs && typeof ccs === "object" && ccs.nodeId === csNodeId)
+							return true;
 						if (ccs && c.containing_frame?.nodeId === csNodeId) return true;
 						if (c.component_set_id === csNodeId) return true;
 						return false;
 					};
 					const isVariant = (c: any): boolean => {
-						return !!(c.containing_frame?.containingComponentSet || c.component_set_id);
+						return !!(
+							c.containing_frame?.containingComponentSet || c.component_set_id
+						);
 					};
 					const getParentSetName = (c: any): string | undefined => {
 						const ccs = c.containing_frame?.containingComponentSet;
 						if (ccs && typeof ccs === "object" && ccs.name) return ccs.name;
-						return c.containing_frame?.name || c.component_set_name || undefined;
+						return (
+							c.containing_frame?.name || c.component_set_name || undefined
+						);
 					};
 
 					// Process component sets (groups of variants)
 					const componentSets = rawComponentSets.map((cs: any) => {
-						const variants = rawComponents.filter((c: any) => isVariantOf(c, cs.node_id));
+						const variants = rawComponents.filter((c: any) =>
+							isVariantOf(c, cs.node_id),
+						);
 
 						return {
 							name: cs.name,
@@ -2969,10 +3156,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						}));
 
 					// Combine results
-					let allResults: any[] = [
-						...componentSets,
-						...standaloneComponents,
-					];
+					let allResults: any[] = [...componentSets, ...standaloneComponents];
 
 					// Include individual variants if requested
 					if (includeVariants) {
@@ -2994,12 +3178,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						const queryLower = query.toLowerCase();
 						allResults = allResults.filter(
 							(item) =>
-								item.name
-									.toLowerCase()
-									.includes(queryLower) ||
-								item.description
-									?.toLowerCase()
-									.includes(queryLower),
+								item.name.toLowerCase().includes(queryLower) ||
+								item.description?.toLowerCase().includes(queryLower),
 						);
 					}
 
@@ -3014,8 +3194,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						effectiveOffset,
 						effectiveOffset + effectiveLimit,
 					);
-					const hasMore =
-						effectiveOffset + effectiveLimit < total;
+					const hasMore = effectiveOffset + effectiveLimit < total;
 
 					return {
 						content: [
@@ -3030,10 +3209,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 										hint: "REST API errors occurred. Check that FIGMA_ACCESS_TOKEN is valid and has file_content:read scope. If the token is correct, the library components may not be published to a team library.",
 									}),
 									summary: {
-										totalComponentSets:
-											componentSets.length,
-										totalStandaloneComponents:
-											standaloneComponents.length,
+										totalComponentSets: componentSets.length,
+										totalStandaloneComponents: standaloneComponents.length,
 										totalComponents: rawComponents.length,
 									},
 									results: paginatedResults,
@@ -3048,7 +3225,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 										example: (() => {
 											const first = paginatedResults[0];
 											if (!first) return undefined;
-											if (first.type === "COMPONENT_SET" && first.variants?.length > 0) {
+											if (
+												first.type === "COMPONENT_SET" &&
+												first.variants?.length > 0
+											) {
 												return `figma_instantiate_component({ componentKey: "${first.variants[0].key}" }) — using first variant of "${first.name}"`;
 											}
 											return `figma_instantiate_component({ componentKey: "${first.key}" })`;
@@ -3062,10 +3242,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 				} catch (error) {
 					const errorMessage =
 						error instanceof Error ? error.message : String(error);
-					logger.error(
-						{ error },
-						"Failed to get library components",
-					);
+					logger.error({ error }, "Failed to get library components");
 
 					// Provide helpful guidance based on error type
 					let hint =
@@ -3138,9 +3315,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			// Lets figma_export_tokens report WHICH connected file it read from —
 			// the bridge reads the active file, which may not be the intended one.
 			resolveFileName: (fileKey) =>
-				this.wsServer
-					?.getConnectedFiles()
-					.find((f) => f.fileKey === fileKey)?.fileName ?? null,
+				this.wsServer?.getConnectedFiles().find((f) => f.fileKey === fileKey)
+					?.fileName ?? null,
 		});
 
 		// Register design system extraction tools (figma_ds_*) — scan a
@@ -3257,38 +3433,64 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		});
 
 		// Register Annotation tools (read/write design annotations via Desktop Bridge)
-		registerAnnotationTools(
-			server,
-			() => this.getDesktopConnector(),
-		);
+		registerAnnotationTools(server, () => this.getDesktopConnector());
 
 		// Register Deep Component tools (full Plugin API tree extraction for code generation)
-		registerDeepComponentTools(
-			server,
-			() => this.getDesktopConnector(),
-		);
+		registerDeepComponentTools(server, () => this.getDesktopConnector());
 
 		// Register FigJam-specific tools (sticky notes, connectors, tables, etc.)
-		registerFigJamTools(
-			server,
-			() => this.getDesktopConnector(),
-		);
+		registerFigJamTools(server, () => this.getDesktopConnector());
 
 		// Register Figma Slides tools (slide management, transitions, content)
-		registerSlidesTools(
-			server,
-			() => this.getDesktopConnector(),
-		);
+		registerSlidesTools(server, () => this.getDesktopConnector());
 
-		registerSlotTools(
-			server,
-			() => this.getDesktopConnector(),
-		);
+		registerSlotTools(server, () => this.getDesktopConnector());
+		registerDevResourceTools(server, () => this.getDesktopConnector());
+		registerUsageTools(server, () => this.getDesktopConnector());
+		registerExtendedCollectionTools(server, () => this.getDesktopConnector());
+		registerAnalyticsTools(server, { getFigmaAPI: () => this.getFigmaAPI(), getCurrentUrl: () => this.getCurrentFileUrl() });
 
-		registerMotionTools(server, () => this.getDesktopConnector(), { allowFileWrite: true });
+		registerMotionTools(server, () => this.getDesktopConnector(), {
+			allowFileWrite: true,
+		});
 		registerCodeLayerTools(server, () => this.getDesktopConnector());
 		registerShaderTools(server, () => this.getDesktopConnector());
 		registerLayoutTools(server, () => this.getDesktopConnector());
+
+		// Design-system adherence: resolve needs → components (gaps go to the
+		// person), and audit generated compositions for invented / hardcoded work.
+		registerTokenBindingTools(server, () => this.getDesktopConnector());
+		registerAdherenceTools(server, {
+			readFile: async (path: string) => (await import("node:fs/promises")).readFile(path, "utf8"),
+			listDir: async (path: string) => (await import("node:fs/promises")).readdir(path),
+			getDesktopConnector: () => this.getDesktopConnector(),
+			getFigmaAPI: () => this.getFigmaAPI(),
+			getLocalCatalog: async () => {
+				const { cacheEntry, warning } = await ensureDesignSystemCache();
+				const manifest = cacheEntry?.manifest;
+				if (!manifest) throw new Error(warning ?? "Design system data could not be loaded from the active file.");
+				const entries: any[] = [];
+				for (const set of Object.values<any>(manifest.componentSets ?? {})) {
+					entries.push({
+						name: set.name,
+						key: set.key,
+						nodeId: set.nodeId,
+						type: "COMPONENT_SET",
+						description: set.description,
+						variantAxes: (set.variantAxes ?? []).map((a: any) => ({ name: a.name, values: a.values ?? [] })),
+						...((): any => {
+							const dv = pickDefaultVariant<any>(set.variants ?? []);
+							return dv ? { defaultVariant: { name: dv.name, key: dv.key, nodeId: dv.nodeId } } : {};
+						})(),
+						source: "local",
+					});
+				}
+				for (const c of Object.values<any>(manifest.components ?? {})) {
+					entries.push({ name: c.name, key: c.key, nodeId: c.nodeId, type: "COMPONENT", description: c.description, source: "local" });
+				}
+				return entries;
+			},
+		});
 
 		// MCP Apps - gated behind ENABLE_MCP_APPS env var
 		if (process.env.ENABLE_MCP_APPS === "true") {
@@ -3425,200 +3627,198 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			fileUrl?: string,
 			forceRefresh?: boolean,
 		) => {
-					const url = fileUrl || this.getCurrentFileUrl();
-					if (!url) {
-						throw new Error(
-							"No Figma file URL available. Either pass a fileUrl, call figma_navigate, or ensure the Desktop Bridge plugin is connected.",
-						);
+			const url = fileUrl || this.getCurrentFileUrl();
+			if (!url) {
+				throw new Error(
+					"No Figma file URL available. Either pass a fileUrl, call figma_navigate, or ensure the Desktop Bridge plugin is connected.",
+				);
+			}
+
+			const urlInfo = extractFigmaUrlInfo(url);
+			if (!urlInfo) {
+				throw new Error(`Invalid Figma URL: ${url}`);
+			}
+
+			const fileKey = urlInfo.branchId || urlInfo.fileKey;
+
+			// Audit fetches are heavy (full-file crawl); serve repeat calls
+			// within the TTL from cache unless the caller forces a refresh.
+			if (!forceRefresh) {
+				const cached = this.auditDataCache.get(fileKey);
+				if (
+					cached &&
+					Date.now() - cached.timestamp <
+						LocalFigmaConsoleMCP.AUDIT_CACHE_TTL_MS
+				) {
+					return cached.data;
+				}
+			}
+
+			// Track data availability for transparent scoring
+			let variablesAvailable = false;
+			let variableError: string | undefined;
+			let desktopBridgeAttempted = false;
+			let desktopBridgeFailed = false;
+			let restApiAttempted = false;
+			let restApiFailed = false;
+
+			// Fetch variables + collections
+			// Fallback chain: Cache → Desktop Bridge → REST API → Actionable error
+			let variables: any[] = [];
+			let collections: any[] = [];
+
+			// 1. Check cache first — unless the caller forced a refresh.
+			// forceRefresh must bypass BOTH the audit cache and this
+			// variables cache: during v1.37.0 verification, a stale
+			// variablesCache entry survived an audit forceRefresh and
+			// under-reported alias counts.
+			const cacheEntry = forceRefresh
+				? undefined
+				: this.variablesCache.get(fileKey);
+			if (cacheEntry && Date.now() - cacheEntry.timestamp < 5 * 60 * 1000) {
+				const cached = cacheEntry.data;
+				if (Array.isArray(cached.variables)) {
+					variables = cached.variables;
+					collections = cached.variableCollections || [];
+				} else {
+					const formatted = formatVariables(cached);
+					variables = formatted.variables;
+					collections = formatted.collections;
+				}
+				variablesAvailable = variables.length > 0;
+			}
+
+			// 2. Try Desktop Bridge via transport-agnostic connector
+			if (variables.length === 0) {
+				desktopBridgeAttempted = true;
+				try {
+					const connector = await this.getDesktopConnector();
+					const desktopResult =
+						await connector.getVariablesFromPluginUI(fileKey);
+
+					if (desktopResult.success && desktopResult.variables) {
+						this.variablesCache.set(fileKey, {
+							data: {
+								variables: desktopResult.variables,
+								variableCollections: desktopResult.variableCollections,
+							},
+							timestamp: Date.now(),
+						});
+						variables = desktopResult.variables;
+						collections = desktopResult.variableCollections || [];
+						variablesAvailable = true;
+					} else {
+						desktopBridgeFailed = true;
 					}
+				} catch (desktopErr) {
+					desktopBridgeFailed = true;
+					logger.warn(
+						{
+							error:
+								desktopErr instanceof Error
+									? desktopErr.message
+									: String(desktopErr),
+						},
+						"Desktop Bridge failed for dashboard, trying REST API for variables",
+					);
+				}
+			}
 
-					const urlInfo = extractFigmaUrlInfo(url);
-					if (!urlInfo) {
-						throw new Error(`Invalid Figma URL: ${url}`);
+			// 3. Try REST API (works only with Enterprise plan)
+			if (variables.length === 0) {
+				restApiAttempted = true;
+				try {
+					const api = await this.getFigmaAPI();
+					const { local, localError } = await api.getAllVariables(fileKey);
+					if (!localError && local) {
+						this.variablesCache.set(fileKey, {
+							data: local,
+							timestamp: Date.now(),
+						});
+						const formatted = formatVariables(local);
+						variables = formatted.variables;
+						collections = formatted.collections;
+						variablesAvailable = true;
+					} else {
+						restApiFailed = true;
 					}
+				} catch (varErr) {
+					restApiFailed = true;
+					logger.warn(
+						{
+							error: varErr instanceof Error ? varErr.message : String(varErr),
+						},
+						"REST API variable fetch failed for dashboard",
+					);
+				}
+			}
 
-					const fileKey = urlInfo.branchId || urlInfo.fileKey;
+			// 4. Build actionable error message based on what was tried
+			if (!variablesAvailable) {
+				if (desktopBridgeFailed && restApiFailed) {
+					variableError =
+						"Desktop Bridge plugin not connected and REST API requires Enterprise plan. Please open the Desktop Bridge plugin in Figma to enable variable/token analysis.";
+				} else if (desktopBridgeFailed) {
+					variableError =
+						"Desktop Bridge plugin not connected. Please open the Desktop Bridge plugin in Figma to enable variable/token analysis.";
+				} else if (restApiFailed) {
+					variableError =
+						"REST API requires Figma Enterprise plan. Connect the Desktop Bridge plugin in Figma for variable/token access.";
+				} else if (!desktopBridgeAttempted && !restApiAttempted) {
+					variableError =
+						"No variable fetch methods available. Connect the Desktop Bridge plugin in Figma.";
+				}
+			}
 
-					// Audit fetches are heavy (full-file crawl); serve repeat calls
-					// within the TTL from cache unless the caller forces a refresh.
-					if (!forceRefresh) {
-						const cached = this.auditDataCache.get(fileKey);
-						if (
-							cached &&
-							Date.now() - cached.timestamp <
-								LocalFigmaConsoleMCP.AUDIT_CACHE_TTL_MS
-						) {
-							return cached.data;
-						}
-					}
+			// Fetch components + component sets.
+			// Priority 1: Desktop Bridge live crawl, one page per EXECUTE_CODE
+			// command. Per-page chunking (instead of one whole-file command)
+			// keeps every plugin roundtrip small, isolates failures to a
+			// single page, and never blocks the plugin thread for minutes on
+			// large files. This scores the file as it IS. The REST
+			// published-library endpoints only reflect the last publish, so
+			// they are the fallback, and the chosen source is reported in
+			// dataAvailability.componentsSource for transparency.
+			let fileInfo:
+				| {
+						name: string;
+						lastModified: string;
+						version?: string;
+						thumbnailUrl?: string;
+				  }
+				| undefined;
+			let components: any[] = [];
+			let componentSets: any[] = [];
+			let styles: any[] = [];
+			let componentsSource: "bridge-live" | "rest-published" | "none" = "none";
 
-					// Track data availability for transparent scoring
-					let variablesAvailable = false;
-					let variableError: string | undefined;
-					let desktopBridgeAttempted = false;
-					let desktopBridgeFailed = false;
-					let restApiAttempted = false;
-					let restApiFailed = false;
-
-					// Fetch variables + collections
-					// Fallback chain: Cache → Desktop Bridge → REST API → Actionable error
-					let variables: any[] = [];
-					let collections: any[] = [];
-
-					// 1. Check cache first — unless the caller forced a refresh.
-					// forceRefresh must bypass BOTH the audit cache and this
-					// variables cache: during v1.37.0 verification, a stale
-					// variablesCache entry survived an audit forceRefresh and
-					// under-reported alias counts.
-					const cacheEntry = forceRefresh
-						? undefined
-						: this.variablesCache.get(fileKey);
-					if (cacheEntry && Date.now() - cacheEntry.timestamp < 5 * 60 * 1000) {
-						const cached = cacheEntry.data;
-						if (Array.isArray(cached.variables)) {
-							variables = cached.variables;
-							collections = cached.variableCollections || [];
-						} else {
-							const formatted = formatVariables(cached);
-							variables = formatted.variables;
-							collections = formatted.collections;
-						}
-						variablesAvailable = variables.length > 0;
-					}
-
-					// 2. Try Desktop Bridge via transport-agnostic connector
-					if (variables.length === 0) {
-						desktopBridgeAttempted = true;
+			try {
+				const connector = await this.getDesktopConnector();
+				// The bridge crawls the ACTIVE file. If it reports a different
+				// fileKey than the one requested, we must NOT score it — fall
+				// through to REST rather than silently auditing the wrong file.
+				const fileCheck = await connector.executeCodeViaUI(
+					"return { fileKey: figma.fileKey || null, fileName: figma.root.name }",
+					10000,
+				);
+				const activeKey = fileCheck?.result?.fileKey;
+				const activeName = fileCheck?.result?.fileName;
+				if (activeKey && activeKey !== fileKey) {
+					logger.warn(
+						{ requested: fileKey, active: activeKey },
+						"Bridge is connected to a different file than requested — falling back to REST for component data",
+					);
+				} else if (fileCheck?.success) {
+					const pageListRes = await connector.executeCodeViaUI(
+						"await figma.loadAllPagesAsync(); return figma.root.children.map(function(p){ return p.id; })",
+						60000,
+					);
+					const pageIds: string[] = pageListRes?.result || [];
+					let failedPages = 0;
+					for (const pageId of pageIds) {
 						try {
-							const connector = await this.getDesktopConnector();
-							const desktopResult =
-								await connector.getVariablesFromPluginUI(fileKey);
-
-							if (desktopResult.success && desktopResult.variables) {
-								this.variablesCache.set(fileKey, {
-									data: {
-										variables: desktopResult.variables,
-										variableCollections: desktopResult.variableCollections,
-									},
-									timestamp: Date.now(),
-								});
-								variables = desktopResult.variables;
-								collections = desktopResult.variableCollections || [];
-								variablesAvailable = true;
-							} else {
-								desktopBridgeFailed = true;
-							}
-						} catch (desktopErr) {
-							desktopBridgeFailed = true;
-							logger.warn(
-								{
-									error:
-										desktopErr instanceof Error
-											? desktopErr.message
-											: String(desktopErr),
-								},
-								"Desktop Bridge failed for dashboard, trying REST API for variables",
-							);
-						}
-					}
-
-					// 3. Try REST API (works only with Enterprise plan)
-					if (variables.length === 0) {
-						restApiAttempted = true;
-						try {
-							const api = await this.getFigmaAPI();
-							const { local, localError } = await api.getAllVariables(fileKey);
-							if (!localError && local) {
-								this.variablesCache.set(fileKey, {
-									data: local,
-									timestamp: Date.now(),
-								});
-								const formatted = formatVariables(local);
-								variables = formatted.variables;
-								collections = formatted.collections;
-								variablesAvailable = true;
-							} else {
-								restApiFailed = true;
-							}
-						} catch (varErr) {
-							restApiFailed = true;
-							logger.warn(
-								{
-									error:
-										varErr instanceof Error ? varErr.message : String(varErr),
-								},
-								"REST API variable fetch failed for dashboard",
-							);
-						}
-					}
-
-					// 4. Build actionable error message based on what was tried
-					if (!variablesAvailable) {
-						if (desktopBridgeFailed && restApiFailed) {
-							variableError =
-								"Desktop Bridge plugin not connected and REST API requires Enterprise plan. Please open the Desktop Bridge plugin in Figma to enable variable/token analysis.";
-						} else if (desktopBridgeFailed) {
-							variableError =
-								"Desktop Bridge plugin not connected. Please open the Desktop Bridge plugin in Figma to enable variable/token analysis.";
-						} else if (restApiFailed) {
-							variableError =
-								"REST API requires Figma Enterprise plan. Connect the Desktop Bridge plugin in Figma for variable/token access.";
-						} else if (!desktopBridgeAttempted && !restApiAttempted) {
-							variableError =
-								"No variable fetch methods available. Connect the Desktop Bridge plugin in Figma.";
-						}
-					}
-
-					// Fetch components + component sets.
-					// Priority 1: Desktop Bridge live crawl, one page per EXECUTE_CODE
-					// command. Per-page chunking (instead of one whole-file command)
-					// keeps every plugin roundtrip small, isolates failures to a
-					// single page, and never blocks the plugin thread for minutes on
-					// large files. This scores the file as it IS. The REST
-					// published-library endpoints only reflect the last publish, so
-					// they are the fallback, and the chosen source is reported in
-					// dataAvailability.componentsSource for transparency.
-					let fileInfo:
-						| {
-								name: string;
-								lastModified: string;
-								version?: string;
-								thumbnailUrl?: string;
-						  }
-						| undefined;
-					let components: any[] = [];
-					let componentSets: any[] = [];
-					let styles: any[] = [];
-					let componentsSource: "bridge-live" | "rest-published" | "none" =
-						"none";
-
-					try {
-						const connector = await this.getDesktopConnector();
-						// The bridge crawls the ACTIVE file. If it reports a different
-						// fileKey than the one requested, we must NOT score it — fall
-						// through to REST rather than silently auditing the wrong file.
-						const fileCheck = await connector.executeCodeViaUI(
-							"return { fileKey: figma.fileKey || null, fileName: figma.root.name }",
-							10000,
-						);
-						const activeKey = fileCheck?.result?.fileKey;
-						const activeName = fileCheck?.result?.fileName;
-						if (activeKey && activeKey !== fileKey) {
-							logger.warn(
-								{ requested: fileKey, active: activeKey },
-								"Bridge is connected to a different file than requested — falling back to REST for component data",
-							);
-						} else if (fileCheck?.success) {
-							const pageListRes = await connector.executeCodeViaUI(
-								"await figma.loadAllPagesAsync(); return figma.root.children.map(function(p){ return p.id; })",
-								60000,
-							);
-							const pageIds: string[] = pageListRes?.result || [];
-							let failedPages = 0;
-							for (const pageId of pageIds) {
-								try {
-									const crawl = await connector.executeCodeViaUI(
-										`
+							const crawl = await connector.executeCodeViaUI(
+								`
 										const page = await figma.getNodeByIdAsync(${JSON.stringify(pageId)});
 										if (!page || page.type !== 'PAGE') return { sets: [], comps: [] };
 										await page.loadAsync();
@@ -3655,183 +3855,180 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 										for (const c of page.children) walk(c);
 										return { sets, comps };
 										`,
-										30000,
-									);
-									const pageData = crawl?.result;
-									if (!crawl?.success || !pageData) {
-										failedPages++;
-										continue;
-									}
-									for (const set of pageData.sets || []) {
-										componentSets.push({
-											node_id: set.id,
-											id: set.id,
-											key: set.key,
-											name: set.name,
-											description: set.description || "",
-											componentPropertyDefinitions: set.propDefs,
-										});
-										for (const variant of set.variants || []) {
-											components.push({
-												node_id: variant.id,
-												id: variant.id,
-												key: variant.key,
-												name: variant.name,
-												description: variant.description || "",
-												componentSetId: set.id,
-											});
-										}
-									}
-									for (const comp of pageData.comps || []) {
-										components.push({
-											node_id: comp.id,
-											id: comp.id,
-											key: comp.key,
-											name: comp.name,
-											description: comp.description || "",
-											componentPropertyDefinitions:
-												comp.propDefs && Object.keys(comp.propDefs).length > 0
-													? comp.propDefs
-													: undefined,
-										});
-									}
-								} catch (pageErr) {
-									failedPages++;
-									logger.warn(
-										{
-											pageId,
-											error:
-												pageErr instanceof Error
-													? pageErr.message
-													: String(pageErr),
-										},
-										"Audit crawl failed for one page — continuing with remaining pages",
-									);
+								30000,
+							);
+							const pageData = crawl?.result;
+							if (!crawl?.success || !pageData) {
+								failedPages++;
+								continue;
+							}
+							for (const set of pageData.sets || []) {
+								componentSets.push({
+									node_id: set.id,
+									id: set.id,
+									key: set.key,
+									name: set.name,
+									description: set.description || "",
+									componentPropertyDefinitions: set.propDefs,
+								});
+								for (const variant of set.variants || []) {
+									components.push({
+										node_id: variant.id,
+										id: variant.id,
+										key: variant.key,
+										name: variant.name,
+										description: variant.description || "",
+										componentSetId: set.id,
+									});
 								}
 							}
-							if (failedPages > 0) {
-								logger.warn(
-									{ failedPages, totalPages: pageIds.length },
-									"Audit crawl completed with partial page coverage",
-								);
+							for (const comp of pageData.comps || []) {
+								components.push({
+									node_id: comp.id,
+									id: comp.id,
+									key: comp.key,
+									name: comp.name,
+									description: comp.description || "",
+									componentPropertyDefinitions:
+										comp.propDefs && Object.keys(comp.propDefs).length > 0
+											? comp.propDefs
+											: undefined,
+								});
 							}
-							if (components.length > 0 || componentSets.length > 0) {
-								componentsSource = "bridge-live";
-								if (activeName) {
-									fileInfo = { name: activeName, lastModified: "" };
-								}
-							}
+						} catch (pageErr) {
+							failedPages++;
+							logger.warn(
+								{
+									pageId,
+									error:
+										pageErr instanceof Error
+											? pageErr.message
+											: String(pageErr),
+								},
+								"Audit crawl failed for one page — continuing with remaining pages",
+							);
 						}
-					} catch (bridgeErr) {
+					}
+					if (failedPages > 0) {
 						logger.warn(
-							{
-								error:
-									bridgeErr instanceof Error
-										? bridgeErr.message
-										: String(bridgeErr),
-							},
-							"Desktop Bridge component crawl failed for audit, trying REST API",
+							{ failedPages, totalPages: pageIds.length },
+							"Audit crawl completed with partial page coverage",
 						);
 					}
-
-					// REST: file metadata + styles always; components only as fallback.
-					try {
-						const api = await this.getFigmaAPI();
-						const needComponents = componentsSource !== "bridge-live";
-						const [fileData, compResult, compSetResult, styleResult] =
-							await Promise.all([
-								api.getFile(fileKey, { depth: 0 }).catch(() => null),
-								needComponents
-									? api
-											.getComponents(fileKey)
-											.catch(() => ({ meta: { components: [] } }))
-									: Promise.resolve(null),
-								needComponents
-									? api
-											.getComponentSets(fileKey)
-											.catch(() => ({ meta: { component_sets: [] } }))
-									: Promise.resolve(null),
-								api.getStyles(fileKey).catch(() => ({ meta: { styles: [] } })),
-							]);
-						if (fileData) {
-							fileInfo = {
-								name: fileData.name || fileInfo?.name || "Unknown",
-								lastModified: fileData.lastModified || "",
-								version: fileData.version,
-								thumbnailUrl: fileData.thumbnailUrl,
-							};
-						}
-						if (needComponents) {
-							components = compResult?.meta?.components || [];
-							componentSets = compSetResult?.meta?.component_sets || [];
-							if (components.length > 0 || componentSets.length > 0) {
-								componentsSource = "rest-published";
-							}
-						}
-						styles = styleResult?.meta?.styles || [];
-					} catch (apiErr) {
-						logger.warn(
-							{
-								error:
-									apiErr instanceof Error ? apiErr.message : String(apiErr),
-							},
-							"REST API fetch failed for dashboard",
-						);
-					}
-
-					// Fallback: extract file name from URL if getFile failed
-					if (!fileInfo) {
-						try {
-							const urlObj = new URL(url);
-							const segments = urlObj.pathname.split("/").filter(Boolean);
-							// /design/KEY/File-Name or /design/KEY/branch/BRANCHKEY/File-Name
-							const branchIdx = segments.indexOf("branch");
-							const nameSegment =
-								branchIdx >= 0
-									? segments[branchIdx + 2]
-									: segments.length >= 3
-										? segments[2]
-										: undefined;
-							if (nameSegment) {
-								fileInfo = {
-									name: decodeURIComponent(nameSegment).replace(/-/g, " "),
-									lastModified: "",
-								};
-							}
-						} catch {
-							// URL parsing failed — leave fileInfo undefined
+					if (components.length > 0 || componentSets.length > 0) {
+						componentsSource = "bridge-live";
+						if (activeName) {
+							fileInfo = { name: activeName, lastModified: "" };
 						}
 					}
+				}
+			} catch (bridgeErr) {
+				logger.warn(
+					{
+						error:
+							bridgeErr instanceof Error
+								? bridgeErr.message
+								: String(bridgeErr),
+					},
+					"Desktop Bridge component crawl failed for audit, trying REST API",
+				);
+			}
 
-					const auditData = {
-						variables,
-						collections,
-						components,
-						styles,
-						componentSets,
-						fileInfo,
-						dataAvailability: {
-							variables: variablesAvailable,
-							collections: variablesAvailable,
-							components: components.length > 0,
-							styles: styles.length > 0,
-							variableError,
-							componentsSource,
-						},
+			// REST: file metadata + styles always; components only as fallback.
+			try {
+				const api = await this.getFigmaAPI();
+				const needComponents = componentsSource !== "bridge-live";
+				const [fileData, compResult, compSetResult, styleResult] =
+					await Promise.all([
+						api.getFile(fileKey, { depth: 0 }).catch(() => null),
+						needComponents
+							? api
+									.getComponents(fileKey)
+									.catch(() => ({ meta: { components: [] } }))
+							: Promise.resolve(null),
+						needComponents
+							? api
+									.getComponentSets(fileKey)
+									.catch(() => ({ meta: { component_sets: [] } }))
+							: Promise.resolve(null),
+						api.getStyles(fileKey).catch(() => ({ meta: { styles: [] } })),
+					]);
+				if (fileData) {
+					fileInfo = {
+						name: fileData.name || fileInfo?.name || "Unknown",
+						lastModified: fileData.lastModified || "",
+						version: fileData.version,
+						thumbnailUrl: fileData.thumbnailUrl,
 					};
-					this.auditDataCache.set(fileKey, {
-						data: auditData,
-						timestamp: Date.now(),
-					});
-					return auditData;
+				}
+				if (needComponents) {
+					components = compResult?.meta?.components || [];
+					componentSets = compSetResult?.meta?.component_sets || [];
+					if (components.length > 0 || componentSets.length > 0) {
+						componentsSource = "rest-published";
+					}
+				}
+				styles = styleResult?.meta?.styles || [];
+			} catch (apiErr) {
+				logger.warn(
+					{
+						error: apiErr instanceof Error ? apiErr.message : String(apiErr),
+					},
+					"REST API fetch failed for dashboard",
+				);
+			}
+
+			// Fallback: extract file name from URL if getFile failed
+			if (!fileInfo) {
+				try {
+					const urlObj = new URL(url);
+					const segments = urlObj.pathname.split("/").filter(Boolean);
+					// /design/KEY/File-Name or /design/KEY/branch/BRANCHKEY/File-Name
+					const branchIdx = segments.indexOf("branch");
+					const nameSegment =
+						branchIdx >= 0
+							? segments[branchIdx + 2]
+							: segments.length >= 3
+								? segments[2]
+								: undefined;
+					if (nameSegment) {
+						fileInfo = {
+							name: decodeURIComponent(nameSegment).replace(/-/g, " "),
+							lastModified: "",
+						};
+					}
+				} catch {
+					// URL parsing failed — leave fileInfo undefined
+				}
+			}
+
+			const auditData = {
+				variables,
+				collections,
+				components,
+				styles,
+				componentSets,
+				fileInfo,
+				dataAvailability: {
+					variables: variablesAvailable,
+					collections: variablesAvailable,
+					components: components.length > 0,
+					styles: styles.length > 0,
+					variableError,
+					componentsSource,
+				},
+			};
+			this.auditDataCache.set(fileKey, {
+				data: auditData,
+				timestamp: Date.now(),
+			});
+			return auditData;
 		};
 
 		// Always available — any MCP client can run the audit, no MCP Apps
 		// support required.
-		registerDesignSystemAuditTool(
-			server,
-			fetchDesignSystemAuditData,
-			() => this.getCurrentFileUrl(),
+		registerDesignSystemAuditTool(server, fetchDesignSystemAuditData, () =>
+			this.getCurrentFileUrl(),
 		);
 
 		// Visual dashboard app (MCP-Apps-capable hosts only).
@@ -3843,6 +4040,27 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 				() => this.getCurrentFileUrl(),
 			);
 		}
+
+		// Toolsets: figma_enable_toolsets + figma_call (always on).
+		registerToolsetTools(server as any);
+
+		// Behavior hints (read-only / destructive / idempotent) for every tool.
+		const unclassified = applyToolAnnotations(server);
+		if (unclassified.length > 0) {
+			logger.warn({ unclassified }, "Tools registered without annotation hints");
+		}
+
+		// MCP Tasks pilot: slow tools answer 2026-07-28 clients that declare the
+		// tasks extension with a task handle (the client polls tasks/get) instead
+		// of blocking. Every other client still gets the synchronous result.
+		enableTasksForTools(server, LOCAL_TASK_TOOLS);
+
+		// Start with the core tools only (FIGMA_TOOLSETS=all for every tool); the
+		// rest are switched on with figma_enable_toolsets. Each listed tool's
+		// definition costs tokens on every message, so fewer listed = cheaper.
+		const toolsetSelection = parseToolsetsEnv(process.env.FIGMA_TOOLSETS);
+		const ts = applyToolsets(server, toolsetSelection);
+		logger.info({ toolsets: toolsetSelection === "all" ? "all" : [...toolsetSelection], listed: ts.enabled.length, deferred: ts.disabled.length, unknown: ts.unknown }, "Toolsets applied");
 
 		logger.info(
 			"All MCP tools registered successfully (including write operations)",
@@ -3875,8 +4093,11 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			// Start WebSocket bridge server with port range fallback.
 			// If the preferred port is taken (e.g., Claude Desktop Chat tab already bound it),
 			// try subsequent ports in the range (9223-9232) so multiple instances can coexist.
-			const wsHost = process.env.FIGMA_WS_HOST || 'localhost';
-			this.wsPreferredPort = parseInt(process.env.FIGMA_WS_PORT || String(DEFAULT_WS_PORT), 10);
+			const wsHost = process.env.FIGMA_WS_HOST || "localhost";
+			this.wsPreferredPort = parseInt(
+				process.env.FIGMA_WS_PORT || String(DEFAULT_WS_PORT),
+				10,
+			);
 
 			// Clean up stale/orphaned MCP server instances before trying to bind.
 			// Step 1: Remove stale port files and terminate zombie processes that have port files
@@ -3908,7 +4129,10 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							"Preferred WebSocket port was in use, bound to fallback port",
 						);
 					} else {
-						logger.info({ wsPort: boundPort }, "WebSocket bridge server started");
+						logger.info(
+							{ wsPort: boundPort },
+							"WebSocket bridge server started",
+						);
 					}
 
 					// Advertise the port so the Figma plugin and other tools can discover us
@@ -3918,13 +4142,18 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 					// Start heartbeat — periodically refresh the port file to prove this server is active.
 					// Other instances use this to detect zombie processes on startup.
 					const heartbeatPort = boundPort;
-					this.wsHeartbeatTimer = setInterval(() => refreshPortAdvertisement(heartbeatPort), HEARTBEAT_INTERVAL_MS);
+					this.wsHeartbeatTimer = setInterval(
+						() => refreshPortAdvertisement(heartbeatPort),
+						HEARTBEAT_INTERVAL_MS,
+					);
 					this.wsHeartbeatTimer.unref(); // Don't prevent process exit
 
 					break;
 				} catch (wsError) {
-					const errorMsg = wsError instanceof Error ? wsError.message : String(wsError);
-					const errorCode = wsError instanceof Error ? (wsError as any).code : undefined;
+					const errorMsg =
+						wsError instanceof Error ? wsError.message : String(wsError);
+					const errorCode =
+						wsError instanceof Error ? (wsError as any).code : undefined;
 
 					if (errorCode === "EADDRINUSE" || errorMsg.includes("EADDRINUSE")) {
 						logger.debug(
@@ -3952,7 +4181,11 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			// Phase 3: If all ports exhausted, try evicting the oldest instance and
 			// retry ONCE. Only for genuine EADDRINUSE exhaustion — killing a healthy
 			// sibling can't fix an EACCES/EADDRNOTAVAIL bind failure.
-			if (!boundPort && !lastNonPortError && evictOldestInstance(this.wsPreferredPort)) {
+			if (
+				!boundPort &&
+				!lastNonPortError &&
+				evictOldestInstance(this.wsPreferredPort)
+			) {
 				for (const port of portsToTry) {
 					try {
 						this.wsServer = new FigmaWebSocketServer({ port, host: wsHost });
@@ -3967,11 +4200,15 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 						advertisePort(boundPort, wsHost);
 						registerPortCleanup(boundPort);
 						const heartbeatPort = boundPort;
-						this.wsHeartbeatTimer = setInterval(() => refreshPortAdvertisement(heartbeatPort), HEARTBEAT_INTERVAL_MS);
+						this.wsHeartbeatTimer = setInterval(
+							() => refreshPortAdvertisement(heartbeatPort),
+							HEARTBEAT_INTERVAL_MS,
+						);
 						this.wsHeartbeatTimer.unref();
 						break;
 					} catch (wsError) {
-						const errorCode = wsError instanceof Error ? (wsError as any).code : undefined;
+						const errorCode =
+							wsError instanceof Error ? (wsError as any).code : undefined;
 						if (errorCode === "EADDRINUSE") {
 							this.wsServer = null;
 							continue;
@@ -4000,27 +4237,41 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 
 			if (this.wsServer) {
 				// Log when plugin files connect/disconnect (with file identity)
-				this.wsServer.on("fileConnected", (data: { fileKey: string; fileName: string }) => {
-					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin connected via WebSocket");
-				});
+				this.wsServer.on(
+					"fileConnected",
+					(data: { fileKey: string; fileName: string }) => {
+						logger.info(
+							{ fileKey: data.fileKey, fileName: data.fileName },
+							"Desktop Bridge plugin connected via WebSocket",
+						);
+					},
+				);
 
 				// Plugin disconnect leaves cached variables stale — when the plugin reconnects
 				// after a sleep/wake or network blip, the file may have edits we missed
 				// (no DOCUMENT_CHANGE event was delivered while we were disconnected).
 				// Invalidate the cache for the disconnected file so the next read is fresh.
-				this.wsServer.on("fileDisconnected", (data: { fileKey: string; fileName: string }) => {
-					logger.info({ fileKey: data.fileKey, fileName: data.fileName }, "Desktop Bridge plugin disconnected from WebSocket");
-					if (data.fileKey) {
-						this.variablesCache.delete(data.fileKey);
-						// design-system-tools.ts stores token data under a prefixed key
-						this.variablesCache.delete(`vars:${data.fileKey}`);
-						void import("./core/design-system-manifest.js").then(
-							({ DesignSystemManifestCache }) => {
-								DesignSystemManifestCache.getInstance().invalidate(data.fileKey);
-							},
-						).catch(() => {});
-					}
-				});
+				this.wsServer.on(
+					"fileDisconnected",
+					(data: { fileKey: string; fileName: string }) => {
+						logger.info(
+							{ fileKey: data.fileKey, fileName: data.fileName },
+							"Desktop Bridge plugin disconnected from WebSocket",
+						);
+						if (data.fileKey) {
+							this.variablesCache.delete(data.fileKey);
+							// design-system-tools.ts stores token data under a prefixed key
+							this.variablesCache.delete(`vars:${data.fileKey}`);
+							void import("./core/design-system-manifest.js")
+								.then(({ DesignSystemManifestCache }) => {
+									DesignSystemManifestCache.getInstance().invalidate(
+										data.fileKey,
+									);
+								})
+								.catch(() => {});
+						}
+					},
+				);
 
 				// Invalidate variable cache when document changes are reported.
 				// Figma's documentchange API doesn't expose a specific variable change type —
@@ -4035,14 +4286,21 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							// and the design-system kit sees edited variables.
 							this.variablesCache.delete(data.fileKey);
 							this.variablesCache.delete(`vars:${data.fileKey}`);
-							void import("./core/design-system-manifest.js").then(
-								({ DesignSystemManifestCache }) => {
-									DesignSystemManifestCache.getInstance().invalidate(data.fileKey);
-								},
-							).catch(() => {});
+							void import("./core/design-system-manifest.js")
+								.then(({ DesignSystemManifestCache }) => {
+									DesignSystemManifestCache.getInstance().invalidate(
+										data.fileKey,
+									);
+								})
+								.catch(() => {});
 							logger.debug(
-								{ fileKey: data.fileKey, changeCount: data.changeCount, hasStyleChanges: data.hasStyleChanges, hasNodeChanges: data.hasNodeChanges },
-								"Variable cache invalidated due to document changes"
+								{
+									fileKey: data.fileKey,
+									changeCount: data.changeCount,
+									hasStyleChanges: data.hasStyleChanges,
+									hasNodeChanges: data.hasNodeChanges,
+								},
+								"Variable cache invalidated due to document changes",
 							);
 						} else {
 							// Unidentified file (event arrived before FILE_INFO handshake completed).
@@ -4051,7 +4309,7 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 							// any subsequent document changes will route correctly.
 							logger.debug(
 								{ changeCount: data.changeCount },
-								"Document change received before file identification — cache untouched"
+								"Document change received before file identification — cache untouched",
 							);
 						}
 					}
@@ -4069,14 +4327,28 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 			logger.info("Checking Figma Desktop accessibility...");
 			await this.checkFigmaDesktop();
 
+			// Skills over MCP: serve the bundled skills/ folder (or FIGMA_MCP_SKILLS_DIR).
+			// Attaching registers skills/list, skills/get, the skill:// resource
+			// template, and declares the extension in server/discover capabilities.
+			try {
+				const skillsDir =
+					process.env.FIGMA_MCP_SKILLS_DIR ??
+					fileURLToPath(new URL("../skills", import.meta.url));
+				if (existsSync(skillsDir)) this.skills = await loadSkills(skillsDir);
+			} catch (error) {
+				logger.warn({ error }, "Skills catalog failed to load; continuing without skills");
+			}
+
 			// Register all tools
 			this.registerTools(this.server);
 
-			// Create stdio transport
-			const transport = new StdioServerTransport();
-
-			// Connect server to transport
-			await this.server.connect(transport);
+			// Serve stdio for both protocol eras: 2025-era clients (initialize
+			// handshake) and 2026-07-28 clients (server/discover + per-request _meta).
+			// The factory runs once per connection; stdio has exactly one.
+			this.skills?.attach(this.server);
+			serveStdio(() => this.server, {
+				onerror: (error) => logger.error({ error }, "stdio transport error"),
+			});
 
 			logger.info("MCP server started successfully on stdio transport");
 
@@ -4107,7 +4379,8 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 		try {
 			port = parseHttpPort(process.env.FIGMA_MCP_HTTP_PORT);
 		} catch (error) {
-			this.httpStartupError = error instanceof Error ? error.message : String(error);
+			this.httpStartupError =
+				error instanceof Error ? error.message : String(error);
 			logger.warn(this.httpStartupError);
 			return;
 		}
@@ -4120,16 +4393,20 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 				createServer: () => {
 					const server = this.createMcpServer();
 					this.registerTools(server);
+					this.skills?.attach(server);
 					return server;
 				},
 			});
 			setAdvertisedMcpHttpUrl(this.httpEndpoint.url);
-			console.error(`[figma-console-mcp] MCP over HTTP: ${this.httpEndpoint.url}`);
+			console.error(
+				`[figma-console-mcp] MCP over HTTP: ${this.httpEndpoint.url}`,
+			);
 		} catch (error) {
 			const code = (error as NodeJS.ErrnoException)?.code;
-			this.httpStartupError = code === "EADDRINUSE"
-				? `Port ${port} is already in use, so the HTTP endpoint is off (stdio still works). Another figma-console-mcp may already serve it: check its port file, or pick another FIGMA_MCP_HTTP_PORT.`
-				: `HTTP endpoint failed to start on port ${port}: ${error instanceof Error ? error.message : String(error)}`;
+			this.httpStartupError =
+				code === "EADDRINUSE"
+					? `Port ${port} is already in use, so the HTTP endpoint is off (stdio still works). Another figma-console-mcp may already serve it: check its port file, or pick another FIGMA_MCP_HTTP_PORT.`
+					: `HTTP endpoint failed to start on port ${port}: ${error instanceof Error ? error.message : String(error)}`;
 			logger.warn({ port, code }, this.httpStartupError);
 		}
 	}
@@ -4139,6 +4416,9 @@ Without libraryFileKey/libraryFileUrl, searches the currently open file (local c
 	 */
 	async shutdown(): Promise<void> {
 		logger.info("Shutting down MCP server...");
+
+		// Signal any running MCP tasks to stop (their results can't outlive the process).
+		defaultTaskStore.abortAll();
 
 		try {
 			if (this.httpEndpoint) {
@@ -4203,11 +4483,17 @@ async function main() {
 		process.exit(code);
 	};
 
-	process.on("SIGINT", () => { void gracefulExit(0); });
-	process.on("SIGTERM", () => { void gracefulExit(0); });
+	process.on("SIGINT", () => {
+		void gracefulExit(0);
+	});
+	process.on("SIGTERM", () => {
+		void gracefulExit(0);
+	});
 	// The MCP client closing our stdin means it's gone. On Windows no signal is
 	// delivered when the client exits, so without this the process never exits.
-	onStdinClosed(() => { void gracefulExit(0); });
+	onStdinClosed(() => {
+		void gracefulExit(0);
+	});
 
 	// Start the server
 	await server.start();
@@ -4235,19 +4521,19 @@ if (currentFile === entryFile) {
 				console.log(stablePath);
 				console.error(
 					"\nImport this manifest in Figma (Plugins → Development →\n" +
-					"Import plugin from manifest). The MCP server refreshes the\n" +
-					"plugin files in this directory on every startup.\n" +
-					"\n" +
-					"On macOS the folder is hidden (it starts with a dot): in\n" +
-					"the import dialog press Cmd+Shift+G and paste the path above\n" +
-					"(or Cmd+Shift+. to show hidden files).\n" +
-					"\n" +
-					"Re-importing after a package update is OPTIONAL — most\n" +
-					"upgrades stay wire-compatible with the previous plugin.\n" +
-					"Re-import only when release notes call for it, or when you\n" +
-					"want the latest cosmetic touches (status-pill copy, plugin\n" +
-					"version reporting). Figma caches plugin files at the app\n" +
-					"level, so re-importing is what makes Figma pick up changes.\n"
+						"Import plugin from manifest). The MCP server refreshes the\n" +
+						"plugin files in this directory on every startup.\n" +
+						"\n" +
+						"On macOS the folder is hidden (it starts with a dot): in\n" +
+						"the import dialog press Cmd+Shift+G and paste the path above\n" +
+						"(or Cmd+Shift+. to show hidden files).\n" +
+						"\n" +
+						"Re-importing after a package update is OPTIONAL — most\n" +
+						"upgrades stay wire-compatible with the previous plugin.\n" +
+						"Re-import only when release notes call for it, or when you\n" +
+						"want the latest cosmetic touches (status-pill copy, plugin\n" +
+						"version reporting). Figma caches plugin files at the app\n" +
+						"level, so re-importing is what makes Figma pick up changes.\n",
 				);
 				process.exit(0);
 			}
@@ -4261,9 +4547,16 @@ if (currentFile === entryFile) {
 
 			// Last resort: print the stable dir path even if it doesn't exist yet
 			// (the server will create it on first startup)
-			const stableDir = join(homedir(), ".figma-console-mcp", "plugin", "manifest.json");
+			const stableDir = join(
+				homedir(),
+				".figma-console-mcp",
+				"plugin",
+				"manifest.json",
+			);
 			console.log(stableDir);
-			console.error("\nNote: This path will be populated when the MCP server starts.");
+			console.error(
+				"\nNote: This path will be populated when the MCP server starts.",
+			);
 			process.exit(0);
 		} catch (error) {
 			console.error("Error resolving plugin path:", error);

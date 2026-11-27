@@ -22,6 +22,7 @@ import { join } from 'path';
 import { createChildLogger } from './logger.js';
 import { PACKAGE_ROOT } from './resolve-package-root.js';
 import type { ConsoleLogEntry } from './types/index.js';
+import { bridgeCommandFailure } from './bridge-result.js';
 
 // Read version from package.json using the resolved package root.
 // PACKAGE_ROOT uses import.meta.url in ESM (production) and __dirname in CJS (Jest).
@@ -508,8 +509,11 @@ export class FigmaWebSocketServer extends EventEmitter {
         this.pendingRequests.delete(message.id);
         this.clearStall(pending.targetFileKey);
 
+        const refused = message.error ? null : bridgeCommandFailure(pending.method, message.result);
         if (message.error) {
           pending.reject(new Error(message.error));
+        } else if (refused) {
+          pending.reject(new Error(refused));
         } else {
           pending.resolve(message.result);
         }

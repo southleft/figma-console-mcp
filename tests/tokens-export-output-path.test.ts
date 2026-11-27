@@ -90,7 +90,7 @@ describe("figma_export_tokens handler — end to end", () => {
 
 	beforeEach(() => {
 		tmp = mkdtempSync(join(tmpdir(), "fcm-export-e2e-"));
-		const server = { tool: (_n: string, _d: string, _s: any, h: any) => { handler = h; } };
+		const server = { registerTool: (_n: string, __cfg: any, h: any) => { const _d = __cfg?.description ?? ""; const _s = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void _d; void _s; handler = h; } };
 		registerExportTokensTool(server as any, async () => connector);
 	});
 	afterEach(() => { rmSync(tmp, { recursive: true, force: true }); });

@@ -23,8 +23,8 @@ interface RegisteredTool {
 function createMockServer() {
 	const tools: Record<string, RegisteredTool> = {};
 	return {
-		tool: jest.fn(
-			(name: string, description: string, schema: any, handler: any) => {
+		registerTool: jest.fn(
+			(name: string, __cfg: any, handler: any) => { const description = __cfg?.description ?? ""; const schema = __cfg?.inputSchema?.shape ?? __cfg?.inputSchema; void description; void schema;
 				tools[name] = { name, description, schema, handler };
 			}
 		),
@@ -119,8 +119,8 @@ describe("FigJam Tools", () => {
 	// ========================================================================
 
 	it("registers all 10 FigJam tools", () => {
-		expect(server.tool).toHaveBeenCalledTimes(10);
-		const names = server.tool.mock.calls.map((c: any[]) => c[0]);
+		expect(server.registerTool).toHaveBeenCalledTimes(10);
+		const names = server.registerTool.mock.calls.map((c: any[]) => c[0]);
 		expect(names).toContain("figjam_create_sticky");
 		expect(names).toContain("figjam_create_stickies");
 		expect(names).toContain("figjam_create_connector");

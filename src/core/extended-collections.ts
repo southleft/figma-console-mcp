@@ -26,9 +26,19 @@
  */
 export const EXTENDED_COLLECTIONS_CODE = `
 const collections = await figma.variables.getLocalVariableCollectionsAsync();
-return collections
-  .filter((c) => c.isExtension === true)
-  .map((c) => ({
+const extensions = collections.filter((c) => c.isExtension === true);
+if (extensions.length === 0) return [];
+// An extension of a LIBRARY collection inherits the library's variables, which
+// getLocalVariablesAsync() doesn't return — send them along so the server can
+// show the extension's values.
+// Fetched in parallel; one that fails is skipped, never the extension itself.
+const localIds = new Set((await figma.variables.getLocalVariablesAsync()).map((v) => v.id));
+const serialize = (v) => v && ({ id: v.id, name: v.name, key: v.key, resolvedType: v.resolvedType, valuesByMode: v.valuesByMode, variableCollectionId: v.variableCollectionId, scopes: v.scopes, description: v.description, codeSyntax: v.codeSyntax, remote: true });
+const out = [];
+for (const c of extensions) {
+  const ids = c.variableIds.filter((id) => !localIds.has(id));
+  const libraryVariables = (await Promise.all(ids.map((id) => figma.variables.getVariableByIdAsync(id).then(serialize, () => null)))).filter(Boolean);
+  out.push({
     id: c.id,
     name: c.name,
     isExtension: true,
@@ -38,7 +48,10 @@ return collections
     modes: c.modes.map((m) => ({ modeId: m.modeId, name: m.name, parentModeId: m.parentModeId })),
     variableIds: c.variableIds,
     variableOverrides: c.variableOverrides || {},
-  }));
+    ...(libraryVariables.length ? { libraryVariables } : {}),
+  });
+}
+return out;
 `;
 
 export interface ExtendedCollectionInfo {
@@ -51,6 +64,8 @@ export interface ExtendedCollectionInfo {
 	modes: Array<{ modeId: string; name: string; parentModeId: string }>;
 	variableIds: string[];
 	variableOverrides: Record<string, Record<string, unknown>>;
+	/** Variables inherited from a library collection (not in the file's own variables) */
+	libraryVariables?: any[];
 }
 
 /** Unwrap the bridge's EXECUTE_CODE envelope(s) to the array the snippet returned. */
@@ -68,12 +83,34 @@ export function unwrapExtendedCollectionsResult(raw: any): ExtendedCollectionInf
 export function mergeExtendedCollections(data: any, extensions: ExtendedCollectionInfo[]): number {
 	if (!data || !Array.isArray(extensions) || extensions.length === 0) return 0;
 	if (!Array.isArray(data.variableCollections)) data.variableCollections = [];
-	for (const ext of extensions) {
+	for (const { libraryVariables, ...ext } of extensions) {
+		// Figma reports an extension's defaultModeId in short form ("12:0")
+		// while its modes use the full id ("VariableCollectionId:…/12:0").
+		// A tool given the short form is refused by Figma, so report the real one.
+		if (ext.defaultModeId && !ext.modes?.some((m) => m.modeId === ext.defaultModeId)) {
+			const full = ext.modes?.find((m) => m.modeId.endsWith(`/${ext.defaultModeId}`));
+			if (full) ext.defaultModeId = full.modeId;
+		}
 		const existing = data.variableCollections.find((c: any) => c.id === ext.id);
-		if (existing) Object.assign(existing, ext);
-		else data.variableCollections.push({ ...ext });
+		const target = existing ? Object.assign(existing, ext) : ext;
+		if (!existing) data.variableCollections.push(target);
+		// Not enumerable: available to the extension views below, but never
+		// serialized into a tool result (a library can hold thousands).
+		if (libraryVariables?.length)
+			Object.defineProperty(target, "libraryVariables", { value: libraryVariables, enumerable: false, configurable: true, writable: true });
 	}
 	return extensions.length;
+}
+
+/** A variable by id: the file's own, else one an extension inherits from a library. */
+function findVariable(data: any, variableId: string): any {
+	const own = (data?.variables ?? []).find((v: any) => v.id === variableId);
+	if (own) return own;
+	for (const c of data?.variableCollections ?? []) {
+		const lib = c?.libraryVariables?.find((v: any) => v.id === variableId);
+		if (lib) return lib;
+	}
+	return undefined;
 }
 
 export interface ResolvedModeValue {
@@ -94,7 +131,6 @@ export function resolveValueInCollection(
 	modeId: string,
 ): ResolvedModeValue | undefined {
 	const collections: any[] = data?.variableCollections ?? [];
-	const variables: any[] = data?.variables ?? [];
 	let cId = collectionId;
 	let mId = modeId;
 	for (let depth = 0; depth < 16; depth++) {
@@ -108,7 +144,7 @@ export function resolveValueInCollection(
 			mId = mode.parentModeId;
 			continue;
 		}
-		const v = variables.find((x) => x.id === variableId);
+		const v = findVariable(data, variableId);
 		if (!v || !v.valuesByMode || !(mId in v.valuesByMode)) return undefined;
 		return { value: v.valuesByMode[mId], overriddenIn: null };
 	}
@@ -124,10 +160,9 @@ export function resolveValueInCollection(
  */
 export function extendedCollectionView(data: any, collection: any): any[] {
 	if (!collection?.isExtension) return [];
-	const variables: any[] = data?.variables ?? [];
 	const out: any[] = [];
 	for (const variableId of collection.variableIds ?? []) {
-		const base = variables.find((v) => v.id === variableId);
+		const base = findVariable(data, variableId);
 		if (!base) continue;
 		const valuesByMode: Record<string, unknown> = {};
 		const overriddenModeIds: string[] = [];
@@ -207,7 +242,7 @@ export async function augmentWithExtendedCollections(
 ): Promise<{ merged: number; warning?: string }> {
 	if (!connector?.executeCodeViaUI) return { merged: 0 };
 	try {
-		const raw = await connector.executeCodeViaUI(EXTENDED_COLLECTIONS_CODE, 15000, fileKey);
+		const raw = await connector.executeCodeViaUI(EXTENDED_COLLECTIONS_CODE, 30000, fileKey);
 		if (raw && raw.success === false) {
 			return { merged: 0, warning: `Could not read extended collections: ${raw.error ?? "unknown error"}. Overrides in extended collections may be missing from this result.` };
 		}
