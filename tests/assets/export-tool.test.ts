@@ -233,7 +233,8 @@ describe("files (Local Mode, real filesystem)", () => {
 		const spyFs: AssetFs = { ...real, writeReplace: jest.fn(real.writeReplace), writeNew: jest.fn(real.writeNew) };
 		const { tool, conn } = setup({ fake, options: { fs: spyFs } });
 		const r = body(await tool({ nodeIds: [a.id, b2.id], format: "SVG", outputDir: dir }));
-		expect(r.success).toBe(false);
+		// mark.svg was written and logo.svg was only left because it exists: still a successful sync.
+		expect(r.success).toBe(true);
 		expect(r.skipped).toEqual([{ nodeId: a.id, file: "logo.svg", reason: '"logo.svg" already exists. Pass overwrite: true to replace it.', exists: true }]);
 		expect(r.hint).toBe("1 file already exists and was left as is. To refresh it from Figma, run again with overwrite: true (unchanged files stay byte-identical).");
 		expect(conn.renders()).toEqual([b2.id]);

@@ -27,10 +27,11 @@ const LABEL_OK = /^[A-Za-z0-9 :(),-]{1,80}$/;
  * "import" followed by "(" ("Syntax error: possible import expression
  * rejected"), even inside a string. Found live: the restore-version title
  * "Before SVG import (Figma Console MCP)" blocked every update. Icon names,
- * descriptions and SVG text can contain it too, so the "(" is written as the
- * JSON escape (, which decodes back to "(".
+ * descriptions and SVG text can contain it too, in forms we can't predict
+ * (comments, other spacing), so every "(" in the payload is written as the
+ * JSON escape backslash-u-0028, which decodes back to "(". In JSON a "(" only
+ * ever appears inside strings, so this never changes the data.
  */
-const IMPORT_CALL = /(import\s*)\(/gi;
 
 /** `// <label>` + the payload as a JSON literal + the body. */
 export function assetScript(label: string, payload: unknown, body: string): string {
@@ -38,7 +39,7 @@ export function assetScript(label: string, payload: unknown, body: string): stri
 	const json = JSON.stringify(payload)
 		.replace(/\u2028/g, "\\u2028")
 		.replace(/\u2029/g, "\\u2029")
-		.replace(IMPORT_CALL, "$1\\u0028");
+		.replace(/\(/g, "\\u0028");
 	return `// ${label}\nconst P = ${json};\n${body}`;
 }
 
@@ -817,7 +818,7 @@ async function restoreSnapshot(o, s) {
 // createNodeFromSvg gives each filled region a copy of the vector's own fills, and Figma keeps those
 // copies in step when the vector's fills change (seen live: recolored and bound together). Only
 // regions whose fills differ from the vector's are real per-region color.
-function paintKey(p) { const bv = p && p.boundVariables && p.boundVariables.color; return JSON.stringify([p.type, p.visible !== false, p.opacity === undefined ? 1 : p.opacity, p.blendMode || 'NORMAL', p.color ? [p.color.r, p.color.g, p.color.b] : null, bv ? bv.id : null]); }
+function paintKey(p) { const bv = p && p.boundVariables && p.boundVariables.color; return JSON.stringify([p.type, p.visible !== false, p.opacity === undefined ? 1 : p.opacity, p.blendMode || 'NORMAL', p.color ? [p.color.r, p.color.g, p.color.b] : null, bv ? bv.id : null, p.gradientStops || null, p.gradientTransform || null, p.imageHash || null, p.scaleMode || null]); }
 function paintsKey(ps) { return Array.isArray(ps) ? ps.map(paintKey).join('|') : 'mixed'; }
 function distinctRegionFills(n) {
   try {

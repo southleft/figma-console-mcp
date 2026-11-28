@@ -331,6 +331,16 @@ describe("import: update in place", () => {
 		// Figma copies a recolor into every region, so real per-region color only survives when no
 		// color is applied (and the old artwork has no bindings to keep): that still falls back.
 		const distinct = await run("#ff0000", false);
+		// Paints of the same type count as different when their gradient stops differ.
+		const grad = (stops: number) => ({ type: "GRADIENT_LINEAR", visible: true, gradientTransform: [[1, 0, 0], [0, 1, 0]], gradientStops: [{ position: 0, color: { r: 0, g: 0, b: 0, a: 1 } }, { position: stops, color: { r: 1, g: 1, b: 1, a: 1 } }] });
+		const gFake = new FakeFigma();
+		const gComp = makeIconComponent(gFake, { name: "Icon/grad" });
+		gFake.svgFactory = stagingFactory(gFake, (f) => {
+			const v = vec(gFake, f, { d: "grad-new", fills: [grad(1)] });
+			v.vectorNetwork.regions = [{ windingRule: "NONZERO", loops: [[0]], fills: [grad(0.5)] }];
+		});
+		const g = await runImport(gFake, payload(gFake, { groups: singles(update(gComp)) }));
+		expect(g.results[0].update).toMatchObject({ strategy: "replace", fallbackReason: "per-region fills" });
 		expect(distinct.r.results[0].update).toMatchObject({ strategy: "replace", overridesKept: false, fallbackReason: "per-region fills" });
 	});
 
@@ -1235,9 +1245,11 @@ describe("Figma's sandbox rule: no import( text anywhere in a script", () => {
 	it("payload text with import( is escaped and still decodes to the same value", async () => {
 		const fake = new FakeFigma();
 		const title = "Before SVG import (Figma Console MCP)";
-		const odd = ["Use for IMPORT(CSV)", "reimport  (old)", "import\t(x)"];
+		const odd = ["Use for IMPORT(CSV)", "reimport  (old)", "import\t(x)", "reimport/**/(legacy)", "dynamic import\n(x)"];
 		const script = assetScript("Import SVG: save a restore version", { title, description: "x", odd }, "return { title: P.title, odd: P.odd };");
 		expect(IMPORT_CALL.test(script)).toBe(false);
+		// Every "(" in the payload line is escaped, whatever sits between "import" and it.
+		expect(script.split("\n")[1]).not.toContain("(");
 		const r = await runScript(script, fake.api());
 		expect(r).toEqual({ title, odd });
 	});

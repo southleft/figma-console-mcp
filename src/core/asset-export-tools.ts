@@ -626,7 +626,8 @@ function respond(
 	const notes = [...new Set(c.notes)];
 	const shown = notes.length > MAX_NOTES ? [...notes.slice(0, MAX_NOTES), `…and ${notes.length - MAX_NOTES} more notes.`] : notes;
 	const json: Record<string, unknown> = {
-		success: r.skipped.length === 0 && !r.incomplete && exported > 0,
+		// Files left alone only because they already exist don't make a sync export unsuccessful.
+		success: r.skipped.every((sk) => sk.exists) && !r.incomplete && exported > 0,
 		output: c.n.output,
 		...(c.root ? { outputDir: c.root } : {}),
 		assets: r.assets,
