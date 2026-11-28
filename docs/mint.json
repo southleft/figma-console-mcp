@@ -69,6 +69,7 @@
       "pages": [
         "figjam",
         "slides",
+        "import-export",
         "use-cases",
         "figma-mcp-vs-figma-console-mcp",
         "mcp-apps",

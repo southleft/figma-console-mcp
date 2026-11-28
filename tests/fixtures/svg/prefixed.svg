@@ -1,0 +1,7 @@
+<svg:svg xmlns:svg="http://www.w3.org/2000/svg" xmlns:xl="http://www.w3.org/1999/xlink" viewBox="0 0 24 24">
+  <svg:defs>
+    <svg:path id="p" d="M2 2h20v20H2z"/>
+  </svg:defs>
+  <svg:use xl:href="#p" fill="#3366FF"/>
+  <h:p xmlns:h="http://www.w3.org/1999/xhtml">dropped</h:p>
+</svg:svg>

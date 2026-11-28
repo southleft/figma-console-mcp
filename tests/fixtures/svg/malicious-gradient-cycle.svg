@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="g1" xlink:href="#g2"><stop offset="0" stop-color="#FF0000"/></linearGradient>
+    <linearGradient id="g2" href="#g1"/>
+  </defs>
+  <rect width="24" height="24" fill="url(#g1)"/>
+</svg>

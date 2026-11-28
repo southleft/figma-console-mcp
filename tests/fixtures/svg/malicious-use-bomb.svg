@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <path id="a0" d="M0 0h1v1H0z"/>
+    <g id="a1"><use href="#a0"/><use href="#a0"/><use href="#a0"/><use href="#a0"/><use href="#a0"/><use href="#a0"/><use href="#a0"/><use href="#a0"/><use href="#a0"/><use href="#a0"/></g>
+    <g id="a2"><use href="#a1"/><use href="#a1"/><use href="#a1"/><use href="#a1"/><use href="#a1"/><use href="#a1"/><use href="#a1"/><use href="#a1"/><use href="#a1"/><use href="#a1"/></g>
+    <g id="a3"><use href="#a2"/><use href="#a2"/><use href="#a2"/><use href="#a2"/><use href="#a2"/><use href="#a2"/><use href="#a2"/><use href="#a2"/><use href="#a2"/><use href="#a2"/></g>
+    <g id="a4"><use href="#a3"/><use href="#a3"/><use href="#a3"/><use href="#a3"/><use href="#a3"/><use href="#a3"/><use href="#a3"/><use href="#a3"/><use href="#a3"/><use href="#a3"/></g>
+    <g id="a5"><use href="#a4"/><use href="#a4"/><use href="#a4"/><use href="#a4"/><use href="#a4"/><use href="#a4"/><use href="#a4"/><use href="#a4"/><use href="#a4"/><use href="#a4"/></g>
+    <g id="a6"><use href="#a5"/><use href="#a5"/><use href="#a5"/><use href="#a5"/><use href="#a5"/><use href="#a5"/><use href="#a5"/><use href="#a5"/><use href="#a5"/><use href="#a5"/></g>
+    <g id="a7"><use href="#a6"/><use href="#a6"/><use href="#a6"/><use href="#a6"/><use href="#a6"/><use href="#a6"/><use href="#a6"/><use href="#a6"/><use href="#a6"/><use href="#a6"/></g>
+    <g id="a8"><use href="#a7"/><use href="#a7"/><use href="#a7"/><use href="#a7"/><use href="#a7"/><use href="#a7"/><use href="#a7"/><use href="#a7"/><use href="#a7"/><use href="#a7"/></g>
+    <g id="a9"><use href="#a8"/><use href="#a8"/><use href="#a8"/><use href="#a8"/><use href="#a8"/><use href="#a8"/><use href="#a8"/><use href="#a8"/><use href="#a8"/><use href="#a8"/></g>
+    <g id="a10"><use href="#a9"/><use href="#a9"/><use href="#a9"/><use href="#a9"/><use href="#a9"/><use href="#a9"/><use href="#a9"/><use href="#a9"/><use href="#a9"/><use href="#a9"/></g>
+  </defs>
+  <use href="#a10"/>
+</svg>

@@ -28,7 +28,7 @@ Figma Console MCP is designed with security as a priority. The project is **full
 
 | Aspect | Details |
 |--------|---------|
-| **Data Storage** | None. No design data is persisted or cached to disk. |
+| **Data Storage** | None. The server doesn't persist or cache design data on its own. Tools that write files (token export, asset export) write only where you point them, or to a new temp folder. |
 | **Telemetry** | None. No analytics, tracking, or usage data collection. |
 | **Logging** | Local only. Logs stay on your machine. |
 | **Credentials** | Stored in your local MCP config, never transmitted to third parties. |
@@ -70,6 +70,37 @@ Code runs in Figma's **plugin sandbox**, not your system. It cannot access your 
 - All execution is user-initiated
 - Changes covered by Figma's version history
 
+## SVG and Image Import
+
+`figma_import_svg` and `figma_import_image` treat every input as untrusted, whether the AI wrote it, it came from a file, or it was pasted from the web.
+
+**SVG sanitizing.** Each SVG is parsed and rebuilt from an allowlist on the server before Figma sees it. The same code runs in Local Mode and Cloud Mode, with no third-party dependency.
+
+- **Removed:** `<script>`, `<foreignObject>`, `<iframe>`, `<object>`, `<embed>`, animation and audio/video elements, editor metadata (Inkscape, Illustrator, Sketch and other foreign namespaces), every `on*` event attribute, `javascript:` and `data:text` values, and CSS that could load or run anything (`@import` and other at-rules, `expression()`, `-moz-binding`, backslash escapes).
+- **No external references:** only `#id` references inside the same SVG are kept. Links to other files or URLs, `url(https://…)` in styles and external `<image>` or `<use>` targets are removed, so an imported SVG can't fetch anything or act as a tracking pixel. Embedded images are kept only as PNG, JPEG or GIF data.
+- **Bounded:** entity declarations can't nest (no "billion laughs"), and caps on size (5 MB per SVG), elements, nesting depth, attributes and styles are enforced while parsing. Nested `<use>` references are counted with cycle detection before import, so one small SVG can't expand into millions of nodes and freeze Figma's plugin thread.
+- **Reported, not hidden:** the response counts what was removed per SVG. A rejected SVG fails on its own with the reason; the rest of the batch still imports. Error messages quote only element and attribute names and simple ids, never other SVG content.
+
+**Images.** The file type is read from the image bytes, never from the extension or a declared type. Only PNG, JPEG and GIF up to 8 MB and 4096 px per side are passed to Figma.
+
+**How data reaches the plugin.** Imports run as scripts in the Desktop Bridge plugin. Your SVG, image data and names enter those scripts only as a JSON literal; the script text itself is fixed. No REST call is made and the Figma token isn't used. SVG markup, image data and file contents are never logged.
+
+**Updating existing components.** A re-import updates a component in place only when it is plain vector artwork (no text, instances, auto layout or component properties besides variants), so an icon can't overwrite a real UI component that shares its name. When an icon to update has instances or its library is published, the person is asked first and a named version is saved to version history before anything changes; if the version can't be saved, existing components aren't changed. Clients that can't ask skip those updates unless `onExisting: "update"` was passed. Because it can replace artwork, `figma_import_svg` is marked destructive and `figma_call` won't run it.
+
+**Reading files (Local Mode only).** `paths` and `directory` take absolute paths only. Only `.svg` (or `.png`, `.jpg`, `.jpeg`, `.gif`) regular files are read, with their size checked before reading. A symbolic link is followed only when you name it directly; folder walks skip symbolic links, hidden entries and nested `node_modules`, with depth and entry caps. File contents are never echoed in responses or errors. Cloud Mode has no filesystem and refuses these fields.
+
+## Asset Export Files
+
+`figma_export_assets` writes files only in Local Mode, and only where you point it:
+
+- **Inside `outputDir` only.** Paths are built from cleaned name segments (no `..`, no separators, no reserved Windows names), and each folder on the way is checked so nothing resolves outside the real path of `outputDir`. Writes never go through a symbolic link. A filesystem root is refused as `outputDir`.
+- **No overwrites unless asked.** An existing file is skipped unless you pass `overwrite: true`, and a file that appears while the export runs is left alone. Replacements are atomic (a temp file, then a rename).
+- **Default folder.** Without `outputDir`, files go into a new folder in the OS temp directory with a random name.
+- **Case-insensitive names.** Two assets whose names differ only in case get distinct file names, so one can't replace the other on macOS or Windows.
+- **Tokens.** Renders come from the plugin and need no token. Only `output: "urls"` calls Figma's REST API, through the same client as every other REST tool, which never logs the token; the error for a missing token doesn't repeat any part of it.
+
+`figma_export_assets` is marked as writing files, so `figma_call` won't run it.
+
 ## Data Access Scope
 
 <Tabs>
@@ -82,9 +113,10 @@ Code runs in Figma's **plugin sandbox**, not your system. It cannot access your 
     | File Structure | Read |
     | Console Logs | Read |
     | Design Modifications | Write (via Desktop Bridge) |
+    | Files and folders you name (Local Mode) | Read the `.svg` and image files you pass to the import tools; write exports inside the folder you name, or a new temp folder |
   </Tab>
   <Tab title="Cannot Access">
-    - Your filesystem
+    - Your filesystem beyond the files and folders you name in a tool call (Cloud Mode has no filesystem access)
     - Other applications
     - Browser data
     - Network resources outside Figma
@@ -194,6 +226,8 @@ Please use GitHub's private security advisory feature rather than public issues.
 - No telemetry or analytics
 - Platform-native authentication (Figma OAuth/PATs)
 - Code execution sandboxed in Figma plugin environment
+- Imported SVGs sanitized from an allowlist, with no external references, before they reach Figma
+- Asset export writes only inside the folder you name, never through symbolic links, and never replaces a file unless asked
 - Local-only deployment option available
 - All network traffic encrypted (HTTPS)
 - No third-party runtime dependencies

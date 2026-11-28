@@ -434,6 +434,7 @@ How to add this depends on your platform:
 - ✅ Clone, delete, and rename nodes
 - ✅ Set fills, strokes, and text content
 - ✅ Set image fills on nodes
+- ✅ Import SVG icons and images from inline data (SVG markup, base64 images), and export assets inline or as Figma-hosted links
 - ✅ Read design data, take screenshots, extract design systems
 
 ### What's Local-Only (Not Available in Cloud Mode)
@@ -441,6 +442,7 @@ How to add this depends on your platform:
 - ❌ Real-time selection tracking
 - ❌ Document change monitoring
 - ❌ Console log streaming
+- ❌ Importing SVG and image files and folders from disk, and writing export files ([Import & Export](/import-export))
 - ❌ MCP Apps (Token Browser, Design System Dashboard)
 
 ### Tips

@@ -483,6 +483,17 @@ export class FigmaAPI {
 		return response;
 	}
 
+	/**
+	 * GET /v1/files/:file_key/images
+	 * Download URLs for every image used in image fills, keyed by imageRef (the
+	 * same string as the plugin's imageHash). Figma says these URLs expire after
+	 * at most 14 days. Logs the file key only, like getImages.
+	 */
+	async getImageFills(fileKey: string): Promise<{ meta?: { images?: Record<string, string> } }> {
+		logger.info({ fileKey }, 'Fetching image fill URLs');
+		return this.request(`/files/${fileKey}/images`);
+	}
+
   /**
    * GET /v1/files/:file_key/comments
    * Get comments on a file

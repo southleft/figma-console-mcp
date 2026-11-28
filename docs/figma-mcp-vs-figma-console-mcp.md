@@ -7,9 +7,9 @@ description: "How Figma's official MCP server and Figma Console MCP differ, wher
 Figma's official MCP server and Figma Console MCP both connect AI assistants to Figma, and both can read from and write to Figma files. They were built for different jobs, and many teams run both in the same MCP client.
 
 - **The official Figma MCP server** is Figma's hosted server. It focuses on design-to-code context, Code Connect, and creating content in Figma: design files, FigJam diagrams, motion, and shaders.
-- **Figma Console MCP** is an open-source server focused on design-system operations: deterministic audits and design-code parity checks, token sync with round-trip IDs, component documentation, version-history diffs, extracting a design system from a codebase, and plugin console debugging.
+- **Figma Console MCP** is an open-source server focused on design-system operations: deterministic audits and design-code parity checks, token sync with round-trip IDs, component documentation, version-history diffs, extracting a design system from a codebase, icon import and asset export, and plugin console debugging.
 
-This page reflects both servers as of September 2026. Figma's server changes often, so check [Figma's documentation](https://developers.figma.com/docs/figma-mcp-server/) for its current capabilities.
+This page reflects both servers as of November 2026. Figma's server changes often, so check [Figma's documentation](https://developers.figma.com/docs/figma-mcp-server/) for its current capabilities.
 
 ---
 
@@ -42,6 +42,10 @@ Both servers can do the following. How they do it differs: the official server u
 | Search design-system assets | `search_design_system`, `get_libraries` | `figma_search_components`, library component and variable tools |
 | Run Plugin API JavaScript (writes to Figma) | `use_figma` | `figma_execute` |
 | Read FigJam boards | `get_figjam` | `figjam_get_board_contents`, `figjam_get_connections` |
+| Import SVGs as editable vectors | `upload_assets` (SVG part: up to 10 MB per asset, placed on a page) | `figma_import_svg`: also fits to a size, makes icon components and variant sets from file names, binds color to a variable, updates existing icons in place, and reads files and folders in Local Mode. Up to 5 MB per SVG, sanitized first |
+| Import raster images | `upload_assets` (PNG, JPG, GIF, WebP, as fills of existing nodes or new frames) | `figma_import_image` (PNG, JPEG, GIF as new layers or fills of existing layers; files and folders in Local Mode; WebP isn't accepted by Figma's plugin API), or `figma_set_image_fill` for one image onto existing layers |
+| Export assets | `download_assets` (one node per call: a render, up to 20 original images, up to 20 icon SVGs; temporary links) | `figma_export_assets` (up to 50 nodes per call; renders that honor Export panel settings, icon SVGs found inside the nodes, original images; written to files in Local Mode, returned inline, or as links) |
+| Vector icons and illustrations from a description | `generate_vector_illustration` (AI-generated; uses Figma AI credits) | The agent writes the SVG and imports it with `figma_import_svg`, optionally as a token-bound icon component in your set. No AI credits |
 | Skills (markdown workflow guides for agents) | Yes (`get_figma_skill`, plus skills in Figma's plugin) | Yes |
 
 ---
@@ -60,7 +64,6 @@ These are areas where the official server has first-party capabilities that Cons
 | Create code layers from local code | `send_code_to_figma` |
 | Create and edit shaders | `create_shader`, `update_shader`, `get_shader`, `list_shaders`, `list_file_shaders` |
 | Generative plugins | `create_generative_plugin`, `update_generative_plugin`, and related tools |
-| Upload and download assets | `upload_assets`, `download_assets` |
 | Hosted by Figma, OAuth sign-in, no local install | — |
 
 <Note>
@@ -100,6 +103,13 @@ Figma's Variables REST API requires an Enterprise plan. Console MCP reads and wr
 ### Codebase → design system → Figma
 
 Seven `figma_ds_*` tools (Local Mode) analyze a production codebase, extract its styling as DTCG tokens with per-token provenance, scaffold a design-system package with Storybook, and verify it. The extracted tokens import into Figma variables with `figma_import_tokens`.
+
+### Icons and assets between code and Figma
+
+- `figma_import_svg` turns an icon folder into components and variant sets (from file names such as `24/outline/arrow-left.svg`), with the icon color bound to a token. Re-running it after icons change in code updates them in place, so instances follow; it asks first when icons have instances or are published, and saves a restore version.
+- `figma_export_assets` writes icons as code-ready SVGs (`currentColor`, no fixed size) and screens' icons, logos and photos into a folder in your repo, using each layer's Export panel settings unless you pass a format.
+
+See the [Import & Export guide](/import-export).
 
 ### Plugin debugging and live file awareness (Local Mode)
 
@@ -184,6 +194,7 @@ For Figma's current plan requirements and usage limits, see [Figma's documentati
 | *Can it create new files?* | Yes (`create_new_file`) | No |
 | *Does it export tokens to code formats and import them back?* | Not as dedicated tools | Yes (10 export formats, DTCG import) |
 | *Does it compare a Figma component with its code?* | Not as a dedicated tool | Yes (`figma_check_design_parity`) |
+| *Can it import icons and export assets?* | Yes (`upload_assets`, `download_assets`) | Yes (`figma_import_svg`, `figma_import_image`, `figma_export_assets`), including icon components, variant sets and files written to your repo |
 | *Where does it run?* | Hosted by Figma | Your machine, Cloud Mode, or your own deployment |
 | *Is the source available?* | See Figma's documentation | Yes (MIT) |
 | *Who makes it?* | Figma | Southleft |
@@ -192,7 +203,7 @@ For Figma's current plan requirements and usage limits, see [Figma's documentati
 
 ## How This Page Has Changed
 
-When this comparison was first written, the official Figma MCP was read-only and focused on design-to-code, and write access was the main difference between the two servers. That is no longer true. The official server now writes to Figma, creates files, and covers motion, shaders, and diagrams. Console MCP's focus has narrowed to design-system operations. This page was rewritten in September 2026 to reflect both.
+When this comparison was first written, the official Figma MCP was read-only and focused on design-to-code, and write access was the main difference between the two servers. That is no longer true. The official server now writes to Figma, creates files, and covers motion, shaders, and diagrams. Console MCP's focus has narrowed to design-system operations. This page was rewritten in September 2026 to reflect both. In November 2026 Console MCP added SVG and image import and asset export, so uploading and downloading assets moved from the official-only list to shared ground.
 
 <Note>
 **Figma Console MCP** is an open-source project built by [Southleft](https://southleft.com). It is not a Figma product and is not supported by Figma. The official **Figma MCP server** is built and maintained by Figma.

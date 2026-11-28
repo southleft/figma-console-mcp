@@ -185,6 +185,10 @@ the connector lines.
 
 The AI calls `figjam_get_connections` to return the complete edge list with start/end nodes and labels, then presents the graph structure in a readable format — useful for documenting existing flows or identifying missing connections.
 
+### Icons, Illustrations and Images on a Board
+
+`figma_import_svg` works on FigJam boards: the AI can import an SVG, or write one (an icon, a logo, a simple illustration), and it lands as editable vectors. A batch lands in a section; a single SVG goes on the board at clear space (or inside the section you name with `parentId`). Boards get plain vectors only: components and variant sets are Design-only, and FigJam has no variables, so color an icon with `color.value` (a hex or CSS color) instead of `color.variable`. `figma_import_image` places PNG, JPEG and GIF images the same way (several in a section, one on its own on the board), and `figma_export_assets` exports board content as PNG, JPG, SVG or PDF. In Local Mode these tools are in the `assets` toolset; call `figma_import_svg` and `figma_export_assets` by name (not through `figma_call`). See the [Import & Export guide](/import-export).
+
 ---
 
 ## How It Works

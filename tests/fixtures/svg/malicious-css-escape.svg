@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <style>.a { fill: u\72l(https://evil.example/p.svg#g); } .b { fill: #00FF00; }</style>
+  <path class="a" d="M2 2h20v20H2z" fill="u\72l(https://evil.example/x)" style="fill:\75 rl(https://evil.example/y);stroke:#000000"/>
+  <path class="b" d="M4 4h16v16H4z" fill="URL(https://evil.example/z)"/>
+</svg>

@@ -276,6 +276,16 @@ Run an accessibility check on this page and show me all WCAG violations
 Audit the Button component for accessibility completeness and color-blind safety
 ```
 
+### Icons and Assets (Local & Cloud Mode; files and folders in Local Mode)
+
+```
+Import the icons in src/icons as components, one variant set per icon, bound to our icon color token
+```
+
+```
+Export the icons in this screen as SVGs with currentColor
+```
+
 ### Design Creation (Local & Cloud Mode)
 
 ```

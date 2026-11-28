@@ -155,7 +155,7 @@ Then report to the person: what you built (root nodeId), the components used, ev
 - Hand-build a look-alike of a component (a frame styled like a button, card, input, tab bar…).
 - Create a new component or component set inside the composition.
 - Use a raw hex, rgb or px value where a variable or style exists, or invent a token when none does.
-- Hand-draw icons, logos or illustrations with vectors.
+- Hand-draw icons, logos or illustrations with vectors. A missing icon is a gap to report like any other; draw or import one (`figma_import_svg`) only when the person asks for it (enable the `assets` toolset and call `figma_import_svg` by name; `figma_call` won't run it).
 - Swap in a "close enough" component without the person approving it.
 - Fill a gap silently: drop the missing piece without a note, or fake it.
 - Add elements the request didn't ask for.

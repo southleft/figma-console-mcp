@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { containsAnyTypeSchema } from "./helpers/schema";
 // Same conversion the MCP SDK applies to tool schemas (server/zod-json-schema-compat).
 const zodToJsonSchema = (schema: z.ZodType) =>
 	z.toJSONSchema(schema, { target: "draft-7", io: "input" });
@@ -50,67 +51,6 @@ const schemas = {
 		})).optional().describe("Preferred values (INSTANCE_SWAP only)"),
 	}).describe("Object with the values to update"),
 };
-
-/**
- * Check if a JSON Schema represents z.any() - which produces an empty schema
- * z.any() converts to: { "$schema": "..." } with no type or structural properties
- *
- * Valid JSON Schema patterns that look empty but are NOT z.any():
- * - "not": {} - valid negation pattern for optional handling
- * - Schemas with $schema, type, anyOf, oneOf, allOf, properties, etc.
- */
-function isEmptyAnySchema(schema: unknown): boolean {
-	if (typeof schema !== "object" || schema === null) {
-		return false;
-	}
-
-	const obj = schema as Record<string, unknown>;
-	const keys = Object.keys(obj);
-
-	// A schema is "empty" (z.any()) if it only has $schema or nothing at all
-	// and lacks type, anyOf, oneOf, allOf, properties, items, additionalProperties, etc.
-	const structuralKeys = ["type", "anyOf", "oneOf", "allOf", "properties", "items",
-		"additionalProperties", "enum", "const", "pattern", "minimum", "maximum"];
-
-	const hasStructure = structuralKeys.some(key => keys.includes(key));
-	return !hasStructure && keys.every(k => k === "$schema" || k === "description");
-}
-
-/**
- * Recursively check if a JSON Schema contains problematic z.any() patterns
- * Ignores valid JSON Schema constructs like "not": {}
- */
-function containsAnyTypeSchema(schema: unknown, path = ""): string[] {
-	const issues: string[] = [];
-
-	if (typeof schema !== "object" || schema === null) {
-		return issues;
-	}
-
-	const obj = schema as Record<string, unknown>;
-
-	// Skip known valid empty patterns
-	if (path.endsWith(".not")) {
-		// "not": {} is a valid JSON Schema pattern
-		return issues;
-	}
-
-	// Check if this looks like z.any() output (empty schema)
-	if (isEmptyAnySchema(obj)) {
-		issues.push(`Potential z.any() schema found at path: ${path || "root"} - has no type definition`);
-		return issues;
-	}
-
-	// Recursively check nested schemas
-	for (const [key, value] of Object.entries(obj)) {
-		if (typeof value === "object" && value !== null) {
-			const nestedPath = path ? `${path}.${key}` : key;
-			issues.push(...containsAnyTypeSchema(value, nestedPath));
-		}
-	}
-
-	return issues;
-}
 
 describe("Schema Compatibility Tests", () => {
 	describe("JSON Schema Strict Typing", () => {
@@ -534,4 +474,39 @@ describe("Schema Compatibility Tests", () => {
 			}
 		});
 	});
+});
+
+// ============================================================================
+// Asset import/export tools (figma_import_svg, figma_import_image,
+// figma_export_assets): their real registered schemas, not hand copies.
+// ============================================================================
+import { IMPORT_SVG_SCHEMA } from "../src/core/asset-tools";
+import { IMPORT_IMAGE_SCHEMA } from "../src/core/image-import-tools";
+import { EXPORT_ASSETS_SCHEMA } from "../src/core/asset-export-tools";
+
+describe("asset tool schemas are Gemini-safe", () => {
+	const assetSchemas: Record<string, z.ZodType> = {
+		figma_import_svg: IMPORT_SVG_SCHEMA,
+		figma_import_image: IMPORT_IMAGE_SCHEMA,
+		figma_export_assets: EXPORT_ASSETS_SCHEMA,
+	};
+	const walk = (schema: unknown, visit: (node: Record<string, unknown>, path: string) => void, path = "root"): void => {
+		if (!schema || typeof schema !== "object") return;
+		if (!Array.isArray(schema)) visit(schema as Record<string, unknown>, path);
+		for (const [k, v] of Object.entries(schema as Record<string, unknown>)) walk(v, visit, `${path}.${k}`);
+	};
+
+	for (const [name, schema] of Object.entries(assetSchemas)) {
+		it(`${name}: no z.any()-shaped nodes, tuples, unions, records or propertyNames`, () => {
+			const json = zodToJsonSchema(schema);
+			expect(containsAnyTypeSchema(json)).toEqual([]);
+			const issues: string[] = [];
+			walk(json, (node, path) => {
+				if (Array.isArray(node.items)) issues.push(`${path}: tuple items`);
+				for (const k of ["anyOf", "oneOf", "allOf", "propertyNames", "patternProperties"]) if (k in node) issues.push(`${path}: ${k}`);
+				if (node.type === "object" && node.additionalProperties && typeof node.additionalProperties === "object") issues.push(`${path}: record`);
+			});
+			expect(issues).toEqual([]);
+		});
+	}
 });

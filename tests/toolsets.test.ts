@@ -22,6 +22,17 @@ describe("toolsets", () => {
 		expect(parseToolsetsEnv(undefined)).toEqual(new Set(["core"]));
 		expect(parseToolsetsEnv("all")).toBe("all");
 		expect(parseToolsetsEnv("variables, parity,bogus")).toEqual(new Set(["core", "variables", "parity"]));
+		expect(parseToolsetsEnv("assets")).toEqual(new Set(["core", "assets"]));
+	});
+	it("groups SVG/image import and asset export in the assets toolset", () => {
+		expect(TOOLSETS.assets.tools).toEqual(["figma_import_svg", "figma_import_image", "figma_export_assets"]);
+		for (const t of TOOLSETS.assets.tools) expect(toolsetOf(t)).toBe("assets");
+		// The import tools stay out of core: they are reached through figma_enable_toolsets.
+		for (const t of TOOLSETS.assets.tools) expect(CORE_TOOLS).not.toContain(t);
+		// The toolset description carries the words a model looks for.
+		expect(TOOLSETS.assets.description).toMatch(/icons/);
+		expect(TOOLSETS.assets.description).toMatch(/SVG/);
+		expect(TOOLSETS.assets.description).toMatch(/export/);
 	});
 });
 
@@ -70,5 +81,39 @@ describe("figma_call is not a permission bypass", () => {
 		const call = setup();
 		expect(await call("figma_export_tokens", '{"format":"css"}')).toEqual({ ran: "figma_export_tokens", a: { format: "css" } });
 		expect((await call("figma_export_tokens", "[1]")).error).toMatch(/JSON object/);
+	});
+});
+
+describe("figma_enable_toolsets names the tools figma_call refuses", () => {
+	const setup = (hints: Record<string, boolean>) => {
+		const reg: Record<string, any> = {};
+		const mk = (name: string, o: any = {}) => (reg[name] = { enabled: false, ...o });
+		for (const [name, destructiveHint] of Object.entries(hints)) mk(name, { annotations: { destructiveHint } });
+		const server: any = { _registeredTools: reg, registerTool: (n: string, _c: any, h: any) => mk(n, { enabled: true, handler: h }), sendToolListChanged: () => {} };
+		registerToolsetTools(server);
+		return async (toolsets: string[]) => JSON.parse((await reg.figma_enable_toolsets.handler({ toolsets })).content[0].text);
+	};
+	beforeEach(() => resetEnabledToolsets());
+
+	it("lists the destructive-hinted assets tools and how to reach them", async () => {
+		const enable = setup({ figma_import_svg: true, figma_import_image: false, figma_export_assets: true });
+		const res = await enable(["assets"]);
+		expect(res.tools).toEqual(["figma_import_svg", "figma_import_image", "figma_export_assets"]);
+		expect(res.note).toContain("figma_import_svg and figma_export_assets can delete or overwrite, so they can't run through figma_call.");
+		expect(res.note).toContain("Call them by name");
+		expect(res.note).toContain("include assets in FIGMA_TOOLSETS");
+		expect(res.note).not.toContain("figma_import_image can");
+	});
+
+	it("says nothing extra when every enabled tool can run through figma_call", async () => {
+		const enable = setup({ figma_get_styles: false });
+		const res = await enable(["inspect"]);
+		expect(res.note).toBe("These tools are now listed. If your client doesn't show them yet, call them through figma_call({ tool, arguments }).");
+	});
+
+	it("uses the singular for one tool", async () => {
+		const enable = setup({ figma_export_tokens: true, figma_create_variable: false });
+		const res = await enable(["variables"]);
+		expect(res.note).toContain("figma_export_tokens can delete or overwrite, so it can't run through figma_call. Call it by name; if your client doesn't list it,");
 	});
 });
