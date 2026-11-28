@@ -5,6 +5,62 @@ All notable changes to Figma Console MCP will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-11-28
+
+Icons, images and assets, built for design systems. Three new tools bring SVG icon sets into Figma as real components bound to your tokens, place raster images, and export renders, code-ready icon SVGs and original images back into your repo. They cover what Figma's own MCP server does with `upload_assets`, `download_assets` and `generate_vector_illustration`, and add what a design-system team needs on top: variant sets from file names, updates that keep instance overrides, token binding, and exports shaped for code. **No plugin re-import needed**: everything runs through the Desktop Bridge plugin you already have. Local Mode and Cloud Mode.
+
+### Added
+
+- **`figma_import_svg`: SVG icons and illustrations as editable vectors, icon components and variant sets.**
+  - **Sources:** SVG markup in the call, or in Local Mode `.svg` files and whole icon folders (recursive, with paging for large libraries).
+  - **Components:** `asComponent` makes each icon a component whose artwork scales with the instance. `size` (or `width`/`height`) fits the art into a box, keeping the aspect ratio and centering non-square icons in a square.
+  - **Variant sets from file names:** `variants.pattern` turns paths such as `24/outline/arrow-left.svg` into a component set `arrow-left` with `Size` and `Style` properties, laid out as a matrix with Figma's own set border. A set is never split across pages of a large import.
+  - **Token binding:** `color` binds the icon color to a COLOR variable, local or from a library (`variable` or `variableKey`), or sets a plain `value`. It recognizes `currentColor` and single-color icons and leaves fixed accents and multi-color artwork alone, so a duotone icon keeps its accent.
+  - **Re-importing updates icons in place.** When a component with the same name already exists, its artwork is replaced so every instance follows, instead of a duplicate being made. Where the layer structure is unchanged the update swaps geometry only, so instance overrides survive (for example a color someone changed on one instance). Unchanged icons are reported as `unchanged` and not touched. Before updating icons that have instances or are published, it asks first and saves a restore version to the file's history. Components that aren't plain artwork (text, nested instances, properties wired to layers) are never replaced. `onExisting: "skip"` or `"duplicate"`, and `keepOverrides`, give finer control.
+  - **Drawing new icons:** the AI can write the SVG for an icon or illustration and import it, landing straight in a component bound to the icon token. No AI credits.
+  - **Large batches and recovery:** imports run in chunks that lay themselves out, so 600 icons import in about 10 seconds. If Figma doesn't answer in time, nothing more is sent and the result carries a `runId`; running the same call with `resumeRunId` finishes the batch without duplicates. Long imports run as MCP Tasks where the client supports them.
+  - **`dryRun`** reports what would be created, updated, skipped or refused, without touching the file.
+  - **Editors:** Design files get components and variant sets; FigJam and Slides get plain vectors (inside the focused slide in Slides). Binding variables isn't available in FigJam (Figma has no variables API there), so FigJam uses `color.value`.
+- **`figma_import_image`: PNG, JPEG and GIF images.** New image layers at natural size (a `@2x` file is placed at 1x) or fitted to a size, or the fill of existing layers by id (`scaleMode` FILL, FIT, CROP or TILE). From base64 data, or in Local Mode from files and folders. Batches are laid out in a grid, chunked by size so large images travel safely. Up to 8 MB per image.
+- **`figma_export_assets`: assets for code.**
+  - Renders of up to 50 layers as PNG, JPG, SVG or PDF. With no `format`, each layer's own Export panel settings are used (several files with Figma's suffixes); `format` and `scale` override them.
+  - **Icons inside a screen:** `vectors: "include"` finds the icons and logos in a frame and returns each as its own SVG, deduplicated by main component, skipping backgrounds, text and photos.
+  - **Original images:** `images: "include"` or `"only"` returns the original files behind image fills, byte for byte.
+  - **Code-ready SVG:** `svg.currentColor` makes single-color icons recolorable with CSS `color`; `svg.removeSize` drops the fixed width and height and keeps the viewBox.
+  - **Where the output goes:** Local Mode writes files into a folder you name, with `fileName` templates such as `"{set}/{variant}"`. `inline` returns images the AI can see plus SVG text. `urls` returns Figma-hosted links.
+  - Renders come from the live file through the Desktop Bridge, so they reflect changes made a moment ago and need no token. PDF works without a token too.
+  - Re-running an export into the same folder leaves existing files alone and says how many; `overwrite: true` refreshes them (unchanged files stay byte-identical, so git shows only real changes).
+
+### Changed
+
+- **New `assets` toolset** for the three tools (`FIGMA_TOOLSETS=assets` preloads it). The server instructions name icons, illustrations, images and asset export, so the AI finds the toolset when asked to draw or import an icon.
+- **`figma_enable_toolsets` names the tools you must call by name.** Tools that can overwrite or delete (here `figma_import_svg` and `figma_export_assets`) can't run through `figma_call`, so the reply now lists the ones it just enabled and how to reach them if your client doesn't refresh its tool list.
+- **The screenshot tools point to `figma_export_assets`** when what you need is a file for code (`figma_capture_screenshot`, `figma_take_screenshot`, `figma_get_component_image`).
+- **New guide:** [Import & Export](https://docs.figma-console-mcp.southleft.com/import-export). The tools reference, the comparison with Figma's MCP server, mode comparison, security, FigJam and Slides pages are updated.
+
+### Security
+
+- **Every SVG is sanitized before it reaches Figma.** An allowlist removes scripts, event handlers, `foreignObject`, external links and references, and CSS that could fetch anything. The work an SVG can cause is bounded before Figma sees it: references through `<use>`, symbols, markers, patterns, gradients, clip paths, masks, inherited paints and `<style>` rules are counted toward one cap, so a small file can't freeze Figma's plugin thread (which can't be interrupted). The sanitizer itself runs in linear time with memory caps, so a crafted SVG can't stall the server. It was hardened over two rounds of independent attacks.
+- **Export writes only inside the folder you name**: never through a symbolic link, never replacing a file unless you pass `overwrite: true`, and replacements are atomic.
+- **Every write is pinned to the file that was checked**, so switching files mid-import can't send the rest of a batch to another file.
+
+### Fixed during testing (never released)
+
+Live testing in real Figma files found problems no automated test could, all fixed before release:
+
+- Figma's plugin sandbox rejects any script containing the text `import(` (even inside a string), which blocked every icon update. All text sent to Figma is now escaped so this can't happen, whatever an icon is named.
+- Figma copies a shape's fill onto the shape's regions. Treating those copies as multi-color artwork sent every filled icon down the path that resets instance overrides.
+- SVG imports got a white background box; import sections stayed at FigJam's default 500×500 size.
+- A file still being saved while it was read could be imported cut short.
+
+### Internal
+
+- `scripts/update-tool-counts.mjs` follows tool registrations nested inside registered modules (it undercounted Cloud Mode).
+- `tests/published-dependencies.test.ts` no longer treats plugin-script text as an import.
+- `REST_TOOLS` is now `OPEN_WORLD_TOOLS` in `src/core/tool-annotations.ts`.
+- 450 new tests (2,552 in total).
+
+
 ## [2.1.2] - 2026-11-27
 
 Community fixes and a dependency update. **Re-import the Desktop Bridge plugin** (`manifest.json`) to get the selection fix's plugin side; everything else works without it.
@@ -1831,6 +1887,7 @@ Connection health protocol — agents no longer need custom health-check logic t
 - Real-time Figma Desktop Bridge plugin
 - Support for both local (stdio) and Cloudflare Workers deployment
 
+[2.2.0]: https://github.com/southleft/figma-console-mcp/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/southleft/figma-console-mcp/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/southleft/figma-console-mcp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/southleft/figma-console-mcp/compare/v2.0.0...v2.1.0
