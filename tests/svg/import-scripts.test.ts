@@ -14,7 +14,7 @@ import {
 } from "../../src/core/assets/plugin-scripts";
 import { IMAGE_CONTAINER_BODY } from "../../src/core/assets/image-scripts";
 import { sanitizeSvg } from "../../src/core/assets/svg-sanitize";
-import { FakeFigma, FNode, makeIconComponent, rgb, runScript, solid } from "./fake-figma";
+import { FakeFigma, FNode, makeIconComponent, mirrorRegionFills, rgb, runScript, solid } from "./fake-figma";
 
 const RUN = "abcdefabcdef";
 
@@ -303,6 +303,35 @@ describe("import: update in place", () => {
 		expect(leaf.x).toBe(2);
 		expect(r.results[0].color).toMatchObject({ source: "inherited" });
 		expect(JSON.parse(comp.getPluginData("svgImport")).colorRef).toBe("var:K9");
+	});
+
+	it("filled icons: region fills that mirror the vector's own fills still update by geometry (live-found 2026-11-28)", async () => {
+		// createNodeFromSvg gives every filled region a copy of the vector's fills. Treating those
+		// copies as per-region color sent every filled icon down the replace path, resetting overrides.
+		const variable = { id: "VariableID:1:1", key: "KEY1", name: "icon/default", resolvedType: "COLOR", variableCollectionId: "C1" };
+		const colorVar = { variableId: variable.id, apply: "auto", targets: ["fills", "strokes"], label: "Icons/icon/default" };
+		const run = async (regionFill: string, withColor = true) => {
+			const fake = new FakeFigma();
+			fake.localVariables = [variable];
+			const comp = makeIconComponent(fake, { name: "Icon/filled" });
+			const leaf = comp.children![0];
+			fake.svgFactory = stagingFactory(fake, (f) => {
+				const v = mirrorRegionFills(vec(fake, f, { d: "filled-new", fills: [solid("#000000")] }));
+				v.vectorNetwork.regions = [{ windingRule: "NONZERO", loops: [[0]], fills: [solid(regionFill)] }];
+			});
+			const opts = withColor ? { color: colorVar, colorRef: "var:KEY1" } : {};
+			const r = await runImport(fake, payload(fake, { opts, groups: singles(update(comp)) }));
+			return { r, leaf };
+		};
+		const mirrored = await run("#000000");
+		expect(mirrored.r.results[0].update).toEqual({ strategy: "geometry", overridesKept: true });
+		// The mirrored copies are dropped, so the vector's own (bound) fills govern every region.
+		expect(mirrored.leaf.setVectorNetworkAsync).toHaveBeenCalledWith(expect.objectContaining({ d: "filled-new", regions: [{ windingRule: "NONZERO", loops: [[0]] }] }));
+		expect(mirrored.r.results[0].notes ?? []).not.toContain("Some shapes carry per-region fills that weren't recolored.");
+		// Figma copies a recolor into every region, so real per-region color only survives when no
+		// color is applied (and the old artwork has no bindings to keep): that still falls back.
+		const distinct = await run("#ff0000", false);
+		expect(distinct.r.results[0].update).toMatchObject({ strategy: "replace", overridesKept: false, fallbackReason: "per-region fills" });
 	});
 
 	it("geometry maps nested GROUP transforms, takes a rotated leaf's relativeTransform and strips region fills when old paints are kept", async () => {
@@ -1195,5 +1224,32 @@ describe("review fixes", () => {
 		for (const [name, body] of Object.entries(ALL_SVG_BODIES)) {
 			expect([name, /\?\.(?!\d)|\?\?|\.\.\./.test(body)]).toEqual([name, false]);
 		}
+	});
+});
+
+describe("Figma's sandbox rule: no import( text anywhere in a script", () => {
+	// Found live 2026-11-28: Figma refuses a whole script whose source contains "import" + "("
+	// ("Syntax error: possible import expression rejected"), even inside a string.
+	const IMPORT_CALL = /import\s*\(/i;
+
+	it("payload text with import( is escaped and still decodes to the same value", async () => {
+		const fake = new FakeFigma();
+		const title = "Before SVG import (Figma Console MCP)";
+		const odd = ["Use for IMPORT(CSV)", "reimport  (old)", "import\t(x)"];
+		const script = assetScript("Import SVG: save a restore version", { title, description: "x", odd }, "return { title: P.title, odd: P.odd };");
+		expect(IMPORT_CALL.test(script)).toBe(false);
+		const r = await runScript(script, fake.api());
+		expect(r).toEqual({ title, odd });
+	});
+
+	it("labels with import( are refused", () => {
+		expect(() => assetScript("Import (3 items)", {}, "return 1;")).toThrow("fixed text");
+	});
+
+	it("no static script body or label in the SVG, image and export scripts contains import(", async () => {
+		const modules = [await import("../../src/core/assets/plugin-scripts"), await import("../../src/core/assets/image-scripts")];
+		const bodies = modules.flatMap((m) => Object.entries(m).filter(([, v]) => typeof v === "string") as Array<[string, string]>);
+		expect(bodies.length).toBeGreaterThan(5);
+		for (const [name, text] of bodies) expect({ name, hasImportCall: IMPORT_CALL.test(text) }).toEqual({ name, hasImportCall: false });
 	});
 });

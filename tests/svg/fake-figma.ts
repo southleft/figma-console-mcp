@@ -339,6 +339,26 @@ function attrs(tag: string): Record<string, string> {
 	return out;
 }
 
+/**
+ * Figma keeps a vector's filled regions in step with the vector's own fills: setting fills
+ * (including a variable-bound paint) copies them into every region that has fills (seen live
+ * 2026-11-28). Applied per vector, so nodes that model "can't take fills" stay unaffected.
+ */
+export function mirrorRegionFills(v: FNode): FNode {
+	let own = v.fills;
+	Object.defineProperty(v, "fills", {
+		configurable: true,
+		enumerable: true,
+		get: () => own,
+		set: (next: any[]) => {
+			own = next;
+			const regions = v.vectorNetwork && Array.isArray(v.vectorNetwork.regions) ? v.vectorNetwork.regions : [];
+			for (const r of regions) if (r.fills && r.fills.length) r.fills = clone(next);
+		},
+	});
+	return v;
+}
+
 /** Sanitized markup → a frame, the way createNodeFromSvg builds one (roughly). */
 export function defaultSvgParse(fake: FakeFigma, markup: string): FNode {
 	const frame = new FNode("FRAME", fake);
@@ -382,7 +402,7 @@ export function defaultSvgParse(fake: FakeFigma, markup: string): FNode {
 			v._w = w;
 			v._h = h;
 			v.vectorNetwork = { vertices: [{ x: 0, y: 0 }, { x: w, y: h }], segments: [], regions: [], d };
-			return v;
+			return mirrorRegionFills(v);
 		};
 		if (tag === "path") {
 			node = shape(0, 0, frame._w, frame._h, a.d);

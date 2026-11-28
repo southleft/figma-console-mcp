@@ -442,6 +442,8 @@ export interface SkipEntry {
 	imageHash?: string;
 	file?: string;
 	reason: string;
+	/** The file was already there and overwrite was off: a no-clobber skip, not a failure. */
+	exists?: boolean;
 }
 
 export interface ExportPlan {

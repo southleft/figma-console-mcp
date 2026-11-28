@@ -262,7 +262,7 @@ export async function handleExportAssets(deps: HandlerDeps, rawArgs: ExportAsset
 				continue;
 			}
 			if (res.existing === "file" && !n.overwrite) {
-				plan.skipped.push({ nodeId: a.nodeId, file: rel, reason: `"${rel}" already exists. Pass overwrite: true to replace it.` });
+				plan.skipped.push({ nodeId: a.nodeId, file: rel, reason: `"${rel}" already exists. Pass overwrite: true to replace it.`, exists: true });
 				continue;
 			}
 			keep.push(a);
@@ -510,7 +510,7 @@ async function exportPhase(c: ExportContext, signal: AbortSignal, budgetMs: numb
 				res = { ok: false as const, reason: `Can't use "${rel}" (${String(errCode(e) ?? "error")}).` };
 			}
 			if (!res.ok) return skip({ ...who, file: rel, reason: res.reason });
-			if (res.existing === "file" && !n.overwrite) return skip({ ...who, file: rel, reason: `"${rel}" already exists. Pass overwrite: true to replace it.` });
+			if (res.existing === "file" && !n.overwrite) return skip({ ...who, file: rel, reason: `"${rel}" already exists. Pass overwrite: true to replace it.`, exists: true });
 			const data = decodeBase64(r.base64);
 			entry.bytes = data.length;
 			const path = await writeFile(segs, data, data.length, who);
@@ -637,7 +637,14 @@ function respond(
 		...(shown.length ? { notes: shown } : {}),
 		totals: { assets: r.assets.length, vectors: r.vectors.length, images: r.images.length, bytes: r.bytes, inlineBytes: r.inlineBytes },
 	};
-	return { json, isError: exported === 0 };
+	// Re-running an export into the same folder is the normal way to sync assets, so files that
+	// were only left alone because they already exist aren't a failure: say how to refresh them.
+	const existing = r.skipped.filter((s) => s.exists).length;
+	if (existing > 0) {
+		json.hint = `${existing === 1 ? "1 file already exists and was" : `${existing} files already exist and were`} left as is. To refresh ${existing === 1 ? "it" : "them"} from Figma, run again with overwrite: true (unchanged files stay byte-identical).`;
+	}
+	const onlyExisting = existing > 0 && existing === r.skipped.length && !r.incomplete;
+	return { json, isError: exported === 0 && !onlyExisting };
 }
 
 /**

@@ -22,10 +22,23 @@
 /** Labels allowed on the first line (fixed text plus a count). */
 const LABEL_OK = /^[A-Za-z0-9 :(),-]{1,80}$/;
 
+/**
+ * Figma's plugin sandbox refuses a whole script whose source text contains
+ * "import" followed by "(" ("Syntax error: possible import expression
+ * rejected"), even inside a string. Found live: the restore-version title
+ * "Before SVG import (Figma Console MCP)" blocked every update. Icon names,
+ * descriptions and SVG text can contain it too, so the "(" is written as the
+ * JSON escape (, which decodes back to "(".
+ */
+const IMPORT_CALL = /(import\s*)\(/gi;
+
 /** `// <label>` + the payload as a JSON literal + the body. */
 export function assetScript(label: string, payload: unknown, body: string): string {
-	if (!LABEL_OK.test(label)) throw new Error("assetScript label must be fixed text");
-	const json = JSON.stringify(payload).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+	if (!LABEL_OK.test(label) || /import\s*\(/i.test(label)) throw new Error("assetScript label must be fixed text");
+	const json = JSON.stringify(payload)
+		.replace(/\u2028/g, "\\u2028")
+		.replace(/\u2029/g, "\\u2029")
+		.replace(IMPORT_CALL, "$1\\u0028");
 	return `// ${label}\nconst P = ${json};\n${body}`;
 }
 
@@ -658,7 +671,7 @@ function applyColor(root, plan, refs, itemNotes) {
         else nonSolid = true;
       });
     }
-    if (n.type === 'VECTOR') { try { const net = n.vectorNetwork; if (net && net.regions && net.regions.some(function (r) { return r.fills && r.fills.length; })) regionFill = true; } catch (e) {} }
+    if (n.type === 'VECTOR' && distinctRegionFills(n)) regionFill = true;
     return true;
   });
   if (regionFill) itemNotes.push("Some shapes carry per-region fills that weren't recolored.");
@@ -801,7 +814,19 @@ async function restoreSnapshot(o, s) {
   setIf(o, 'fills', s.fills); setIf(o, 'strokes', s.strokes);
 }
 
-function regionFills(n) { try { const net = n.vectorNetwork; return !!(net && net.regions && net.regions.some(function (r) { return r.fills && r.fills.length; })); } catch (e) { return false; } }
+// createNodeFromSvg gives each filled region a copy of the vector's own fills, and Figma keeps those
+// copies in step when the vector's fills change (seen live: recolored and bound together). Only
+// regions whose fills differ from the vector's are real per-region color.
+function paintKey(p) { const bv = p && p.boundVariables && p.boundVariables.color; return JSON.stringify([p.type, p.visible !== false, p.opacity === undefined ? 1 : p.opacity, p.blendMode || 'NORMAL', p.color ? [p.color.r, p.color.g, p.color.b] : null, bv ? bv.id : null]); }
+function paintsKey(ps) { return Array.isArray(ps) ? ps.map(paintKey).join('|') : 'mixed'; }
+function distinctRegionFills(n) {
+  try {
+    const net = n.vectorNetwork;
+    if (!net || !net.regions) return false;
+    const own = paintsKey(n.fills);
+    return net.regions.some(function (r) { return r.fills && r.fills.length && paintsKey(r.fills) !== own; });
+  } catch (e) { return false; }
+}
 function isLeaf(n) { return !('children' in n) || !n.children || n.children.length === 0; }
 
 async function tryGeometry(C, F, dx, dy, keepOldPaints) {
@@ -826,14 +851,16 @@ async function tryGeometry(C, F, dx, dy, keepOldPaints) {
   if (!pairs.length) return { ok: false, why: 'no vector layers' };
   const t = C.absoluteTransform;
   if (Math.abs(t[0][1]) > 1e-6 || Math.abs(t[1][0]) > 1e-6 || Math.abs(t[0][0] - 1) > 1e-6 || Math.abs(t[1][1] - 1) > 1e-6) return { ok: false, why: 'rotated component' };
-  if (!keepOldPaints) for (const pr of pairs) if (pr[1].type === 'VECTOR' && regionFills(pr[1])) return { ok: false, why: 'per-region fills' };
+  if (!keepOldPaints) for (const pr of pairs) if (pr[1].type === 'VECTOR' && distinctRegionFills(pr[1])) return { ok: false, why: 'per-region fills' };
   const snaps = pairs.map(function (pr) { return snapshot(pr[0]); });
   const restore = async function () { for (let i = 0; i < pairs.length; i++) await restoreSnapshot(pairs[i][0], snaps[i]); };
   try {
     for (const pr of pairs) {
       const o = pr[0], n = pr[1];
       const net = clone(n.vectorNetwork);
-      if (keepOldPaints && net.regions) for (const r of net.regions) { delete r.fills; delete r.fillStyleId; }
+      // Region fills that only mirror the vector's fills are dropped, so the vector's own fills (and
+      // their bindings) set below, or kept from the old layer, govern every region.
+      if (net.regions && (keepOldPaints || !distinctRegionFills(n))) for (const r of net.regions) { delete r.fills; delete r.fillStyleId; }
       await o.setVectorNetworkAsync(net);
       o.relativeTransform = mul(translate(dx, dy), n.relativeTransform);
       copyStrokeProps(o, n);

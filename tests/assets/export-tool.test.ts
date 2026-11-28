@@ -234,9 +234,14 @@ describe("files (Local Mode, real filesystem)", () => {
 		const { tool, conn } = setup({ fake, options: { fs: spyFs } });
 		const r = body(await tool({ nodeIds: [a.id, b2.id], format: "SVG", outputDir: dir }));
 		expect(r.success).toBe(false);
-		expect(r.skipped).toEqual([{ nodeId: a.id, file: "logo.svg", reason: '"logo.svg" already exists. Pass overwrite: true to replace it.' }]);
+		expect(r.skipped).toEqual([{ nodeId: a.id, file: "logo.svg", reason: '"logo.svg" already exists. Pass overwrite: true to replace it.', exists: true }]);
+		expect(r.hint).toBe("1 file already exists and was left as is. To refresh it from Figma, run again with overwrite: true (unchanged files stay byte-identical).");
 		expect(conn.renders()).toEqual([b2.id]);
 		expect(readFileSync(join(dir, "logo.svg"), "utf8")).toBe("OLD");
+		// A re-run where every file already exists is a no-op, not a failed call (live-found 2026-11-28).
+		const rerun = await tool({ nodeIds: [a.id, b2.id], format: "SVG", outputDir: dir });
+		expect(rerun.isError).toBeFalsy();
+		expect(body(rerun)).toMatchObject({ success: false, totals: { assets: 0 }, hint: expect.stringContaining("2 files already exist") });
 		const again = body(await tool({ nodeIds: [a.id], format: "SVG", outputDir: dir, overwrite: true }));
 		expect(again.success).toBe(true);
 		expect(spyFs.writeReplace).toHaveBeenCalledTimes(1);
