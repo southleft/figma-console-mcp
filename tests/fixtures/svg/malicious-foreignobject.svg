@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <foreignObject width="24" height="24">
+    <div xmlns="http://www.w3.org/1999/xhtml"><iframe src="https://evil.example"></iframe><img src="x" onerror="alert(1)"/></div>
+  </foreignObject>
+  <path d="M2 2h20v20H2z" fill="#000000"/>
+</svg>

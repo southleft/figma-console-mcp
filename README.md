@@ -22,6 +22,7 @@ Figma Console MCP connects AI assistants (like Claude) to Figma, enabling:
 - **🔁 Bidirectional token sync** - Export Figma variables to DTCG JSON (legacy or 2025.10 dialect) + 9 more formats; push code-side edits back to Figma with full apply — creates, renames, alias re-targeting, and replace-gated deletes. Replaces Style Dictionary and Tokens Studio's export pipeline.
 - **📸 Visual debugging** - Take screenshots for context
 - **✏️ Design creation** - Create UI components, frames, and layouts directly in Figma — including one-call component-set creation from a variant axes matrix
+- **🖼️ Icons, images and asset export** - Import SVG icons (one, a batch, or a whole folder) as editable vectors, icon components and variant sets built from file names, with color bound to a token; re-imports update icons in place. The AI can also write the SVG for a new icon or illustration. Place PNG, JPEG and GIF images, and export renders, code-ready icon SVGs and original images into your repo
 - **🔧 Variable management** - Create, update, rename, and delete design tokens
 - **🕰 Version history & time-series awareness** - List versions, diff snapshots, generate markdown changelogs, trace property/variant introduction via binary-search blame, and fold per-component design + git history into generated component docs
 - **⚡ Real-time monitoring** - Watch console logs from the Desktop Bridge plugin
@@ -401,7 +402,7 @@ When you first use design system tools:
 
 ## 🛠️ Available Tools
 
-> **v2.0: tools load in toolsets (Local Mode).** A core set is always listed: status, navigation, component search and resolve, building, token binding, audit, lint, screenshots and `figma_execute`. Everything else below sits in a toolset that the AI switches on when a task needs it: `inspect`, `variables`, `components`, `parity`, `docs`, `debug`, `motion`, `figjam`, `slides` or `extraction`. This keeps every message ~50k tokens lighter. Set `FIGMA_TOOLSETS=all` to list every tool (the pre-2.0 behavior), or `FIGMA_TOOLSETS=variables,parity` to preload the ones you always use. Cloud Mode lists all its tools.
+> **v2.0: tools load in toolsets (Local Mode).** A core set is always listed: status, navigation, component search and resolve, building, token binding, audit, lint, screenshots and `figma_execute`. Everything else below sits in a toolset that the AI switches on when a task needs it: `inspect`, `variables`, `components`, `parity`, `docs`, `debug`, `motion`, `assets`, `figjam`, `slides` or `extraction`. This keeps every message ~50k tokens lighter. Set `FIGMA_TOOLSETS=all` to list every tool (the pre-2.0 behavior), or `FIGMA_TOOLSETS=variables,parity` to preload the ones you always use. Cloud Mode lists all its tools.
 
 ### 🧰 Toolsets
 - `figma_enable_toolsets` - Switch on a toolset (sends `tools/list_changed`, so the client refreshes its list)
@@ -505,6 +506,11 @@ Figma Motion (Plugin API beta). Animations play in Figma's preview and in video 
 
 ### 📐 Layout (Local Mode + Cloud Mode)
 - `figma_set_layout` - **Auto layout and grid layout in one call**: direction, gaps, padding, alignment including `SPACE_EVENLY`/`SPACE_AROUND`, wrap, sizing, and grid tracks written CSS-style (`'240px 1fr 1fr'`, `repeat(3, 1fr)`) with child placement and spans
+
+### 📥 Import & Export (Local Mode + Cloud Mode)
+- `figma_import_svg` - **SVG markup, files or a whole icon folder → editable vectors, icon components and variant sets** (from file names like `24/outline/arrow-left.svg`), color bound to a COLOR variable. Re-importing updates existing icons in place so instances follow, asking first when they have instances or are published. Also how the AI draws a new icon or illustration: it writes the SVG and imports it. SVGs are sanitized first. Cloud Mode: inline markup only. Call it by name (not through `figma_call`)
+- `figma_import_image` - PNG, JPEG or GIF → new image layers, or the fill of existing layers; `@2x` files placed at 1x; folders in Local Mode. Cloud Mode: base64 data only
+- `figma_export_assets` - **Export for code**: PNG/JPG/SVG/PDF renders of up to 50 nodes (honoring their Export panel settings), code-ready icon SVGs (`currentColor`, no fixed size), the icons inside a screen, and original image files. Local Mode writes files into a folder you name; Cloud Mode returns inline content or Figma-hosted links. Call it by name (not through `figma_call`)
 
 ### 🔍 Design-Code Parity (All Modes)
 - `figma_check_design_parity` - Compare Figma component specs against code implementation, producing a scored diff report with actionable fix items
@@ -636,6 +642,15 @@ Build a navigation bar with logo, menu items, and user avatar
 Create a modal dialog with header, content area, and action buttons
 Arrange these button variants into a component set
 Organize my icon variants as a proper component set with the purple border
+```
+
+### Icons, Images & Asset Export (Local Mode + Cloud Mode)
+```
+Import the icons in src/icons as components, one variant set per icon by size and style, bound to icon/default
+Our icons changed in code: re-import them and update the existing components
+Draw a rocket icon in our icon style and add it to the icon set
+Export the icon set as SVGs with currentColor into src/assets/icons
+Export the icons and photos used in this screen
 ```
 
 ### Variable Management (Local Mode + Cloud Mode)
@@ -800,6 +815,7 @@ The **Figma Desktop Bridge** plugin is the recommended way to connect Figma to t
 - `FIGMA_WS_HOST` — Override the WebSocket server bind address (default: `localhost`). Set to `0.0.0.0` when running inside Docker so the host machine can reach the MCP server.
 - `FIGMA_MCP_HTTP_PORT` — Also serve MCP over Streamable HTTP at `http://127.0.0.1:<port>/mcp`, so other local clients can share this server's Figma connection. Off by default. See [Sharing one server over HTTP](#sharing-one-server-over-http-optional).
 - `FIGMA_MCP_HTTP_TOKEN` — With `FIGMA_MCP_HTTP_PORT`, require `Authorization: Bearer <token>` on every HTTP request.
+- `FIGMA_CONSOLE_ASSET_TIMEOUT_SCALE` — Multiply how long SVG/image import and asset export wait for Figma at each step (default 1, from 0.05 to 10). Raise it on a slow machine or for a very large file.
 
 **Cloud Mode:** The plugin also supports a **Cloud Mode** toggle for pairing with web AI clients (Claude.ai, v0, Replit, Lovable). Toggle "Cloud Mode" in the plugin UI, enter the 6-character pairing code from your AI assistant, and click Connect. See [Cloud Mode](#-cloud-mode-web-ai-clients) for details.
 
@@ -942,6 +958,7 @@ The two servers are complementary, and both can run in the same MCP client.
 - Variable reads and writes on any Figma plan through the Desktop Bridge plugin
 - Component documentation with design and code history, and version-history diffs
 - Codebase → design system extraction
+- Icon folders imported as token-bound components and variant sets (updated in place on re-import), and asset export into your repo
 - Plugin console capture, selection tracking, and multi-file execution (Local Mode)
 
 **📖 [Full comparison](https://docs.figma-console-mcp.southleft.com/figma-mcp-vs-figma-console-mcp)**

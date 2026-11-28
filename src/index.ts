@@ -49,6 +49,7 @@ import { registerMotionTools } from "./core/motion-tools.js";
 import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
 import { registerLayoutTools } from "./core/layout-tools.js";
+import { registerAssetTools } from "./core/asset-tools.js";
 import { escapeHtml, isAllowedRedirectUri, isLoopbackOrTrustedRedirect, mintSseSessionId, readCookie, sseSessionBelongsTo, verifyPkceS256 } from "./core/oauth-security.js";
 
 // Re-export PluginRelayDO so Cloudflare Workers can bind it as a Durable Object
@@ -367,7 +368,7 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		// Note: For screenshots of specific components, use figma_get_component_image instead
 		this.server.tool(
 			"figma_take_screenshot",
-			"Export an image of the currently viewed Figma page or specific node using Figma's REST API. Returns an image URL (valid for 30 days). For specific components, use figma_get_component_image instead.",
+			"Export an image of the currently viewed Figma page or specific node using Figma's REST API. Returns an image URL (valid for 30 days). For specific components, use figma_get_component_image instead. For files to use in code, use figma_export_assets.",
 			{
 				nodeId: z
 					.string()
@@ -885,6 +886,12 @@ export class FigmaConsoleMCPv3 extends McpAgent {
 		registerCodeLayerTools(this.toolServer, getCloudDesktopConnector);
 		registerShaderTools(this.toolServer, getCloudDesktopConnector);
 		registerLayoutTools(this.toolServer, getCloudDesktopConnector);
+		// SVG/icon and image import, asset export: inline data only (no filesystem);
+		// export output "urls" uses this session's REST API.
+		registerAssetTools(this.toolServer as any, getCloudDesktopConnector, {
+			isRemoteMode: true,
+			getFigmaAPI: async () => await this.getFigmaAPI(),
+		});
 		// Design-system adherence (components read through the paired plugin; no filesystem).
 		registerTokenBindingTools(this.toolServer as any, getCloudDesktopConnector);
 		registerAdherenceTools(this.toolServer as any, {
@@ -1364,6 +1371,11 @@ export default {
 			registerCodeLayerTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 			registerShaderTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
 			registerLayoutTools(statelessServer as unknown as ToolServer, getCloudDesktopConnector);
+			// SVG/icon and image import, asset export: inline data only (no filesystem).
+			registerAssetTools(statelessServer as any, getCloudDesktopConnector, {
+				isRemoteMode: true,
+				getFigmaAPI: async () => statelessApi,
+			});
 			registerTokenBindingTools(statelessServer as any, getCloudDesktopConnector);
 			registerAdherenceTools(statelessServer as any, {
 				getDesktopConnector: getCloudDesktopConnector,

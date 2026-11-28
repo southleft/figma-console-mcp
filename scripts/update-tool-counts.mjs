@@ -84,7 +84,13 @@ function detectCloud() {
   // nothing but understated by three for several releases.
   //   1. take the `if (url.pathname === "/mcp")` block,
   //   2. resolve every register*() it calls through the import lines,
-  //   3. add its direct statelessServer.tool("…") registrations.
+  //   3. follow register*() calls inside those modules through their own
+  //      relative imports (a registered module may register sibling modules'
+  //      tools), counting every double-quoted tool name in each file reached,
+  //   4. add its direct statelessServer.tool("…") registrations.
+  // Step 3 can't see an `if (!isRemoteMode)` guard: a module Cloud registers
+  // must never call a Local-only register*() function, or that module's tools
+  // count for Cloud. Local-only tools register from src/local.ts.
   // Live-checked against tools/list: /mcp = 95, /sse = 104 at v1.40.7.
   const indexPath = join(ROOT, "src/index.ts");
   const src = readFileSync(indexPath, "utf8");
@@ -106,6 +112,29 @@ function detectCloud() {
     const f = importOf.get(fn);
     if (!f) throw new Error(`detectCloud: ${fn}() is called in /mcp but not imported from ./core — update the parser`);
     files.add(f);
+  }
+  // Step 3. A registered module may register more tools through register*()
+  // functions it imports from sibling modules (registerAssetTools calls
+  // registerExportAssetsTool and registerImportImageTool). Follow those calls,
+  // through each file's own relative imports, so their tools count too.
+  const queue = [...files];
+  while (queue.length) {
+    const file = queue.shift();
+    const text = readFileSync(file, "utf8");
+    const localImports = new Map();
+    for (const m of text.matchAll(/import\s*\{([^}]+)\}\s*from\s*"(\.{1,2}\/[^"]+)\.js"/g)) {
+      for (const spec of m[1].split(",").map((x) => x.trim()).filter(Boolean)) {
+        const local = spec.replace(/^type\s+/, "").split(/\s+as\s+/).pop().trim();
+        localImports.set(local, resolve(dirname(file), m[2] + ".ts"));
+      }
+    }
+    for (const m of text.matchAll(/\b(register[A-Za-z]+)\(/g)) {
+      const target = localImports.get(m[1]);
+      if (target && !files.has(target)) {
+        files.add(target);
+        queue.push(target);
+      }
+    }
   }
   const names = countNames([...files]);
   for (const m of block.matchAll(/statelessServer\.(?:tool|registerTool)\(\s*("fig(?:ma|jam)_[a-z_]+")/g)) names.add(m[1]);

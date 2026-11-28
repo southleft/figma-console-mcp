@@ -179,6 +179,15 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
 	figma_apply_shader: "update",
 	figma_delete_node: "destructive",
 
+	// ── Import & export ──────────────────────────────────────────────────────
+	// onExisting "update" replaces component artwork (asks first when instances exist or it is published).
+	figma_import_svg: "destructive",
+	// New layers by default, so a repeat adds a second copy: "create" keeps idempotentHint false, so
+	// hosts don't auto-retry it. Filling existing layers (nodeIds) replaces their fills the way
+	// figma_set_image_fill ("update") does; it never deletes a layer, so it isn't destructive.
+	figma_import_image: "create",
+	figma_export_assets: "file", // writes files; output "urls" calls REST
+
 	// ── Slots ────────────────────────────────────────────────────────────────
 	figma_create_slot: "create",
 	figma_add_slot_property: "create",
@@ -233,10 +242,11 @@ export const TOOL_KINDS: Record<string, ToolKind> = {
 };
 
 /**
- * Tools that only touch the local machine / the user's open Figma file.
- * Everything else reaches the Figma REST API (an external system).
+ * Open-world tools: each reaches an external system (the Figma REST API,
+ * Figma's servers through a CLI, or arbitrary web origins). Every other tool
+ * only touches the local machine and the user's open Figma file.
  */
-const REST_TOOLS = new Set<string>([
+const OPEN_WORLD_TOOLS = new Set<string>([
 	"figma_get_file_data",
 	"figma_get_component",
 	"figma_get_styles",
@@ -257,12 +267,13 @@ const REST_TOOLS = new Set<string>([
 	"figma_get_design_system_kit",
 	"figma_resolve_components",
 	"figma_get_library_analytics",
+	"figma_export_assets", // output "urls" renders through REST
 ]);
 
 export function hintsFor(name: string): ToolHints | undefined {
 	const kind = TOOL_KINDS[name];
 	if (!kind) return undefined;
-	return { ...KIND_HINTS[kind], openWorldHint: REST_TOOLS.has(name) };
+	return { ...KIND_HINTS[kind], openWorldHint: OPEN_WORLD_TOOLS.has(name) };
 }
 
 /**

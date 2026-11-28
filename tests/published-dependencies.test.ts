@@ -47,6 +47,9 @@ function runtimeImportsOfLocalEntry(): Map<string, string> {
 			if (m[2]) continue; // `import type` / `export type` — erased at compile time
 			const spec = m[3] ?? m[4] ?? m[5];
 			if (!spec) continue;
+			// A module specifier never contains whitespace. Text inside a string that only looks
+			// like an import (a generated plugin script's "…could not export ' + n.name + '…") isn't one.
+			if (/\s/.test(spec)) continue;
 			if (spec.startsWith(".")) {
 				const target = resolve(dirname(file), spec).replace(/\.js$/, ".ts");
 				visit(target.endsWith(".ts") ? target : `${target}.ts`);

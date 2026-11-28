@@ -107,6 +107,9 @@ The MCP server has **three execution modes** and **four setup methods**:
 | **Shaders and layout** (`figma_apply_shader`, `figma_list_shaders`, `figma_set_layout`) | ❌ | ✅ | ✅ | Desktop Bridge |
 | **Design-system adherence** (`figma_resolve_components`, `figma_audit_adherence`, `figma_audit_code_adherence`, `figma_bind_tokens`, `figma_check_library_parity`) | ❌ | ✅ | ✅ | Desktop Bridge; published libraries via REST. In Cloud Mode, pass code as `sources` (no filesystem) |
 | **Code layer discovery** (`figma_get_code_layers`) | ❌ | ✅ | ✅ | Desktop Bridge. Finds code layers; their source can't be read or edited through Figma's APIs |
+| **SVG and icon import** (`figma_import_svg`) | ❌ | ⚠️ | ✅ | Desktop Bridge. Cloud Mode imports inline markup only (up to 100 SVGs per call) and skips updates to icons with instances or a published library unless you pass `onExisting: "update"`. Local Mode also reads `.svg` files and folders, and asks before those updates when the client can show the question |
+| **Image import** (`figma_import_image`) | ❌ | ⚠️ | ✅ | Desktop Bridge. Cloud Mode takes base64 data only (up to 50 images per call); Local Mode also reads image files and folders |
+| **Asset export** (`figma_export_assets`) | ❌ | ⚠️ | ✅ | Renders through the Desktop Bridge. Cloud Mode returns inline content or Figma-hosted links (`output: "urls"`); only Local Mode writes files |
 | **Design System Reads** | ✅ | ✅ | ✅ | Variables, components, styles via Figma API |
 | **Codebase → Design System Extraction** (`figma_ds_*`) | ❌ | ❌ | ✅ | Local-only — reads and writes your local filesystem |
 | **Design-System Health Report** (`figma_audit_design_system_report`) | ❌ | ❌ | ✅ | Local-only |
@@ -229,6 +232,14 @@ Variables & Components Data
 **Component Descriptions:**
 - **Remote Mode:** Figma REST API has known bugs (descriptions often missing)
 - **Local Mode:** Desktop Bridge plugin uses `figma.getNodeByIdAsync()` (reliable)
+
+**Asset import and export (Local Mode only):**
+- Reading `.svg` and image files and folders (`paths`, `directory`)
+- Writing export files (`output: "files"`, `outputDir`, `overwrite`)
+- Targeting another open file with `fileKey`
+- Asking before updating icons that have instances or are published, when the client can show the question (Cloud Mode skips those updates unless `onExisting: "update"` is passed)
+
+See the [Import & Export guide](/import-export).
 
 ---
 

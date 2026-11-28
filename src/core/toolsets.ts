@@ -172,6 +172,11 @@ export const TOOLSETS: Record<string, Toolset> = {
 			"figma_get_code_layers",
 		],
 	},
+	assets: {
+		description:
+			"draw icons and illustrations as editable vectors (write SVG), import SVG icon sets as components and variant sets, import PNG/JPEG/GIF images as layers or fills, export PNG/JPG/SVG/PDF, icon SVGs and original images to files",
+		tools: ["figma_import_svg", "figma_import_image", "figma_export_assets"],
+	},
 	figjam: {
 		description: "FigJam boards",
 		tools: [
@@ -309,6 +314,16 @@ export function registerToolsetTools(server: ToolsetServer): void {
 			try {
 				await server.sendToolListChanged?.();
 			} catch {}
+			let note = "These tools are now listed. If your client doesn't show them yet, call them through figma_call({ tool, arguments }).";
+			// figma_call refuses destructive-hinted tools (below), so name the ones just enabled.
+			// Annotations are applied at startup, before any call can reach this handler.
+			const direct = now.filter((name) => (reg[name] as { annotations?: { destructiveHint?: boolean } } | undefined)?.annotations?.destructiveHint === true);
+			if (direct.length) {
+				const sets = toolsets.filter((set) => TOOLSETS[set]?.tools.some((t) => direct.includes(t)));
+				const list = direct.length === 1 ? direct[0] : `${direct.slice(0, -1).join(", ")} and ${direct[direct.length - 1]}`;
+				const one = direct.length === 1;
+				note += ` ${list} can delete or overwrite, so ${one ? "it can't" : "they can't"} run through figma_call. Call ${one ? "it" : "them"} by name; if your client doesn't list ${one ? "it" : "them"}, restart the client or include ${sets.join(",")} in FIGMA_TOOLSETS.`;
+			}
 			return {
 				content: [
 					{
@@ -317,7 +332,7 @@ export function registerToolsetTools(server: ToolsetServer): void {
 							success: true,
 							enabled: toolsets,
 							tools: now,
-							note: "These tools are now listed. If your client doesn't show them yet, call them through figma_call({ tool, arguments }).",
+							note,
 						}),
 					},
 				],

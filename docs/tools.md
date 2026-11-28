@@ -119,6 +119,9 @@ This guide provides detailed documentation for each tool, including when to use 
 | | `figma_set_layout` | **Set auto layout or grid layout in one call** and place children | Local / Cloud |
 | | `figma_create_child` | Create child node | Local / Cloud |
 | **🖼️ Image** | `figma_set_image_fill` | Set image fill on nodes | Local / Cloud |
+| **📥 Import & Export** | `figma_import_svg` | **Import SVG as editable vectors, icon components and variant sets**, bound to a color token; re-imports update icons in place. Cloud Mode imports inline markup only | Local / Cloud |
+| | `figma_import_image` | Import PNG, JPEG or GIF as new image layers, or as the fill of existing layers. Cloud Mode takes base64 data only | Local / Cloud |
+| | `figma_export_assets` | **Export renders, icon SVGs and original images for code**: files, inline, or Figma-hosted links. Cloud Mode returns inline content or links | Local / Cloud |
 | **🔍 Accessibility** | `figma_lint_design` | 14 WCAG checks with AA/best-practice level tagging | Local / Cloud |
 | | `figma_audit_component_accessibility` | Deep component scorecard: states, focus, color-blind simulation | Local / Cloud |
 | | `figma_scan_code_accessibility` | Scan HTML with axe-core (104 rules): ARIA, labels, landmarks, semantics | Local |
@@ -178,9 +181,12 @@ figma_enable_toolsets({ toolsets: ["variables", "parity"] })
 | `docs` | Component docs, version history, changelogs, blame, comments, annotations |
 | `debug` | Plugin console, plugin reload and pairing, running code across files |
 | `motion` | Animations, shaders, code layers |
+| `assets` | Draw icons and illustrations as editable vectors (write SVG), import SVG icon sets as components and variant sets, import PNG/JPEG/GIF images as layers or fills, export PNG/JPG/SVG/PDF, icon SVGs and original images to files |
 | `figjam` | FigJam boards |
 | `slides` | Figma Slides |
 | `extraction` | `figma_ds_*`: extract a design system from app code |
+
+Tools that overwrite or delete can't run through `figma_call`; call them by name. In the toolsets above that includes `figma_import_svg` and `figma_export_assets`. `figma_enable_toolsets` names them in its reply.
 
 - **Everything at once:** set `FIGMA_TOOLSETS=all` to list every tool, as earlier versions did.
 - **Preload some groups:** set e.g. `FIGMA_TOOLSETS=variables,parity`; core is always included.
@@ -1279,6 +1285,11 @@ figma_get_file_for_plugin({
 - `figma_get_component_for_development` - Best for implementing UI components (includes image + layout data)
 - `figma_get_component_image` - Just need a visual reference
 - `figma_get_component` - Need full component metadata
+
+**For Assets Used in Code:**
+- `figma_export_assets` - Files for your repo: PNG/JPG/SVG/PDF renders of up to 50 nodes, code-ready icon SVGs (`currentColor`), the icons inside a screen, and original image files, written to a folder
+- `figma_capture_screenshot` / `figma_take_screenshot` - To look at a design, not to produce files (one node, sized for viewing)
+- `figma_get_component_image` - A Figma-hosted link to one render (REST, last saved version)
 
 **For Plugin Development:**
 - `figma_get_file_for_plugin` - Optimized file structure for plugins
@@ -2994,9 +3005,22 @@ Use it after `figma_get_design_system_summary` to get the values behind specific
 | Create UI components | `figma_execute` | Buttons, cards, modals |
 | Create frames/layouts | `figma_execute` | Auto-layout containers |
 | Add text | `figma_execute` | Labels, headings, paragraphs |
-| Create shapes | `figma_execute` | Icons, decorations |
+| Create shapes | `figma_execute` | Decorations, dividers |
+| Draw or import icons and illustrations | `figma_import_svg` (not `figma_execute`) | Write the SVG, import it as a token-bound icon component |
 | Modify existing elements | `figma_execute` | Change colors, resize |
 | Create pages | `figma_execute` | Organize file structure |
+
+### For Assets
+
+| Task | Tool |
+|------|------|
+| Add an icon, logo or illustration | `figma_import_svg` |
+| Turn an icon folder into components and variant sets | `figma_import_svg` with `directory` and `variants.pattern` |
+| Update icons after they change in code | `figma_import_svg` again (updates in place) |
+| Place photos or other raster images | `figma_import_image` |
+| Export icons as SVG files for code | `figma_export_assets` with `vectors: "only"` on a set or frame (or `format: "SVG"` on the icon ids), and `svg.currentColor` |
+| Pull the icons and photos out of a screen | `figma_export_assets` with `vectors` or `images` |
+| Just look at a design | `figma_capture_screenshot` |
 
 ### For Variable Management
 
@@ -3530,6 +3554,158 @@ figma_set_image_fill({
 - `imageHash`: Figma's internal hash for the created image
 - `updatedCount`: Number of nodes successfully updated
 - `nodes`: Array of updated node IDs and names
+
+---
+
+## 📥 Import & Export Tools
+
+Bring SVG icons, illustrations and images into Figma, and export what code needs. All three run through the Desktop Bridge plugin (no plugin re-import, no token except for export links). In Local Mode they are in the `assets` toolset. The [Import & Export guide](/import-export) walks through the workflows.
+
+### `figma_import_svg`
+
+Import SVG markup as editable vector layers: one SVG or a batch, and in Local Mode `.svg` files or a whole folder. Makes icon components and variant sets, binds color to a COLOR variable, and updates existing icons in place on re-import. Also how the AI draws a new icon or illustration: it writes the SVG and imports it.
+
+**Mode:** Local / Cloud (Cloud: inline markup only, up to 100 SVGs per call)
+
+**Call this tool directly.** It can replace component artwork, so `figma_call` won't run it.
+
+**When to Use:**
+- Adding icons, logos and illustrations, or drawing new ones
+- Turning an icon folder into components and variant sets bound to your icon color token
+- Re-syncing icons after they change in code, so every instance updates
+
+**Usage:**
+```javascript
+// An icon folder → variant sets, color bound to a token
+figma_import_svg({
+  directory: "/Users/me/app/src/icons",      // Local Mode only
+  recursive: true,
+  variants: { pattern: "{Size}/{Style}/{name}" },
+  namePrefix: "Icon/",
+  color: { variable: "icon/default" }
+})
+
+// Re-sync after icons changed in code: the same call. Changed icons update in place
+// (instances follow); unchanged ones are skipped. You're asked first when an icon
+// has instances or the library is published, and a restore version is saved.
+figma_import_svg({ directory: "/Users/me/app/src/icons", recursive: true, variants: { pattern: "{Size}/{Style}/{name}" }, namePrefix: "Icon/", color: { variable: "icon/default" } })
+// Preview first with dryRun: true (reports updates and the question a real run would ask)
+
+// Draw an icon: the AI writes the SVG
+figma_import_svg({
+  svgs: [{ name: "rocket", markup: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\">…</svg>" }],
+  asComponent: true, size: 24, namePrefix: "Icon/", color: { variable: "icon/default" }, flatten: true
+})
+```
+
+**Parameters:**
+- `svgs` (optional): `[{ markup, name?, description? }]`, up to 200 (16 MB total). Cloud Mode: up to 100
+- `paths` / `directory` (optional, Local Mode only): absolute `.svg` file paths, or a folder; `recursive` (up to 6 levels), `offset` and `limit` page through a big folder (`remaining.nextOffset` in the response)
+- `name`, `namePrefix`, `description` (optional): names and component descriptions
+- `parentId`, `x`, `y` (optional): where the result goes. Default: clear space on the current page (Slides: the focused slide)
+- `size` (optional): fit inside `size × size`; with `asComponent`, the component frame is exactly that size, art centered. `width` / `height` fit one side. `scaleStrokes` (default true)
+- `asComponent` (optional): one component per SVG (Design files only). `flatten`: merge an icon into one vector so later updates keep instance overrides
+- `variants` (optional): `{ pattern, axes? }`. `{name}` plus one `{Axis}` per variant property, e.g. `{name}-{Size}` or `{Size}/{Style}/{name}`
+- `color` (optional): `variable` (local, by name or id), `variableKey` (library), or `value` (literal); `apply` (`auto`, `currentColor`, `all`); `targets` (`fills`, `strokes`)
+- `onExisting` (optional): `update` (default), `skip`, `duplicate`. `keepOverrides`: only update icons whose layer structure is unchanged. `force`: re-apply unchanged artwork. `matchScope`: `file` (default) or `page`
+- `layout` (optional): `container` (`auto`, `section`, `frame`, `none`), `containerName`, `columns`, `gap`, `padding`
+- `focus` (default true), `dryRun`, `resumeRunId` (continue an interrupted run), `verbose`
+- `fileKey` (optional, Local Mode only): run in another open file
+
+**Returns:** `summary` counts, `items` (failed, conflicting, skipped and updated first, each with its reason), compact `created` and `unchanged` lists, `componentSets`, `container`, `restorePoint` (when a version was saved), `remaining` (paging), `incomplete` (when the run stopped early, with a `runId`) and a `hint` naming the node to screenshot.
+
+**Notes:** scripts, event handlers, `foreignObject` and external links are removed before Figma sees the markup. FigJam and Slides import plain vectors (no components; FigJam has no variables, so use `color.value` there). Dev Mode is read-only.
+
+---
+
+### `figma_import_image`
+
+Import PNG, JPEG or GIF images: as new layers with an image fill, or as the fill of existing layers. Base64 data (a `data:` URL is fine), or in Local Mode file paths and folders.
+
+**Mode:** Local / Cloud (Cloud: base64 only, up to 50 images per call)
+
+**Usage:**
+```javascript
+// New layers at the image's size; a @2x file is placed at 1x
+figma_import_image({ images: [{ path: "/Users/me/app/public/hero@2x.png" }] })   // Local Mode
+
+// A folder of photos in a grid, each 320 wide
+figma_import_image({ directory: "/Users/me/app/public/team", width: 320 })      // Local Mode
+
+// Into existing layers
+figma_import_image({ images: [{ data: "iVBORw0KGgo…", nodeIds: ["12:40", "12:41"] }], scaleMode: "CROP" })
+```
+
+**Parameters:**
+- `images` (optional): `[{ data? | path?, name?, nodeIds? }]`, up to 100 (32 MB of base64 in total). `nodeIds` puts that image into those layers' fills
+- `directory`, `recursive`, `offset`, `limit` (optional, Local Mode only): import a folder's `.png`, `.jpg`, `.jpeg` and `.gif` files
+- `nodeIds` (optional): with exactly one image, same as `images[0].nodeIds`
+- `parentId`, `x`, `y` (optional): where new layers go
+- `width`, `height`, `fit` (`contain` default, `exact`), `density` (default from an `@2x`/`@3x` name, else 1)
+- `scaleMode` (optional): `FILL` (default), `FIT`, `CROP`, `TILE`
+- `nodeType` (optional): `rectangle` (default) or `frame`
+- `layout`, `focus`, `dryRun`, `resumeRunId`, `verbose`, `fileKey` (Local Mode only): as in `figma_import_svg`
+
+**Returns:** `summary`, `items` (failed and filled first), compact `created` rows with each `imageHash`, `container`, `remaining`, `incomplete` and a `hint`.
+
+**Notes:** up to 8 MB and 4096 px per side per image. The type is read from the bytes: WebP, HEIC, AVIF, BMP, TIFF and SVG are refused with a message (use `figma_import_svg` for SVG). Layers that are filled aren't moved or selected.
+
+---
+
+### `figma_export_assets`
+
+Export layers for code: PNG, JPG, SVG or PDF renders of up to 50 nodes, the SVGs of icon and logo layers found inside them, and the original image files behind image fills. Renders come from the live file through the Desktop Bridge: any plan, no token, unsaved changes included.
+
+**Mode:** Local / Cloud (Cloud: `inline` or `urls`)
+
+**Call this tool directly.** It writes files (and can replace them with `overwrite: true`), so `figma_call` won't run it.
+
+**When to Use:**
+- Writing icons as code-ready SVGs into a repo
+- Exporting the icons, logos and photos used in a screen
+- Exporting with each layer's Export panel settings, in batches
+- Getting downloadable links from Cloud Mode
+
+**Usage:**
+```javascript
+// Icons as code-ready SVGs, one file per icon, one subfolder per set
+figma_export_assets({
+  nodeIds: ["12:39"],                 // an icon set, or a frame of icons
+  vectors: "only",                    // each icon inside it as its own SVG (vectors are always SVG)
+  svg: { currentColor: true, removeSize: true },
+  outputDir: "/Users/me/app/src/icons",
+  fileName: "{set}/{variant}"
+})
+// format: "SVG" on the set itself gives one SVG of the whole set; pass variant ids for single icons
+
+// The icons and logos inside a screen, plus the screen render
+figma_export_assets({ nodeIds: ["40:2"], vectors: "include", outputDir: "/Users/me/app/src/assets" })
+
+// Only the original photos behind image fills
+figma_export_assets({ nodeIds: ["40:2"], images: "only", outputDir: "/Users/me/app/public/img" })
+
+// Cloud Mode: Figma-hosted links
+figma_export_assets({ nodeIds: ["40:2", "40:7"], format: "PNG", scale: 2, output: "urls" })
+```
+
+**Parameters:**
+- `nodeIds` (optional): up to 50. Default: the current selection
+- `format` (optional): `PNG`, `JPG`, `SVG`, `PDF`. Omit to use each node's Export panel settings (PNG 1x when it has none)
+- `scale` (0.01–4), `width`, `height` (optional, PNG/JPG, one of them)
+- `svg` (optional): `outlineText`, `includeIds`, `simplifyStroke`, `currentColor` (single-color SVGs use `currentColor`), `removeSize` (keep only the `viewBox`)
+- `contentsOnly`, `useAbsoluteBounds`, `colorProfile` (optional): as in Figma's export
+- `vectors` (optional): `none` (default), `include`, `only`: SVGs of the vector layers inside the nodes (icons, logos), deduplicated by main component
+- `images` (optional): `none` (default), `include`, `only`: original image files from image fills. `imageHashes` exports images by hash
+- `output` (optional): `files` (Local Mode default), `inline` (Cloud Mode default), `urls` (needs a Figma token; renders the last saved version; links expire)
+- `outputDir` (optional, Local Mode only): absolute folder. Default: a new folder in the OS temp directory
+- `fileName` (optional): template without extension. Tokens `{name}`, `{path}`, `{leaf}`, `{set}`, `{variant}`, `{id}`, `{page}`; `/` makes subfolders. Default `{name}`
+- `overwrite` (optional): replace existing files (default false: existing files are skipped)
+- `inlineSvgKB` (optional): SVG text budget for `inline` (default 96, up to 512)
+- `fileKey` (optional, Local Mode only): export from another open file
+
+**Returns:** JSON with `assets`, `vectors` and `images` (each with path, link or inline data reference, size and bytes), `skipped` with reasons, `notes`, `incomplete` and `totals`. With `output: "inline"`, PNG/JPG images follow as image content blocks and small PDFs as embedded resources.
+
+**Notes:** to just look at a design, use `figma_capture_screenshot`. Files are written only inside `outputDir`, never through symbolic links.
 
 ---
 

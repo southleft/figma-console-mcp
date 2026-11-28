@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <style>
+    @import url(https://evil.example/a.css);
+    @font-face { font-family: x; src: url(https://evil.example/f.woff); }
+    .a { fill: url(https://evil.example/p.svg#g); stroke: #000000; }
+    .b { fill: url(#grad); }
+    div &gt; iframe[src] { fill: red; }
+  </style>
+  <defs><linearGradient id="grad"><stop offset="0" stop-color="#FF0000"/></linearGradient></defs>
+  <path class="a" d="M2 2h20v20H2z" style="fill:url('https://evil.example/x.png');stroke:#111111"/>
+  <path class="b" d="M4 4h16v16H4z" style="background:URL(https://evil.example/y.png)"/>
+</svg>

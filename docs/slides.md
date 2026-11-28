@@ -221,6 +221,10 @@ Add the title "Brainstorm" to the first one.
 
 The AI creates the slides with `figma_create_slide` and adds the section title with `figma_add_text_to_slide`, giving you a clean scaffold to build on.
 
+### Icons, Illustrations and Images on Slides
+
+`figma_import_svg` imports SVGs into a deck as editable vectors, including SVGs the AI writes for an icon or a simple illustration. With no `parentId` the result goes on the focused slide; pass a slide's id as `parentId` to put it on another one. Slides get plain vectors (components and variant sets are Design-only), and an icon's color can be bound to a COLOR variable with `color.variable`. `figma_import_image` places PNG, JPEG and GIF images on the focused slide the same way, and `figma_export_assets` exports slides or their layers as PNG, JPG, SVG or PDF. In Local Mode these tools are in the `assets` toolset; call `figma_import_svg` and `figma_export_assets` by name (not through `figma_call`). See the [Import & Export guide](/import-export).
+
 ---
 
 ## How It Works

@@ -104,6 +104,8 @@ import { registerMotionTools } from "./core/motion-tools.js";
 import { registerCodeLayerTools } from "./core/code-layer-tools.js";
 import { registerShaderTools } from "./core/shader-tools.js";
 import { registerLayoutTools } from "./core/layout-tools.js";
+import { registerAssetTools } from "./core/asset-tools.js";
+import { createNodeAssetFs } from "./core/assets/node-fs.js";
 import { applyToolAnnotations } from "./core/tool-annotations.js";
 import { applyToolsets, parseToolsetsEnv, registerToolsetTools } from "./core/toolsets.js";
 import { LOCAL_TASK_TOOLS, defaultTaskStore, enableTasksForTools } from "./core/tasks.js";
@@ -244,7 +246,7 @@ ${
 		? ""
 		: `
 ### TOOLSETS (load what the task needs)
-Only the core tools are listed at first, to save tokens. For variables/tokens, component authoring, design↔code parity, docs/history, FigJam, Slides, motion, deep inspection or debugging, call figma_enable_toolsets({ toolsets: [...] }) first. If the new tools don't appear, run them through figma_call({ tool, arguments }).
+Only the core tools are listed at first, to save tokens. For variables/tokens, component authoring, design↔code parity, docs/history, FigJam, Slides, motion, SVG icons and illustrations, image import and asset export, deep inspection or debugging, call figma_enable_toolsets({ toolsets: [...] }) first. If the new tools don't appear, run them through figma_call({ tool, arguments }); tools that overwrite or delete can't run that way, so call them by name.
 `
 }
 This MCP server enables AI-assisted design creation in Figma. Follow these mandatory workflows:
@@ -662,7 +664,7 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		server.registerTool(
 			"figma_take_screenshot",
 			{
-				description: `Export an image of the current Figma page or specific node. Uses the Desktop Bridge plugin (exportAsync) when connected — works on any plan, no REST token needed, reflects current runtime state. Falls back to the Figma REST API when the bridge is unavailable or for PDF format. Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image.`,
+				description: `Export an image of the current Figma page or specific node. Uses the Desktop Bridge plugin (exportAsync) when connected — works on any plan, no REST token needed, reflects current runtime state. Falls back to the Figma REST API when the bridge is unavailable or for PDF format. Use for visual validation after design changes — check alignment, spacing, proportions. Pass nodeId to target specific elements. For components, prefer figma_get_component_image. For files to use in code, use figma_export_assets.`,
 				inputSchema: z.object({
 					nodeId: z
 						.string()
@@ -691,8 +693,10 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 				// API and REST response maps use colon format (123:456).
 				nodeId = nodeId?.replace(/-/g, ":");
 				// Bridge-first: exportAsync via the Desktop Bridge works on any plan
-				// (no REST token) and reflects the current runtime state. PDF is the
-				// only format exportAsync can't produce, so it goes straight to REST.
+				// (no REST token) and reflects the current runtime state. This path
+				// returns an image block (PNG, JPG or SVG), so PDF goes straight to
+				// REST here. exportAsync itself can make PDFs: figma_export_assets
+				// renders them through the plugin.
 				if (format !== "pdf" && this.wsServer?.isClientConnected()) {
 					try {
 						const connector = await this.getDesktopConnector();
@@ -3519,6 +3523,14 @@ If Design Systems Assistant MCP is not available, install it from: https://githu
 		registerCodeLayerTools(server, () => this.getDesktopConnector());
 		registerShaderTools(server, () => this.getDesktopConnector());
 		registerLayoutTools(server, () => this.getDesktopConnector());
+		// SVG/icon import, raster image import and asset export (figma_import_svg,
+		// figma_import_image, figma_export_assets). Local Mode gets the filesystem
+		// (read .svg/.png/.jpg files and folders, write exports under outputDir);
+		// output "urls" uses REST and needs FIGMA_ACCESS_TOKEN.
+		registerAssetTools(server, () => this.getDesktopConnector(), {
+			fs: createNodeAssetFs(),
+			getFigmaAPI: () => this.getFigmaAPI(),
+		});
 
 		// Design-system adherence: resolve needs → components (gaps go to the
 		// person), and audit generated compositions for invented / hardcoded work.

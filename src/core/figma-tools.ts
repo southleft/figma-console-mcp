@@ -3397,7 +3397,7 @@ export function registerFigmaAPITools(
 		"figma_get_component_image",
 		{
 			description:
-				"Render a specific component or node as an image (PNG, JPG, SVG, PDF). Returns image URL valid for 30 days. Use when user asks for: component screenshot, visual preview, rendered output, or 'show me'. NOT for component metadata/properties (use figma_get_component). NOT for getting code/layout data (use figma_get_component_for_development). Best for: visual references, design review, documentation.",
+				"Render a specific component or node as an image (PNG, JPG, SVG, PDF). Returns image URL valid for 30 days. Use when user asks for: component screenshot, visual preview, rendered output, or 'show me'. NOT for component metadata/properties (use figma_get_component). NOT for getting code/layout data (use figma_get_component_for_development). Best for: visual references, design review, documentation. For files to use in code, use figma_export_assets.",
 			inputSchema: z.object({
 				fileUrl: z
 					.string()
@@ -4331,7 +4331,7 @@ export function registerFigmaAPITools(
 	server.registerTool(
 		"figma_capture_screenshot",
 		{
-			description: "Screenshot a node (or the current page) from the live plugin state, so it reflects changes made a moment ago. PNG at 1x by default, capped at 1568px on the longest side.",
+			description: "Screenshot a node (or the current page) from the live plugin state, so it reflects changes made a moment ago. PNG at 1x by default, capped at 1568px on the longest side. For files to use in code, use figma_export_assets.",
 			inputSchema: z.object({
 				nodeId: z
 					.string()

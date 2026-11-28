@@ -8,6 +8,8 @@ import { McpServer, InMemoryTransport } from "@modelcontextprotocol/server";
 import { Client } from "@modelcontextprotocol/client";
 import { withToolIdentity } from "../src/core/identity";
 import { registerWriteTools } from "../src/core/write-tools";
+import { registerAssetTools } from "../src/core/asset-tools";
+import { createNodeAssetFs } from "../src/core/assets/node-fs";
 
 describe("tools/list through withToolIdentity", () => {
 	it("serves record schemas without propertyNames", async () => {
@@ -48,5 +50,22 @@ describe("tools/list through withToolIdentity", () => {
 		expect(JSON.stringify(tools)).not.toContain("propertyNames");
 		await client.close();
 		await server.close();
+	});
+
+	it("leaves no propertyNames in the asset import/export tools, in Local and Cloud form", async () => {
+		// Local Mode is the form with a filesystem (as src/local.ts registers it); Cloud has none.
+		for (const options of [{ fs: createNodeAssetFs() }, { isRemoteMode: true }]) {
+			const server = new (withToolIdentity(McpServer))({ name: "t", version: "0" });
+			registerAssetTools(server, async () => ({}), options);
+			const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+			await server.connect(serverTransport);
+			const client = new Client({ name: "c", version: "0" });
+			await client.connect(clientTransport);
+			const { tools } = await client.listTools();
+			expect(tools.map((t) => t.name).sort()).toEqual(["figma_export_assets", "figma_import_image", "figma_import_svg"]);
+			expect(JSON.stringify(tools)).not.toContain("propertyNames");
+			await client.close();
+			await server.close();
+		}
 	});
 });
