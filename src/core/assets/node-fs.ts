@@ -211,8 +211,12 @@ async function statNamedFile(path: string, maxBytes: number, ext: RegExp, kind: 
 	return info.size;
 }
 
-/** Read at most maxBytes + 1, so a file that grew after the size check is still caught. */
-async function readCapped(path: string, size: number, maxBytes: number): Promise<Buffer> {
+/**
+ * Read the file whose size was just checked. The buffer holds one byte more
+ * than expected, so a file that grew or shrank since the size check (an editor
+ * still saving it) is caught instead of being imported cut short.
+ */
+export async function readCapped(path: string, size: number, maxBytes: number): Promise<Buffer> {
 	const fh = await open(path, "r");
 	try {
 		const chunk = Buffer.alloc(Math.min(maxBytes + 1, Math.max(size, 0) + 1));
@@ -225,6 +229,7 @@ async function readCapped(path: string, size: number, maxBytes: number): Promise
 		}
 		const buf = chunk.subarray(0, filled);
 		if (buf.length > maxBytes) throw new Error(`${path} is larger than ${formatMB(maxBytes)}.`);
+		if (buf.length !== size) throw new Error(`${path} changed while it was being read (it may still be saving). Run the import again.`);
 		return buf;
 	} finally {
 		await fh.close();
@@ -375,6 +380,14 @@ export function createNodeAssetFs(): AssetFs {
 					await fh.writeFile(data);
 				} finally {
 					await fh.close();
+				}
+				// Same landing check as the link path: a folder swapped for a link in the
+				// meantime means the file went somewhere else, so take it back and refuse.
+				try {
+					await checkLanded(path);
+				} catch (e3) {
+					await unlink(path).catch(() => {});
+					throw e3;
 				}
 				return "written";
 			} finally {
