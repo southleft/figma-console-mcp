@@ -533,7 +533,8 @@ function growContainer(target) {
   for (const c of target.children) { right = Math.max(right, c.x + c.width); bottom = Math.max(bottom, c.y + c.height); }
   // A container this run created starts at the editor's default size (a FigJam section is
   // about 500x500), so it is fitted to its content; a reused one is only ever grown.
-  const fitted = L.container.created && !P.layout.origin;
+  // With nothing placed yet (every item failed), keep the starting size rather than shrink to a dot.
+  const fitted = L.container.created && !P.layout.origin && target.children.length > 0;
   const w = fitted ? right + L.padding : Math.max(target.width, right + L.padding);
   const h = fitted ? bottom + L.padding : Math.max(target.height, bottom + L.padding);
   if (w !== target.width || h !== target.height) target.resizeWithoutConstraints(Math.round(w), Math.round(h));

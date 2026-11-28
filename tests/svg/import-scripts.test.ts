@@ -101,7 +101,24 @@ describe("import: basics", () => {
 		expect(r.results[1]).toMatchObject({ stage: "import", reason: "Figma could not import this SVG: failed to invert transform" });
 		expect(r.results[2]).toMatchObject({ stage: "import", reason: "Figma imported nothing visible from this SVG." });
 		expect(frame.children!.map((c) => c.name)).toEqual(["A", "D"]);
+		// createNodeFromSvg's frame comes with a white fill; an icon's box must be transparent.
+		expect(frame.children!.map((c) => c.fills)).toEqual([[], []]);
 		expect(fake.currentPage.children!.filter((c) => c.type === "FRAME" && c !== frame)).toHaveLength(0);
+	});
+
+	it("a container this run created keeps its starting size when every item fails", async () => {
+		const fake = new FakeFigma();
+		const section = new FNode("SECTION", fake);
+		section._w = 500;
+		section._h = 500;
+		fake.currentPage.appendChild(section);
+		fake.svgFactory = () => {
+			throw new Error("failed to invert transform");
+		};
+		const layout = { mode: "grid", columns: 2, gap: 10, padding: 20, cell: { w: 24, h: 24 }, container: { id: section.id, created: true } };
+		const r = await runImport(fake, payload(fake, { targetId: section.id, layout, groups: singles(item(STROKE_ICON, { name: "A" }), item(STROKE_ICON, { name: "B" })) }));
+		expect(r.results.map((x: any) => x.status)).toEqual(["failed", "failed"]);
+		expect([section.width, section.height]).toEqual([500, 500]);
 	});
 
 	it("editorImportMode group groups the children into the target and removes the frame", async () => {

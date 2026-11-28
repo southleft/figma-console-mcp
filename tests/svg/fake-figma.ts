@@ -11,7 +11,8 @@
  *   - resize()/resizeWithoutConstraints() on an auto-layout frame reset both
  *     sizing modes to FIXED;
  *   - rescale/resize of TEXT needs its font loaded (loadFontAsync);
- *   - FigJam has no figma.variables (set `variablesAvailable = false`).
+ *   - FigJam has no figma.variables (set `variablesAvailable = false`);
+ *   - createNodeFromSvg gives the wrapping frame a white fill (seen live in FigJam and Slides).
  */
 
 export const MIXED = Symbol("mixed");
@@ -341,7 +342,7 @@ function attrs(tag: string): Record<string, string> {
 /** Sanitized markup → a frame, the way createNodeFromSvg builds one (roughly). */
 export function defaultSvgParse(fake: FakeFigma, markup: string): FNode {
 	const frame = new FNode("FRAME", fake);
-	frame.fills = [];
+	frame.fills = [solid("#ffffff")];
 	const stack: Array<{ node: FNode; fill?: string; stroke?: string; sw?: string }> = [];
 	for (const m of markup.matchAll(/<(\/?)([a-zA-Z]+)([^>]*?)(\/?)>/g)) {
 		const [, close, tag, rest, self] = m;
